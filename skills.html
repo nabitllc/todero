@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill Tree — Kemuni Agent</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d0d; color: #e0e0e0; font-family: 'SF Mono', 'Fira Code', monospace; padding: 24px; min-height: 100vh; }
+  h1 { font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: #555; margin-bottom: 32px; }
+  .graph { display: flex; gap: 48px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+  .agent-node { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .agent-card {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 16px 24px;
+    text-align: center;
+    min-width: 160px;
+    cursor: default;
+    position: relative;
+  }
+  .agent-card .emoji { font-size: 28px; display: block; margin-bottom: 6px; }
+  .agent-card .name { font-size: 14px; font-weight: 700; color: #fff; }
+  .agent-card .model { font-size: 10px; color: #555; margin-top: 4px; }
+  .connector { width: 1px; height: 32px; background: #333; margin: 0 auto; }
+  .skills-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; max-width: 340px; }
+  .skill-card {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+  }
+  .skill-card:hover { border-color: #555; background: #1a1a1a; }
+  .skill-card.active { border-color: #4CAF50; }
+  .skill-card .skill-emoji { font-size: 16px; }
+  .skill-card .skill-name { font-size: 11px; font-weight: 600; color: #ccc; margin-top: 4px; }
+  .skill-card .skill-desc { font-size: 10px; color: #555; margin-top: 2px; line-height: 1.4; display: none; }
+  .skill-card:hover .skill-desc { display: block; }
+  .tooltip {
+    display: none;
+    position: fixed;
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 10px;
+    padding: 14px 16px;
+    max-width: 300px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #ccc;
+    z-index: 100;
+    pointer-events: none;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .tooltip.visible { display: block; }
+  .tooltip .t-name { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+  .tooltip .t-desc { color: #aaa; }
+  .legend { display: flex; gap: 16px; margin-bottom: 24px; font-size: 11px; color: #555; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.ready { background: #4CAF50; }
+  .dot.missing { background: #333; }
+  .section-label { font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; text-align: center; }
+  .agents-row { display: flex; gap: 64px; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+  .shared-skills { margin-top: 40px; }
+  .shared-skills .section-label { margin-bottom: 16px; }
+  .shared-grid { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 720px; margin: 0 auto; }
+</style>
+</head>
+<body>
+
+<h1>🦞 Skill Tree</h1>
+<div class="subtitle">Kemuni Agent · 12 skills ready · hover for details</div>
+
+<div class="legend">
+  <span><span class="dot ready"></span> Ready</span>
+  <span><span class="dot missing"></span> Not installed</span>
+</div>
+
+<div class="agents-row">
+
+  <!-- MAIN AGENT -->
+  <div class="agent-node">
+    <div class="section-label">Main Agent</div>
+    <div class="agent-card">
+      <span class="emoji">🏢</span>
+      <div class="name">Kemuni Agent</div>
+      <div class="model">claude-sonnet-4-6</div>
+    </div>
+    <div class="connector"></div>
+    <div class="skills-grid">
+      <div class="skill-card active" data-name="coding-agent" data-desc="Delegate coding tasks to Codex or Claude Code. Spawn background agents for builds, refactors, PR reviews.">
+        <div class="skill-emoji">🧩</div>
+        <div class="skill-name">coding-agent</div>
+      </div>
+      <div class="skill-card active" data-name="discord" data-desc="Discord ops: send messages, create channels, react, read history, manage threads.">
+        <div class="skill-emoji">🎮</div>
+        <div class="skill-name">discord</div>
+      </div>
+      <div class="skill-card active" data-name="gh-issues" data-desc="Fetch GitHub issues, spawn agents to fix them, open PRs, monitor review comments.">
+        <div class="skill-emoji">📦</div>
+        <div class="skill-name">gh-issues</div>
+      </div>
+      <div class="skill-card active" data-name="github" data-desc="GitHub ops via gh CLI: issues, PRs, CI runs, code review, API queries.">
+        <div class="skill-emoji">🐙</div>
+        <div class="skill-name">github</div>
+      </div>
+      <div class="skill-card active" data-name="gog" data-desc="Google Workspace: Gmail, Calendar, Drive, Contacts, Sheets, Docs.">
+        <div class="skill-emoji">🎮</div>
+        <div class="skill-name">gog</div>
+      </div>
+      <div class="skill-card active" data-name="healthcheck" data-desc="Security audits, firewall/SSH hardening, risk posture, exposure review for OpenClaw deployments.">
+        <div class="skill-emoji">📦</div>
+        <div class="skill-name">healthcheck</div>
+      </div>
+      <div class="skill-card active" data-name="node-connect" data-desc="Diagnose OpenClaw node connection and pairing failures for mobile apps.">
+        <div class="skill-emoji">📦</div>
+        <div class="skill-name">node-connect</div>
+      </div>
+      <div class="skill-card active" data-name="session-logs" data-desc="Search and analyze older session logs using jq.">
+        <div class="skill-emoji">📜</div>
+        <div class="skill-name">session-logs</div>
+      </div>
+      <div class="skill-card active" data-name="skill-creator" data-desc="Create, edit, improve, or audit AgentSkills. Build new skills from scratch.">
+        <div class="skill-emoji">📦</div>
+        <div class="skill-name">skill-creator</div>
+      </div>
+      <div class="skill-card active" data-name="summarize" data-desc="Summarize URLs, YouTube videos, podcasts, PDFs. Best fallback for video transcription.">
+        <div class="skill-emoji">🧾</div>
+        <div class="skill-name">summarize</div>
+      </div>
+      <div class="skill-card active" data-name="video-frames" data-desc="Extract frames or short clips from videos using ffmpeg.">
+        <div class="skill-emoji">🎬</div>
+        <div class="skill-name">video-frames</div>
+      </div>
+      <div class="skill-card active" data-name="weather" data-desc="Current weather and forecasts via wttr.in or Open-Meteo. No API key needed.">
+        <div class="skill-emoji">☔</div>
+        <div class="skill-name">weather</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KEMUNI AGENT -->
+  <div class="agent-node">
+    <div class="section-label">Kemuni Agent</div>
+    <div class="agent-card" style="border-color:#1a4a2a;">
+      <span class="emoji">🚀</span>
+      <div class="name">kemuni</div>
+      <div class="model">claude-sonnet-4-6</div>
+    </div>
+    <div class="connector"></div>
+    <div style="font-size:11px; color:#444; text-align:center; padding: 12px;">inherits main skills</div>
+  </div>
+
+  <!-- VESPERA AGENT -->
+  <div class="agent-node">
+    <div class="section-label">Vespera Agent</div>
+    <div class="agent-card" style="border-color:#2a1a3a;">
+      <span class="emoji">🖤</span>
+      <div class="name">vespera</div>
+      <div class="model">claude-sonnet-4-6</div>
+    </div>
+    <div class="connector"></div>
+    <div style="font-size:11px; color:#444; text-align:center; padding: 12px;">inherits main skills</div>
+  </div>
+
+</div>
+
+<!-- CRONS SECTION -->
+<div style="margin-top:48px;">
+  <div class="section-label" style="text-align:center;">Active Crons</div>
+  <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:16px;">
+    <div style="background:#111; border:1px solid #222; border-radius:8px; padding:12px 16px; font-size:11px;">
+      <div style="color:#4CAF50; font-weight:700;">☀️ morning-brief</div>
+      <div style="color:#555; margin-top:4px;">6AM ET daily → Kemuni Daily (Telegram)</div>
+      <div style="color:#333; margin-top:2px;">model: haiku-4-5</div>
+    </div>
+    <div style="background:#111; border:1px solid #222; border-radius:8px; padding:12px 16px; font-size:11px;">
+      <div style="color:#4CAF50; font-weight:700;">📈 trending-alerts</div>
+      <div style="color:#555; margin-top:4px;">6AM ET daily → Discord #alerts</div>
+      <div style="color:#333; margin-top:2px;">model: haiku-4-5</div>
+    </div>
+    <div style="background:#111; border:1px solid #222; border-radius:8px; padding:12px 16px; font-size:11px;">
+      <div style="color:#4CAF50; font-weight:700;">🌙 overnight-employee</div>
+      <div style="color:#555; margin-top:4px;">2AM ET daily → Discord #research + Telegram</div>
+      <div style="color:#333; margin-top:2px;">model: sonnet-4-6 · 3 parallel sub-agents</div>
+    </div>
+    <div style="background:#111; border:1px solid #222; border-radius:8px; padding:12px 16px; font-size:11px;">
+      <div style="color:#4CAF50; font-weight:700;">🔒 security-audit</div>
+      <div style="color:#555; margin-top:4px;">9AM Monday → Discord #agent-logs</div>
+      <div style="color:#333; margin-top:2px;">model: haiku-4-5</div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>
+
+<script>
+  const tooltip = document.getElementById('tooltip');
+  document.querySelectorAll('.skill-card').forEach(card => {
+    card.addEventListener('mouseenter', (e) => {
+      const name = card.dataset.name;
+      const desc = card.dataset.desc;
+      tooltip.innerHTML = `<div class="t-name">${card.querySelector('.skill-emoji').textContent} ${name}</div><div class="t-desc">${desc}</div>`;
+      tooltip.classList.add('visible');
+    });
+    card.addEventListener('mousemove', (e) => {
+      tooltip.style.left = (e.clientX + 16) + 'px';
+      tooltip.style.top = (e.clientY - 8) + 'px';
+    });
+    card.addEventListener('mouseleave', () => {
+      tooltip.classList.remove('visible');
+    });
+  });
+</script>
+</body>
+</html>
