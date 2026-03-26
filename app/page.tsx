@@ -109,6 +109,7 @@ const NAV = [
   { id:'activity',  label:'Activity',  icon:'📡' },
   { id:'team',      label:'Team',      icon:'👥' },
   { id:'calendar', label:'Calendar', icon:'📅' },
+  { id:'automations', label:'Automations', icon:'⚡' },
   { id:'office',   label:'Office',   icon:'🏢' },
   { id:'memory',   label:'Memory',   icon:'🧠' },
   { id:'board',    label:'Board',    icon:'📋' },
@@ -797,7 +798,7 @@ export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
     if(typeof window!=='undefined'){
       const saved = localStorage.getItem('mc-tab') as Tab|null
-      if(saved && ['overview','activity','team','calendar','office','memory','board','chat','infra'].includes(saved)) return saved
+      if(saved && ['overview','activity','team','calendar','automations','office','memory','board','chat','infra'].includes(saved)) return saved
     }
     return 'overview'
   })
@@ -1946,6 +1947,31 @@ export default function Home() {
           {/* ── BOARD ── */}
           {tab==='board' && (
             <KanbanBoard />
+          )}
+
+          {/* ── AUTOMATIONS (n8n embed) ── */}
+          {tab==='automations' && (
+            <div className="h-full flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Automations</h2>
+                  <p className="text-xs text-zinc-500 mt-0.5">n8n workflow editor — build and manage automations</p>
+                </div>
+                <a href="https://n8n.nabit.work" target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors">
+                  Open in new tab ↗
+                </a>
+              </div>
+              <div className="flex-1 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900" style={{minHeight:'600px'}}>
+                <iframe
+                  src="https://n8n.nabit.work"
+                  className="w-full h-full"
+                  style={{minHeight:'600px', border:'none'}}
+                  title="n8n Workflow Editor"
+                  allow="same-origin"
+                />
+              </div>
+            </div>
           )}
 
           {/* ── CHAT ── */}
