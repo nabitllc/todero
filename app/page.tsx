@@ -10,37 +10,61 @@ function daysUntil(d: Date) { return Math.max(0, Math.ceil((d.getTime()-Date.now
 function daysSince(d: Date) { return Math.floor((Date.now()-d.getTime())/86400000) }
 function miniPct(a: number, b: number) { return Math.min(100, Math.round((a/b)*100)) }
 
+const AGENT_DISPLAY: Record<string,{name:string;emoji:string;role:string;color:string;desc:string;capabilities:string[];modelShort?:string}> = {
+  main:          {name:'KAOS',        emoji:'🧠', role:'Chief of Staff',    color:'#6b7280', desc:'Main orchestrator. Strategy, memory, delegation, comms.', capabilities:['Orchestration','Memory','Strategy','Comms','Delegation']},
+  scout:         {name:'Scout',       emoji:'🔍', role:'Research Agent',    color:'#a855f7', desc:'Morning scan: goth scene, competitors, PropTech trends.', capabilities:['Web Research','Summarization','Trends']},
+  ops:           {name:'Ops',         emoji:'⚙️', role:'Operations Agent',  color:'#6b7280', desc:'Infrastructure monitoring, deployment ops, system health.', capabilities:['Monitoring','Deploys','Health Checks']},
+  'kemuni-sme':  {name:'Kemuni SME',  emoji:'🚀', role:'Kemuni Specialist', color:'#3b82f6', desc:'Domain expert for Kemuni platform. PropTech strategy & features.', capabilities:['PropTech','Strategy','Features']},
+  'vespera-sme': {name:'Vespera SME', emoji:'🖤', role:'Vespera Specialist',color:'#a855f7', desc:'Domain expert for Vespera. Goth community, events, culture.', capabilities:['Events','Community','Culture']},
+  builder:       {name:'Builder',     emoji:'🔨', role:'Coding Agent',      color:'#3b82f6', desc:'On-demand coding. Next.js, Supabase, Vespera and Kemuni builds.', capabilities:['Next.js','Supabase','TypeScript','APIs']},
+  tester:        {name:'Tester',      emoji:'🧪', role:'QA Agent',          color:'#ef4444', desc:'Automated testing, bug detection, regression checks.', capabilities:['Testing','QA','Bug Detection']},
+}
+
+const PLANNED_AGENTS = [
+  { id:'quill',   name:'Quill',        emoji:'✍️', role:'Content Writer',    status:'planned' as const,
+    model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#10b981',
+    desc:'Landing pages, blog posts, Vespera event copy. Free via Ollama.',
+    capabilities:['Copywriting','SEO','Event Descriptions'],
+    activatesWhen:'Vespera ships — landing page copy needed' },
+  { id:'echo',    name:'Echo',         emoji:'📢', role:'Community Manager', status:'planned' as const,
+    model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#f59e0b',
+    desc:'Discord/Telegram engagement, social posts, community replies.',
+    capabilities:['Discord','Telegram','Social Posts'],
+    activatesWhen:'Community reaches 50+ members' },
+  { id:'ralph',   name:'Ralph',        emoji:'🧪', role:'QA Reviewer',       status:'planned' as const,
+    model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#ef4444',
+    desc:'Reviews Builder code, catches bugs before deploy.',
+    capabilities:['Code Review','Testing','Bug Detection'],
+    activatesWhen:'First full feature ready for pre-deploy review' },
+  { id:'analyst', name:'Analyst',      emoji:'📊', role:'Data Analyst',      status:'planned' as const,
+    model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#0ea5e9',
+    desc:'Analytics, reporting, metrics dashboards, data insights.',
+    capabilities:['Analytics','Reporting','Metrics'],
+    activatesWhen:'Kemuni reaches beta with real user data' },
+]
+
+// Legacy fallback for when API is not available
 const ALL_AGENTS = [
-  { id:'main',    name:'KAOS', emoji:'🏢', role:'Chief of Staff',    status:'active',
+  { id:'main',    name:'KAOS', emoji:'🧠', role:'Chief of Staff',    status:'active',
     model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#6b7280',
     desc:'Main orchestrator. Strategy, memory, delegation, comms.',
     capabilities:['Orchestration','Memory','Strategy','Comms','Delegation'],
     floor: true },
-  { id:'builder', name:'Builder',      emoji:'🔨', role:'Coding Agent',      status:'idle',
-    model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#3b82f6',
-    desc:'On-demand coding. Next.js, Supabase, Vespera and Kemuni builds.',
+  { id:'builder', name:'Builder',      emoji:'🔨', role:'Coding Agent',      status:'active',
+    model:'anthropic/claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#3b82f6',
+    desc:'Ships clean PRs for Vespera and Kemuni. Runs nightly from task queue.',
     capabilities:['Next.js','Supabase','TypeScript','APIs'],
+    floor: true },
+  { id:'tester',  name:'Tester',       emoji:'🧪', role:'QA Reviewer',      status:'active',
+    model:'anthropic/claude-haiku-4-5', modelShort:'Haiku 4.5', color:'#a855f7',
+    desc:'Reviews PRs from Builder. Catches bugs before they reach production.',
+    capabilities:['Code Review','Testing','Bug Detection','PR Review'],
     floor: true },
   { id:'scout',   name:'Scout',        emoji:'🔍', role:'Research Agent',    status:'scheduled',
     model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#a855f7',
     desc:'Morning scan: goth scene, competitors, PropTech trends.',
     capabilities:['Web Research','Summarization','Trends'],
     floor: true },
-  { id:'quill',   name:'Quill',        emoji:'✍️', role:'Content Writer',    status:'planned',
-    model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#10b981',
-    desc:'Landing pages, blog posts, Vespera event copy. Free via Ollama.',
-    capabilities:['Copywriting','SEO','Event Descriptions'],
-    floor: false, activatesWhen:'Vespera ships — landing page copy needed' },
-  { id:'echo',    name:'Echo',         emoji:'📢', role:'Community Manager', status:'planned',
-    model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#f59e0b',
-    desc:'Discord/Telegram engagement, social posts, community replies.',
-    capabilities:['Discord','Telegram','Social Posts'],
-    floor: false, activatesWhen:'Community reaches 50+ members' },
-  { id:'ralph',   name:'Ralph',        emoji:'🧪', role:'QA Reviewer',       status:'planned',
-    model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#ef4444',
-    desc:'Reviews Builder code, catches bugs before deploy.',
-    capabilities:['Code Review','Testing','Bug Detection'],
-    floor: false, activatesWhen:'First full feature ready for pre-deploy review' },
 ]
 
 const CRONS = [
@@ -81,8 +105,9 @@ const ACTION_COLORS: Record<string,string> = {
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
 const NAV = [
-  { id:'overview', label:'Overview', icon:'📊' },
-  { id:'team',     label:'Team',     icon:'👥' },
+  { id:'overview',  label:'Overview',  icon:'📊' },
+  { id:'activity',  label:'Activity',  icon:'📡' },
+  { id:'team',      label:'Team',      icon:'👥' },
   { id:'calendar', label:'Calendar', icon:'📅' },
   { id:'office',   label:'Office',   icon:'🏢' },
   { id:'memory',   label:'Memory',   icon:'🧠' },
@@ -503,6 +528,8 @@ const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
   ops:           {emoji:'⚙️', name:'Ops'},
   'kemuni-sme':  {emoji:'🚀', name:'Kemuni SME'},
   'vespera-sme': {emoji:'🖤', name:'Vespera SME'},
+  builder:       {emoji:'🔨', name:'Builder'},
+  tester:        {emoji:'🧪', name:'Tester'},
 }
 
 const PRIORITY_COLORS: Record<string,string> = {
@@ -770,7 +797,7 @@ export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
     if(typeof window!=='undefined'){
       const saved = localStorage.getItem('mc-tab') as Tab|null
-      if(saved && ['overview','team','calendar','office','memory','board','chat','infra'].includes(saved)) return saved
+      if(saved && ['overview','activity','team','calendar','office','memory','board','chat','infra'].includes(saved)) return saved
     }
     return 'overview'
   })
@@ -981,97 +1008,42 @@ export default function Home() {
                 })}
               </div>
 
-              {/* Vespera Deploy Card */}
-              {(()=>{
-                const dep = liveStatus?.vercel?.lastDeploy
-                const depStatus = dep?.status?.toUpperCase() ?? 'UNKNOWN'
-                const depUrl = dep?.url ?? ''
-                const depAt = dep?.createdAt ? new Date(dep.createdAt) : null
-                const depAgo = depAt ? Math.floor((Date.now()-depAt.getTime())/60000) : null
-                const depAgoStr = depAgo!==null ? (depAgo<60 ? depAgo+'m ago' : Math.floor(depAgo/60)+'h ago') : ''
-                const stColor = depStatus==='READY'?'#10b981':depStatus==='ERROR'?'#ef4444':depStatus==='BUILDING'?'#f59e0b':'#6b7280'
-                const handleDeploy = () => {
-                  setDeployState('loading')
-                  fetch('https://api.vercel.com/v1/integrations/deploy/prj_s7KQ9gnUsan2Wdu4JcqK11vQ0Ifh/KmBMtJEjoT',{method:'POST'})
-                    .then(()=>{ setDeployState('done'); setTimeout(()=>setDeployState('idle'),3000) })
-                    .catch(()=>{ setDeployState('done'); setTimeout(()=>setDeployState('idle'),3000) })
-                }
-                return (
-                  <div className="rounded-2xl p-5 border border-zinc-800/60 card-glow" style={{background:'#0f0f0f'}}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">🚀</span>
-                        <span className="text-white text-sm font-semibold">Vespera Deploy</span>
-                      </div>
-                      <button
-                        onClick={handleDeploy}
-                        disabled={deployState!=='idle'}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all border border-zinc-800 hover:border-zinc-600 disabled:opacity-60"
-                        style={{background:'#1a1a1a',color: deployState==='done'?'#10b981':'#d4d4d8'}}>
-                        {deployState==='loading' ? 'Deploying...' : deployState==='done' ? 'Triggered ✓' : 'Deploy Now'}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold border" style={{color:stColor,borderColor:stColor+'40',background:stColor+'15'}}>{depStatus}</span>
-                      {depUrl && <a href={'https://'+depUrl} target="_blank" rel="noreferrer" className="text-zinc-500 text-xs hover:text-zinc-300 truncate">{depUrl}</a>}
-                      {depAgoStr && <span className="text-zinc-600 text-xs ml-auto shrink-0">{depAgoStr}</span>}
-                    </div>
-                  </div>
-                )
-              })()}
-
+              {/* Live Activity Feed (mini) */}
               <div>
-                <SH icon="🤖">Active Agents</SH>
-                <div className="grid grid-cols-3 gap-3">
-                  {floorAgents.map(a=>(
-                    <div key={a.id} className="rounded-xl p-4 border card-glow" style={{background:'#0f0f0f',borderColor:'#1e1e1e'}}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{a.emoji}</span>
-                          <div>
-                            <p className="text-white text-xs font-semibold">{a.name}</p>
-                            <p className="text-zinc-600 text-[10px]">{a.role}</p>
-                          </div>
-                        </div>
-                        <Dot status={a.status} />
-                      </div>
-                      <p className="text-zinc-600 text-[10px] mb-2 italic">{act(a.id)}</p>
-                      <p className="text-zinc-700 text-[10px] font-mono">{a.modelShort}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <SH icon="⏱" sub={liveCrons ? '● live' : undefined}>Automations</SH>
+                <SH icon="📡" sub={liveStatus?.recentActivity?.length ? '● live' : undefined}>Recent Activity</SH>
                 <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-                  {displayCrons.map((c:any,i:number)=>(
-                    <div key={c.id} className={'flex items-center gap-3 px-5 py-3 '+(i<displayCrons.length-1?'border-b border-zinc-800/40':'')}>
-                      <Dot status={c.status} />
-                      <span className="font-mono text-xs text-white w-36 shrink-0">{c.id}</span>
-                      <span className="text-zinc-600 text-xs w-20 shrink-0">{c.days==='interval'?c.time:(c.time+(c.days!=='daily'?' '+c.days:''))}</span>
-                      <span className="text-zinc-500 text-xs flex-1">{c.desc}</span>
-                      <span className="text-zinc-700 text-[10px] font-mono w-12 text-right shrink-0">{c.model}</span>
-                      <Chip label={c.project} color={pColor(c.project)} />
-                      {/* Heartbeat toggle */}
-                      {c.source==='openclaw' && c.agentId && (
-                        <button
-                          onClick={async()=>{
-                            const newState = !c.heartbeatEnabled
-                            await fetch('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agentId:c.agentId,enabled:newState})})
-                            fetch('/api/automations').then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setLiveCrons(d as any) }).catch(()=>{})
-                          }}
-                          className={'ml-1 text-[9px] px-2 py-0.5 rounded-full border transition-all '+(
-                            c.heartbeatEnabled
-                              ? 'text-emerald-400 border-emerald-400/40 bg-emerald-400/10 hover:bg-red-400/10 hover:text-red-400 hover:border-red-400/40'
-                              : 'text-zinc-600 border-zinc-700 bg-zinc-900 hover:bg-emerald-400/10 hover:text-emerald-400 hover:border-emerald-400/40'
-                          )}>
-                          {c.heartbeatEnabled ? 'on' : 'off'}
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                  {(liveStatus?.recentActivity ?? []).slice(0,5).map((entry:any, i:number, arr:any[])=>{
+                    const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
+                    const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':'#3b82f6'
+                    return (
+                      <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+                        <span className="text-base shrink-0 mt-0.5">{entry.emoji || (AGENT_DISPLAY[entry.agentId]?.emoji ?? '🤖')}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-white text-xs font-medium">{entry.agentName || AGENT_DISPLAY[entry.agentId]?.name || entry.agentId}</span>
+                            {entry.channel && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
+                              style={{background:actionColor+'20',color:actionColor}}>
+                              {entry.channel}
+                            </span>}
+                            {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-zinc-800 text-zinc-500">{entry.model}</span>}
+                            <span className="ml-auto text-zinc-600 text-[10px] shrink-0">{agoStr}</span>
+                          </div>
+                          <p className="text-zinc-500 text-[10px] mt-0.5 truncate">{entry.desc}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {(!liveStatus?.recentActivity || liveStatus.recentActivity.length === 0) && (
+                    <p className="text-zinc-700 text-xs px-4 py-4">No activity yet — loading...</p>
+                  )}
                 </div>
+                {(liveStatus?.recentActivity?.length ?? 0) > 5 && (
+                  <button onClick={()=>{ setTab('activity'); if(typeof window!=='undefined') localStorage.setItem('mc-tab','activity') }}
+                    className="mt-2 w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
+                    style={{background:'#0a0a0a'}}>
+                    View All Activity →
+                  </button>
+                )}
               </div>
 
               {/* OpenRouter Balance — live */}
@@ -1098,6 +1070,56 @@ export default function Home() {
                 )
               })()}
 
+            </div>
+          )}
+
+          {/* ── ACTIVITY ── */}
+          {tab==='activity' && (
+            <div className="space-y-5">
+              <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${liveStatus.recentActivity.length} entries · live` : undefined}>Activity Feed</SH>
+              {(()=>{
+                const items = liveStatus?.recentActivity ?? []
+                if(items.length === 0) return <p className="text-zinc-700 text-xs px-4 py-4">No activity yet — loading...</p>
+                // Group by date
+                const grouped: Record<string, any[]> = {}
+                for(const entry of items){
+                  const dateKey = entry.date || (entry.ago < 60 ? 'Today' : entry.ago < 1440 ? 'Yesterday' : 'Earlier')
+                  if(!grouped[dateKey]) grouped[dateKey] = []
+                  grouped[dateKey].push(entry)
+                }
+                return Object.entries(grouped).map(([date, entries])=>(
+                  <div key={date}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-widest">{date}</span>
+                      <div className="flex-1 h-px bg-zinc-800/50" />
+                      <span className="text-zinc-700 text-[10px]">{entries.length}</span>
+                    </div>
+                    <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+                      {entries.map((entry:any, i:number, arr:any[])=>{
+                        const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
+                        const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':'#3b82f6'
+                        return (
+                          <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+                            <span className="text-base shrink-0 mt-0.5">{entry.emoji || (AGENT_DISPLAY[entry.agentId]?.emoji ?? '🤖')}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-white text-xs font-medium">{entry.agentName || AGENT_DISPLAY[entry.agentId]?.name || entry.agentId}</span>
+                                {entry.channel && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
+                                  style={{background:actionColor+'20',color:actionColor}}>
+                                  {entry.channel}
+                                </span>}
+                                {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-zinc-800 text-zinc-500">{entry.model}</span>}
+                                <span className="ml-auto text-zinc-600 text-[10px] shrink-0">{agoStr}</span>
+                              </div>
+                              <p className="text-zinc-500 text-[10px] mt-0.5 truncate">{entry.desc}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))
+              })()}
             </div>
           )}
 
@@ -1351,6 +1373,30 @@ export default function Home() {
                       <Chip label={cron.project} color={pColor(cron.project)} />
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Automations / Crons */}
+              <div>
+                <SH icon="🤖">Automations</SH>
+                <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+                  {displayCrons.map((c,i,arr)=>{
+                    const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
+                    return (
+                      <div key={c.id} className={'flex items-center gap-4 px-5 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors '+(i<arr.length-1?'border-b border-zinc-800/40':'')}
+                        onClick={()=>setCronModal(c)}>
+                        <span className="font-mono text-xs text-zinc-400 w-16 shrink-0">{c.time}</span>
+                        <span className="text-zinc-600 text-[10px] w-12 shrink-0">{c.days}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
+                          style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
+                          {c.model}
+                        </span>
+                        <Chip label={c.project} color={pColor(c.project)} />
+                        <span className="text-zinc-300 text-xs flex-1">{c.desc}</span>
+                        <Dot status={c.status} sm />
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 
