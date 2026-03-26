@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Kemuni Mission Control',
+  title: 'KAOS Mission Control',
   description: 'Nabit LLC — Agent Operations Dashboard',
 }
 

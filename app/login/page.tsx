@@ -14,13 +14,11 @@ function LoginForm() {
     e.preventDefault()
     setLoading(true)
     setError(false)
-
     const res = await fetch('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
     })
-
     if (res.ok) {
       router.push(from)
       router.refresh()
@@ -31,7 +29,7 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div>
         <input
           type="password"
@@ -39,14 +37,35 @@ function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter password"
           autoFocus
-          className="w-full px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm placeholder-zinc-600 outline-none focus:border-zinc-600 transition-all"
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: '#111',
+            border: '1px solid #333',
+            color: '#fff',
+            fontSize: 14,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
         />
-        {error && <p className="text-red-400 text-xs mt-2">Incorrect password</p>}
+        {error && <p style={{ color: '#f87171', fontSize: 12, marginTop: 6 }}>Incorrect password</p>}
       </div>
       <button
         type="submit"
         disabled={!password || loading}
-        className="w-full py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-all"
+        style={{
+          width: '100%',
+          padding: '12px 0',
+          borderRadius: 12,
+          background: password && !loading ? '#3f3f46' : '#27272a',
+          border: 'none',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 500,
+          cursor: password && !loading ? 'pointer' : 'not-allowed',
+          opacity: password && !loading ? 1 : 0.5,
+        }}
       >
         {loading ? 'Authenticating...' : 'Enter'}
       </button>
@@ -56,12 +75,23 @@ function LoginForm() {
 
 export default function Login() {
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#080808' }}>
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-3xl mx-auto mb-4">🧠</div>
-          <h1 className="text-white text-xl font-bold">KAOS</h1>
-          <p className="text-zinc-500 text-sm mt-1">Mission Control</p>
+    <div style={{
+      minHeight: '100dvh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#080808',
+    }}>
+      <div style={{ width: '100%', maxWidth: 360, padding: '0 24px' }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 16,
+            background: '#27272a',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 28, margin: '0 auto 16px',
+          }}>🧠</div>
+          <h1 style={{ color: '#fff', fontSize: 20, fontWeight: 700, margin: 0 }}>KAOS</h1>
+          <p style={{ color: '#71717a', fontSize: 14, margin: '4px 0 0' }}>Mission Control</p>
         </div>
         <Suspense fallback={null}>
           <LoginForm />

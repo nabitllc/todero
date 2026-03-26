@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 const KEMUNI_START     = new Date('2026-03-21')
 const KEMUNI_DEADLINE  = new Date('2026-04-20')
@@ -11,7 +11,7 @@ function daysSince(d: Date) { return Math.floor((Date.now()-d.getTime())/8640000
 function miniPct(a: number, b: number) { return Math.min(100, Math.round((a/b)*100)) }
 
 const ALL_AGENTS = [
-  { id:'main',    name:'Kemuni Agent', emoji:'🏢', role:'Chief of Staff',    status:'active',
+  { id:'main',    name:'KAOS', emoji:'🏢', role:'Chief of Staff',    status:'active',
     model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#6b7280',
     desc:'Main orchestrator. Strategy, memory, delegation, comms.',
     capabilities:['Orchestration','Memory','Strategy','Comms','Delegation'],
@@ -86,6 +86,7 @@ const NAV = [
   { id:'calendar', label:'Calendar', icon:'📅' },
   { id:'office',   label:'Office',   icon:'🏢' },
   { id:'memory',   label:'Memory',   icon:'🧠' },
+  { id:'board',    label:'Board',    icon:'📋' },
   { id:'chat',     label:'Chat',     icon:'💬' },
   { id:'infra',    label:'Infra',    icon:'⚙️' },
 ] as const
@@ -176,6 +177,7 @@ function ChatTab() {
   const [selectedFile, setSelectedFile] = useState<string|null>(null)
 
   const models = [
+    { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'Anthropic' },
     { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', provider: 'Anthropic' },
     { id: 'claude-haiku-4-5', label: 'Haiku 4.5', provider: 'Anthropic' },
     { id: 'openrouter/auto', label: 'OpenRouter Auto', provider: 'OpenRouter' },
@@ -251,7 +253,7 @@ function ChatTab() {
       const assistantMsg: ChatMessage = {
         id: 'msg-' + (Date.now() + 1),
         role: 'assistant',
-        content: `I am Kemuni Agent, running on ${selectedModel}. This chat interface is functional. You can save conversations in localStorage, switch models, and attach files. (The actual API integration is pending OpenClaw auth setup.)`,
+        content: `I am KAOS, running on ${selectedModel}. This chat interface is functional. You can save conversations in localStorage, switch models, and attach files. (The actual API integration is pending OpenClaw auth setup.)`,
         model: selectedModel,
       }
 
@@ -453,7 +455,7 @@ function ChatTab() {
                       handleSend()
                     }
                   }}
-                  placeholder="Message Kemuni Agent..."
+                  placeholder="Message KAOS..."
                   className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60 text-white text-sm placeholder-zinc-600 outline-none focus:border-zinc-700 transition-all"
                 />
 
@@ -480,12 +482,295 @@ function ChatTab() {
   )
 }
 
+// ── Task types ────────────────────────────────────────────────────────────
+interface Task {
+  id: string; title: string; description?: string; status: string;
+  assignee?: string; project?: string; priority?: string; type?: string;
+  due_date?: string; created_at?: string; updated_at?: string;
+}
+
+const BOARD_COLUMNS = [
+  { id:'backlog',     label:'Backlog',      color:'#3f3f46' },
+  { id:'open',        label:'Open',         color:'#3b82f6' },
+  { id:'in_progress', label:'In Progress',  color:'#eab308' },
+  { id:'in_review',   label:'In Review',    color:'#a855f7' },
+  { id:'done',        label:'Done',         color:'#22c55e' },
+]
+
+const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
+  main:          {emoji:'🧠', name:'KAOS'},
+  scout:         {emoji:'🔍', name:'Scout'},
+  ops:           {emoji:'⚙️', name:'Ops'},
+  'kemuni-sme':  {emoji:'🚀', name:'Kemuni SME'},
+  'vespera-sme': {emoji:'🖤', name:'Vespera SME'},
+}
+
+const PRIORITY_COLORS: Record<string,string> = {
+  critical:'#ef4444', high:'#f97316', medium:'#3f3f46', low:'#27272a',
+}
+
+const PROJECT_COLORS: Record<string,string> = {
+  Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280', OpenClaw:'#10b981',
+}
+
+function KanbanBoard() {
+  const [tasks, setTasks]         = useState<Task[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [dragId, setDragId]       = useState<string|null>(null)
+  const [editTask, setEditTask]   = useState<Task|null>(null)
+  const [newTask, setNewTask]     = useState<Partial<Task>|null>(null)
+  const [filterProject, setFilterProject]   = useState('')
+  const [filterAssignee, setFilterAssignee] = useState('')
+  const [filterPriority, setFilterPriority] = useState('')
+  const [confirmDelete, setConfirmDelete]   = useState<string|null>(null)
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tasks')
+      if (res.ok) { const d = await res.json(); setTasks(d) }
+    } catch { /* ignore */ }
+    finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { fetchTasks() }, [fetchTasks])
+
+  const createTask = async (t: Partial<Task>) => {
+    const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
+    if (res.ok) { const d = await res.json(); setTasks(prev => [d, ...prev]); setNewTask(null) }
+  }
+
+  const updateTask = async (id: string, fields: Partial<Task>) => {
+    const res = await fetch('/api/tasks', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, ...fields}) })
+    if (res.ok) { const d = await res.json(); setTasks(prev => prev.map(t => t.id===id ? d : t)); setEditTask(null) }
+  }
+
+  const deleteTask = async (id: string) => {
+    const res = await fetch(`/api/tasks?id=${id}`, { method:'DELETE' })
+    if (res.ok) { setTasks(prev => prev.filter(t => t.id!==id)); setConfirmDelete(null); setEditTask(null) }
+  }
+
+  const handleDrop = (status: string) => {
+    if (!dragId) return
+    updateTask(dragId, { status })
+    setTasks(prev => prev.map(t => t.id===dragId ? {...t, status} : t))
+    setDragId(null)
+  }
+
+  const filtered = tasks.filter(t => {
+    if (filterProject && t.project !== filterProject) return false
+    if (filterAssignee && t.assignee !== filterAssignee) return false
+    if (filterPriority && t.priority !== filterPriority) return false
+    return true
+  })
+
+  const projects = Array.from(new Set(tasks.map(t=>t.project).filter(Boolean)))
+  const assignees = Array.from(new Set(tasks.map(t=>t.assignee).filter(Boolean)))
+
+  const isOverdue = (d?: string) => {
+    if (!d) return false
+    return new Date(d) < new Date(new Date().toDateString())
+  }
+
+  const selectCls = "bg-transparent border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-400 outline-none focus:border-zinc-600"
+  const inputCls = "w-full bg-transparent border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-zinc-600 placeholder-zinc-700"
+  const labelCls = "text-[10px] uppercase tracking-widest text-zinc-600 mb-1"
+
+  return (
+    <div className="h-full flex flex-col gap-4">
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <select className={selectCls} value={filterProject} onChange={e=>setFilterProject(e.target.value)}>
+          <option value="">All Projects</option>
+          {projects.map(p=><option key={p} value={p!}>{p}</option>)}
+        </select>
+        <select className={selectCls} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
+          <option value="">All Assignees</option>
+          {assignees.map(a=><option key={a} value={a!}>{ASSIGNEE_MAP[a!]?.name??a}</option>)}
+        </select>
+        <select className={selectCls} value={filterPriority} onChange={e=>setFilterPriority(e.target.value)}>
+          <option value="">All Priorities</option>
+          {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+        <button onClick={()=>setNewTask({status:'backlog',priority:'medium'})}
+          className="ml-auto text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
+          + New Task
+        </button>
+      </div>
+
+      {/* Columns */}
+      <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
+        {BOARD_COLUMNS.map(col => {
+          const colTasks = filtered.filter(t => t.status===col.id)
+          return (
+            <div key={col.id}
+              className="flex-shrink-0 w-64 flex flex-col rounded-xl bg-zinc-900/50"
+              style={{borderTop:`2px solid ${col.color}`}}
+              onDragOver={e => e.preventDefault()}
+              onDrop={() => handleDrop(col.id)}>
+              {/* Column header */}
+              <div className="flex items-center justify-between px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
+                  <span className="text-xs font-semibold text-zinc-400">{col.label}</span>
+                </div>
+                <span className="text-[10px] text-zinc-600 font-mono">{colTasks.length}</span>
+              </div>
+
+              {/* Cards */}
+              <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[60px]">
+                {loading && <div className="text-zinc-700 text-xs text-center py-4">Loading...</div>}
+                {colTasks.map(task => (
+                  <div key={task.id}
+                    draggable
+                    onDragStart={() => setDragId(task.id)}
+                    onDragEnd={() => setDragId(null)}
+                    onClick={() => setEditTask(task)}
+                    className={`rounded-xl border p-3 cursor-pointer transition-colors ${
+                      dragId===task.id ? 'opacity-50' : ''
+                    }`}
+                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a'}}
+                    onMouseEnter={e=>(e.currentTarget.style.borderColor='#3f3f46')}
+                    onMouseLeave={e=>(e.currentTarget.style.borderColor= dragId===task.id ? '#555' : '#27272a')}>
+                    <p className="text-white text-sm font-medium leading-snug mb-2">{task.title}</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
+                      {task.type && <Chip label={task.type} />}
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      {task.priority && (
+                        <span className="w-1.5 h-1.5 rounded-full inline-block"
+                          style={{background:PRIORITY_COLORS[task.priority]||'#3f3f46'}} />
+                      )}
+                      {task.assignee && ASSIGNEE_MAP[task.assignee] && (
+                        <span className="text-[10px] text-zinc-500">
+                          {ASSIGNEE_MAP[task.assignee].emoji} {ASSIGNEE_MAP[task.assignee].name}
+                        </span>
+                      )}
+                      {task.due_date && (
+                        <span className={`text-[10px] ml-auto ${isOverdue(task.due_date)?'text-red-500':'text-zinc-600'}`}>
+                          {new Date(task.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Quick-add */}
+              <button onClick={()=>setNewTask({status:col.id,priority:'medium'})}
+                className="mx-2 mb-2 text-[10px] text-zinc-700 hover:text-zinc-500 transition-colors py-1">
+                + Add task
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* New Task Modal */}
+      {newTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setNewTask(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-zinc-800 p-6 space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+            <h3 className="text-white font-semibold text-sm">New Task</h3>
+            <div><p className={labelCls}>Title *</p><input className={inputCls} placeholder="Task title..." autoFocus
+              value={newTask.title??''} onChange={e=>setNewTask({...newTask,title:e.target.value})} /></div>
+            <div><p className={labelCls}>Description</p><textarea className={inputCls+' h-20 resize-none'} placeholder="Details..."
+              value={newTask.description??''} onChange={e=>setNewTask({...newTask,description:e.target.value})} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><p className={labelCls}>Status</p>
+                <select className={inputCls} value={newTask.status??'backlog'} onChange={e=>setNewTask({...newTask,status:e.target.value})}>
+                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                </select></div>
+              <div><p className={labelCls}>Priority</p>
+                <select className={inputCls} value={newTask.priority??'medium'} onChange={e=>setNewTask({...newTask,priority:e.target.value})}>
+                  {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
+                </select></div>
+              <div><p className={labelCls}>Project</p>
+                <input className={inputCls} placeholder="e.g. Kemuni" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} /></div>
+              <div><p className={labelCls}>Assignee</p>
+                <select className={inputCls} value={newTask.assignee??''} onChange={e=>setNewTask({...newTask,assignee:e.target.value})}>
+                  <option value="">Unassigned</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k}>{v.emoji} {v.name}</option>)}
+                </select></div>
+              <div><p className={labelCls}>Type</p>
+                <input className={inputCls} placeholder="e.g. feature, bug" value={newTask.type??''} onChange={e=>setNewTask({...newTask,type:e.target.value})} /></div>
+              <div><p className={labelCls}>Due Date</p>
+                <input type="date" className={inputCls} value={newTask.due_date??''} onChange={e=>setNewTask({...newTask,due_date:e.target.value})} /></div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={()=>setNewTask(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
+              <button onClick={()=>{if(newTask.title?.trim()) createTask(newTask)}}
+                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                disabled={!newTask.title?.trim()}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit/Detail Modal */}
+      {editTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setEditTask(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-zinc-800 p-6 space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+            <div className="flex items-start justify-between">
+              <h3 className="text-white font-semibold text-sm">Edit Task</h3>
+              <button onClick={()=>setConfirmDelete(editTask.id)} className="text-[10px] text-red-500/60 hover:text-red-500 transition-colors">Delete</button>
+            </div>
+            <div><p className={labelCls}>Title</p><input className={inputCls}
+              value={editTask.title} onChange={e=>setEditTask({...editTask,title:e.target.value})} /></div>
+            <div><p className={labelCls}>Description</p><textarea className={inputCls+' h-20 resize-none'}
+              value={editTask.description??''} onChange={e=>setEditTask({...editTask,description:e.target.value})} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><p className={labelCls}>Status</p>
+                <select className={inputCls} value={editTask.status} onChange={e=>setEditTask({...editTask,status:e.target.value})}>
+                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                </select></div>
+              <div><p className={labelCls}>Priority</p>
+                <select className={inputCls} value={editTask.priority??'medium'} onChange={e=>setEditTask({...editTask,priority:e.target.value})}>
+                  {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
+                </select></div>
+              <div><p className={labelCls}>Project</p>
+                <input className={inputCls} value={editTask.project??''} onChange={e=>setEditTask({...editTask,project:e.target.value})} /></div>
+              <div><p className={labelCls}>Assignee</p>
+                <select className={inputCls} value={editTask.assignee??''} onChange={e=>setEditTask({...editTask,assignee:e.target.value})}>
+                  <option value="">Unassigned</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k}>{v.emoji} {v.name}</option>)}
+                </select></div>
+              <div><p className={labelCls}>Type</p>
+                <input className={inputCls} value={editTask.type??''} onChange={e=>setEditTask({...editTask,type:e.target.value})} /></div>
+              <div><p className={labelCls}>Due Date</p>
+                <input type="date" className={inputCls} value={editTask.due_date??''} onChange={e=>setEditTask({...editTask,due_date:e.target.value})} /></div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={()=>setEditTask(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
+              <button onClick={()=>updateTask(editTask.id,{title:editTask.title,description:editTask.description,status:editTask.status,
+                priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date})}
+                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 transition-colors">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirm */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60" onClick={()=>setConfirmDelete(null)}>
+          <div className="rounded-2xl border border-zinc-800 p-6 text-center space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+            <p className="text-white text-sm">Delete this task?</p>
+            <div className="flex justify-center gap-3">
+              <button onClick={()=>setConfirmDelete(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
+              <button onClick={()=>deleteTask(confirmDelete)} className="text-xs font-medium px-4 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
     if(typeof window!=='undefined'){
       const saved = localStorage.getItem('mc-tab') as Tab|null
-      if(saved && ['overview','team','calendar','office','memory','chat','infra'].includes(saved)) return saved
+      if(saved && ['overview','team','calendar','office','memory','board','chat','infra'].includes(saved)) return saved
     }
     return 'overview'
   })
@@ -503,6 +788,9 @@ export default function Home() {
   const [liveCrons, setLiveCrons] = useState<typeof CRONS | null>(null)
   const [projects, setProjects] = useState<any[]|null>(null)
   const [deployState, setDeployState] = useState<'idle'|'loading'|'done'>('idle')
+  const [mobileNav, setMobileNav] = useState(false)
+  const [agentModal, setAgentModal] = useState<any>(null)
+  const [cronModal, setCronModal] = useState<any>(null)
 
   const [statusCountdown, setStatusCountdown] = useState(30)
   const [agentsCountdown, setAgentsCountdown] = useState(60)
@@ -595,7 +883,7 @@ export default function Home() {
     <div className="min-h-screen flex" style={{background:'#080808'}}>
 
       {/* SIDEBAR */}
-      <aside className="w-44 shrink-0 hidden md:flex flex-col border-r border-zinc-800/60 sticky top-0 h-screen" style={{background:'#0a0a0a'}}>
+      <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-zinc-800/60 sticky top-0 h-screen" style={{background:'#0a0a0a'}}>
         <div className="px-4 py-4 border-b border-zinc-800/40">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-sm font-bold text-white">N</div>
@@ -626,21 +914,28 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* MOBILE BOTTOM NAV */}
-      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800/60 justify-around items-center py-2" style={{background:'#0a0a0a'}}>
-        {NAV.map(item=>(
-          <button key={item.id} onClick={()=>{ setTab(item.id); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
-            className={'flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-all '+(
-              tab===item.id ? 'text-white' : 'text-zinc-600'
-            )}>
-            <span className="text-lg">{item.icon}</span>
-            <span className="text-[9px] font-medium">{item.label}</span>
-          </button>
-        ))}
-      </nav>
+      {/* MOBILE HAMBURGER + OVERLAY */}
+      <button onClick={()=>setMobileNav(true)} className="lg:hidden fixed top-2 left-2 z-50 w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-lg text-zinc-300 hover:text-white transition-colors">
+        ☰
+      </button>
+      {mobileNav && (
+        <div className="lg:hidden fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3" style={{background:'#080808ee'}} onClick={()=>setMobileNav(false)}>
+          <p className="text-zinc-600 text-xs mb-4 uppercase tracking-widest">Navigate</p>
+          {NAV.map(item=>(
+            <button key={item.id} onClick={()=>{ setTab(item.id); setMobileNav(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
+              className={'flex items-center gap-3 px-6 py-3 rounded-xl transition-all w-56 '+(
+                tab===item.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+              )}>
+              <span className="text-xl">{item.icon}</span>
+              <span className="text-sm font-medium">{item.label}</span>
+              {tab===item.id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* MAIN */}
-      <div className="flex-1 flex flex-col min-h-screen overflow-auto pb-16 md:pb-0">
+      <div className="flex-1 flex flex-col min-h-screen overflow-auto">
         <header className="border-b border-zinc-800/40 px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20" style={{background:'#090909'}}>
           <div className="flex items-center gap-2">
             <span className="text-zinc-400 text-sm font-medium capitalize">{tab}</span>
@@ -803,9 +1098,108 @@ export default function Home() {
                 )
               })()}
 
-              {/* Activity Feed */}
+            </div>
+          )}
+
+          {/* ── TEAM ── */}
+          {tab==='team' && (
+            <div className="space-y-6">
+              {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-zinc-600 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
+
+              {/* Lead agent card */}
+              {displayAgents.length > 0 && <div className="flex justify-center">
+                <div className="rounded-2xl p-6 border border-zinc-700/50 card-glow w-80 cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setAgentModal(displayAgents[0])}>
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{background:'#1a1a1a'}}>
+                      {displayAgents[0].emoji}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-white font-semibold">{displayAgents[0].name}</p>
+                        <Dot status={displayAgents[0].status} />
+                      </div>
+                      <p className="text-zinc-500 text-xs">{displayAgents[0].role}</p>
+                      <p className="text-zinc-700 text-[10px] font-mono mt-0.5">{displayAgents[0].model}</p>
+                    </div>
+                  </div>
+                  <p className="text-zinc-500 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {displayAgents[0].capabilities.map((c:string)=><Chip key={c} label={c}/>)}
+                  </div>
+                </div>
+              </div>}
+              <div className="flex justify-center">
+                <div className="w-px h-6 bg-gradient-to-b from-zinc-600 to-transparent" />
+              </div>
+              <div className="flex justify-center">
+                <div className="w-3/4 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
+              </div>
+
+              {/* Active agents */}
+              <SH icon="🤖">Active Agents</SH>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {displayAgents.slice(1).filter((a:any)=>a.status!=='planned').map((a:any)=>(
+                  <div key={a.id} className="rounded-2xl p-5 border card-glow cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f',borderColor:a.color+'28'}} onClick={()=>setAgentModal(a)}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                        style={{background:a.color+'18',border:'1px solid '+a.color+'30'}}>
+                        {a.emoji}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-white text-sm font-semibold truncate">{a.name}</p>
+                          <Dot status={a.status} />
+                        </div>
+                        <p className="text-zinc-500 text-xs truncate">{a.role}</p>
+                        <p className="text-zinc-700 text-[10px] font-mono truncate">{a.modelShort}</p>
+                      </div>
+                    </div>
+                    <p className="text-zinc-500 text-xs leading-relaxed mb-3">{a.desc}</p>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Planned agents */}
+              {displayAgents.filter((a:any)=>a.status==='planned').length > 0 && (<>
+                <SH icon="📋">Planned Agents</SH>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {displayAgents.filter((a:any)=>a.status==='planned').map((a:any)=>(
+                    <div key={a.id} className="rounded-2xl p-5 border border-dashed cursor-pointer hover:border-zinc-600 transition-colors opacity-60 hover:opacity-90" style={{background:'#0a0a0a',borderColor:a.color+'20'}} onClick={()=>setAgentModal(a)}>
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
+                          style={{background:a.color+'10',border:'1px dashed '+a.color+'25'}}>
+                          {a.emoji}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-zinc-400 text-sm font-semibold truncate">{a.name}</p>
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full border border-zinc-700 text-zinc-500 bg-zinc-900 font-semibold uppercase">Planned</span>
+                          </div>
+                          <p className="text-zinc-600 text-xs truncate">{a.role}</p>
+                          <p className="text-zinc-700 text-[10px] font-mono truncate">{a.modelShort}</p>
+                        </div>
+                      </div>
+                      <p className="text-zinc-600 text-xs leading-relaxed mb-3">{a.desc}</p>
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
+                      </div>
+                      {(a as any).activatesWhen && (
+                        <div className="mt-2 pt-2 border-t border-zinc-800/40">
+                          <span className="text-[9px] text-zinc-600">Activates: </span>
+                          <span className="text-[9px] text-zinc-500">{(a as any).activatesWhen}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>)}
+
+              {/* Activity Feed (moved from Overview) */}
               <div>
-                <SH icon="📋" sub={liveStatus?.recentActivity?.length ? `${liveStatus.recentActivity.length} entries` : undefined}>Activity</SH>
+                <SH icon="📋" sub={liveStatus?.recentActivity?.length ? `${liveStatus.recentActivity.length} entries` : undefined}>Live Activity Feed</SH>
                 <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
                   {(liveStatus?.recentActivity ?? []).slice(0,10).map((entry:any, i:number, arr:any[])=>{
                     const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
@@ -833,75 +1227,12 @@ export default function Home() {
                 </div>
               </div>
 
-            </div>
-          )}
-
-          {/* ── TEAM ── */}
-          {tab==='team' && (
-            <div className="space-y-6">
-              {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-zinc-600 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
-              {displayAgents.length > 0 && <div className="flex justify-center">
-                <div className="rounded-2xl p-6 border border-zinc-700/50 card-glow w-80" style={{background:'#0f0f0f'}}>
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{background:'#1a1a1a'}}>
-                      {displayAgents[0].emoji}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-white font-semibold">{displayAgents[0].name}</p>
-                        <Dot status={displayAgents[0].status} />
-                      </div>
-                      <p className="text-zinc-500 text-xs">{displayAgents[0].role}</p>
-                      <p className="text-zinc-700 text-[10px] font-mono mt-0.5">{displayAgents[0].model}</p>
-                    </div>
-                  </div>
-                  <p className="text-zinc-500 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {displayAgents[0].capabilities.map((c:string)=><Chip key={c} label={c}/>)}
-                  </div>
-                </div>
-              </div>}
-              <div className="flex justify-center">
-                <div className="w-px h-6 bg-gradient-to-b from-zinc-600 to-transparent" />
-              </div>
-              <div className="flex justify-center">
-                <div className="w-3/4 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {displayAgents.slice(1).map((a:any)=>(
-                  <div key={a.id} className="rounded-2xl p-5 border card-glow" style={{background:'#0f0f0f',borderColor:a.color+'28'}}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
-                        style={{background:a.color+'18',border:'1px solid '+a.color+'30'}}>
-                        {a.emoji}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-white text-sm font-semibold truncate">{a.name}</p>
-                          <Dot status={a.status} />
-                        </div>
-                        <p className="text-zinc-500 text-xs truncate">{a.role}</p>
-                        <p className="text-zinc-700 text-[10px] font-mono truncate">{a.modelShort}</p>
-                      </div>
-                    </div>
-                    <p className="text-zinc-500 text-xs leading-relaxed mb-3">{a.desc}</p>
-                    <div className="flex flex-wrap gap-1 mb-2">
-                      {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
-                    </div>
-                    {!a.floor && (
-                      <div className="mt-2 pt-2 border-t border-zinc-800/40">
-                        <span className="text-[9px] text-zinc-600">Activates: </span>
-                        <span className="text-[9px] text-zinc-500">{a.activatesWhen}</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              {/* Model Routing */}
               <div>
                 <SH icon="🧠">Model Routing</SH>
                 <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
                   {[
-                    {role:'Orchestration · Kemuni Agent (main)', model:'claude-sonnet-4-6', cost:'Max sub'},
+                    {role:'Orchestration · KAOS (main)', model:'claude-sonnet-4-6', cost:'Max sub'},
                     {role:'Coding · Builder 🔨', model:'claude-sonnet-4-6', cost:'Max sub'},
                     {role:'Research · Scout 🔍', model:'ollama/gemma3:4b', cost:'Free — local'},
                     {role:'Content · Quill ✍️  Community · Echo 📢', model:'ollama/gemma3:4b', cost:'Free — local'},
@@ -917,6 +1248,40 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+
+              {/* Agent Detail Modal */}
+              {agentModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setAgentModal(null)}>
+                  <div className="w-full max-w-md rounded-2xl border border-zinc-800 p-6 space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{background:agentModal.color+'18',border:'1px solid '+agentModal.color+'30'}}>
+                        {agentModal.emoji}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-white font-semibold text-lg">{agentModal.name}</p>
+                          <Dot status={agentModal.status} />
+                          {agentModal.status==='planned' && <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-zinc-700 text-zinc-500 bg-zinc-900 font-semibold uppercase">Planned</span>}
+                        </div>
+                        <p className="text-zinc-500 text-sm">{agentModal.role}</p>
+                      </div>
+                      <button onClick={()=>setAgentModal(null)} className="ml-auto text-zinc-600 hover:text-white text-lg">✕</button>
+                    </div>
+                    <div className="space-y-3">
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Model</p><p className="text-zinc-300 text-sm font-mono">{agentModal.model}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Description</p><p className="text-zinc-300 text-sm leading-relaxed">{agentModal.desc}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Capabilities</p><div className="flex flex-wrap gap-1.5">{agentModal.capabilities.map((c:string)=><Chip key={c} label={c} color={agentModal.color}/>)}</div></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Status</p><p className="text-zinc-300 text-sm">{agentModal.status}</p></div>
+                      {agentModal.status !== 'planned' && (
+                        <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Current Task</p><p className="text-zinc-300 text-sm italic">{act(agentModal.id)}</p></div>
+                      )}
+                      {(agentModal as any).activatesWhen && (
+                        <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Activates When</p><p className="text-zinc-300 text-sm">{(agentModal as any).activatesWhen}</p></div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -927,11 +1292,13 @@ export default function Home() {
                 <SH icon="⚡">Always Running</SH>
                 <div className="flex flex-wrap gap-2">
                   {CRONS.filter(c=>c.days==='daily'&&c.status==='active').map(c=>(
-                    <div key={c.id} className="flex items-center gap-2 px-3 py-1.5 rounded-full border"
-                      style={{background:pColor(c.project)+'15',borderColor:pColor(c.project)+'40'}}>
+                    <div key={c.id} className="flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer hover:brightness-125 transition-all"
+                      style={{background:pColor(c.project)+'15',borderColor:pColor(c.project)+'40'}}
+                      onClick={()=>setCronModal(c)}>
                       <Dot status="active" sm />
                       <span className="text-xs font-medium" style={{color:pColor(c.project)}}>{c.id}</span>
                       <span className="text-zinc-600 text-[10px]">· {c.time}</span>
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">{c.model}</span>
                     </div>
                   ))}
                 </div>
@@ -939,7 +1306,13 @@ export default function Home() {
               <div>
                 <SH icon="📅">This Week</SH>
                 <div className="grid grid-cols-7 gap-1.5">
-                  {DAYS.map((day,di)=>(
+                  {DAYS.map((day,di)=>{
+                    const dayCrons = CRONS.filter(c=>{
+                      if(c.days==='daily') return true
+                      if(c.days===day) return true
+                      return false
+                    })
+                    return (
                     <div key={day} className="flex flex-col gap-1.5">
                       <div className={'text-center text-[10px] font-semibold py-1.5 rounded-lg '+(
                         di===todayIdx ? 'bg-white text-black' : 'text-zinc-500 bg-zinc-900/50'
@@ -947,39 +1320,27 @@ export default function Home() {
                         {day}
                         {di===todayIdx && <div className="text-[9px] font-normal opacity-60">today</div>}
                       </div>
-                      <div className="rounded-lg px-2 py-1.5 border" style={{background:'#1e293b',borderColor:'#3b82f650'}}>
-                        <p className="text-[9px] text-zinc-500 font-mono">2:00 AM</p>
-                        <p className="text-[9px] text-blue-300 mt-0.5">overnight</p>
-                      </div>
-                      <div className="rounded-lg px-2 py-1.5 border" style={{background:'#1e293b',borderColor:'#3b82f650'}}>
-                        <p className="text-[9px] text-zinc-500 font-mono">6:00 AM</p>
-                        <p className="text-[9px] text-blue-300 mt-0.5">brief</p>
-                        <p className="text-[9px] text-blue-300">alerts</p>
-                      </div>
-                      <div className="rounded-lg px-2 py-1.5 border border-dashed" style={{background:'#1e0a2e',borderColor:'#a855f750'}}>
-                        <p className="text-[9px] text-zinc-500 font-mono">8:00 AM</p>
-                        <p className="text-[9px] text-purple-400 mt-0.5">scout</p>
-                        <p className="text-[9px] text-purple-800">planned</p>
-                      </div>
-                      <div className="rounded-lg px-2 py-1.5 border" style={{background:'#1a1a1a',borderColor:'#6b728050'}}>
-                        <p className="text-[9px] text-zinc-500 font-mono">9:00 AM</p>
-                        <p className="text-[9px] text-zinc-400 mt-0.5">billing</p>
-                      </div>
-                      {di===1 && (
-                        <div className="rounded-lg px-2 py-1.5 border" style={{background:'#1a1a1a',borderColor:'#6b728050'}}>
-                          <p className="text-[9px] text-zinc-500 font-mono">9:00 AM</p>
-                          <p className="text-[9px] text-zinc-400 mt-0.5">security</p>
+                      {dayCrons.map(c=>(
+                        <div key={c.id} className={'rounded-lg px-2 py-1.5 border cursor-pointer hover:brightness-125 transition-all '+(c.status==='planned'?'border-dashed':'')}
+                          style={{background: c.status==='planned'?'#1e0a2e': c.project==='Kemuni'||c.project==='Ops'&&c.model!=='n8n'?'#1e293b':'#1a1a1a',
+                            borderColor: c.status==='planned'?'#a855f750': c.project==='Kemuni'?'#3b82f650':'#6b728050'}}
+                          onClick={()=>setCronModal(c)}>
+                          <p className="text-[11px] text-zinc-500 font-mono leading-tight">{c.time}</p>
+                          <p className={'text-[13px] mt-0.5 font-medium leading-tight '+(c.status==='planned'?'text-purple-400':c.project==='Kemuni'?'text-blue-300':'text-zinc-400')}>{c.id.replace(/-/g,' ')}</p>
+                          <span className="inline-block text-[9px] px-1 py-0.5 rounded mt-1 font-mono" style={{background:'#ffffff08',color:'#888'}}>{c.model}</span>
+                          {c.status==='planned' && <p className="text-[10px] text-purple-800">planned</p>}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
               <div>
                 <SH icon="⏭">Next Up</SH>
                 <div className="space-y-2">
                   {nextRuns.map(({cron,mins},i)=>(
-                    <div key={cron.id} className="flex items-center gap-4 px-5 py-3 rounded-xl border border-zinc-800/60" style={{background:'#0f0f0f'}}>
+                    <div key={cron.id} className="flex items-center gap-4 px-5 py-3 rounded-xl border border-zinc-800/60 cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setCronModal(cron)}>
                       <span className="text-zinc-600 text-xs w-4">#{i+1}</span>
                       <Dot status={cron.status} />
                       <span className="font-mono text-xs text-white flex-1">{cron.id}</span>
@@ -992,6 +1353,26 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+
+              {/* Cron Detail Modal */}
+              {cronModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
+                  <div className="w-full max-w-sm rounded-2xl border border-zinc-800 p-6 space-y-3" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-semibold text-sm">{cronModal.id}</h3>
+                      <button onClick={()=>setCronModal(null)} className="text-zinc-600 hover:text-white text-lg">✕</button>
+                    </div>
+                    <div className="space-y-2.5">
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Description</p><p className="text-zinc-300 text-sm">{cronModal.desc}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Time</p><p className="text-zinc-300 text-sm font-mono">{cronModal.time}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Schedule</p><p className="text-zinc-300 text-sm">{cronModal.days}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Runner</p><p className="text-zinc-300 text-sm font-mono">{cronModal.model}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-zinc-300 text-sm">{cronModal.status}</span></div></div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1514,6 +1895,11 @@ export default function Home() {
               </div>{/* end inner scroll div */}
               </div>{/* end right panel */}
             </div>
+          )}
+
+          {/* ── BOARD ── */}
+          {tab==='board' && (
+            <KanbanBoard />
           )}
 
           {/* ── CHAT ── */}
