@@ -288,16 +288,18 @@ const THEMES={
 };
 type ThemeKey=keyof typeof THEMES;
 
-function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,incidentActive:boolean,thm:typeof THEMES.A){
+function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,incidentActive:boolean,thm:typeof THEMES.A,showGrid:boolean){
   ctx.save();applyCamera(ctx,cam);
   for(let r=0;r<MAP_ROWS;r++) for(let c=0;c<MAP_COLS;c++){
     const hold=r>STANCHION_R;
     ctx.fillStyle=hold?((c+r)%2===0?thm.floorHold:thm.floorHoldB):((c+r)%2===0?thm.floorA:thm.floorB);
     ctx.fillRect(c*T,r*T,T,T);
   }
-  ctx.strokeStyle=thm.grid;ctx.lineWidth=0.5;
-  for(let c=0;c<=MAP_COLS;c++){ctx.beginPath();ctx.moveTo(c*T,0);ctx.lineTo(c*T,MAP_ROWS*T);ctx.stroke();}
-  for(let r=0;r<=MAP_ROWS;r++){ctx.beginPath();ctx.moveTo(0,r*T);ctx.lineTo(MAP_COLS*T,r*T);ctx.stroke();}
+  if(showGrid){
+    ctx.strokeStyle=thm.grid;ctx.lineWidth=0.5;
+    for(let c=0;c<=MAP_COLS;c++){ctx.beginPath();ctx.moveTo(c*T,0);ctx.lineTo(c*T,MAP_ROWS*T);ctx.stroke();}
+    for(let r=0;r<=MAP_ROWS;r++){ctx.beginPath();ctx.moveTo(0,r*T);ctx.lineTo(MAP_COLS*T,r*T);ctx.stroke();}
+  }
   ctx.fillStyle=thm.wall;
   ctx.fillRect(0,0,MAP_COLS*T,5);ctx.fillRect(0,0,5,STANCHION_R*T);ctx.fillRect(MAP_COLS*T-5,0,5,STANCHION_R*T);
   [ROW_Y[1],ROW_Y[2],ROW_Y[3]].forEach(ry=>{
@@ -364,6 +366,20 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
 
   // ── Orchestrator desk ──
   const orchAg=agents.find(a=>a.id===ORCHESTRATOR_ID);
+  // Pulse ring: expand outward when KAOS is coordinating (working + other agents also working)
+  const othersWorking2=agents.filter(a=>a.id!==ORCHESTRATOR_ID&&a.active&&a.state==="working");
+  if(orchAg&&orchAg.state==="working"&&othersWorking2.length>=1){
+    const cx=ORCH_TX*T+T*1.1, cy=ORCH_TY*T+T*1.0;
+    const pulse=(now*0.0008)%1;
+    for(let r=0;r<2;r++){
+      const rp=(pulse+r*0.5)%1;
+      const radius=T*(1.2+rp*1.8);
+      const alpha=(1-rp)*0.3;
+      ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);
+      ctx.strokeStyle=(orchAg.color)+Math.round(alpha*255).toString(16).padStart(2,"0");
+      ctx.lineWidth=T*0.03;ctx.stroke();
+    }
+  }
   {
     const x=ORCH_TX*T, y=ORCH_TY*T, dw=T*2.2, dh=T*2.0;
     const working=orchAg?.state==="working";
@@ -424,7 +440,7 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
     const working=ag.state==="working";
     const mood=(ag.mood||88)/100;
     ctx.fillStyle=thm.deskBody;
-    ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(incidentActive?"#ff333344":"#222244");
+    ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(incidentActive?"#ff333344":(ag.color+"18"));
     ctx.lineWidth=working?T*0.022:T*0.01;
     ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
     const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
@@ -758,6 +774,7 @@ export default function AgentOffice(){
     return next;
   });
   const [meetingLogs,setMeetingLogs] = useState<any[]>([]);
+  const [incidentLog,setIncidentLog] = useState<any[]>([]); // persistent incident history
   const [soundOn,setSoundOn]         = useState(true);
   const [incident,setIncident]       = useState<any>(null);
   const [showConfig,setShowConfig]   = useState(false);
@@ -776,6 +793,8 @@ export default function AgentOffice(){
   const [nlInput,setNlInput]         = useState("");
   const [nlLoading,setNlLoading]     = useState(false);
   const [showLegend,setShowLegend]   = useState(true);
+  const [showGrid,setShowGrid]       = useState(true);
+  const showGridRef                  = useRef(true);
   const [waterfall,setWaterfall]     = useState<any[]>([]);
   const waterfallRef                 = useRef<any[]>([]);
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
@@ -803,6 +822,7 @@ export default function AgentOffice(){
 
   useEffect(()=>{minimapRef.current=showMinimap;},[showMinimap]);
   useEffect(()=>{themeRef.current=theme;},[theme]);
+  useEffect(()=>{showGridRef.current=showGrid;},[showGrid]);
   useEffect(()=>{depGraphRef.current=showDepGraph;},[showDepGraph]);
   useEffect(()=>{showLegendRef.current=showLegend;},[showLegend]);
   useEffect(()=>{replayModeRef.current=replayMode;},[replayMode]);
@@ -829,9 +849,13 @@ export default function AgentOffice(){
           // "Active on webchat · 12k tokens" → "Processing session"
           let taskDesc:string|null=null;
           if(isActive){
-            const channel=rawTask.match(/on (\w+)/)?.[1]||"";
-            if(channel) taskDesc=`Working via ${channel}`;
-            else taskDesc="Processing";
+            if(rawTask.startsWith("Active: ")){
+              // Real task label from last user message
+              taskDesc=rawTask.slice(8).trim().slice(0,40);
+            } else {
+              const channel=rawTask.match(/on (\w+)/)?.[1]||"";
+              taskDesc=channel?`via ${channel}`:"Working";
+            }
           }
 
           if(isActive&&taskDesc){
@@ -911,7 +935,10 @@ export default function AgentOffice(){
         const lower=rawTask.toLowerCase();
         const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running");
         let taskDesc:string|null=null;
-        if(isActive){const channel=rawTask.match(/on (\w+)/)?.[1]||"";taskDesc=channel?`Working via ${channel}`:"Processing";}
+        if(isActive){
+          if(rawTask.startsWith("Active: ")){taskDesc=rawTask.slice(8).trim().slice(0,40);}
+          else{const channel=rawTask.match(/on (\w+)/)?.[1]||"";taskDesc=channel?`via ${channel}`:"Working";}
+        }
         if(isActive&&taskDesc){
           if(ag.state!=="working"){ag.state="working";ag.task=taskDesc;ag.progress=5;ag.monologue=null;ag.glowTick=60;ag.lastStateChange=Date.now();addFeed(`${ag.emoji} ${ag.name}: ${taskDesc}`,ag.color);if(soundRef.current&&audioRef.current)audioRef.current.playClick();timelineRef.current=[...timelineRef.current,{type:"task",color:ag.color,ts:nowts(),label:`${ag.name}: ${taskDesc}`,tick:0}].slice(-120);setTimeline([...timelineRef.current]);}
           else if(ag.task!==taskDesc){ag.task=taskDesc;ag.progress=5;}
@@ -1119,6 +1146,7 @@ export default function AgentOffice(){
           if(incidentTick>400){
             addFeed(`${incidentData.title} — resolved ✓`,"#00ff88");
             agents.forEach(ag=>{if(incidentData.victims.includes(ag.id)&&(ag.state==="meeting"||ag.state==="moving_to_meeting")){ag.state="returning";ag.waypoints=lpath(ag.px,ag.py,ag.deskX,ag.deskY);}});
+            setIncidentLog(prev=>[{id:Date.now(),title:incidentData.title,ts:nowts(),resolved:true},...prev].slice(0,20));
             incidentData=null;setIncident(null);
           }
         }
@@ -1177,8 +1205,10 @@ export default function AgentOffice(){
       ctx.clearRect(0,0,W,H);
       const darkAlpha=getDayNight(simTick);
       const thm=THEMES[themeRef.current]||THEMES.A;
-      drawFloor(ctx,T2,cam,darkAlpha,!!incidentData,thm);
-      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!meeting,meeting?.topic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm);
+      drawFloor(ctx,T2,cam,darkAlpha,!!incidentData,thm,showGridRef.current);
+      // Use meetingRef (real data) OR meeting (simulation), real data takes priority
+      const activeMeetingTopic=meetingRef.current?.topic||meeting?.topic||null;
+      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!(meetingRef.current||meeting),activeMeetingTopic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm);
       // Connection lines: working agents → orchestrator
       const orchAgent2=drawAgentsArr.find((a:any)=>a.id===ORCHESTRATOR_ID);
       if(orchAgent2){
@@ -1234,10 +1264,18 @@ export default function AgentOffice(){
       if(simTick%10===0){
         const snap=agents.map(ag=>({...ag,progress:Math.round(ag.progress),taskHistory:[...(ag.taskHistory||[])]}));
         setRoster(snap);
-        setStats({working:snap.filter(a=>a.active&&a.state==="working").length,
+        const wCount=snap.filter(a=>a.active&&a.state==="working").length;
+        setStats({working:wCount,
           meeting:snap.filter(a=>a.active&&(a.state==="meeting"||a.state==="moving_to_meeting")).length,
           idle:snap.filter(a=>a.active&&(a.state==="idle"||a.state==="returning")).length,
           completed:totalDone.current});
+        // #10: Update page title to reflect activity
+        const workingAgent=snap.find(a=>a.active&&a.state==="working");
+        if(wCount>0&&workingAgent){
+          document.title=`${workingAgent.emoji} ${workingAgent.name} working · NABIT`;
+        } else {
+          document.title="🧠 Agent Office · NABIT";
+        }
         setDetail((prev:any)=>prev?snap.find(a=>a.id===prev.id)||prev:null);
       }
       animRef.current=requestAnimationFrame(tick);
@@ -1306,7 +1344,7 @@ export default function AgentOffice(){
             setSelectedId((id:any)=>id===best.id?null:best.id);
             setDetail((d:any)=>d?.id===best.id?null:{...best});
             setTab("roster");
-            if(best.id===ORCHESTRATOR_ID)setShowOrchPanel((p:any)=>!p);
+            // KAOS opens detail panel like everyone else — orch content lives in sidebar now
           } else{setSelectedId(null);setDetail(null);}
         }
       }
@@ -1430,81 +1468,6 @@ export default function AgentOffice(){
       )}
 
       {/* Orchestrator panel */}
-      {showOrchPanel&&orchAgent&&(
-        <div style={{position:"fixed",inset:0,background:"#000000aa",zIndex:350,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={(e:any)=>e.target===e.currentTarget&&setShowOrchPanel(false)}>
-          <div style={{background:"#0d0d20",border:`2px solid ${orchAgent.color}44`,borderRadius:10,padding:22,width:460,maxHeight:"75vh",overflowY:"auto",color:"#8892b0"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"center",gap:9}}>
-                <span style={{fontSize:22}}>👑</span>
-                <div>
-                  <div style={{color:orchAgent.color,fontSize:13,fontWeight:700}}>{orchAgent.name} — Orchestrator</div>
-                  <div style={{fontSize:9,color:"#7a7a98"}}>{orchAgent.role}</div>
-                </div>
-              </div>
-              <button onClick={()=>setShowOrchPanel(false)} style={{background:"transparent",border:"none",color:"#7a7a98",cursor:"pointer",fontSize:14}}>✕</button>
-            </div>
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:9,color:"#6a6a8e",letterSpacing:"0.12em",marginBottom:6}}>ACTIVE DEPENDENCY CHAINS</div>
-              {Object.entries(DEPENDENCIES).map(([src,dsts])=>{
-                const srcAg=roster.find(a=>a.id===src);if(!srcAg?.active) return null;
-                return (
-                  <div key={src} style={{marginBottom:4,padding:"4px 8px",background:"#12122a",borderRadius:3,border:`1px solid ${srcAg.color}22`,fontSize:10}}>
-                    <span style={{color:srcAg.color,fontWeight:700}}>{srcAg.emoji} {srcAg.name}</span>
-                    <span style={{color:"#6a6a8e"}}> → </span>
-                    {dsts.map(d=>{const dag=roster.find(a=>a.id===d);return dag?<span key={d} style={{color:dag.color,marginRight:6}}>{dag.emoji}{dag.name}</span>:null;})}
-                  </div>
-                );
-              }).filter(Boolean)}
-            </div>
-            <div style={{marginBottom:14,padding:"10px 12px",background:"#0a0a1a",borderRadius:5,border:"1px solid #2a2a4a"}}>
-              <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.12em",marginBottom:8}}>COMMAND TERMINAL</div>
-              <div style={{fontSize:10,color:"#7a7a98",marginBottom:6}}>Send a message to KAOS — real orchestration, not simulation</div>
-              <div style={{display:"flex",alignItems:"center",gap:4}}>
-                <span style={{color:"#6C5CE7",fontSize:11,fontWeight:700}}>❯</span>
-                <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
-                  onKeyDown={(e:any)=>{if(e.key==="Enter"&&nlInput.trim()&&!nlLoading){
-                    setNlLoading(true);
-                    const userMsg=nlInput.trim();
-                    addFeed(`❯ ${userMsg}`,"#6C5CE7");
-                    fetch("http://127.0.0.1:18789/v1/chat/completions",{
-                      method:"POST",
-                      headers:{"Content-Type":"application/json","Authorization":"Bearer eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0"},
-                      body:JSON.stringify({model:"main",messages:[{role:"user",content:userMsg}]})
-                    }).then(r=>r.json()).then(data=>{
-                      const reply=data.choices?.[0]?.message?.content||"No response";
-                      const short=reply.length>200?reply.slice(0,200)+"…":reply;
-                      addFeed(`🧠 ${short}`,"#a29bfe");
-                      addToast("KAOS responded","#6C5CE7");
-                      const entry={id:feedIdRef.current++,ts:nowts(),sender:"You",senderColor:"#6C5CE7",receiver:"KAOS",text:userMsg};
-                      const replyEntry={id:feedIdRef.current++,ts:nowts(),sender:"KAOS",senderColor:"#6C5CE7",receiver:"You",text:short};
-                      dialogueRef.current=[replyEntry,entry,...dialogueRef.current].slice(0,40);
-                      setDialogue([...dialogueRef.current]);
-                      setNlInput("");setNlLoading(false);
-                    }).catch(()=>{addToast("Gateway error — is KAOS running?","#ff4444");setNlLoading(false);});
-                  }}}
-                  placeholder="e.g. Research competitor pricing for Kemuni..."
-                  disabled={nlLoading}
-                  style={{flex:1,background:"#12122a",border:"1px solid #2a2a4a",borderRadius:3,padding:"6px 8px",color:"#e0e0ff",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,boxSizing:"border-box",outline:"none"}}/>
-              </div>
-              {nlLoading&&<div style={{fontSize:10,color:"#6C5CE7",marginTop:4}}>⟳ KAOS processing…</div>}
-            </div>
-            <div>
-              <div style={{fontSize:9,color:"#6a6a8e",letterSpacing:"0.12em",marginBottom:6}}>AGENT STATUS UPDATES</div>
-              {dialogue.length===0&&<div style={{fontSize:9,color:"#4a4a6a",padding:"8px 0"}}>Updates appear after agents complete tasks.</div>}
-              {dialogue.slice(0,12).map((d:any)=>(
-                <div key={d.id} style={{marginBottom:6,padding:"5px 8px",background:"#0f0f22",borderRadius:3,borderLeft:`2px solid ${d.senderColor}`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
-                    <span style={{color:d.senderColor,fontSize:9,fontWeight:700}}>{d.sender}</span>
-                    <span style={{color:"#4a4a6a",fontSize:9}}>{d.ts}</span>
-                  </div>
-                  <div style={{color:"#8892b0",fontSize:9,lineHeight:1.5}}>{d.text}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Settings panel */}
       {showSettings&&(
         <div style={{position:"fixed",inset:0,background:"#000000aa",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={(e:any)=>e.target===e.currentTarget&&setShowSettings(false)}>
@@ -1600,6 +1563,7 @@ export default function AgentOffice(){
               }}>{t==="A"?"Space":"Green"}</button>
             ))}
           </div>
+          <button onClick={()=>{showGridRef.current=!showGridRef.current;setShowGrid(s=>!s);}} style={{background:"transparent",border:"1px solid #2a2a4a",color:showGrid?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:12,cursor:"pointer",fontFamily:"inherit"}} title="Toggle grid">#</button>
           <button onClick={toggleDepGraph} style={{background:showDepGraph?"#1a1a3a":"transparent",border:`1px solid ${showDepGraph?"#6C5CE7":"#2a2a4a"}`,color:showDepGraph?"#a29bfe":"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>⟡ FLOW</button>
           <button onClick={()=>{showLegendRef.current=!showLegendRef.current;setShowLegend(s=>!s);}} style={{background:"transparent",border:"1px solid #2a2a4a",color:showLegend?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Toggle legend">◉</button>
           <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Toggle minimap">🗺</button>
@@ -1625,7 +1589,7 @@ export default function AgentOffice(){
               <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>
                 <span>AGENT DETAIL{detail.id===ORCHESTRATOR_ID?" 👑":""}</span>
                 <div style={{display:"flex",gap:5}}>
-                  {detail.id===ORCHESTRATOR_ID&&<button onClick={()=>setShowOrchPanel(true)} style={{background:"#6C5CE722",border:"1px solid #6C5CE744",color:"#a29bfe",cursor:"pointer",fontSize:10,fontFamily:"inherit",padding:"2px 6px",borderRadius:2}}>Panel</button>}
+                  {/* Panel button removed — orch content is inline below */}
                   <button onClick={()=>{setSelectedId(null);setDetail(null);}} style={{background:"transparent",border:"none",color:"#6a6a8e",cursor:"pointer",fontSize:12,fontFamily:"inherit",padding:0}}>✕</button>
                 </div>
               </div>
@@ -1635,6 +1599,11 @@ export default function AgentOffice(){
                   <div style={{flex:1}}>
                     <div style={{color:detail.color,fontWeight:700,fontSize:14}}>{detail.name}</div>
                     <div style={{color:"#7a7a98",fontSize:11}}>{detail.role}</div>
+                    <div style={{color:"#4a4a6a",fontSize:10,marginTop:1}}>
+                      {detail.lastStateChange
+                        ? `Last active ${Math.round((Date.now()-detail.lastStateChange)/60000)}m ago`
+                        : "Not yet active"}
+                    </div>
                   </div>
                   <div style={{fontSize:9,padding:"2px 5px",borderRadius:2,background:detail.state==="working"?"#00ff8815":"#1a1a28",color:detail.state==="working"?"#00ff88":"#7a7a98"}}>
                     {detail.state?.replace(/_/g," ")}
@@ -1655,6 +1624,66 @@ export default function AgentOffice(){
                   </div>
                 )}
               </div>
+
+              {/* KAOS-specific: dependency chains + command terminal + status updates */}
+              {detail&&detail.id===ORCHESTRATOR_ID&&(
+                <div style={{borderTop:"1px solid #1e1e35",padding:"8px 11px"}}>
+                  <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:6}}>DEPENDENCY CHAINS</div>
+                  {Object.entries(DEPENDENCIES).map(([src,dsts])=>{
+                    const srcAg=roster.find(a=>a.id===src);if(!srcAg?.active) return null;
+                    return(
+                      <div key={src} style={{marginBottom:3,padding:"3px 7px",background:"#12122a",borderRadius:3,border:`1px solid ${srcAg.color}22`,fontSize:10}}>
+                        <span style={{color:srcAg.color,fontWeight:700}}>{srcAg.emoji} {srcAg.name}</span>
+                        <span style={{color:"#6a6a8e"}}> → </span>
+                        {dsts.map(d=>{const dag=roster.find(a=>a.id===d);return dag?<span key={d} style={{color:dag.color,marginRight:5}}>{dag.emoji}{dag.name}</span>:null;})}
+                      </div>
+                    );
+                  }).filter(Boolean)}
+
+                  <div style={{marginTop:8,fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>COMMAND TERMINAL</div>
+                  <div style={{display:"flex",alignItems:"center",gap:4,background:"#0a0a18",borderRadius:4,padding:"4px 8px",border:"1px solid #1e1e35"}}>
+                    <span style={{color:"#6C5CE7",fontSize:12,fontWeight:700}}>❯</span>
+                    <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
+                      onKeyDown={(e:any)=>{if(e.key==="Enter"&&nlInput.trim()&&!nlLoading){
+                        setNlLoading(true);
+                        const userMsg=nlInput.trim();
+                        addFeed(`❯ ${userMsg}`,"#6C5CE7");
+                        fetch("http://127.0.0.1:18789/v1/chat/completions",{method:"POST",
+                          headers:{"Content-Type":"application/json","Authorization":"Bearer eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0"},
+                          body:JSON.stringify({model:"main",messages:[{role:"user",content:userMsg}]})
+                        }).then(r=>r.json()).then(data=>{
+                          const reply=data.choices?.[0]?.message?.content||"No response";
+                          const short=reply.length>200?reply.slice(0,200)+"…":reply;
+                          addFeed(`🧠 ${short}`,"#a29bfe");
+                          addToast("KAOS responded","#6C5CE7");
+                          const rEntry={id:feedIdRef.current++,ts:nowts(),sender:"KAOS",senderColor:"#6C5CE7",receiver:"You",text:short};
+                          dialogueRef.current=[rEntry,...dialogueRef.current].slice(0,40);
+                          setDialogue([...dialogueRef.current]);
+                          setNlInput("");setNlLoading(false);
+                        }).catch(()=>{addToast("Gateway error","#ff4444");setNlLoading(false);});
+                      }}}
+                      placeholder="Send a message to KAOS…"
+                      disabled={nlLoading}
+                      style={{flex:1,background:"transparent",border:"none",color:"#e0e0ff",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,outline:"none"}}/>
+                  </div>
+                  {nlLoading&&<div style={{fontSize:10,color:"#6C5CE7",marginTop:3}}>⟳ thinking…</div>}
+
+                  {dialogue.length>0&&(
+                    <div style={{marginTop:8}}>
+                      <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>AGENT UPDATES</div>
+                      {dialogue.slice(0,5).map((d:any)=>(
+                        <div key={d.id} style={{marginBottom:4,padding:"4px 7px",background:"#0f0f22",borderRadius:3,borderLeft:`2px solid ${d.senderColor}`}}>
+                          <div style={{display:"flex",justifyContent:"space-between"}}>
+                            <span style={{color:d.senderColor,fontSize:10,fontWeight:700}}>{d.sender}</span>
+                            <span style={{color:"#4a4a6a",fontSize:9}}>{d.ts}</span>
+                          </div>
+                          <div style={{color:"#8892b0",fontSize:10,lineHeight:1.5,marginTop:1}}>{d.text}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1749,6 +1778,37 @@ export default function AgentOffice(){
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{color:a.color,fontSize:11,fontWeight:600}}>{a.name}</div>
                         <div style={{fontSize:10,color:"#00ff88"}}>{a.tasksCompleted} tasks completed</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ▶ INCIDENTS */}
+            <div>
+              <div onClick={()=>togglePanel("incidents")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{openPanels.has("incidents")?"▼":"▶"} INCIDENTS</span>
+                <span style={{fontSize:9,color:incidentLog.length>0?"#ff4444":"#4a4a6a"}}>{incidentLog.length}</span>
+              </div>
+              {openPanels.has("incidents")&&(
+                <div style={{maxHeight:160,overflowY:"auto"}}>
+                  {incident&&(
+                    <div style={{padding:"6px 11px",background:"#1a0808",borderBottom:"1px solid #2a1010",display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:11}}>🔴</span>
+                      <div style={{flex:1}}>
+                        <div style={{color:"#ff4444",fontSize:11,fontWeight:700}}>{incident.title}</div>
+                        <div style={{color:"#ff7777",fontSize:10}}>Active — all hands</div>
+                      </div>
+                    </div>
+                  )}
+                  {incidentLog.length===0&&!incident&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>No incidents recorded.</div>}
+                  {incidentLog.map((inc:any)=>(
+                    <div key={inc.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:10}}>✓</span>
+                      <div style={{flex:1}}>
+                        <div style={{color:"#7a7a98",fontSize:11}}>{inc.title}</div>
+                        <div style={{color:"#4a4a6a",fontSize:9}}>Resolved {inc.ts}</div>
                       </div>
                     </div>
                   ))}

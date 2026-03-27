@@ -192,8 +192,43 @@ export async function GET() {
           const isActive = agoMin < 5
           const channelLabel = channel === 'telegram' ? 'Telegram' : channel === 'discord' ? 'Discord'
             : channel === 'cron' ? 'Cron' : channel === 'subagent' ? 'Sub-agent' : 'Session'
+
+          // Try to get last user message from session JSONL for real task label
+          let lastUserMsg = ''
+          try {
+            const sessionFile = (val as any).sessionFile
+            if (sessionFile && isActive) {
+              const jsonlPath = sessionFile.startsWith('/')
+                ? sessionFile
+                : `/Users/kemuniagent/.openclaw/agents/${agentId}/sessions/${sessionFile}`
+              if (fs.existsSync(jsonlPath)) {
+                const lines = fs.readFileSync(jsonlPath, 'utf-8').split('\n').filter(Boolean)
+                // Walk backwards to find last user message
+                for (let i = lines.length - 1; i >= 0; i--) {
+                  try {
+                    const obj = JSON.parse(lines[i])
+                    const msg = obj.message ?? obj
+                    if (msg.role === 'user') {
+                      const content = msg.content
+                      let text = typeof content === 'string' ? content
+                        : Array.isArray(content) ? (content.find((b: any) => b.type === 'text')?.text ?? '') : ''
+                      // Strip metadata headers from MC/Telegram messages
+                      text = text.replace(/^Sender \(untrusted[^)]+\)[^]*?\n\n/m, '')
+                        .replace(/^\[.*?\]\s*/m, '')
+                        .trim()
+                      if (text && text.length > 3 && !text.startsWith('[') && !text.startsWith('Read HEARTBEAT')) {
+                        lastUserMsg = text.slice(0, 48).replace(/\n/g, ' ')
+                        break
+                      }
+                    }
+                  } catch { continue }
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
+
           agentCurrentTask[agentId] = isActive
-            ? `Active on ${channelLabel} · ${(tokens/1000).toFixed(1)}k tokens`
+            ? (lastUserMsg ? `Active: ${lastUserMsg}` : `Active on ${channelLabel} · ${(tokens/1000).toFixed(1)}k tokens`)
             : agoMin < 60 ? `Last: ${channelLabel} ${agoMin}m ago` : `Idle · last ${Math.floor(agoMin/60)}h ago`
         }
 
