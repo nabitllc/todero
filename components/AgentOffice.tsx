@@ -173,13 +173,13 @@ function mkBurst(x:number,y:number,color:string){
 
 // ─── localStorage ─────────────────────────────────────────────────────────────
 const LS_KEY="agentoffice_v2";
-function loadMemory(){ try{return JSON.parse(localStorage.getItem(LS_KEY)||"{}");}catch{return {};} }
+function loadMemory(){ try{return JSON.parse(localStorage.getItem(LS_KEY)||"{}");}catch(e){return {};} }
 function saveMemory(agents:any[]){
   try{
     const m:any={};
     agents.forEach(ag=>{m[ag.id]={tasksCompleted:ag.tasksCompleted,meetingsAttended:ag.meetingsAttended,timeWorking:ag.timeWorking,timeMeeting:ag.timeMeeting,taskHistory:ag.taskHistory};});
     localStorage.setItem(LS_KEY,JSON.stringify(m));
-  }catch{}
+  }catch(e){}
 }
 
 function initAgents(T:number, activeIds:string[]){
@@ -228,7 +228,7 @@ function createAudio(){
       playIncident(){[200,150,100].forEach((f,i)=>setTimeout(()=>note(f,0.3,"sawtooth",0.14),i*80));},
       playSpawn(){[440,554,659].forEach((f,i)=>setTimeout(()=>note(f,0.15,"sine",0.10),i*70));},
     };
-  }catch{return null;}
+  }catch(e){return null;}
 }
 
 // ─── Day/night ────────────────────────────────────────────────────────────────
@@ -641,6 +641,7 @@ export default function AgentOffice(){
   const feedIdRef      = useRef(1);
   const totalDone      = useRef(0);
   const meetingLogsRef = useRef<any[]>([]);
+  const meetingRef     = useRef<any>(null); // current meeting state for cross-useEffect access
   const activeIdsRef   = useRef([...ACTIVE_IDS]);
   const chatBubbles    = useRef<any[]>([]);
   const minimapRef     = useRef(true);
@@ -682,6 +683,8 @@ export default function AgentOffice(){
   const waterfallRef                 = useRef<any[]>([]);
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
   const [showSettings,setShowSettings] = useState(false);
+  const [sessionLog,setSessionLog] = useState<any[]>([]);
+  const [loadingLog,setLoadingLog] = useState(false);
 
   const addToast=useCallback((text:string,color="#00ff88")=>{
     const id=feedIdRef.current++;
@@ -756,7 +759,29 @@ export default function AgentOffice(){
           prevStates[ag.id]=isActive?"working":"idle";
         });
 
-      }catch{}
+        // Detect multi-agent collaboration → conference table meeting
+        const workingAgents=agents.filter((a:any)=>a.active&&a.state==="working");
+        const kaosWorking=workingAgents.find((a:any)=>a.id===ORCHESTRATOR_ID);
+        const othersWorking=workingAgents.filter((a:any)=>a.id!==ORCHESTRATOR_ID);
+        if(kaosWorking&&othersWorking.length>=1&&!meetingRef.current){
+          const topic=othersWorking.length>1?"Full Team Sync":`${kaosWorking.name} + ${othersWorking[0].name}`;
+          meetingRef.current={topic,agents:[kaosWorking.id,...othersWorking.map((a:any)=>a.id)],startTs:nowts()};
+          addFeed(`📅 "${topic}" — ${[kaosWorking,...othersWorking].map(a=>a.name).join(", ")}`,"#FDCB6E");
+          addToast(`📅 "${topic}"`,"#FDCB6E");
+          timelineRef.current=[...timelineRef.current,{type:"meeting",color:"#FDCB6E",ts:nowts(),label:`Meeting: ${topic}`,tick:0}].slice(-120);
+          setTimeline([...timelineRef.current]);
+          if(soundRef.current&&audioRef.current)audioRef.current.playMeeting();
+        } else if(meetingRef.current&&othersWorking.length===0){
+          addFeed(`✓ "${meetingRef.current.topic}" concluded`,"#FDCB6E");
+          const attendees=agents.filter((a:any)=>meetingRef.current.agents.includes(a.id));
+          const summary=MEETING_SUMMARIES[meetingRef.current.topic]||"• Coordinated agent tasks\n• Reviewed progress\n• Set next actions";
+          const logEntry={id:feedIdRef.current++,topic:meetingRef.current.topic,ts:meetingRef.current.startTs,attendees:attendees.map((a:any)=>a.name),summary};
+          meetingLogsRef.current=[logEntry,...meetingLogsRef.current].slice(0,20);
+          setMeetingLogs([...meetingLogsRef.current]);
+          meetingRef.current=null;
+        }
+
+      }catch(e){}
     };
     poll(); // Initial poll immediately
     const interval=setInterval(poll,5000);
@@ -889,8 +914,11 @@ export default function AgentOffice(){
       if(!pausedRef.current&&!replayModeRef.current){
         simTick++;
 
+        // Mood based on real performance: working = energized, idle long = neutral
         if(simTick%360===0) agents.forEach(ag=>{
-          ag.mood=Math.max(85,Math.min(100,(ag.mood||88)+(Math.random()>0.5?1:-0.5)));
+          if(ag.state==="working") ag.mood=Math.min(100,(ag.mood||88)+2); // Working boosts mood
+          else if(ag.tasksCompleted>0) ag.mood=Math.max(80,Math.min(95,(ag.mood||88)-0.3)); // Idle but productive = stable
+          else ag.mood=Math.max(70,(ag.mood||88)-0.5); // Never worked = slowly drops to neutral
         });
 
         agents.forEach(ag=>{
@@ -1211,33 +1239,36 @@ export default function AgentOffice(){
               }).filter(Boolean)}
             </div>
             <div style={{marginBottom:14,padding:"10px 12px",background:"#0a0a1a",borderRadius:5,border:"1px solid #2a2a4a"}}>
-              <div style={{fontSize:9,color:"#3a3a5e",letterSpacing:"0.12em",marginBottom:8}}>INJECT TASK</div>
-              <div style={{fontSize:10,color:"#4a5568",marginBottom:6}}>Type a goal — KAOS breaks it into subtasks and assigns to agents</div>
-              <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
-                onKeyDown={(e:any)=>{if(e.key==="Enter"&&nlInput.trim()&&!nlLoading){
-                  setNlLoading(true);
-                  fetch("http://127.0.0.1:18789/v1/chat/completions",{
-                    method:"POST",
-                    headers:{"Content-Type":"application/json","Authorization":"Bearer eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0"},
-                    body:JSON.stringify({model:"main",messages:[{role:"user",content:`Break this goal into specific subtasks for my agents (Scout=research, Ops=infrastructure, Kemuni SME=kemuni product, Vespera SME=vespera product). Goal: "${nlInput.trim()}". Return JSON array: [{"agent":"scout","task":"..."},{"agent":"ops","task":"..."}]. Each task max 6 words. Return ONLY JSON.`}]})
-                  }).then(r=>r.json()).then(data=>{
-                    try{
-                      const txt=data.choices?.[0]?.message?.content||"";
-                      const clean=txt.trim().replace(/```json?|```/g,"").trim();
-                      const parsed=JSON.parse(clean);
-                      parsed.forEach(({agent,task}:any)=>{
-                        const ag=simRef.current?.agents?.find((a:any)=>a.id===agent&&a.active);
-                        if(ag&&ag.state==="idle"){ag.state="working";ag.task=task;ag.progress=0;addFeed(`🎯 ${ag.emoji} ${ag.name}: "${task}"`,ag.color);}
-                      });
-                      addToast("Tasks injected!","#00ff88");
-                    }catch{addToast("Parse error — try again","#ff4444");}
-                    setNlInput("");setNlLoading(false);
-                  }).catch(()=>{addToast("Gateway error","#ff4444");setNlLoading(false);});
-                }}}
-                placeholder="e.g. Research competitor pricing..."
-                disabled={nlLoading}
-                style={{width:"100%",background:"#12122a",border:"1px solid #2a2a4a",borderRadius:3,padding:"5px 8px",color:"#e0e0ff",fontFamily:"inherit",fontSize:9,boxSizing:"border-box",outline:"none"}}/>
-              {nlLoading&&<div style={{fontSize:10,color:"#6C5CE7",marginTop:4}}>⟳ KAOS thinking…</div>}
+              <div style={{fontSize:10,color:"#3a3a5e",letterSpacing:"0.12em",marginBottom:8}}>COMMAND TERMINAL</div>
+              <div style={{fontSize:10,color:"#4a5568",marginBottom:6}}>Send a message to KAOS — real orchestration, not simulation</div>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <span style={{color:"#6C5CE7",fontSize:11,fontWeight:700}}>❯</span>
+                <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
+                  onKeyDown={(e:any)=>{if(e.key==="Enter"&&nlInput.trim()&&!nlLoading){
+                    setNlLoading(true);
+                    const userMsg=nlInput.trim();
+                    addFeed(`❯ ${userMsg}`,"#6C5CE7");
+                    fetch("http://127.0.0.1:18789/v1/chat/completions",{
+                      method:"POST",
+                      headers:{"Content-Type":"application/json","Authorization":"Bearer eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0"},
+                      body:JSON.stringify({model:"main",messages:[{role:"user",content:userMsg}]})
+                    }).then(r=>r.json()).then(data=>{
+                      const reply=data.choices?.[0]?.message?.content||"No response";
+                      const short=reply.length>200?reply.slice(0,200)+"…":reply;
+                      addFeed(`🧠 ${short}`,"#a29bfe");
+                      addToast("KAOS responded","#6C5CE7");
+                      const entry={id:feedIdRef.current++,ts:nowts(),sender:"You",senderColor:"#6C5CE7",receiver:"KAOS",text:userMsg};
+                      const replyEntry={id:feedIdRef.current++,ts:nowts(),sender:"KAOS",senderColor:"#6C5CE7",receiver:"You",text:short};
+                      dialogueRef.current=[replyEntry,entry,...dialogueRef.current].slice(0,40);
+                      setDialogue([...dialogueRef.current]);
+                      setNlInput("");setNlLoading(false);
+                    }).catch(()=>{addToast("Gateway error — is KAOS running?","#ff4444");setNlLoading(false);});
+                  }}}
+                  placeholder="e.g. Research competitor pricing for Kemuni..."
+                  disabled={nlLoading}
+                  style={{flex:1,background:"#12122a",border:"1px solid #2a2a4a",borderRadius:3,padding:"6px 8px",color:"#e0e0ff",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,boxSizing:"border-box",outline:"none"}}/>
+              </div>
+              {nlLoading&&<div style={{fontSize:10,color:"#6C5CE7",marginTop:4}}>⟳ KAOS processing…</div>}
             </div>
             <div>
               <div style={{fontSize:9,color:"#3a3a5e",letterSpacing:"0.12em",marginBottom:6}}>AGENT STATUS UPDATES</div>
@@ -1388,6 +1419,29 @@ export default function AgentOffice(){
                       ))}
                     </div>
                   )}
+                  {/* View Session Log */}
+                  <div style={{marginTop:8}}>
+                    <button onClick={()=>{
+                      if(sessionLog.length>0){setSessionLog([]);return;}
+                      setLoadingLog(true);
+                      fetch(`/api/status`).then(r=>r.json()).then(data=>{
+                        const task=data.agentCurrentTask?.[detail.id]||"No active session";
+                        setSessionLog([{role:"system",content:`Agent: ${detail.name}\nStatus: ${task}`}]);
+                        setLoadingLog(false);
+                      }).catch(()=>{setSessionLog([{role:"system",content:"Failed to fetch session data"}]);setLoadingLog(false);});
+                    }} style={{background:"#12122a",border:"1px solid #2a2a4a",borderRadius:3,padding:"4px 10px",color:"#a29bfe",fontSize:10,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
+                      {loadingLog?"Loading…":sessionLog.length>0?"Hide Session":"View Live Status"}
+                    </button>
+                    {sessionLog.length>0&&(
+                      <div style={{marginTop:6,padding:"6px 8px",background:"#0a0a18",borderRadius:3,border:"1px solid #1a1a2e",maxHeight:120,overflowY:"auto"}}>
+                        {sessionLog.map((msg:any,i:number)=>(
+                          <div key={i} style={{fontSize:10,color:msg.role==="system"?"#4a5568":"#8892b0",padding:"3px 0",borderBottom:"1px solid #0f0f1f",whiteSpace:"pre-wrap",lineHeight:1.5}}>
+                            {msg.content}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ):(
