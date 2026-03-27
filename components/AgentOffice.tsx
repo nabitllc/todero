@@ -1349,9 +1349,16 @@ export default function AgentOffice(){
           <div style={{width:7,height:7,borderRadius:"50%",background:paused?"#3a3a5e":incident?"#ff4444":"#00ff88",boxShadow:paused?"none":incident?"0 0 8px #ff444466":"0 0 8px #00ff8866"}}/>
           <span style={{color:"#e0e0ff",fontSize:12,letterSpacing:"0.14em",fontWeight:600}}>NABIT LLC</span>
           <span style={{color:"#4a4a6a"}}>·</span>
-          <span style={{color:incident?"#ff4444":"#4a5568",fontSize:10,letterSpacing:"0.09em"}}>{incident?incident.title:"AGENT OFFICE"}</span>
+          <span style={{color:incident?"#ff4444":"#7a7a98",fontSize:10,letterSpacing:"0.09em"}}>{incident?incident.title:"AGENT OFFICE"}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,padding:"2px 8px",background:"#0f0f20",border:"1px solid #1a1a2e",borderRadius:3}}>
+            <span style={{fontSize:9,color:"#00ff88"}}>{stats.working}</span>
+            <span style={{fontSize:9,color:"#6a6a8e"}}>working</span>
+            <span style={{fontSize:9,color:"#4a4a6a"}}>·</span>
+            <span style={{fontSize:9,color:"#6C5CE7"}}>{stats.completed}</span>
+            <span style={{fontSize:9,color:"#6a6a8e"}}>done</span>
+          </div>
           <button onClick={toggleDepGraph} style={{background:showDepGraph?"#1a1a3a":"transparent",border:`1px solid ${showDepGraph?"#6C5CE7":"#2a2a4a"}`,color:showDepGraph?"#a29bfe":"#4a5568",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>⟡ FLOW</button>
           <button onClick={()=>{showLegendRef.current=!showLegendRef.current;setShowLegend(s=>!s);}} style={{background:"transparent",border:"1px solid #2a2a4a",color:showLegend?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>◉</button>
           <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>🗺</button>
