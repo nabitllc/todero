@@ -251,20 +251,57 @@ function clampCam(cam:any,W:number,H:number){
 function applyCamera(ctx:CanvasRenderingContext2D,cam:any){ctx.translate(cam.x,cam.y);ctx.scale(cam.z,cam.z);}
 
 // ─── Draw floor ───────────────────────────────────────────────────────────────
-function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,incidentActive:boolean){
+// ─── Themes ────────────────────────────────────────────────────────────────
+const THEMES={
+  A:{
+    // Deep Space — refined dark navy/purple
+    floorA:"#141428", floorB:"#161636",
+    floorHold:"#0e0e1e", floorHoldB:"#101024",
+    grid:"#1e1e3c",
+    wall:"#0a0a18",
+    rowDiv:"#111128",
+    deskBody:"#18183a",  deskBorder:"#222248",
+    orchDesk:"#201a40",
+    confTable:"#1e1c3a",
+    sidebar:"#0b0b14",   sidebarHeader:"#0d0d18",
+    header:"#0b0b18",
+    accent:"#6C5CE7",
+    textDim:"#6a6a8e",   textMid:"#8892b0",
+    borderSub:"#1e1e35",
+  },
+  B:{
+    // Midnight Green — deep teal ops center
+    floorA:"#0c1a17", floorB:"#0e1f1c",
+    floorHold:"#0a1210", floorHoldB:"#0c1614",
+    grid:"#162820",
+    wall:"#091410",
+    rowDiv:"#0d1c18",
+    deskBody:"#122820",  deskBorder:"#1a3828",
+    orchDesk:"#14302a",
+    confTable:"#162e26",
+    sidebar:"#0a1510",   sidebarHeader:"#0c1a14",
+    header:"#0c1a14",
+    accent:"#00b894",
+    textDim:"#5a8a70",   textMid:"#7ab89a",
+    borderSub:"#162e22",
+  },
+};
+type ThemeKey=keyof typeof THEMES;
+
+function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,incidentActive:boolean,thm:typeof THEMES.A){
   ctx.save();applyCamera(ctx,cam);
   for(let r=0;r<MAP_ROWS;r++) for(let c=0;c<MAP_COLS;c++){
     const hold=r>STANCHION_R;
-    ctx.fillStyle=hold?((c+r)%2===0?"#0d0d1a":"#0f0f22"):((c+r)%2===0?"#11111e":"#13132a");
+    ctx.fillStyle=hold?((c+r)%2===0?thm.floorHold:thm.floorHoldB):((c+r)%2===0?thm.floorA:thm.floorB);
     ctx.fillRect(c*T,r*T,T,T);
   }
-  ctx.strokeStyle="#1c1c38";ctx.lineWidth=0.5;
+  ctx.strokeStyle=thm.grid;ctx.lineWidth=0.5;
   for(let c=0;c<=MAP_COLS;c++){ctx.beginPath();ctx.moveTo(c*T,0);ctx.lineTo(c*T,MAP_ROWS*T);ctx.stroke();}
   for(let r=0;r<=MAP_ROWS;r++){ctx.beginPath();ctx.moveTo(0,r*T);ctx.lineTo(MAP_COLS*T,r*T);ctx.stroke();}
-  ctx.fillStyle="#080814";
+  ctx.fillStyle=thm.wall;
   ctx.fillRect(0,0,MAP_COLS*T,5);ctx.fillRect(0,0,5,STANCHION_R*T);ctx.fillRect(MAP_COLS*T-5,0,5,STANCHION_R*T);
   [ROW_Y[1],ROW_Y[2],ROW_Y[3]].forEach(ry=>{
-    ctx.fillStyle="#0e0e1e";ctx.fillRect(0,(ry-0.15)*T,MAP_COLS*T,T*0.25);
+    ctx.fillStyle=thm.rowDiv;ctx.fillRect(0,(ry-0.15)*T,MAP_COLS*T,T*0.25);
   });
   if(darkAlpha>0.03){ctx.fillStyle=`rgba(5,5,28,${darkAlpha})`;ctx.fillRect(0,0,MAP_COLS*T,STANCHION_R*T);}
   if(incidentActive){ctx.fillStyle=`rgba(255,40,40,${0.05+0.03*Math.sin(Date.now()*0.008)})`;ctx.fillRect(0,0,MAP_COLS*T,STANCHION_R*T);}
@@ -278,13 +315,13 @@ function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:numbe
     ctx.beginPath();ctx.arc(px2,sy-T*0.32,T*0.07,0,Math.PI*2);ctx.fill();
   }
   ctx.font=`bold ${Math.round(T*0.18)}px 'IBM Plex Mono',monospace`;
-  ctx.fillStyle="#242450";ctx.textAlign="center";
+  ctx.fillStyle=thm.textDim;ctx.textAlign="center";
   ctx.fillText("— HOLDING AREA —",MAP_COLS*T/2,STANCHION_R*T+T*0.88);
   ctx.restore();
 }
 
 // ─── Draw furniture ───────────────────────────────────────────────────────────
-function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean){
+function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A){
   ctx.save();applyCamera(ctx,cam);
 
   // ── Dependency graph overlay ──
@@ -333,7 +370,7 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
     const mood=(orchAg?.mood||88)/100;
     ctx.beginPath();ctx.roundRect(x-T*0.06,y-T*0.06,dw+T*0.12,dh+T*0.12,T*0.12);
     ctx.strokeStyle=(orchAg?.color||"#6C5CE7")+"55";ctx.lineWidth=T*0.05;ctx.stroke();
-    ctx.fillStyle="#201a40";
+    ctx.fillStyle=thm.orchDesk;
     ctx.strokeStyle=working?(orchAg.color+"cc"):(orchAg?.color||"#6C5CE7")+"44";
     ctx.lineWidth=T*0.022;
     ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.1);ctx.fill();ctx.stroke();
@@ -386,7 +423,7 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
     const x=dp.tx*T, y=dp.ty*T, dw=T*1.5, dh=T*1.7;
     const working=ag.state==="working";
     const mood=(ag.mood||88)/100;
-    ctx.fillStyle="#17172e";
+    ctx.fillStyle=thm.deskBody;
     ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(incidentActive?"#ff333344":"#222244");
     ctx.lineWidth=working?T*0.022:T*0.01;
     ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
@@ -447,7 +484,7 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
 
   // ── Conference table ──
   const tcx=CONF_TX*T, tcy=CONF_TY*T, tw=CONF_TW*T, th=CONF_TH*T;
-  ctx.fillStyle="#1b1830";
+  ctx.fillStyle=thm.confTable;
   ctx.strokeStyle=activeMeeting?"#FDCB6Ecc":incidentActive?"#ff3333aa":"#282848";
   ctx.lineWidth=activeMeeting?T*0.028:T*0.014;
   ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.fill();ctx.stroke();
@@ -680,6 +717,7 @@ function captureFrame(agents:any[],simTick:number){
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AgentOffice(){
   const canvasRef      = useRef<HTMLCanvasElement>(null);
+  const themeRef       = useRef<"A"|"B">("A"); // keep in sync for canvas draw functions
   const simRef         = useRef<any>(null);
   const animRef        = useRef<any>(null);
   const feedRef        = useRef<HTMLDivElement>(null);
@@ -743,6 +781,10 @@ export default function AgentOffice(){
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
   const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
   const [showSettings,setShowSettings] = useState(false);
+  const [theme,setTheme] = useState<"A"|"B">(()=>{
+    try{return (localStorage.getItem("office_theme")||"A") as "A"|"B";}catch{return "A";}
+  });
+  const switchTheme=(t:"A"|"B")=>{setTheme(t);try{localStorage.setItem("office_theme",t);}catch(e){}};
   const [sessionLog,setSessionLog] = useState<any[]>([]);
   const [loadingLog,setLoadingLog] = useState(false);
 
@@ -760,6 +802,7 @@ export default function AgentOffice(){
   useEffect(()=>()=>{if(simRef.current?.agents)saveMemory(simRef.current.agents);},[]);
 
   useEffect(()=>{minimapRef.current=showMinimap;},[showMinimap]);
+  useEffect(()=>{themeRef.current=theme;},[theme]);
   useEffect(()=>{depGraphRef.current=showDepGraph;},[showDepGraph]);
   useEffect(()=>{showLegendRef.current=showLegend;},[showLegend]);
   useEffect(()=>{replayModeRef.current=replayMode;},[replayMode]);
@@ -1133,8 +1176,9 @@ export default function AgentOffice(){
 
       ctx.clearRect(0,0,W,H);
       const darkAlpha=getDayNight(simTick);
-      drawFloor(ctx,T2,cam,darkAlpha,!!incidentData);
-      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!meeting,meeting?.topic,darkAlpha,!!incidentData,critPairs,depGraphRef.current);
+      const thm=THEMES[themeRef.current]||THEMES.A;
+      drawFloor(ctx,T2,cam,darkAlpha,!!incidentData,thm);
+      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!meeting,meeting?.topic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm);
       // Connection lines: working agents → orchestrator
       const orchAgent2=drawAgentsArr.find((a:any)=>a.id===ORCHESTRATOR_ID);
       if(orchAgent2){
@@ -1343,8 +1387,10 @@ export default function AgentOffice(){
   const orchAgent=roster.find(a=>a.id===ORCHESTRATOR_ID);
 
   return (
-    <div style={{height:"100%",minHeight:"600px",display:"flex",flexDirection:"column",background:"#060610",
-      fontFamily:"'IBM Plex Mono','JetBrains Mono','Fira Code',monospace",overflow:"hidden",color:"#8892b0"}}>
+    <div style={{height:"100%",minHeight:"600px",display:"flex",flexDirection:"column",
+      background:theme==="B"?"#091410":"#060610",
+      fontFamily:"'IBM Plex Mono','JetBrains Mono','Fira Code',monospace",overflow:"hidden",
+      color:theme==="B"?"#7ab89a":"#8892b0"}}>
 
       <style>{`@keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}`}</style>
 
@@ -1528,28 +1574,39 @@ export default function AgentOffice(){
       )}
 
       {/* Header */}
-      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 14px",height:44,background:"#0b0b18",borderBottom:"1px solid #1a1a2e"}}>
+      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 14px",height:44,background:theme==="B"?"#0c1a14":"#0b0b18",borderBottom:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:7,height:7,borderRadius:"50%",background:paused?"#3a3a5e":incident?"#ff4444":"#00ff88",boxShadow:paused?"none":incident?"0 0 8px #ff444466":"0 0 8px #00ff8866"}}/>
-          <span style={{color:"#e0e0ff",fontSize:12,letterSpacing:"0.14em",fontWeight:600}}>NABIT LLC</span>
+          <div style={{width:9,height:9,borderRadius:"50%",background:paused?"#3a3a5e":incident?"#ff4444":"#00ff88",boxShadow:paused?"none":incident?"0 0 8px #ff444466":"0 0 8px #00ff8866"}}/>
+          <span style={{color:"#e0e0ff",fontSize:13,letterSpacing:"0.14em",fontWeight:700}}>NABIT LLC</span>
           <span style={{color:"#4a4a6a"}}>·</span>
-          <span style={{color:incident?"#ff4444":"#7a7a98",fontSize:10,letterSpacing:"0.09em"}}>{incident?incident.title:"AGENT OFFICE"}</span>
+          <span style={{color:incident?"#ff4444":"#8892b0",fontSize:12,letterSpacing:"0.09em"}}>{incident?incident.title:"AGENT OFFICE"}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <div style={{display:"flex",alignItems:"center",gap:4,padding:"2px 8px",background:"#0f0f20",border:"1px solid #1a1a2e",borderRadius:3}}>
-            <span style={{fontSize:9,color:"#00ff88"}}>{stats.working}</span>
-            <span style={{fontSize:9,color:"#6a6a8e"}}>working</span>
-            <span style={{fontSize:9,color:"#4a4a6a"}}>·</span>
-            <span style={{fontSize:9,color:"#6C5CE7"}}>{stats.completed}</span>
-            <span style={{fontSize:9,color:"#6a6a8e"}}>done</span>
+          <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 10px",background:"#0f0f20",border:"1px solid #1a1a2e",borderRadius:3}}>
+            <span style={{fontSize:12,fontWeight:700,color:"#00ff88"}}>{stats.working}</span>
+            <span style={{fontSize:11,color:"#6a6a8e"}}>working</span>
+            <span style={{fontSize:11,color:"#3a3a5e"}}>·</span>
+            <span style={{fontSize:12,fontWeight:700,color:"#6C5CE7"}}>{stats.completed}</span>
+            <span style={{fontSize:11,color:"#6a6a8e"}}>done</span>
           </div>
-          <button onClick={toggleDepGraph} style={{background:showDepGraph?"#1a1a3a":"transparent",border:`1px solid ${showDepGraph?"#6C5CE7":"#2a2a4a"}`,color:showDepGraph?"#a29bfe":"#4a5568",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>⟡ FLOW</button>
-          <button onClick={()=>{showLegendRef.current=!showLegendRef.current;setShowLegend(s=>!s);}} style={{background:"transparent",border:"1px solid #2a2a4a",color:showLegend?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>◉</button>
-          <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>🗺</button>
-          <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>⌨</button>
-          <button onClick={()=>{const el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen?.();}} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}} title="Fullscreen">⛶</button>
-          <button onClick={toggleSound} style={{background:"transparent",border:"1px solid #2a2a4a",color:soundOn?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
-          <button onClick={togglePause} style={{background:"transparent",border:"1px solid #2a2a4a",color:paused?"#00ff88":"#8892b0",padding:"3px 10px",borderRadius:3,fontSize:9,letterSpacing:"0.08em",cursor:"pointer",fontFamily:"inherit"}}>{paused?"▶":"⏸"}</button>
+          {/* Theme switcher */}
+          <div style={{display:"flex",gap:2,padding:"2px",background:"#0a0a18",borderRadius:4,border:"1px solid #1a1a2e"}}>
+            {(["A","B"] as const).map(t=>(
+              <button key={t} onClick={()=>switchTheme(t)} style={{
+                background:theme===t?(t==="A"?"#6C5CE7":"#00b894"):"transparent",
+                border:"none",borderRadius:3,color:theme===t?"#fff":"#6a6a8e",
+                padding:"2px 8px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                transition:"all 0.15s"
+              }}>{t==="A"?"Space":"Green"}</button>
+            ))}
+          </div>
+          <button onClick={toggleDepGraph} style={{background:showDepGraph?"#1a1a3a":"transparent",border:`1px solid ${showDepGraph?"#6C5CE7":"#2a2a4a"}`,color:showDepGraph?"#a29bfe":"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>⟡ FLOW</button>
+          <button onClick={()=>{showLegendRef.current=!showLegendRef.current;setShowLegend(s=>!s);}} style={{background:"transparent",border:"1px solid #2a2a4a",color:showLegend?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Toggle legend">◉</button>
+          <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Toggle minimap">🗺</button>
+          <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Settings">⌨</button>
+          <button onClick={()=>{const el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen?.();}} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Fullscreen">⛶</button>
+          <button onClick={toggleSound} style={{background:"transparent",border:"1px solid #2a2a4a",color:soundOn?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
+          <button onClick={togglePause} style={{background:"transparent",border:"1px solid #2a2a4a",color:paused?"#00ff88":"#8892b0",padding:"3px 11px",borderRadius:3,fontSize:12,fontWeight:600,letterSpacing:"0.08em",cursor:"pointer",fontFamily:"inherit"}}>{paused?"▶ RUN":"⏸ LIVE"}</button>
         </div>
       </div>
 
@@ -1560,7 +1617,7 @@ export default function AgentOffice(){
         </div>
 
         {/* Sidebar */}
-        <div style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",background:"#0b0b14",borderLeft:"1px solid #1a1a2e",overflow:"hidden"}}>
+        <div style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",background:theme==="B"?"#0a1510":"#0b0b14",borderLeft:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden"}}>
 
           {/* Detail panel — shows when an agent is selected on canvas */}
           {detail&&(
