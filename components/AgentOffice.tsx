@@ -74,12 +74,12 @@ const CHAT_LINES = [
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 const ORCH_TX = 0.3,  ORCH_TY = 1.6;
-const CONF_TX = 3.8,  CONF_TY = 1.6;
-const CONF_TW = 9.0;
+const CONF_TX = 5.0,  CONF_TY = 1.6;  // pushed right to clear orchestrator
+const CONF_TW = 8.0;
 const CONF_TH = 2.2;
 
 const ROW_Y = [1.6, 4.5, 7.0, 9.5];
-const COL_X = [0.3, 4.1, 8.0, 11.8]; // 4 desks per row
+const COL_X = [1.0, 4.5, 8.0, 11.5]; // 4 desks centered with margin from walls
 
 const DESK_POS: Record<string,{tx:number,ty:number}> = {
   main:          { tx:ORCH_TX,    ty:ORCH_TY    },
@@ -537,9 +537,9 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
   const nPx=Math.max(10,Math.round(T*0.13));
   ctx.font=`bold ${nPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
   const nlW=ctx.measureText(name).width+T*0.14,nlH=nPx*1.6,nlY=py+hs+T*0.05+dy2+oy;
-  ctx.fillStyle="#0a0a14dd";ctx.strokeStyle=(active?color:"#3a3a5e")+"99";ctx.lineWidth=sz*0.04;
+  ctx.fillStyle="#0a0a14dd";ctx.strokeStyle=(active?color:"#6a6a8e")+"99";ctx.lineWidth=sz*0.04;
   ctx.beginPath();ctx.roundRect(px-nlW/2,nlY,nlW,nlH,T*0.03);ctx.fill();ctx.stroke();
-  ctx.fillStyle=active?color:"#3a3a5e";ctx.fillText(name,px,nlY+nlH*0.72);
+  ctx.fillStyle=active?color:"#6a6a8e";ctx.fillText(name,px,nlY+nlH*0.72);
 
   if(state==="working"&&task){
     const tPx=Math.max(11,Math.round(T*0.19));
@@ -594,7 +594,7 @@ function drawMinimap(ctx:CanvasRenderingContext2D,T:number,agents:any[],cam:any,
   agents.forEach(a=>{
     const ax=mmX+a.px*sx,ay=mmY+a.py*sy,r=Math.max(2,3);
     ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);
-    ctx.fillStyle=a.state==="working"?"#00ff88":a.state==="meeting"||a.state==="moving_to_meeting"?"#FDCB6E":a.active?a.color:"#2a2a4a";
+    ctx.fillStyle=a.state==="working"?"#00ff88":a.state==="meeting"||a.state==="moving_to_meeting"?"#FDCB6E":a.active?a.color:"#4a4a6a";
     ctx.fill();ctx.strokeStyle="#000";ctx.lineWidth=0.5;ctx.stroke();
   });
   const vx=mmX+(-cam.x/cam.z)*sx,vy=mmY+(-cam.y/cam.z)*sy;
@@ -719,10 +719,17 @@ export default function AgentOffice(){
           if(!ag.active) return;
           const prev=prevStates[ag.id]||"idle";
           const rawTask=taskMap[ag.id]||"";
-          // Parse: "Active on Telegram · 53.5k tokens" → working
-          // "Idle · last 1h ago" → idle
-          const isActive=rawTask.toLowerCase().startsWith("active")||rawTask.toLowerCase().startsWith("working")||rawTask.toLowerCase().startsWith("running");
-          const taskDesc=isActive?rawTask.split("·")[0].trim():null;
+          // Parse OpenClaw status strings
+          const lower=rawTask.toLowerCase();
+          const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running");
+          // Clean the description: "Active on Telegram · 53.5k tokens" → "Processing session"
+          // "Active on webchat · 12k tokens" → "Processing session"
+          let taskDesc:string|null=null;
+          if(isActive){
+            const channel=rawTask.match(/on (\w+)/)?.[1]||"";
+            if(channel) taskDesc=`Working via ${channel}`;
+            else taskDesc="Processing";
+          }
 
           if(isActive&&taskDesc){
             if(ag.state!=="working"){
@@ -1182,7 +1189,7 @@ export default function AgentOffice(){
           <div style={{background:"#0f0f20",border:"1px solid #2a2a4a",borderRadius:8,padding:22,width:300,color:"#8892b0"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
               <span style={{fontSize:11,color:"#e0e0ff",letterSpacing:"0.1em"}}>CONFIGURE</span>
-              <button onClick={()=>setShowConfig(false)} style={{background:"transparent",border:"none",color:"#4a5568",cursor:"pointer",fontSize:14}}>✕</button>
+              <button onClick={()=>setShowConfig(false)} style={{background:"transparent",border:"none",color:"#7a7a98",cursor:"pointer",fontSize:14}}>✕</button>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
               <span style={{fontSize:22}}>{configAgent.emoji}</span>
@@ -1190,18 +1197,13 @@ export default function AgentOffice(){
             </div>
             {[{l:"Name",k:"name",t:"text"},{l:"Color",k:"color",t:"color"}].map(f=>(
               <div key={f.k} style={{marginBottom:10}}>
-                <div style={{fontSize:10,color:"#3a3a5e",marginBottom:3,letterSpacing:"0.1em"}}>{f.l.toUpperCase()}</div>
+                <div style={{fontSize:10,color:"#6a6a8e",marginBottom:3,letterSpacing:"0.1em"}}>{f.l.toUpperCase()}</div>
                 <input type={f.t} value={configEdits[f.k]||""} onChange={(e:any)=>setConfigEdits((p:any)=>({...p,[f.k]:e.target.value}))}
                   style={{width:"100%",background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:4,padding:"4px 7px",color:"#e0e0ff",fontFamily:"inherit",fontSize:10,boxSizing:"border-box"}}/>
               </div>
             ))}
-            <div style={{marginBottom:10}}>
-              <div style={{fontSize:10,color:"#3a3a5e",marginBottom:3,letterSpacing:"0.1em"}}>WORK BURST ({Math.round((configEdits.workBurst||0)*100)}%)</div>
-              <input type="range" min="0.5" max="1.0" step="0.05" value={configEdits.workBurst||0.8} onChange={(e:any)=>setConfigEdits((p:any)=>({...p,workBurst:+e.target.value}))} style={{width:"100%"}}/>
-            </div>
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:10,color:"#3a3a5e",marginBottom:3,letterSpacing:"0.1em"}}>FOCUS DURATION ({configEdits.focusDuration||1})</div>
-              <input type="range" min="1" max="8" step="1" value={configEdits.focusDuration||1} onChange={(e:any)=>setConfigEdits((p:any)=>({...p,focusDuration:+e.target.value}))} style={{width:"100%"}}/>
+            <div style={{marginBottom:14,padding:"8px",background:"#0a0a18",borderRadius:4}}>
+              <div style={{fontSize:10,color:"#6a6a8e",lineHeight:1.6}}>Agent behavior is driven by real OpenClaw sessions. Visual config (name/color) is cosmetic only.</div>
             </div>
             <div style={{display:"flex",gap:7}}>
               <button onClick={saveConfig} style={{flex:1,background:"#6C5CE7",border:"none",borderRadius:4,color:"#fff",padding:"7px",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
@@ -1220,27 +1222,27 @@ export default function AgentOffice(){
                 <span style={{fontSize:22}}>👑</span>
                 <div>
                   <div style={{color:orchAgent.color,fontSize:13,fontWeight:700}}>{orchAgent.name} — Orchestrator</div>
-                  <div style={{fontSize:9,color:"#4a5568"}}>{orchAgent.role}</div>
+                  <div style={{fontSize:9,color:"#7a7a98"}}>{orchAgent.role}</div>
                 </div>
               </div>
-              <button onClick={()=>setShowOrchPanel(false)} style={{background:"transparent",border:"none",color:"#4a5568",cursor:"pointer",fontSize:14}}>✕</button>
+              <button onClick={()=>setShowOrchPanel(false)} style={{background:"transparent",border:"none",color:"#7a7a98",cursor:"pointer",fontSize:14}}>✕</button>
             </div>
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:9,color:"#3a3a5e",letterSpacing:"0.12em",marginBottom:6}}>ACTIVE DEPENDENCY CHAINS</div>
+              <div style={{fontSize:9,color:"#6a6a8e",letterSpacing:"0.12em",marginBottom:6}}>ACTIVE DEPENDENCY CHAINS</div>
               {Object.entries(DEPENDENCIES).map(([src,dsts])=>{
                 const srcAg=roster.find(a=>a.id===src);if(!srcAg?.active) return null;
                 return (
                   <div key={src} style={{marginBottom:4,padding:"4px 8px",background:"#12122a",borderRadius:3,border:`1px solid ${srcAg.color}22`,fontSize:10}}>
                     <span style={{color:srcAg.color,fontWeight:700}}>{srcAg.emoji} {srcAg.name}</span>
-                    <span style={{color:"#3a3a5e"}}> → </span>
+                    <span style={{color:"#6a6a8e"}}> → </span>
                     {dsts.map(d=>{const dag=roster.find(a=>a.id===d);return dag?<span key={d} style={{color:dag.color,marginRight:6}}>{dag.emoji}{dag.name}</span>:null;})}
                   </div>
                 );
               }).filter(Boolean)}
             </div>
             <div style={{marginBottom:14,padding:"10px 12px",background:"#0a0a1a",borderRadius:5,border:"1px solid #2a2a4a"}}>
-              <div style={{fontSize:10,color:"#3a3a5e",letterSpacing:"0.12em",marginBottom:8}}>COMMAND TERMINAL</div>
-              <div style={{fontSize:10,color:"#4a5568",marginBottom:6}}>Send a message to KAOS — real orchestration, not simulation</div>
+              <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.12em",marginBottom:8}}>COMMAND TERMINAL</div>
+              <div style={{fontSize:10,color:"#7a7a98",marginBottom:6}}>Send a message to KAOS — real orchestration, not simulation</div>
               <div style={{display:"flex",alignItems:"center",gap:4}}>
                 <span style={{color:"#6C5CE7",fontSize:11,fontWeight:700}}>❯</span>
                 <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
@@ -1271,13 +1273,13 @@ export default function AgentOffice(){
               {nlLoading&&<div style={{fontSize:10,color:"#6C5CE7",marginTop:4}}>⟳ KAOS processing…</div>}
             </div>
             <div>
-              <div style={{fontSize:9,color:"#3a3a5e",letterSpacing:"0.12em",marginBottom:6}}>AGENT STATUS UPDATES</div>
-              {dialogue.length===0&&<div style={{fontSize:9,color:"#2a2a4a",padding:"8px 0"}}>Updates appear after agents complete tasks.</div>}
+              <div style={{fontSize:9,color:"#6a6a8e",letterSpacing:"0.12em",marginBottom:6}}>AGENT STATUS UPDATES</div>
+              {dialogue.length===0&&<div style={{fontSize:9,color:"#4a4a6a",padding:"8px 0"}}>Updates appear after agents complete tasks.</div>}
               {dialogue.slice(0,12).map((d:any)=>(
                 <div key={d.id} style={{marginBottom:6,padding:"5px 8px",background:"#0f0f22",borderRadius:3,borderLeft:`2px solid ${d.senderColor}`}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
                     <span style={{color:d.senderColor,fontSize:9,fontWeight:700}}>{d.sender}</span>
-                    <span style={{color:"#2a2a4a",fontSize:9}}>{d.ts}</span>
+                    <span style={{color:"#4a4a6a",fontSize:9}}>{d.ts}</span>
                   </div>
                   <div style={{color:"#8892b0",fontSize:9,lineHeight:1.5}}>{d.text}</div>
                 </div>
@@ -1293,13 +1295,13 @@ export default function AgentOffice(){
           <div style={{background:"#0f0f20",border:"1px solid #2a2a4a",borderRadius:8,padding:22,width:280,color:"#8892b0"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
               <span style={{fontSize:11,color:"#e0e0ff",letterSpacing:"0.1em"}}>KEYBOARD SHORTCUTS</span>
-              <button onClick={()=>setShowSettings(false)} style={{background:"transparent",border:"none",color:"#4a5568",cursor:"pointer",fontSize:14}}>✕</button>
+              <button onClick={()=>setShowSettings(false)} style={{background:"transparent",border:"none",color:"#7a7a98",cursor:"pointer",fontSize:14}}>✕</button>
             </div>
-            <div style={{padding:"6px 8px",background:"#0a0a18",borderRadius:3,fontSize:10,color:"#4a5568",lineHeight:1.6}}>
+            <div style={{padding:"6px 8px",background:"#0a0a18",borderRadius:3,fontSize:10,color:"#7a7a98",lineHeight:1.6}}>
               {[["Space","Pause/Resume"],["M","Toggle minimap"],["D","Dep flow graph"],["O","Orchestrator panel"],["T","Switch tab"],["R","Replay mode"],["Esc","Close panels"]].map(([k,v])=>(
                 <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
                   <kbd style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:2,padding:"0 4px",fontSize:9,color:"#6C5CE7"}}>{k}</kbd>
-                  <span style={{color:"#4a5568",fontSize:10}}>{v}</span>
+                  <span style={{color:"#7a7a98",fontSize:10}}>{v}</span>
                 </div>
               ))}
             </div>
@@ -1329,7 +1331,7 @@ export default function AgentOffice(){
                 ].map(item=>(
                   <button key={item.action} onClick={()=>ctxAction(item.action)} disabled={item.disabled}
                     style={{display:"block",width:"100%",background:"transparent",border:"none",
-                      borderBottom:"1px solid #12121f",color:item.disabled?"#2a2a4a":"#8892b0",
+                      borderBottom:"1px solid #1e1e35",color:item.disabled?"#2a2a4a":"#8892b0",
                       padding:"7px 12px",textAlign:"left",cursor:item.disabled?"default":"pointer",
                       fontSize:9,fontFamily:"inherit"}}>
                     {item.label}
@@ -1346,14 +1348,14 @@ export default function AgentOffice(){
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div style={{width:7,height:7,borderRadius:"50%",background:paused?"#3a3a5e":incident?"#ff4444":"#00ff88",boxShadow:paused?"none":incident?"0 0 8px #ff444466":"0 0 8px #00ff8866"}}/>
           <span style={{color:"#e0e0ff",fontSize:12,letterSpacing:"0.14em",fontWeight:600}}>NABIT LLC</span>
-          <span style={{color:"#2a2a4a"}}>·</span>
+          <span style={{color:"#4a4a6a"}}>·</span>
           <span style={{color:incident?"#ff4444":"#4a5568",fontSize:10,letterSpacing:"0.09em"}}>{incident?incident.title:"AGENT OFFICE"}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <button onClick={toggleDepGraph} style={{background:showDepGraph?"#1a1a3a":"transparent",border:`1px solid ${showDepGraph?"#6C5CE7":"#2a2a4a"}`,color:showDepGraph?"#a29bfe":"#4a5568",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>⟡ FLOW</button>
           <button onClick={()=>{showLegendRef.current=!showLegendRef.current;setShowLegend(s=>!s);}} style={{background:"transparent",border:"1px solid #2a2a4a",color:showLegend?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>◉</button>
           <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>🗺</button>
-          <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#4a5568",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>⌨</button>
+          <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>⌨</button>
           <button onClick={toggleSound} style={{background:"transparent",border:"1px solid #2a2a4a",color:soundOn?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
           <button onClick={togglePause} style={{background:"transparent",border:"1px solid #2a2a4a",color:paused?"#00ff88":"#8892b0",padding:"3px 10px",borderRadius:3,fontSize:9,letterSpacing:"0.08em",cursor:"pointer",fontFamily:"inherit"}}>{paused?"▶":"⏸"}</button>
         </div>
@@ -1376,12 +1378,12 @@ export default function AgentOffice(){
           {tab==="roster"&&(<>
             {detail?(
               <div style={{flexShrink:0,borderBottom:"1px solid #1a1a2e",overflowY:"auto",maxHeight:"56%"}}>
-                <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#3a3a5e",borderBottom:"1px solid #12121f"}}>
+                <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>
                   <span>AGENT DETAIL{detail.id===ORCHESTRATOR_ID?" 👑":""}</span>
                   <div style={{display:"flex",gap:5}}>
                     {detail.id===ORCHESTRATOR_ID&&<button onClick={()=>setShowOrchPanel(true)} style={{background:"#6C5CE722",border:"1px solid #6C5CE744",color:"#a29bfe",cursor:"pointer",fontSize:10,fontFamily:"inherit",padding:"2px 6px",borderRadius:2}}>Panel</button>}
-                    <button onClick={()=>openConfig(detail)} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#4a5568",cursor:"pointer",fontSize:9,fontFamily:"inherit",padding:"1px 4px",borderRadius:2}}>⚙</button>
-                    <button onClick={()=>{setSelectedId(null);setDetail(null);}} style={{background:"transparent",border:"none",color:"#3a3a5e",cursor:"pointer",fontSize:12,fontFamily:"inherit",padding:0}}>✕</button>
+                    <button onClick={()=>openConfig(detail)} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",cursor:"pointer",fontSize:9,fontFamily:"inherit",padding:"1px 4px",borderRadius:2}}>⚙</button>
+                    <button onClick={()=>{setSelectedId(null);setDetail(null);}} style={{background:"transparent",border:"none",color:"#6a6a8e",cursor:"pointer",fontSize:12,fontFamily:"inherit",padding:0}}>✕</button>
                   </div>
                 </div>
                 <div style={{padding:"9px 11px"}}>
@@ -1389,32 +1391,32 @@ export default function AgentOffice(){
                     <span style={{fontSize:20}}>{detail.emoji}</span>
                     <div style={{flex:1}}>
                       <div style={{color:detail.color,fontWeight:700,fontSize:14}}>{detail.name}</div>
-                      <div style={{color:"#4a5568",fontSize:11}}>{detail.role}</div>
+                      <div style={{color:"#7a7a98",fontSize:11}}>{detail.role}</div>
                     </div>
                     <div style={{fontSize:9,padding:"2px 5px",borderRadius:2,background:detail.state==="working"?"#00ff8815":"#1a1a28",color:detail.state==="working"?"#00ff88":"#4a5568"}}>
                       {detail.state?.replace(/_/g," ")}
                     </div>
                   </div>
                   <div style={{marginBottom:8}}>
-                    <div style={{fontSize:10,color:"#3a3a5e",marginBottom:3,letterSpacing:"0.1em"}}>TIME BREAKDOWN</div>
+                    <div style={{fontSize:10,color:"#6a6a8e",marginBottom:3,letterSpacing:"0.1em"}}>TIME BREAKDOWN</div>
                     {[{l:"Working",v:pct(detail.timeWorking||0,totalF(detail)),c:"#00ff88"},{l:"Meeting",v:pct(detail.timeMeeting||0,totalF(detail)),c:"#FDCB6E"}].map(item=>(
                       <div key={item.l} style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
-                        <span style={{fontSize:10,color:"#4a5568",width:38}}>{item.l}</span>
+                        <span style={{fontSize:10,color:"#7a7a98",width:38}}>{item.l}</span>
                         <div style={{flex:1,height:3,background:"#1a1a30",borderRadius:2}}><div style={{height:3,width:item.v+"%",background:item.c,borderRadius:2}}/></div>
                         <span style={{fontSize:10,color:item.c,width:22,textAlign:"right"}}>{item.v}%</span>
                       </div>
                     ))}
                   </div>
                   <div style={{display:"flex",gap:12,marginBottom:8}}>
-                    <div style={{textAlign:"center"}}><div style={{fontSize:14,color:detail.color,fontWeight:700}}>{detail.tasksCompleted}</div><div style={{fontSize:10,color:"#3a3a5e"}}>TASKS</div></div>
-                    <div style={{textAlign:"center"}}><div style={{fontSize:14,color:"#FDCB6E",fontWeight:700}}>{detail.meetingsAttended}</div><div style={{fontSize:10,color:"#3a3a5e"}}>MEETINGS</div></div>
+                    <div style={{textAlign:"center"}}><div style={{fontSize:14,color:detail.color,fontWeight:700}}>{detail.tasksCompleted}</div><div style={{fontSize:10,color:"#6a6a8e"}}>TASKS</div></div>
+                    <div style={{textAlign:"center"}}><div style={{fontSize:14,color:"#FDCB6E",fontWeight:700}}>{detail.meetingsAttended}</div><div style={{fontSize:10,color:"#6a6a8e"}}>MEETINGS</div></div>
                   </div>
                   {detail.taskHistory?.length>0&&(
                     <div>
-                      <div style={{fontSize:10,color:"#3a3a5e",marginBottom:3,letterSpacing:"0.1em"}}>RECENT TASKS</div>
+                      <div style={{fontSize:10,color:"#6a6a8e",marginBottom:3,letterSpacing:"0.1em"}}>RECENT TASKS</div>
                       {[...detail.taskHistory].reverse().slice(0,5).map((t:string,i:number)=>(
-                        <div key={i} style={{fontSize:11,color:"#4a5568",padding:"2px 0",borderBottom:"1px solid #12121f"}}>
-                          <span style={{color:"#2a2a4a",marginRight:3}}>↳</span>{t}
+                        <div key={i} style={{fontSize:11,color:"#7a7a98",padding:"2px 0",borderBottom:"1px solid #1e1e35"}}>
+                          <span style={{color:"#4a4a6a",marginRight:3}}>↳</span>{t}
                         </div>
                       ))}
                     </div>
@@ -1446,9 +1448,9 @@ export default function AgentOffice(){
               </div>
             ):(
               <div style={{flexShrink:0,borderBottom:"1px solid #1a1a2e",maxHeight:"52%",overflowY:"auto"}}>
-                <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#3a3a5e",borderBottom:"1px solid #12121f"}}>ACTIVE AGENTS</div>
+                <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>ACTIVE AGENTS</div>
                 {activeAgents.map((a:any)=>(
-                  <div key={a.id} onClick={()=>{setSelectedId(a.id);setDetail(a);}} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 11px",borderBottom:"1px solid #12121f",cursor:"pointer",background:selectedId===a.id?"#14142a":"transparent"}}>
+                  <div key={a.id} onClick={()=>{setSelectedId(a.id);setDetail(a);}} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 11px",borderBottom:"1px solid #1e1e35",cursor:"pointer",background:selectedId===a.id?"#14142a":"transparent"}}>
                     <div style={{width:6,height:6,borderRadius:"50%",background:dotColor(a),flexShrink:0}}/>
                     <span style={{fontSize:12}}>{a.emoji}</span>
                     <div style={{flex:1,minWidth:0}}>
@@ -1456,32 +1458,32 @@ export default function AgentOffice(){
                         <span style={{color:a.color,fontSize:12,fontWeight:600}}>{a.name}</span>
                         {a.id===ORCHESTRATOR_ID&&<span style={{fontSize:10,color:"#FDCB6E"}}>👑</span>}
                       </div>
-                      <div style={{color:"#4a5568",fontSize:11,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{stateLabel(a)}</div>
+                      <div style={{color:"#7a7a98",fontSize:11,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{stateLabel(a)}</div>
                       {a.state==="working"&&<div style={{marginTop:2,height:2,background:"#1a1a30",borderRadius:1}}><div style={{height:2,width:a.progress+"%",background:a.color,borderRadius:1}}/></div>}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:3}}>
-                      {a.state==="working"&&<span style={{color:a.color,fontSize:11}}>{a.progress}%</span>}
-                      <button onClick={(e:any)=>{e.stopPropagation();openConfig(a);}} style={{background:"transparent",border:"none",color:"#2a2a4a",cursor:"pointer",fontSize:9,padding:0}}>⚙</button>
+                      {a.state==="working"&&<span style={{color:a.color,fontSize:10}}>●</span>}
+                      <button onClick={(e:any)=>{e.stopPropagation();openConfig(a);}} style={{background:"transparent",border:"none",color:"#4a4a6a",cursor:"pointer",fontSize:9,padding:0}}>⚙</button>
                     </div>
                   </div>
                 ))}
                 {benchAgents.length>0&&<>
-                  <div style={{padding:"4px 11px 3px",fontSize:11,letterSpacing:"0.1em",color:"#2a2a50",borderBottom:"1px solid #12121f",background:"#0a0a18",borderTop:"1px solid #1a1a2e"}}>HOLDING</div>
+                  <div style={{padding:"4px 11px 3px",fontSize:11,letterSpacing:"0.1em",color:"#5a5a7a",borderBottom:"1px solid #1e1e35",background:"#0a0a18",borderTop:"1px solid #1a1a2e"}}>HOLDING</div>
                   {benchAgents.map((a:any)=>(
-                    <div key={a.id} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 11px",borderBottom:"1px solid #12121f",background:"#0a0a18",opacity:0.7}}>
+                    <div key={a.id} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 11px",borderBottom:"1px solid #1e1e35",background:"#0a0a18",opacity:0.7}}>
                       <span style={{fontSize:11}}>{a.emoji}</span>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{color:"#4a5568",fontSize:9,fontWeight:600}}>{a.name}</div>
-                        <div style={{color:"#2a2a4a",fontSize:11}}>{a.role}</div>
+                        <div style={{color:"#7a7a98",fontSize:9,fontWeight:600}}>{a.name}</div>
+                        <div style={{color:"#4a4a6a",fontSize:11}}>{a.role}</div>
                       </div>
-                      <button onClick={()=>promoteAgent(a.id)} style={{background:"#6C5CE722",border:"1px solid #6C5CE733",color:"#a29bfe",padding:"2px 6px",borderRadius:3,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Deploy →</button>
+                      <button title="Preview: moves agent to floor visually (does not create real agent yet)" onClick={()=>promoteAgent(a.id)} style={{background:"#6C5CE722",border:"1px solid #6C5CE733",color:"#a29bfe",padding:"2px 6px",borderRadius:3,fontSize:10,cursor:"pointer",fontFamily:"inherit",opacity:0.7}}>Preview →</button>
                     </div>
                   ))}
                 </>}
               </div>
             )}
             <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
-              <div style={{flexShrink:0,padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#3a3a5e",borderBottom:"1px solid #12121f"}}>ACTIVITY FEED</div>
+              <div style={{flexShrink:0,padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>ACTIVITY FEED</div>
               <div ref={feedRef} style={{flex:1,overflowY:"auto",padding:"3px 0"}}>
                 {feed.map((e:any)=><div key={e.id} style={{padding:"2px 11px",display:"flex",gap:5,alignItems:"flex-start"}}>
                   <span style={{color:"#1a1a3a",fontSize:9,flexShrink:0,marginTop:2}}>{e.ts}</span>
@@ -1493,15 +1495,15 @@ export default function AgentOffice(){
 
           {tab==="meetings"&&(
             <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
-              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#3a3a5e",borderBottom:"1px solid #12121f"}}>TRANSCRIPTS</div>
-              {meetingLogs.length===0&&<div style={{padding:"20px 11px",color:"#2a2a4a",fontSize:11,textAlign:"center",lineHeight:1.8}}>Transcripts appear<br/>after meetings end.</div>}
+              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>TRANSCRIPTS</div>
+              {meetingLogs.length===0&&<div style={{padding:"20px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center",lineHeight:1.8}}>Transcripts appear<br/>after meetings end.</div>}
               {meetingLogs.map((m:any)=>(
-                <div key={m.id} style={{padding:"7px 11px",borderBottom:"1px solid #12121f"}}>
+                <div key={m.id} style={{padding:"7px 11px",borderBottom:"1px solid #1e1e35"}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{color:"#FDCB6E",fontSize:9,fontWeight:600}}>{m.topic}</span>
-                    <span style={{color:"#2a2a4a",fontSize:9}}>{m.ts}</span>
+                    <span style={{color:"#4a4a6a",fontSize:9}}>{m.ts}</span>
                   </div>
-                  <div style={{color:"#3a3a5e",fontSize:11,marginBottom:3}}>{m.attendees.join(", ")}</div>
+                  <div style={{color:"#6a6a8e",fontSize:11,marginBottom:3}}>{m.attendees.join(", ")}</div>
                   <div style={{color:"#8892b0",fontSize:12,lineHeight:1.7,whiteSpace:"pre-line"}}>{m.summary}</div>
                 </div>
               ))}
@@ -1510,19 +1512,19 @@ export default function AgentOffice(){
 
           {tab==="board"&&(
             <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
-              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#3a3a5e",borderBottom:"1px solid #12121f"}}>EFFICIENCY RANKING</div>
-              {leaderboard.length===0&&<div style={{padding:"18px 11px",color:"#2a2a4a",fontSize:11,textAlign:"center"}}>Collecting data…</div>}
+              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>EFFICIENCY RANKING</div>
+              {leaderboard.length===0&&<div style={{padding:"18px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Collecting data…</div>}
               {leaderboard.map((a:any,rank:number)=>(
-                <div key={a.id} style={{padding:"6px 11px",borderBottom:"1px solid #12121f",display:"flex",alignItems:"center",gap:6}}>
+                <div key={a.id} style={{padding:"6px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:10,color:rank===0?"#FFD700":rank===1?"#C0C0C0":rank===2?"#CD7F32":"#2a2a4a",width:14,textAlign:"center",fontWeight:700}}>{rank===0?"①":rank===1?"②":rank===2?"③":String(rank+1)}</span>
                   <span style={{fontSize:11}}>{a.emoji}</span>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{color:a.color,fontSize:12,fontWeight:600}}>{a.name}</div>
                     <div style={{display:"flex",gap:7,marginTop:2}}>
                       <span style={{fontSize:10,color:"#00ff88"}}>{a.tasksCompleted} tasks</span>
-                      <span style={{fontSize:10,color:"#FDCB6E"}}>{a.efficiency}% on task</span>
+                      <span style={{fontSize:10,color:"#FDCB6E"}}>{a.mood}% mood</span>
                     </div>
-                    <div style={{marginTop:2,height:2,background:"#1a1a30",borderRadius:1}}><div style={{height:2,width:a.efficiency+"%",background:a.color,borderRadius:1}}/></div>
+                    <div style={{marginTop:2,height:2,background:"#1a1a30",borderRadius:1}}><div style={{height:2,width:Math.min(100,a.tasksCompleted*10)+"%",background:a.color,borderRadius:1}}/></div>
                   </div>
                 </div>
               ))}
@@ -1531,25 +1533,25 @@ export default function AgentOffice(){
 
           {tab==="flow"&&(
             <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
-              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#3a3a5e",borderBottom:"1px solid #12121f"}}>TASK WATERFALL</div>
-              {waterfall.length===0&&<div style={{padding:"20px 11px",color:"#2a2a4a",fontSize:11,textAlign:"center",lineHeight:1.8}}>Task completions<br/>appear here.</div>}
+              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>TASK WATERFALL</div>
+              {waterfall.length===0&&<div style={{padding:"20px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center",lineHeight:2}}>Real task completions appear here<br/>when agents finish work sessions.<br/><br/><span style={{fontSize:10,color:"#4a4a6a"}}>Tracks: who finished → what task → triggers</span></div>}
               {waterfall.map((wf:any)=>{
                 const ag=ALL_AGENTS.find(a=>a.id===wf.agentId);
                 if(!ag) return null;
                 const deps=DEPENDENCIES[wf.agentId];
                 return (
-                  <div key={wf.id} style={{padding:"5px 11px",borderBottom:"1px solid #12121f"}}>
+                  <div key={wf.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35"}}>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                       <span style={{fontSize:11}}>{ag.emoji}</span>
                       <div style={{flex:1}}>
                         <span style={{color:ag.color,fontSize:12,fontWeight:700}}>{ag.name}</span>
-                        <span style={{color:"#4a5568",fontSize:11}}> ✓ {wf.task}</span>
+                        <span style={{color:"#7a7a98",fontSize:11}}> ✓ {wf.task}</span>
                       </div>
-                      <span style={{color:"#2a2a4a",fontSize:9}}>{wf.ts}</span>
+                      <span style={{color:"#4a4a6a",fontSize:9}}>{wf.ts}</span>
                     </div>
                     {deps&&deps.length>0&&(
                       <div style={{paddingLeft:18,display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-                        <span style={{color:"#3a3a5e",fontSize:9}}>triggers →</span>
+                        <span style={{color:"#6a6a8e",fontSize:9}}>triggers →</span>
                         {deps.map(depId=>{const dep=ALL_AGENTS.find(a=>a.id===depId);return dep?<span key={depId} style={{fontSize:9,color:dep.color,background:dep.color+"15",padding:"1px 5px",borderRadius:2,border:`1px solid ${dep.color}33`}}>{dep.emoji} {dep.name}</span>:null;})}
                       </div>
                     )}
@@ -1564,7 +1566,7 @@ export default function AgentOffice(){
             {[{l:"DONE",v:stats.completed,c:"#6C5CE7"},{l:"ACTIVE",v:stats.working,c:"#00ff88"},{l:"MTG",v:stats.meeting,c:"#FDCB6E"},{l:"IDLE",v:stats.idle,c:"#3a3a5e"}].map((s,i,arr)=>(
               <div key={s.l} style={{flex:1,textAlign:"center",borderRight:i<arr.length-1?"1px solid #1a1a2e":"none"}}>
                 <div style={{fontSize:16,fontWeight:700,color:s.c,lineHeight:1}}>{s.v}</div>
-                <div style={{fontSize:10,color:"#2a2a4a",letterSpacing:"0.06em",marginTop:2}}>{s.l}</div>
+                <div style={{fontSize:10,color:"#4a4a6a",letterSpacing:"0.06em",marginTop:2}}>{s.l}</div>
               </div>
             ))}
           </div>
@@ -1572,16 +1574,16 @@ export default function AgentOffice(){
           {/* Replay scrubber */}
           <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",padding:"5px 11px"}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-              <span style={{fontSize:10,color:"#3a3a5e",letterSpacing:"0.1em"}}>REPLAY</span>
+              <span style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em"}}>REPLAY</span>
               <button onClick={()=>{setReplayMode(r=>{replayModeRef.current=!r;return!r;});}} style={{background:replayMode?"#1a1a3a":"transparent",border:`1px solid ${replayMode?"#6C5CE7":"#2a2a4a"}`,color:replayMode?"#a29bfe":"#4a5568",padding:"1px 6px",borderRadius:2,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{replayMode?"● REC OFF":"○ REC ON"}</button>
-              <span style={{fontSize:9,color:"#2a2a4a",marginLeft:"auto"}}>{replayLen} frames</span>
+              <span style={{fontSize:9,color:"#4a4a6a",marginLeft:"auto"}}>{replayLen} frames</span>
             </div>
             {replayMode&&replayLen>0&&(
               <div style={{display:"flex",alignItems:"center",gap:5}}>
                 <input type="range" min="0" max={Math.max(0,replayLen-1)} value={replayPos}
                   onChange={(e:any)=>{const v=+e.target.value;setReplayPos(v);replayCurRef.current=v;}}
                   style={{flex:1,accentColor:"#6C5CE7"}}/>
-                <span style={{fontSize:10,color:"#4a5568",width:26,textAlign:"right"}}>{replayPos+1}/{replayLen}</span>
+                <span style={{fontSize:10,color:"#7a7a98",width:26,textAlign:"right"}}>{replayPos+1}/{replayLen}</span>
               </div>
             )}
             {timeline.length>0&&(
