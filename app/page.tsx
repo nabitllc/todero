@@ -198,19 +198,10 @@ function ChatTab() {
   const [activeChat, setActiveChat] = useState<string|null>(null)
   const [search, setSearch] = useState('')
   const [inputVal, setInputVal] = useState('')
-  const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6')
   const [loading, setLoading] = useState(false)
   const [selectedFile, setSelectedFile] = useState<string|null>(null)
   const [chatError, setChatError] = useState<string|null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-
-  const models = [
-    { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', provider: 'Anthropic' },
-    { id: 'claude-haiku-4-5', label: 'Haiku 4.5', provider: 'Anthropic' },
-    { id: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', provider: 'OpenAI' },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', provider: 'Google' },
-  ]
 
   // Load chats from Supabase on mount
   useEffect(() => {
@@ -248,7 +239,7 @@ function ChatTab() {
     const conv: ChatConversation = {
       id,
       title: 'New Chat',
-      model: selectedModel,
+      model: 'kaos',
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -259,7 +250,7 @@ function ChatTab() {
     await fetch('/api/chat/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, title: 'New Chat', model: selectedModel }),
+      body: JSON.stringify({ id, title: 'New Chat', model: 'kaos' }),
     })
   }
 
@@ -332,7 +323,7 @@ function ChatTab() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: selectedModel, messages: allMessages }),
+        body: JSON.stringify({ conversationId: activeConv.id, messages: allMessages }),
       })
 
       const data = await res.json()
@@ -346,7 +337,7 @@ function ChatTab() {
         id: data.id || 'msg-' + Date.now(),
         role: 'assistant',
         content: data.content,
-        model: selectedModel,
+        model: 'kaos',
       }
 
       const finalChats = updatedChats.map(c =>
@@ -410,7 +401,7 @@ function ChatTab() {
               >
                 <p className="font-medium truncate pr-5">{c.title}</p>
                 <p className="text-[10px] mt-0.5 opacity-60">
-                  {models.find(m => m.id === c.model)?.label || c.model}
+                  KAOS
                 </p>
                 <p className="text-[9px] opacity-40 mt-1">
                   {new Date(c.updatedAt).toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}
@@ -443,7 +434,7 @@ function ChatTab() {
             <div className="border-b border-zinc-800/40 px-6 py-3 shrink-0">
               <h2 className="text-white text-sm font-medium">{activeConv.title}</h2>
               <p className="text-zinc-500 text-xs mt-0.5">
-                {models.find(m => m.id === activeConv.model)?.label}
+                KAOS — Claude Max
               </p>
             </div>
 
@@ -482,7 +473,7 @@ function ChatTab() {
                       </p>
                       {msg.model && (
                         <p className="text-[10px] mt-2 opacity-50">
-                          {models.find(m => m.id === msg.model)?.label}
+                          KAOS
                         </p>
                       )}
                     </div>
@@ -545,17 +536,10 @@ function ChatTab() {
                   </svg>
                 </button>
 
-                {/* Model selector */}
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-300 outline-none cursor-pointer">
-                  {models.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.label} ({m.provider})
-                    </option>
-                  ))}
-                </select>
+                {/* KAOS badge */}
+                <span className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-500 shrink-0">
+                  🧠 KAOS
+                </span>
 
                 {/* Input */}
                 <input
@@ -568,7 +552,7 @@ function ChatTab() {
                       handleSend()
                     }
                   }}
-                  placeholder="Message KAOS..."
+                  placeholder="Message KAOS (Claude Max)..."
                   className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60 text-white text-sm placeholder-zinc-600 outline-none focus:border-zinc-700 transition-all"
                 />
 
