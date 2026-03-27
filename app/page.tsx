@@ -1,5 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import AgentOffice from '@/components/AgentOffice'
 
 const KEMUNI_START     = new Date('2026-03-21')
 const KEMUNI_DEADLINE  = new Date('2026-04-20')
@@ -119,7 +121,7 @@ const NAV = [
 type Tab = typeof NAV[number]['id']
 
 // Chat types
-interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; attachments?: string[] }
+interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[] }
 interface ChatConversation { id: string; title: string; model: string; messages: ChatMessage[]; createdAt: number; updatedAt: number }
 
 const FLOOR_DESKS = [
@@ -193,23 +195,87 @@ function SH({icon,children,sub}:{icon:string;children:React.ReactNode;sub?:strin
 }
 
 // ── Chat Component ────────────────────────────────────────────────────────
+function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      components={{
+        p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+        ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+        li: ({ children }) => <li className="text-sm">{children}</li>,
+        code: ({ inline, children }: any) =>
+          inline
+            ? <code className="px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-400 text-[11px] font-mono">{children}</code>
+            : <pre className="my-2 p-3 rounded-lg bg-zinc-950 border border-zinc-800 overflow-x-auto"><code className="text-[11px] font-mono text-emerald-300 whitespace-pre">{children}</code></pre>,
+        strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+        em: ({ children }) => <em className="italic text-zinc-400">{children}</em>,
+        h1: ({ children }) => <h1 className="text-base font-bold text-white mb-2 mt-3">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-sm font-bold text-white mb-1.5 mt-3">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-sm font-semibold text-zinc-200 mb-1 mt-2">{children}</h3>,
+        blockquote: ({ children }) => <blockquote className="border-l-2 border-zinc-600 pl-3 my-2 text-zinc-400 italic">{children}</blockquote>,
+        a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">{children}</a>,
+        hr: () => <hr className="border-zinc-700 my-3" />,
+      }}>
+      {content}
+    </ReactMarkdown>
+  )
+}
+
+function groupChatsByDate(chats: ChatConversation[]): { label: string; items: ChatConversation[] }[] {
+  const now = Date.now()
+  const DAY = 86400000
+  const groups: { label: string; items: ChatConversation[] }[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'This Week', items: [] },
+    { label: 'Older', items: [] },
+  ]
+  for (const c of chats) {
+    const age = now - c.updatedAt
+    if (age < DAY) groups[0].items.push(c)
+    else if (age < DAY * 2) groups[1].items.push(c)
+    else if (age < DAY * 7) groups[2].items.push(c)
+    else groups[3].items.push(c)
+  }
+  return groups.filter(g => g.items.length > 0)
+}
+
 function ChatTab() {
   const [chats, setChats] = useState<ChatConversation[]>([])
   const [activeChat, setActiveChat] = useState<string|null>(null)
   const [search, setSearch] = useState('')
   const [inputVal, setInputVal] = useState('')
   const [loading, setLoading] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<string|null>(null)
+  const [isSending, setIsSending] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<{name: string; content: string}|null>(null)
   const [chatError, setChatError] = useState<string|null>(null)
+  const [copiedId, setCopiedId] = useState<string|null>(null)
+  const [lastUserMsg, setLastUserMsg] = useState<ChatMessage|null>(null)
+  const [userScrolledUp, setUserScrolledUp] = useState(false)
+  const [renamingTitle, setRenamingTitle] = useState<string|null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<string>('main')
+  const [sidebarFocusIdx, setSidebarFocusIdx] = useState<number>(-1)
+  const abortControllerRef = useRef<AbortController|null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
 
-  // Load chats from Supabase on mount
+  const AGENT_OPTIONS = [
+    { id: 'main', label: '🧠 KAOS', desc: 'Chief of Staff' },
+    { id: 'kemuni-sme', label: '🚀 Kemuni SME', desc: 'Kemuni Specialist' },
+    { id: 'vespera-sme', label: '🖤 Vespera SME', desc: 'Vespera Specialist' },
+    { id: 'scout', label: '🔍 Scout', desc: 'Research Agent' },
+  ]
+  const currentAgent = AGENT_OPTIONS.find(a => a.id === selectedAgent) || AGENT_OPTIONS[0]
+
+  // Load chats from Supabase on mount, restore active chat from localStorage
   useEffect(() => {
+    const savedActiveChat = typeof window !== 'undefined' ? localStorage.getItem('mc-active-chat') : null
     fetch('/api/chat/conversations')
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) {
-          // Normalize Supabase snake_case → camelCase for UI
           const normalized: ChatConversation[] = data.map((c: any) => ({
             id: c.id,
             title: c.title,
@@ -219,34 +285,108 @@ function ChatTab() {
               role: m.role,
               content: m.content,
               model: m.model,
+              ts: m.created_at ? new Date(m.created_at).getTime() : undefined,
             })),
             createdAt: new Date(c.created_at).getTime(),
             updatedAt: new Date(c.updated_at).getTime(),
           }))
           setChats(normalized)
+          // Restore last active chat if it still exists
+          if (savedActiveChat && normalized.find(c => c.id === savedActiveChat)) {
+            setActiveChat(savedActiveChat)
+          }
         }
       })
-      .catch(() => {/* silently fail, will retry on next render */})
+      .catch(() => {})
   }, [])
 
-  // Auto-scroll to bottom on new messages
+  // Persist active chat to localStorage whenever it changes
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chats, loading])
+    if (typeof window !== 'undefined') {
+      if (activeChat) localStorage.setItem('mc-active-chat', activeChat)
+      else localStorage.removeItem('mc-active-chat')
+    }
+  }, [activeChat])
+
+  // Detect when user scrolls up (so we don't hijack scroll during streaming)
+  useEffect(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    const onScroll = () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+      setUserScrolledUp(!atBottom)
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [activeChat])
+
+  // Auto-scroll to bottom only when user hasn't scrolled up
+  useEffect(() => {
+    if (!userScrolledUp) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [chats, loading, userScrolledUp])
+
+  // Scroll to bottom when switching chats
+  useEffect(() => {
+    setUserScrolledUp(false)
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'instant' }), 50)
+  }, [activeChat])
+
+  // Poll active conversation while sending (catches dropped streams on tab switch/refresh)
+  const reloadActiveConv = useCallback(async () => {
+    if (!activeChat) return
+    try {
+      const res = await fetch('/api/chat/conversations')
+      const data = await res.json()
+      if (!Array.isArray(data)) return
+      const conv = data.find((c: any) => c.id === activeChat)
+      if (!conv) return
+      const normalized: ChatConversation = {
+        id: conv.id,
+        title: conv.title,
+        model: conv.model,
+        messages: (conv.messages || []).map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          model: m.model,
+          ts: m.created_at ? new Date(m.created_at).getTime() : undefined,
+        })),
+        createdAt: new Date(conv.created_at).getTime(),
+        updatedAt: new Date(conv.updated_at).getTime(),
+      }
+      setChats(prev => prev.map(c => c.id === activeChat ? normalized : c))
+    } catch { /* ignore */ }
+  }, [activeChat])
+
+  // On tab visibility restored, reload active conv in case stream completed while away
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') reloadActiveConv()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [reloadActiveConv])
+
+  // Cmd+K / arrow-key nav wired up after helpers defined (see below)
+
+  // Auto-grow textarea
+  const adjustTextarea = () => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  }
 
   const newChat = async () => {
     const id = 'chat-' + Date.now()
     const conv: ChatConversation = {
-      id,
-      title: 'New Chat',
-      model: 'kaos',
-      messages: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      id, title: 'New Chat', model: 'kaos', messages: [],
+      createdAt: Date.now(), updatedAt: Date.now(),
     }
     setChats([conv, ...chats])
     setActiveChat(id)
-    // Persist to Supabase
     await fetch('/api/chat/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -260,10 +400,63 @@ function ChatTab() {
     await fetch(`/api/chat/conversations?id=${id}`, { method: 'DELETE' })
   }
 
+  const renameChat = async (id: string, title: string) => {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    setChats(prev => prev.map(c => c.id === id ? { ...c, title: trimmed } : c))
+    setRenamingTitle(null)
+    await fetch('/api/chat/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, title: trimmed }),
+    })
+  }
+
+  const exportChat = (conv: ChatConversation) => {
+    const md = conv.messages.map(m =>
+      `### ${m.role === 'user' ? '👤 You' : '🧠 KAOS'}${m.ts ? ` — ${new Date(m.ts).toLocaleTimeString()}` : ''}\n\n${m.content}`
+    ).join('\n\n---\n\n')
+    const blob = new Blob([`# ${conv.title}\n\n${md}`], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${conv.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const activeConv = chats.find(c => c.id === activeChat)
   const filteredChats = chats.filter(c =>
     c.title.toLowerCase().includes(search.toLowerCase())
   )
+
+  // Cmd+K → new chat; arrow keys → navigate sidebar
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        newChat()
+        return
+      }
+      // Arrow nav in sidebar (only when not typing)
+      if (document.activeElement === textareaRef.current) return
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSidebarFocusIdx(i => Math.min(i + 1, filteredChats.length - 1))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSidebarFocusIdx(i => Math.max(i - 1, 0))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [filteredChats.length])
+
+  useEffect(() => {
+    if (sidebarFocusIdx < 0 || !filteredChats[sidebarFocusIdx]) return
+    setActiveChat(filteredChats[sidebarFocusIdx].id)
+  }, [sidebarFocusIdx])
 
   const persistMessage = async (convId: string, msg: ChatMessage) => {
     await fetch('/api/chat/messages', {
@@ -279,43 +472,54 @@ function ChatTab() {
     })
   }
 
-  const handleSend = async () => {
-    if (!inputVal.trim() || !activeConv) return
-    setChatError(null)
+  const copyMessage = (id: string, content: string) => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    })
+  }
 
-    const isFirstMsg = activeConv.messages.length === 0
-    const title = isFirstMsg ? inputVal.slice(0, 40) : activeConv.title
+  const stopGeneration = () => {
+    abortControllerRef.current?.abort()
+    setIsSending(false)
+    setLoading(false)
+  }
 
-    // Add user message locally
+  const doSend = async (msgContent: string, msgId: string, convToUse: ChatConversation, prevChats: ChatConversation[]) => {
+    const isFirstMsg = convToUse.messages.length === 0
+    const title = isFirstMsg ? msgContent.slice(0, 40) : convToUse.title
+
     const userMsg: ChatMessage = {
-      id: 'msg-' + Date.now(),
+      id: msgId,
       role: 'user',
-      content: selectedFile ? `[📎 ${selectedFile}]\n${inputVal}` : inputVal,
+      content: msgContent,
+      ts: Date.now(),
     }
+    setLastUserMsg(userMsg)
 
-    const updatedChats = chats.map(c =>
-      c.id === activeChat
+    const updatedChats = prevChats.map(c =>
+      c.id === convToUse.id
         ? { ...c, messages: [...c.messages, userMsg], title, updatedAt: Date.now() }
         : c
     )
     setChats(updatedChats)
-    setInputVal('')
-    setSelectedFile(null)
 
-    // Persist user message + update title if first
-    await persistMessage(activeConv.id, userMsg)
+    await persistMessage(convToUse.id, userMsg)
     if (isFirstMsg) {
       await fetch('/api/chat/conversations', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: activeConv.id, title }),
+        body: JSON.stringify({ id: convToUse.id, title }),
       })
     }
 
-    // Call real LLM
     setLoading(true)
+    setIsSending(true)
+    setChatError(null)
+    const abortCtrl = new AbortController()
+    abortControllerRef.current = abortCtrl
     try {
-      const allMessages = [...activeConv.messages, userMsg].map(m => ({
+      const allMessages = [...convToUse.messages, userMsg].map(m => ({
         role: m.role,
         content: m.content,
       }))
@@ -323,38 +527,137 @@ function ChatTab() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: activeConv.id, messages: allMessages }),
+        body: JSON.stringify({ conversationId: convToUse.id, messages: allMessages, agentId: selectedAgent }),
+        signal: abortCtrl.signal,
       })
 
-      const data = await res.json()
-      if (!res.ok || data.error) {
-        setChatError(data.error || 'Unknown error from LLM')
+      if (!res.ok || !res.body) {
+        setChatError('Gateway error — could not stream response')
         setLoading(false)
+        setIsSending(false)
         return
       }
 
-      const assistantMsg: ChatMessage = {
-        id: data.id || 'msg-' + Date.now(),
+      // SSE streaming: insert a placeholder assistant message, append tokens as they arrive
+      const streamMsgId = 'msg-stream-' + Date.now()
+      const placeholderMsg: ChatMessage = {
+        id: streamMsgId,
         role: 'assistant',
-        content: data.content,
+        content: '',
         model: 'kaos',
+        ts: Date.now(),
       }
 
-      const finalChats = updatedChats.map(c =>
-        c.id === activeChat
-          ? { ...c, messages: [...c.messages, assistantMsg], updatedAt: Date.now() }
+      // Add placeholder to chat
+      setChats(prev => prev.map(c =>
+        c.id === convToUse.id
+          ? { ...c, messages: [...c.messages, placeholderMsg], updatedAt: Date.now() }
           : c
-      )
-      setChats(finalChats)
+      ))
+      setLoading(false) // dots go away once streaming starts
 
-      // Persist assistant message
-      await persistMessage(activeConv.id, assistantMsg)
-    } catch (err) {
-      setChatError('Network error — could not reach LLM')
-    } finally {
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let fullContent = ''
+      let finalId = streamMsgId
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value, { stream: true })
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue
+          const raw = line.slice(6).trim()
+          try {
+            const parsed = JSON.parse(raw)
+            if (parsed.error) {
+              setChatError(parsed.error)
+              break
+            }
+            if (parsed.done) {
+              finalId = parsed.id || streamMsgId
+              break
+            }
+            if (parsed.delta) {
+              fullContent += parsed.delta
+              // Update the streaming message content in place
+              setChats(prev => prev.map(c =>
+                c.id === convToUse.id
+                  ? {
+                      ...c,
+                      messages: c.messages.map(m =>
+                        m.id === streamMsgId ? { ...m, content: fullContent } : m
+                      ),
+                    }
+                  : c
+              ))
+            }
+          } catch { /* skip bad lines */ }
+        }
+      }
+
+      // Server-side already persisted the message to Supabase.
+      // Just update the local placeholder id to the final server id.
+      if (finalId !== streamMsgId) {
+        setChats(prev => prev.map(c =>
+          c.id === convToUse.id
+            ? { ...c, messages: c.messages.map(m => m.id === streamMsgId ? { ...m, id: finalId } : m) }
+            : c
+        ))
+      }
+
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        setChatError('Network error — could not reach LLM')
+      }
       setLoading(false)
+    } finally {
+      setIsSending(false)
+      abortControllerRef.current = null
     }
   }
+
+  const handleSend = async () => {
+    if (!inputVal.trim() || !activeConv) return
+    const MAX_FILE = 32768
+    const fileContent = selectedFile
+      ? (selectedFile.content.length > MAX_FILE ? selectedFile.content.slice(0, MAX_FILE) + '\n\n[...truncated at 32KB]' : selectedFile.content)
+      : null
+    const content = fileContent
+      ? `[📎 ${selectedFile!.name}]\n\n${fileContent}\n\n---\n${inputVal}`
+      : inputVal
+    const msgId = 'msg-' + Date.now()
+    setInputVal('')
+    setSelectedFile(null)
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'
+    await doSend(content, msgId, activeConv, chats)
+  }
+
+  const handleRetry = async () => {
+    if (!lastUserMsg || !activeConv) return
+    setChatError(null)
+    // Remove the last user message from the conv (we'll re-add it)
+    const convWithoutLast = {
+      ...activeConv,
+      messages: activeConv.messages.filter(m => m.id !== lastUserMsg.id),
+    }
+    await doSend(lastUserMsg.content, 'msg-retry-' + Date.now(), convWithoutLast, chats)
+  }
+
+  const handleFileAttach = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.txt,.md,.ts,.tsx,.js,.jsx,.json,.csv,.py,.sh,.yaml,.yml,.env'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      const text = await file.text()
+      setSelectedFile({ name: file.name, content: text })
+    }
+    input.click()
+  }
+
+  const groupedChats = groupChatsByDate(filteredChats)
 
   return (
     <div className="flex gap-0 h-[calc(100vh-88px)] -mx-6 -my-5">
@@ -385,33 +688,40 @@ function ChatTab() {
           </div>
         </div>
 
-        {/* Recent Chats */}
-        <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+        {/* Grouped Chats */}
+        <div className="flex-1 overflow-y-auto px-2 py-2">
           {filteredChats.length === 0 ? (
             <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
           ) : (
-            filteredChats.map(c => (
-              <div
-                key={c.id}
-                className={
-                  'group relative w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer ' +
-                  (activeChat === c.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')
-                }
-                onClick={() => setActiveChat(c.id)}
-              >
-                <p className="font-medium truncate pr-5">{c.title}</p>
-                <p className="text-[10px] mt-0.5 opacity-60">
-                  KAOS
-                </p>
-                <p className="text-[9px] opacity-40 mt-1">
-                  {new Date(c.updatedAt).toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}
-                </p>
-                <button
-                  onClick={(e) => { e.stopPropagation(); deleteChat(c.id) }}
-                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all text-[10px] p-0.5"
-                  title="Delete">
-                  ✕
-                </button>
+            groupedChats.map(group => (
+              <div key={group.label} className="mb-2">
+                <p className="text-[9px] uppercase tracking-widest text-zinc-700 font-semibold px-3 py-1.5">{group.label}</p>
+                <div className="space-y-0.5">
+                  {group.items.map(c => {
+                    const flatIdx = filteredChats.indexOf(c)
+                    return (
+                    <div
+                      key={c.id}
+                      className={
+                        'group relative w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer ' +
+                        (activeChat === c.id ? 'bg-zinc-800 text-white' : sidebarFocusIdx === flatIdx ? 'bg-zinc-900/70 text-zinc-300 ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')
+                      }
+                      onClick={() => { setActiveChat(c.id); setSidebarFocusIdx(flatIdx) }}
+                    >
+                      <p className="font-medium truncate pr-5">{c.title}</p>
+                      <p className="text-[9px] opacity-40 mt-0.5">
+                        {new Date(c.updatedAt).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}
+                      </p>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteChat(c.id) }}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all text-[10px] p-0.5"
+                        title="Delete">
+                        ✕
+                      </button>
+                    </div>
+                  )
+                  })}
+                </div>
               </div>
             ))
           )}
@@ -419,7 +729,7 @@ function ChatTab() {
       </div>
 
       {/* CENTER: CHAT AREA */}
-      <div className="flex-1 flex flex-col min-w-0" style={{background:'#0a0a0a'}}>
+      <div className="flex-1 flex flex-col min-w-0 relative" style={{background:'#0a0a0a'}}>
         {!activeConv ? (
           <div className="flex-1 flex flex-col items-center justify-center">
             <div className="text-center">
@@ -431,15 +741,73 @@ function ChatTab() {
         ) : (
           <>
             {/* Header */}
-            <div className="border-b border-zinc-800/40 px-6 py-3 shrink-0">
-              <h2 className="text-white text-sm font-medium">{activeConv.title}</h2>
-              <p className="text-zinc-500 text-xs mt-0.5">
-                KAOS — Claude Max
-              </p>
+            <div className="border-b border-zinc-800/40 px-6 py-3 shrink-0 flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                {renamingTitle !== null ? (
+                  <input
+                    autoFocus
+                    value={renamingTitle}
+                    onChange={e => setRenamingTitle(e.target.value)}
+                    onBlur={() => renameChat(activeConv.id, renamingTitle)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') renameChat(activeConv.id, renamingTitle)
+                      if (e.key === 'Escape') setRenamingTitle(null)
+                    }}
+                    className="bg-transparent border-b border-zinc-600 text-white text-sm font-medium outline-none w-full"
+                  />
+                ) : (
+                  <h2
+                    className="text-white text-sm font-medium truncate cursor-pointer hover:text-zinc-300 transition-colors"
+                    title="Double-click to rename"
+                    onDoubleClick={() => setRenamingTitle(activeConv.title)}>
+                    {activeConv.title}
+                  </h2>
+                )}
+                <p className="text-zinc-500 text-xs mt-0.5">{currentAgent.label} — Claude Max</p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isSending ? (
+                  <button
+                    onClick={stopGeneration}
+                    className="text-[10px] px-2.5 py-1 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-300 border border-red-800/50 transition-colors flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-red-400 inline-block" />
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => exportChat(activeConv)}
+                    className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors">
+                    ↓ Export
+                  </button>
+                )}
+              </div>
             </div>
 
+            {/* KAOS is writing status bar */}
+            {isSending && (
+              <div className="border-b border-zinc-800/40 px-6 py-2 shrink-0 flex items-center gap-2.5" style={{background:'#0d0d0d'}}>
+                <div className="flex gap-0.5 items-center">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'0ms'}} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'120ms'}} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'240ms'}} />
+                </div>
+                <span className="text-xs text-zinc-500">🧠 <span className="text-blue-400 font-medium">KAOS</span> is writing…</span>
+              </div>
+            )}
+
+            {/* Scroll to bottom button */}
+            {userScrolledUp && (
+              <div className="absolute bottom-28 right-8 z-10">
+                <button
+                  onClick={() => { setUserScrolledUp(false); messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+                  className="w-8 h-8 rounded-full bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 text-white text-sm flex items-center justify-center shadow-lg transition-all">
+                  ↓
+                </button>
+              </div>
+            )}
+
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-4 relative">
               {activeConv.messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-zinc-600 text-sm">Start a conversation</p>
@@ -448,34 +816,44 @@ function ChatTab() {
                 activeConv.messages.map(msg => (
                   <div
                     key={msg.id}
-                    className={
-                      'flex gap-3 ' + (msg.role === 'user' ? 'flex-row-reverse' : '')
-                    }>
+                    className={'group flex gap-3 ' + (msg.role === 'user' ? 'flex-row-reverse' : '')}>
                     {/* Avatar */}
                     <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm"
-                      style={{
-                        background: msg.role === 'user' ? '#1e1e1e' : '#3b82f620',
-                      }}>
-                      {msg.role === 'user' ? '👤' : '🏢'}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm mt-0.5"
+                      style={{ background: msg.role === 'user' ? '#1e1e1e' : '#3b82f620' }}>
+                      {msg.role === 'user' ? '👤' : '🧠'}
                     </div>
 
                     {/* Bubble */}
-                    <div
-                      className={
-                        'max-w-xl px-4 py-3 rounded-lg ' +
-                        (msg.role === 'user'
-                          ? 'bg-zinc-800 text-white'
-                          : 'bg-zinc-900 text-zinc-300')
+                    <div className={'relative ' + (msg.role === 'user' ? 'max-w-[65ch]' : 'max-w-[75ch]')}>
+                      <div
+                        className={
+                          'px-4 py-3 rounded-lg text-sm ' +
+                          (msg.role === 'user'
+                            ? 'bg-zinc-800 text-white'
+                            : 'bg-zinc-900 text-zinc-300')
+                        }>
+                        {msg.role === 'user'
+                          ? <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
+                          : <MarkdownMessage content={msg.content} />
+                        }
+                      </div>
+                      {/* Timestamp + copy row */}
+                      <div className={
+                        'flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ' +
+                        (msg.role === 'user' ? 'justify-end' : 'justify-start')
                       }>
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                        {msg.content}
-                      </p>
-                      {msg.model && (
-                        <p className="text-[10px] mt-2 opacity-50">
-                          KAOS
-                        </p>
-                      )}
+                        {msg.ts && (
+                          <span className="text-[9px] text-zinc-600">
+                            {new Date(msg.ts).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => copyMessage(msg.id, msg.content)}
+                          className="text-[9px] text-zinc-600 hover:text-zinc-400 flex items-center gap-1 transition-colors">
+                          {copiedId === msg.id ? '✓ Copied' : '⎘ Copy'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -496,8 +874,13 @@ function ChatTab() {
               )}
               {chatError && (
                 <div className="flex gap-3">
-                  <div className="px-4 py-3 rounded-lg bg-red-950/40 border border-red-900/40 text-red-400 text-sm max-w-xl">
-                    ⚠️ {chatError}
+                  <div className="px-4 py-3 rounded-lg bg-red-950/40 border border-red-900/40 text-red-400 text-sm max-w-xl flex items-center gap-3">
+                    <span>⚠️ {chatError}</span>
+                    <button
+                      onClick={handleRetry}
+                      className="ml-2 text-xs px-2.5 py-1 rounded-lg bg-red-900/40 hover:bg-red-900/70 text-red-300 border border-red-800/50 transition-colors shrink-0">
+                      Retry ↺
+                    </button>
                   </div>
                 </div>
               )}
@@ -509,68 +892,90 @@ function ChatTab() {
               {selectedFile && (
                 <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60">
                   <span className="text-sm">📎</span>
-                  <span className="text-xs text-zinc-400 flex-1">{selectedFile}</span>
+                  <span className="text-xs text-zinc-400 flex-1 truncate">{selectedFile.name}</span>
+                  <span className="text-[9px] text-zinc-600">{(selectedFile.content.length / 1024).toFixed(1)}KB</span>
                   <button
                     onClick={() => setSelectedFile(null)}
-                    className="text-zinc-600 hover:text-white text-xs">
+                    className="text-zinc-600 hover:text-white text-xs ml-1">
                     ✕
                   </button>
                 </div>
               )}
 
-              <div className="flex items-center gap-2">
-                {/* File button */}
+              <div className="flex items-end gap-2">
+                {/* Paperclip button */}
                 <button
-                  onClick={() => {
-                    const input = document.createElement('input')
-                    input.type = 'file'
-                    input.onchange = (e) => {
-                      const file = (e.target as HTMLInputElement).files?.[0]
-                      if (file) setSelectedFile(file.name)
-                    }
-                    input.click()
-                  }}
-                  className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300">
+                  onClick={handleFileAttach}
+                  disabled={isSending}
+                  className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 shrink-0 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Attach file (text/code)">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12.172 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a2 2 0 11-4 0 2 2 0 014 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                   </svg>
                 </button>
 
-                {/* KAOS badge */}
-                <span className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-500 shrink-0">
-                  🧠 KAOS
-                </span>
+                {/* Agent selector */}
+                <select
+                  value={selectedAgent}
+                  onChange={e => setSelectedAgent(e.target.value)}
+                  disabled={isSending}
+                  className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  title="Select agent">
+                  {AGENT_OPTIONS.map(a => (
+                    <option key={a.id} value={a.id}>{a.label}</option>
+                  ))}
+                </select>
 
-                {/* Input */}
-                <input
-                  type="text"
+                {/* Auto-grow textarea */}
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
                   value={inputVal}
-                  onChange={(e) => setInputVal(e.target.value)}
+                  onChange={(e) => { setInputVal(e.target.value); adjustTextarea() }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
                       handleSend()
+                    } else if (e.key === 'Enter' && e.shiftKey) {
+                      // Let the newline happen, then resize
+                      setTimeout(adjustTextarea, 0)
                     }
                   }}
-                  placeholder="Message KAOS (Claude Max)..."
-                  className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60 text-white text-sm placeholder-zinc-600 outline-none focus:border-zinc-700 transition-all"
+                  disabled={isSending}
+                  placeholder={isSending ? 'KAOS is writing…' : 'Message KAOS (Claude Max)...'}
+                  className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60 text-white text-sm placeholder-zinc-600 outline-none focus:border-zinc-700 transition-all resize-none overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{minHeight:'38px', maxHeight:'160px'}}
                 />
 
                 {/* Send button */}
                 <button
                   onClick={handleSend}
-                  disabled={!inputVal.trim() || loading}
-                  className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-white">
+                  disabled={!inputVal.trim() || isSending}
+                  className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-white shrink-0 mb-0.5">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9-7-9-7m0 0l-9 7m9-7v7" />
                   </svg>
                 </button>
               </div>
 
-              <p className="text-zinc-700 text-[10px] mt-2">
-                <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500">Enter</kbd> to send,
-                <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">Shift + Enter</kbd> for newline
-              </p>
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-zinc-700 text-[10px]">
+                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500">Enter</kbd> send ·
+                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">⇧ Enter</kbd> newline ·
+                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">⌘K</kbd> new chat
+                </p>
+                {inputVal.length > 0 && (
+                  <span className={`text-[9px] tabular-nums ${inputVal.length > 8000 ? 'text-red-500' : inputVal.length > 4000 ? 'text-yellow-500' : 'text-zinc-700'}`}>
+                    {inputVal.length.toLocaleString()} chars
+                  </span>
+                )}
+              </div>
+              {selectedFile && selectedFile.content.length > 32768 && (
+                <p className="text-[10px] text-yellow-500 mt-1">
+                  ⚠️ File is {(selectedFile.content.length / 1024).toFixed(0)}KB — only first 32KB will be sent to avoid context overflow.
+                </p>
+              )}
             </div>
           </>
         )}
@@ -1496,6 +1901,13 @@ export default function Home() {
 
           {/* ── OFFICE ── */}
           {tab==='office' && (
+            <div className="h-[calc(100vh-88px)] -mx-6 -my-5">
+              <AgentOffice />
+            </div>
+          )}
+
+          {/* ── OLD_OFFICE_REMOVED ── */}
+          {false && (
             <div className="space-y-4">
               <div className="flex flex-col md:flex-row gap-4">
 

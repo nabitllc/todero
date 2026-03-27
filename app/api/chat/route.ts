@@ -1,47 +1,132 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 const OPENCLAW_GATEWAY = 'http://127.0.0.1:18789'
 const OPENCLAW_TOKEN = 'eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0'
 
+const supabase = createClient(
+  'https://twthgapiouiqhavrcnry.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+)
+
+export const runtime = 'nodejs'
+
 export async function POST(req: NextRequest) {
+  const encoder = new TextEncoder()
+
+  const errorStream = (msg: string) => {
+    return new Response(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`))
+          c.close()
+        }
+      }),
+      { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } }
+    )
+  }
+
+  let body: any
+  try { body = await req.json() } catch { return errorStream('Invalid request body') }
+
+  const { messages, conversationId, assistantMsgId, agentId } = body
+  if (!messages || !conversationId) return errorStream('messages and conversationId required')
+
+  const resolvedAgent = agentId || 'main'
+  const sessionKey = `mc-chat-${conversationId}`
+  const msgId = assistantMsgId || ('msg-server-' + Date.now())
+
+  let upstream: Response
   try {
-    const { messages, conversationId } = await req.json()
-
-    // Use a stable session key per conversation so KAOS remembers context within it
-    const sessionKey = conversationId ? `mc-chat-${conversationId}` : undefined
-
-    const response = await fetch(`${OPENCLAW_GATEWAY}/v1/chat/completions`, {
+    upstream = await fetch(`${OPENCLAW_GATEWAY}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${OPENCLAW_TOKEN}`,
         'Content-Type': 'application/json',
-        'x-openclaw-agent-id': 'main',
-        ...(sessionKey ? { 'x-openclaw-session-key': sessionKey } : {}),
+        'x-openclaw-agent-id': resolvedAgent,
+        'x-openclaw-session-key': sessionKey,
       },
-      body: JSON.stringify({
-        model: 'openclaw',
-        messages,
-      }),
+      body: JSON.stringify({ model: 'openclaw', messages, stream: true }),
     })
-
-    if (!response.ok) {
-      const err = await response.text()
-      return NextResponse.json({ error: `Gateway error: ${err}` }, { status: 500 })
-    }
-
-    const data = await response.json()
-    const content = data.choices?.[0]?.message?.content || 'No response.'
-
-    return NextResponse.json({
-      id: data.id || 'msg-' + Date.now(),
-      role: 'assistant',
-      content,
-      model: 'KAOS (Claude Max)',
-    })
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to reach OpenClaw gateway' },
-      { status: 500 }
-    )
+  } catch {
+    return errorStream('Failed to reach OpenClaw gateway')
   }
+
+  if (!upstream.ok || !upstream.body) {
+    const err = await upstream.text().catch(() => 'unknown')
+    return errorStream(`Gateway error: ${err}`)
+  }
+
+  const upstreamReader = upstream.body.getReader()
+  const decoder = new TextDecoder()
+
+  // Accumulate full content server-side, stream tokens to client simultaneously
+  let fullContent = ''
+  let finalId = msgId
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await upstreamReader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value, { stream: true })
+          for (const line of chunk.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            const raw = line.slice(6).trim()
+            if (raw === '[DONE]') {
+              // Stream closed — write full message to Supabase
+              try {
+                await supabase.from('chat_messages').insert({
+                  id: finalId,
+                  conversation_id: conversationId,
+                  role: 'assistant',
+                  content: fullContent,
+                  model: 'kaos',
+                })
+                // Update conversation updated_at
+                await supabase
+                  .from('chat_conversations')
+                  .update({ updated_at: new Date().toISOString() })
+                  .eq('id', conversationId)
+              } catch { /* non-fatal — client will poll */ }
+
+              controller.enqueue(encoder.encode(
+                `data: ${JSON.stringify({ done: true, id: finalId })}\n\n`
+              ))
+              continue
+            }
+
+            try {
+              const parsed = JSON.parse(raw)
+              if (parsed.id) finalId = parsed.id
+              const delta = parsed.choices?.[0]?.delta?.content
+              if (delta != null) {
+                fullContent += delta
+                controller.enqueue(encoder.encode(
+                  `data: ${JSON.stringify({ delta, id: finalId })}\n\n`
+                ))
+              }
+            } catch { /* skip */ }
+          }
+        }
+      } catch {
+        controller.enqueue(encoder.encode(
+          `data: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`
+        ))
+      } finally {
+        controller.close()
+      }
+    },
+    cancel() { upstreamReader.cancel() }
+  })
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  })
 }
