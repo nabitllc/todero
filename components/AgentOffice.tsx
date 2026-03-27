@@ -204,6 +204,8 @@ function initAgents(T:number, activeIds:string[]){
       tasksCompleted:saved.tasksCompleted||0,
       meetingsAttended:saved.meetingsAttended||0,
       mood:88,
+      glowTick:0, // flashes on state transition
+      lastStateChange:Date.now(),
     };
   });
 }
@@ -222,6 +224,7 @@ function createAudio(){
       o.start(ac.currentTime);o.stop(ac.currentTime+dur);
     }
     return{
+      master,
       playClick(){[0,100,200].forEach(d=>setTimeout(()=>note(700+Math.random()*400,0.04),d));},
       playComplete(){[523,659,784].forEach((f,i)=>setTimeout(()=>note(f,0.2,"sine",0.11),i*90));},
       playMeeting(){note(330,0.4,"sine",0.09);},
@@ -232,7 +235,12 @@ function createAudio(){
 }
 
 // ─── Day/night ────────────────────────────────────────────────────────────────
-function getDayNight(tick:number){ return 0.18+0.12*Math.sin((tick/7200)*Math.PI*2-Math.PI/2); }
+function getDayNight(_tick:number){
+  // Sync to real local time: darkest at 2am, brightest at 2pm
+  const h=new Date().getHours()+new Date().getMinutes()/60;
+  const norm=(h-14)/12; // 0 at 2pm, ±1 at 2am
+  return 0.05+0.20*Math.max(0,Math.abs(norm)); // 0.05 at noon, 0.25 at midnight
+}
 
 // ─── Camera ───────────────────────────────────────────────────────────────────
 function clampCam(cam:any,W:number,H:number){
@@ -512,6 +520,15 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
   ctx.beginPath();ctx.ellipse(px+ox,py+hs+T*0.022+oy+dy2,hs*0.65,T*0.022,0,0,Math.PI*2);ctx.fill();
   const bA=Math.round((0.7+moodN*0.3)*255).toString(16).padStart(2,"0");
   const bodyCol=isInc?"#ff2222":(active?color+bA:"#3a3a5e"+bA);
+  // State transition glow
+  if(ag.glowTick>0){
+    ag.glowTick--;
+    const glowAlpha=ag.glowTick/60;
+    ctx.shadowColor=color;ctx.shadowBlur=sz*0.8*glowAlpha;
+    ctx.beginPath();ctx.arc(px+ox,py+dy2+oy,hs+T*0.15,0,Math.PI*2);
+    ctx.fillStyle=color+Math.round(glowAlpha*40).toString(16).padStart(2,"0");ctx.fill();
+    ctx.shadowBlur=0;
+  }
   if(darkAlpha>0.05){ctx.shadowColor=isInc?"#ff2222":color;ctx.shadowBlur=sz*0.22*darkAlpha;}
   ctx.fillStyle=bodyCol;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz);ctx.shadowBlur=0;
   const fw=sz*0.44,fh=sz*0.31;
@@ -570,6 +587,17 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
       const phase=((now*0.0014+b*0.42)%1),alpha=Math.sin(phase*Math.PI)*0.9;
       ctx.beginPath();ctx.arc(px+sz*0.5+b*sz*0.22+ox,py-hs-T*0.05-phase*T*0.26+dy2+oy,(sz*0.1-b*sz*0.02),0,Math.PI*2);
       ctx.fillStyle=isInc?`rgba(255,80,80,${alpha})`:`rgba(253,203,110,${alpha})`;ctx.fill();
+    }
+  }
+  // Idle timer display
+  if(state==="idle"&&active&&ag.lastStateChange){
+    const idleMins=Math.round((now-(ag.lastStateChange||now))/60000);
+    if(idleMins>=1){
+      const idleText=idleMins>=60?`${Math.floor(idleMins/60)}h ${idleMins%60}m`:`${idleMins}m`;
+      const iPx=Math.max(9,Math.round(T*0.10));
+      ctx.font=`${iPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+      ctx.fillStyle="#4a4a6a";
+      ctx.fillText(`idle ${idleText}`,px,py+hs+T*0.35+dy2+oy);
     }
   }
   ctx.globalAlpha=1;ctx.restore();
@@ -659,7 +687,9 @@ export default function AgentOffice(){
   const [selectedId,setSelectedId]   = useState<string|null>(null);
   const [detail,setDetail]           = useState<any>(null);
   const [toasts,setToasts]           = useState<any[]>([]);
-  const [tab,setTab]                 = useState("roster");
+  const [tab,setTab]                 = useState("roster"); // legacy — kept for keyboard shortcut compat
+  const [openPanels,setOpenPanels]   = useState<Set<string>>(new Set(["feed"])); // expandable panels
+  const togglePanel=(id:string)=>setOpenPanels(prev=>{const next=new Set(prev);if(next.has(id))next.delete(id);else next.add(id);return next;});
   const [meetingLogs,setMeetingLogs] = useState<any[]>([]);
   const [soundOn,setSoundOn]         = useState(true);
   const [incident,setIncident]       = useState<any>(null);
@@ -682,6 +712,7 @@ export default function AgentOffice(){
   const [waterfall,setWaterfall]     = useState<any[]>([]);
   const waterfallRef                 = useRef<any[]>([]);
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
+  const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
   const [showSettings,setShowSettings] = useState(false);
   const [sessionLog,setSessionLog] = useState<any[]>([]);
   const [loadingLog,setLoadingLog] = useState(false);
@@ -738,6 +769,8 @@ export default function AgentOffice(){
               ag.task=taskDesc;
               ag.progress=5;
               ag.monologue=null;
+              ag.glowTick=60; // 60-frame glow on transition
+              ag.lastStateChange=Date.now();
               addFeed(`${ag.emoji} ${ag.name}: ${taskDesc}`,ag.color);
               if(soundRef.current&&audioRef.current)audioRef.current.playClick();
               timelineRef.current=[...timelineRef.current,{type:"task",color:ag.color,ts:nowts(),label:`${ag.name}: ${taskDesc}`,tick:0}].slice(-120);
@@ -790,9 +823,59 @@ export default function AgentOffice(){
 
       }catch(e){}
     };
-    poll(); // Initial poll immediately
-    const interval=setInterval(poll,5000);
-    return()=>clearInterval(interval);
+    // Try SSE first, fall back to polling
+    let es:EventSource|null=null;
+    let pollInterval:any=null;
+    const processTaskMap=(taskMap:Record<string,string>)=>{
+      if(!simRef.current?.agents) return;
+      // Reuse same logic as poll() but with provided taskMap
+      const agents=simRef.current.agents;
+      agents.forEach((ag:any)=>{
+        if(!ag.active) return;
+        const prev=prevStates[ag.id]||"idle";
+        const rawTask=taskMap[ag.id]||"";
+        const lower=rawTask.toLowerCase();
+        const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running");
+        let taskDesc:string|null=null;
+        if(isActive){const channel=rawTask.match(/on (\w+)/)?.[1]||"";taskDesc=channel?`Working via ${channel}`:"Processing";}
+        if(isActive&&taskDesc){
+          if(ag.state!=="working"){ag.state="working";ag.task=taskDesc;ag.progress=5;ag.monologue=null;ag.glowTick=60;ag.lastStateChange=Date.now();addFeed(`${ag.emoji} ${ag.name}: ${taskDesc}`,ag.color);if(soundRef.current&&audioRef.current)audioRef.current.playClick();timelineRef.current=[...timelineRef.current,{type:"task",color:ag.color,ts:nowts(),label:`${ag.name}: ${taskDesc}`,tick:0}].slice(-120);setTimeline([...timelineRef.current]);}
+          else if(ag.task!==taskDesc){ag.task=taskDesc;ag.progress=5;}
+        } else {
+          if(prev==="working"&&ag.state==="working"){ag.tasksCompleted++;totalDone.current++;ag.taskHistory=[...(ag.taskHistory||[]),ag.task].slice(-20);addFeed(`${ag.emoji} ${ag.name}: ✓ "${ag.task}"`,"#00ff88");addToast(`✓ ${ag.name} — "${ag.task}"`,ag.color);const wfEntry={id:feedIdRef.current++,agentId:ag.id,task:ag.task,state:"done",ts:nowts()};waterfallRef.current=[wfEntry,...waterfallRef.current].slice(-20);setWaterfall([...waterfallRef.current]);if(soundRef.current&&audioRef.current)audioRef.current.playComplete();}
+          if(ag.state==="working"){ag.state="idle";ag.task=null;ag.progress=0;ag.monologue=null;}
+        }
+        prevStates[ag.id]=isActive?"working":"idle";
+      });
+    };
+    try{
+      es=new EventSource('/api/office-stream');
+      es.onmessage=(event)=>{
+        try{
+          const data=JSON.parse(event.data);
+          if(data.type==='state'&&data.agentCurrentTask){
+            processTaskMap(data.agentCurrentTask);
+          }
+        }catch(e2){}
+      };
+      es.onerror=()=>{
+        // SSE failed — fall back to polling
+        es?.close();es=null;
+        if(!pollInterval){
+          poll();
+          pollInterval=setInterval(poll,5000);
+        }
+      };
+    }catch(e3){
+      // SSE not available — poll
+      poll();
+      pollInterval=setInterval(poll,5000);
+    }
+
+    return()=>{
+      es?.close();
+      if(pollInterval)clearInterval(pollInterval);
+    };
   },[addFeed,addToast]);
 
   // ── OPENCLAW_STATE postMessage listener ──────────────────────────────────
@@ -1021,10 +1104,52 @@ export default function AgentOffice(){
       const darkAlpha=getDayNight(simTick);
       drawFloor(ctx,T2,cam,darkAlpha,!!incidentData);
       drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!meeting,meeting?.topic,darkAlpha,!!incidentData,critPairs,depGraphRef.current);
+      // Connection lines: working agents → orchestrator
+      const orchAgent2=drawAgentsArr.find((a:any)=>a.id===ORCHESTRATOR_ID);
+      if(orchAgent2){
+        ctx.save();applyCamera(ctx,cam);
+        drawAgentsArr.forEach((ag:any)=>{
+          if(ag.id===ORCHESTRATOR_ID||ag.state!=="working"||!ag.active) return;
+          const phase=(now*0.001)%1;
+          ctx.strokeStyle=ag.color+"22";ctx.lineWidth=T2*0.015;ctx.setLineDash([T2*0.1,T2*0.08]);
+          ctx.beginPath();ctx.moveTo(ag.px,ag.py);ctx.lineTo(orchAgent2.px,orchAgent2.py);ctx.stroke();
+          ctx.setLineDash([]);
+          // Flowing dot along the line
+          const dx=orchAgent2.px-ag.px,dy=orchAgent2.py-ag.py;
+          const dotX=ag.px+dx*phase,dotY=ag.py+dy*phase;
+          ctx.beginPath();ctx.arc(dotX,dotY,T2*0.04,0,Math.PI*2);
+          ctx.fillStyle=ag.color+"88";ctx.fill();
+        });
+        ctx.restore();
+      }
       drawParticles(ctx,particles,cam);
       drawChatBubbles(ctx,chatBubbles.current,T2,cam);
       drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData));
       if(minimapRef.current)drawMinimap(ctx,T2,drawAgentsArr,cam,W,H,showLegendRef.current);
+
+      // Hover tooltip
+      const hov=hoverAgentRef.current;
+      if(hov&&!camRef.current.drag){
+        const fPx=Math.round(T2*0.16);
+        ctx.font=`bold ${fPx}px 'IBM Plex Mono',monospace`;
+        const taskText=hov.state==="working"?(hov.task||"Working"):(hov.state||"idle");
+        const idleTime=hov.state==="idle"?` · idle ${Math.round((Date.now()-(hov.lastStateChange||Date.now()))/60000)}m`:"";
+        const line1=`${hov.emoji} ${hov.name}`;
+        const line2=`${taskText}${idleTime}`;
+        const line3=`${hov.tasksCompleted||0} tasks completed`;
+        const tw2=Math.max(ctx.measureText(line1).width,ctx.measureText(line2).width,ctx.measureText(line3).width)+20;
+        const th2=fPx*4.2;
+        const tx=hov.screenX+12,ty=Math.max(10,hov.screenY-th2-8);
+        ctx.fillStyle="#0d0d20ee";ctx.strokeStyle=hov.color+"66";ctx.lineWidth=1;
+        ctx.beginPath();ctx.roundRect(tx,ty,tw2,th2,6);ctx.fill();ctx.stroke();
+        ctx.fillStyle=hov.color;ctx.textAlign="left";
+        ctx.fillText(line1,tx+8,ty+fPx*1.1);
+        ctx.font=`${fPx*0.85}px 'IBM Plex Mono',monospace`;
+        ctx.fillStyle=hov.state==="working"?"#00ff88":"#7a7a98";
+        ctx.fillText(line2,tx+8,ty+fPx*2.2);
+        ctx.fillStyle="#6a6a8e";
+        ctx.fillText(line3,tx+8,ty+fPx*3.3);
+      }
 
       if(simTick%10===0){
         const snap=agents.map(ag=>({...ag,progress:Math.round(ag.progress),taskHistory:[...(ag.taskHistory||[])]}));
@@ -1079,7 +1204,16 @@ export default function AgentOffice(){
       clampCam(cam,canvas!.width,canvas!.height);
     }
     function onDown(e:MouseEvent){const cam=camRef.current;cam.drag=true;cam.ds=c2w(e);cam.cs={x:cam.x,y:cam.y};canvas!.style.cursor="grabbing";}
-    function onMove(e:MouseEvent){const cam=camRef.current;if(!cam.drag)return;const p=c2w(e);cam.x=cam.cs.x+(p.x-cam.ds.x);cam.y=cam.cs.y+(p.y-cam.ds.y);clampCam(cam,canvas!.width,canvas!.height);}
+    function onMove(e:MouseEvent){
+      const cam=camRef.current;
+      if(cam.drag){const p=c2w(e);cam.x=cam.cs.x+(p.x-cam.ds.x);cam.y=cam.cs.y+(p.y-cam.ds.y);clampCam(cam,canvas!.width,canvas!.height);return;}
+      // Hover detection for tooltip
+      const p=c2w(e);
+      const wx=(p.x-cam.x)/cam.z,wy=(p.y-cam.y)/cam.z,T2=tileRef.current;
+      let best:any=null,bestD=T2*0.7;
+      simRef.current?.agents?.forEach((ag:any)=>{const d=Math.hypot(ag.px-wx,ag.py-wy);if(d<bestD){bestD=d;best=ag;}});
+      hoverAgentRef.current=best?{...best,screenX:p.x,screenY:p.y}:null;
+    }
     function onUp(e:MouseEvent){
       const cam=camRef.current;
       if(cam.drag&&cam.ds){
@@ -1298,12 +1432,26 @@ export default function AgentOffice(){
               <button onClick={()=>setShowSettings(false)} style={{background:"transparent",border:"none",color:"#7a7a98",cursor:"pointer",fontSize:14}}>✕</button>
             </div>
             <div style={{padding:"6px 8px",background:"#0a0a18",borderRadius:3,fontSize:10,color:"#7a7a98",lineHeight:1.6}}>
-              {[["Space","Pause/Resume"],["M","Toggle minimap"],["D","Dep flow graph"],["O","Orchestrator panel"],["T","Switch tab"],["R","Replay mode"],["Esc","Close panels"]].map(([k,v])=>(
+              {[["Space","Pause/Resume"],["M","Toggle minimap"],["D","Dep flow graph"],["O","Orchestrator panel"],["R","Replay mode"],["Esc","Close panels"]].map(([k,v])=>(
                 <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
                   <kbd style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:2,padding:"0 4px",fontSize:9,color:"#6C5CE7"}}>{k}</kbd>
                   <span style={{color:"#7a7a98",fontSize:10}}>{v}</span>
                 </div>
               ))}
+            </div>
+            <div style={{marginTop:12}}>
+              <div style={{fontSize:10,color:"#6a6a8e",marginBottom:6,letterSpacing:"0.1em"}}>VOLUME</div>
+              <input type="range" min="0" max="100" value={soundOn?50:0}
+                onChange={(e:any)=>{
+                  const v=+e.target.value;
+                  if(v===0){soundRef.current=false;setSoundOn(false);}
+                  else{soundRef.current=true;setSoundOn(true);if(audioRef.current?.master)audioRef.current.master.gain.value=v/100*0.15;}
+                }}
+                style={{width:"100%",accentColor:"#6C5CE7"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
+                <span style={{fontSize:9,color:"#4a4a6a"}}>🔇</span>
+                <span style={{fontSize:9,color:"#4a4a6a"}}>🔊</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1363,6 +1511,7 @@ export default function AgentOffice(){
           <button onClick={()=>{showLegendRef.current=!showLegendRef.current;setShowLegend(s=>!s);}} style={{background:"transparent",border:"1px solid #2a2a4a",color:showLegend?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>◉</button>
           <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>🗺</button>
           <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>⌨</button>
+          <button onClick={()=>{const el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen?.();}} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}} title="Fullscreen">⛶</button>
           <button onClick={toggleSound} style={{background:"transparent",border:"1px solid #2a2a4a",color:soundOn?"#8892b0":"#3a3a5e",padding:"3px 7px",borderRadius:3,fontSize:9,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
           <button onClick={togglePause} style={{background:"transparent",border:"1px solid #2a2a4a",color:paused?"#00ff88":"#8892b0",padding:"3px 10px",borderRadius:3,fontSize:9,letterSpacing:"0.08em",cursor:"pointer",fontFamily:"inherit"}}>{paused?"▶":"⏸"}</button>
         </div>
@@ -1421,11 +1570,11 @@ export default function AgentOffice(){
 
             {/* ▼ ACTIVITY FEED — always expanded */}
             <div>
-              <div onClick={()=>setTab(tab==="feed"?"":"feed")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
-                <span>{tab==="feed"?"▼":"▶"} ACTIVITY FEED</span>
+              <div onClick={()=>togglePanel("feed")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{openPanels.has("feed")?"▼":"▶"} ACTIVITY FEED</span>
                 <span style={{fontSize:9,color:"#4a4a6a"}}>{feed.length}</span>
               </div>
-              {tab!=="feed-collapsed"&&(
+              {openPanels.has("feed")&&(
                 <div ref={feedRef} style={{maxHeight:200,overflowY:"auto",padding:"3px 0"}}>
                   {feed.slice(-20).map((e:any)=><div key={e.id} style={{padding:"2px 11px",display:"flex",gap:5,alignItems:"flex-start"}}>
                     <span style={{color:"#4a4a6a",fontSize:9,flexShrink:0,marginTop:2}}>{e.ts}</span>
@@ -1437,11 +1586,11 @@ export default function AgentOffice(){
 
             {/* ▶ COMPLETED TASKS */}
             <div>
-              <div onClick={()=>setTab(tab==="flow"?"":"flow")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
-                <span>{tab==="flow"?"▼":"▶"} COMPLETED TASKS</span>
+              <div onClick={()=>togglePanel("flow")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{openPanels.has("flow")?"▼":"▶"} COMPLETED TASKS</span>
                 <span style={{fontSize:9,color:waterfall.length>0?"#00ff88":"#4a4a6a"}}>{waterfall.length}</span>
               </div>
-              {tab==="flow"&&(
+              {openPanels.has("flow")&&(
                 <div style={{maxHeight:200,overflowY:"auto"}}>
                   {waterfall.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center",lineHeight:1.8}}>Completions appear when agents finish work.</div>}
                   {waterfall.map((wf:any)=>{
@@ -1471,11 +1620,11 @@ export default function AgentOffice(){
 
             {/* ▶ MEETINGS */}
             <div>
-              <div onClick={()=>setTab(tab==="meetings"?"":"meetings")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
-                <span>{tab==="meetings"?"▼":"▶"} MEETINGS</span>
+              <div onClick={()=>togglePanel("meetings")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{openPanels.has("meetings")?"▼":"▶"} MEETINGS</span>
                 <span style={{fontSize:9,color:meetingLogs.length>0?"#FDCB6E":"#4a4a6a"}}>{meetingLogs.length}</span>
               </div>
-              {tab==="meetings"&&(
+              {openPanels.has("meetings")&&(
                 <div style={{maxHeight:200,overflowY:"auto"}}>
                   {meetingLogs.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Transcripts appear after meetings end.</div>}
                   {meetingLogs.map((m:any)=>(
@@ -1494,10 +1643,10 @@ export default function AgentOffice(){
 
             {/* ▶ LEADERBOARD */}
             <div>
-              <div onClick={()=>setTab(tab==="board"?"":"board")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
-                <span>{tab==="board"?"▼":"▶"} LEADERBOARD</span>
+              <div onClick={()=>togglePanel("board")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{openPanels.has("board")?"▼":"▶"} LEADERBOARD</span>
               </div>
-              {tab==="board"&&(
+              {openPanels.has("board")&&(
                 <div style={{maxHeight:200,overflowY:"auto"}}>
                   {leaderboard.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Collecting data…</div>}
                   {leaderboard.map((a:any,rank:number)=>(
