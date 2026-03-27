@@ -1376,197 +1376,144 @@ export default function AgentOffice(){
 
         {/* Sidebar */}
         <div style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",background:"#0b0b14",borderLeft:"1px solid #1a1a2e",overflow:"hidden"}}>
-          <div style={{flexShrink:0,display:"flex",borderBottom:"1px solid #1a1a2e"}}>
-            {[["roster","AGENTS"],["meetings","MEETINGS"],["board","BOARD"],["flow","FLOW"]].map(([id,lbl])=>(
-              <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"6px 0",fontSize:11,letterSpacing:"0.09em",background:"transparent",border:"none",borderBottom:tab===id?"2px solid #6C5CE7":"2px solid transparent",color:tab===id?"#a29bfe":"#3a3a5e",cursor:"pointer",fontFamily:"inherit"}}>{lbl}</button>
-            ))}
-          </div>
 
-          {tab==="roster"&&(<>
-            {detail?(
-              <div style={{flexShrink:0,borderBottom:"1px solid #1a1a2e",overflowY:"auto",maxHeight:"56%"}}>
-                <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>
-                  <span>AGENT DETAIL{detail.id===ORCHESTRATOR_ID?" 👑":""}</span>
-                  <div style={{display:"flex",gap:5}}>
-                    {detail.id===ORCHESTRATOR_ID&&<button onClick={()=>setShowOrchPanel(true)} style={{background:"#6C5CE722",border:"1px solid #6C5CE744",color:"#a29bfe",cursor:"pointer",fontSize:10,fontFamily:"inherit",padding:"2px 6px",borderRadius:2}}>Panel</button>}
-                    <button onClick={()=>openConfig(detail)} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",cursor:"pointer",fontSize:9,fontFamily:"inherit",padding:"1px 4px",borderRadius:2}}>⚙</button>
-                    <button onClick={()=>{setSelectedId(null);setDetail(null);}} style={{background:"transparent",border:"none",color:"#6a6a8e",cursor:"pointer",fontSize:12,fontFamily:"inherit",padding:0}}>✕</button>
+          {/* Detail panel — shows when an agent is selected on canvas */}
+          {detail&&(
+            <div style={{flexShrink:0,borderBottom:"1px solid #1a1a2e",overflowY:"auto",maxHeight:"45%"}}>
+              <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>
+                <span>AGENT DETAIL{detail.id===ORCHESTRATOR_ID?" 👑":""}</span>
+                <div style={{display:"flex",gap:5}}>
+                  {detail.id===ORCHESTRATOR_ID&&<button onClick={()=>setShowOrchPanel(true)} style={{background:"#6C5CE722",border:"1px solid #6C5CE744",color:"#a29bfe",cursor:"pointer",fontSize:10,fontFamily:"inherit",padding:"2px 6px",borderRadius:2}}>Panel</button>}
+                  <button onClick={()=>{setSelectedId(null);setDetail(null);}} style={{background:"transparent",border:"none",color:"#6a6a8e",cursor:"pointer",fontSize:12,fontFamily:"inherit",padding:0}}>✕</button>
+                </div>
+              </div>
+              <div style={{padding:"9px 11px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
+                  <span style={{fontSize:20}}>{detail.emoji}</span>
+                  <div style={{flex:1}}>
+                    <div style={{color:detail.color,fontWeight:700,fontSize:14}}>{detail.name}</div>
+                    <div style={{color:"#7a7a98",fontSize:11}}>{detail.role}</div>
+                  </div>
+                  <div style={{fontSize:9,padding:"2px 5px",borderRadius:2,background:detail.state==="working"?"#00ff8815":"#1a1a28",color:detail.state==="working"?"#00ff88":"#7a7a98"}}>
+                    {detail.state?.replace(/_/g," ")}
                   </div>
                 </div>
-                <div style={{padding:"9px 11px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
-                    <span style={{fontSize:20}}>{detail.emoji}</span>
-                    <div style={{flex:1}}>
-                      <div style={{color:detail.color,fontWeight:700,fontSize:14}}>{detail.name}</div>
-                      <div style={{color:"#7a7a98",fontSize:11}}>{detail.role}</div>
-                    </div>
-                    <div style={{fontSize:9,padding:"2px 5px",borderRadius:2,background:detail.state==="working"?"#00ff8815":"#1a1a28",color:detail.state==="working"?"#00ff88":"#4a5568"}}>
-                      {detail.state?.replace(/_/g," ")}
-                    </div>
-                  </div>
-                  <div style={{marginBottom:8}}>
-                    <div style={{fontSize:10,color:"#6a6a8e",marginBottom:3,letterSpacing:"0.1em"}}>TIME BREAKDOWN</div>
-                    {[{l:"Working",v:pct(detail.timeWorking||0,totalF(detail)),c:"#00ff88"},{l:"Meeting",v:pct(detail.timeMeeting||0,totalF(detail)),c:"#FDCB6E"}].map(item=>(
-                      <div key={item.l} style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
-                        <span style={{fontSize:10,color:"#7a7a98",width:38}}>{item.l}</span>
-                        <div style={{flex:1,height:3,background:"#1a1a30",borderRadius:2}}><div style={{height:3,width:item.v+"%",background:item.c,borderRadius:2}}/></div>
-                        <span style={{fontSize:10,color:item.c,width:22,textAlign:"right"}}>{item.v}%</span>
+                <div style={{display:"flex",gap:12,marginBottom:8}}>
+                  <div style={{textAlign:"center"}}><div style={{fontSize:14,color:detail.color,fontWeight:700}}>{detail.tasksCompleted}</div><div style={{fontSize:10,color:"#6a6a8e"}}>TASKS</div></div>
+                  <div style={{textAlign:"center"}}><div style={{fontSize:14,color:"#FDCB6E",fontWeight:700}}>{detail.meetingsAttended}</div><div style={{fontSize:10,color:"#6a6a8e"}}>MEETINGS</div></div>
+                </div>
+                {detail.taskHistory?.length>0&&(
+                  <div>
+                    <div style={{fontSize:10,color:"#6a6a8e",marginBottom:3,letterSpacing:"0.1em"}}>RECENT TASKS</div>
+                    {[...detail.taskHistory].reverse().slice(0,3).map((t:string,i:number)=>(
+                      <div key={i} style={{fontSize:11,color:"#7a7a98",padding:"2px 0",borderBottom:"1px solid #1e1e35"}}>
+                        <span style={{color:"#4a4a6a",marginRight:3}}>↳</span>{t}
                       </div>
                     ))}
                   </div>
-                  <div style={{display:"flex",gap:12,marginBottom:8}}>
-                    <div style={{textAlign:"center"}}><div style={{fontSize:14,color:detail.color,fontWeight:700}}>{detail.tasksCompleted}</div><div style={{fontSize:10,color:"#6a6a8e"}}>TASKS</div></div>
-                    <div style={{textAlign:"center"}}><div style={{fontSize:14,color:"#FDCB6E",fontWeight:700}}>{detail.meetingsAttended}</div><div style={{fontSize:10,color:"#6a6a8e"}}>MEETINGS</div></div>
-                  </div>
-                  {detail.taskHistory?.length>0&&(
-                    <div>
-                      <div style={{fontSize:10,color:"#6a6a8e",marginBottom:3,letterSpacing:"0.1em"}}>RECENT TASKS</div>
-                      {[...detail.taskHistory].reverse().slice(0,5).map((t:string,i:number)=>(
-                        <div key={i} style={{fontSize:11,color:"#7a7a98",padding:"2px 0",borderBottom:"1px solid #1e1e35"}}>
-                          <span style={{color:"#4a4a6a",marginRight:3}}>↳</span>{t}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {/* View Session Log */}
-                  <div style={{marginTop:8}}>
-                    <button onClick={()=>{
-                      if(sessionLog.length>0){setSessionLog([]);return;}
-                      setLoadingLog(true);
-                      fetch(`/api/status`).then(r=>r.json()).then(data=>{
-                        const task=data.agentCurrentTask?.[detail.id]||"No active session";
-                        setSessionLog([{role:"system",content:`Agent: ${detail.name}\nStatus: ${task}`}]);
-                        setLoadingLog(false);
-                      }).catch(()=>{setSessionLog([{role:"system",content:"Failed to fetch session data"}]);setLoadingLog(false);});
-                    }} style={{background:"#12122a",border:"1px solid #2a2a4a",borderRadius:3,padding:"4px 10px",color:"#a29bfe",fontSize:10,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
-                      {loadingLog?"Loading…":sessionLog.length>0?"Hide Session":"View Live Status"}
-                    </button>
-                    {sessionLog.length>0&&(
-                      <div style={{marginTop:6,padding:"6px 8px",background:"#0a0a18",borderRadius:3,border:"1px solid #1a1a2e",maxHeight:120,overflowY:"auto"}}>
-                        {sessionLog.map((msg:any,i:number)=>(
-                          <div key={i} style={{fontSize:10,color:msg.role==="system"?"#4a5568":"#8892b0",padding:"3px 0",borderBottom:"1px solid #0f0f1f",whiteSpace:"pre-wrap",lineHeight:1.5}}>
-                            {msg.content}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
-            ):(
-              <div style={{flexShrink:0,borderBottom:"1px solid #1a1a2e",maxHeight:"52%",overflowY:"auto"}}>
-                <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>ACTIVE AGENTS</div>
-                {activeAgents.map((a:any)=>(
-                  <div key={a.id} onClick={()=>{setSelectedId(a.id);setDetail(a);}} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 11px",borderBottom:"1px solid #1e1e35",cursor:"pointer",background:selectedId===a.id?"#14142a":"transparent"}}>
-                    <div style={{width:6,height:6,borderRadius:"50%",background:dotColor(a),flexShrink:0}}/>
-                    <span style={{fontSize:12}}>{a.emoji}</span>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",alignItems:"center",gap:3}}>
-                        <span style={{color:a.color,fontSize:12,fontWeight:600}}>{a.name}</span>
-                        {a.id===ORCHESTRATOR_ID&&<span style={{fontSize:10,color:"#FDCB6E"}}>👑</span>}
+            </div>
+          )}
+
+          {/* Expandable panels — all in one scrollable container */}
+          <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
+
+            {/* ▼ ACTIVITY FEED — always expanded */}
+            <div>
+              <div onClick={()=>setTab(tab==="feed"?"":"feed")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{tab==="feed"?"▼":"▶"} ACTIVITY FEED</span>
+                <span style={{fontSize:9,color:"#4a4a6a"}}>{feed.length}</span>
+              </div>
+              {tab!=="feed-collapsed"&&(
+                <div ref={feedRef} style={{maxHeight:200,overflowY:"auto",padding:"3px 0"}}>
+                  {feed.slice(-20).map((e:any)=><div key={e.id} style={{padding:"2px 11px",display:"flex",gap:5,alignItems:"flex-start"}}>
+                    <span style={{color:"#4a4a6a",fontSize:9,flexShrink:0,marginTop:2}}>{e.ts}</span>
+                    <span style={{color:e.color,fontSize:11,lineHeight:1.5}}>{e.text}</span>
+                  </div>)}
+                </div>
+              )}
+            </div>
+
+            {/* ▶ COMPLETED TASKS */}
+            <div>
+              <div onClick={()=>setTab(tab==="flow"?"":"flow")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{tab==="flow"?"▼":"▶"} COMPLETED TASKS</span>
+                <span style={{fontSize:9,color:waterfall.length>0?"#00ff88":"#4a4a6a"}}>{waterfall.length}</span>
+              </div>
+              {tab==="flow"&&(
+                <div style={{maxHeight:200,overflowY:"auto"}}>
+                  {waterfall.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center",lineHeight:1.8}}>Completions appear when agents finish work.</div>}
+                  {waterfall.map((wf:any)=>{
+                    const ag=ALL_AGENTS.find(a=>a.id===wf.agentId);
+                    if(!ag) return null;
+                    const deps=DEPENDENCIES[wf.agentId];
+                    return (
+                      <div key={wf.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                          <span style={{fontSize:11}}>{ag.emoji}</span>
+                          <span style={{color:ag.color,fontSize:11,fontWeight:700}}>{ag.name}</span>
+                          <span style={{color:"#7a7a98",fontSize:10}}>✓ {wf.task}</span>
+                          <span style={{color:"#4a4a6a",fontSize:9,marginLeft:"auto"}}>{wf.ts}</span>
+                        </div>
+                        {deps&&deps.length>0&&(
+                          <div style={{paddingLeft:18,display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                            <span style={{color:"#6a6a8e",fontSize:9}}>triggers →</span>
+                            {deps.map(depId=>{const dep=ALL_AGENTS.find(a=>a.id===depId);return dep?<span key={depId} style={{fontSize:9,color:dep.color,background:dep.color+"15",padding:"1px 4px",borderRadius:2}}>{dep.emoji} {dep.name}</span>:null;})}
+                          </div>
+                        )}
                       </div>
-                      <div style={{color:"#7a7a98",fontSize:11,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{stateLabel(a)}</div>
-                      {a.state==="working"&&<div style={{marginTop:2,height:2,background:"#1a1a30",borderRadius:1}}><div style={{height:2,width:a.progress+"%",background:a.color,borderRadius:1}}/></div>}
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:3}}>
-                      {a.state==="working"&&<span style={{color:a.color,fontSize:10}}>●</span>}
-                      <button onClick={(e:any)=>{e.stopPropagation();openConfig(a);}} style={{background:"transparent",border:"none",color:"#4a4a6a",cursor:"pointer",fontSize:9,padding:0}}>⚙</button>
-                    </div>
-                  </div>
-                ))}
-                {benchAgents.length>0&&<>
-                  <div style={{padding:"4px 11px 3px",fontSize:11,letterSpacing:"0.1em",color:"#5a5a7a",borderBottom:"1px solid #1e1e35",background:"#0a0a18",borderTop:"1px solid #1a1a2e"}}>HOLDING</div>
-                  {benchAgents.map((a:any)=>(
-                    <div key={a.id} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 11px",borderBottom:"1px solid #1e1e35",background:"#0a0a18",opacity:0.7}}>
-                      <span style={{fontSize:11}}>{a.emoji}</span>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{color:"#7a7a98",fontSize:9,fontWeight:600}}>{a.name}</div>
-                        <div style={{color:"#4a4a6a",fontSize:11}}>{a.role}</div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* ▶ MEETINGS */}
+            <div>
+              <div onClick={()=>setTab(tab==="meetings"?"":"meetings")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{tab==="meetings"?"▼":"▶"} MEETINGS</span>
+                <span style={{fontSize:9,color:meetingLogs.length>0?"#FDCB6E":"#4a4a6a"}}>{meetingLogs.length}</span>
+              </div>
+              {tab==="meetings"&&(
+                <div style={{maxHeight:200,overflowY:"auto"}}>
+                  {meetingLogs.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Transcripts appear after meetings end.</div>}
+                  {meetingLogs.map((m:any)=>(
+                    <div key={m.id} style={{padding:"7px 11px",borderBottom:"1px solid #1e1e35"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{color:"#FDCB6E",fontSize:11,fontWeight:600}}>{m.topic}</span>
+                        <span style={{color:"#4a4a6a",fontSize:9}}>{m.ts}</span>
                       </div>
-                      <button title="Preview: moves agent to floor visually (does not create real agent yet)" onClick={()=>promoteAgent(a.id)} style={{background:"#6C5CE722",border:"1px solid #6C5CE733",color:"#a29bfe",padding:"2px 6px",borderRadius:3,fontSize:10,cursor:"pointer",fontFamily:"inherit",opacity:0.7}}>Preview →</button>
+                      <div style={{color:"#6a6a8e",fontSize:10,marginBottom:3}}>{m.attendees.join(", ")}</div>
+                      <div style={{color:"#8892b0",fontSize:11,lineHeight:1.7,whiteSpace:"pre-line"}}>{m.summary}</div>
                     </div>
                   ))}
-                </>}
-              </div>
-            )}
-            <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column"}}>
-              <div style={{flexShrink:0,padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>ACTIVITY FEED</div>
-              <div ref={feedRef} style={{flex:1,overflowY:"auto",padding:"3px 0"}}>
-                {feed.map((e:any)=><div key={e.id} style={{padding:"2px 11px",display:"flex",gap:5,alignItems:"flex-start"}}>
-                  <span style={{color:"#1a1a3a",fontSize:9,flexShrink:0,marginTop:2}}>{e.ts}</span>
-                  <span style={{color:e.color,fontSize:11,lineHeight:1.5}}>{e.text}</span>
-                </div>)}
-              </div>
-            </div>
-          </>)}
-
-          {tab==="meetings"&&(
-            <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
-              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>TRANSCRIPTS</div>
-              {meetingLogs.length===0&&<div style={{padding:"20px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center",lineHeight:1.8}}>Transcripts appear<br/>after meetings end.</div>}
-              {meetingLogs.map((m:any)=>(
-                <div key={m.id} style={{padding:"7px 11px",borderBottom:"1px solid #1e1e35"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{color:"#FDCB6E",fontSize:9,fontWeight:600}}>{m.topic}</span>
-                    <span style={{color:"#4a4a6a",fontSize:9}}>{m.ts}</span>
-                  </div>
-                  <div style={{color:"#6a6a8e",fontSize:11,marginBottom:3}}>{m.attendees.join(", ")}</div>
-                  <div style={{color:"#8892b0",fontSize:12,lineHeight:1.7,whiteSpace:"pre-line"}}>{m.summary}</div>
                 </div>
-              ))}
+              )}
             </div>
-          )}
 
-          {tab==="board"&&(
-            <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
-              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>EFFICIENCY RANKING</div>
-              {leaderboard.length===0&&<div style={{padding:"18px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Collecting data…</div>}
-              {leaderboard.map((a:any,rank:number)=>(
-                <div key={a.id} style={{padding:"6px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
-                  <span style={{fontSize:10,color:rank===0?"#FFD700":rank===1?"#C0C0C0":rank===2?"#CD7F32":"#2a2a4a",width:14,textAlign:"center",fontWeight:700}}>{rank===0?"①":rank===1?"②":rank===2?"③":String(rank+1)}</span>
-                  <span style={{fontSize:11}}>{a.emoji}</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{color:a.color,fontSize:12,fontWeight:600}}>{a.name}</div>
-                    <div style={{display:"flex",gap:7,marginTop:2}}>
-                      <span style={{fontSize:10,color:"#00ff88"}}>{a.tasksCompleted} tasks</span>
-                      <span style={{fontSize:10,color:"#FDCB6E"}}>{a.mood}% mood</span>
+            {/* ▶ LEADERBOARD */}
+            <div>
+              <div onClick={()=>setTab(tab==="board"?"":"board")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{tab==="board"?"▼":"▶"} LEADERBOARD</span>
+              </div>
+              {tab==="board"&&(
+                <div style={{maxHeight:200,overflowY:"auto"}}>
+                  {leaderboard.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Collecting data…</div>}
+                  {leaderboard.map((a:any,rank:number)=>(
+                    <div key={a.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:10,color:rank===0?"#FFD700":rank===1?"#C0C0C0":rank===2?"#CD7F32":"#4a4a6a",width:14,textAlign:"center",fontWeight:700}}>{rank===0?"①":rank===1?"②":rank===2?"③":String(rank+1)}</span>
+                      <span style={{fontSize:11}}>{a.emoji}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{color:a.color,fontSize:11,fontWeight:600}}>{a.name}</div>
+                        <div style={{fontSize:10,color:"#00ff88"}}>{a.tasksCompleted} tasks completed</div>
+                      </div>
                     </div>
-                    <div style={{marginTop:2,height:2,background:"#1a1a30",borderRadius:1}}><div style={{height:2,width:Math.min(100,a.tasksCompleted*10)+"%",background:a.color,borderRadius:1}}/></div>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-
-          {tab==="flow"&&(
-            <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
-              <div style={{padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>TASK WATERFALL</div>
-              {waterfall.length===0&&<div style={{padding:"20px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center",lineHeight:2}}>Real task completions appear here<br/>when agents finish work sessions.<br/><br/><span style={{fontSize:10,color:"#4a4a6a"}}>Tracks: who finished → what task → triggers</span></div>}
-              {waterfall.map((wf:any)=>{
-                const ag=ALL_AGENTS.find(a=>a.id===wf.agentId);
-                if(!ag) return null;
-                const deps=DEPENDENCIES[wf.agentId];
-                return (
-                  <div key={wf.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                      <span style={{fontSize:11}}>{ag.emoji}</span>
-                      <div style={{flex:1}}>
-                        <span style={{color:ag.color,fontSize:12,fontWeight:700}}>{ag.name}</span>
-                        <span style={{color:"#7a7a98",fontSize:11}}> ✓ {wf.task}</span>
-                      </div>
-                      <span style={{color:"#4a4a6a",fontSize:9}}>{wf.ts}</span>
-                    </div>
-                    {deps&&deps.length>0&&(
-                      <div style={{paddingLeft:18,display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-                        <span style={{color:"#6a6a8e",fontSize:9}}>triggers →</span>
-                        {deps.map(depId=>{const dep=ALL_AGENTS.find(a=>a.id===depId);return dep?<span key={depId} style={{fontSize:9,color:dep.color,background:dep.color+"15",padding:"1px 5px",borderRadius:2,border:`1px solid ${dep.color}33`}}>{dep.emoji} {dep.name}</span>:null;})}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          </div>
 
           {/* Stats bar */}
           <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",display:"flex",padding:"6px 0"}}>
