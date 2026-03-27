@@ -389,7 +389,7 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
     ctx.fillStyle="#17172e";
     ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(incidentActive?"#ff333344":"#222244");
     ctx.lineWidth=working?T*0.022:T*0.01;
-    ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
     const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
     ctx.fillStyle="#090918";ctx.fillRect(mx2,my2,mw,mh);
     ctx.strokeStyle=working?ag.color+"cc":incidentActive?"#ff222233":"#252550";ctx.lineWidth=T*0.014;ctx.strokeRect(mx2,my2,mw,mh);
@@ -418,17 +418,31 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
   });
 
   // ── Empty row 3 desks (dimmed, no agents) ──
-  EMPTY_DESK_POS.forEach(({tx,ty})=>{
+  const PLANNED_LABELS=[
+    {tx:COL_X[2],ty:ROW_Y[1],emoji:"🔨",name:"Builder"},
+    {tx:COL_X[3],ty:ROW_Y[1],emoji:"🧪",name:"Tester"},
+    {tx:COL_X[2],ty:ROW_Y[2],emoji:"✍️",name:"Quill"},
+    {tx:COL_X[3],ty:ROW_Y[2],emoji:"📣",name:"Echo"},
+    {tx:COL_X[0],ty:ROW_Y[3],emoji:"",name:""},
+    {tx:COL_X[1],ty:ROW_Y[3],emoji:"",name:""},
+    {tx:COL_X[2],ty:ROW_Y[3],emoji:"",name:""},
+    {tx:COL_X[3],ty:ROW_Y[3],emoji:"",name:""},
+  ];
+  PLANNED_LABELS.forEach(({tx,ty,emoji,name})=>{
     const x=tx*T, y=ty*T, dw=T*1.5, dh=T*1.7;
     ctx.fillStyle="#0f0f1c";
     ctx.strokeStyle="#181830";
     ctx.lineWidth=T*0.008;
-    ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
     const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
     ctx.fillStyle="#060610";ctx.fillRect(mx2,my2,mw,mh);
     ctx.strokeStyle="#131328";ctx.lineWidth=T*0.012;ctx.strokeRect(mx2,my2,mw,mh);
-    ctx.font=`${Math.round(T*0.14)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-    ctx.fillStyle="#1a1a35";ctx.fillText("—",x+dw/2,y+dh*0.55);
+    if(name){
+      ctx.font=`${Math.round(T*0.18)}px serif`;ctx.textAlign="center";
+      ctx.fillStyle="#1a1a38";ctx.fillText(emoji,x+dw/2,y+dh*0.42);
+      ctx.font=`${Math.round(T*0.12)}px "IBM Plex Mono",monospace`;
+      ctx.fillStyle="#181835";ctx.fillText(name,x+dw/2,y+dh*0.72);
+    }
   });
 
   // ── Conference table ──
@@ -439,14 +453,22 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
   ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.fill();ctx.stroke();
   ctx.strokeStyle=activeMeeting?"#FDCB6E22":"#ffffff05";ctx.lineWidth=T*0.01;
   ctx.beginPath();ctx.roundRect(tcx+T*0.1,tcy+T*0.1,tw-T*0.2,th-T*0.2,T*0.15);ctx.stroke();
-  const chairW=T*0.2,chairH=T*0.13;
-  [[0.1,-.15],[0.28,-.15],[0.46,-.15],[0.64,-.15],[0.82,-.15],
-   [0.1,1.04],[0.28,1.04],[0.46,1.04],[0.64,1.04],[0.82,1.04],
-   [-.14,0.25],[-.14,0.62],[1.04,0.25],[1.04,0.62]
-  ].forEach(([fx,fy])=>{
-    ctx.fillStyle="#1c1c3a";ctx.strokeStyle="#252545";ctx.lineWidth=T*0.01;
-    ctx.beginPath();ctx.roundRect(tcx+tw*fx-chairW/2,tcy+th*fy-chairH/2,chairW,chairH,T*0.04);ctx.fill();ctx.stroke();
-    ctx.fillStyle="#222240";ctx.fillRect(tcx+tw*fx-chairW/2+T*0.02,tcy+th*fy-chairH/2+T*0.025,chairW-T*0.04,chairH*0.38);
+  // Chairs: 4 top, 4 bottom (evenly spaced with margin), 2 left, 2 right
+  const cW=T*0.22,cH=T*0.14,cGap=0.02;
+  const topBottom=[0.15,0.35,0.65,0.85];
+  const leftRight=[0.25,0.75];
+  const chairs=[
+    ...topBottom.map(fx=>({fx,fy:-0.14,rot:0})),
+    ...topBottom.map(fx=>({fx,fy:1.10,rot:0})),
+    ...leftRight.map(fy=>({fx:-0.12,fy,rot:0})),
+    ...leftRight.map(fy=>({fx:1.08,fy,rot:0})),
+  ];
+  chairs.forEach(({fx,fy})=>{
+    const cx=tcx+tw*fx-cW/2, cy=tcy+th*fy-cH/2;
+    ctx.fillStyle="#1e1e3c";ctx.strokeStyle="#282848";ctx.lineWidth=T*0.009;
+    ctx.beginPath();ctx.roundRect(cx,cy,cW,cH,T*0.04);ctx.fill();ctx.stroke();
+    // Cushion
+    ctx.fillStyle="#24243e";ctx.beginPath();ctx.roundRect(cx+T*0.02,cy+T*0.02,cW-T*0.04,cH*0.5,T*0.02);ctx.fill();
   });
   if(activeMeeting&&darkAlpha>0.04){ctx.shadowColor="#FDCB6E";ctx.shadowBlur=T*0.3*darkAlpha;ctx.strokeStyle="#FDCB6E33";ctx.lineWidth=T*0.025;ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();ctx.shadowBlur=0;}
   ctx.font=`bold ${Math.round(T*0.15)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
@@ -591,7 +613,7 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
   }
   // Idle timer display
   if(state==="idle"&&active&&ag.lastStateChange){
-    const idleMins=Math.round((now-(ag.lastStateChange||now))/60000);
+    const idleMins=Math.round((Date.now()-(ag.lastStateChange||Date.now()))/60000);
     if(idleMins>=1){
       const idleText=idleMins>=60?`${Math.floor(idleMins/60)}h ${idleMins%60}m`:`${idleMins}m`;
       const iPx=Math.max(9,Math.round(T*0.10));
@@ -688,8 +710,15 @@ export default function AgentOffice(){
   const [detail,setDetail]           = useState<any>(null);
   const [toasts,setToasts]           = useState<any[]>([]);
   const [tab,setTab]                 = useState("roster"); // legacy — kept for keyboard shortcut compat
-  const [openPanels,setOpenPanels]   = useState<Set<string>>(new Set(["feed"])); // expandable panels
-  const togglePanel=(id:string)=>setOpenPanels(prev=>{const next=new Set(prev);if(next.has(id))next.delete(id);else next.add(id);return next;});
+  const [openPanels,setOpenPanels]   = useState<Set<string>>(()=>{
+    try{const s=localStorage.getItem("office_panels");return s?new Set(JSON.parse(s)):new Set(["feed"]);}catch{return new Set(["feed"]);}
+  });
+  const togglePanel=(id:string)=>setOpenPanels(prev=>{
+    const next=new Set(prev);
+    if(next.has(id))next.delete(id);else next.add(id);
+    try{localStorage.setItem("office_panels",JSON.stringify(Array.from(next)));}catch(e){}
+    return next;
+  });
   const [meetingLogs,setMeetingLogs] = useState<any[]>([]);
   const [soundOn,setSoundOn]         = useState(true);
   const [incident,setIncident]       = useState<any>(null);
@@ -803,7 +832,9 @@ export default function AgentOffice(){
         const workingAgents=agents.filter((a:any)=>a.active&&a.state==="working");
         const kaosWorking=workingAgents.find((a:any)=>a.id===ORCHESTRATOR_ID);
         const othersWorking=workingAgents.filter((a:any)=>a.id!==ORCHESTRATOR_ID);
-        if(kaosWorking&&othersWorking.length>=1&&!meetingRef.current){
+        const kaosAge=kaosWorking?Date.now()-(kaosWorking.lastStateChange||0):0;
+        const collaborating=kaosWorking&&othersWorking.length>=1&&kaosAge>30000;
+        if(collaborating&&!meetingRef.current){
           const topic=othersWorking.length>1?"Full Team Sync":`${kaosWorking.name} + ${othersWorking[0].name}`;
           meetingRef.current={topic,agents:[kaosWorking.id,...othersWorking.map((a:any)=>a.id)],startTs:nowts()};
           addFeed(`📅 "${topic}" — ${[kaosWorking,...othersWorking].map(a=>a.name).join(", ")}`,"#FDCB6E");
@@ -1110,15 +1141,20 @@ export default function AgentOffice(){
         ctx.save();applyCamera(ctx,cam);
         drawAgentsArr.forEach((ag:any)=>{
           if(ag.id===ORCHESTRATOR_ID||ag.state!=="working"||!ag.active) return;
+          const workingMs=Date.now()-(ag.lastStateChange||Date.now());
+          const fadeIn=Math.min(1,workingMs/2000);
+          if(fadeIn<=0) return;
           const phase=(now*0.001)%1;
-          ctx.strokeStyle=ag.color+"22";ctx.lineWidth=T2*0.015;ctx.setLineDash([T2*0.1,T2*0.08]);
+          const lineAlpha=Math.round(fadeIn*0x22).toString(16).padStart(2,"0");
+          const dotAlpha=Math.round(fadeIn*0x88).toString(16).padStart(2,"0");
+          ctx.strokeStyle=ag.color+lineAlpha;ctx.lineWidth=T2*0.015;ctx.setLineDash([T2*0.1,T2*0.08]);
           ctx.beginPath();ctx.moveTo(ag.px,ag.py);ctx.lineTo(orchAgent2.px,orchAgent2.py);ctx.stroke();
           ctx.setLineDash([]);
           // Flowing dot along the line
           const dx=orchAgent2.px-ag.px,dy=orchAgent2.py-ag.py;
           const dotX=ag.px+dx*phase,dotY=ag.py+dy*phase;
           ctx.beginPath();ctx.arc(dotX,dotY,T2*0.04,0,Math.PI*2);
-          ctx.fillStyle=ag.color+"88";ctx.fill();
+          ctx.fillStyle=ag.color+dotAlpha;ctx.fill();
         });
         ctx.restore();
       }
@@ -1674,37 +1710,21 @@ export default function AgentOffice(){
             ))}
           </div>
 
-          {/* Replay scrubber */}
-          <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",padding:"5px 11px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-              <span style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em"}}>REPLAY</span>
-              <button onClick={()=>{setReplayMode(r=>{replayModeRef.current=!r;return!r;});}} style={{background:replayMode?"#1a1a3a":"transparent",border:`1px solid ${replayMode?"#6C5CE7":"#2a2a4a"}`,color:replayMode?"#a29bfe":"#4a5568",padding:"1px 6px",borderRadius:2,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{replayMode?"● REC OFF":"○ REC ON"}</button>
-              <span style={{fontSize:9,color:"#4a4a6a",marginLeft:"auto"}}>{replayLen} frames</span>
-            </div>
-            {replayMode&&replayLen>0&&(
-              <div style={{display:"flex",alignItems:"center",gap:5}}>
-                <input type="range" min="0" max={Math.max(0,replayLen-1)} value={replayPos}
-                  onChange={(e:any)=>{const v=+e.target.value;setReplayPos(v);replayCurRef.current=v;}}
-                  style={{flex:1,accentColor:"#6C5CE7"}}/>
-                <span style={{fontSize:10,color:"#7a7a98",width:26,textAlign:"right"}}>{replayPos+1}/{replayLen}</span>
-              </div>
-            )}
-            {timeline.length>0&&(
-              <div style={{height:8,background:"#0a0a18",borderRadius:2,overflow:"hidden",position:"relative",marginTop:3}}>
+          {/* Event timeline strip */}
+          {timeline.length>0&&(
+            <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",padding:"4px 11px 5px"}}>
+              <div style={{height:5,background:"#0a0a18",borderRadius:3,overflow:"hidden",position:"relative"}} title="Session events: green=task, gold=meeting, red=incident">
                 {timeline.map((ev:any,i:number)=>(
                   <div key={i} title={`${ev.ts} — ${ev.label}`} style={{
                     position:"absolute",left:`${(i/Math.max(1,timeline.length-1))*100}%`,
                     top:0,width:3,height:"100%",
                     background:ev.color,opacity:0.7,borderRadius:1,
-                    transform:"translateX(-50%)",cursor:"pointer"
+                    transform:"translateX(-50%)"
                   }}/>
                 ))}
               </div>
-            )}
-            <div style={{fontSize:9,color:"#1a1a3a",marginTop:2}}>
-              space=pause · m=map · d=flow · o=orch · esc=close
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
