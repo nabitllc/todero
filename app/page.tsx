@@ -201,35 +201,49 @@ function ChatTab() {
   const [selectedModel, setSelectedModel] = useState('claude-sonnet-4-6')
   const [loading, setLoading] = useState(false)
   const [selectedFile, setSelectedFile] = useState<string|null>(null)
+  const [chatError, setChatError] = useState<string|null>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const models = [
-    { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'Anthropic' },
     { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', provider: 'Anthropic' },
     { id: 'claude-haiku-4-5', label: 'Haiku 4.5', provider: 'Anthropic' },
-    { id: 'openrouter/auto', label: 'OpenRouter Auto', provider: 'OpenRouter' },
-    { id: 'ollama/gemma3:4b', label: 'Gemma 3 4B', provider: 'Local' },
+    { id: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', provider: 'OpenAI' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', provider: 'Google' },
   ]
 
-  // Load chats from localStorage
+  // Load chats from Supabase on mount
   useEffect(() => {
-    const saved = localStorage.getItem('mc-chats')
-    if (saved) {
-      try {
-        setChats(JSON.parse(saved))
-      } catch (e) {
-        // ignore
-      }
-    }
+    fetch('/api/chat/conversations')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          // Normalize Supabase snake_case → camelCase for UI
+          const normalized: ChatConversation[] = data.map((c: any) => ({
+            id: c.id,
+            title: c.title,
+            model: c.model,
+            messages: (c.messages || []).map((m: any) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              model: m.model,
+            })),
+            createdAt: new Date(c.created_at).getTime(),
+            updatedAt: new Date(c.updated_at).getTime(),
+          }))
+          setChats(normalized)
+        }
+      })
+      .catch(() => {/* silently fail, will retry on next render */})
   }, [])
 
-  // Save chats to localStorage
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (chats.length > 0) {
-      localStorage.setItem('mc-chats', JSON.stringify(chats))
-    }
-  }, [chats])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chats, loading])
 
-  const newChat = () => {
+  const newChat = async () => {
     const id = 'chat-' + Date.now()
     const conv: ChatConversation = {
       id,
@@ -241,6 +255,18 @@ function ChatTab() {
     }
     setChats([conv, ...chats])
     setActiveChat(id)
+    // Persist to Supabase
+    await fetch('/api/chat/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, title: 'New Chat', model: selectedModel }),
+    })
+  }
+
+  const deleteChat = async (id: string) => {
+    setChats(prev => prev.filter(c => c.id !== id))
+    if (activeChat === id) setActiveChat(null)
+    await fetch(`/api/chat/conversations?id=${id}`, { method: 'DELETE' })
   }
 
   const activeConv = chats.find(c => c.id === activeChat)
@@ -248,38 +274,78 @@ function ChatTab() {
     c.title.toLowerCase().includes(search.toLowerCase())
   )
 
+  const persistMessage = async (convId: string, msg: ChatMessage) => {
+    await fetch('/api/chat/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: msg.id,
+        conversation_id: convId,
+        role: msg.role,
+        content: msg.content,
+        model: msg.model || null,
+      }),
+    })
+  }
+
   const handleSend = async () => {
     if (!inputVal.trim() || !activeConv) return
+    setChatError(null)
 
-    // Add user message
+    const isFirstMsg = activeConv.messages.length === 0
+    const title = isFirstMsg ? inputVal.slice(0, 40) : activeConv.title
+
+    // Add user message locally
     const userMsg: ChatMessage = {
       id: 'msg-' + Date.now(),
       role: 'user',
       content: selectedFile ? `[📎 ${selectedFile}]\n${inputVal}` : inputVal,
-      attachments: selectedFile ? [selectedFile] : undefined,
     }
 
     const updatedChats = chats.map(c =>
       c.id === activeChat
-        ? {
-            ...c,
-            messages: [...c.messages, userMsg],
-            title: c.messages.length === 0 ? inputVal.slice(0, 40) : c.title,
-            updatedAt: Date.now(),
-          }
+        ? { ...c, messages: [...c.messages, userMsg], title, updatedAt: Date.now() }
         : c
     )
     setChats(updatedChats)
     setInputVal('')
     setSelectedFile(null)
 
-    // Simulate assistant response
+    // Persist user message + update title if first
+    await persistMessage(activeConv.id, userMsg)
+    if (isFirstMsg) {
+      await fetch('/api/chat/conversations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: activeConv.id, title }),
+      })
+    }
+
+    // Call real LLM
     setLoading(true)
-    setTimeout(() => {
+    try {
+      const allMessages = [...activeConv.messages, userMsg].map(m => ({
+        role: m.role,
+        content: m.content,
+      }))
+
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: selectedModel, messages: allMessages }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setChatError(data.error || 'Unknown error from LLM')
+        setLoading(false)
+        return
+      }
+
       const assistantMsg: ChatMessage = {
-        id: 'msg-' + (Date.now() + 1),
+        id: data.id || 'msg-' + Date.now(),
         role: 'assistant',
-        content: `I am KAOS, running on ${selectedModel}. This chat interface is functional. You can save conversations in localStorage, switch models, and attach files. (The actual API integration is pending OpenClaw auth setup.)`,
+        content: data.content,
         model: selectedModel,
       }
 
@@ -289,8 +355,14 @@ function ChatTab() {
           : c
       )
       setChats(finalChats)
+
+      // Persist assistant message
+      await persistMessage(activeConv.id, assistantMsg)
+    } catch (err) {
+      setChatError('Network error — could not reach LLM')
+    } finally {
       setLoading(false)
-    }, 1200)
+    }
   }
 
   return (
@@ -328,21 +400,28 @@ function ChatTab() {
             <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
           ) : (
             filteredChats.map(c => (
-              <button
+              <div
                 key={c.id}
-                onClick={() => setActiveChat(c.id)}
                 className={
-                  'w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs ' +
+                  'group relative w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer ' +
                   (activeChat === c.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')
-                }>
-                <p className="font-medium truncate">{c.title}</p>
+                }
+                onClick={() => setActiveChat(c.id)}
+              >
+                <p className="font-medium truncate pr-5">{c.title}</p>
                 <p className="text-[10px] mt-0.5 opacity-60">
                   {models.find(m => m.id === c.model)?.label || c.model}
                 </p>
                 <p className="text-[9px] opacity-40 mt-1">
-                  {new Date(c.createdAt).toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}
+                  {new Date(c.updatedAt).toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}
                 </p>
-              </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); deleteChat(c.id) }}
+                  className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all text-[10px] p-0.5"
+                  title="Delete">
+                  ✕
+                </button>
+              </div>
             ))
           )}
         </div>
@@ -413,17 +492,25 @@ function ChatTab() {
               {loading && (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm bg-zinc-900/50">
-                    🏢
+                    🧠
                   </div>
                   <div className="px-4 py-3 rounded-lg bg-zinc-900 text-zinc-500">
-                    <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 anim-bounce" style={{animationDelay:'0ms'}} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 anim-bounce" style={{animationDelay:'150ms'}} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 anim-bounce" style={{animationDelay:'300ms'}} />
+                    <div className="flex gap-1 items-center">
+                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'0ms'}} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'150ms'}} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'300ms'}} />
                     </div>
                   </div>
                 </div>
               )}
+              {chatError && (
+                <div className="flex gap-3">
+                  <div className="px-4 py-3 rounded-lg bg-red-950/40 border border-red-900/40 text-red-400 text-sm max-w-xl">
+                    ⚠️ {chatError}
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Input Area */}
