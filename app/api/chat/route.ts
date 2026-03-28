@@ -29,24 +29,28 @@ export async function POST(req: NextRequest) {
   let body: any
   try { body = await req.json() } catch { return errorStream('Invalid request body') }
 
-  const { messages, conversationId, assistantMsgId, agentId } = body
+  const { messages, conversationId, assistantMsgId, agentId, modelOverride } = body
   if (!messages || !conversationId) return errorStream('messages and conversationId required')
 
   const resolvedAgent = agentId || 'main'
   const sessionKey = `mc-chat-${conversationId}`
   const msgId = assistantMsgId || ('msg-server-' + Date.now())
+  // Model override: if set, pass as x-openclaw-model header so gateway uses that model
+  const resolvedModel = modelOverride || 'openclaw'
 
   let upstream: Response
   try {
+    const upstreamHeaders: Record<string, string> = {
+      'Authorization': `Bearer ${OPENCLAW_TOKEN}`,
+      'Content-Type': 'application/json',
+      'x-openclaw-agent-id': resolvedAgent,
+      'x-openclaw-session-key': sessionKey,
+    }
+    if (modelOverride) upstreamHeaders['x-openclaw-model'] = modelOverride
     upstream = await fetch(`${OPENCLAW_GATEWAY}/v1/chat/completions`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENCLAW_TOKEN}`,
-        'Content-Type': 'application/json',
-        'x-openclaw-agent-id': resolvedAgent,
-        'x-openclaw-session-key': sessionKey,
-      },
-      body: JSON.stringify({ model: 'openclaw', messages, stream: true }),
+      headers: upstreamHeaders,
+      body: JSON.stringify({ model: resolvedModel, messages, stream: true }),
     })
   } catch {
     return errorStream('Failed to reach OpenClaw gateway')

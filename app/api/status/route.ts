@@ -189,7 +189,15 @@ export async function GET() {
           const channel = key.split(':')[2] || 'session'
           const agoMin = Math.floor((Date.now() - (val.updatedAt ?? Date.now())) / 60000)
           const tokens = val.totalTokens ?? 0
-          const isActive = agoMin < 5
+          // Check actual session file mtime for real-time "currently processing" detection
+          let fileMtimeSec = 9999
+          try {
+            const sf = (val as any).sessionFile
+            if (sf && fs.existsSync(sf)) {
+              fileMtimeSec = Math.floor((Date.now() - fs.statSync(sf).mtimeMs) / 1000)
+            }
+          } catch { /* non-fatal */ }
+          const isActive = agoMin < 10 || fileMtimeSec < 30
           const channelLabel = channel === 'telegram' ? 'Telegram' : channel === 'discord' ? 'Discord'
             : channel === 'cron' ? 'Cron' : channel === 'subagent' ? 'Sub-agent' : 'Session'
 
@@ -227,8 +235,9 @@ export async function GET() {
             }
           } catch { /* non-fatal */ }
 
+          const isLive = fileMtimeSec < 30
           agentCurrentTask[agentId] = isActive
-            ? (lastUserMsg ? `Active: ${lastUserMsg}` : `Active on ${channelLabel} · ${(tokens/1000).toFixed(1)}k tokens`)
+            ? (lastUserMsg ? `${isLive ? 'Processing' : 'Active'}: ${lastUserMsg}` : `${isLive ? 'Processing' : 'Active'} on ${channelLabel} · ${(tokens/1000).toFixed(1)}k tokens`)
             : agoMin < 60 ? `Last: ${channelLabel} ${agoMin}m ago` : `Idle · last ${Math.floor(agoMin/60)}h ago`
         }
 

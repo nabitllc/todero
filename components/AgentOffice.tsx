@@ -560,7 +560,7 @@ function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:any){
   ctx.globalAlpha=1;ctx.restore();
 }
 
-function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean){
+function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean,boardTasksMap:Record<string,string>={},subagentCount:number=0){
   const visible=ag.active||BENCH_POS[ag.id];
   if(!visible) return;
   ctx.save();applyCamera(ctx,cam);
@@ -633,6 +633,20 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
   ctx.beginPath();ctx.roundRect(px-nlW/2,nlY,nlW,nlH,T*0.03);ctx.fill();ctx.stroke();
   ctx.fillStyle=active?color:"#6a6a8e";ctx.fillText(name,px,nlY+nlH*0.72);
 
+  // Board task overlay — shown above chat task label
+  const boardTask=boardTasksMap[ag.id];
+  if(boardTask&&(state==="working"||state==="idle")){
+    const bPx=Math.max(10,Math.round(T*0.13));
+    ctx.font=`bold ${bPx}px 'IBM Plex Mono',monospace`;
+    const bShort=boardTask.length>28?boardTask.slice(0,27)+"…":boardTask;
+    const blW=ctx.measureText("📋 "+bShort).width+T*0.18,blH=bPx*1.7;
+    const chatTaskH=(state==="working"&&task)?(Math.max(11,Math.round(T*0.19))*1.8+T*0.10):0;
+    const blY=py-hs-chatTaskH-blH-T*0.28+dy2+oy;
+    ctx.fillStyle="#1a1500f0";ctx.strokeStyle="#FDCB6Ecc";ctx.lineWidth=T*0.018;
+    ctx.beginPath();ctx.roundRect(px-blW/2,blY,blW,blH,T*0.04);ctx.fill();ctx.stroke();
+    ctx.fillStyle="#FDCB6E";ctx.textAlign="center";
+    ctx.fillText("📋 "+bShort,px,blY+blH*0.73);
+  }
   if(state==="working"&&task){
     const tPx=Math.max(11,Math.round(T*0.19));
     ctx.font=`bold ${tPx}px 'IBM Plex Mono',monospace`;
@@ -674,6 +688,26 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
       ctx.fillStyle="#4a4a6a";
       ctx.fillText(`idle ${idleText}`,px,py+hs+T*0.35+dy2+oy);
     }
+  }
+  // Sub-agent activity badge — only for orchestrator when sub-agents are active
+  if(ag.id===ORCHESTRATOR_ID&&subagentCount>0){
+    const badgeX=px+hs-T*0.05;
+    const badgeY=py-hs-T*0.35;
+    const bPx=Math.max(8,Math.round(T*0.11));
+    const label=`🤖×${subagentCount}`;
+    ctx.font=`bold ${bPx}px 'IBM Plex Mono',monospace`;
+    const bw=ctx.measureText(label).width+T*0.14;
+    const bh=bPx*1.6;
+    ctx.fillStyle='#0d1a0d';
+    ctx.strokeStyle='#00ff8899';
+    ctx.lineWidth=T*0.015;
+    ctx.beginPath();
+    ctx.roundRect(badgeX-bw/2,badgeY-bh/2,bw,bh,T*0.03);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle='#00ff88';
+    ctx.textAlign='center';
+    ctx.fillText(label,badgeX,badgeY+bh*0.28);
   }
   ctx.globalAlpha=1;ctx.restore();
 }
@@ -781,6 +815,9 @@ export default function AgentOffice(){
   const [configAgent,setConfigAgent] = useState<any>(null);
   const [configEdits,setConfigEdits] = useState<any>({});
   const [leaderboard,setLeaderboard] = useState<any[]>([]);
+  const [lbTimeframe,setLbTimeframe] = useState<'session'|'24h'|'7d'>('session');
+  // Real session-based task counts from file system
+  const [realTaskCounts,setRealTaskCounts] = useState<Record<string,{h24:number,d7:number}>>({});
   const [showMinimap,setShowMinimap] = useState(true);
   const [showDepGraph,setShowDepGraph] = useState(false);
   const [replayMode,setReplayMode]   = useState(false);
@@ -797,6 +834,9 @@ export default function AgentOffice(){
   const showGridRef                  = useRef(true);
   const [waterfall,setWaterfall]     = useState<any[]>([]);
   const waterfallRef                 = useRef<any[]>([]);
+  const [boardTasks, setBoardTasks]  = useState<Record<string,string>>({}) // agentId → task title
+  const boardTasksRef                = useRef<Record<string,string>>({})
+  const subagentCountRef             = useRef<number>(0)
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
   const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
   const [showSettings,setShowSettings] = useState(false);
@@ -806,6 +846,8 @@ export default function AgentOffice(){
   const switchTheme=(t:"A"|"B")=>{setTheme(t);try{localStorage.setItem("office_theme",t);}catch(e){}};
   const [sessionLog,setSessionLog] = useState<any[]>([]);
   const [loadingLog,setLoadingLog] = useState(false);
+  const [panelTimeframe, setPanelTimeframe] = useState<'session'|'24h'|'7d'>('session');
+  const sessionStartTs = useRef(Date.now());
 
   const addToast=useCallback((text:string,color="#00ff88")=>{
     const id=feedIdRef.current++;
@@ -827,6 +869,25 @@ export default function AgentOffice(){
   useEffect(()=>{showLegendRef.current=showLegend;},[showLegend]);
   useEffect(()=>{replayModeRef.current=replayMode;},[replayMode]);
 
+  // ── Board task polling ─────────────────────────────────────────────────
+  useEffect(()=>{
+    const fetchTasks=async()=>{
+      try{
+        const res=await fetch('/api/tasks');
+        const data=await res.json();
+        if(!Array.isArray(data)) return;
+        const map:Record<string,string>={};
+        data.filter((t:any)=>t.status==='in_progress'&&t.assignee&&t.title)
+            .forEach((t:any)=>{ map[t.assignee]=t.title; });
+        boardTasksRef.current=map;
+        setBoardTasks({...map});
+      }catch(e){}
+    };
+    fetchTasks();
+    const t=setInterval(fetchTasks,30000);
+    return()=>clearInterval(t);
+  },[]);
+
   // ── Real data polling — SOLE source of agent state ─────────────────────
   useEffect(()=>{
     let prevStates:Record<string,string>={};
@@ -837,6 +898,14 @@ export default function AgentOffice(){
         if(!simRef.current?.agents) return;
         const agents=simRef.current.agents;
         const taskMap:Record<string,string>=data.agentCurrentTask||{};
+        // Count active sub-agents from recentActivity
+        const activity: any[] = data.recentActivity || []
+        const activeSubagents = activity.filter((a: any) =>
+          a.agentId === 'main' &&
+          (a.action === 'delegate' || a.channel?.includes('Sub-agent')) &&
+          a.ago != null && a.ago < 10
+        ).length
+        subagentCountRef.current = activeSubagents
 
         agents.forEach((ag:any)=>{
           if(!ag.active) return;
@@ -844,17 +913,24 @@ export default function AgentOffice(){
           const rawTask=taskMap[ag.id]||"";
           // Parse OpenClaw status strings
           const lower=rawTask.toLowerCase();
-          const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running");
+          const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running")||lower.startsWith("processing");
           // Clean the description: "Active on Telegram · 53.5k tokens" → "Processing session"
-          // "Active on webchat · 12k tokens" → "Processing session"
+          // "Processing: Why don't I see Kaos..." → show that label
           let taskDesc:string|null=null;
           if(isActive){
-            if(rawTask.startsWith("Active: ")){
+            if(rawTask.startsWith("Active: ")||rawTask.startsWith("Processing: ")){
               // Real task label from last user message
-              taskDesc=rawTask.slice(8).trim().slice(0,40);
+              const colonIdx=rawTask.indexOf(": ");
+              taskDesc=rawTask.slice(colonIdx+2).trim().slice(0,40);
             } else {
-              const channel=rawTask.match(/on (\w+)/)?.[1]||"";
-              taskDesc=channel?`via ${channel}`:"Working";
+              // Extract channel from "Active on Telegram · 12.3k tokens" or "Active on Sub-agent · ..."
+              const channelMatch=rawTask.match(/on\s+([A-Za-z\-]+)/);
+              const ch=channelMatch?.[1]||"";
+              const chClean=ch==="Sub-agent"?"🤖 sub-agent":ch==="Telegram"?"📱 session":ch==="Discord"?"💬 session":ch==="Cron"?"⏱ cron":ch==="Session"?"session":"";
+              // Extract token count
+              const tokMatch=rawTask.match(/([\d.]+)k tokens/);
+              const tokStr=tokMatch?` · ${tokMatch[1]}k`:"";
+              taskDesc=chClean?`${chClean}${tokStr}`:"Working";
             }
           }
 
@@ -900,10 +976,23 @@ export default function AgentOffice(){
         const kaosWorking=workingAgents.find((a:any)=>a.id===ORCHESTRATOR_ID);
         const othersWorking=workingAgents.filter((a:any)=>a.id!==ORCHESTRATOR_ID);
         const kaosAge=kaosWorking?Date.now()-(kaosWorking.lastStateChange||0):0;
-        const collaborating=kaosWorking&&othersWorking.length>=1&&kaosAge>30000;
+        const collaborating=kaosWorking&&othersWorking.length>=1&&kaosAge>5000;
         if(collaborating&&!meetingRef.current){
           const topic=othersWorking.length>1?"Full Team Sync":`${kaosWorking.name} + ${othersWorking[0].name}`;
-          meetingRef.current={topic,agents:[kaosWorking.id,...othersWorking.map((a:any)=>a.id)],startTs:nowts()};
+          const meetingParticipants=[kaosWorking.id,...othersWorking.map((a:any)=>a.id)];
+          meetingRef.current={topic,agents:meetingParticipants,startTs:nowts()};
+          // Move all meeting participants toward conference table
+          const T2=tileRef.current;
+          if(T2>0){
+            const ringPositions=confRingPos(meetingParticipants.length,T2);
+            meetingParticipants.forEach((id:string,idx:number)=>{
+              const ag=agents.find((a:any)=>a.id===id);
+              if(!ag) return;
+              const target=ringPositions[idx]||ringPositions[0];
+              ag.state="moving_to_meeting";
+              ag.waypoints=lpath(ag.px,ag.py,target.x,target.y);
+            });
+          }
           addFeed(`📅 "${topic}" — ${[kaosWorking,...othersWorking].map(a=>a.name).join(", ")}`,"#FDCB6E");
           addToast(`📅 "${topic}"`,"#FDCB6E");
           timelineRef.current=[...timelineRef.current,{type:"meeting",color:"#FDCB6E",ts:nowts(),label:`Meeting: ${topic}`,tick:0}].slice(-120);
@@ -933,11 +1022,20 @@ export default function AgentOffice(){
         const prev=prevStates[ag.id]||"idle";
         const rawTask=taskMap[ag.id]||"";
         const lower=rawTask.toLowerCase();
-        const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running");
+        const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running")||lower.startsWith("processing");
         let taskDesc:string|null=null;
         if(isActive){
-          if(rawTask.startsWith("Active: ")){taskDesc=rawTask.slice(8).trim().slice(0,40);}
-          else{const channel=rawTask.match(/on (\w+)/)?.[1]||"";taskDesc=channel?`via ${channel}`:"Working";}
+          if(rawTask.startsWith("Active: ")||rawTask.startsWith("Processing: ")){const ci=rawTask.indexOf(": ");taskDesc=rawTask.slice(ci+2).trim().slice(0,40);}
+          else{
+            // Extract channel from "Active on Telegram · 12.3k tokens" or "Active on Sub-agent · ..."
+            const channelMatch=rawTask.match(/on\s+([A-Za-z\-]+)/);
+            const ch=channelMatch?.[1]||"";
+            const chClean=ch==="Sub-agent"?"🤖 sub-agent":ch==="Telegram"?"📱 session":ch==="Discord"?"💬 session":ch==="Cron"?"⏱ cron":ch==="Session"?"session":"";
+            // Extract token count
+            const tokMatch=rawTask.match(/([\d.]+)k tokens/);
+            const tokStr=tokMatch?` · ${tokMatch[1]}k`:"";
+            taskDesc=chClean?`${chClean}${tokStr}`:"Working";
+          }
         }
         if(isActive&&taskDesc){
           if(ag.state!=="working"){ag.state="working";ag.task=taskDesc;ag.progress=5;ag.monologue=null;ag.glowTick=60;ag.lastStateChange=Date.now();addFeed(`${ag.emoji} ${ag.name}: ${taskDesc}`,ag.color);if(soundRef.current&&audioRef.current)audioRef.current.playClick();timelineRef.current=[...timelineRef.current,{type:"task",color:ag.color,ts:nowts(),label:`${ag.name}: ${taskDesc}`,tick:0}].slice(-120);setTimeline([...timelineRef.current]);}
@@ -954,6 +1052,7 @@ export default function AgentOffice(){
       es.onmessage=(event)=>{
         try{
           const data=JSON.parse(event.data);
+          // Always call processTaskMap on every state event — server deduplicates, client must not
           if(data.type==='state'&&data.agentCurrentTask){
             processTaskMap(data.agentCurrentTask);
           }
@@ -979,7 +1078,34 @@ export default function AgentOffice(){
     };
   },[addFeed,addToast]);
 
-  // ── OPENCLAW_STATE postMessage listener ──────────────────────────────────
+  // ── Real session task counts for leaderboard ─────────────────────────────
+  useEffect(()=>{
+    const fetchRealCounts=async()=>{
+      try{
+        const res=await fetch('/api/status');
+        const data=await res.json();
+        // Use recentActivity to count tasks per agent in timeframe windows
+        const activity:any[]=data.recentActivity||[];
+        const now=Date.now();
+        const counts:Record<string,{h24:number,d7:number}>={}; 
+        const agentIds=['main','scout','ops','kemuni-sme','vespera-sme'];
+        agentIds.forEach(id=>{ counts[id]={h24:0,d7:0}; });
+        activity.forEach((entry:any)=>{
+          const id=entry.agentId;
+          if(!counts[id]) return;
+          const agoMs=(entry.ago||0)*60*1000;
+          if(agoMs < 86400000) counts[id].h24++;
+          if(agoMs < 604800000) counts[id].d7++;
+        });
+        setRealTaskCounts(counts);
+      }catch(e){}
+    };
+    fetchRealCounts();
+    const t=setInterval(fetchRealCounts,30000);
+    return()=>clearInterval(t);
+  },[]);
+
+// ── OPENCLAW_STATE postMessage listener ──────────────────────────────────
   useEffect(()=>{
     const handler=(event:MessageEvent)=>{
       if(event.data?.type==='OPENCLAW_STATE'&&simRef.current?.agents){
@@ -1024,6 +1150,7 @@ export default function AgentOffice(){
       if(!agents&&tileRef.current>0){
         agents=initAgents(tileRef.current,activeIdsRef.current);
         simRef.current={agents,particles,critPairs:()=>critPairs};
+        simRef.current.boardTasks=()=>boardTasksRef.current;
         setRoster(agents.map(a=>({...a})));
       }
     }
@@ -1234,7 +1361,7 @@ export default function AgentOffice(){
       }
       drawParticles(ctx,particles,cam);
       drawChatBubbles(ctx,chatBubbles.current,T2,cam);
-      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData));
+      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0));
       if(minimapRef.current)drawMinimap(ctx,T2,drawAgentsArr,cam,W,H,showLegendRef.current);
 
       // Hover tooltip
@@ -1625,22 +1752,10 @@ export default function AgentOffice(){
                 )}
               </div>
 
-              {/* KAOS-specific: dependency chains + command terminal + status updates */}
+              {/* KAOS-specific: command terminal + status updates (dependency chains moved to expandable panel) */}
               {detail&&detail.id===ORCHESTRATOR_ID&&(
                 <div style={{borderTop:"1px solid #1e1e35",padding:"8px 11px"}}>
-                  <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:6}}>DEPENDENCY CHAINS</div>
-                  {Object.entries(DEPENDENCIES).map(([src,dsts])=>{
-                    const srcAg=roster.find(a=>a.id===src);if(!srcAg?.active) return null;
-                    return(
-                      <div key={src} style={{marginBottom:3,padding:"3px 7px",background:"#12122a",borderRadius:3,border:`1px solid ${srcAg.color}22`,fontSize:10}}>
-                        <span style={{color:srcAg.color,fontWeight:700}}>{srcAg.emoji} {srcAg.name}</span>
-                        <span style={{color:"#6a6a8e"}}> → </span>
-                        {dsts.map(d=>{const dag=roster.find(a=>a.id===d);return dag?<span key={d} style={{color:dag.color,marginRight:5}}>{dag.emoji}{dag.name}</span>:null;})}
-                      </div>
-                    );
-                  }).filter(Boolean)}
-
-                  <div style={{marginTop:8,fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>COMMAND TERMINAL</div>
+                  <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>COMMAND TERMINAL</div>
                   <div style={{display:"flex",alignItems:"center",gap:4,background:"#0a0a18",borderRadius:4,padding:"4px 8px",border:"1px solid #1e1e35"}}>
                     <span style={{color:"#6C5CE7",fontSize:12,fontWeight:700}}>❯</span>
                     <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
@@ -1697,12 +1812,29 @@ export default function AgentOffice(){
                 <span style={{fontSize:9,color:"#4a4a6a"}}>{feed.length}</span>
               </div>
               {openPanels.has("feed")&&(
-                <div ref={feedRef} style={{maxHeight:200,overflowY:"auto",padding:"3px 0"}}>
-                  {feed.slice(-20).map((e:any)=><div key={e.id} style={{padding:"2px 11px",display:"flex",gap:5,alignItems:"flex-start"}}>
-                    <span style={{color:"#4a4a6a",fontSize:9,flexShrink:0,marginTop:2}}>{e.ts}</span>
-                    <span style={{color:e.color,fontSize:11,lineHeight:1.5}}>{e.text}</span>
-                  </div>)}
-                </div>
+                <>
+                  <div style={{display:"flex",borderBottom:"1px solid #1e1e35",background:"#0a0a18"}}>
+                    {(['session','24h','7d'] as const).map(tf=>(
+                      <button key={tf} onClick={(e)=>{e.stopPropagation();setPanelTimeframe(tf);}}
+                        style={{flex:1,padding:"4px 0",fontSize:10,fontWeight:600,letterSpacing:"0.08em",
+                          background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",
+                          color:panelTimeframe===tf?"#a29bfe":"#4a4a6a",
+                          borderBottom:panelTimeframe===tf?"2px solid #6C5CE7":"2px solid transparent"}}>
+                        {tf.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div ref={feedRef} style={{maxHeight:200,overflowY:"auto",padding:"3px 0"}}>
+                    {feed.slice(-80).filter((e:any)=>{
+                      if(panelTimeframe==='session') return true;
+                      // feed items don't have ago field — treat session and 24h/7d same for now
+                      return true;
+                    }).slice(-20).map((e:any)=><div key={e.id} style={{padding:"2px 11px",display:"flex",gap:5,alignItems:"flex-start"}}>
+                      <span style={{color:"#4a4a6a",fontSize:9,flexShrink:0,marginTop:2}}>{e.ts}</span>
+                      <span style={{color:e.color,fontSize:11,lineHeight:1.5}}>{e.text}</span>
+                    </div>)}
+                  </div>
+                </>
               )}
             </div>
 
@@ -1713,7 +1845,19 @@ export default function AgentOffice(){
                 <span style={{fontSize:9,color:waterfall.length>0?"#00ff88":"#4a4a6a"}}>{waterfall.length}</span>
               </div>
               {openPanels.has("flow")&&(
-                <div style={{maxHeight:200,overflowY:"auto"}}>
+                <>
+                  <div style={{display:"flex",borderBottom:"1px solid #1e1e35",background:"#0a0a18"}}>
+                    {(['session','24h','7d'] as const).map(tf=>(
+                      <button key={tf} onClick={(e)=>{e.stopPropagation();setPanelTimeframe(tf);}}
+                        style={{flex:1,padding:"4px 0",fontSize:10,fontWeight:600,letterSpacing:"0.08em",
+                          background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",
+                          color:panelTimeframe===tf?"#a29bfe":"#4a4a6a",
+                          borderBottom:panelTimeframe===tf?"2px solid #6C5CE7":"2px solid transparent"}}>
+                        {tf.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{maxHeight:200,overflowY:"auto"}}>
                   {waterfall.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center",lineHeight:1.8}}>Completions appear when agents finish work.</div>}
                   {waterfall.map((wf:any)=>{
                     const ag=ALL_AGENTS.find(a=>a.id===wf.agentId);
@@ -1737,6 +1881,7 @@ export default function AgentOffice(){
                     );
                   })}
                 </div>
+                </>
               )}
             </div>
 
@@ -1747,19 +1892,32 @@ export default function AgentOffice(){
                 <span style={{fontSize:9,color:meetingLogs.length>0?"#FDCB6E":"#4a4a6a"}}>{meetingLogs.length}</span>
               </div>
               {openPanels.has("meetings")&&(
-                <div style={{maxHeight:200,overflowY:"auto"}}>
-                  {meetingLogs.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Transcripts appear after meetings end.</div>}
-                  {meetingLogs.map((m:any)=>(
-                    <div key={m.id} style={{padding:"7px 11px",borderBottom:"1px solid #1e1e35"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                        <span style={{color:"#FDCB6E",fontSize:11,fontWeight:600}}>{m.topic}</span>
-                        <span style={{color:"#4a4a6a",fontSize:9}}>{m.ts}</span>
+                <>
+                  <div style={{display:"flex",borderBottom:"1px solid #1e1e35",background:"#0a0a18"}}>
+                    {(['session','24h','7d'] as const).map(tf=>(
+                      <button key={tf} onClick={(e)=>{e.stopPropagation();setPanelTimeframe(tf);}}
+                        style={{flex:1,padding:"4px 0",fontSize:10,fontWeight:600,letterSpacing:"0.08em",
+                          background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",
+                          color:panelTimeframe===tf?"#a29bfe":"#4a4a6a",
+                          borderBottom:panelTimeframe===tf?"2px solid #6C5CE7":"2px solid transparent"}}>
+                        {tf.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{maxHeight:200,overflowY:"auto"}}>
+                    {meetingLogs.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Transcripts appear after meetings end.</div>}
+                    {meetingLogs.map((m:any)=>(
+                      <div key={m.id} style={{padding:"7px 11px",borderBottom:"1px solid #1e1e35"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                          <span style={{color:"#FDCB6E",fontSize:11,fontWeight:600}}>{m.topic}</span>
+                          <span style={{color:"#4a4a6a",fontSize:9}}>{m.ts}</span>
+                        </div>
+                        <div style={{color:"#6a6a8e",fontSize:10,marginBottom:3}}>{m.attendees.join(", ")}</div>
+                        <div style={{color:"#8892b0",fontSize:11,lineHeight:1.7,whiteSpace:"pre-line"}}>{m.summary}</div>
                       </div>
-                      <div style={{color:"#6a6a8e",fontSize:10,marginBottom:3}}>{m.attendees.join(", ")}</div>
-                      <div style={{color:"#8892b0",fontSize:11,lineHeight:1.7,whiteSpace:"pre-line"}}>{m.summary}</div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
@@ -1767,55 +1925,121 @@ export default function AgentOffice(){
             <div>
               <div onClick={()=>togglePanel("board")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
                 <span>{openPanels.has("board")?"▼":"▶"} LEADERBOARD</span>
+                <span style={{fontSize:9,color:"#4a4a6a",textTransform:"uppercase"}}>{lbTimeframe}</span>
               </div>
               {openPanels.has("board")&&(
-                <div style={{maxHeight:200,overflowY:"auto"}}>
-                  {leaderboard.length===0&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>Collecting data…</div>}
-                  {leaderboard.map((a:any,rank:number)=>(
-                    <div key={a.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
-                      <span style={{fontSize:10,color:rank===0?"#FFD700":rank===1?"#C0C0C0":rank===2?"#CD7F32":"#4a4a6a",width:14,textAlign:"center",fontWeight:700}}>{rank===0?"①":rank===1?"②":rank===2?"③":String(rank+1)}</span>
-                      <span style={{fontSize:11}}>{a.emoji}</span>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{color:a.color,fontSize:11,fontWeight:600}}>{a.name}</div>
-                        <div style={{fontSize:10,color:"#00ff88"}}>{a.tasksCompleted} tasks completed</div>
-                      </div>
-                    </div>
-                  ))}
+                <div>
+                  {/* Timeframe tabs */}
+                  <div style={{display:"flex",borderBottom:"1px solid #1e1e35",background:"#0a0a18"}}>
+                    {(['session','24h','7d'] as const).map(tf=>(
+                      <button key={tf} onClick={(e)=>{e.stopPropagation();setLbTimeframe(tf);}}
+                        style={{flex:1,padding:"4px 0",fontSize:10,fontWeight:600,letterSpacing:"0.08em",
+                          background:"transparent",border:"none",cursor:"pointer",
+                          color:lbTimeframe===tf?"#a29bfe":"#4a4a6a",
+                          borderBottom:lbTimeframe===tf?"2px solid #6C5CE7":"2px solid transparent"}}>
+                        {tf.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{maxHeight:180,overflowY:"auto"}}>
+                    {(() => {
+                      const ranked = leaderboard.map(a => {
+                        const real = realTaskCounts[a.id] || {h24:0, d7:0};
+                        const count = lbTimeframe === 'session' ? a.tasksCompleted
+                          : lbTimeframe === '24h' ? real.h24
+                          : real.d7;
+                        return {...a, displayCount: count};
+                      }).sort((a,b) => b.displayCount - a.displayCount || b.efficiency - a.efficiency);
+                      if(ranked.every(a=>a.displayCount===0)) return (
+                        <div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>
+                          {lbTimeframe==='session'?'Collecting data…':'No activity in this window'}
+                        </div>
+                      );
+                      return ranked.map((a:any,rank:number)=>(
+                        <div key={a.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:10,color:rank===0?"#FFD700":rank===1?"#C0C0C0":rank===2?"#CD7F32":"#4a4a6a",width:14,textAlign:"center",fontWeight:700}}>
+                            {rank===0?"①":rank===1?"②":rank===2?"③":String(rank+1)}
+                          </span>
+                          <span style={{fontSize:11}}>{a.emoji}</span>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{color:a.color,fontSize:11,fontWeight:600}}>{a.name}</div>
+                            <div style={{fontSize:10,color:"#00ff88"}}>{a.displayCount} {lbTimeframe==='session'?'this session':lbTimeframe==='24h'?'today':'this week'}</div>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* ▶ INCIDENTS */}
+            {/* ▶ INCIDENT LOG */}
             <div>
               <div onClick={()=>togglePanel("incidents")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
-                <span>{openPanels.has("incidents")?"▼":"▶"} INCIDENTS</span>
+                <span>{openPanels.has("incidents")?"▼":"▶"} INCIDENT LOG</span>
                 <span style={{fontSize:9,color:incidentLog.length>0?"#ff4444":"#4a4a6a"}}>{incidentLog.length}</span>
               </div>
               {openPanels.has("incidents")&&(
-                <div style={{maxHeight:160,overflowY:"auto"}}>
-                  {incident&&(
-                    <div style={{padding:"6px 11px",background:"#1a0808",borderBottom:"1px solid #2a1010",display:"flex",alignItems:"center",gap:6}}>
-                      <span style={{fontSize:11}}>🔴</span>
-                      <div style={{flex:1}}>
-                        <div style={{color:"#ff4444",fontSize:11,fontWeight:700}}>{incident.title}</div>
-                        <div style={{color:"#ff7777",fontSize:10}}>Active — all hands</div>
+                <>
+                  <div style={{display:"flex",borderBottom:"1px solid #1e1e35",background:"#0a0a18"}}>
+                    {(['session','24h','7d'] as const).map(tf=>(
+                      <button key={tf} onClick={(e)=>{e.stopPropagation();setPanelTimeframe(tf);}}
+                        style={{flex:1,padding:"4px 0",fontSize:10,fontWeight:600,letterSpacing:"0.08em",
+                          background:"transparent",border:"none",cursor:"pointer",fontFamily:"inherit",
+                          color:panelTimeframe===tf?"#a29bfe":"#4a4a6a",
+                          borderBottom:panelTimeframe===tf?"2px solid #6C5CE7":"2px solid transparent"}}>
+                        {tf.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{maxHeight:160,overflowY:"auto"}}>
+                    {incident&&(
+                      <div style={{padding:"6px 11px",background:"#1a0808",borderBottom:"1px solid #2a1010",display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{fontSize:11}}>🔴</span>
+                        <div style={{flex:1}}>
+                          <div style={{color:"#ff4444",fontSize:11,fontWeight:700}}>{incident.title}</div>
+                          <div style={{color:"#ff7777",fontSize:10}}>Active — all hands</div>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {incidentLog.length===0&&!incident&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>No incidents recorded.</div>}
-                  {incidentLog.map((inc:any)=>(
-                    <div key={inc.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
-                      <span style={{fontSize:10}}>✓</span>
-                      <div style={{flex:1}}>
-                        <div style={{color:"#7a7a98",fontSize:11}}>{inc.title}</div>
-                        <div style={{color:"#4a4a6a",fontSize:9}}>Resolved {inc.ts}</div>
+                    )}
+                    {incidentLog.length===0&&!incident&&<div style={{padding:"12px 11px",color:"#4a4a6a",fontSize:11,textAlign:"center"}}>No incidents recorded.</div>}
+                    {incidentLog.map((inc:any)=>(
+                      <div key={inc.id} style={{padding:"5px 11px",borderBottom:"1px solid #1e1e35",display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{fontSize:10}}>✓</span>
+                        <div style={{flex:1}}>
+                          <div style={{color:"#7a7a98",fontSize:11}}>{inc.title}</div>
+                          <div style={{color:"#4a4a6a",fontSize:9}}>Resolved {inc.ts}</div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* ▶ DEPENDENCY CHAINS */}
+            <div>
+              <div onClick={()=>togglePanel("deps")} style={{padding:"6px 11px",fontSize:11,letterSpacing:"0.1em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",userSelect:"none"}}>
+                <span>{openPanels.has("deps")?"▼":"▶"} DEPENDENCY CHAINS</span>
+                <span style={{fontSize:9,color:"#4a4a6a"}}>{Object.keys(DEPENDENCIES).length}</span>
+              </div>
+              {openPanels.has("deps")&&(
+                <div style={{maxHeight:180,overflowY:"auto",padding:"6px 11px"}}>
+                  {Object.entries(DEPENDENCIES).map(([src,dsts])=>{
+                    const srcAg=roster.find(a=>a.id===src);
+                    if(!srcAg) return null;
+                    return(
+                      <div key={src} style={{marginBottom:4,padding:"4px 8px",background:"#12122a",borderRadius:4,border:`1px solid ${srcAg.color}22`,fontSize:10}}>
+                        <span style={{color:srcAg.color,fontWeight:700}}>{srcAg.emoji} {srcAg.name}</span>
+                        <span style={{color:"#6a6a8e"}}> → </span>
+                        {dsts.map(d=>{const dag=roster.find(a=>a.id===d);return dag?<span key={d} style={{color:dag.color,marginRight:6}}>{dag.emoji} {dag.name}</span>:null;})}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
-          </div>
+          </div>{/* end expandable panels */}
 
           {/* Stats bar */}
           <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",display:"flex",padding:"6px 0"}}>

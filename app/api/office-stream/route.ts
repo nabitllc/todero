@@ -2,86 +2,135 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import fs from 'fs';
 
-const execAsync = promisify(exec);
+const AGENT_IDS = ['main', 'scout', 'ops', 'kemuni-sme', 'vespera-sme'];
 
-async function getAgentState(): Promise<Record<string, string>> {
-  try {
-    const { stdout } = await execAsync('/opt/homebrew/bin/openclaw status --json', { timeout: 5000 });
-    const data = JSON.parse(stdout);
-    const taskMap: Record<string, string> = {};
-    
-    if (data.agents) {
-      for (const agent of data.agents) {
-        if (agent.id && agent.status) {
-          taskMap[agent.id] = agent.status;
+async function getAgentTaskMap(): Promise<Record<string, string>> {
+  const taskMap: Record<string, string> = {};
+  for (const agentId of AGENT_IDS) {
+    const sessionsPath = `/Users/kemuniagent/.openclaw/agents/${agentId}/sessions/sessions.json`;
+    if (!fs.existsSync(sessionsPath)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'));
+      const entries = Object.entries(raw as Record<string, any>)
+        .filter(([, v]) => v && typeof v === 'object')
+        .sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+      if (entries.length === 0) continue;
+
+      const [key, val] = entries[0] as [string, any];
+      const channel = key.split(':')[2] || 'session';
+      const agoMin = Math.floor((Date.now() - (val.updatedAt ?? Date.now())) / 60000);
+
+      // Real-time check: session file mtime within 30s = currently processing
+      let fileMtimeSec = 9999;
+      try {
+        const sf = (val as any).sessionFile;
+        if (sf && fs.existsSync(sf)) {
+          fileMtimeSec = Math.floor((Date.now() - fs.statSync(sf).mtimeMs) / 1000);
         }
+      } catch { /* non-fatal */ }
+
+      const isActive = agoMin < 10 || fileMtimeSec < 30;
+      const isLive = fileMtimeSec < 30;
+
+      if (!isActive) {
+        taskMap[agentId] = agoMin < 60
+          ? `Last: ${channel} ${agoMin}m ago`
+          : `Idle · last ${Math.floor(agoMin / 60)}h ago`;
+        continue;
       }
-    }
-    
-    // Fallback: parse from sessions
-    if (Object.keys(taskMap).length === 0 && data.sessions) {
-      for (const session of data.sessions) {
-        if (session.agentId) {
-          taskMap[session.agentId] = session.active ? `Active · ${session.tokenCount || 0} tokens` : 'Idle';
+
+      // Try to read last user message from JSONL
+      let lastUserMsg = '';
+      try {
+        const sf = (val as any).sessionFile;
+        if (sf) {
+          const jsonlPath = sf.startsWith('/') ? sf
+            : `/Users/kemuniagent/.openclaw/agents/${agentId}/sessions/${sf}`;
+          if (fs.existsSync(jsonlPath)) {
+            const lines = fs.readFileSync(jsonlPath, 'utf-8').split('\n').filter(Boolean);
+            for (let i = lines.length - 1; i >= 0; i--) {
+              try {
+                const obj = JSON.parse(lines[i]);
+                const msg = obj.message ?? obj;
+                if (msg.role === 'user') {
+                  let text = typeof msg.content === 'string' ? msg.content
+                    : Array.isArray(msg.content)
+                      ? (msg.content.find((b: any) => b.type === 'text')?.text ?? '')
+                      : '';
+                  text = text
+                    .replace(/^Sender \(untrusted[^)]+\)[^]*?\n\n/m, '')
+                    .replace(/^\[.*?\]\s*/m, '')
+                    .trim();
+                  if (text && text.length > 3 && !text.startsWith('[') && !text.startsWith('Read HEARTBEAT')) {
+                    lastUserMsg = text.slice(0, 48).replace(/\n/g, ' ');
+                    break;
+                  }
+                }
+              } catch { continue; }
+            }
+          }
         }
-      }
-    }
-    
-    return taskMap;
-  } catch (e) {
-    return {};
+      } catch { /* non-fatal */ }
+
+      const channelLabel = channel === 'telegram' ? 'Telegram'
+        : channel === 'discord' ? 'Discord'
+        : channel === 'cron' ? 'Cron'
+        : channel === 'subagent' ? 'Sub-agent'
+        : 'Session';
+
+      taskMap[agentId] = lastUserMsg
+        ? `${isLive ? 'Processing' : 'Active'}: ${lastUserMsg}`
+        : `${isLive ? 'Processing' : 'Active'} on ${channelLabel}`;
+    } catch { /* skip agent */ }
   }
+  return taskMap;
 }
 
 export async function GET() {
   const encoder = new TextEncoder();
-  let lastState = '';
+  let lastStateStr = '';
   let alive = true;
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Send initial state immediately
-      try {
-        const state = await getAgentState();
-        const payload = JSON.stringify({ type: 'state', agentCurrentTask: state, ts: Date.now() });
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-        lastState = JSON.stringify(state);
-      } catch (e) {}
-
-      // Poll every 3 seconds, push only on change
-      const interval = setInterval(async () => {
-        if (!alive) { clearInterval(interval); return; }
+      const send = async () => {
+        if (!alive) return;
         try {
-          const state = await getAgentState();
+          const state = await getAgentTaskMap();
           const stateStr = JSON.stringify(state);
-          if (stateStr !== lastState) {
+          // Always send on first tick; then only on change
+          if (stateStr !== lastStateStr) {
             const payload = JSON.stringify({ type: 'state', agentCurrentTask: state, ts: Date.now() });
             controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-            lastState = stateStr;
+            lastStateStr = stateStr;
           }
-          // Heartbeat every cycle to keep connection alive
+          // Keep-alive comment every cycle
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
-        } catch (e) {
-          // Connection might be closed
+        } catch {
           alive = false;
-          clearInterval(interval);
-          try { controller.close(); } catch (e2) {}
+          try { controller.close(); } catch { /* ignore */ }
         }
+      };
+
+      // Immediate first read
+      await send();
+
+      // Then every 3 seconds
+      const interval = setInterval(async () => {
+        if (!alive) { clearInterval(interval); return; }
+        await send();
       }, 3000);
 
-      // Cleanup after 5 minutes (client will reconnect)
+      // Reconnect after 5 min
       setTimeout(() => {
         alive = false;
         clearInterval(interval);
-        try { controller.close(); } catch (e) {}
+        try { controller.close(); } catch { /* ignore */ }
       }, 300000);
     },
-    cancel() {
-      alive = false;
-    }
+    cancel() { alive = false; }
   });
 
   return new NextResponse(stream, {

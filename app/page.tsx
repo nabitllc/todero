@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import AgentOffice from '@/components/AgentOffice'
 
 const KEMUNI_START     = new Date('2026-03-21')
@@ -121,8 +122,8 @@ const NAV = [
 type Tab = typeof NAV[number]['id']
 
 // Chat types
-interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[] }
-interface ChatConversation { id: string; title: string; model: string; messages: ChatMessage[]; createdAt: number; updatedAt: number }
+interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean }
+interface ChatConversation { id: string; title: string; model: string; messages: ChatMessage[]; createdAt: number; updatedAt: number; pinned?: boolean; project?: string|null; agent_id?: string; system_prompt?: string|null; forked_from?: string|null }
 
 const FLOOR_DESKS = [
   { id:'main',    left:'8%',  top:'10%', screenColor:'#1e3a5f' },
@@ -198,15 +199,16 @@ function SH({icon,children,sub}:{icon:string;children:React.ReactNode;sub?:strin
 function MarkdownMessage({ content }: { content: string }) {
   return (
     <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
       components={{
         p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
         ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
         ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
         li: ({ children }) => <li className="text-sm">{children}</li>,
-        code: ({ inline, children }: any) =>
+        code: ({ inline, children, className }: any) =>
           inline
             ? <code className="px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-400 text-[11px] font-mono">{children}</code>
-            : <pre className="my-2 p-3 rounded-lg bg-zinc-950 border border-zinc-800 overflow-x-auto"><code className="text-[11px] font-mono text-emerald-300 whitespace-pre">{children}</code></pre>,
+            : <CodeBlock className={className}>{children}</CodeBlock>,
         strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
         em: ({ children }) => <em className="italic text-zinc-400">{children}</em>,
         h1: ({ children }) => <h1 className="text-base font-bold text-white mb-2 mt-3">{children}</h1>,
@@ -215,29 +217,184 @@ function MarkdownMessage({ content }: { content: string }) {
         blockquote: ({ children }) => <blockquote className="border-l-2 border-zinc-600 pl-3 my-2 text-zinc-400 italic">{children}</blockquote>,
         a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">{children}</a>,
         hr: () => <hr className="border-zinc-700 my-3" />,
+        table: ({ children }) => <div className="overflow-x-auto my-3"><table className="w-full text-sm border-collapse">{children}</table></div>,
+        thead: ({ children }) => <thead className="border-b border-zinc-700">{children}</thead>,
+        tbody: ({ children }) => <tbody>{children}</tbody>,
+        tr: ({ children }) => <tr className="border-b border-zinc-800 hover:bg-zinc-800/30 transition-colors">{children}</tr>,
+        th: ({ children }) => <th className="text-left px-3 py-1.5 text-xs font-semibold text-zinc-400 uppercase tracking-wider">{children}</th>,
+        td: ({ children }) => <td className="px-3 py-1.5 text-xs text-zinc-300">{children}</td>,
       }}>
       {content}
     </ReactMarkdown>
   )
 }
 
-function groupChatsByDate(chats: ChatConversation[]): { label: string; items: ChatConversation[] }[] {
+function groupChatsByDate(chats: ChatConversation[]): { label: string; items: ChatConversation[]; pinned?: boolean }[] {
   const now = Date.now()
   const DAY = 86400000
-  const groups: { label: string; items: ChatConversation[] }[] = [
+  const pinned = chats.filter(c => c.pinned)
+  const unpinned = chats.filter(c => !c.pinned)
+  const groups: { label: string; items: ChatConversation[]; pinned?: boolean }[] = []
+  if (pinned.length > 0) groups.push({ label: 'Pinned', items: pinned, pinned: true })
+  const dateGroups: { label: string; items: ChatConversation[] }[] = [
     { label: 'Today', items: [] },
     { label: 'Yesterday', items: [] },
     { label: 'This Week', items: [] },
     { label: 'Older', items: [] },
   ]
-  for (const c of chats) {
+  for (const c of unpinned) {
     const age = now - c.updatedAt
-    if (age < DAY) groups[0].items.push(c)
-    else if (age < DAY * 2) groups[1].items.push(c)
-    else if (age < DAY * 7) groups[2].items.push(c)
-    else groups[3].items.push(c)
+    if (age < DAY) dateGroups[0].items.push(c)
+    else if (age < DAY * 2) dateGroups[1].items.push(c)
+    else if (age < DAY * 7) dateGroups[2].items.push(c)
+    else dateGroups[3].items.push(c)
   }
-  return groups.filter(g => g.items.length > 0)
+  for (const g of dateGroups) if (g.items.length > 0) groups.push(g)
+  return groups
+}
+
+function stripMarkdownPreview(text: string): string {
+  return text
+    .replace(/[*#>`\-]/g, '')
+    .replace(/`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+}
+
+const AGENT_MODEL_MAP: Record<string, string> = {
+  'main': 'Claude Max',
+  'kemuni-sme': 'Claude Max',
+  'vespera-sme': 'Claude Max',
+  'scout': 'Gemma 3 4B (local)',
+}
+
+// Model options available in chat (maps to OpenClaw agent or model override)
+const MODEL_OPTIONS = [
+  { id: 'default',                       label: '⚡ Agent default',          desc: 'Use the selected agent\'s default model' },
+  { id: 'anthropic/claude-sonnet-4-6',   label: '🟣 Claude Sonnet',          desc: 'Best for complex tasks' },
+  { id: 'anthropic/claude-haiku-4-5',    label: '🔵 Claude Haiku',           desc: 'Fast, lightweight' },
+  { id: 'anthropic/claude-opus-4-6',     label: '🔶 Claude Opus',            desc: 'Most powerful' },
+  { id: 'ollama/gemma3:4b',              label: '🟢 Gemma 3 4B (local)',     desc: 'Private, free, offline' },
+  { id: 'openrouter/auto',               label: '🔀 OpenRouter auto',        desc: 'Best available via OpenRouter' },
+]
+
+// Expanded file type groups
+const FILE_TYPE_GROUPS = [
+  { label: 'Code',       accept: '.ts,.tsx,.js,.jsx,.mjs,.cjs,.vue,.svelte,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.cpp,.h,.cs,.php' },
+  { label: 'Config',     accept: '.json,.yaml,.yml,.toml,.env,.ini,.cfg,.conf,.lock' },
+  { label: 'Text / Docs', accept: '.txt,.md,.mdx,.rst,.csv,.log,.xml,.html,.css,.scss' },
+  { label: 'Shell',      accept: '.sh,.bash,.zsh,.fish,.ps1,.bat,.cmd' },
+  { label: 'Any text',   accept: '*' },
+]
+
+const AGENT_BADGE_MAP: Record<string, string> = {
+  'main': '🧠',
+  'kemuni-sme': '🚀',
+  'vespera-sme': '🖤',
+  'scout': '🔍',
+}
+
+const PROJECT_TAG_COLORS: Record<string, string> = {
+  'Kemuni': '#3b82f6',
+  'Vespera': '#a855f7',
+  'Ops': '#6b7280',
+  'General': '#10b981',
+}
+const PROJECT_CYCLE = [null, 'Kemuni', 'Vespera', 'Ops', 'General'] as const
+
+const PROMPT_TEMPLATES = [
+  { label: '🗺️ Plan a feature', text: 'Help me plan a new feature for Kemuni. The feature is: ' },
+  { label: '🐛 Debug code', text: 'I have a bug in my code. Here\'s what\'s happening:\n\n' },
+  { label: '📋 Write a PRD', text: 'Write a product requirements document for: ' },
+  { label: '🔍 Research topic', text: 'Research and summarize the latest developments in: ' },
+  { label: '✍️ Draft a message', text: 'Draft a professional message to: \n\nContext: ' },
+  { label: '⚡ Optimize this', text: 'Review and optimize the following code for performance and readability:\n\n```\n\n```' },
+]
+
+// ── Syntax Highlighter ────────────────────────────────────────────────────
+function highlightCode(code: string, lang: string): React.ReactNode[] {
+  const supported = ['javascript','typescript','js','ts','tsx','jsx','python','py','bash','sh','css','html','json','go','rust','rs','java','sql','yaml','yml']
+  if (!supported.includes(lang.toLowerCase())) {
+    return [<span key="raw" style={{color:'#a8d5a2'}}>{code}</span>]
+  }
+  type Token = { type: 'keyword'|'string'|'comment'|'number'|'function'|'plain'; value: string }
+  const tokens: Token[] = []
+  let remaining = code
+  let i = 0
+
+  const KEYWORD_RE = /^(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|class|extends|import|export|default|from|new|this|typeof|instanceof|void|null|undefined|true|false|async|await|try|catch|finally|throw|in|of|type|interface|enum|implements|static|public|private|protected|abstract|readonly|override|def|print|pass|lambda|with|as|and|or|not|is|elif|yield|global|nonlocal|select|from|where|insert|update|delete|create|table|index|join|on|group|by|order|having|limit|func|struct|package|var|map|chan|go|defer|range|make|append|len|cap)\b/
+  const FUNC_RE = /^([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(?=\()/
+  const NUM_RE = /^(-?\d+\.?\d*(?:[eE][+-]?\d+)?|0x[0-9a-fA-F]+)\b/
+  const STR_RE = /^(`[^`]*`|'[^'\\]*(?:\\[\s\S][^'\\]*)*'|"[^"\\]*(?:\\[\s\S][^"\\]*)*")/
+  const COMMENT_RE = /^(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*)/
+
+  while (remaining.length > 0) {
+    i++
+    if (i > 5000) break // guard
+    let m: RegExpMatchArray|null
+
+    m = remaining.match(COMMENT_RE)
+    if (m) { tokens.push({ type: 'comment', value: m[0] }); remaining = remaining.slice(m[0].length); continue }
+
+    m = remaining.match(STR_RE)
+    if (m) { tokens.push({ type: 'string', value: m[0] }); remaining = remaining.slice(m[0].length); continue }
+
+    m = remaining.match(KEYWORD_RE)
+    if (m) { tokens.push({ type: 'keyword', value: m[0] }); remaining = remaining.slice(m[0].length); continue }
+
+    m = remaining.match(FUNC_RE)
+    if (m) { tokens.push({ type: 'function', value: m[1] }); remaining = remaining.slice(m[1].length); continue }
+
+    m = remaining.match(NUM_RE)
+    if (m) { tokens.push({ type: 'number', value: m[0] }); remaining = remaining.slice(m[0].length); continue }
+
+    tokens.push({ type: 'plain', value: remaining[0] }); remaining = remaining.slice(1)
+  }
+
+  const COLOR_MAP: Record<string, React.CSSProperties> = {
+    keyword:  { color: '#79b8ff' },
+    string:   { color: '#a8d5a2' },
+    comment:  { color: '#6b7280', fontStyle: 'italic' },
+    number:   { color: '#f97316' },
+    function: { color: '#e2c08d' },
+    plain:    {},
+  }
+  return tokens.map((t, idx) => (
+    <span key={idx} style={COLOR_MAP[t.type] || {}}>{t.value}</span>
+  ))
+}
+
+// ── Code Block with copy button ───────────────────────────────────────────
+function CodeBlock({ children, className }: { children: React.ReactNode; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  const lang = (className || '').replace('language-', '').toLowerCase() || 'text'
+  const code = typeof children === 'string' ? children : String(children)
+  const highlighted = highlightCode(code, lang)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  }
+
+  return (
+    <div className="group relative my-2">
+      <div className="flex items-center justify-between px-3 py-1 rounded-t-lg bg-zinc-900 border border-zinc-800 border-b-0">
+        <span className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">{lang}</span>
+        <button
+          onClick={handleCopy}
+          className="opacity-0 group-hover:opacity-100 text-[10px] px-2 py-0.5 rounded transition-all text-zinc-400 hover:text-white"
+          style={{ background: '#1a1a1a' }}>
+          {copied ? '✓ Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="p-3 rounded-b-lg bg-zinc-950 border border-zinc-800 overflow-x-auto">
+        <code className="text-[11px] font-mono whitespace-pre">{highlighted}</code>
+      </pre>
+    </div>
+  )
 }
 
 function ChatTab() {
@@ -254,7 +411,81 @@ function ChatTab() {
   const [userScrolledUp, setUserScrolledUp] = useState(false)
   const [renamingTitle, setRenamingTitle] = useState<string|null>(null)
   const [selectedAgent, setSelectedAgent] = useState<string>('main')
+  const [selectedModel, setSelectedModel] = useState<string>('default')
+  const [showFileTypePicker, setShowFileTypePicker] = useState(false)
+  const fileTypePickerRef = useRef<HTMLDivElement>(null)
   const [sidebarFocusIdx, setSidebarFocusIdx] = useState<number>(-1)
+  // Feature 1: pasted image
+  const [pastedImage, setPastedImage] = useState<string|null>(null)
+  // Feature 5: system prompt popover
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false)
+  const [systemPromptDraft, setSystemPromptDraft] = useState('')
+  // Feature 6: inline edit
+  const [editingMsgId, setEditingMsgId] = useState<string|null>(null)
+  const [editingMsgContent, setEditingMsgContent] = useState('')
+  // Feature 7: unread
+  const [unreadChat, setUnreadChat] = useState(false)
+  const unreadChatRef = useRef(false)
+  // Feature 9: project filter
+  const [projectFilter, setProjectFilter] = useState<string|null>(null)
+  // Feature 10: sidebar collapsed
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('mc-chat-sidebar-collapsed') === 'true'
+    return false
+  })
+  // Feature 11: voice input
+  const [speechAvailable, setSpeechAvailable] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const speechRecognitionRef = useRef<any>(null)
+  // Feature 12: full-text search
+  const [searchMode, setSearchMode] = useState<'title'|'messages'>('title')
+  const [searchResults, setSearchResults] = useState<Array<{id:string;conversation_id:string;content:string;role:string;created_at:string}>>([])
+  const [isSearching, setIsSearching] = useState(false)
+  // Feature 13: follow-up suggestions
+  const [followUpSuggestions, setFollowUpSuggestions] = useState<string[]>([])
+  // Feature 14: keyboard cheatsheet
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  // Feature 16: starred filter
+  const [starredFilter, setStarredFilter] = useState(false)
+  // Feature 18: export dropdown
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+  const printRef = useRef(false)
+  // Feature 20: session context viewer
+  const [showContextViewer, setShowContextViewer] = useState(false)
+  // NEW: Slash command palette
+  const [showSlashPalette, setShowSlashPalette] = useState(false)
+  const [slashPaletteIdx, setSlashPaletteIdx] = useState(0)
+  // NEW: Tool call indicators (ephemeral, local-only)
+  const [toolIndicators, setToolIndicators] = useState<Record<string, {name:string;input:string;expanded:boolean}[]>>({})
+  // NEW: Thinking/reasoning content per stream message
+  const [thinkingContent, setThinkingContent] = useState<Record<string,string>>({})
+  // NEW: Approval buttons state (per message id, true = used)
+  const [approvalUsed, setApprovalUsed] = useState<Record<string,boolean>>({})
+  // NEW: File browser modal
+  const [showFileBrowser, setShowFileBrowser] = useState(false)
+  const [fileBrowserPath, setFileBrowserPath] = useState('')
+  const [fileBrowserEntries, setFileBrowserEntries] = useState<{name:string;isDir:boolean;path:string}[]>([])
+  // NEW: Image URL input
+  const [showImageUrlInput, setShowImageUrlInput] = useState(false)
+  const [imageUrlDraft, setImageUrlDraft] = useState('')
+  const [imageUrlPreview, setImageUrlPreview] = useState<string|null>(null)
+  // Sidebar tabs: mine / openclaw / heartbeats
+  const [sidebarTab, setSidebarTab] = useState<'mine'|'openclaw'|'heartbeats'>('mine')
+  const [ocSessions, setOcSessions] = useState<any[]>([])
+  const [ocLoading, setOcLoading] = useState(false)
+  // NEW: Send-to-agent dropdown
+  const [showSendToAgent, setShowSendToAgent] = useState(false)
+  const sendToAgentRef = useRef<HTMLDivElement>(null)
+  // NEW: Drag-and-drop
+  const [isDraggingOver, setIsDraggingOver] = useState(false)
+  // NEW: Prompt templates popover
+  const [showPromptTemplates, setShowPromptTemplates] = useState(false)
+  const promptTemplatesRef = useRef<HTMLDivElement>(null)
+  // NEW: @-mention dropdown
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false)
+  const [mentionFilter, setMentionFilter] = useState('')
+  const [mentionIdx, setMentionIdx] = useState(0)
   const abortControllerRef = useRef<AbortController|null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -266,8 +497,21 @@ function ChatTab() {
     { id: 'kemuni-sme', label: '🚀 Kemuni SME', desc: 'Kemuni Specialist' },
     { id: 'vespera-sme', label: '🖤 Vespera SME', desc: 'Vespera Specialist' },
     { id: 'scout', label: '🔍 Scout', desc: 'Research Agent' },
+    { id: 'ops', label: '⚙️ Ops', desc: 'Operations Agent' },
   ]
   const currentAgent = AGENT_OPTIONS.find(a => a.id === selectedAgent) || AGENT_OPTIONS[0]
+
+  // Slash command definitions
+  const SLASH_COMMANDS = [
+    { cmd: '/new',     icon: '➕', desc: 'Start a new conversation' },
+    { cmd: '/clear',   icon: '🗑️', desc: 'Clear all messages in this chat' },
+    { cmd: '/status',  icon: '📊', desc: 'Show session info (agent, model, messages)' },
+    { cmd: '/compact', icon: '📦', desc: 'Ask AI to summarize conversation so far' },
+    { cmd: '/pin',     icon: '📌', desc: 'Toggle pin on current conversation' },
+    { cmd: '/export',  icon: '↓',  desc: 'Export this conversation as Markdown' },
+    { cmd: '/imagine', icon: '🎨', desc: 'Generate an image: /imagine a purple cat in space' },
+  ]
+  const slashFilter = inputVal.startsWith('/') ? SLASH_COMMANDS.filter(c => c.cmd.startsWith(inputVal.split(' ')[0].toLowerCase())) : SLASH_COMMANDS
 
   // Load chats from Supabase on mount, restore active chat from localStorage
   useEffect(() => {
@@ -286,12 +530,18 @@ function ChatTab() {
               content: m.content,
               model: m.model,
               ts: m.created_at ? new Date(m.created_at).getTime() : undefined,
+              image_url: m.image_url || undefined,
+              bookmarked: m.bookmarked || false,
             })),
             createdAt: new Date(c.created_at).getTime(),
             updatedAt: new Date(c.updated_at).getTime(),
+            pinned: c.pinned || false,
+            project: c.project || null,
+            agent_id: c.agent_id || 'main',
+            system_prompt: c.system_prompt || null,
+            forked_from: c.forked_from || null,
           }))
           setChats(normalized)
-          // Restore last active chat if it still exists
           if (savedActiveChat && normalized.find(c => c.id === savedActiveChat)) {
             setActiveChat(savedActiveChat)
           }
@@ -307,6 +557,29 @@ function ChatTab() {
       else localStorage.removeItem('mc-active-chat')
     }
   }, [activeChat])
+
+  // Persist sidebar collapsed state
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mc-chat-sidebar-collapsed', String(sidebarCollapsed))
+    }
+  }, [sidebarCollapsed])
+
+  // Feature 7: unread document title
+  useEffect(() => {
+    if (unreadChat) {
+      document.title = '● Mission Control'
+    } else {
+      document.title = 'Mission Control'
+    }
+  }, [unreadChat])
+
+  // Clear unread when ChatTab is mounted/visible
+  useEffect(() => {
+    setUnreadChat(false)
+    unreadChatRef.current = false
+    document.title = 'Mission Control'
+  }, [])
 
   // Detect when user scrolls up (so we don't hijack scroll during streaming)
   useEffect(() => {
@@ -333,6 +606,13 @@ function ChatTab() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'instant' }), 50)
   }, [activeChat])
 
+  // Sync system prompt draft when active conv changes
+  useEffect(() => {
+    const conv = chats.find(c => c.id === activeChat)
+    setSystemPromptDraft(conv?.system_prompt || '')
+    setShowSystemPrompt(false)
+  }, [activeChat])
+
   // Poll active conversation while sending (catches dropped streams on tab switch/refresh)
   const reloadActiveConv = useCallback(async () => {
     if (!activeChat) return
@@ -352,9 +632,16 @@ function ChatTab() {
           content: m.content,
           model: m.model,
           ts: m.created_at ? new Date(m.created_at).getTime() : undefined,
+          image_url: m.image_url || undefined,
+          bookmarked: m.bookmarked || false,
         })),
         createdAt: new Date(conv.created_at).getTime(),
         updatedAt: new Date(conv.updated_at).getTime(),
+        pinned: conv.pinned || false,
+        project: conv.project || null,
+        agent_id: conv.agent_id || 'main',
+        system_prompt: conv.system_prompt || null,
+        forked_from: conv.forked_from || null,
       }
       setChats(prev => prev.map(c => c.id === activeChat ? normalized : c))
     } catch { /* ignore */ }
@@ -369,7 +656,73 @@ function ChatTab() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [reloadActiveConv])
 
-  // Cmd+K / arrow-key nav wired up after helpers defined (see below)
+  // Feature 11: detect speech API availability
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      if (SR) setSpeechAvailable(true)
+    }
+  }, [])
+
+  // Feature 18: close export menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false)
+      }
+      if (sendToAgentRef.current && !sendToAgentRef.current.contains(e.target as Node)) {
+        setShowSendToAgent(false)
+      }
+      if (promptTemplatesRef.current && !promptTemplatesRef.current.contains(e.target as Node)) {
+        setShowPromptTemplates(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Feature 1: paste image listener
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile()
+          if (!blob) continue
+          const reader = new FileReader()
+          reader.onload = (ev) => {
+            const dataUrl = ev.target?.result as string
+            setPastedImage(dataUrl)
+          }
+          reader.readAsDataURL(blob)
+          e.preventDefault()
+          break
+        }
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [])
+
+  // NEW: Load file browser entries when path changes
+  useEffect(() => {
+    if (!showFileBrowser) return
+    fetch(`/api/files?path=${encodeURIComponent(fileBrowserPath)}`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setFileBrowserEntries(data) })
+      .catch(() => {})
+  }, [showFileBrowser, fileBrowserPath])
+
+  // Fetch OpenClaw sessions when sidebar tab switches to openclaw/heartbeats
+  useEffect(() => {
+    if (sidebarTab === 'mine') return
+    setOcLoading(true)
+    fetch('/api/status').then(r => r.json()).then(data => {
+      const activity: any[] = data.recentActivity || []
+      setOcSessions(activity)
+    }).catch(() => {}).finally(() => setOcLoading(false))
+  }, [sidebarTab])
 
   // Auto-grow textarea
   const adjustTextarea = () => {
@@ -384,14 +737,83 @@ function ChatTab() {
     const conv: ChatConversation = {
       id, title: 'New Chat', model: 'kaos', messages: [],
       createdAt: Date.now(), updatedAt: Date.now(),
+      pinned: false, project: null, agent_id: selectedAgent, system_prompt: null,
     }
     setChats([conv, ...chats])
     setActiveChat(id)
     await fetch('/api/chat/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, title: 'New Chat', model: 'kaos' }),
+      body: JSON.stringify({ id, title: 'New Chat', model: 'kaos', agent_id: selectedAgent }),
     })
+  }
+
+  // NEW: Clear all messages in active conversation
+  const clearChat = async (convId: string) => {
+    await fetch(`/api/chat/messages?conversation_id=${convId}&clear=true`, { method: 'DELETE' })
+    setChats(prev => prev.map(c => c.id === convId ? { ...c, messages: [] } : c))
+  }
+
+  // NEW: Execute slash command
+  const executeSlashCommand = async (cmd: string) => {
+    setInputVal('')
+    setShowSlashPalette(false)
+    if (!activeConv) return
+    if (cmd === '/new') {
+      await newChat()
+    } else if (cmd === '/clear') {
+      await clearChat(activeConv.id)
+    } else if (cmd === '/status') {
+      const mdl = AGENT_MODEL_MAP[selectedAgent] || 'Claude Max'
+      const tokEst = activeConv ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4) : 0
+      const tokLabel = tokEst >= 1000 ? `~${(tokEst/1000).toFixed(1)}k / 200k tokens` : `~${tokEst} / 200k tokens`
+      const statusMsg: ChatMessage = {
+        id: 'status-' + Date.now(),
+        role: 'assistant',
+        content: `**Session Status**\n- Session key: \`mc-chat-${activeConv.id}\`\n- Agent: ${selectedAgent} (${currentAgent.label})\n- Model: ${mdl}\n- Messages: ${activeConv.messages.length}\n- Est. tokens: ${tokLabel}\n- Pinned: ${activeConv.pinned ? 'yes' : 'no'}\n- Project: ${activeConv.project || 'none'}`,
+        ts: Date.now(),
+      }
+      setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, statusMsg] } : c))
+    } else if (cmd === '/compact') {
+      const msgId = 'msg-compact-' + Date.now()
+      setInputVal('')
+      await doSend('[System: Please summarize our conversation so far in a brief paragraph, then we\'ll continue from that summary]', msgId, activeConv, chats)
+    } else if (cmd === '/pin') {
+      await togglePin(activeConv.id, !activeConv.pinned)
+    } else if (cmd === '/export') {
+      exportChat(activeConv)
+    } else if (cmd === '/imagine') {
+      const prompt = inputVal.replace('/imagine', '').trim()
+      if (!prompt) {
+        const hint: ChatMessage = { id: 'hint-'+Date.now(), role:'assistant', content:'Usage: `/imagine <description>` — e.g. `/imagine a purple cat floating in space`', ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv?.id ? { ...c, messages: [...c.messages, hint] } : c))
+        return
+      }
+      setLoading(true)
+      const userMsg: ChatMessage = { id: 'img-user-'+Date.now(), role:'user', content:`🎨 /imagine ${prompt}`, ts: Date.now() }
+      const placeholderId = 'img-'+Date.now()
+      const placeholder: ChatMessage = { id: placeholderId, role:'assistant', content:'⏳ Generating image…', ts: Date.now() }
+      setChats(prev => prev.map(c => c.id === activeConv?.id ? { ...c, messages: [...c.messages, userMsg, placeholder] } : c))
+      try {
+        const r = await fetch('/api/imagine', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt }) })
+        const d = await r.json()
+        if (d.url) {
+          setChats(prev => prev.map(c => c.id === activeConv?.id ? {
+            ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: `![generated](${d.url})`, image_url: d.url } : m)
+          } : c))
+        } else {
+          setChats(prev => prev.map(c => c.id === activeConv?.id ? {
+            ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: `❌ Image gen failed: ${d.error||'unknown error'}` } : m)
+          } : c))
+        }
+      } catch(e) {
+        setChats(prev => prev.map(c => c.id === activeConv?.id ? {
+          ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: '❌ Network error generating image' } : m)
+        } : c))
+      } finally {
+        setLoading(false)
+      }
+    }
   }
 
   const deleteChat = async (id: string) => {
@@ -412,25 +834,68 @@ function ChatTab() {
     })
   }
 
+  // Feature 4: pin/unpin
+  const togglePin = async (id: string, pinned: boolean) => {
+    setChats(prev => prev.map(c => c.id === id ? { ...c, pinned } : c))
+    await fetch('/api/chat/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, pinned }),
+    })
+  }
+
+  // Feature 9: set project
+  const setConvProject = async (id: string, project: string|null) => {
+    setChats(prev => prev.map(c => c.id === id ? { ...c, project } : c))
+    await fetch('/api/chat/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, project }),
+    })
+  }
+
+  // Feature 5: save system prompt
+  const saveSystemPrompt = async (id: string, system_prompt: string) => {
+    const val = system_prompt.trim() || null
+    setChats(prev => prev.map(c => c.id === id ? { ...c, system_prompt: val } : c))
+    await fetch('/api/chat/conversations', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, system_prompt: val }),
+    })
+  }
+
   const exportChat = (conv: ChatConversation) => {
-    const md = conv.messages.map(m =>
-      `### ${m.role === 'user' ? '👤 You' : '🧠 KAOS'}${m.ts ? ` — ${new Date(m.ts).toLocaleTimeString()}` : ''}\n\n${m.content}`
-    ).join('\n\n---\n\n')
-    const blob = new Blob([`# ${conv.title}\n\n${md}`], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${conv.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.md`
-    a.click()
-    URL.revokeObjectURL(url)
+    downloadConvMd(conv)
   }
 
   const activeConv = chats.find(c => c.id === activeChat)
-  const filteredChats = chats.filter(c =>
-    c.title.toLowerCase().includes(search.toLowerCase())
-  )
 
-  // Cmd+K → new chat; arrow keys → navigate sidebar
+  // Feature 9 + 16: filter by project and/or starred
+  const projectFilteredChats = (() => {
+    let result = projectFilter ? chats.filter(c => c.project === projectFilter) : chats
+    if (starredFilter) {
+      result = result.filter(c => c.messages.some(m => m.bookmarked))
+    }
+    return result
+  })()
+
+  const filteredChats = searchMode === 'messages'
+    ? chats.filter(c => searchResults.some(r => r.conversation_id === c.id))
+    : projectFilteredChats.filter(c =>
+        c.title.toLowerCase().includes(search.toLowerCase())
+      )
+
+  // Feature 15: context budget
+  const contextTokenEstimate = activeConv
+    ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4)
+    : 0
+  const contextTokenColor = contextTokenEstimate > 150000 ? 'text-red-500' : contextTokenEstimate > 50000 ? 'text-yellow-500' : 'text-zinc-600'
+  const contextTokenLabel = contextTokenEstimate >= 1000
+    ? `~${(contextTokenEstimate / 1000).toFixed(1)}k / 200k tokens`
+    : `~${contextTokenEstimate} / 200k tokens`
+
+  // Cmd+K / arrow-key nav wired up after helpers defined (see below)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -439,7 +904,24 @@ function ChatTab() {
         newChat()
         return
       }
-      // Arrow nav in sidebar (only when not typing)
+      // Feature 14: ⌘/ focus input
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault()
+        textareaRef.current?.focus()
+        return
+      }
+      // Feature 14: Esc to close panels
+      if (e.key === 'Escape') {
+        setShowShortcuts(false)
+        setShowContextViewer(false)
+        setShowExportMenu(false)
+        setShowSlashPalette(false)
+        setShowFileBrowser(false)
+        setShowSendToAgent(false)
+        setShowMentionDropdown(false)
+        setShowPromptTemplates(false)
+        return
+      }
       if (document.activeElement === textareaRef.current) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -468,6 +950,7 @@ function ChatTab() {
         role: msg.role,
         content: msg.content,
         model: msg.model || null,
+        image_url: msg.image_url || null,
       }),
     })
   }
@@ -485,15 +968,17 @@ function ChatTab() {
     setLoading(false)
   }
 
-  const doSend = async (msgContent: string, msgId: string, convToUse: ChatConversation, prevChats: ChatConversation[]) => {
+  const doSend = async (msgContent: string, msgId: string, convToUse: ChatConversation, prevChats: ChatConversation[], imageUrl?: string) => {
     const isFirstMsg = convToUse.messages.length === 0
     const title = isFirstMsg ? msgContent.slice(0, 40) : convToUse.title
+    setFollowUpSuggestions([])
 
     const userMsg: ChatMessage = {
       id: msgId,
       role: 'user',
       content: msgContent,
       ts: Date.now(),
+      image_url: imageUrl || undefined,
     }
     setLastUserMsg(userMsg)
 
@@ -519,15 +1004,20 @@ function ChatTab() {
     const abortCtrl = new AbortController()
     abortControllerRef.current = abortCtrl
     try {
-      const allMessages = [...convToUse.messages, userMsg].map(m => ({
+      // Feature 5: prepend system prompt if set
+      const systemPrompt = convToUse.system_prompt
+      const historyMessages = [...convToUse.messages, userMsg].map(m => ({
         role: m.role,
         content: m.content,
       }))
+      const allMessages = systemPrompt
+        ? [{ role: 'system', content: systemPrompt }, ...historyMessages]
+        : historyMessages
 
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: convToUse.id, messages: allMessages, agentId: selectedAgent }),
+        body: JSON.stringify({ conversationId: convToUse.id, messages: allMessages, agentId: selectedAgent, modelOverride: selectedModel !== 'default' ? selectedModel : undefined }),
         signal: abortCtrl.signal,
       })
 
@@ -538,7 +1028,6 @@ function ChatTab() {
         return
       }
 
-      // SSE streaming: insert a placeholder assistant message, append tokens as they arrive
       const streamMsgId = 'msg-stream-' + Date.now()
       const placeholderMsg: ChatMessage = {
         id: streamMsgId,
@@ -548,18 +1037,18 @@ function ChatTab() {
         ts: Date.now(),
       }
 
-      // Add placeholder to chat
       setChats(prev => prev.map(c =>
         c.id === convToUse.id
           ? { ...c, messages: [...c.messages, placeholderMsg], updatedAt: Date.now() }
           : c
       ))
-      setLoading(false) // dots go away once streaming starts
+      setLoading(false)
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
       let finalId = streamMsgId
+      let streamThinking = ''
 
       while (true) {
         const { done, value } = await reader.read()
@@ -578,9 +1067,33 @@ function ChatTab() {
               finalId = parsed.id || streamMsgId
               break
             }
+            // Tool call visibility: detect tool_use events
+            if (parsed.tool_use) {
+              const tu = parsed.tool_use
+              setToolIndicators(prev => ({
+                ...prev,
+                [streamMsgId]: [...(prev[streamMsgId] || []), { name: tu.name || 'unknown', input: JSON.stringify(tu.input || {}), expanded: false }]
+              }))
+            }
+            // Also detect tool_use wrapped in delta content blocks
+            if (parsed.choices?.[0]?.delta?.content && typeof parsed.choices[0].delta.content === 'string') {
+              try {
+                const inner = JSON.parse(parsed.choices[0].delta.content)
+                if (inner?.type === 'tool_use') {
+                  setToolIndicators(prev => ({
+                    ...prev,
+                    [streamMsgId]: [...(prev[streamMsgId] || []), { name: inner.name || 'unknown', input: JSON.stringify(inner.input || {}), expanded: false }]
+                  }))
+                }
+              } catch { /* not JSON */ }
+            }
+            // Reasoning/thinking blocks
+            const thinkingDelta = parsed.choices?.[0]?.delta?.thinking || parsed.thinking
+            if (thinkingDelta) {
+              streamThinking += thinkingDelta
+            }
             if (parsed.delta) {
               fullContent += parsed.delta
-              // Update the streaming message content in place
               setChats(prev => prev.map(c =>
                 c.id === convToUse.id
                   ? {
@@ -596,14 +1109,46 @@ function ChatTab() {
         }
       }
 
-      // Server-side already persisted the message to Supabase.
-      // Just update the local placeholder id to the final server id.
+      // Store thinking content if any
+      if (streamThinking) {
+        setThinkingContent(prev => ({ ...prev, [finalId !== streamMsgId ? finalId : streamMsgId]: streamThinking }))
+      }
+
+      // Feature 7: mark unread if document not visible
+      if (document.hidden) {
+        setUnreadChat(true)
+        unreadChatRef.current = true
+        window.dispatchEvent(new CustomEvent('mc-chat-unread'))
+      }
+
       if (finalId !== streamMsgId) {
+        // Migrate tool indicators and thinking to new id
+        setToolIndicators(prev => {
+          if (!prev[streamMsgId]) return prev
+          const { [streamMsgId]: old, ...rest } = prev
+          return { ...rest, [finalId]: old }
+        })
+        if (streamThinking) {
+          setThinkingContent(prev => {
+            const { [streamMsgId]: old, ...rest } = prev
+            return { ...rest, [finalId]: old }
+          })
+        }
         setChats(prev => prev.map(c =>
           c.id === convToUse.id
             ? { ...c, messages: c.messages.map(m => m.id === streamMsgId ? { ...m, id: finalId } : m) }
             : c
         ))
+      }
+
+      // Feature 13: generate follow-up suggestions after streaming completes
+      if (fullContent) {
+        setFollowUpSuggestions(generateSuggestions(fullContent))
+      }
+
+      // Feature 17: auto-title for new conversations
+      if (isFirstMsg && msgContent) {
+        triggerAutoTitle(convToUse.id, msgContent)
       }
 
     } catch (err: any) {
@@ -619,24 +1164,66 @@ function ChatTab() {
 
   const handleSend = async () => {
     if (!inputVal.trim() || !activeConv) return
+
+    // Handle /imagine typed manually
+    if (inputVal.trim().startsWith('/imagine ')) {
+      await executeSlashCommand('/imagine')
+      return
+    }
+
+    // Handle slash commands — match exact OR first filtered result from palette
+    if (inputVal.startsWith('/')) {
+      const typed = inputVal.trim().split(' ')[0]
+      const exact = SLASH_COMMANDS.find(c => c.cmd === typed)
+      if (exact) { await executeSlashCommand(typed); return }
+      // Partial match: if palette is open and exactly one match (or first match), execute or insert
+      const filtered = SLASH_COMMANDS.filter(c => c.cmd.startsWith(typed))
+      if (filtered.length >= 1 && showSlashPalette) {
+        const chosen = filtered[slashPaletteIdx] || filtered[0]
+        if (chosen.cmd === '/imagine') {
+          setInputVal('/imagine ')
+          setShowSlashPalette(false)
+          setTimeout(() => textareaRef.current?.focus(), 0)
+          return
+        }
+        await executeSlashCommand(chosen.cmd)
+        return
+      }
+    }
+
+    setFollowUpSuggestions([])
     const MAX_FILE = 32768
     const fileContent = selectedFile
       ? (selectedFile.content.length > MAX_FILE ? selectedFile.content.slice(0, MAX_FILE) + '\n\n[...truncated at 32KB]' : selectedFile.content)
       : null
-    const content = fileContent
+    // Feature 1: include pasted image
+    let content = fileContent
       ? `[📎 ${selectedFile!.name}]\n\n${fileContent}\n\n---\n${inputVal}`
       : inputVal
+    let imageUrl: string|undefined
+    if (pastedImage) {
+      content = `![image](${pastedImage})\n\n${content}`
+      imageUrl = pastedImage
+      setPastedImage(null)
+    }
+    // URL image input
+    if (imageUrlPreview) {
+      content = `![image](${imageUrlPreview})\n\n${content}`
+      setImageUrlPreview(null)
+      setImageUrlDraft('')
+      setShowImageUrlInput(false)
+    }
     const msgId = 'msg-' + Date.now()
     setInputVal('')
+    setShowSlashPalette(false)
     setSelectedFile(null)
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
-    await doSend(content, msgId, activeConv, chats)
+    await doSend(content, msgId, activeConv, chats, imageUrl)
   }
 
   const handleRetry = async () => {
     if (!lastUserMsg || !activeConv) return
     setChatError(null)
-    // Remove the last user message from the conv (we'll re-add it)
     const convWithoutLast = {
       ...activeConv,
       messages: activeConv.messages.filter(m => m.id !== lastUserMsg.id),
@@ -644,10 +1231,180 @@ function ChatTab() {
     await doSend(lastUserMsg.content, 'msg-retry-' + Date.now(), convWithoutLast, chats)
   }
 
-  const handleFileAttach = () => {
+  // Feature 6: edit message
+  const startEditMessage = (msg: ChatMessage) => {
+    setEditingMsgId(msg.id)
+    setEditingMsgContent(msg.content)
+  }
+
+  const confirmEditMessage = async (msg: ChatMessage) => {
+    if (!activeConv || !editingMsgContent.trim()) return
+    const editedContent = editingMsgContent.trim()
+    const msgTs = msg.ts || Date.now()
+
+    // Remove all messages at or after this message
+    const newMessages = activeConv.messages.filter(m => (m.ts || 0) < msgTs)
+    const updatedConv = { ...activeConv, messages: newMessages }
+    setChats(prev => prev.map(c => c.id === activeConv.id ? updatedConv : c))
+    setEditingMsgId(null)
+
+    // Delete from Supabase
+    await fetch(`/api/chat/messages?conversation_id=${activeConv.id}&after_ts=${msgTs}`, {
+      method: 'DELETE',
+    })
+
+    // Re-send the edited message
+    await doSend(editedContent, 'msg-edit-' + Date.now(), updatedConv, chats.map(c => c.id === activeConv.id ? updatedConv : c))
+  }
+
+  // Feature 11: voice input
+  const toggleVoiceInput = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) return
+    if (isListening) {
+      speechRecognitionRef.current?.stop()
+      setIsListening(false)
+      return
+    }
+    const recognition = new SpeechRecognition()
+    recognition.continuous = false
+    recognition.interimResults = false
+    recognition.lang = 'en-US'
+    recognition.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript
+      setInputVal(prev => prev ? prev + ' ' + transcript : transcript)
+    }
+    recognition.onend = () => setIsListening(false)
+    recognition.onerror = () => setIsListening(false)
+    speechRecognitionRef.current = recognition
+    recognition.start()
+    setIsListening(true)
+  }
+
+  // Feature 12: full-text search
+  const doMessageSearch = async (q: string) => {
+    if (q.length < 3) return
+    setIsSearching(true)
+    try {
+      const res = await fetch(`/api/chat/search?q=${encodeURIComponent(q)}`)
+      const data = await res.json()
+      setSearchResults(data)
+      setSearchMode('messages')
+    } catch { /* ignore */ }
+    finally { setIsSearching(false) }
+  }
+
+  // Feature 13: generate follow-up suggestions
+  const generateSuggestions = (text: string) => {
+    const last200 = text.slice(-200)
+    const words = last200.toLowerCase().split(/\W+/).filter(w => w.length > 4)
+    const stopWords = new Set(['about','would','should','could','their','there','where','which','these','those','other','after','before','while'])
+    const nouns = words.filter(w => !stopWords.has(w)).slice(0, 10)
+    const unique = Array.from(new Set(nouns)).slice(0, 4)
+    const suggestions: string[] = []
+    if (unique[0]) suggestions.push(`Tell me more about ${unique[0]}`)
+    if (unique[1]) suggestions.push(`How do I ${unique[1]}?`)
+    return suggestions.slice(0, 2)
+  }
+
+  // Feature 16: toggle bookmark
+  const toggleBookmark = async (msgId: string, current: boolean) => {
+    const newVal = !current
+    setChats(prev => prev.map(c => c.id === activeChat
+      ? { ...c, messages: c.messages.map(m => m.id === msgId ? { ...m, bookmarked: newVal } : m) }
+      : c
+    ))
+    await fetch('/api/chat/messages', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: msgId, bookmarked: newVal }),
+    })
+  }
+
+  // Feature 17: auto-title
+  const triggerAutoTitle = (conversationId: string, firstUserMessage: string) => {
+    fetch('/api/chat/autotitle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId, firstUserMessage }),
+    }).then(r => r.json()).then(data => {
+      if (data.title) {
+        setChats(prev => prev.map(c => c.id === conversationId ? { ...c, title: data.title } : c))
+      }
+    }).catch(() => {})
+  }
+
+  // Feature 18: export helpers
+  const exportChatMarkdown = (conv: ChatConversation): string => {
+    const md = conv.messages.map(m =>
+      `### ${m.role === 'user' ? '👤 You' : '🧠 KAOS'}${m.ts ? ` — ${new Date(m.ts).toLocaleTimeString()}` : ''}\n\n${m.content}`
+    ).join('\n\n---\n\n')
+    return `# ${conv.title}\n\n${md}`
+  }
+
+  const copyConvAsMarkdown = (conv: ChatConversation) => {
+    navigator.clipboard.writeText(exportChatMarkdown(conv))
+    setShowExportMenu(false)
+  }
+
+  const downloadConvMd = (conv: ChatConversation) => {
+    const blob = new Blob([exportChatMarkdown(conv)], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${conv.title.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+    setShowExportMenu(false)
+  }
+
+  const printConv = () => {
+    printRef.current = true
+    setShowExportMenu(false)
+    setTimeout(() => { window.print(); printRef.current = false }, 100)
+  }
+
+  // Feature 19: fork conversation
+  const forkConversation = async (conv: ChatConversation, upToMsgId: string) => {
+    const msgIdx = conv.messages.findIndex(m => m.id === upToMsgId)
+    const messagesToCopy = conv.messages.slice(0, msgIdx + 1)
+    const newId = 'chat-fork-' + Date.now()
+    const newTitle = `Fork of: ${conv.title}`
+    const newConv: ChatConversation = {
+      id: newId,
+      title: newTitle,
+      model: conv.model,
+      messages: messagesToCopy.map(m => ({ ...m, id: 'msg-fork-' + Date.now() + Math.random().toString(36).slice(2) })),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      pinned: false,
+      project: conv.project,
+      agent_id: conv.agent_id,
+      system_prompt: conv.system_prompt,
+      forked_from: conv.id,
+    }
+    setChats(prev => [newConv, ...prev])
+    setActiveChat(newId)
+    // Persist
+    await fetch('/api/chat/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: newId, title: newTitle, model: conv.model, agent_id: conv.agent_id, forked_from: conv.id }),
+    })
+    for (const m of newConv.messages) {
+      await fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: m.id, conversation_id: newId, role: m.role, content: m.content, model: m.model || null }),
+      })
+    }
+  }
+
+  const handleFileAttach = (accept?: string) => {
+    setShowFileTypePicker(false)
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.txt,.md,.ts,.tsx,.js,.jsx,.json,.csv,.py,.sh,.yaml,.yml,.env'
+    input.accept = accept || FILE_TYPE_GROUPS[0].accept
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
@@ -657,75 +1414,296 @@ function ChatTab() {
     input.click()
   }
 
+  // Close file type picker on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (fileTypePickerRef.current && !fileTypePickerRef.current.contains(e.target as Node)) {
+        setShowFileTypePicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   const groupedChats = groupChatsByDate(filteredChats)
 
+  // Feature 8: model label
+  const agentModelLabel = AGENT_MODEL_MAP[selectedAgent] || 'Claude Max'
+
+  // NEW: Send last assistant message to another agent
+  const sendToAgent = async (targetAgentId: string) => {
+    if (!activeConv) return
+    const lastAssistant = [...activeConv.messages].reverse().find(m => m.role === 'assistant')
+    if (!lastAssistant) return
+    setShowSendToAgent(false)
+    try {
+      const res = await fetch('/api/chat/send-to-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId: targetAgentId, message: lastAssistant.content, sessionKey: `mc-send-${targetAgentId}-${activeConv.id}` }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        // Show a local info message
+        const infoMsg: ChatMessage = {
+          id: 'send-to-' + Date.now(),
+          role: 'assistant',
+          content: `↗ **Forwarded to ${AGENT_OPTIONS.find(a=>a.id===targetAgentId)?.label || targetAgentId}**\n\n${data.reply}`,
+          ts: Date.now(),
+        }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, infoMsg] } : c))
+      }
+    } catch { /* ignore */ }
+  }
+
   return (
-    <div className="flex gap-0 h-[calc(100vh-88px)] -mx-6 -my-5">
-      {/* LEFT SIDEBAR */}
-      <div className="w-64 shrink-0 border-r border-zinc-800/60 flex flex-col" style={{background:'#0d0d0d'}}>
-        {/* New Chat button */}
-        <div className="px-3 py-3 border-b border-zinc-800/40">
-          <button
-            onClick={newChat}
-            className="w-full px-3 py-2.5 rounded-lg bg-zinc-800 text-white text-xs font-medium hover:bg-zinc-700 transition-all flex items-center gap-2">
-            <span>+</span> New Chat
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="px-3 py-2.5 border-b border-zinc-800/40">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800/60" style={{background:'#111'}}>
-            <svg className="w-3 h-3 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="bg-transparent text-xs text-zinc-300 placeholder-zinc-600 w-full outline-none"
-            />
+    <div className="flex gap-0 h-[calc(100vh-88px)] -mx-3 md:-mx-6 -my-5">
+      {/* LEFT SIDEBAR — Feature 10: collapsible, hidden on mobile */}
+      <div
+        className={'shrink-0 border-r border-zinc-800/60 hidden md:flex flex-col transition-all duration-200 ' + (sidebarCollapsed ? 'w-10' : 'w-64')}
+        style={{background:'#0d0d0d'}}
+        ref={sidebarRef}
+      >
+        {sidebarCollapsed ? (
+          /* Collapsed strip */
+          <div className="flex flex-col items-center py-2 gap-2">
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-white transition-colors text-sm"
+              title="Expand sidebar">
+              ›
+            </button>
+            <button
+              onClick={newChat}
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-zinc-800 text-white hover:bg-zinc-700 transition-all text-xs"
+              title="New Chat">
+              +
+            </button>
+            {/* Unread dot on nav */}
+            {unreadChat && (
+              <span className="w-2 h-2 rounded-full bg-red-500" title="Unread messages" />
+            )}
+            {/* Conversation dots */}
+            <div className="flex flex-col gap-1 mt-1">
+              {filteredChats.slice(0, 8).map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveChat(c.id)}
+                  title={c.title}
+                  className={'w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition-all ' +
+                    (activeChat === c.id ? 'bg-zinc-600' : 'bg-zinc-900 hover:bg-zinc-800')}>
+                  {AGENT_BADGE_MAP[c.agent_id || 'main'] || '💬'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Sidebar header with collapse button */}
+            <div className="px-3 py-3 border-b border-zinc-800/40 flex items-center gap-2">
+              <button
+                onClick={newChat}
+                className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 text-white text-xs font-medium hover:bg-zinc-700 transition-all flex items-center gap-2">
+                <span>+</span> New Chat
+              </button>
+              <button
+                onClick={() => setSidebarCollapsed(true)}
+                className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-white transition-colors text-sm rounded-lg hover:bg-zinc-800"
+                title="Collapse sidebar">
+                ‹
+              </button>
+            </div>
 
-        {/* Grouped Chats */}
-        <div className="flex-1 overflow-y-auto px-2 py-2">
-          {filteredChats.length === 0 ? (
-            <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
-          ) : (
-            groupedChats.map(group => (
-              <div key={group.label} className="mb-2">
-                <p className="text-[9px] uppercase tracking-widest text-zinc-700 font-semibold px-3 py-1.5">{group.label}</p>
-                <div className="space-y-0.5">
-                  {group.items.map(c => {
-                    const flatIdx = filteredChats.indexOf(c)
-                    return (
-                    <div
-                      key={c.id}
-                      className={
-                        'group relative w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer ' +
-                        (activeChat === c.id ? 'bg-zinc-800 text-white' : sidebarFocusIdx === flatIdx ? 'bg-zinc-900/70 text-zinc-300 ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')
-                      }
-                      onClick={() => { setActiveChat(c.id); setSidebarFocusIdx(flatIdx) }}
-                    >
-                      <p className="font-medium truncate pr-5">{c.title}</p>
-                      <p className="text-[9px] opacity-40 mt-0.5">
-                        {new Date(c.updatedAt).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}
-                      </p>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteChat(c.id) }}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all text-[10px] p-0.5"
-                        title="Delete">
-                        ✕
-                      </button>
-                    </div>
-                  )
-                  })}
-                </div>
+            {/* Sidebar tabs: Mine / OpenClaw / Heartbeats */}
+            <div className="flex border-b border-zinc-800 shrink-0">
+              {([['mine','💬','Mine'],['openclaw','🤖','OpenClaw'],['heartbeats','⏱','Beats']] as const).map(([id,icon,label])=>(
+                <button key={id} onClick={()=>setSidebarTab(id)}
+                  className={'flex-1 py-2 text-[10px] font-semibold tracking-wide transition-colors flex flex-col items-center gap-0.5 ' +
+                    (sidebarTab===id ? 'text-white border-b-2 border-purple-500' : 'text-zinc-600 hover:text-zinc-400 border-b-2 border-transparent')}>
+                  <span>{icon}</span>
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Feature 9 + 16: Project filter pills + Starred */}
+            {sidebarTab === 'mine' && <div className="px-3 py-2 border-b border-zinc-800/40 flex flex-wrap gap-1">
+              <button
+                onClick={() => { setProjectFilter(null); setStarredFilter(false) }}
+                className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
+                  (!projectFilter && !starredFilter ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 border-zinc-800 hover:border-zinc-700')}>
+                All
+              </button>
+              {Object.entries(PROJECT_TAG_COLORS).map(([proj, color]) => (
+                <button
+                  key={proj}
+                  onClick={() => { setProjectFilter(projectFilter === proj ? null : proj); setStarredFilter(false) }}
+                  className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
+                    (projectFilter === proj ? 'text-white' : 'text-zinc-500 hover:text-zinc-300')}
+                  style={projectFilter === proj
+                    ? { background: color + '30', borderColor: color + '80', color }
+                    : { borderColor: '#27272a' }}>
+                  {proj}
+                </button>
+              ))}
+              <button
+                onClick={() => { setStarredFilter(v => !v); setProjectFilter(null) }}
+                className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
+                  (starredFilter ? 'bg-yellow-900/40 text-yellow-400 border-yellow-700/50' : 'text-zinc-500 border-zinc-800 hover:border-zinc-700')}>
+                ⭐ Starred
+              </button>
+            </div>}
+
+            {/* Feature 12: Search + message search */}
+            {sidebarTab === 'mine' && <>
+            <div className="px-3 py-2.5 border-b border-zinc-800/40">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800/60" style={{background:'#111'}}>
+                <svg className="w-3 h-3 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value)
+                    if (searchMode === 'messages') { setSearchMode('title'); setSearchResults([]) }
+                  }}
+                  className="bg-transparent text-xs text-zinc-300 placeholder-zinc-600 w-full outline-none"
+                />
+                {searchMode === 'messages' && (
+                  <button onClick={() => { setSearchMode('title'); setSearchResults([]) }} className="text-[9px] text-yellow-400 hover:text-yellow-200">✕</button>
+                )}
               </div>
-            ))
-          )}
-        </div>
+              {search.length >= 3 && searchMode === 'title' && (
+                <button
+                  onClick={() => doMessageSearch(search)}
+                  disabled={isSearching}
+                  className="mt-1.5 w-full text-[9px] px-2 py-1 rounded-lg border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-colors text-left flex items-center gap-1.5">
+                  {isSearching ? '⟳ Searching messages...' : '🔍 Search message content'}
+                </button>
+              )}
+              {searchMode === 'messages' && searchResults.length > 0 && (
+                <p className="mt-1 text-[9px] text-zinc-600">{searchResults.length} message{searchResults.length !== 1 ? 's' : ''} found</p>
+              )}
+            </div>
+
+            {/* Grouped Chats */}
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {filteredChats.length === 0 ? (
+                <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
+              ) : (
+                groupedChats.map(group => (
+                  <div key={group.label} className="mb-2">
+                    <p className={'text-[9px] uppercase tracking-widest font-semibold px-3 py-1.5 ' + (group.pinned ? 'text-amber-600' : 'text-zinc-700')}>
+                      {group.pinned ? '📌 ' : ''}{group.label}
+                    </p>
+                    <div className="space-y-0.5">
+                      {group.items.map(c => {
+                        const flatIdx = filteredChats.indexOf(c)
+                        const lastMsg = c.messages[c.messages.length - 1]
+                        const preview = searchMode === 'messages'
+                          ? searchResults.find(r => r.conversation_id === c.id)?.content.slice(0, 60)
+                          : lastMsg ? stripMarkdownPreview(lastMsg.content) : ''
+                        const agentBadge = AGENT_BADGE_MAP[c.agent_id || 'main'] || '🧠'
+                        const projColor = c.project ? PROJECT_TAG_COLORS[c.project] : null
+                        const highlightedPreview = searchMode === 'messages' && preview && search.length >= 3
+                          ? (() => {
+                              const idx = preview.toLowerCase().indexOf(search.toLowerCase())
+                              if (idx < 0) return <span>{preview}</span>
+                              return <span>{preview.slice(0, idx)}<span className="bg-yellow-900/40 text-yellow-300">{preview.slice(idx, idx + search.length)}</span>{preview.slice(idx + search.length)}</span>
+                            })()
+                          : <span>{preview}</span>
+                        return (
+                          <div
+                            key={c.id}
+                            className={
+                              'group relative w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer ' +
+                              (activeChat === c.id ? 'bg-zinc-800 text-white' : sidebarFocusIdx === flatIdx ? 'bg-zinc-900/70 text-zinc-300 ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')
+                            }
+                            onClick={() => { setActiveChat(c.id); setSidebarFocusIdx(flatIdx) }}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              togglePin(c.id, !c.pinned)
+                            }}
+                          >
+                            {/* Feature 3: agent badge */}
+                            <div className="flex items-center justify-between gap-1">
+                              <p
+                                className="font-medium truncate flex-1 pr-1"
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation()
+                                  setActiveChat(c.id)
+                                  setRenamingTitle(c.title)
+                                }}>
+                                {c.pinned ? '📌 ' : ''}{c.title}
+                              </p>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {/* Feature 19: forked badge */}
+                                {c.forked_from && <span className="text-[9px] text-zinc-600" title="Forked conversation">⑂</span>}
+                                <span className="text-[10px] opacity-70">{agentBadge}</span>
+                              </div>
+                            </div>
+                            {/* Feature 2: last message preview */}
+                            {preview && (
+                              <p className="text-zinc-600 text-[9px] truncate mt-0.5">{highlightedPreview}</p>
+                            )}
+                            <div className="flex items-center justify-between mt-0.5">
+                              <p className="text-[9px] opacity-40">
+                                {new Date(c.updatedAt).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}
+                              </p>
+                              {/* Feature 9: project pill */}
+                              {c.project && projColor && (
+                                <span
+                                  className="text-[8px] px-1.5 py-0 rounded-full"
+                                  style={{ background: projColor + '20', color: projColor }}>
+                                  {c.project}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteChat(c.id) }}
+                              className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all text-[10px] p-0.5"
+                              title="Delete">
+                              ✕
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            </>}
+
+            {/* OpenClaw / Heartbeats tab content */}
+            {sidebarTab !== 'mine' && (
+              <div className="flex-1 overflow-y-auto">
+                {ocLoading && <div className="p-4 text-center text-zinc-600 text-xs">Loading…</div>}
+                {!ocLoading && (() => {
+                  const items = sidebarTab === 'heartbeats'
+                    ? ocSessions.filter(s => s.action === 'cron' || s.channel?.includes('Cron'))
+                    : ocSessions.filter(s => s.action !== 'cron' && !s.channel?.includes('Cron'))
+                  if (items.length === 0) return <div className="p-4 text-center text-zinc-600 text-xs">No sessions found</div>
+                  return items.map((s: any, i: number) => (
+                    <div key={i} className="px-3 py-2.5 border-b border-zinc-900 hover:bg-zinc-900/50 cursor-default">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-base">{s.emoji || '🤖'}</span>
+                        <span className="text-xs font-semibold text-zinc-300">{s.agentName || s.agentId}</span>
+                        <span className="ml-auto text-[9px] text-zinc-600">{s.ago != null ? `${s.ago}m ago` : ''}</span>
+                      </div>
+                      <div className="flex items-center gap-2 pl-7">
+                        <span className="text-[10px] text-zinc-500">{s.channel}</span>
+                        {s.tokens > 0 && <span className="text-[9px] text-zinc-700">{(s.tokens/1000).toFixed(1)}k tokens</span>}
+                      </div>
+                    </div>
+                  ))
+                })()}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* CENTER: CHAT AREA */}
@@ -756,16 +1734,117 @@ function ChatTab() {
                     className="bg-transparent border-b border-zinc-600 text-white text-sm font-medium outline-none w-full"
                   />
                 ) : (
-                  <h2
-                    className="text-white text-sm font-medium truncate cursor-pointer hover:text-zinc-300 transition-colors"
-                    title="Double-click to rename"
-                    onDoubleClick={() => setRenamingTitle(activeConv.title)}>
-                    {activeConv.title}
-                  </h2>
+                  <div className="flex items-center gap-2">
+                    <h2
+                      className="text-white text-sm font-medium truncate cursor-pointer hover:text-zinc-300 transition-colors"
+                      title="Double-click to rename"
+                      onDoubleClick={() => setRenamingTitle(activeConv.title)}>
+                      {activeConv.title}
+                    </h2>
+                    {/* Feature 9: project badge in header */}
+                    <button
+                      onClick={() => {
+                        const current = activeConv.project || null
+                        const idx = PROJECT_CYCLE.indexOf(current as any)
+                        const next = PROJECT_CYCLE[(idx + 1) % PROJECT_CYCLE.length]
+                        setConvProject(activeConv.id, next)
+                      }}
+                      className="text-[9px] px-2 py-0.5 rounded-full border transition-colors shrink-0"
+                      style={activeConv.project
+                        ? { background: (PROJECT_TAG_COLORS[activeConv.project] || '#555') + '20', color: PROJECT_TAG_COLORS[activeConv.project] || '#aaa', borderColor: (PROJECT_TAG_COLORS[activeConv.project] || '#555') + '50' }
+                        : { color: '#555', borderColor: '#2a2a2a', background: '#141414' }}
+                      title="Click to cycle project tag">
+                      {activeConv.project || '+ project'}
+                    </button>
+                  </div>
                 )}
-                <p className="text-zinc-500 text-xs mt-0.5">{currentAgent.label} — Claude Max</p>
+                {/* Feature 8: model display + Feature 15: context budget */}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-zinc-500 text-xs">{currentAgent.label} — {agentModelLabel}</p>
+                  {activeConv.messages.length > 0 && (
+                    <span className={`text-[9px] tabular-nums ${contextTokenColor}`}>{contextTokenLabel}</span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
+                {/* Feature 20: session context viewer button */}
+                <div className="relative">
+                  <button
+                    onClick={() => { setShowContextViewer(v => !v); setShowSystemPrompt(false) }}
+                    className={'text-[10px] px-2.5 py-1 rounded-lg border transition-colors font-mono ' +
+                      (showContextViewer ? 'text-emerald-300 border-emerald-800 bg-emerald-900/20' : 'text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600')}
+                    title="Session context">
+                    {'{ }'}
+                  </button>
+                  {showContextViewer && (
+                    <div className="absolute right-0 top-8 z-20 w-72 rounded-xl border border-zinc-800 shadow-2xl p-3 space-y-1.5" style={{background:'#0f0f0f'}}>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold mb-2">Session Context</p>
+                      {[
+                        ['Session key', `mc-chat-${activeConv.id}`],
+                        ['Agent', `${selectedAgent} (${currentAgent.label})`],
+                        ['Model', agentModelLabel],
+                        ['Messages', String(activeConv.messages.length)],
+                        ['Est. tokens', contextTokenLabel],
+                        ['System prompt', activeConv.system_prompt ? activeConv.system_prompt.slice(0, 100) + (activeConv.system_prompt.length > 100 ? '…' : '') : 'none'],
+                        ['Forked from', activeConv.forked_from || 'original'],
+                      ].map(([k, v]) => (
+                        <div key={k} className="flex gap-2">
+                          <span className="text-[9px] text-zinc-600 w-24 shrink-0">{k}</span>
+                          <span className="text-[9px] text-zinc-400 break-all">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* Feature 5: system prompt gear button */}
+                <div className="relative">
+                  <button
+                    onClick={() => { setShowSystemPrompt(v => !v); setShowContextViewer(false) }}
+                    className={'text-[10px] px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ' +
+                      (showSystemPrompt ? 'text-blue-300 border-blue-800 bg-blue-900/30' : 'text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600')}
+                    title="System prompt">
+                    ⚙️
+                    {activeConv.system_prompt && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+                    )}
+                  </button>
+                  {showSystemPrompt && (
+                    <div className="absolute right-0 top-8 z-20 w-80 rounded-xl border border-zinc-700 shadow-2xl p-3 space-y-2" style={{background:'#0f0f0f'}}>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">System Prompt</p>
+                      <textarea
+                        rows={4}
+                        value={systemPromptDraft}
+                        onChange={e => setSystemPromptDraft(e.target.value)}
+                        onBlur={() => saveSystemPrompt(activeConv.id, systemPromptDraft)}
+                        placeholder="Optional system prompt for this conversation..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 placeholder-zinc-700 outline-none focus:border-zinc-600 resize-none"
+                      />
+                      <p className="text-[9px] text-zinc-700">Auto-saves on blur. Prepended to every message in this conversation.</p>
+                    </div>
+                  )}
+                </div>
+                {/* NEW: Send-to-agent */}
+                <div className="relative" ref={sendToAgentRef}>
+                  <button
+                    onClick={() => setShowSendToAgent(v => !v)}
+                    className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors flex items-center gap-1"
+                    title="Forward last message to another agent">
+                    ↗ Send to
+                    <span className="text-[8px]">▾</span>
+                  </button>
+                  {showSendToAgent && (
+                    <div className="absolute right-0 top-7 z-30 w-48 rounded-xl border border-zinc-800 shadow-2xl py-1" style={{background:'#0f0f0f'}}>
+                      {AGENT_OPTIONS.filter(a => a.id !== selectedAgent).map(a => (
+                        <button
+                          key={a.id}
+                          onClick={() => sendToAgent(a.id)}
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          {a.label} <span className="text-zinc-600 text-[9px]">{a.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {isSending ? (
                   <button
                     onClick={stopGeneration}
@@ -774,11 +1853,34 @@ function ChatTab() {
                     Stop
                   </button>
                 ) : (
-                  <button
-                    onClick={() => exportChat(activeConv)}
-                    className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors">
-                    ↓ Export
-                  </button>
+                  /* Feature 18: export dropdown */
+                  <div className="relative" ref={exportMenuRef}>
+                    <button
+                      onClick={() => setShowExportMenu(v => !v)}
+                      className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors flex items-center gap-1">
+                      ↓ Export
+                      <span className="text-[8px]">▾</span>
+                    </button>
+                    {showExportMenu && (
+                      <div className="absolute right-0 top-7 z-30 w-44 rounded-xl border border-zinc-800 shadow-2xl py-1" style={{background:'#0f0f0f'}}>
+                        <button
+                          onClick={() => copyConvAsMarkdown(activeConv)}
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          ⎘ Copy as Markdown
+                        </button>
+                        <button
+                          onClick={() => downloadConvMd(activeConv)}
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          ↓ Download .md
+                        </button>
+                        <button
+                          onClick={printConv}
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          🖨 Print / PDF
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -791,23 +1893,48 @@ function ChatTab() {
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'120ms'}} />
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'240ms'}} />
                 </div>
-                <span className="text-xs text-zinc-500">🧠 <span className="text-blue-400 font-medium">KAOS</span> is writing…</span>
-              </div>
-            )}
-
-            {/* Scroll to bottom button */}
-            {userScrolledUp && (
-              <div className="absolute bottom-28 right-8 z-10">
-                <button
-                  onClick={() => { setUserScrolledUp(false); messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
-                  className="w-8 h-8 rounded-full bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 text-white text-sm flex items-center justify-center shadow-lg transition-all">
-                  ↓
-                </button>
+                <span className="text-xs text-zinc-500">🧠 <span className="text-blue-400 font-medium">{currentAgent.label}</span> is writing…</span>
               </div>
             )}
 
             {/* Messages */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-4 relative">
+            <div
+              ref={messagesContainerRef}
+              className={`flex-1 overflow-y-auto px-6 py-4 space-y-4 relative print-chat`}
+              onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true) }}
+              onDragLeave={(e) => { if (!messagesContainerRef.current?.contains(e.relatedTarget as Node)) setIsDraggingOver(false) }}
+              onDrop={(e) => {
+                e.preventDefault()
+                setIsDraggingOver(false)
+                const file = e.dataTransfer.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onload = (ev) => {
+                  const text = ev.target?.result as string
+                  setSelectedFile({ name: file.name, content: text })
+                }
+                reader.readAsText(file)
+              }}
+            >
+              {/* Auto-scroll lock indicator */}
+              {userScrolledUp && (
+                <div className="absolute top-3 right-4 z-20 flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold pointer-events-none"
+                  style={{background:'#78350f22', border:'1px solid #f59e0b55', color:'#f59e0b'}}>
+                  🔒 scroll locked
+                </div>
+              )}
+
+              {/* Drag overlay */}
+              {isDraggingOver && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center rounded-lg pointer-events-none"
+                  style={{ background: 'rgba(59,130,246,0.08)', border: '2px dashed #3b82f6' }}>
+                  <div className="text-center">
+                    <div className="text-3xl mb-2">📎</div>
+                    <p className="text-blue-400 text-sm font-medium">Drop file to attach</p>
+                  </div>
+                </div>
+              )}
+
               {activeConv.messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-zinc-600 text-sm">Start a conversation</p>
@@ -821,42 +1948,190 @@ function ChatTab() {
                     <div
                       className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm mt-0.5"
                       style={{ background: msg.role === 'user' ? '#1e1e1e' : '#3b82f620' }}>
-                      {msg.role === 'user' ? '👤' : '🧠'}
+                      {msg.role === 'user' ? '👤' : (AGENT_BADGE_MAP[selectedAgent] || '🧠')}
                     </div>
 
                     {/* Bubble */}
                     <div className={'relative ' + (msg.role === 'user' ? 'max-w-[65ch]' : 'max-w-[75ch]')}>
-                      <div
-                        className={
-                          'px-4 py-3 rounded-lg text-sm ' +
-                          (msg.role === 'user'
-                            ? 'bg-zinc-800 text-white'
-                            : 'bg-zinc-900 text-zinc-300')
-                        }>
-                        {msg.role === 'user'
-                          ? <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
-                          : <MarkdownMessage content={msg.content} />
-                        }
-                      </div>
-                      {/* Timestamp + copy row */}
-                      <div className={
-                        'flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ' +
-                        (msg.role === 'user' ? 'justify-end' : 'justify-start')
-                      }>
-                        {msg.ts && (
-                          <span className="text-[9px] text-zinc-600">
-                            {new Date(msg.ts).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}
-                          </span>
-                        )}
-                        <button
-                          onClick={() => copyMessage(msg.id, msg.content)}
-                          className="text-[9px] text-zinc-600 hover:text-zinc-400 flex items-center gap-1 transition-colors">
-                          {copiedId === msg.id ? '✓ Copied' : '⎘ Copy'}
-                        </button>
-                      </div>
+                      {/* Feature 6: inline edit mode */}
+                      {editingMsgId === msg.id ? (
+                        <div className="flex flex-col gap-2">
+                          <textarea
+                            autoFocus
+                            value={editingMsgContent}
+                            onChange={e => setEditingMsgContent(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmEditMessage(msg) }
+                              if (e.key === 'Escape') setEditingMsgId(null)
+                            }}
+                            className="px-4 py-3 rounded-lg bg-zinc-700 text-white text-sm outline-none border border-zinc-500 resize-none w-full"
+                            rows={3}
+                          />
+                          <div className="flex items-center gap-2 justify-end">
+                            <button
+                              onClick={() => setEditingMsgId(null)}
+                              className="text-xs text-zinc-500 hover:text-white px-2 py-1 rounded-lg border border-zinc-700 hover:border-zinc-500 transition-colors">
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => confirmEditMessage(msg)}
+                              className="text-xs text-white px-2 py-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 transition-colors">
+                              ✓ Send
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {/* NEW: Tool call indicators above assistant messages */}
+                          {msg.role === 'assistant' && toolIndicators[msg.id] && toolIndicators[msg.id].map((tool, ti) => (
+                            <div key={ti} className="mb-2 rounded-lg border border-zinc-700/50 bg-zinc-950 text-xs overflow-hidden">
+                              <button
+                                onClick={() => setToolIndicators(prev => ({
+                                  ...prev,
+                                  [msg.id]: prev[msg.id].map((t, i) => i === ti ? { ...t, expanded: !t.expanded } : t)
+                                }))}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-zinc-400 hover:text-zinc-200 transition-colors text-left">
+                                <span>🔧</span>
+                                <span className="font-mono text-emerald-400">{tool.name}</span>
+                                <span className="text-zinc-600 text-[9px] ml-auto">{tool.expanded ? '▲' : '▼'}</span>
+                              </button>
+                              {tool.expanded && (
+                                <pre className="px-3 pb-2 text-[10px] font-mono text-zinc-500 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
+                                  {tool.input}
+                                </pre>
+                              )}
+                            </div>
+                          ))}
+                          {/* NEW: Thinking/reasoning panel above assistant message */}
+                          {msg.role === 'assistant' && thinkingContent[msg.id] && (
+                            <details className="mb-2 rounded-lg border border-zinc-700/50 overflow-hidden">
+                              <summary className="px-3 py-1.5 text-[11px] text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors select-none" style={{background:'#161616'}}>
+                                💭 Reasoning <span className="text-[9px] text-zinc-700">(click to expand)</span>
+                              </summary>
+                              <pre className="px-3 py-2 text-[10px] font-mono text-zinc-500 whitespace-pre-wrap break-words max-h-48 overflow-y-auto" style={{background:'#111'}}>
+                                {thinkingContent[msg.id]}
+                              </pre>
+                            </details>
+                          )}
+                          {/* Feature 16: bookmarked gold left border */}
+                          <div
+                            className={
+                              'message-bubble px-4 py-3 rounded-lg text-sm ' +
+                              (msg.role === 'user' ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-zinc-300') +
+                              (msg.bookmarked ? ' border-l-2 border-yellow-600/50' : '')
+                            }>
+                            {/* Feature 1: show image if present */}
+                            {msg.image_url && (
+                              <img src={msg.image_url} alt="pasted" className="max-w-[200px] max-h-[150px] rounded-lg mb-2 object-contain" />
+                            )}
+                            {msg.role === 'user'
+                              ? <p className="leading-relaxed whitespace-pre-wrap break-words">{msg.content.replace(/^!\[image\]\(data:[^)]+\)\n\n/, '')}</p>
+                              : <MarkdownMessage content={msg.content} />
+                            }
+                          </div>
+                          {/* NEW: Approval flow buttons */}
+                          {msg.role === 'assistant' && /\/approve\s+(allow-once|allow-always|deny)/i.test(msg.content) && !approvalUsed[msg.id] && (
+                            <div className="flex gap-2 mt-2 flex-wrap">
+                              {[
+                                { label: '✓ Allow once', cmd: '/approve allow-once', cls: 'bg-emerald-900/40 text-emerald-300 border-emerald-800/50 hover:bg-emerald-900/70' },
+                                { label: '✓ Always',     cmd: '/approve allow-always', cls: 'bg-blue-900/40 text-blue-300 border-blue-800/50 hover:bg-blue-900/70' },
+                                { label: '✗ Deny',       cmd: '/approve deny',         cls: 'bg-red-900/40 text-red-300 border-red-800/50 hover:bg-red-900/70' },
+                              ].map(btn => (
+                                <button
+                                  key={btn.cmd}
+                                  onClick={async () => {
+                                    setApprovalUsed(prev => ({ ...prev, [msg.id]: true }))
+                                    if (!activeConv) return
+                                    const approvalMsgId = 'msg-approval-' + Date.now()
+                                    await doSend(btn.cmd, approvalMsgId, activeConv, chats)
+                                  }}
+                                  className={`text-xs px-3 py-1 rounded-lg border transition-colors ${btn.cls}`}>
+                                  {btn.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {/* Actions row: copy + edit + bookmark + fork */}
+                          <div className={
+                            'flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ' +
+                            (msg.role === 'user' ? 'justify-end' : 'justify-start')
+                          }>
+                            <button
+                              onClick={() => copyMessage(msg.id, msg.content)}
+                              className="text-[9px] text-zinc-600 hover:text-zinc-400 flex items-center gap-1 transition-colors">
+                              {copiedId === msg.id ? '✓ Copied' : '⎘ Copy'}
+                            </button>
+                            {/* Feature 16: bookmark */}
+                            <button
+                              onClick={() => toggleBookmark(msg.id, !!msg.bookmarked)}
+                              className={'text-[9px] transition-colors ' + (msg.bookmarked ? 'text-yellow-500 hover:text-yellow-300' : 'text-zinc-600 hover:text-zinc-400')}
+                              title={msg.bookmarked ? 'Remove bookmark' : 'Bookmark'}>
+                              ★
+                            </button>
+                            {/* Fork: assistant messages (existing) + user messages (new task 6) */}
+                            {activeConv && (
+                              <button
+                                onClick={() => forkConversation(activeConv, msg.id)}
+                                className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                                title="Fork conversation from here">
+                                ⑂ Fork
+                              </button>
+                            )}
+                            {/* Feature 6: edit button for user messages */}
+                            {msg.role === 'user' && (
+                              <button
+                                onClick={() => startEditMessage(msg)}
+                                className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                                title="Edit message">
+                                ✏️
+                              </button>
+                            )}
+                            {/* Per-message delete */}
+                            <button
+                              onClick={() => {
+                                if (!activeConv) return
+                                const updated = { ...activeConv, messages: activeConv.messages.filter(m => m.id !== msg.id) }
+                                setChats(prev => prev.map(c => c.id === activeConv.id ? updated : c))
+                                fetch('/api/chat/conversations', {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ id: activeConv.id, messages: updated.messages })
+                                })
+                              }}
+                              className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded"
+                              title="Delete message">
+                              🗑
+                            </button>
+                          </div>
+                          {/* Task 5: Timestamp on hover, shown below actions row */}
+                          {msg.ts && (
+                            <div className={
+                              'opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 ' +
+                              (msg.role === 'user' ? 'text-right' : 'text-left')
+                            }>
+                              <span className="text-[9px] text-zinc-700">
+                                {new Date(msg.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 ))
+              )}
+              {/* Feature 13: follow-up suggestions */}
+              {followUpSuggestions.length > 0 && !isSending && (
+                <div className="flex gap-2 flex-wrap pl-11">
+                  {followUpSuggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setInputVal(s); textareaRef.current?.focus() }}
+                      className="px-3 py-1 rounded-full border border-zinc-700 text-zinc-400 text-[11px] hover:bg-zinc-800 hover:text-white cursor-pointer transition-colors">
+                      {s}
+                    </button>
+                  ))}
+                </div>
               )}
               {loading && (
                 <div className="flex gap-3">
@@ -887,33 +2162,204 @@ function ChatTab() {
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Back to bottom button — fixed bottom-right of chat column */}
+            {userScrolledUp && (
+              <div className="absolute bottom-24 right-6 z-40">
+                <button
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold shadow-xl transition-all"
+                  style={{ background: '#18181b', border: '2px solid #a855f7', color: '#e4d4f4', boxShadow: '0 0 12px #a855f744' }}
+                  onClick={() => { setUserScrolledUp(false); messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+                  title="Back to bottom">
+                  ↓ Back to bottom
+                </button>
+              </div>
+            )}
+
             {/* Input Area */}
-            <div className="border-t border-zinc-800/40 px-6 py-4 shrink-0" style={{background:'#0d0d0d'}}>
-              {selectedFile && (
+            <div className="border-t border-zinc-800/40 px-3 md:px-6 py-3 md:py-4 shrink-0" style={{background:'#0d0d0d'}}>
+              {/* Feature 1: pasted image preview */}
+              {pastedImage && (
                 <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60">
-                  <span className="text-sm">📎</span>
-                  <span className="text-xs text-zinc-400 flex-1 truncate">{selectedFile.name}</span>
-                  <span className="text-[9px] text-zinc-600">{(selectedFile.content.length / 1024).toFixed(1)}KB</span>
+                  <img src={pastedImage} alt="paste preview" className="w-12 h-12 object-contain rounded" />
+                  <span className="text-xs text-zinc-400 flex-1">Image pasted</span>
                   <button
-                    onClick={() => setSelectedFile(null)}
+                    onClick={() => setPastedImage(null)}
                     className="text-zinc-600 hover:text-white text-xs ml-1">
                     ✕
                   </button>
                 </div>
               )}
+              {selectedFile && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs mb-2"
+                  style={{background:'#1a1a2e', border:'1px solid #2a2a4a'}}>
+                  <span className="text-base">{
+                    selectedFile.name.endsWith('.ts')||selectedFile.name.endsWith('.tsx') ? '🟦' :
+                    selectedFile.name.endsWith('.js')||selectedFile.name.endsWith('.jsx') ? '🟨' :
+                    selectedFile.name.endsWith('.py') ? '🐍' :
+                    selectedFile.name.endsWith('.md') ? '📝' :
+                    selectedFile.name.endsWith('.json') ? '📋' :
+                    selectedFile.name.endsWith('.css') ? '🎨' :
+                    selectedFile.name.endsWith('.html') ? '🌐' : '📄'
+                  }</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-zinc-300 font-medium truncate">{selectedFile.name}</div>
+                    <div className="text-zinc-600 text-[9px]">{(selectedFile.content.length/1024).toFixed(1)} KB</div>
+                  </div>
+                  <button onClick={() => setSelectedFile(null)} className="text-zinc-600 hover:text-zinc-400 text-xs px-1">✕</button>
+                </div>
+              )}
 
+              {/* NEW: Image URL preview */}
+              {imageUrlPreview && (
+                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60">
+                  <img src={imageUrlPreview} alt="url preview" className="w-12 h-12 object-contain rounded" onError={() => setImageUrlPreview(null)} />
+                  <span className="text-xs text-zinc-400 flex-1 truncate">{imageUrlPreview.slice(0, 50)}…</span>
+                  <button onClick={() => { setImageUrlPreview(null); setImageUrlDraft('') }} className="text-zinc-600 hover:text-white text-xs ml-1">✕</button>
+                </div>
+              )}
+              {/* Task 8: @-mention agent dropdown */}
+              {showMentionDropdown && (() => {
+                const filtered = AGENT_OPTIONS.filter(a =>
+                  a.id.toLowerCase().includes(mentionFilter) || a.label.toLowerCase().includes(mentionFilter)
+                )
+                return filtered.length > 0 ? (
+                  <div className="mb-2 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f'}}>
+                    <p className="text-[9px] text-zinc-600 uppercase tracking-widest px-3 pt-2 pb-1">Route to agent</p>
+                    {filtered.map((a, i) => (
+                      <button
+                        key={a.id}
+                        onClick={() => {
+                          setInputVal(v => v.replace(/@\w*$/, `@${a.id} `))
+                          setSelectedAgent(a.id)
+                          setShowMentionDropdown(false)
+                          textareaRef.current?.focus()
+                        }}
+                        className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-zinc-800/50 last:border-0 transition-colors ' +
+                          (i === mentionIdx ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900')}>
+                        <span className="text-sm shrink-0">{a.label.split(' ')[0]}</span>
+                        <span className="font-mono text-xs text-blue-400 shrink-0">@{a.id}</span>
+                        <span className="text-[10px] text-zinc-600">{a.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null
+              })()}
+              {/* NEW: Slash command palette */}
+              {showSlashPalette && slashFilter.length > 0 && (
+                <div className="mb-2 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f'}}>
+                  {slashFilter.map((c, i) => (
+                    <button
+                      key={c.cmd}
+                      onClick={() => {
+                        // For /imagine: insert command into input so user can type their prompt, don't execute
+                        if (c.cmd === '/imagine') {
+                          setInputVal('/imagine ')
+                          setShowSlashPalette(false)
+                          setTimeout(() => textareaRef.current?.focus(), 0)
+                        } else {
+                          executeSlashCommand(c.cmd)
+                        }
+                      }}
+                      className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-zinc-800/50 last:border-0 transition-colors ' +
+                        (i === slashPaletteIdx ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900')}>
+                      <span className="text-base shrink-0">{c.icon}</span>
+                      <span className="font-mono text-xs text-emerald-400 shrink-0">{c.cmd}</span>
+                      <span className="text-[10px] text-zinc-600">{c.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Feature 14: keyboard shortcut cheatsheet panel */}
+              {showShortcuts && (
+                <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 no-print">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Keyboard Shortcuts</p>
+                    <button onClick={() => setShowShortcuts(false)} className="text-zinc-600 hover:text-white text-xs">✕</button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                    {[
+                      ['⌘K', 'New chat'],
+                      ['↑/↓', 'Navigate conversations'],
+                      ['Enter', 'Send message'],
+                      ['⇧ Enter', 'New line'],
+                      ['Esc', 'Cancel / close'],
+                      ['⌘/', 'Focus input'],
+                    ].map(([key, desc]) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 font-mono">{key}</kbd>
+                        <span className="text-[10px] text-zinc-600">{desc}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex items-end gap-2">
-                {/* Paperclip button */}
+                {/* Paperclip button + file type picker */}
+                <div className="relative shrink-0 hidden sm:block" ref={fileTypePickerRef}>
+                  <button
+                    onClick={() => setShowFileTypePicker(p => !p)}
+                    disabled={isSending}
+                    className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Attach file">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                  </button>
+                  {showFileTypePicker && (
+                    <div className="absolute bottom-10 left-0 z-50 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f', minWidth:'160px'}}>
+                      {FILE_TYPE_GROUPS.map(g => (
+                        <button key={g.label}
+                          onClick={() => handleFileAttach(g.accept)}
+                          className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800/50 last:border-0">
+                          {g.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* NEW: File browser button */}
                 <button
-                  onClick={handleFileAttach}
+                  onClick={() => { setShowFileBrowser(true); setFileBrowserPath('') }}
                   disabled={isSending}
-                  className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 shrink-0 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Attach file (text/code)">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                  </svg>
+                  className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                  title="Browse workspace files">
+                  📁
                 </button>
+
+                {/* NEW: Image URL input button */}
+                <div className="relative shrink-0">
+                  <button
+                    onClick={() => setShowImageUrlInput(v => !v)}
+                    disabled={isSending}
+                    className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                    title="Add image by URL">
+                    🔗
+                  </button>
+                  {showImageUrlInput && (
+                    <div className="absolute bottom-10 left-0 z-50 rounded-xl border border-zinc-700 shadow-xl p-2" style={{background:'#0f0f0f', minWidth:'240px'}}>
+                      <p className="text-[9px] text-zinc-600 mb-1.5 uppercase tracking-widest">Image URL</p>
+                      <input
+                        autoFocus
+                        type="url"
+                        value={imageUrlDraft}
+                        onChange={e => setImageUrlDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && imageUrlDraft.trim()) {
+                            setImageUrlPreview(imageUrlDraft.trim())
+                            setShowImageUrlInput(false)
+                          }
+                          if (e.key === 'Escape') setShowImageUrlInput(false)
+                        }}
+                        placeholder="https://example.com/image.png"
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-300 placeholder-zinc-700 outline-none focus:border-zinc-600"
+                      />
+                      <p className="text-[9px] text-zinc-700 mt-1">Press Enter to add preview</p>
+                    </div>
+                  )}
+                </div>
 
                 {/* Agent selector */}
                 <select
@@ -927,49 +2373,179 @@ function ChatTab() {
                   ))}
                 </select>
 
+                {/* Model selector */}
+                <select
+                  value={selectedModel}
+                  onChange={e => setSelectedModel(e.target.value)}
+                  disabled={isSending}
+                  className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  title="Select model">
+                  {MODEL_OPTIONS.map(m => (
+                    <option key={m.id} value={m.id} title={m.desc}>{m.label}</option>
+                  ))}
+                </select>
+
                 {/* Auto-grow textarea */}
                 <textarea
                   ref={textareaRef}
                   rows={1}
                   value={inputVal}
-                  onChange={(e) => { setInputVal(e.target.value); adjustTextarea() }}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setInputVal(val)
+                    adjustTextarea()
+                    if (val) setFollowUpSuggestions([])
+                    // Slash command palette — hide once user has typed a space after the command (they have their prompt)
+                    if (val.startsWith('/') && !val.includes(' ')) {
+                      setShowSlashPalette(true)
+                      setSlashPaletteIdx(0)
+                    } else {
+                      setShowSlashPalette(false)
+                    }
+                    // @-mention routing
+                    const atMatch = val.match(/@(\w*)$/)
+                    if (atMatch) {
+                      setMentionFilter(atMatch[1].toLowerCase())
+                      setShowMentionDropdown(true)
+                      setMentionIdx(0)
+                    } else {
+                      setShowMentionDropdown(false)
+                    }
+                  }}
                   onKeyDown={(e) => {
+                    if (showMentionDropdown) {
+                      const filtered = AGENT_OPTIONS.filter(a =>
+                        a.id.toLowerCase().includes(mentionFilter) || a.label.toLowerCase().includes(mentionFilter)
+                      )
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIdx(i => Math.min(i+1, filtered.length-1)); return }
+                      if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIdx(i => Math.max(i-1, 0)); return }
+                      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                        e.preventDefault()
+                        const chosen = filtered[mentionIdx]
+                        if (chosen) {
+                          setInputVal(v => v.replace(/@\w*$/, `@${chosen.id} `))
+                          setSelectedAgent(chosen.id)
+                          setShowMentionDropdown(false)
+                        }
+                        return
+                      }
+                      if (e.key === 'Escape') { setShowMentionDropdown(false); return }
+                    }
+                    if (showSlashPalette) {
+                      const visible = slashFilter
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashPaletteIdx(i => Math.min(i+1, visible.length-1)); return }
+                      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashPaletteIdx(i => Math.max(i-1, 0)); return }
+                      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                        e.preventDefault()
+                        const chosen = visible[slashPaletteIdx]
+                        if (chosen) {
+                          if (chosen.cmd === '/imagine') {
+                            setInputVal('/imagine ')
+                            setShowSlashPalette(false)
+                            setTimeout(() => textareaRef.current?.focus(), 0)
+                          } else {
+                            executeSlashCommand(chosen.cmd)
+                          }
+                        }
+                        return
+                      }
+                      if (e.key === 'Escape') { setShowSlashPalette(false); return }
+                    }
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
                       handleSend()
                     } else if (e.key === 'Enter' && e.shiftKey) {
-                      // Let the newline happen, then resize
                       setTimeout(adjustTextarea, 0)
                     }
                   }}
                   disabled={isSending}
-                  placeholder={isSending ? 'KAOS is writing…' : 'Message KAOS (Claude Max)...'}
+                  placeholder={isListening ? 'Listening...' : isSending ? `${currentAgent.label} is writing…` : `Message ${currentAgent.label} (${agentModelLabel})...`}
                   className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60 text-white text-sm placeholder-zinc-600 outline-none focus:border-zinc-700 transition-all resize-none overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{minHeight:'38px', maxHeight:'160px'}}
                 />
 
-                {/* Send button */}
-                <button
-                  onClick={handleSend}
-                  disabled={!inputVal.trim() || isSending}
-                  className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-white shrink-0 mb-0.5">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9-7-9-7m0 0l-9 7m9-7v7" />
-                  </svg>
-                </button>
+                {/* Feature 11: voice input button */}
+                {speechAvailable && (
+                  <button
+                    onClick={toggleVoiceInput}
+                    disabled={isSending}
+                    title={isListening ? 'Stop listening' : 'Voice input'}
+                    className={
+                      'p-2 rounded-lg transition-all text-sm shrink-0 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed ' +
+                      (isListening ? 'bg-red-600 text-white anim-mic' : 'hover:bg-zinc-900 text-zinc-500 hover:text-zinc-300')
+                    }>
+                    🎤
+                  </button>
+                )}
+
+                {/* Send / Stop button */}
+                {loading ? (
+                  <button
+                    onClick={() => { abortControllerRef.current?.abort(); setLoading(false) }}
+                    className="w-9 h-9 rounded-lg bg-red-900/40 border border-red-800/50 text-red-300 hover:bg-red-900/70 transition-colors flex items-center justify-center text-sm shrink-0 mb-0.5"
+                    title="Stop generation">
+                    ■
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSend}
+                    disabled={!inputVal.trim() || isSending}
+                    className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-white shrink-0 mb-0.5">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9-7-9-7m0 0l-9 7m9-7v7" />
+                    </svg>
+                  </button>
+                )}
               </div>
 
-              <div className="flex items-center justify-between mt-2">
+              <div className="hidden md:flex items-center justify-between mt-2 no-print">
                 <p className="text-zinc-700 text-[10px]">
                   <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500">Enter</kbd> send ·
                   <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">⇧ Enter</kbd> newline ·
-                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">⌘K</kbd> new chat
+                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">⌘K</kbd> new chat ·
+                  <span className="ml-1 text-zinc-700">right-click conv to pin</span>
                 </p>
-                {inputVal.length > 0 && (
-                  <span className={`text-[9px] tabular-nums ${inputVal.length > 8000 ? 'text-red-500' : inputVal.length > 4000 ? 'text-yellow-500' : 'text-zinc-700'}`}>
-                    {inputVal.length.toLocaleString()} chars
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {inputVal.length > 0 && (
+                    <span className={`text-[9px] tabular-nums font-mono ${inputVal.length > 8000 ? 'text-red-500' : inputVal.length > 4000 ? 'text-yellow-500' : 'text-zinc-700'}`}>
+                      {inputVal.length.toLocaleString()} chars · ~{Math.ceil(inputVal.length/4)} tokens
+                    </span>
+                  )}
+                  {/* Task 7: Prompt templates popover */}
+                  <div className="relative" ref={promptTemplatesRef}>
+                    <button
+                      onClick={() => setShowPromptTemplates(v => !v)}
+                      className={'text-[10px] w-5 h-5 rounded flex items-center justify-center border transition-colors ' +
+                        (showPromptTemplates ? 'border-zinc-600 text-yellow-400 bg-zinc-800' : 'border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400')}
+                      title="Prompt templates">
+                      💡
+                    </button>
+                    {showPromptTemplates && (
+                      <div className="absolute bottom-7 right-0 z-50 w-64 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden" style={{background:'#0f0f0f'}}>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest px-3 pt-2.5 pb-1.5">Starter prompts</p>
+                        {PROMPT_TEMPLATES.map((t, i) => (
+                          <button
+                            key={i}
+                            onClick={() => {
+                              setInputVal(t.text)
+                              setShowPromptTemplates(false)
+                              setTimeout(() => { textareaRef.current?.focus(); adjustTextarea() }, 50)
+                            }}
+                            className="w-full text-left px-3 py-2 text-[11px] text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800/50 last:border-0">
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Feature 14: keyboard cheatsheet button */}
+                  <button
+                    onClick={() => setShowShortcuts(v => !v)}
+                    className={'text-[10px] w-5 h-5 rounded flex items-center justify-center border transition-colors ' +
+                      (showShortcuts ? 'border-zinc-600 text-zinc-400 bg-zinc-800' : 'border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400')}>
+                    ?
+                  </button>
+                </div>
               </div>
               {selectedFile && selectedFile.content.length > 32768 && (
                 <p className="text-[10px] text-yellow-500 mt-1">
@@ -980,6 +2556,59 @@ function ChatTab() {
           </>
         )}
       </div>
+
+      {/* NEW: File Browser Modal */}
+      {showFileBrowser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowFileBrowser(false)}>
+          <div className="w-96 max-h-[70vh] rounded-2xl border border-zinc-700 shadow-2xl flex flex-col overflow-hidden" style={{background:'#0f0f0f'}} onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <span>📁</span>
+                <span className="text-xs text-zinc-400 font-medium">Workspace Files</span>
+                {fileBrowserPath && <span className="text-[9px] text-zinc-600 font-mono truncate max-w-[160px]">/{fileBrowserPath}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                {fileBrowserPath && (
+                  <button
+                    onClick={() => setFileBrowserPath(p => p.split('/').slice(0,-1).join('/'))}
+                    className="text-[10px] text-zinc-500 hover:text-white px-2 py-0.5 rounded border border-zinc-700 hover:border-zinc-500">
+                    ← Up
+                  </button>
+                )}
+                <button onClick={() => setShowFileBrowser(false)} className="text-zinc-600 hover:text-white text-xs">✕</button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {fileBrowserEntries.length === 0 ? (
+                <p className="text-zinc-600 text-xs px-4 py-3">Empty directory</p>
+              ) : (
+                fileBrowserEntries.map(entry => (
+                  <button
+                    key={entry.path}
+                    onClick={async () => {
+                      if (entry.isDir) {
+                        setFileBrowserPath(entry.path)
+                      } else {
+                        // Read file and attach
+                        const res = await fetch('/api/files', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({path: entry.path}) })
+                        const data = await res.json()
+                        if (data.content !== undefined) {
+                          setSelectedFile({ name: entry.name, content: data.content })
+                          setShowFileBrowser(false)
+                        }
+                      }
+                    }}
+                    className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-zinc-800/60 transition-colors">
+                    <span className="text-sm shrink-0">{entry.isDir ? '📁' : '📄'}</span>
+                    <span className="text-xs text-zinc-300 truncate">{entry.name}</span>
+                    {!entry.isDir && <span className="text-[9px] text-zinc-600 ml-auto shrink-0">.{entry.name.split('.').pop()}</span>}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1027,6 +2656,7 @@ function KanbanBoard() {
   const [filterAssignee, setFilterAssignee] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
   const [confirmDelete, setConfirmDelete]   = useState<string|null>(null)
+  const [mobileCol, setMobileCol] = useState('open')
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -1101,13 +2731,24 @@ function KanbanBoard() {
         </button>
       </div>
 
+      {/* Mobile column tabs */}
+      <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
+        {BOARD_COLUMNS.map(col=>(
+          <button key={col.id} onClick={()=>setMobileCol(col.id)}
+            className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300')}
+            style={mobileCol===col.id?{borderBottom:`2px solid ${col.color}`}:{}}>
+            {col.label} <span className="text-zinc-600 ml-1">{filtered.filter(t=>t.status===col.id).length}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Columns */}
       <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => t.status===col.id)
           return (
             <div key={col.id}
-              className="flex-shrink-0 w-64 flex flex-col rounded-xl bg-zinc-900/50"
+              className={`flex-shrink-0 w-full md:w-64 flex flex-col rounded-xl bg-zinc-900/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
               style={{borderTop:`2px solid ${col.color}`}}
               onDragOver={e => e.preventDefault()}
               onDrop={() => handleDrop(col.id)}>
@@ -1172,8 +2813,8 @@ function KanbanBoard() {
 
       {/* New Task Modal */}
       {newTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setNewTask(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 p-6 space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setNewTask(null)}>
+          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
             <h3 className="text-white font-semibold text-sm">New Task</h3>
             <div><p className={labelCls}>Title *</p><input className={inputCls} placeholder="Task title..." autoFocus
               value={newTask.title??''} onChange={e=>setNewTask({...newTask,title:e.target.value})} /></div>
@@ -1212,8 +2853,8 @@ function KanbanBoard() {
 
       {/* Edit/Detail Modal */}
       {editTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setEditTask(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 p-6 space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setEditTask(null)}>
+          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <h3 className="text-white font-semibold text-sm">Edit Task</h3>
               <button onClick={()=>setConfirmDelete(editTask.id)} className="text-[10px] text-red-500/60 hover:text-red-500 transition-colors">Delete</button>
@@ -1295,6 +2936,14 @@ export default function Home() {
   const [mobileNav, setMobileNav] = useState(false)
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
+  const [unreadChat, setUnreadChat] = useState(false)
+
+  // Listen for unread event from ChatTab
+  useEffect(() => {
+    const handler = () => setUnreadChat(true)
+    window.addEventListener('mc-chat-unread', handler)
+    return () => window.removeEventListener('mc-chat-unread', handler)
+  }, [])
 
   const [statusCountdown, setStatusCountdown] = useState(30)
   const [agentsCountdown, setAgentsCountdown] = useState(60)
@@ -1399,13 +3048,16 @@ export default function Home() {
         </div>
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
           {NAV.map(item=>(
-            <button key={item.id} onClick={()=>{ setTab(item.id); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
+            <button key={item.id} onClick={()=>{ setTab(item.id); if(item.id==='chat') setUnreadChat(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
               className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all '+(
                 tab===item.id ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
               )}>
               <span className="text-sm shrink-0">{item.icon}</span>
               <span className="text-xs font-medium">{item.label}</span>
-              {tab===item.id && <span className="ml-auto w-1 h-1 rounded-full bg-white shrink-0" />}
+              {item.id === 'chat' && unreadChat && tab !== 'chat' && (
+                <span className="ml-auto w-2 h-2 rounded-full bg-red-500 shrink-0 animate-pulse" />
+              )}
+              {tab===item.id && !unreadChat && <span className="ml-auto w-1 h-1 rounded-full bg-white shrink-0" />}
             </button>
           ))}
         </nav>
@@ -1426,12 +3078,15 @@ export default function Home() {
         <div className="lg:hidden fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3" style={{background:'#080808ee'}} onClick={()=>setMobileNav(false)}>
           <p className="text-zinc-600 text-xs mb-4 uppercase tracking-widest">Navigate</p>
           {NAV.map(item=>(
-            <button key={item.id} onClick={()=>{ setTab(item.id); setMobileNav(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
+            <button key={item.id} onClick={()=>{ setTab(item.id); if(item.id==='chat') setUnreadChat(false); setMobileNav(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
               className={'flex items-center gap-3 px-6 py-3 rounded-xl transition-all w-56 '+(
                 tab===item.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
               )}>
               <span className="text-xl">{item.icon}</span>
               <span className="text-sm font-medium">{item.label}</span>
+              {item.id === 'chat' && unreadChat && tab !== 'chat' && (
+                <span className="ml-auto w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+              )}
               {tab===item.id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />}
             </button>
           ))}
@@ -1440,7 +3095,7 @@ export default function Home() {
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col min-h-screen overflow-auto">
-        <header className="border-b border-zinc-800/40 px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20" style={{background:'#090909'}}>
+        <header className="border-b border-zinc-800/40 px-3 md:px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20" style={{background:'#090909'}}>
           <div className="flex items-center gap-2">
             <span className="text-zinc-400 text-sm font-medium capitalize">{tab}</span>
             <span className="text-zinc-700 text-xs">· Nabit LLC</span>
@@ -1450,28 +3105,28 @@ export default function Home() {
           </span>
         </header>
 
-        <main className="flex-1 px-6 py-5">
+        <main className="flex-1 px-3 md:px-6 py-5 overflow-x-hidden">
 
           {/* ── OVERVIEW ── */}
           {tab==='overview' && (
             <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sprintProjects.map(proj=>{
                   const dl=new Date(proj.deadline), st=new Date(proj.startDate)
                   const left=daysUntil(dl), elap=daysSince(st), pct=miniPct(elap,proj.totalDays)
                   const dlLabel=dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})
                   const isUrgent = left<=2 && proj.color!=='#ffffff'
                   return (
-                    <div key={proj.id} className={`rounded-2xl p-5 border ${proj.borderColor} card-glow`} style={{background:proj.bg}}>
+                    <div key={proj.id} className={`rounded-2xl p-4 md:p-5 border ${proj.borderColor} card-glow`} style={{background:proj.bg}}>
                       <div className="flex justify-between items-start mb-4">
-                        <div>
+                        <div className="min-w-0 flex-1 mr-2">
                           <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{color:proj.color==='#ffffff'?'#71717a':proj.color+'b3'}}>{proj.name}</p>
-                          <p className="text-white text-sm font-medium">{proj.desc}</p>
+                          <p className="text-white text-xs sm:text-sm font-medium truncate">{proj.desc}</p>
                         </div>
                         <span className="text-xl">{proj.emoji}</span>
                       </div>
                       <div className="flex items-baseline gap-2 mb-3">
-                        <span className="text-4xl font-bold tabular-nums" style={{color:isUrgent?'#ef4444':proj.color}}>{left}</span>
+                        <span className="text-3xl md:text-4xl font-bold tabular-nums" style={{color:isUrgent?'#ef4444':proj.color}}>{left}</span>
                         <span className="text-zinc-500 text-sm">days</span>
                         <span className="ml-auto text-zinc-600 text-xs">Day {elap}/{proj.totalDays}</span>
                       </div>
@@ -1607,7 +3262,7 @@ export default function Home() {
 
               {/* Lead agent card */}
               {displayAgents.length > 0 && <div className="flex justify-center">
-                <div className="rounded-2xl p-6 border border-zinc-700/50 card-glow w-80 cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setAgentModal(displayAgents[0])}>
+                <div className="rounded-2xl p-4 md:p-6 border border-zinc-700/50 card-glow w-full max-w-xs sm:max-w-sm cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setAgentModal(displayAgents[0])}>
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{background:'#1a1a1a'}}>
                       {displayAgents[0].emoji}
@@ -1739,10 +3394,12 @@ export default function Home() {
                     {role:'Heartbeat + lightweight crons', model:'claude-haiku-4-5', cost:'Max sub'},
                     {role:'n8n automations', model:'n8n only', cost:'~$0/run'},
                   ].map((r,i,arr)=>(
-                    <div key={r.role} className={'flex items-center gap-4 px-5 py-3.5 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
+                    <div key={r.role} className={'flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 sm:py-3.5 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
                       <span className="text-zinc-400 text-xs flex-1">{r.role}</span>
-                      <span className="font-mono text-xs text-zinc-400">{r.model}</span>
-                      <span className="text-zinc-600 text-xs w-20 text-right">{r.cost}</span>
+                      <div className="flex items-center gap-2 sm:gap-4">
+                        <span className="font-mono text-xs text-zinc-400">{r.model}</span>
+                        <span className="text-zinc-600 text-xs text-right">{r.cost}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1750,10 +3407,10 @@ export default function Home() {
 
               {/* Agent Detail Modal */}
               {agentModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setAgentModal(null)}>
-                  <div className="w-full max-w-md rounded-2xl border border-zinc-800 p-6 space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setAgentModal(null)}>
+                  <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
                     <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{background:agentModal.color+'18',border:'1px solid '+agentModal.color+'30'}}>
+                      <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl shrink-0" style={{background:agentModal.color+'18',border:'1px solid '+agentModal.color+'30'}}>
                         {agentModal.emoji}
                       </div>
                       <div>
@@ -1791,7 +3448,7 @@ export default function Home() {
                 <SH icon="⚡">Always Running</SH>
                 <div className="flex flex-wrap gap-2">
                   {CRONS.filter(c=>c.days==='daily'&&c.status==='active').map(c=>(
-                    <div key={c.id} className="flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer hover:brightness-125 transition-all"
+                    <div key={c.id} className="flex items-center gap-2 px-2.5 md:px-3 py-1.5 rounded-full border cursor-pointer hover:brightness-125 transition-all"
                       style={{background:pColor(c.project)+'15',borderColor:pColor(c.project)+'40'}}
                       onClick={()=>setCronModal(c)}>
                       <Dot status="active" sm />
@@ -1804,7 +3461,7 @@ export default function Home() {
               </div>
               <div>
                 <SH icon="📅">This Week</SH>
-                <div className="grid grid-cols-7 gap-1.5">
+                <div className="overflow-x-auto -mx-1 px-1"><div className="grid grid-cols-7 gap-1.5 min-w-[580px]">
                   {DAYS.map((day,di)=>{
                     const dayCrons = CRONS.filter(c=>{
                       if(c.days==='daily') return true
@@ -1833,21 +3490,25 @@ export default function Home() {
                     </div>
                     )
                   })}
-                </div>
+                </div></div>
               </div>
               <div>
                 <SH icon="⏭">Next Up</SH>
                 <div className="space-y-2">
                   {nextRuns.map(({cron,mins},i)=>(
-                    <div key={cron.id} className="flex items-center gap-4 px-5 py-3 rounded-xl border border-zinc-800/60 cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setCronModal(cron)}>
-                      <span className="text-zinc-600 text-xs w-4">#{i+1}</span>
-                      <Dot status={cron.status} />
-                      <span className="font-mono text-xs text-white flex-1">{cron.id}</span>
-                      <span className="text-zinc-500 text-xs">{cron.desc}</span>
-                      <span className="text-xs font-semibold tabular-nums" style={{color:mins<60?'#f59e0b':'#6b7280'}}>
-                        in {fmtMins(mins)}
-                      </span>
-                      <Chip label={cron.project} color={pColor(cron.project)} />
+                    <div key={cron.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 rounded-xl border border-zinc-800/60 cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setCronModal(cron)}>
+                      <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
+                        <span className="text-zinc-600 text-xs shrink-0">#{i+1}</span>
+                        <Dot status={cron.status} />
+                        <span className="font-mono text-xs text-white truncate">{cron.id}</span>
+                      </div>
+                      <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+                        <span className="text-zinc-500 text-xs truncate">{cron.desc}</span>
+                        <span className="text-xs font-semibold tabular-nums shrink-0" style={{color:mins<60?'#f59e0b':'#6b7280'}}>
+                          in {fmtMins(mins)}
+                        </span>
+                        <Chip label={cron.project} color={pColor(cron.project)} />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1860,17 +3521,21 @@ export default function Home() {
                   {displayCrons.map((c,i,arr)=>{
                     const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
                     return (
-                      <div key={c.id} className={'flex items-center gap-4 px-5 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors '+(i<arr.length-1?'border-b border-zinc-800/40':'')}
+                      <div key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors '+(i<arr.length-1?'border-b border-zinc-800/40':'')}
                         onClick={()=>setCronModal(c)}>
-                        <span className="font-mono text-xs text-zinc-400 w-16 shrink-0">{c.time}</span>
-                        <span className="text-zinc-600 text-[10px] w-12 shrink-0">{c.days}</span>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
-                          style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
-                          {c.model}
-                        </span>
-                        <Chip label={c.project} color={pColor(c.project)} />
-                        <span className="text-zinc-300 text-xs flex-1">{c.desc}</span>
-                        <Dot status={c.status} sm />
+                        <div className="flex items-center gap-2 sm:gap-4">
+                          <span className="font-mono text-xs text-zinc-400 shrink-0">{c.time}</span>
+                          <span className="text-zinc-600 text-[10px] shrink-0">{c.days}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
+                            style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
+                            {c.model}
+                          </span>
+                          <Dot status={c.status} sm />
+                        </div>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Chip label={c.project} color={pColor(c.project)} />
+                          <span className="text-zinc-300 text-xs truncate">{c.desc}</span>
+                        </div>
                       </div>
                     )
                   })}
@@ -1879,8 +3544,8 @@ export default function Home() {
 
               {/* Cron Detail Modal */}
               {cronModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
-                  <div className="w-full max-w-sm rounded-2xl border border-zinc-800 p-6 space-y-3" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
+                  <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
                     <div className="flex items-center justify-between">
                       <h3 className="text-white font-semibold text-sm">{cronModal.id}</h3>
                       <button onClick={()=>setCronModal(null)} className="text-zinc-600 hover:text-white text-lg">✕</button>
@@ -2445,7 +4110,28 @@ export default function Home() {
                   Open in new tab ↗
                 </a>
               </div>
-              <div className="flex-1 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900" style={{minHeight:'600px'}}>
+              {/* Mobile: workflow list */}
+              <div className="block md:hidden rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+                {CRONS.map((c,i,arr)=>(
+                  <div key={c.id} className={'flex items-center gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
+                    <Dot status={c.status} sm />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-xs font-medium truncate">{c.id.replace(/-/g,' ')}</p>
+                      <p className="text-zinc-600 text-[10px] truncate">{c.desc}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-zinc-400 text-[10px] font-mono">{c.time} · {c.days}</p>
+                      <p className="text-zinc-600 text-[10px]">{c.model}</p>
+                    </div>
+                  </div>
+                ))}
+                <a href="https://n8n.nabit.work" target="_blank" rel="noopener noreferrer"
+                  className="block text-center text-xs text-zinc-500 hover:text-zinc-300 py-3 border-t border-zinc-800/40 transition-colors">
+                  Open n8n Editor ↗
+                </a>
+              </div>
+              {/* Desktop: iframe */}
+              <div className="hidden md:block flex-1 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900" style={{minHeight:'600px'}}>
                 <iframe
                   src="https://n8n.nabit.work"
                   className="w-full h-full"
@@ -2505,18 +4191,18 @@ export default function Home() {
 
             return (
             <div className="space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <SH icon="🔌">Services</SH>
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap">
                   {ls && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-zinc-700 text-[10px]">Updated {agoSec}s ago</span></>}
                   {!ls && <span className="text-yellow-600 text-[10px]">Loading…</span>}
                   <span className="text-zinc-700 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">↻ {statusCountdown}s</span>
                   <button onClick={()=>{fetchStatus();setStatusCountdown(30)}} className="text-zinc-600 hover:text-zinc-400 text-[10px] border border-zinc-800 rounded px-2 py-0.5 transition-colors">Refresh</button>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {liveInfra.map(svc=>(
-                  <div key={svc.name} className="rounded-xl p-4 border border-zinc-800/60 flex items-start gap-3 card-glow" style={{background:'#0f0f0f'}}>
+                  <div key={svc.name} className="rounded-xl p-3 md:p-4 border border-zinc-800/60 flex items-start gap-3 card-glow" style={{background:'#0f0f0f'}}>
                     <Dot status={svc.status} />
                     <div>
                       <p className="text-white text-sm font-medium">{svc.name}</p>
@@ -2535,9 +4221,9 @@ export default function Home() {
                   {agentId:'kemuni-sme', enabled:false, every:'disabled'},
                   {agentId:'vespera-sme', enabled:false, every:'disabled'},
                 ]).map((hb:any, i:number, arr:any[])=>(
-                  <div key={hb.agentId} className={'flex items-center gap-4 px-5 py-3 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
+                  <div key={hb.agentId} className={'flex items-center gap-3 md:gap-4 px-4 md:px-5 py-3 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
                     <Dot status={hb.enabled ? 'active' : 'planned'} />
-                    <span className="font-mono text-xs text-white w-32 shrink-0">{hb.agentId}</span>
+                    <span className="font-mono text-xs text-white shrink-0">{hb.agentId}</span>
                     <span className="text-zinc-500 text-xs flex-1">{hb.enabled ? `every ${hb.every}` : 'disabled'}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full border" style={hb.enabled
                       ? {color:'#10b981',borderColor:'#10b98140',background:'#10b98115'}
@@ -2549,9 +4235,9 @@ export default function Home() {
               </div>
 
               <SH icon="📊">Token Usage</SH>
-              <div className="rounded-2xl border border-zinc-800/60 p-5" style={{background:'#0f0f0f'}}>
+              <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
                 <div className="flex items-end justify-between mb-4">
-                  <div className="flex items-baseline gap-6">
+                  <div className="flex items-baseline gap-4 md:gap-6 flex-wrap">
                     <div>
                       <p className="text-zinc-500 text-[10px] mb-1 uppercase tracking-wider">Today</p>
                       <div className="flex items-baseline gap-1.5">
