@@ -849,8 +849,12 @@ export default function AgentOffice(){
   const [panelTimeframe, setPanelTimeframe] = useState<'session'|'24h'|'7d'>('session');
   const sessionStartTs = useRef(Date.now());
   const [isMobile, setIsMobile] = useState(false);
+  const [canvasScale, setCanvasScale] = useState(1);
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
+    const check = () => {
+      setIsMobile(window.innerWidth < 768);
+      setCanvasScale(Math.min(1, window.innerWidth / 900));
+    };
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
@@ -1711,10 +1715,16 @@ export default function AgentOffice(){
       </div>
 
       {/* Body */}
-      <div style={{display:"flex",flex:1,minHeight:0,overflow:"hidden"}}>
-        {isMobile ? (
-          /* Mobile: Agent status cards */
-          <div style={{flex:1,overflowY:"auto",background:theme==="B"?"#091410":"#09090f",padding:"12px"}}>
+      <div style={{display:"flex",flexDirection:"column",flex:1,minHeight:0,overflow:"auto"}}>
+        {/* Canvas — scales to fit on mobile */}
+        <div style={{flex:isMobile?undefined:1,minHeight:isMobile?300:0,overflow:"hidden",background:theme==="B"?"#091410":"#060610",display:"flex",alignItems:"stretch",
+          ...(canvasScale<1?{transform:`scale(${canvasScale})`,transformOrigin:"top left",width:`${100/canvasScale}%`}:{})}}>
+          <canvas ref={canvasRef} style={{imageRendering:"pixelated" as any,display:"block",width:"100%",height:"100%"}}/>
+        </div>
+
+        {/* Mobile: Agent status cards below canvas */}
+        {isMobile && (
+          <div style={{background:theme==="B"?"#091410":"#09090f",padding:"12px",borderTop:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
               <div style={{width:7,height:7,borderRadius:"50%",background:"#00ff88",boxShadow:"0 0 6px #00ff8866"}}/>
               <span style={{color:theme==="B"?"#7ab89a":"#8892b0",fontSize:12,fontWeight:700,letterSpacing:"0.1em"}}>AGENT STATUS</span>
@@ -1756,10 +1766,6 @@ export default function AgentOffice(){
                 </>
               )}
             </div>
-          </div>
-        ) : (
-          <div style={{flex:1,minWidth:0,overflow:"hidden",background:"#060610",display:"flex",alignItems:"stretch"}}>
-            <canvas ref={canvasRef} style={{imageRendering:"pixelated" as any,display:"block",width:"100%",height:"100%"}}/>
           </div>
         )}
 

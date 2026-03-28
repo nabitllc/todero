@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AgentOffice from '@/components/AgentOffice'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server } from 'lucide-react'
 
 const KEMUNI_START     = new Date('2026-03-21')
 const KEMUNI_DEADLINE  = new Date('2026-04-20')
@@ -107,17 +108,23 @@ const ACTION_COLORS: Record<string,string> = {
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
+const LUCIDE_ICONS: Record<string, any> = {
+  overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
+  office: Building2, memory: Brain, board: Kanban, automations: Zap, chat: MessageSquare, infra: Server,
+}
+
 const NAV = [
-  { id:'overview',  label:'Overview',  icon:'📊' },
-  { id:'activity',  label:'Activity',  icon:'📡' },
-  { id:'team',      label:'Team',      icon:'👥' },
-  { id:'calendar', label:'Calendar', icon:'📅' },
-  { id:'automations', label:'Automations', icon:'⚡' },
-  { id:'office',   label:'Office',   icon:'🏢' },
-  { id:'memory',   label:'Memory',   icon:'🧠' },
-  { id:'board',    label:'Board',    icon:'📋' },
-  { id:'chat',     label:'Chat',     icon:'💬' },
-  { id:'infra',    label:'Infra',    icon:'⚙️' },
+  { id:'overview',     label:'Overview',     icon:'📊' },
+  { id:'activity',     label:'Activity',     icon:'📡' },
+  { id:'team',         label:'Team',         icon:'👥' },
+  { id:'calendar',     label:'Calendar',     icon:'📅' },
+  { id:'office',       label:'Office',       icon:'🏢' },
+  { id:'memory',       label:'Memory',       icon:'🧠' },
+  { id:'board',        label:'Board',        icon:'📋' },
+  { id:'divider' as any, label:'',           icon:'' },
+  { id:'automations',  label:'Automations',  icon:'⚡' },
+  { id:'chat',         label:'Chat',         icon:'💬' },
+  { id:'infra',        label:'Infra',        icon:'⚙️' },
 ] as const
 type Tab = typeof NAV[number]['id']
 
@@ -195,6 +202,14 @@ function SH({icon,children,sub}:{icon:string;children:React.ReactNode;sub?:strin
     </div>
   )
 }
+
+const EmptyState = ({icon, message, action}: {icon:string, message:string, action?:string}) => (
+  <div className='flex flex-col items-center justify-center py-16 text-zinc-500'>
+    <span className='text-4xl mb-3'>{icon}</span>
+    <p className='text-sm'>{message}</p>
+    {action && <button className='mt-3 text-xs text-zinc-400 border border-zinc-700 px-3 py-1 rounded hover:bg-zinc-800'>{action}</button>}
+  </div>
+)
 
 // ── Chat Component ────────────────────────────────────────────────────────
 function MarkdownMessage({ content }: { content: string }) {
@@ -1970,9 +1985,7 @@ function ChatTab() {
               )}
 
               {activeConv.messages.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-zinc-600 text-sm">Start a conversation</p>
-                </div>
+                <EmptyState icon="💬" message="No messages yet — start the conversation" />
               ) : (
                 activeConv.messages.map(msg => (
                   <div
@@ -2791,26 +2804,28 @@ function KanbanBoard() {
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
                   <span className="text-xs font-semibold text-zinc-400">{col.label}</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500">{colTasks.length}</span>
                 </div>
-                <span className="text-[10px] text-zinc-600 font-mono">{colTasks.length}</span>
               </div>
 
               {/* Cards */}
               <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[60px]">
                 {loading && <div className="text-zinc-700 text-xs text-center py-4">Loading...</div>}
+                {!loading && colTasks.length === 0 && <div className="flex flex-col items-center py-6 text-zinc-700"><span className="text-2xl mb-1">📋</span><p className="text-[10px]">No tasks</p></div>}
                 {colTasks.map(task => (
                   <div key={task.id}
                     draggable
                     onDragStart={() => setDragId(task.id)}
                     onDragEnd={() => setDragId(null)}
                     onClick={() => setEditTask(task)}
-                    className={`rounded-xl border p-3 cursor-pointer transition-colors ${
-                      dragId===task.id ? 'opacity-50' : ''
-                    }`}
-                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a'}}
-                    onMouseEnter={e=>(e.currentTarget.style.borderColor='#3f3f46')}
-                    onMouseLeave={e=>(e.currentTarget.style.borderColor= dragId===task.id ? '#555' : '#27272a')}>
-                    <p className="text-white text-sm font-medium leading-snug mb-2">{task.title}</p>
+                    className={`rounded-xl border p-3 cursor-pointer transition-colors border-l-2 ${
+                      task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
+                    } ${dragId===task.id ? 'opacity-50' : ''}`}
+                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a', borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderRightColor='#3f3f46';e.currentTarget.style.borderTopColor='#3f3f46';e.currentTarget.style.borderBottomColor='#3f3f46'}}
+                    onMouseLeave={e=>{const bc=dragId===task.id?'#555':'#27272a';e.currentTarget.style.borderRightColor=bc;e.currentTarget.style.borderTopColor=bc;e.currentTarget.style.borderBottomColor=bc}}>
+                    <p className="text-white text-sm font-medium leading-snug mb-1">{task.title}</p>
+                    {task.project && <p className="text-xs text-zinc-500 mb-2">{task.project}</p>}
                     <div className="flex flex-wrap items-center gap-1.5">
                       {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
                       {task.type && <Chip label={task.type} />}
@@ -3081,19 +3096,22 @@ export default function Home() {
           </div>
         </div>
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {NAV.map(item=>(
-            <button key={item.id} onClick={()=>{ setTab(item.id); if(item.id==='chat') setUnreadChat(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
-              className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all '+(
-                tab===item.id ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
+          {NAV.map(item=>{
+            if (item.id === 'divider') return <div key="divider" className="border-t border-zinc-800 my-2" />
+            const LIcon = LUCIDE_ICONS[item.id]
+            return (
+            <button key={item.id} onClick={()=>{ setTab(item.id as Tab); if(item.id==='chat') setUnreadChat(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
+              className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all border-l-2 '+(
+                tab===item.id ? 'bg-zinc-800 text-white border-white' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 border-transparent'
               )}>
-              <span className="text-sm shrink-0">{item.icon}</span>
+              {LIcon ? <LIcon size={14} className="shrink-0" /> : <span className="text-sm shrink-0">{item.icon}</span>}
               <span className="text-xs font-medium">{item.label}</span>
               {item.id === 'chat' && unreadChat && tab !== 'chat' && (
                 <span className="ml-auto w-2 h-2 rounded-full bg-red-500 shrink-0 animate-pulse" />
               )}
-              {tab===item.id && !unreadChat && <span className="ml-auto w-1 h-1 rounded-full bg-white shrink-0" />}
             </button>
-          ))}
+            )
+          })}
         </nav>
         <div className="px-4 py-3 border-t border-zinc-800/40 space-y-1">
           <div className="flex items-center gap-1.5">
@@ -3111,19 +3129,22 @@ export default function Home() {
       {mobileNav && (
         <div className="lg:hidden fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3" style={{background:'#080808ee'}} onClick={()=>setMobileNav(false)}>
           <p className="text-zinc-600 text-xs mb-4 uppercase tracking-widest">Navigate</p>
-          {NAV.map(item=>(
-            <button key={item.id} onClick={()=>{ setTab(item.id); if(item.id==='chat') setUnreadChat(false); setMobileNav(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
-              className={'flex items-center gap-3 px-6 py-3 rounded-xl transition-all w-56 '+(
-                tab===item.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+          {NAV.map(item=>{
+            if (item.id === 'divider') return <div key="divider" className="border-t border-zinc-800 my-2 w-56" />
+            const LIcon = LUCIDE_ICONS[item.id]
+            return (
+            <button key={item.id} onClick={()=>{ setTab(item.id as Tab); if(item.id==='chat') setUnreadChat(false); setMobileNav(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
+              className={'flex items-center gap-3 px-6 py-3 rounded-xl transition-all w-56 border-l-2 '+(
+                tab===item.id ? 'bg-zinc-800 text-white border-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900 border-transparent'
               )}>
-              <span className="text-xl">{item.icon}</span>
+              {LIcon ? <LIcon size={18} className="shrink-0" /> : <span className="text-xl">{item.icon}</span>}
               <span className="text-sm font-medium">{item.label}</span>
               {item.id === 'chat' && unreadChat && tab !== 'chat' && (
                 <span className="ml-auto w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
               )}
-              {tab===item.id && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />}
             </button>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -3245,7 +3266,7 @@ export default function Home() {
               <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${liveStatus.recentActivity.length} entries · live` : undefined}>Activity Feed</SH>
               {(()=>{
                 const items = liveStatus?.recentActivity ?? []
-                if(items.length === 0) return <p className="text-zinc-700 text-xs px-4 py-4">No activity yet — loading...</p>
+                if(items.length === 0) return <EmptyState icon="📡" message="No activity runs recorded yet" action="Refresh" />
                 // Group by date
                 const grouped: Record<string, any[]> = {}
                 for(const entry of items){
@@ -3293,6 +3314,7 @@ export default function Home() {
           {tab==='team' && (
             <div className="space-y-6">
               {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-zinc-600 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
+              {displayAgents.length === 0 && <EmptyState icon="👥" message="No agents registered yet" />}
 
               {/* Lead agent card */}
               {displayAgents.length > 0 && <div className="flex justify-center">
