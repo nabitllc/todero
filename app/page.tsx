@@ -2731,6 +2731,10 @@ function KanbanBoard() {
   const [resolutionPending, setResolutionPending] = useState<{taskId:string;source:'drag'|'edit';editFields?:Partial<Task>}|null>(null)
   const [detailTask, setDetailTask] = useState<Task|null>(null)
   const [bugDetailsOpen, setBugDetailsOpen] = useState(false)
+  const [showArchive, setShowArchive] = useState(false)
+  const [archiveSearch, setArchiveSearch] = useState('')
+  const [archiveProject, setArchiveProject] = useState('')
+  const [closedConfirm, setClosedConfirm] = useState<string|null>(null)
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -2755,6 +2759,13 @@ function KanbanBoard() {
   const deleteTask = async (id: string) => {
     const res = await fetch(`/api/tasks?id=${id}`, { method:'DELETE' })
     if (res.ok) { setTasks(prev => prev.filter(t => t.id!==id)); setConfirmDelete(null); setEditTask(null) }
+  }
+
+  const closeTask = async (id: string) => {
+    setTasks(prev => prev.map(t => t.id===id ? {...t, status:'closed'} : t))
+    setClosedConfirm(id)
+    setTimeout(() => setClosedConfirm(prev => prev===id ? null : prev), 2000)
+    await fetch('/api/tasks', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
   }
 
   const handleDrop = (status: string) => {
@@ -2792,11 +2803,18 @@ function KanbanBoard() {
   }, [detailTask])
 
   const filtered = tasks.filter(t => {
+    if (t.status === 'closed') return false
     if (filterProject && t.project !== filterProject) return false
     if (filterAssignee && t.assignee !== filterAssignee) return false
     if (filterPriority && t.priority !== filterPriority) return false
     return true
   })
+
+  const closedTasks = tasks.filter(t => t.status === 'closed')
+  const filteredClosed = closedTasks
+    .filter(t => !archiveProject || t.project === archiveProject)
+    .filter(t => !archiveSearch || t.title.toLowerCase().includes(archiveSearch.toLowerCase()))
+    .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
 
   const projects = Array.from(new Set(tasks.map(t=>t.project).filter(Boolean)))
   const assignees = Array.from(new Set(tasks.map(t=>t.assignee).filter(Boolean)))
@@ -2826,14 +2844,45 @@ function KanbanBoard() {
           <option value="">All Priorities</option>
           {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
         </select>
-        <button onClick={()=>setNewTask({status:'backlog',priority:'medium'})}
-          className="ml-auto text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
-          + New Task
+        <button onClick={() => setShowArchive(!showArchive)}
+          className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${showArchive ? 'bg-zinc-700 text-white' : 'bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}>
+          📦 Archive{closedTasks.length > 0 && <span className="ml-1 text-zinc-500">({closedTasks.length})</span>}
         </button>
+        {!showArchive && <button onClick={()=>setNewTask({status:'backlog',priority:'medium'})}
+          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
+          + New Task
+        </button>}
       </div>
 
+      {/* Archive View */}
+      {showArchive && (
+        <div className="flex-1 flex flex-col gap-3 min-h-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <input type="text" placeholder="Search closed tasks..." value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
+              className="bg-transparent border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-300 outline-none focus:border-zinc-600 placeholder-zinc-700 w-52" />
+            <select className={selectCls} value={archiveProject} onChange={e => setArchiveProject(e.target.value)}>
+              <option value="">All Projects</option>
+              {projects.map(p => <option key={p} value={p!}>{p}</option>)}
+            </select>
+            <span className="text-[10px] text-zinc-600 ml-auto">{filteredClosed.length} closed task{filteredClosed.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+            {filteredClosed.length === 0 && <p className="text-zinc-700 text-xs text-center py-8">No closed tasks</p>}
+            {filteredClosed.map(t => (
+              <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-zinc-800/60 hover:border-zinc-700 transition-colors" style={{background:'#0f0f0f'}}>
+                <p className="text-sm text-zinc-300 flex-1 truncate">{t.title}</p>
+                {t.project && <Chip label={t.project} color={PROJECT_COLORS[t.project] || undefined} />}
+                {t.resolution_type && <Chip label={RESOLUTION_OPTIONS.find(r => r.value === t.resolution_type)?.label ?? t.resolution_type} color={RESOLUTION_BADGE_COLORS[t.resolution_type] ?? '#71717a'} />}
+                {t.assignee && ASSIGNEE_MAP[t.assignee] && <span className="text-[10px] text-zinc-500 whitespace-nowrap">{ASSIGNEE_MAP[t.assignee].emoji} {ASSIGNEE_MAP[t.assignee].name}</span>}
+                {t.updated_at && <span className="text-[10px] text-zinc-600 whitespace-nowrap">{new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Mobile column tabs */}
-      <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
+      {!showArchive && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
         {BOARD_COLUMNS.map(col=>(
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
             className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300')}
@@ -2841,10 +2890,10 @@ function KanbanBoard() {
             {col.label} <span className="text-zinc-600 ml-1">{filtered.filter(t=>t.status===col.id).length}</span>
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* Columns */}
-      <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
+      {!showArchive && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => t.status===col.id)
           return (
@@ -2872,13 +2921,24 @@ function KanbanBoard() {
                     onDragStart={() => setDragId(task.id)}
                     onDragEnd={() => setDragId(null)}
                     onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                    className={`rounded-xl border p-3 cursor-pointer transition-colors border-l-2 ${
+                    className={`group rounded-xl border p-3 cursor-pointer transition-colors border-l-2 ${
                       task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
                     } ${dragId===task.id ? 'opacity-50' : ''}`}
                     style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a', borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderRightColor='#3f3f46';e.currentTarget.style.borderTopColor='#3f3f46';e.currentTarget.style.borderBottomColor='#3f3f46'}}
                     onMouseLeave={e=>{const bc=dragId===task.id?'#555':'#27272a';e.currentTarget.style.borderRightColor=bc;e.currentTarget.style.borderTopColor=bc;e.currentTarget.style.borderBottomColor=bc}}>
-                    <p className="text-white text-sm font-medium leading-snug mb-1">{task.title}</p>
+                    <div className="flex items-start justify-between gap-1">
+                      <p className="text-white text-sm font-medium leading-snug mb-1">{task.title}</p>
+                      {col.id === 'done' && closedConfirm === task.id && (
+                        <span className="text-[10px] text-green-400 whitespace-nowrap animate-pulse">Archived ✓</span>
+                      )}
+                      {col.id === 'done' && closedConfirm !== task.id && (
+                        <button onClick={e => { e.stopPropagation(); closeTask(task.id) }}
+                          className="text-[10px] text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-zinc-800">
+                          × Close
+                        </button>
+                      )}
+                    </div>
                     {task.project && <p className="text-xs text-zinc-500 mb-2">{task.project}</p>}
                     <div className="flex flex-wrap items-center gap-1.5">
                       {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
@@ -2916,7 +2976,7 @@ function KanbanBoard() {
             </div>
           )
         })}
-      </div>
+      </div>}
 
       {/* New Task Modal */}
       {newTask && (
