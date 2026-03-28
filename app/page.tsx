@@ -161,6 +161,7 @@ function Dot({status,sm}:{status:string;sm?:boolean}) {
   const cls = status==='active'||status==='ok' ? 'bg-emerald-500 anim-pg'
     : status==='scheduled' ? 'bg-yellow-500 anim-py'
     : status==='planned' ? 'bg-zinc-700'
+    : status==='error' ? 'bg-red-500'
     : 'bg-zinc-600'
   return <span className={'inline-block rounded-full shrink-0 '+sz+' '+cls} />
 }
@@ -428,6 +429,7 @@ function ChatTab() {
   const unreadChatRef = useRef(false)
   // Feature 9: project filter
   const [projectFilter, setProjectFilter] = useState<string|null>(null)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   // Feature 10: sidebar collapsed
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('mc-chat-sidebar-collapsed') === 'true'
@@ -1706,6 +1708,37 @@ function ChatTab() {
         )}
       </div>
 
+      {/* Mobile sidebar overlay */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden">
+          <div className="w-72 bg-[#0d0d0d] border-r border-zinc-800 flex flex-col h-full overflow-y-auto">
+            <div className="px-3 py-3 border-b border-zinc-800/40 flex items-center gap-2">
+              <button onClick={newChat} className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 text-white text-xs font-medium hover:bg-zinc-700 transition-all flex items-center gap-2">
+                <span>+</span> New Chat
+              </button>
+              <button onClick={() => setMobileSidebarOpen(false)} className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-white transition-colors text-sm rounded-lg hover:bg-zinc-800">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {filteredChats.length === 0 ? (
+                <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
+              ) : (
+                filteredChats.map(c => (
+                  <div
+                    key={c.id}
+                    className={'w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer mb-0.5 ' +
+                      (activeChat === c.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')}
+                    onClick={() => { setActiveChat(c.id); setMobileSidebarOpen(false) }}>
+                    <p className="font-medium truncate">{c.pinned ? '📌 ' : ''}{c.title}</p>
+                    <p className="text-[9px] opacity-40 mt-0.5">{new Date(c.updatedAt).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="flex-1 bg-black/60" onClick={() => setMobileSidebarOpen(false)} />
+        </div>
+      )}
+
       {/* CENTER: CHAT AREA */}
       <div className="flex-1 flex flex-col min-w-0 relative" style={{background:'#0a0a0a'}}>
         {!activeConv ? (
@@ -1719,7 +1752,8 @@ function ChatTab() {
         ) : (
           <>
             {/* Header */}
-            <div className="border-b border-zinc-800/40 px-6 py-3 shrink-0 flex items-center justify-between gap-3">
+            <div className="border-b border-zinc-800/40 px-3 md:px-6 py-3 shrink-0 flex items-center justify-between gap-3">
+              <button onClick={() => setMobileSidebarOpen(true)} className="md:hidden shrink-0 p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors text-sm" title="History">☰</button>
               <div className="flex-1 min-w-0">
                 {renamingTitle !== null ? (
                   <input
@@ -1768,7 +1802,7 @@ function ChatTab() {
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {/* Feature 20: session context viewer button */}
-                <div className="relative">
+                <div className="hidden md:block relative">
                   <button
                     onClick={() => { setShowContextViewer(v => !v); setShowSystemPrompt(false) }}
                     className={'text-[10px] px-2.5 py-1 rounded-lg border transition-colors font-mono ' +
@@ -1797,7 +1831,7 @@ function ChatTab() {
                   )}
                 </div>
                 {/* Feature 5: system prompt gear button */}
-                <div className="relative">
+                <div className="hidden md:block relative">
                   <button
                     onClick={() => { setShowSystemPrompt(v => !v); setShowContextViewer(false) }}
                     className={'text-[10px] px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ' +
@@ -1824,7 +1858,7 @@ function ChatTab() {
                   )}
                 </div>
                 {/* NEW: Send-to-agent */}
-                <div className="relative" ref={sendToAgentRef}>
+                <div className="hidden md:block relative" ref={sendToAgentRef}>
                   <button
                     onClick={() => setShowSendToAgent(v => !v)}
                     className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors flex items-center gap-1"
@@ -1854,7 +1888,7 @@ function ChatTab() {
                   </button>
                 ) : (
                   /* Feature 18: export dropdown */
-                  <div className="relative" ref={exportMenuRef}>
+                  <div className="hidden md:block relative" ref={exportMenuRef}>
                     <button
                       onClick={() => setShowExportMenu(v => !v)}
                       className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors flex items-center gap-1">
@@ -1900,7 +1934,7 @@ function ChatTab() {
             {/* Messages */}
             <div
               ref={messagesContainerRef}
-              className={`flex-1 overflow-y-auto px-6 py-4 space-y-4 relative print-chat`}
+              className={`flex-1 overflow-y-auto px-3 md:px-6 py-4 space-y-4 relative print-chat`}
               onDragOver={(e) => { e.preventDefault(); setIsDraggingOver(true) }}
               onDragLeave={(e) => { if (!messagesContainerRef.current?.contains(e.relatedTarget as Node)) setIsDraggingOver(false) }}
               onDrop={(e) => {
@@ -1952,7 +1986,7 @@ function ChatTab() {
                     </div>
 
                     {/* Bubble */}
-                    <div className={'relative ' + (msg.role === 'user' ? 'max-w-[65ch]' : 'max-w-[75ch]')}>
+                    <div className={'relative ' + (msg.role === 'user' ? 'max-w-[85%] md:max-w-[65ch]' : 'max-w-[85%] md:max-w-[75ch]')}>
                       {/* Feature 6: inline edit mode */}
                       {editingMsgId === msg.id ? (
                         <div className="flex flex-col gap-2">
@@ -2176,7 +2210,7 @@ function ChatTab() {
             )}
 
             {/* Input Area */}
-            <div className="border-t border-zinc-800/40 px-3 md:px-6 py-3 md:py-4 shrink-0" style={{background:'#0d0d0d'}}>
+            <div className="border-t border-zinc-800/40 px-3 md:px-6 py-3 md:py-4 shrink-0" style={{background:'#0d0d0d', paddingBottom:'max(12px, env(safe-area-inset-bottom))'}}>
               {/* Feature 1: pasted image preview */}
               {pastedImage && (
                 <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60">
@@ -2324,13 +2358,13 @@ function ChatTab() {
                 <button
                   onClick={() => { setShowFileBrowser(true); setFileBrowserPath('') }}
                   disabled={isSending}
-                  className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                  className="hidden sm:block p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
                   title="Browse workspace files">
                   📁
                 </button>
 
                 {/* NEW: Image URL input button */}
-                <div className="relative shrink-0">
+                <div className="hidden sm:block relative shrink-0">
                   <button
                     onClick={() => setShowImageUrlInput(v => !v)}
                     disabled={isSending}
@@ -2378,7 +2412,7 @@ function ChatTab() {
                   value={selectedModel}
                   onChange={e => setSelectedModel(e.target.value)}
                   disabled={isSending}
-                  className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  className="hidden sm:block px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
                   title="Select model">
                   {MODEL_OPTIONS.map(m => (
                     <option key={m.id} value={m.id} title={m.desc}>{m.label}</option>
@@ -3518,24 +3552,39 @@ export default function Home() {
               <div>
                 <SH icon="🤖">Automations</SH>
                 <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-                  {displayCrons.map((c,i,arr)=>{
-                    const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
+                  {/* Group by source */}
+                  {(['openclaw-cron','n8n','openclaw'] as const).map(src => {
+                    const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src)
+                    if (group.length === 0) return null
+                    const srcLabel = src === 'openclaw-cron' ? '⚡ OpenClaw Crons' : src === 'n8n' ? '🔧 n8n Workflows' : '💓 Heartbeats'
                     return (
-                      <div key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors '+(i<arr.length-1?'border-b border-zinc-800/40':'')}
-                        onClick={()=>setCronModal(c)}>
-                        <div className="flex items-center gap-2 sm:gap-4">
-                          <span className="font-mono text-xs text-zinc-400 shrink-0">{c.time}</span>
-                          <span className="text-zinc-600 text-[10px] shrink-0">{c.days}</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
-                            style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
-                            {c.model}
-                          </span>
-                          <Dot status={c.status} sm />
-                        </div>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Chip label={c.project} color={pColor(c.project)} />
-                          <span className="text-zinc-300 text-xs truncate">{c.desc}</span>
-                        </div>
+                      <div key={src}>
+                        <div className="px-4 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600 border-b border-zinc-800/60" style={{background:'#080808'}}>{srcLabel}</div>
+                        {group.map((c:any,i:number,arr:any[])=>{
+                          const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
+                          const isError = c.status === 'error' || (c.consecutiveErrors ?? 0) > 0
+                          return (
+                            <div key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors '+(i<arr.length-1?'border-b border-zinc-800/40':'')}
+                              style={isError ? {background:'#1a0808'} : {}}
+                              onClick={()=>setCronModal(c)}>
+                              <div className="flex items-center gap-2 sm:gap-4">
+                                <span className="font-mono text-xs text-zinc-400 shrink-0">{c.time}</span>
+                                <span className="text-zinc-600 text-[10px] shrink-0">{c.days}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
+                                  style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
+                                  {c.model}
+                                </span>
+                                <Dot status={isError ? 'error' : c.status} sm />
+                                {isError && <span className="text-[9px] text-red-400">⚠ {c.consecutiveErrors}x error</span>}
+                              </div>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Chip label={c.project} color={pColor(c.project)} />
+                                <span className="text-zinc-300 text-xs truncate">{c.name || c.desc}</span>
+                                {c.lastRunAtMs && <span className="text-zinc-600 text-[9px] shrink-0 ml-auto">{Math.round((Date.now()-c.lastRunAtMs)/60000)}m ago</span>}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   })}
@@ -3557,6 +3606,12 @@ export default function Home() {
                       <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Runner</p><p className="text-zinc-300 text-sm font-mono">{cronModal.model}</p></div>
                       <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
                       <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-zinc-300 text-sm">{cronModal.status}</span></div></div>
+                      {(cronModal as any).source === 'openclaw-cron' && <>
+                        {(cronModal as any).sessionTarget && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-zinc-300 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
+                        {(cronModal as any).lastRunAtMs && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-zinc-300 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
+                        {(cronModal as any).lastRunStatus && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Status</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
+                        {(cronModal as any).consecutiveErrors > 0 && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Consecutive Errors</p><p className="text-red-400 text-sm font-mono">{(cronModal as any).consecutiveErrors}</p></div>}
+                      </>}
                     </div>
                   </div>
                 </div>
@@ -4099,47 +4154,95 @@ export default function Home() {
 
           {/* ── AUTOMATIONS (n8n embed) ── */}
           {tab==='automations' && (
-            <div className="h-full flex flex-col gap-4">
+            <div className="space-y-5">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Automations</h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">n8n workflow editor — build and manage automations</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">All scheduled jobs — OpenClaw crons, n8n workflows, and heartbeats</p>
                 </div>
                 <a href="https://n8n.nabit.work" target="_blank" rel="noopener noreferrer"
                   className="text-xs text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors">
-                  Open in new tab ↗
+                  Open n8n editor ↗
                 </a>
               </div>
-              {/* Mobile: workflow list */}
-              <div className="block md:hidden rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-                {CRONS.map((c,i,arr)=>(
-                  <div key={c.id} className={'flex items-center gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
-                    <Dot status={c.status} sm />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-xs font-medium truncate">{c.id.replace(/-/g,' ')}</p>
-                      <p className="text-zinc-600 text-[10px] truncate">{c.desc}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-zinc-400 text-[10px] font-mono">{c.time} · {c.days}</p>
-                      <p className="text-zinc-600 text-[10px]">{c.model}</p>
-                    </div>
+
+              {/* Stats row */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  {label:'Total jobs', value: displayCrons.length, color:'#a855f7'},
+                  {label:'Active', value: displayCrons.filter((c:any)=>c.status==='active'||c.status==='ok').length, color:'#10b981'},
+                  {label:'Errors', value: displayCrons.filter((c:any)=>c.status==='error'||(c as any).consecutiveErrors>0).length, color:'#ef4444'},
+                ].map(s=>(
+                  <div key={s.label} className="rounded-xl border border-zinc-800/60 px-4 py-3" style={{background:'#0f0f0f'}}>
+                    <div className="text-xl font-bold" style={{color:s.color}}>{s.value}</div>
+                    <div className="text-[10px] text-zinc-600 uppercase tracking-wider mt-0.5">{s.label}</div>
                   </div>
                 ))}
-                <a href="https://n8n.nabit.work" target="_blank" rel="noopener noreferrer"
-                  className="block text-center text-xs text-zinc-500 hover:text-zinc-300 py-3 border-t border-zinc-800/40 transition-colors">
-                  Open n8n Editor ↗
-                </a>
               </div>
-              {/* Desktop: iframe */}
-              <div className="hidden md:block flex-1 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900" style={{minHeight:'600px'}}>
-                <iframe
-                  src="https://n8n.nabit.work"
-                  className="w-full h-full"
-                  style={{minHeight:'600px', border:'none'}}
-                  title="n8n Workflow Editor"
-                  allow="same-origin"
-                />
+
+              {/* Grouped cron list */}
+              <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+                {(['openclaw-cron','n8n','openclaw'] as const).map(src => {
+                  const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src)
+                  if (group.length === 0) return null
+                  const srcLabel = src === 'openclaw-cron' ? '⚡ OpenClaw Crons' : src === 'n8n' ? '🔧 n8n Workflows' : '💓 Heartbeats'
+                  return (
+                    <div key={src}>
+                      <div className="px-4 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600 border-b border-zinc-800/60" style={{background:'#080808'}}>{srcLabel}</div>
+                      {group.map((c:any, i:number, arr:any[]) => {
+                        const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
+                        const isError = c.status === 'error' || (c.consecutiveErrors ?? 0) > 0
+                        return (
+                          <div key={c.id}
+                            className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors ' + (i<arr.length-1?'border-b border-zinc-800/40':'')}
+                            style={isError ? {background:'#1a0808'} : {}}
+                            onClick={()=>setCronModal(c)}>
+                            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                              <Dot status={isError ? 'error' : c.status} sm />
+                              <span className="font-mono text-xs text-zinc-400 w-12 shrink-0">{c.time}</span>
+                              <span className="text-zinc-600 text-[10px] w-14 shrink-0">{c.days}</span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
+                                style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
+                                {c.model}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <Chip label={c.project} color={pColor(c.project)} />
+                              <span className="text-zinc-300 text-xs truncate">{c.name || c.desc}</span>
+                              {isError && <span className="text-[9px] text-red-400 shrink-0">⚠ {c.consecutiveErrors}x</span>}
+                              {c.lastRunAtMs && <span className="text-zinc-600 text-[9px] shrink-0 ml-auto">{Math.round((Date.now()-c.lastRunAtMs)/60000)}m ago</span>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
               </div>
+
+              {/* Cron Detail Modal */}
+              {cronModal && (
+                <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
+                  <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-white font-semibold text-sm">{(cronModal as any).name || cronModal.id}</h3>
+                      <button onClick={()=>setCronModal(null)} className="text-zinc-600 hover:text-white text-lg">✕</button>
+                    </div>
+                    <div className="space-y-2.5">
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Schedule</p><p className="text-zinc-300 text-sm font-mono">{cronModal.time} · {cronModal.days}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Runner</p><p className="text-zinc-300 text-sm font-mono">{cronModal.model}</p></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-zinc-300 text-sm">{cronModal.status}</span></div></div>
+                      {(cronModal as any).source === 'openclaw-cron' && <>
+                        {(cronModal as any).sessionTarget && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-zinc-300 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
+                        {(cronModal as any).lastRunAtMs && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-zinc-300 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
+                        {(cronModal as any).lastRunStatus && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Status</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus==='ok'?'text-emerald-400':'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
+                        {(cronModal as any).consecutiveErrors > 0 && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Consecutive Errors</p><p className="text-red-400 text-sm font-mono">{(cronModal as any).consecutiveErrors}</p></div>}
+                      </>}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

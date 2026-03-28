@@ -848,6 +848,13 @@ export default function AgentOffice(){
   const [loadingLog,setLoadingLog] = useState(false);
   const [panelTimeframe, setPanelTimeframe] = useState<'session'|'24h'|'7d'>('session');
   const sessionStartTs = useRef(Date.now());
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const addToast=useCallback((text:string,color="#00ff88")=>{
     const id=feedIdRef.current++;
@@ -1552,7 +1559,7 @@ export default function AgentOffice(){
   const orchAgent=roster.find(a=>a.id===ORCHESTRATOR_ID);
 
   return (
-    <div style={{height:"100%",minHeight:"600px",display:"flex",flexDirection:"column",
+    <div style={{height:"100%",minHeight:isMobile?"100%":"600px",display:"flex",flexDirection:"column",
       background:theme==="B"?"#091410":"#060610",
       fontFamily:"'IBM Plex Mono','JetBrains Mono','Fira Code',monospace",overflow:"hidden",
       color:theme==="B"?"#7ab89a":"#8892b0"}}>
@@ -1664,11 +1671,11 @@ export default function AgentOffice(){
       )}
 
       {/* Header */}
-      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 14px",height:44,background:theme==="B"?"#0c1a14":"#0b0b18",borderBottom:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`}}>
+      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:isMobile?"0 8px":"0 14px",height:44,background:theme==="B"?"#0c1a14":"#0b0b18",borderBottom:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <div style={{width:9,height:9,borderRadius:"50%",background:paused?"#3a3a5e":incident?"#ff4444":"#00ff88",boxShadow:paused?"none":incident?"0 0 8px #ff444466":"0 0 8px #00ff8866"}}/>
-          <span style={{color:"#e0e0ff",fontSize:13,letterSpacing:"0.14em",fontWeight:700}}>NABIT LLC</span>
-          <span style={{color:"#4a4a6a"}}>·</span>
+          {!isMobile && <span style={{color:"#e0e0ff",fontSize:13,letterSpacing:"0.14em",fontWeight:700}}>NABIT LLC</span>}
+          {!isMobile && <span style={{color:"#4a4a6a"}}>·</span>}
           <span style={{color:incident?"#ff4444":"#8892b0",fontSize:12,letterSpacing:"0.09em"}}>{incident?incident.title:"AGENT OFFICE"}</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1679,6 +1686,7 @@ export default function AgentOffice(){
             <span style={{fontSize:12,fontWeight:700,color:"#6C5CE7"}}>{stats.completed}</span>
             <span style={{fontSize:11,color:"#6a6a8e"}}>done</span>
           </div>
+          {!isMobile && <>
           {/* Theme switcher */}
           <div style={{display:"flex",gap:2,padding:"2px",background:"#0a0a18",borderRadius:4,border:"1px solid #1a1a2e"}}>
             {(["A","B"] as const).map(t=>(
@@ -1697,18 +1705,66 @@ export default function AgentOffice(){
           <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Settings">⌨</button>
           <button onClick={()=>{const el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen?.();}} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Fullscreen">⛶</button>
           <button onClick={toggleSound} style={{background:"transparent",border:"1px solid #2a2a4a",color:soundOn?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
+          </>}
           <button onClick={togglePause} style={{background:"transparent",border:"1px solid #2a2a4a",color:paused?"#00ff88":"#8892b0",padding:"3px 11px",borderRadius:3,fontSize:12,fontWeight:600,letterSpacing:"0.08em",cursor:"pointer",fontFamily:"inherit"}}>{paused?"▶ RUN":"⏸ LIVE"}</button>
         </div>
       </div>
 
       {/* Body */}
       <div style={{display:"flex",flex:1,minHeight:0,overflow:"hidden"}}>
-        <div style={{flex:1,minWidth:0,overflow:"hidden",background:"#060610",display:"flex",alignItems:"stretch"}}>
-          <canvas ref={canvasRef} style={{imageRendering:"pixelated" as any,display:"block",width:"100%",height:"100%"}}/>
-        </div>
+        {isMobile ? (
+          /* Mobile: Agent status cards */
+          <div style={{flex:1,overflowY:"auto",background:theme==="B"?"#091410":"#09090f",padding:"12px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:"#00ff88",boxShadow:"0 0 6px #00ff8866"}}/>
+              <span style={{color:theme==="B"?"#7ab89a":"#8892b0",fontSize:12,fontWeight:700,letterSpacing:"0.1em"}}>AGENT STATUS</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {roster.filter(a=>a.active).map(a=>(
+                <div key={a.id} style={{background:theme==="B"?"#0c1a14":"#0f0f1a",border:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,borderRadius:8,padding:"10px 12px",display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:20}}>{a.emoji}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{color:"#e0e0ff",fontSize:12,fontWeight:700}}>{a.name}</span>
+                      <span style={{
+                        fontSize:9,fontWeight:600,letterSpacing:"0.08em",
+                        padding:"1px 6px",borderRadius:9,
+                        background:a.state==="working"?"#00ff8820":a.state==="meeting"?"#6C5CE720":"#3a3a5e20",
+                        color:a.state==="working"?"#00ff88":a.state==="meeting"?"#a29bfe":"#6a6a8e",
+                        border:`1px solid ${a.state==="working"?"#00ff8840":a.state==="meeting"?"#6C5CE740":"#3a3a5e40"}`,
+                        textTransform:"uppercase"
+                      }}>{a.state==="working"?"working":a.state==="meeting"?"meeting":"idle"}</span>
+                    </div>
+                    <div style={{color:theme==="B"?"#5a9a7a":"#6a6a8e",fontSize:10,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {a.task ? (a.task.length > 40 ? a.task.slice(0,40)+"…" : a.task) : "Standing by"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {roster.filter(a=>!a.active).length > 0 && (
+                <>
+                  <div style={{color:theme==="B"?"#5a9a7a":"#4a4a6a",fontSize:10,letterSpacing:"0.1em",fontWeight:600,marginTop:4}}>BENCH</div>
+                  {roster.filter(a=>!a.active).map(a=>(
+                    <div key={a.id} style={{background:theme==="B"?"#0c1a14":"#0f0f1a",border:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,borderRadius:8,padding:"8px 12px",display:"flex",alignItems:"center",gap:10,opacity:0.6}}>
+                      <span style={{fontSize:18}}>{a.emoji}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <span style={{color:"#e0e0ff",fontSize:11,fontWeight:600}}>{a.name}</span>
+                        <span style={{color:"#4a4a6a",fontSize:10,marginLeft:6}}>{a.role}</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={{flex:1,minWidth:0,overflow:"hidden",background:"#060610",display:"flex",alignItems:"stretch"}}>
+            <canvas ref={canvasRef} style={{imageRendering:"pixelated" as any,display:"block",width:"100%",height:"100%"}}/>
+          </div>
+        )}
 
         {/* Sidebar */}
-        <div style={{width:320,flexShrink:0,display:"flex",flexDirection:"column",background:theme==="B"?"#0a1510":"#0b0b14",borderLeft:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden"}}>
+        <div style={{width:320,flexShrink:0,display:isMobile?"none":"flex",flexDirection:"column",background:theme==="B"?"#0a1510":"#0b0b14",borderLeft:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden"}}>
 
           {/* Detail panel — shows when an agent is selected on canvas */}
           {detail&&(
