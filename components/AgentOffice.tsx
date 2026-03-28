@@ -1,6 +1,45 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 
+// ─── Supabase agent_runs ──────────────────────────────────────────────────────
+const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';
+const SUPA_AGENTS = ['main','scout','ops','kemuni-sme','vespera-sme','builder','tester','deployer'] as const;
+
+type AgentRunStatus = 'working' | 'idle' | 'never';
+interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; }
+
+async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
+  const res = await fetch(
+    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=100`,
+    { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
+  );
+  if (!res.ok) return {};
+  const rows: any[] = await res.json();
+  const now = Date.now();
+  const result: Record<string, AgentRunInfo> = {};
+  // Group by agent_id — first occurrence is most recent (ordered desc)
+  for (const row of rows) {
+    const aid = row.agent_id;
+    if (result[aid]) continue; // already have most recent
+    const startMs = row.started_at ? new Date(row.started_at).getTime() : 0;
+    const ageMin = (now - startMs) / 60000;
+    let st: AgentRunStatus = 'idle';
+    if (row.status === 'running' || ageMin < 5) st = 'working';
+    else if (ageMin >= 30) st = 'idle';
+    else st = 'working'; // between 5-30min with non-running status still counts as recent
+    // Refine: only 'working' if status=running OR started_at < 5min ago
+    if (row.status === 'running' || ageMin < 5) st = 'working';
+    else st = 'idle';
+    result[aid] = { status: st, taskTitle: (row.task_title || '').slice(0, 35), startedAt: row.started_at };
+  }
+  // Fill missing agents as 'never'
+  for (const id of SUPA_AGENTS) {
+    if (!result[id]) result[id] = { status: 'never', taskTitle: '', startedAt: null };
+  }
+  return result;
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 const MAP_COLS    = 16;
 const MAP_ROWS    = 16;
@@ -17,12 +56,11 @@ const ALL_AGENTS = [
   // Bench
   { id:"builder",     name:"Builder",    color:"#0984E3", emoji:"🔨", role:"Code Generation",  personality:{ workBurst:0.88, focusDuration:5 } },
   { id:"tester",      name:"Tester",     color:"#E84393", emoji:"🧪", role:"QA & Testing",     personality:{ workBurst:0.85, focusDuration:2 } },
-  { id:"quill",       name:"Quill",      color:"#FDCB6E", emoji:"✍️", role:"Documentation",   personality:{ workBurst:0.88, focusDuration:3 } },
-  { id:"echo",        name:"Echo",       color:"#00CEC9", emoji:"📣", role:"Communications",  personality:{ workBurst:0.85, focusDuration:2 } },
+  { id:"deployer",    name:"Deployer",   color:"#00CEC9", emoji:"🚀", role:"Deployment",       personality:{ workBurst:0.90, focusDuration:3 } },
 ];
 
 const ACTIVE_IDS = ["main","scout","ops","kemuni-sme","vespera-sme"];
-const BENCH_IDS  = ["builder","tester","quill","echo"];
+const BENCH_IDS  = ["builder","tester","deployer"];
 
 const DEPENDENCIES: Record<string,string[]> = {
   "main":        ["scout","kemuni-sme","vespera-sme"],
@@ -40,8 +78,7 @@ const AGENT_TASKS: Record<string,string[]> = {
   "vespera-sme": ["Planning event features","Designing social feeds","Reviewing goth UX patterns","Drafting community features","Analyzing user feedback","Planning onboarding flow"],
   "builder":     ["Writing API endpoints","Refactoring components","Fixing bug reports","Building UI pages","Optimizing database queries","Implementing auth flow"],
   "tester":      ["Running integration tests","Writing unit tests","Checking edge cases","Reviewing PR code","Regression testing","Load testing API"],
-  "quill":       ["Writing landing copy","Drafting blog posts","Creating event descriptions","Editing documentation","Release notes","SEO optimization"],
-  "echo":        ["Posting community updates","Engaging Discord threads","Writing social posts","Moderating channels","Community Q&A","Drafting announcements"],
+  "deployer":    ["Deploying to production","Rolling back release","Checking deploy health","Updating CI pipeline","Provisioning environments","Running smoke tests"],
 };
 
 const MEETINGS = [
@@ -107,10 +144,9 @@ const EMPTY_DESK_POS = [
 ];
 
 const BENCH_POS: Record<string,{tx:number,ty:number}> = {
-  builder:{ tx:1.5,  ty:STANCHION_R+1.0 },
-  tester: { tx:5.0,  ty:STANCHION_R+1.0 },
-  quill:  { tx:9.5,  ty:STANCHION_R+1.0 },
-  echo:   { tx:13.0, ty:STANCHION_R+1.0 },
+  builder: { tx:1.5,  ty:STANCHION_R+1.0 },
+  tester:  { tx:5.0,  ty:STANCHION_R+1.0 },
+  deployer:{ tx:9.5,  ty:STANCHION_R+1.0 },
 };
 
 // ─── Static Templates ─────────────────────────────────────────────────────────
@@ -122,8 +158,7 @@ const MONOLOGUES: Record<string,string[]> = {
   "vespera-sme": ["designing interactions","mapping goth UX","reviewing flows","drafting features","analyzing feedback","planning onboarding"],
   "builder":     ["writing handlers","refactoring modules","fixing edge cases","building components","optimizing queries","wiring auth"],
   "tester":      ["running assertions","writing test cases","checking coverage","auditing edge cases","running regression","load testing"],
-  "quill":       ["drafting copy","editing content","optimizing SEO","writing descriptions","polishing docs","revising notes"],
-  "echo":        ["composing post","engaging thread","drafting update","moderating queue","writing announcement","scheduling content"],
+  "deployer":    ["deploying build","checking health","rolling back","provisioning env","running smoke tests","updating pipeline"],
 };
 
 const MEETING_SUMMARIES: Record<string,string> = {
@@ -837,6 +872,7 @@ export default function AgentOffice(){
   const [boardTasks, setBoardTasks]  = useState<Record<string,string>>({}) // agentId → task title
   const boardTasksRef                = useRef<Record<string,string>>({})
   const subagentCountRef             = useRef<number>(0)
+  const liveRunsRef                  = useRef<Record<string, AgentRunInfo>>({})
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
   const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
   const [showSettings,setShowSettings] = useState(false);
@@ -898,6 +934,51 @@ export default function AgentOffice(){
     const t=setInterval(fetchTasks,30000);
     return()=>clearInterval(t);
   },[]);
+
+  // ── Supabase agent_runs polling — real-time status for ALL 8 agents ────
+  useEffect(()=>{
+    let cancelled=false;
+    const pollRuns=async()=>{
+      try{
+        const runs=await fetchAgentRuns();
+        if(cancelled) return;
+        liveRunsRef.current=runs;
+        if(!simRef.current?.agents) return;
+        const agents=simRef.current.agents;
+        agents.forEach((ag:any)=>{
+          const run=runs[ag.id];
+          if(!run) return;
+          if(run.status==='working'){
+            if(ag.state!=='working'&&ag.state!=='meeting'&&ag.state!=='moving_to_meeting'){
+              ag.state='working';
+              ag.task=run.taskTitle||'Working';
+              ag.progress=5;
+              ag.monologue=null;
+              ag.glowTick=60;
+              ag.lastStateChange=Date.now();
+              addFeed(`${ag.emoji} ${ag.name}: ${run.taskTitle||'Working'}`,ag.color);
+            } else if(ag.state==='working'&&run.taskTitle&&ag.task!==run.taskTitle){
+              ag.task=run.taskTitle;
+              ag.progress=5;
+            }
+          } else if(run.status==='idle'){
+            if(ag.state==='working'){
+              ag.tasksCompleted++;
+              totalDone.current++;
+              ag.taskHistory=[...(ag.taskHistory||[]),ag.task].slice(-20);
+              addFeed(`${ag.emoji} ${ag.name}: done`,'#00ff88');
+              ag.state='idle';ag.task=null;ag.progress=0;ag.monologue=null;
+              ag.lastStateChange=Date.now();
+            }
+          }
+          // 'never' agents stay idle with no task
+        });
+      }catch(e){}
+    };
+    pollRuns();
+    const t=setInterval(pollRuns,10000);
+    return()=>{cancelled=true;clearInterval(t);};
+  },[addFeed]);
 
   // ── Real data polling — SOLE source of agent state ─────────────────────
   useEffect(()=>{
@@ -1380,10 +1461,11 @@ export default function AgentOffice(){
       if(hov&&!camRef.current.drag){
         const fPx=Math.round(T2*0.16);
         ctx.font=`bold ${fPx}px 'IBM Plex Mono',monospace`;
-        const taskText=hov.state==="working"?(hov.task||"Working"):(hov.state||"idle");
-        const idleTime=hov.state==="idle"?` · idle ${Math.round((Date.now()-(hov.lastStateChange||Date.now()))/60000)}m`:"";
+        const liveRun=liveRunsRef.current[hov.id];
+        const liveLabel=liveRun?.status==='never'?'No runs yet':hov.state==="working"?(hov.task||"Working"):(hov.state||"idle");
+        const idleTime=hov.state==="idle"&&liveRun?.status!=='never'?` · idle ${Math.round((Date.now()-(hov.lastStateChange||Date.now()))/60000)}m`:"";
         const line1=`${hov.emoji} ${hov.name}`;
-        const line2=`${taskText}${idleTime}`;
+        const line2=`${liveLabel}${idleTime}`;
         const line3=`${hov.tasksCompleted||0} tasks completed`;
         const tw2=Math.max(ctx.measureText(line1).width,ctx.measureText(line2).width,ctx.measureText(line3).width)+20;
         const th2=fPx*4.2;
