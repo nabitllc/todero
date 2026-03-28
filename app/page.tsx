@@ -3291,7 +3291,7 @@ export default function Home() {
   const [liveCrons, setLiveCrons] = useState<typeof CRONS | null>(null)
   const [projects, setProjects] = useState<any[]|null>(null)
   const [deployState, setDeployState] = useState<'idle'|'loading'|'done'>('idle')
-  const [mobileNav, setMobileNav] = useState(false)
+
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
@@ -3431,31 +3431,19 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* MOBILE HAMBURGER + OVERLAY */}
-      <button onClick={()=>setMobileNav(true)} className="lg:hidden fixed top-2 left-2 z-50 w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-lg text-zinc-300 hover:text-white transition-colors">
-        ☰
-      </button>
-      {mobileNav && (
-        <div className="lg:hidden fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3" style={{background:'#080808ee'}} onClick={()=>setMobileNav(false)}>
-          <p className="text-zinc-600 text-xs mb-4 uppercase tracking-widest">Navigate</p>
-          {NAV.map(item=>{
-            if (item.id === 'divider') return <div key="divider" className="border-t border-zinc-800 my-2 w-56" />
-            const LIcon = LUCIDE_ICONS[item.id]
-            return (
-            <button key={item.id} onClick={()=>{ setTab(item.id as Tab); if(item.id==='chat') setUnreadChat(false); setMobileNav(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
-              className={'flex items-center gap-3 px-6 py-3 rounded-xl transition-all w-56 border-l-2 '+(
-                tab===item.id ? 'bg-zinc-800 text-white border-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900 border-transparent'
-              )}>
-              {LIcon ? <LIcon size={18} className="shrink-0" /> : <span className="text-xl">{item.icon}</span>}
-              <span className="text-sm font-medium">{item.label}</span>
-              {item.id === 'chat' && unreadChat && tab !== 'chat' && (
-                <span className="ml-auto w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-              )}
+      {/* MOBILE BOTTOM TAB BAR */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-950 border-t border-zinc-800 flex justify-around px-1" style={{paddingBottom: "env(safe-area-inset-bottom, 16px)"}}>
+        {NAV.filter(item => item.id !== "divider" && ["overview","board","chat","team"].includes(item.id)).map(item => {
+          const LIcon = LUCIDE_ICONS[item.id]
+          return (
+            <button key={item.id} onClick={() => { setTab(item.id as Tab); if(item.id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", item.id) }}
+              className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-[50px] text-xs " + (tab === item.id ? "text-white" : "text-zinc-500")}>
+              {LIcon ? <LIcon size={18} /> : <span>{item.icon}</span>}
+              <span className="text-[9px]">{item.label.split(" ")[0]}</span>
             </button>
-            )
-          })}
-        </div>
-      )}
+          )
+        })}
+      </nav>
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col min-h-screen overflow-auto">
@@ -3469,7 +3457,7 @@ export default function Home() {
           </span>
         </header>
 
-        <main className="flex-1 px-3 md:px-6 py-5 overflow-x-hidden">
+        <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
 
           {/* ── OVERVIEW ── */}
           {tab==='overview' && (
@@ -3489,13 +3477,13 @@ export default function Home() {
                         </div>
                         <span className="text-xl">{proj.emoji}</span>
                       </div>
-                      <div className="flex items-baseline gap-2 mb-3">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-3">
                         <span className="text-3xl md:text-4xl font-bold tabular-nums" style={{color:isUrgent?'#ef4444':proj.color}}>{left}</span>
-                        <span className="text-zinc-500 text-sm">days</span>
+                        <span className="text-zinc-500 text-sm"> Days</span>
                         <span className="ml-auto text-zinc-600 text-xs">Day {elap}/{proj.totalDays}</span>
                       </div>
                       <Bar v={pct} color={proj.color} bg={proj.color==='#ffffff'?'#1e1e1e':'#1a0a2a'} />
-                      <div className="flex justify-between mt-1.5">
+                      <div className="flex flex-col sm:flex-row justify-between mt-1.5 gap-0.5">
                         <span className="text-zinc-600 text-[10px]">{pct}% elapsed</span>
                         <span className="text-zinc-600 text-[10px]">{dlLabel}</span>
                       </div>
