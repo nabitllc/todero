@@ -2,7 +2,8 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-function LoginForm() {
+// Isolated to its own component so useSearchParams doesn't cause full-page Suspense bailout
+function LoginFormInner() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -73,6 +74,47 @@ function LoginForm() {
   )
 }
 
+function LoginFormFallback() {
+  return (
+    <form style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div>
+        <input
+          type="password"
+          placeholder="Enter password"
+          autoFocus
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: '#111',
+            border: '1px solid #333',
+            color: '#fff',
+            fontSize: 14,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+      <button
+        disabled
+        style={{
+          width: '100%',
+          padding: '12px 0',
+          borderRadius: 12,
+          background: '#27272a',
+          border: 'none',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 500,
+          opacity: 0.5,
+        }}
+      >
+        Enter
+      </button>
+    </form>
+  )
+}
+
 export default function Login() {
   return (
     <div style={{
@@ -93,8 +135,8 @@ export default function Login() {
           <h1 style={{ color: '#fff', fontSize: 20, fontWeight: 700, margin: 0 }}>KAOS</h1>
           <p style={{ color: '#71717a', fontSize: 14, margin: '4px 0 0' }}>Mission Control</p>
         </div>
-        <Suspense fallback={null}>
-          <LoginForm />
+        <Suspense fallback={<LoginFormFallback />}>
+          <LoginFormInner />
         </Suspense>
       </div>
     </div>
