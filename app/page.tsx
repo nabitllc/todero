@@ -487,6 +487,9 @@ function ChatTab() {
   const [showImageUrlInput, setShowImageUrlInput] = useState(false)
   const [imageUrlDraft, setImageUrlDraft] = useState('')
   const [imageUrlPreview, setImageUrlPreview] = useState<string|null>(null)
+  const [showMobileAttach, setShowMobileAttach] = useState(false)
+  const [mobileSidebarSearch, setMobileSidebarSearch] = useState("")
+  const mobileAttachRef = useRef<HTMLDivElement>(null)
   // Sidebar tabs: mine / openclaw / heartbeats
   const [sidebarTab, setSidebarTab] = useState<'mine'|'openclaw'|'heartbeats'>('mine')
   const [ocSessions, setOcSessions] = useState<any[]>([])
@@ -692,6 +695,9 @@ function ChatTab() {
       }
       if (promptTemplatesRef.current && !promptTemplatesRef.current.contains(e.target as Node)) {
         setShowPromptTemplates(false)
+      }
+      if (mobileAttachRef.current && !mobileAttachRef.current.contains(e.target as Node)) {
+        setShowMobileAttach(false)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -1474,7 +1480,7 @@ function ChatTab() {
   }
 
   return (
-    <div className="flex gap-0 h-[calc(100vh-88px)] -mx-3 md:-mx-6 -my-5">
+    <div className="flex gap-0 -mx-3 md:-mx-6 -my-5" style={{ height: "calc(100svh - 88px)" }}>
       {/* LEFT SIDEBAR — Feature 10: collapsible, hidden on mobile */}
       <div
         className={'shrink-0 border-r border-zinc-800/60 hidden md:flex flex-col transition-all duration-200 ' + (sidebarCollapsed ? 'w-10' : 'w-64')}
@@ -1733,11 +1739,33 @@ function ChatTab() {
               </button>
               <button onClick={() => setMobileSidebarOpen(false)} className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-white transition-colors text-sm rounded-lg hover:bg-zinc-800">✕</button>
             </div>
+            {/* Mobile sidebar search */}
+            <div className="px-3 py-2.5 border-b border-zinc-800/40">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800/60" style={{background:'#111'}}>
+                <svg className="w-3 h-3 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={mobileSidebarSearch}
+                  onChange={(e) => setMobileSidebarSearch(e.target.value)}
+                  className="bg-transparent text-xs text-zinc-300 placeholder-zinc-600 w-full outline-none"
+                />
+                {mobileSidebarSearch && (
+                  <button onClick={() => setMobileSidebarSearch("")} className="text-[9px] text-zinc-500 hover:text-zinc-300">✕</button>
+                )}
+              </div>
+            </div>
             <div className="flex-1 overflow-y-auto px-2 py-2">
-              {filteredChats.length === 0 ? (
+              {(() => {
+                const mobileChatList = mobileSidebarSearch
+                  ? filteredChats.filter(c => c.title.toLowerCase().includes(mobileSidebarSearch.toLowerCase()))
+                  : filteredChats
+                return mobileChatList.length === 0 ? (
                 <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
               ) : (
-                filteredChats.map(c => (
+                mobileChatList.map(c => (
                   <div
                     key={c.id}
                     className={'w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer mb-0.5 ' +
@@ -1747,7 +1775,8 @@ function ChatTab() {
                     <p className="text-[9px] opacity-40 mt-0.5">{new Date(c.updatedAt).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}</p>
                   </div>
                 ))
-              )}
+              )
+              })()}
             </div>
           </div>
           <div className="flex-1 bg-black/60" onClick={() => setMobileSidebarOpen(false)} />
@@ -2100,7 +2129,7 @@ function ChatTab() {
                           )}
                           {/* Actions row: copy + edit + bookmark + fork */}
                           <div className={
-                            'flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ' +
+                            'flex items-center gap-3 md:gap-2 mt-1 min-h-[32px] opacity-0 group-hover:opacity-100 transition-opacity ' +
                             (msg.role === 'user' ? 'justify-end' : 'justify-start')
                           }>
                             <button
@@ -2342,6 +2371,35 @@ function ChatTab() {
                 </div>
               )}
               <div className="flex items-end gap-2">
+                {/* Mobile attach "+" action sheet */}
+                <div className="relative shrink-0 sm:hidden" ref={mobileAttachRef}>
+                  <button
+                    onClick={() => setShowMobileAttach(v => !v)}
+                    disabled={isSending}
+                    className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed text-lg font-bold"
+                    title="Attach">
+                    +
+                  </button>
+                  {showMobileAttach && (
+                    <div className="absolute bottom-10 left-0 z-50 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f', minWidth:'160px'}}>
+                      <button
+                        onClick={() => { handleFileAttach(); setShowMobileAttach(false) }}
+                        className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800/50">
+                        📎 Attach File
+                      </button>
+                      <button
+                        onClick={() => { setShowFileBrowser(true); setFileBrowserPath(""); setShowMobileAttach(false) }}
+                        className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800/50">
+                        📁 Browse Files
+                      </button>
+                      <button
+                        onClick={() => { setShowImageUrlInput(true); setShowMobileAttach(false) }}
+                        className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors">
+                        🔗 Image URL
+                      </button>
+                    </div>
+                  )}
+                </div>
                 {/* Paperclip button + file type picker */}
                 <div className="relative shrink-0 hidden sm:block" ref={fileTypePickerRef}>
                   <button
@@ -2408,12 +2466,24 @@ function ChatTab() {
                   )}
                 </div>
 
-                {/* Agent selector */}
+                {/* Agent selector — mobile cycling button */}
+                <button
+                  className="sm:hidden px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-sm mb-0.5 disabled:opacity-50"
+                  disabled={isSending}
+                  title={currentAgent.label}
+                  onClick={() => {
+                    const idx = AGENT_OPTIONS.findIndex(a => a.id === selectedAgent)
+                    const next = AGENT_OPTIONS[(idx + 1) % AGENT_OPTIONS.length]
+                    setSelectedAgent(next.id)
+                  }}>
+                  {currentAgent.label.split(" ")[0]}
+                </button>
+                {/* Agent selector — desktop dropdown */}
                 <select
                   value={selectedAgent}
                   onChange={e => setSelectedAgent(e.target.value)}
                   disabled={isSending}
-                  className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  className="hidden sm:block px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
                   title="Select agent">
                   {AGENT_OPTIONS.map(a => (
                     <option key={a.id} value={a.id}>{a.label}</option>
