@@ -2665,6 +2665,30 @@ interface Task {
   id: string; title: string; description?: string; status: string;
   assignee?: string; project?: string; priority?: string; type?: string;
   due_date?: string; created_at?: string; updated_at?: string;
+  resolution_type?: string; acceptance_criteria?: string;
+  steps_to_reproduce?: string; expected_behavior?: string;
+  actual_behavior?: string; environment?: string;
+  pr_url?: string; blocked_by?: string;
+}
+
+const RESOLUTION_OPTIONS: { value: string; label: string; emoji: string }[] = [
+  { value: 'code_change',       label: 'Code Change',       emoji: '✅' },
+  { value: 'config_change',     label: 'Config Change',     emoji: '⚙️' },
+  { value: 'wont_fix',          label: "Won't Fix",         emoji: '🚫' },
+  { value: 'canceled',          label: 'Canceled',          emoji: '❌' },
+  { value: 'duplicate',         label: 'Duplicate',         emoji: '🔁' },
+  { value: 'cannot_reproduce',  label: "Can't Reproduce",   emoji: '🔬' },
+  { value: 'by_design',         label: 'By Design',         emoji: '🎯' },
+]
+
+const RESOLUTION_BADGE_COLORS: Record<string, string> = {
+  code_change:      '#22c55e',
+  config_change:    '#3b82f6',
+  by_design:        '#3b82f6',
+  canceled:         '#71717a',
+  wont_fix:         '#71717a',
+  duplicate:        '#eab308',
+  cannot_reproduce: '#eab308',
 }
 
 const BOARD_COLUMNS = [
@@ -2704,6 +2728,9 @@ function KanbanBoard() {
   const [filterPriority, setFilterPriority] = useState('')
   const [confirmDelete, setConfirmDelete]   = useState<string|null>(null)
   const [mobileCol, setMobileCol] = useState('open')
+  const [resolutionPending, setResolutionPending] = useState<{taskId:string;source:'drag'|'edit';editFields?:Partial<Task>}|null>(null)
+  const [detailTask, setDetailTask] = useState<Task|null>(null)
+  const [bugDetailsOpen, setBugDetailsOpen] = useState(false)
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -2732,10 +2759,37 @@ function KanbanBoard() {
 
   const handleDrop = (status: string) => {
     if (!dragId) return
+    if (status === 'done') {
+      setResolutionPending({ taskId: dragId, source: 'drag' })
+      setDragId(null)
+      return
+    }
     updateTask(dragId, { status })
     setTasks(prev => prev.map(t => t.id===dragId ? {...t, status} : t))
     setDragId(null)
   }
+
+  const handleResolutionSelect = (resolutionType: string) => {
+    if (!resolutionPending) return
+    const { taskId, source, editFields } = resolutionPending
+    if (source === 'edit' && editFields) {
+      updateTask(taskId, { ...editFields, status: 'done', resolution_type: resolutionType })
+      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...editFields, status: 'done', resolution_type: resolutionType } : t))
+    } else {
+      updateTask(taskId, { status: 'done', resolution_type: resolutionType })
+      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, status: 'done', resolution_type: resolutionType } : t))
+    }
+    setResolutionPending(null)
+    setEditTask(null)
+  }
+
+  // ESC key closes detail panel
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setDetailTask(null); setBugDetailsOpen(false) }
+    }
+    if (detailTask) { window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }
+  }, [detailTask])
 
   const filtered = tasks.filter(t => {
     if (filterProject && t.project !== filterProject) return false
@@ -2817,7 +2871,7 @@ function KanbanBoard() {
                     draggable
                     onDragStart={() => setDragId(task.id)}
                     onDragEnd={() => setDragId(null)}
-                    onClick={() => setEditTask(task)}
+                    onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
                     className={`rounded-xl border p-3 cursor-pointer transition-colors border-l-2 ${
                       task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
                     } ${dragId===task.id ? 'opacity-50' : ''}`}
@@ -2829,6 +2883,10 @@ function KanbanBoard() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
                       {task.type && <Chip label={task.type} />}
+                      {task.status === 'done' && task.resolution_type && (
+                        <Chip label={RESOLUTION_OPTIONS.find(r=>r.value===task.resolution_type)?.label ?? task.resolution_type}
+                          color={RESOLUTION_BADGE_COLORS[task.resolution_type] ?? '#71717a'} />
+                      )}
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       {task.priority && (
@@ -2935,8 +2993,16 @@ function KanbanBoard() {
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={()=>setEditTask(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
-              <button onClick={()=>updateTask(editTask.id,{title:editTask.title,description:editTask.description,status:editTask.status,
-                priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date})}
+              <button onClick={()=>{
+                const fields = {title:editTask.title,description:editTask.description,status:editTask.status,
+                  priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date}
+                const origTask = tasks.find(t=>t.id===editTask.id)
+                if (editTask.status==='done' && origTask?.status!=='done') {
+                  setResolutionPending({taskId:editTask.id,source:'edit',editFields:fields})
+                } else {
+                  updateTask(editTask.id,fields)
+                }
+              }}
                 className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 transition-colors">Save</button>
             </div>
           </div>
@@ -2955,6 +3021,189 @@ function KanbanBoard() {
           </div>
         </div>
       )}
+
+      {/* Resolution Type Picker */}
+      {resolutionPending && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60" onClick={()=>setResolutionPending(null)}>
+          <div className="w-full max-w-sm mx-4 rounded-2xl border border-zinc-800 p-5 space-y-4" style={{background:'#18181b'}} onClick={e=>e.stopPropagation()}>
+            <h3 className="text-white font-semibold text-sm text-center">How was this resolved?</h3>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {RESOLUTION_OPTIONS.map(opt => (
+                <button key={opt.value} onClick={() => handleResolutionSelect(opt.value)}
+                  className="text-xs font-medium px-3 py-1.5 rounded-full border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-500 transition-colors">
+                  {opt.emoji} {opt.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-center pt-1">
+              <button onClick={()=>setResolutionPending(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Detail Panel */}
+      {detailTask && (() => {
+        const t = tasks.find(tk => tk.id === detailTask.id) ?? detailTask
+        const hasAcceptance = !!t.acceptance_criteria?.trim()
+        const acLines = (t.acceptance_criteria ?? '').split('\n').filter(l => l.trim())
+        const isBug = t.type === 'bug'
+        const stepsLines = (t.steps_to_reproduce ?? '').split('\n').filter(l => l.trim())
+        return (
+          <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}>
+            <div className="w-full md:w-[480px] h-full border-l border-zinc-800 overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-zinc-800" style={{background:'#0a0a0a'}}>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setEditTask(t); setDetailTask(null); setBugDetailsOpen(false) }}
+                    className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1 rounded-lg hover:bg-zinc-800">Edit</button>
+                </div>
+                <button onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}
+                  className="text-zinc-500 hover:text-white transition-colors text-lg leading-none">&times;</button>
+              </div>
+
+              <div className="px-5 py-5 space-y-5">
+                {/* Blocked banner */}
+                {t.blocked_by && (
+                  <div className="rounded-xl px-4 py-2.5 border border-red-500/30 bg-red-500/10 text-red-400 text-xs font-medium">
+                    🚫 Blocked by: {t.blocked_by}
+                  </div>
+                )}
+
+                {/* Title */}
+                <h2 className="text-white text-lg font-semibold leading-snug">{t.title}</h2>
+
+                {/* Status + Priority badges */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {t.status && (() => {
+                    const col = BOARD_COLUMNS.find(c => c.id === t.status)
+                    return col ? <Chip label={col.label} color={col.color} /> : null
+                  })()}
+                  {t.priority && <Chip label={t.priority} color={PRIORITY_COLORS[t.priority]} />}
+                  {t.type && <Chip label={t.type} />}
+                </div>
+
+                {/* Assignee + Project */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Assignee</p>
+                    <p className="text-sm text-zinc-300">
+                      {t.assignee && ASSIGNEE_MAP[t.assignee] ? `${ASSIGNEE_MAP[t.assignee].emoji} ${ASSIGNEE_MAP[t.assignee].name}` : 'Unassigned'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Project</p>
+                    <p className="text-sm text-zinc-300">{t.project || '—'}</p>
+                  </div>
+                </div>
+
+                {/* Description */}
+                {t.description && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-2">Description</p>
+                    <p className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap">{t.description}</p>
+                  </div>
+                )}
+
+                {/* DoR / Acceptance Criteria */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600">Acceptance Criteria</p>
+                    {hasAcceptance
+                      ? <span className="w-4 h-4 rounded-full bg-green-500/20 text-green-400 text-[10px] flex items-center justify-center">✓</span>
+                      : <span className="w-4 h-4 rounded-full bg-yellow-500/20 text-yellow-400 text-[10px] flex items-center justify-center">!</span>
+                    }
+                  </div>
+                  {hasAcceptance ? (
+                    <div className="space-y-1.5">
+                      {acLines.map((line, i) => (
+                        <label key={i} className="flex items-start gap-2 text-sm text-zinc-400 cursor-default">
+                          <input type="checkbox" className="mt-1 accent-green-500 pointer-events-auto" readOnly />
+                          <span>{line.replace(/^[-*•]\s*/, '')}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-600 italic">No acceptance criteria defined</p>
+                  )}
+                </div>
+
+                {/* Bug Details */}
+                {isBug && (
+                  <div className="border border-zinc-800 rounded-xl overflow-hidden">
+                    <button onClick={() => setBugDetailsOpen(!bugDetailsOpen)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium text-zinc-400 hover:bg-zinc-900/50 transition-colors">
+                      <span>🐛 Bug Details</span>
+                      <span className="text-zinc-600">{bugDetailsOpen ? '▾' : '▸'}</span>
+                    </button>
+                    {bugDetailsOpen && (
+                      <div className="px-4 pb-4 space-y-3 border-t border-zinc-800">
+                        {t.steps_to_reproduce && (
+                          <div className="pt-3">
+                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1.5">Steps to Reproduce</p>
+                            <ol className="list-decimal list-inside text-sm text-zinc-400 space-y-1">
+                              {stepsLines.map((s, i) => <li key={i}>{s.replace(/^\d+[.)]\s*/, '')}</li>)}
+                            </ol>
+                          </div>
+                        )}
+                        {t.expected_behavior && (
+                          <div>
+                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Expected Behavior</p>
+                            <p className="text-sm text-zinc-400">{t.expected_behavior}</p>
+                          </div>
+                        )}
+                        {t.actual_behavior && (
+                          <div>
+                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Actual Behavior</p>
+                            <p className="text-sm text-zinc-400">{t.actual_behavior}</p>
+                          </div>
+                        )}
+                        {t.environment && (
+                          <div>
+                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Environment</p>
+                            <p className="text-sm text-zinc-400">{t.environment}</p>
+                          </div>
+                        )}
+                        {!t.steps_to_reproduce && !t.expected_behavior && !t.actual_behavior && !t.environment && (
+                          <p className="text-xs text-zinc-600 italic pt-3">No bug details provided</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* PR URL */}
+                {t.pr_url && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Pull Request</p>
+                    <a href={t.pr_url} target="_blank" rel="noopener noreferrer"
+                      className="text-sm text-blue-400 hover:text-blue-300 underline break-all">{t.pr_url}</a>
+                  </div>
+                )}
+
+                {/* Resolution */}
+                {t.status === 'done' && t.resolution_type && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Resolution</p>
+                    <Chip label={RESOLUTION_OPTIONS.find(r => r.value === t.resolution_type)?.label ?? t.resolution_type!}
+                      color={RESOLUTION_BADGE_COLORS[t.resolution_type] ?? '#71717a'} />
+                  </div>
+                )}
+
+                {/* Timestamps */}
+                <div className="pt-4 border-t border-zinc-800 flex flex-wrap gap-x-6 gap-y-1">
+                  {t.created_at && (
+                    <p className="text-[10px] text-zinc-600">Created: {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  )}
+                  {t.updated_at && (
+                    <p className="text-[10px] text-zinc-600">Updated: {new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
