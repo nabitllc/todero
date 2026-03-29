@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
     .insert({
       title, description, status: status ?? 'open', assignee, project,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
-      acceptance_criteria, sprint, parent_id, test_tier: test_tier ?? 'P2',
+      acceptance_criteria, sprint, parent_id,
+      ...(test_tier ? { test_tier } : {}),
       resolution_type, feature_branch, pr_url,
       ...(task_key ? { task_key, task_number } : {})
     })
