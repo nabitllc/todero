@@ -190,8 +190,22 @@ function notifyTestFailure(issue: { task_key?: string; title?: string; project?:
 
 export async function PATCH(req: NextRequest) {
   const body = await req.json()
-  const { id, ...fields } = body
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+  const { id: rawId, task_key, ...fields } = body
+
+  // ── Resolve UUID: accept either id (UUID) or task_key (e.g. INF-254) ──
+  let id = rawId
+  if (!id && task_key) {
+    const { data: lookup, error: lookupErr } = await supabase
+      .from('issues')
+      .select('id')
+      .eq('task_key', task_key)
+      .single()
+    if (lookupErr || !lookup) {
+      return NextResponse.json({ error: `No issue found for task_key=${task_key}` }, { status: 404 })
+    }
+    id = lookup.id
+  }
+  if (!id) return NextResponse.json({ error: 'id or task_key required' }, { status: 400 })
 
   // ── Sprint required if moving out of backlog ──
   if (fields.status && fields.status !== 'backlog' && !fields.sprint) {
