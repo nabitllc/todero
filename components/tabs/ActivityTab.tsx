@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
 
 const EmptyStateLocal = ({icon, message}: {icon: string; message: string}) => (
-  <div className="text-center py-12 text-zinc-600">
+  <div className="text-center py-12 text-white/30">
     <div className="text-3xl mb-2">{icon}</div>
     <p className="text-sm">{message}</p>
   </div>
@@ -29,12 +29,12 @@ function AttentionAndShipped({ agents }: { agents: any[] }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {data.attention.length > 0 && (
-        <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-          <div className="px-4 py-2 border-b border-zinc-800/40"><span className="text-xs font-semibold text-zinc-400">⚠️ Needs Attention</span></div>
-          <div className="divide-y divide-zinc-800/30">
+        <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
+          <div className="px-4 py-2 border-b border-white/10"><span className="text-xs font-semibold text-white/40">⚠️ Needs Attention</span></div>
+          <div className="divide-y divide-white/10">
             {data.attention.map((i: any) => (
               <div key={i.task_key} className="px-4 py-2.5 flex items-center gap-2">
-                <span className="text-[10px] font-mono text-zinc-600">{i.task_key}</span>
+                <span className="text-[10px] font-mono text-white/30">{i.task_key}</span>
                 <span className="text-xs text-white/70 truncate flex-1">{i.title}</span>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${i.priority === 'critical' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'}`}>{i.priority}</span>
               </div>
@@ -43,14 +43,14 @@ function AttentionAndShipped({ agents }: { agents: any[] }) {
         </div>
       )}
       {data.shipped.length > 0 && (
-        <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-          <div className="px-4 py-2 border-b border-zinc-800/40"><span className="text-xs font-semibold text-zinc-400">✅ Shipped Today</span></div>
-          <div className="divide-y divide-zinc-800/30">
+        <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
+          <div className="px-4 py-2 border-b border-white/10"><span className="text-xs font-semibold text-white/40">✅ Shipped Today</span></div>
+          <div className="divide-y divide-white/10">
             {data.shipped.map((i: any) => (
               <div key={i.task_key} className="px-4 py-2.5 flex items-center gap-2">
-                <span className="text-[10px] font-mono text-zinc-600">{i.task_key}</span>
+                <span className="text-[10px] font-mono text-white/30">{i.task_key}</span>
                 <span className="text-xs text-white/70 truncate flex-1">{i.title}</span>
-                <span className="text-[9px] text-emerald-400">{AGENT_DISPLAY[i.assignee]?.emoji ?? ''}</span>
+                <span className="text-[9px] text-green-400">{AGENT_DISPLAY[i.assignee]?.emoji ?? ''}</span>
               </div>
             ))}
           </div>
@@ -80,9 +80,9 @@ export default function ActivityTab({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">📡 Activity Feed</h2>
+          <h2 className="text-base font-medium text-white">📡 Activity Feed</h2>
           {liveStatus?.recentActivity?.length > 0 && (
-            <p className="text-xs text-zinc-500 mt-0.5">{(liveStatus.recentActivity?.length ?? 0) + issueActivity.length} entries</p>
+            <p className="text-xs text-white/50 mt-0.5">{(liveStatus.recentActivity?.length ?? 0) + issueActivity.length} entries</p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -90,7 +90,7 @@ export default function ActivityTab({
             const syncAgo = Math.round((Date.now() - statusAt) / 60000)
             const isFresh = syncAgo < 2
             return (
-              <span className={`text-[10px] font-mono ${isFresh ? 'text-emerald-400' : 'text-zinc-600'}`}>
+              <span className={`text-[10px] font-mono ${isFresh ? 'text-green-400' : 'text-white/30'}`}>
                 {isFresh ? '● Live' : `Synced ${syncAgo}m ago`}
               </span>
             )
@@ -99,7 +99,7 @@ export default function ActivityTab({
             onClick={() => {
               fetch('/api/status').then(r => r.json()).then(d => { setLiveStatus(d); setStatusAt(Date.now()) }).catch(() => {})
             }}
-            className="text-[10px] px-2.5 py-1 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 bg-zinc-900/50 transition-all">
+            className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-white/40 hover:text-white hover:border-white/20 bg-white/5 transition-all">
             Sync
           </button>
         </div>
@@ -109,7 +109,7 @@ export default function ActivityTab({
       <div className="flex items-center gap-2">
         {(['all','agent','issue','pr'] as const).map(f => (
           <button key={f} onClick={() => setActivityFilter(f)}
-            className={`text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all ${activityFilter === f ? 'border-blue-600 bg-blue-900/30 text-blue-400' : 'border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'}`}>
+            className={`text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all ${activityFilter === f ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' : 'border-white/10 bg-white/5 text-white/50 hover:text-white/70 hover:border-white/20'}`}>
             {f === 'all' ? '📡 All' : f === 'agent' ? '🤖 Agent Runs' : f === 'issue' ? '📋 Issue Changes' : '🔀 PR Events'}
           </button>
         ))}
@@ -134,16 +134,16 @@ export default function ActivityTab({
         return Object.entries(grouped).map(([date, entries])=>(
           <div key={date}>
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-widest">{date}</span>
-              <div className="flex-1 h-px bg-zinc-800/50" />
-              <span className="text-zinc-700 text-[10px]">{entries.length}</span>
+              <span className="text-white/30 text-[10px] font-semibold uppercase tracking-widest">{date}</span>
+              <div className="flex-1 h-px bg-white/10" />
+              <span className="text-white/20 text-[10px]">{entries.length}</span>
             </div>
-            <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+            <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
               {entries.map((entry:any, i:number, arr:any[])=>{
                 const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
                 const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':entry.action==='issue'?'#22c55e':'#3b82f6'
                 return (
-                  <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+                  <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-white/10':'')}>
                     <span className="text-base shrink-0 mt-0.5">{entry.emoji || (AGENT_DISPLAY[entry.agentId]?.emoji ?? '🤖')}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -153,10 +153,10 @@ export default function ActivityTab({
                           {entry.channel}
                         </span>}
                         {entry.type === 'issue' && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0 bg-green-500/20 text-green-400">issue</span>}
-                        {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-zinc-800 text-zinc-500">{entry.model}</span>}
-                        <span className="ml-auto text-zinc-600 text-[10px] shrink-0">{agoStr}</span>
+                        {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-white/10 text-white/50">{entry.model}</span>}
+                        <span className="ml-auto text-white/30 text-[10px] shrink-0">{agoStr}</span>
                       </div>
-                      <p className="text-zinc-500 text-[10px] mt-0.5 truncate">{entry.desc}</p>
+                      <p className="text-white/50 text-[10px] mt-0.5 truncate">{entry.desc}</p>
                     </div>
                   </div>
                 )
@@ -169,8 +169,7 @@ export default function ActivityTab({
       {/* Load more */}
       {((liveStatus?.recentActivity?.length ?? 0) + issueActivity.length) > activityLimit && (
         <button onClick={() => setActivityLimit(prev => prev + 100)}
-          className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2.5 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
-          style={{background:'#0a0a0a'}}>
+          className="w-full text-center text-xs text-white/50 hover:text-white/70 py-2.5 rounded-lg border border-white/10 hover:border-white/20 transition-all bg-[#080808]">
           Load 100 more
         </button>
       )}

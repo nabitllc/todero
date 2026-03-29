@@ -1,7 +1,8 @@
 'use client'
 import React, { useEffect, useState, useRef } from 'react'
 import FeatureCard from './FeatureCard'
-import { Button } from '@/components/ui'
+import { Button, EmptyState } from '@/components/ui'
+import { Map } from 'lucide-react'
 
 interface Issue {
   id: string; title: string; description?: string; status: string;
@@ -50,6 +51,7 @@ function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: 
 export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIssues?: (featureId: string, featureName: string) => void; projectFilter?: string | null }) {
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string|null>(null)
   const [projFilters, setProjFilters] = useState<string[]>([])
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -58,7 +60,8 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
   useEffect(() => {
     fetch('/api/issues').then(r => r.json()).then(d => {
       if (Array.isArray(d)) setIssues(d)
-    }).catch(() => {}).finally(() => setLoading(false))
+      setFetchError(null)
+    }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false))
   }, [])
 
   const features = issues.filter(i => i.type === 'feature')
@@ -89,7 +92,22 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <span className="text-white/40 text-sm">Loading features...</span>
+        <div className="flex items-center gap-2 text-white/40 text-sm">
+          <span className="animate-spin h-4 w-4 border-2 border-white/20 border-t-white/60 rounded-full" />
+          Loading features...
+        </div>
+      </div>
+    )
+  }
+
+  if (fetchError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <p className="text-red-400 text-sm">{fetchError}</p>
+        <button onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r => r.json()).then(d => { if (Array.isArray(d)) setIssues(d) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}
+          className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white transition-all">
+          Retry
+        </button>
       </div>
     )
   }
@@ -131,8 +149,13 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
       )}
 
       {Object.keys(grouped).length === 0 && (
-        <div className="rounded-xl border border-white/10 bg-[#0f0f0f] px-6 py-12 text-center">
-          <p className="text-white/25 text-sm">No features yet</p>
+        <div className="bg-[#0f0f0f] border border-white/10 rounded-xl">
+          <EmptyState
+            icon={Map}
+            title="No features yet"
+            description={hasAnyFilter ? 'Try clearing your filters' : 'Features will appear here once created'}
+            action={hasAnyFilter ? { label: 'Clear filters', onClick: clearAll } : undefined}
+          />
         </div>
       )}
 

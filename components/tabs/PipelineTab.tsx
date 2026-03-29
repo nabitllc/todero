@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { getPipelineStage, isBlocked, nextPRWindow, type PipelineStage, STAGE_COLORS } from '@/lib/pipeline'
+import { EmptyState } from '@/components/ui'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -45,6 +46,7 @@ const COLUMN_OPTIONS: { label: string; status: string; color: string }[] = [
 export default function PipelineTab({ projectFilter }: { projectFilter?: string | null }) {
   const [issues, setIssues] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string|null>(null)
   const [filter, setFilter] = useState<FilterMode>('both')
   const [countdown, setCountdown] = useState('')
   // Mobile long-press action sheet
@@ -112,8 +114,10 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       const done = await doneRes.json()
       const all = [...(Array.isArray(active) ? active : []), ...(Array.isArray(done) ? done : [])]
       setIssues(all)
+      setError(null)
     } catch (e) {
       console.error('Pipeline fetch error:', e)
+      setError('Failed to load pipeline data')
     } finally {
       setLoading(false)
     }
@@ -187,7 +191,22 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-white/40 text-sm">Loading pipeline...</div>
+        <div className="flex items-center gap-2 text-white/40 text-sm">
+          <span className="animate-spin h-4 w-4 border-2 border-white/20 border-t-white/60 rounded-full" />
+          Loading pipeline...
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <p className="text-red-400 text-sm">{error}</p>
+        <button onClick={() => { setError(null); setLoading(true); fetchIssues() }}
+          className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white transition-all">
+          Retry
+        </button>
       </div>
     )
   }

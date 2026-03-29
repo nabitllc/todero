@@ -1,8 +1,9 @@
 'use client'
 import React, { useEffect, useState, useMemo } from 'react'
 import { Search, ChevronUp, ChevronDown } from 'lucide-react'
-import { Button, Input, Select } from '@/components/ui'
+import { Button, Input, Select, EmptyState } from '@/components/ui'
 import { TypeBadge, PriorityBadge, StatusBadge, Badge } from '@/components/ui'
+import { List } from 'lucide-react'
 
 interface Issue {
   id: string; title: string; description?: string; status: string;
@@ -29,6 +30,7 @@ type SortDir = 'asc'|'desc'
 export default function IssuesTab({ projectFilter }: { projectFilter?: string | null }) {
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string|null>(null)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('task_key')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -42,7 +44,8 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   useEffect(() => {
     fetch('/api/issues').then(r=>r.json()).then(d => {
       setIssues(Array.isArray(d) ? d : d.data ?? d)
-    }).catch(()=>{}).finally(()=>setLoading(false))
+      setFetchError(null)
+    }).catch(() => setFetchError('Failed to load issues')).finally(()=>setLoading(false))
   }, [])
 
   const filtered = useMemo(() => {
@@ -178,7 +181,19 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
       )}
 
       <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
-        {loading && <div className="text-white/25 text-xs text-center py-8">Loading issues...</div>}
+        {loading && (
+          <div className="flex items-center justify-center py-8 gap-2 text-white/40 text-xs">
+            <span className="animate-spin h-4 w-4 border-2 border-white/20 border-t-white/60 rounded-full" />
+            Loading issues...
+          </div>
+        )}
+        {fetchError && (
+          <div className="flex flex-col items-center py-8 gap-3">
+            <p className="text-red-400 text-sm">{fetchError}</p>
+            <button onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r=>r.json()).then(d => { setIssues(Array.isArray(d)?d:d.data??d); setFetchError(null) }).catch(()=>setFetchError('Failed to load issues')).finally(()=>setLoading(false)) }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white transition-all">Retry</button>
+          </div>
+        )}
 
         {!loading && (
           <div className="overflow-x-auto">
@@ -282,10 +297,12 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
               </React.Fragment>
             ))}
 
-            {!loading && filtered.length === 0 && (
-              <div className="text-white/25 text-xs text-center py-8">
-                {search ? 'No issues match your search' : 'No issues found'}
-              </div>
+            {!loading && !fetchError && filtered.length === 0 && (
+              <EmptyState
+                icon={List}
+                title={search ? 'No issues match your search' : 'No issues found'}
+                description={search ? 'Try a different search term' : 'Issues will appear here once created'}
+              />
             )}
           </div>
         )}

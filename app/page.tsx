@@ -224,7 +224,7 @@ function NeedsAttentionBlock() {
       </div>
       <div className="space-y-2">
         {items.slice(0, 3).map((t: any, i: number) => (
-          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-white/10" style={{ background: '#0a0a0a' }}>
+          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-white/10" style={{ background: '#080808' }}>
             <span className="text-red-400 text-xs mt-0.5">{t.priority === 'critical' ? '🔴' : '🟠'}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -389,7 +389,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
           const badgeColor = s.count === 0 ? '#10b981' : s.count <= 3 ? '#f59e0b' : '#ef4444'
           const badgeBg = s.count === 0 ? '#10b98118' : s.count <= 3 ? '#f59e0b18' : '#ef444418'
           return (
-            <div key={s.label} className="rounded-xl border border-white/10 px-3 py-2.5" style={{ background: '#0a0a0a' }}>
+            <div key={s.label} className="rounded-xl border border-white/10 px-3 py-2.5" style={{ background: '#080808' }}>
               <div className="flex items-center gap-2">
                 <span className="text-xs">{s.icon}</span>
                 <span className="text-white/40 text-xs flex-1">{s.label}</span>
@@ -1953,7 +1953,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                             key={c.id}
                             className={
                               'group relative w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer ' +
-                              (activeChat === c.id ? 'bg-white/10 text-white' : sidebarFocusIdx === flatIdx ? 'bg-[#0f0f0f]/70 text-white/70 ring-1 ring-zinc-700' : 'text-white/40 hover:text-white/70 hover:bg-[#0f0f0f]')
+                              (activeChat === c.id ? 'bg-white/10 text-white' : sidebarFocusIdx === flatIdx ? 'bg-[#0f0f0f]/70 text-white/70 ring-1 ring-white/10' : 'text-white/40 hover:text-white/70 hover:bg-[#0f0f0f]')
                             }
                             onClick={() => { setActiveChat(c.id); setSidebarFocusIdx(flatIdx) }}
                             onContextMenu={(e) => {
@@ -2021,7 +2021,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     : ocSessions.filter(s => s.action !== 'cron' && !s.channel?.includes('Cron'))
                   if (items.length === 0) return <div className="p-4 text-center text-white/30 text-xs">No sessions found</div>
                   return items.map((s: any, i: number) => (
-                    <div key={i} className="px-3 py-2.5 border-b border-zinc-900 hover:bg-[#0f0f0f]/50 cursor-default">
+                    <div key={i} className="px-3 py-2.5 border-b border-white/10 hover:bg-[#0f0f0f]/50 cursor-default">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-base">{s.emoji || '🤖'}</span>
                         <span className="text-xs font-semibold text-white/70">{s.agentName || s.agentId}</span>
@@ -2072,7 +2072,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
       )}
 
       {/* CENTER: CHAT AREA */}
-      <div className="flex-1 flex flex-col min-w-0 relative" style={{background:'#0a0a0a'}}>
+      <div className="flex-1 flex flex-col min-w-0 relative" style={{background:'#080808'}}>
         {!activeConv ? (
           <div className="flex-1 flex flex-col items-center justify-center">
             <div className="text-center">
@@ -2194,7 +2194,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                         onChange={e => setSystemPromptDraft(e.target.value)}
                         onBlur={() => saveSystemPrompt(activeConv.id, systemPromptDraft)}
                         placeholder="Optional system prompt for this conversation..."
-                        className="w-full bg-[#0f0f0f] border border-white/10 rounded-lg px-3 py-2 text-xs text-white/70 placeholder-zinc-700 outline-none focus:border-white/20 resize-none"
+                        className="w-full bg-[#0f0f0f] border border-white/10 rounded-lg px-3 py-2 text-xs text-white/70 placeholder-white/30 outline-none focus:border-white/20 resize-none"
                       />
                       <p className="text-[9px] text-white/20">Auto-saves on blur. Prepended to every message in this conversation.</p>
                     </div>
@@ -2549,9 +2549,9 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   </div>
                   <div className="px-4 py-3 rounded-lg bg-[#0f0f0f] text-white/50">
                     <div className="flex gap-1 items-center">
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'0ms'}} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'150ms'}} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'300ms'}} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{animationDelay:'0ms'}} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{animationDelay:'150ms'}} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce" style={{animationDelay:'300ms'}} />
                     </div>
                   </div>
                 </div>
@@ -2764,7 +2764,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                           if (e.key === 'Escape') setShowImageUrlInput(false)
                         }}
                         placeholder="https://example.com/image.png"
-                        className="w-full bg-[#0f0f0f] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 placeholder-zinc-700 outline-none focus:border-white/20"
+                        className="w-full bg-[#0f0f0f] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 placeholder-white/30 outline-none focus:border-white/20"
                       />
                       <p className="text-[9px] text-white/20 mt-1">Press Enter to add preview</p>
                     </div>
@@ -3415,7 +3415,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   }
 
   const selectCls = "bg-transparent border border-white/10 rounded-lg px-2 py-1 text-xs text-white/40 outline-none focus:border-white/20"
-  const inputCls = "w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-white/20 placeholder-zinc-700"
+  const inputCls = "w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-white/20 placeholder-white/30"
   const labelCls = "text-[10px] uppercase tracking-widest text-white/30 mb-1"
 
   return (
@@ -3431,7 +3431,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
           </select>
           {hasAnyFilter && <button onClick={clearAllFilters} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-white/10 transition-colors">Clear all</button>}
-          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#0a0a0a'}}>
+          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#080808'}}>
             <button onClick={() => { setBoardGroupBy('status'); localStorage.setItem('board-group-by','status') }}
               className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='status'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
               Status
@@ -3517,7 +3517,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         <div className="flex-1 flex flex-col gap-3 min-h-0">
           <div className="flex items-center gap-3 flex-wrap">
             <input type="text" placeholder="Search closed tasks..." value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
-              className="bg-transparent border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/70 outline-none focus:border-white/20 placeholder-zinc-700 w-52" />
+              className="bg-transparent border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/70 outline-none focus:border-white/20 placeholder-white/30 w-52" />
             <select className={selectCls} value={archiveProject} onChange={e => setArchiveProject(e.target.value)}>
               <option value="">All Projects</option>
               {projects.map(p => <option key={p} value={p!}>{p}</option>)}
@@ -3577,7 +3577,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 acc[col.id] = group.children.filter(t => t.status === col.id).length; return acc
               }, {} as Record<string, number>)
               return (
-                <div key={group.label} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#0a0a0a'}}>
+                <div key={group.label} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#080808'}}>
                   <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-white/5 transition-colors"
                     style={{borderLeft: group.feature ? `3px solid ${PRIORITY_COLORS[group.feature.priority||'medium']||'#3f3f46'}` : '3px solid #27272a'}}>
                     <div className="flex-1 min-w-0">
@@ -3659,7 +3659,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 if (typeof window !== 'undefined') localStorage.setItem('board-biz-collapsed', JSON.stringify(next))
               }
               return (
-                <div key={bizKey} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#0a0a0a'}}>
+                <div key={bizKey} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#080808'}}>
                   {/* Business header */}
                   <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none">
                     <span className="text-base">{biz.emoji}</span>
@@ -3726,7 +3726,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                             onDragEnd={() => setDragId(null)}
                                             onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
                                             className={`rounded-xl border p-2.5 cursor-pointer transition-colors border-l-2 ${
-                                              task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
+                                              task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-white/20'
                                             } ${dragId===task.id ? 'opacity-50' : ''}`}
                                             style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a',
                                               borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}>
@@ -3800,7 +3800,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                     onDragEnd={() => setDragId(null)}
                     onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
                     className={`group rounded-xl border p-3 cursor-pointer transition-colors border-l-2 ${
-                      task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
+                      task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-white/20'
                     } ${dragId===task.id ? 'opacity-50' : ''}`}
                     style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a', borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderRightColor='#3f3f46';e.currentTarget.style.borderTopColor='#3f3f46';e.currentTarget.style.borderBottomColor='#3f3f46'}}
@@ -3885,7 +3885,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {!showArchive && hasMoreBoard && (
         <button onClick={() => setBoardLimit(prev => prev + 100)}
           className="w-full text-center text-xs text-white/50 hover:text-white/70 py-2.5 rounded-lg border border-white/10 hover:border-white/20 transition-all"
-          style={{background:'#0a0a0a'}}>
+          style={{background:'#080808'}}>
           Load 100 more ({allFiltered.length - boardLimit} remaining)
         </button>
       )}
@@ -3893,7 +3893,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* New Task Modal */}
       {newTask && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setNewTask(null)}>
-          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <h3 className="text-white font-semibold text-sm">New Task</h3>
             <div><p className={labelCls}>Title *</p><input className={inputCls} placeholder="Task title..." autoFocus
               value={newTask.title??''} onChange={e=>setNewTask({...newTask,title:e.target.value})} /></div>
@@ -3929,7 +3929,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={()=>setNewTask(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
               <button onClick={()=>{if(newTask.title?.trim()) createTask(newTask)}}
-                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-white/90 disabled:opacity-30 transition-colors"
                 disabled={!newTask.title?.trim()}>Create</button>
             </div>
           </div>
@@ -3939,7 +3939,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Edit/Detail Modal */}
       {editTask && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setEditTask(null)}>
-          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <h3 className="text-white font-semibold text-sm">Edit Task</h3>
               <button onClick={()=>setConfirmDelete(editTask.id)} className="text-[10px] text-red-500/60 hover:text-red-500 transition-colors">Delete</button>
@@ -3981,7 +3981,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   updateTask(editTask.id,fields)
                 }
               }}
-                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 transition-colors">Save</button>
+                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-white/90 transition-colors">Save</button>
             </div>
           </div>
         </div>
@@ -3990,7 +3990,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Delete confirm */}
       {confirmDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60" onClick={()=>setConfirmDelete(null)}>
-          <div className="rounded-2xl border border-white/10 p-6 text-center space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+          <div className="rounded-2xl border border-white/10 p-6 text-center space-y-4" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <p className="text-white text-sm">Delete this task?</p>
             <div className="flex justify-center gap-3">
               <button onClick={()=>setConfirmDelete(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
@@ -4029,9 +4029,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         const stepsLines = (t.steps_to_reproduce ?? '').split('\n').filter(l => l.trim())
         return (
           <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}>
-            <div className="w-full md:w-[480px] h-full border-l border-white/10 overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e => e.stopPropagation()}>
+            <div className="w-full md:w-[480px] h-full border-l border-white/10 overflow-y-auto" style={{background:'#080808'}} onClick={e => e.stopPropagation()}>
               {/* Header */}
-              <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-white/10" style={{background:'#0a0a0a'}}>
+              <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-white/10" style={{background:'#080808'}}>
                 <div className="flex items-center gap-2">
                   <button onClick={() => { setEditTask(t); setDetailTask(null); setBugDetailsOpen(false) }}
                     className="text-[10px] text-white/50 hover:text-white/70 transition-colors px-2 py-1 rounded-lg hover:bg-white/10">Edit</button>
@@ -4734,7 +4734,7 @@ export default function Home() {
       )}
 
       {/* SIDEBAR */}
-      <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-white/10 sticky top-0 h-screen" style={{background:'#0a0a0a'}}>
+      <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-white/10 sticky top-0 h-screen" style={{background:'#080808'}}>
         {/* MC-118: sidebar logo height matches topbar h-11 (44px) */}
         <div className="px-4 h-11 flex items-center border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -4798,7 +4798,7 @@ export default function Home() {
 
       {/* MOBILE MORE MENU */}
       {showMobileMore && (
-        <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-white/10" style={{background:'#0a0a0a', paddingBottom:0}}>
+        <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-white/10" style={{background:'#080808', paddingBottom:0}}>
           <div className="grid grid-cols-3 gap-px p-2">
             {NAV.filter(n => n.id !== 'divider' && !["overview","board","office","chat","calendar"].includes(n.id)).map(item => {
               const LIcon = LUCIDE_ICONS[item.id]
@@ -4844,7 +4844,7 @@ export default function Home() {
                   disabled={syncing}
                   className="text-[10px] px-3 py-1.5 rounded-lg border border-white/10 text-white/40 hover:text-white hover:border-white/20 bg-[#0f0f0f]/50 transition-all flex items-center gap-1.5 disabled:opacity-50">
                   {syncing ? (
-                    <span className="w-3 h-3 border border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
+                    <span className="w-3 h-3 border border-white/30 border-t-transparent rounded-full animate-spin inline-block" />
                   ) : (
                     <span>↻</span>
                   )}
@@ -4915,7 +4915,7 @@ export default function Home() {
                     { name: 'OpenRouter', type: 'balance', note: `$${(liveStatus?.openrouter?.remaining ?? 9.57).toFixed(2)} remaining`, color: liveStatus?.openrouter?.remaining < 2 ? '#ef4444' : '#10b981', icon: '🔀' },
                     { name: 'Brave Search', type: 'subscription', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
                   ].map(s => (
-                    <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5" style={{background:'#0a0a0a'}}>
+                    <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5" style={{background:'#080808'}}>
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-xs">{s.icon}</span>
                         <span className="text-white text-[11px] font-medium">{s.name}</span>
@@ -5146,7 +5146,7 @@ export default function Home() {
                 {(liveStatus?.recentActivity?.length ?? 0) > 5 && (
                   <button onClick={()=>{ setTab('activity'); if(typeof window!=='undefined') localStorage.setItem('mc-tab','activity') }}
                     className="mt-2 w-full text-center text-xs text-white/50 hover:text-white/70 py-2 rounded-lg border border-white/10 hover:border-white/20 transition-all"
-                    style={{background:'#0a0a0a'}}>
+                    style={{background:'#080808'}}>
                     View All Activity →
                   </button>
                 )}
@@ -5204,10 +5204,10 @@ export default function Home() {
               </div>
               })()}
               <div className="flex justify-center">
-                <div className="w-px h-6 bg-gradient-to-b from-zinc-600 to-transparent" />
+                <div className="w-px h-6 bg-gradient-to-b from-white/20 to-transparent" />
               </div>
               <div className="flex justify-center">
-                <div className="w-3/4 h-px bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
+                <div className="w-3/4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
               </div>
 
               {/* Active agents */}
@@ -5255,7 +5255,7 @@ export default function Home() {
                 <SH icon="📋">Planned Agents</SH>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {displayAgents.filter((a:any)=>a.status==='planned').map((a:any)=>(
-                    <div key={a.id} className="rounded-2xl p-5 border border-dashed cursor-pointer hover:border-white/20 transition-colors opacity-60 hover:opacity-90" style={{background:'#0a0a0a',borderColor:a.color+'20'}} onClick={()=>setAgentModal(a)}>
+                    <div key={a.id} className="rounded-2xl p-5 border border-dashed cursor-pointer hover:border-white/20 transition-colors opacity-60 hover:opacity-90" style={{background:'#080808',borderColor:a.color+'20'}} onClick={()=>setAgentModal(a)}>
                       <div className="flex items-center gap-3 mb-3">
                         <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
                           style={{background:a.color+'10',border:'1px dashed '+a.color+'25'}}>
@@ -5289,7 +5289,7 @@ export default function Home() {
               {/* Agent Detail Modal */}
               {agentModal && (
                 <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setAgentModal(null)}>
-                  <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                  <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl shrink-0" style={{background:agentModal.color+'18',border:'1px solid '+agentModal.color+'30'}}>
                         {agentModal.emoji}
@@ -5435,7 +5435,7 @@ export default function Home() {
                     return (
                       <div key={i} className={'rounded-lg border p-1.5 min-h-[60px] '+(calView==='month'?'min-h-[48px]':'')}
                         style={{
-                          background: isToday?'#1a1a30':inSprints.length>0?(inSprints[0].color+'08'):'#0a0a0a',
+                          background: isToday?'#1a1a30':inSprints.length>0?(inSprints[0].color+'08'):'#080808',
                           borderColor: isToday?'#ffffff30':inSprints.length>0?(inSprints[0].color+'25'):'#1e1e1e',
                           opacity: calView==='month'&&!isCurrentMonth?0.4:1,
                         }}>
@@ -5538,7 +5538,7 @@ export default function Home() {
               {/* Cron Detail Modal */}
               {cronModal && (
                 <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
-                  <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                  <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
                     <div className="flex items-center justify-between">
                       <h3 className="text-white font-semibold text-sm">{cronModal.id}</h3>
                       <button onClick={()=>setCronModal(null)} className="text-white/30 hover:text-white text-lg">✕</button>
@@ -5687,8 +5687,8 @@ export default function Home() {
                               {/* Hair */}
                               <div style={{position:'absolute',left:3,top:0,width:18,height:8,borderRadius:'50% 50% 0 0',background:agent.color,filter:'brightness(0.7)'}} />
                               {/* Eyes */}
-                              <div style={{position:'absolute',left:6,top:9,width:4,height:4,borderRadius:'50%',background:'#0a0a0a'}} />
-                              <div style={{position:'absolute',left:14,top:9,width:4,height:4,borderRadius:'50%',background:'#0a0a0a'}} />
+                              <div style={{position:'absolute',left:6,top:9,width:4,height:4,borderRadius:'50%',background:'#080808'}} />
+                              <div style={{position:'absolute',left:14,top:9,width:4,height:4,borderRadius:'50%',background:'#080808'}} />
                               {/* Smile */}
                               <div style={{position:'absolute',left:7,top:15,width:10,height:4,borderRadius:'0 0 6px 6px',borderBottom:'2px solid #0a0a0a',borderLeft:'1px solid #0a0a0a',borderRight:'1px solid #0a0a0a'}} />
                             </div>
@@ -5748,8 +5748,8 @@ export default function Home() {
                             <div style={{position:'absolute',left:'50%',top:'100%',transform:'translateX(-50%)',width:14,height:3,borderRadius:'50%',background:'rgba(0,0,0,0.4)'}} />
                             <div style={{position:'relative',width:22,height:22,borderRadius:'50%',background:agent.color,border:'3px solid '+agent.color+'cc'}}>
                               <div style={{position:'absolute',left:3,top:0,width:16,height:7,borderRadius:'50% 50% 0 0',background:agent.color,filter:'brightness(0.65)'}} />
-                              <div style={{position:'absolute',left:5,top:8,width:4,height:4,borderRadius:'50%',background:'#0a0a0a'}} />
-                              <div style={{position:'absolute',left:13,top:8,width:4,height:4,borderRadius:'50%',background:'#0a0a0a'}} />
+                              <div style={{position:'absolute',left:5,top:8,width:4,height:4,borderRadius:'50%',background:'#080808'}} />
+                              <div style={{position:'absolute',left:13,top:8,width:4,height:4,borderRadius:'50%',background:'#080808'}} />
                               <div style={{position:'absolute',left:6,top:14,width:9,height:3,borderRadius:'0 0 5px 5px',borderBottom:'2px solid #0a0a0a',borderLeft:'1px solid #0a0a0a',borderRight:'1px solid #0a0a0a'}} />
                             </div>
                           </div>
@@ -5975,7 +5975,7 @@ export default function Home() {
                               className={'w-full text-left px-4 py-2 border-l-2 transition-all '+(
                                 openMem===f.filename
                                   ? 'border-l-indigo-500 bg-white/10'
-                                  : 'border-l-transparent hover:bg-[#0f0f0f]/50 hover:border-l-zinc-700'
+                                  : 'border-l-transparent hover:bg-[#0f0f0f]/50 hover:border-l-white/10'
                               )}>
                               <div className="flex items-center gap-2">
                                 {/* Calendar icon */}
@@ -6006,7 +6006,7 @@ export default function Home() {
               </div>
 
               {/* Right panel: journal view */}
-              <div className={`${openMem ? 'flex' : 'hidden md:flex'} flex-1 flex-col overflow-hidden`} style={{background:'#0a0a0a'}}>
+              <div className={`${openMem ? 'flex' : 'hidden md:flex'} flex-1 flex-col overflow-hidden`} style={{background:'#080808'}}>
               {openMem && <button onClick={()=>setOpenMem(null)} className="md:hidden shrink-0 flex items-center gap-2 px-4 py-3 border-b border-white/10 text-white/40 text-xs hover:text-white">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
                 Back to list
