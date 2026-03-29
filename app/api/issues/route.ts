@@ -1,5 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { exec } from 'child_process'
+
+const DISCORD_CHANNEL = '1487584901678104698'
+const PROJECT_EMOJI: Record<string, string> = {
+  Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️'
+}
+
+function notifyDiscord(issue: { task_key?: string; title?: string; project?: string }) {
+  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
+  const key = issue.task_key ?? '?'
+  const msg = `${emoji} **[${key}]** ${issue.title ?? ''}`
+  const escaped = msg.replace(/'/g, `'\\''`)
+  exec(`openclaw message send --channel discord --target "channel:${DISCORD_CHANNEL}" --message '${escaped}'`,
+    (err) => { if (err) console.error('[discord-notify]', err.message) })
+}
 
 const supabase = createClient(
   'https://twthgapiouiqhavrcnry.supabase.co',
@@ -95,6 +110,12 @@ export async function PATCH(req: NextRequest) {
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ── Instant Discord notification on done + code_change ──
+  if (fields.status === 'done' && fields.resolution_type === 'code_change' && data) {
+    notifyDiscord(data)
+  }
+
   return NextResponse.json(data)
 }
 
