@@ -7,6 +7,9 @@ import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanba
 import FeaturesTab from '@/components/tabs/FeaturesTab'
 import PipelineTab from '@/components/tabs/PipelineTab'
 import IssuesTab from '@/components/tabs/IssuesTab'
+import BusinessRail from '@/components/BusinessRail'
+import OnboardingWizard from '@/components/OnboardingWizard'
+import IssuePreviewCard from '@/components/IssuePreviewCard'
 
 const KEMUNI_START     = new Date('2026-03-21')
 const KEMUNI_DEADLINE  = new Date('2026-04-20')
@@ -730,6 +733,8 @@ function ChatTab() {
   const [isSearching, setIsSearching] = useState(false)
   // Feature 13: follow-up suggestions
   const [followUpSuggestions, setFollowUpSuggestions] = useState<string[]>([])
+  // MC-184: NL issue draft from chat
+  const [issueDraft, setIssueDraft] = useState<{title:string;type:string;priority:string;assignee:string;acceptance_criteria:string}|null>(null)
   // Feature 14: keyboard cheatsheet
   const [showShortcuts, setShowShortcuts] = useState(false)
   // Feature 16: starred filter
@@ -1375,6 +1380,7 @@ function ChatTab() {
             }
             if (parsed.done) {
               finalId = parsed.id || streamMsgId
+              if (parsed.issue_draft) setIssueDraft(parsed.issue_draft)
               break
             }
             // Tool call visibility: detect tool_use events
@@ -3255,7 +3261,7 @@ const TYPE_COLORS: Record<string,string> = {
   feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b',
 }
 
-function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }: { featureFilter?: string; featureFilterName?: string; onClearFeatureFilter?: () => void }) {
+function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, projectFilter }: { featureFilter?: string; featureFilterName?: string; onClearFeatureFilter?: () => void; projectFilter?: string | null }) {
   const [tasks, setTasks]         = useState<Task[]>([])
   const [loading, setLoading]     = useState(true)
   const [dragId, setDragId]       = useState<string|null>(null)
@@ -3373,6 +3379,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
   const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
   const allFiltered = tasks.filter(t => {
     if (t.status === 'closed') return false
+    if (projectFilter && (t as any).project !== projectFilter) return false
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
     if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
     if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee ?? '')) return false
@@ -4462,6 +4469,9 @@ export default function Home() {
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
   const [runningWorkflow, setRunningWorkflow] = useState<string|null>(null)
+  // MC-176: Business rail state
+  const [selectedBusiness, setSelectedBusiness] = useState<string|null>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [boardFeatureFilter, setBoardFeatureFilter] = useState<string|undefined>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -4696,6 +4706,21 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex" style={{background:'#080808'}}>
+
+      {/* MC-176: BUSINESS RAIL */}
+      <BusinessRail
+        selected={selectedBusiness}
+        onSelect={setSelectedBusiness}
+        onNew={() => setShowOnboarding(true)}
+      />
+
+      {/* MC-179: ONBOARDING WIZARD */}
+      {showOnboarding && (
+        <OnboardingWizard
+          onComplete={(name) => { setSelectedBusiness(name); setShowOnboarding(false) }}
+          onClose={() => setShowOnboarding(false)}
+        />
+      )}
 
       {/* SIDEBAR */}
       <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-zinc-800/60 sticky top-0 h-screen" style={{background:'#0a0a0a'}}>
@@ -6147,22 +6172,22 @@ export default function Home() {
 
           {/* ── BOARD ── */}
           {tab==='board' && (
-            <KanbanBoard featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} />
+            <KanbanBoard featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} projectFilter={selectedBusiness} />
           )}
 
           {/* ── FEATURES ── */}
           {tab==='features' && (
-            <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); setTab('board'); if (typeof window !== 'undefined') localStorage.setItem('mc-tab', 'board') }} />
+            <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); setTab('board'); if (typeof window !== 'undefined') localStorage.setItem('mc-tab', 'board') }} projectFilter={selectedBusiness} />
           )}
 
           {/* ── PIPELINE ── */}
           {tab==='pipeline' && (
-            <PipelineTab />
+            <PipelineTab projectFilter={selectedBusiness} />
           )}
 
           {/* ── ISSUES ── */}
           {tab==='issues' && (
-            <IssuesTab />
+            <IssuesTab projectFilter={selectedBusiness} />
           )}
 
           {/* ── AUTOMATIONS (n8n embed) ── */}

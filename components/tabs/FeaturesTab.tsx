@@ -46,7 +46,7 @@ function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: 
   )
 }
 
-export default function FeaturesTab({ onViewIssues }: { onViewIssues?: (featureId: string, featureName: string) => void }) {
+export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIssues?: (featureId: string, featureName: string) => void; projectFilter?: string | null }) {
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
   const [projFilters, setProjFilters] = useState<string[]>([])
@@ -62,6 +62,7 @@ export default function FeaturesTab({ onViewIssues }: { onViewIssues?: (featureI
 
   const features = issues.filter(i => i.type === 'feature')
   const allFiltered = features.filter(f => {
+    if (projectFilter && f.project !== projectFilter) return false
     if (projFilters.length > 0 && !projFilters.includes(f.project ?? '')) return false
     if (statusFilters.length > 0 && !statusFilters.includes(f.status)) return false
     return true

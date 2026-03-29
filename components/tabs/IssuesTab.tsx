@@ -37,7 +37,7 @@ const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
 type SortKey = 'task_key'|'type'|'title'|'status'|'priority'|'assignee'|'sprint'
 type SortDir = 'asc'|'desc'
 
-export default function IssuesTab() {
+export default function IssuesTab({ projectFilter }: { projectFilter?: string | null }) {
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -59,6 +59,7 @@ export default function IssuesTab() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     let list = issues
+    if (projectFilter) list = list.filter(i => i.project === projectFilter)
     if (q) list = list.filter(i => i.title.toLowerCase().includes(q) || (i.task_key??'').toLowerCase().includes(q))
     list = [...list].sort((a,b) => {
       const av = (a[sortKey]??'') as string

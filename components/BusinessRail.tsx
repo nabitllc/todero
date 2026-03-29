@@ -1,0 +1,81 @@
+'use client'
+import { useEffect, useState } from 'react'
+import { Plus } from 'lucide-react'
+
+interface Business { id: string; name: string; type: string; status: string }
+
+const EMOJI: Record<string, string> = {
+  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠',
+  'Infrastructure': '⚙️', 'KAOS': '🤖'
+}
+
+function getInitials(name: string) {
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
+
+interface Props {
+  selected: string | null
+  onSelect: (name: string | null) => void
+  onNew: () => void
+  refreshKey?: number
+}
+
+export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: Props) {
+  const [businesses, setBusinesses] = useState<Business[]>([])
+
+  useEffect(() => {
+    fetch('/api/businesses').then(r => r.json()).then(setBusinesses).catch(() => {})
+  }, [refreshKey])
+
+  return (
+    <div className="flex flex-col items-center gap-2 w-14 min-h-screen bg-[#060606] border-r border-white/5 py-3 shrink-0">
+      {/* All */}
+      <button
+        onClick={() => onSelect(null)}
+        title="All Businesses"
+        className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold transition-all
+          ${selected === null ? 'bg-white text-black ring-2 ring-white' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}
+      >
+        All
+      </button>
+
+      {/* Divider */}
+      <div className="w-6 h-px bg-white/10 my-1" />
+
+      {/* Business list */}
+      {businesses.filter(b => b.status === 'active').map(b => {
+        const emoji = EMOJI[b.name]
+        const isSelected = selected === b.name
+        return (
+          <div key={b.id} className="relative group">
+            <button
+              onClick={() => onSelect(b.name)}
+              title={b.name}
+              className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-all
+                ${isSelected ? 'ring-2 ring-white rounded-2xl' : 'hover:rounded-2xl'}`}
+              style={{ background: isSelected ? '#1a1a1a' : '#111' }}
+            >
+              {emoji || <span className="text-xs font-bold text-white/60">{getInitials(b.name)}</span>}
+            </button>
+            {/* Tooltip */}
+            <div className="absolute left-14 top-1/2 -translate-y-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 border border-white/10">
+              {b.name}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* New business */}
+      <button
+        onClick={onNew}
+        title="Add Business"
+        className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white/40 hover:text-white transition-all"
+      >
+        <Plus size={18} />
+      </button>
+    </div>
+  )
+}

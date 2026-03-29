@@ -41,7 +41,7 @@ const COLUMN_OPTIONS: { label: string; status: string; color: string }[] = [
   { label: 'Done', status: 'done', color: '#10b981' },
 ]
 
-export default function PipelineTab() {
+export default function PipelineTab({ projectFilter }: { projectFilter?: string | null }) {
   const [issues, setIssues] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterMode>('both')
@@ -130,6 +130,12 @@ export default function PipelineTab() {
     return map
   }, [issues])
 
+  // MC-178: Filter by selected business
+  const filteredIssues = useMemo(() => {
+    if (!projectFilter) return issues
+    return issues.filter(i => i.project === projectFilter)
+  }, [issues, projectFilter])
+
   // Classify each issue into a stage
   const stageMap = useMemo(() => {
     const map: Record<PipelineStage, { features: any[]; issues: any[] }> = {
@@ -140,7 +146,7 @@ export default function PipelineTab() {
       "PR Queue": { features: [], issues: [] },
       Merged: { features: [], issues: [] },
     }
-    for (const issue of issues) {
+    for (const issue of filteredIssues) {
       const children = childrenMap[issue.id]
       const stage = getPipelineStage(issue, children)
       if (issue.type === 'feature') {
@@ -156,7 +162,7 @@ export default function PipelineTab() {
       map[stage].issues.sort(sortByPriority)
     }
     return map
-  }, [issues, childrenMap])
+  }, [filteredIssues, childrenMap])
 
   // Find which agents are in which stage
   const agentStageMap = useMemo(() => {
