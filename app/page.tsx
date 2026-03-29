@@ -3364,6 +3364,7 @@ export default function Home() {
   const [blink, setBlink]   = useState(true)
   const [tick, setTick]     = useState(0)
   const [hoverDesk, setHoverDesk] = useState<string|null>(null)
+  const [showMobileMore, setShowMobileMore] = useState(false)
   const [liveStatus, setLiveStatus] = useState<any>(null)
   const [statusAt, setStatusAt] = useState<number>(0)
   const [agoSec, setAgoSec] = useState<number>(0)
@@ -3523,17 +3524,44 @@ export default function Home() {
 
       {/* MOBILE BOTTOM TAB BAR */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-950 border-t border-zinc-800 flex justify-around px-1" style={{paddingBottom: "env(safe-area-inset-bottom, 16px)"}}>
-        {NAV.filter(item => item.id !== "divider" && ["overview","board","chat","team"].includes(item.id)).map(item => {
-          const LIcon = LUCIDE_ICONS[item.id]
+        {(["overview","office","calendar","chat"] as Tab[]).map(id => {
+          const item = NAV.find(n => n.id === id)!
+          const LIcon = LUCIDE_ICONS[id]
           return (
-            <button key={item.id} onClick={() => { setTab(item.id as Tab); if(item.id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", item.id) }}
-              className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-[50px] text-xs " + (tab === item.id ? "text-white" : "text-zinc-500")}>
+            <button key={id} onClick={() => { setTab(id); setShowMobileMore(false); if(id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", id) }}
+              className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-[50px] text-xs " + (tab === id ? "text-white" : "text-zinc-500")}>
               {LIcon ? <LIcon size={18} /> : <span>{item.icon}</span>}
               <span className="text-[9px]">{item.label.split(" ")[0]}</span>
             </button>
           )
         })}
+        {/* More button */}
+        <button onClick={() => setShowMobileMore(v => !v)}
+          className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-[50px] text-xs " + (showMobileMore ? "text-white" : "text-zinc-500")}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
+          </svg>
+          <span className="text-[9px]">More</span>
+        </button>
       </nav>
+
+      {/* MOBILE MORE MENU */}
+      {showMobileMore && (
+        <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-zinc-800" style={{background:'#0a0a0a', paddingBottom:0}}>
+          <div className="grid grid-cols-3 gap-px p-2">
+            {NAV.filter(n => n.id !== 'divider' && !["overview","office","calendar","chat"].includes(n.id)).map(item => {
+              const LIcon = LUCIDE_ICONS[item.id]
+              return (
+                <button key={item.id} onClick={() => { setTab(item.id as Tab); setShowMobileMore(false); if(item.id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", item.id) }}
+                  className={"flex flex-col items-center gap-1 p-3 rounded-xl text-xs " + (tab === item.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900")}>
+                  {LIcon ? <LIcon size={20} /> : <span className="text-lg">{item.icon}</span>}
+                  <span className="text-[10px]">{item.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col min-h-screen overflow-auto">
@@ -3552,48 +3580,6 @@ export default function Home() {
           {/* ── OVERVIEW ── */}
           {tab==='overview' && (
             <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sprintProjects.map(proj=>{
-                  const dl=new Date(proj.deadline), st=new Date(proj.startDate)
-                  const left=daysUntil(dl), elap=daysSince(st), pct=miniPct(elap,proj.totalDays)
-                  const dlLabel=dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})
-                  const isUrgent = left<=2 && proj.color!=='#ffffff'
-                  return (
-                    <div key={proj.id} className={`rounded-2xl p-4 md:p-5 border ${proj.borderColor} card-glow`} style={{background:proj.bg}}>
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="min-w-0 flex-1 mr-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{color:proj.color==='#ffffff'?'#71717a':proj.color+'b3'}}>{proj.name}</p>
-                          <p className="text-white text-xs sm:text-sm font-medium truncate">{proj.desc}</p>
-                        </div>
-                        <span className="text-xl">{proj.emoji}</span>
-                      </div>
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-3">
-                        <span className="text-3xl md:text-4xl font-bold tabular-nums" style={{color:isUrgent?'#ef4444':proj.color}}>{left}</span>
-                        <span className="text-zinc-500 text-sm"> Days</span>
-                        <span className="ml-auto text-zinc-600 text-xs">Day {elap}/{proj.totalDays}</span>
-                      </div>
-                      <Bar v={pct} color={proj.color} bg={proj.color==='#ffffff'?'#1e1e1e':'#1a0a2a'} />
-                      <div className="flex flex-col sm:flex-row justify-between mt-1.5 gap-0.5">
-                        <span className="text-zinc-600 text-[10px]">{pct}% elapsed</span>
-                        <span className="text-zinc-600 text-[10px]">{dlLabel}</span>
-                      </div>
-                      {proj.taskCounts && proj.taskCounts.total > 0 && (
-                        <div className="mt-3 pt-3 border-t border-zinc-800/40">
-                          <div className="flex justify-between mb-1.5">
-                            <span className="text-zinc-600 text-[10px]">Tasks</span>
-                            <span className="text-zinc-500 text-[10px]">{proj.taskCounts.done}/{proj.taskCounts.total} done</span>
-                          </div>
-                          <Bar v={proj.taskProgress} color='#10b981' bg='#0a1a12' />
-                          <div className="flex gap-3 mt-1">
-                            {proj.taskCounts.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {proj.taskCounts.inProgress} active</span>}
-                            {proj.taskCounts.open > 0 && <span className="text-zinc-600 text-[9px]">○ {proj.taskCounts.open} open</span>}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
 
               {/* ── Project Health Card ── */}
               {(()=>{
@@ -3649,6 +3635,49 @@ export default function Home() {
                 )
               })()}
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {sprintProjects.map(proj=>{
+                  const dl=new Date(proj.deadline), st=new Date(proj.startDate)
+                  const left=daysUntil(dl), elap=daysSince(st), pct=miniPct(elap,proj.totalDays)
+                  const dlLabel=dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})
+                  const isUrgent = left<=2 && proj.color!=='#ffffff'
+                  return (
+                    <div key={proj.id} className={`rounded-2xl p-4 md:p-5 border ${proj.borderColor} card-glow`} style={{background:proj.bg}}>
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="min-w-0 flex-1 mr-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{color:proj.color==='#ffffff'?'#71717a':proj.color+'b3'}}>{proj.name}</p>
+                          <p className="text-white text-xs sm:text-sm font-medium truncate">{proj.desc}</p>
+                        </div>
+                        <span className="text-xl">{proj.emoji}</span>
+                      </div>
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-3">
+                        <span className="text-3xl md:text-4xl font-bold tabular-nums" style={{color:isUrgent?'#ef4444':proj.color}}>{left}</span>
+                        <span className="text-zinc-500 text-sm"> Days</span>
+                        <span className="ml-auto text-zinc-600 text-xs">Day {elap}/{proj.totalDays}</span>
+                      </div>
+                      <Bar v={pct} color={proj.color} bg={proj.color==='#ffffff'?'#1e1e1e':'#1a0a2a'} />
+                      <div className="flex flex-col sm:flex-row justify-between mt-1.5 gap-0.5">
+                        <span className="text-zinc-600 text-[10px]">{pct}% elapsed</span>
+                        <span className="text-zinc-600 text-[10px]">{dlLabel}</span>
+                      </div>
+                      {proj.taskCounts && proj.taskCounts.total > 0 && (
+                        <div className="mt-3 pt-3 border-t border-zinc-800/40">
+                          <div className="flex justify-between mb-1.5">
+                            <span className="text-zinc-600 text-[10px]">Tasks</span>
+                            <span className="text-zinc-500 text-[10px]">{proj.taskCounts.done}/{proj.taskCounts.total} done</span>
+                          </div>
+                          <Bar v={proj.taskProgress} color='#10b981' bg='#0a1a12' />
+                          <div className="flex gap-3 mt-1">
+                            {proj.taskCounts.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {proj.taskCounts.inProgress} active</span>}
+                            {proj.taskCounts.open > 0 && <span className="text-zinc-600 text-[9px]">○ {proj.taskCounts.open} open</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
               {/* Live Activity Feed (mini) */}
               <div>
                 <SH icon="📡" sub={liveStatus?.recentActivity?.length ? '● live' : undefined}>Recent Activity</SH>
@@ -3686,30 +3715,6 @@ export default function Home() {
                   </button>
                 )}
               </div>
-
-              {/* OpenRouter Balance — live */}
-              {(()=>{
-                const or = liveStatus?.openrouter
-                const remaining = or?.remaining ?? 9.57
-                const limit = or?.limit ?? 10
-                const used = or?.used ?? 0.43
-                const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
-                return (
-                  <div className="rounded-2xl border border-zinc-800/60 p-5" style={{background:'#0f0f0f'}}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-sm">💳</span>
-                      <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">OpenRouter Balance</span>
-                      {liveStatus && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg" title="Live data" />}
-                    </div>
-                    <div className="flex items-baseline gap-2 mb-2">
-                      <span className="text-2xl font-bold text-white tabular-nums">${remaining.toFixed(2)}</span>
-                      <span className="text-zinc-600 text-sm">/ ${limit.toFixed(2)}</span>
-                      <span className="ml-auto text-zinc-600 text-xs">${used.toFixed(2)} used</span>
-                    </div>
-                    <Bar v={pct} color="#3b82f6" bg="#1a1a2a" />
-                  </div>
-                )
-              })()}
 
             </div>
           )}
