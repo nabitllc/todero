@@ -219,7 +219,7 @@ function AttentionAndShipped({agents}:{agents:any[]}) {
         <SH icon="🚨">Needs Attention</SH>
         <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
           {data.attention.length===0
-            ? <div className="px-4 py-4 flex items-center gap-2 text-emerald-400 text-sm"><span>✅</span><span>All clear</span></div>
+            ? <div className="px-4 py-4 flex items-center gap-2 text-emerald-400 text-sm"><span>🟢</span><span>All clear</span></div>
             : data.attention.slice(0,5).map((t:any,i:number,arr:any[])=>(
               <div key={i} className={'flex items-center gap-3 px-4 py-3 border-l-2 border-red-800 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
                 <span className="text-xs">🔴</span>
