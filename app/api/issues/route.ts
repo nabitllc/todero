@@ -34,10 +34,27 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── DoF: features require description ──
+  if (type === 'feature' && !description?.trim()) {
+    return NextResponse.json(
+      { error: 'Feature requires: description' },
+      { status: 422 }
+    )
+  }
+
+  // ── Sprint required for non-backlog issues ──
+  const effectiveStatus = status ?? 'open'
+  if (effectiveStatus !== 'backlog' && !sprint?.trim()) {
+    return NextResponse.json(
+      { error: 'sprint is required for non-backlog issues. Assign a sprint date (YYYY-MM-DD) or set status to backlog.' },
+      { status: 422 }
+    )
+  }
+
   const { data, error } = await supabase
     .from('issues')
     .insert({
-      title, description, status: status ?? 'open', assignee, project,
+      title, description, status: effectiveStatus, assignee, project,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
       acceptance_criteria, sprint, parent_id,
       ...(test_tier ? { test_tier } : {}),
@@ -54,6 +71,23 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json()
   const { id, ...fields } = body
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  // ── Sprint required if moving out of backlog ──
+  if (fields.status && fields.status !== 'backlog' && !fields.sprint) {
+    // Check if existing issue already has a sprint
+    const { data: existing } = await supabase
+      .from('issues')
+      .select('sprint')
+      .eq('id', id)
+      .single()
+    if (!existing?.sprint) {
+      return NextResponse.json(
+        { error: 'sprint is required before moving issue out of backlog. Set sprint (YYYY-MM-DD) first.' },
+        { status: 422 }
+      )
+    }
+  }
+
   const { data, error } = await supabase
     .from('issues')
     .update({ ...fields, updated_at: new Date().toISOString() })
