@@ -345,14 +345,24 @@ const AGENT_MODEL_MAP: Record<string, string> = {
 }
 
 // Model options available in chat (maps to OpenClaw agent or model override)
-const MODEL_OPTIONS = [
-  { id: 'default',                       label: '⚡ Agent default',          desc: 'Use the selected agent\'s default model' },
-  { id: 'anthropic/claude-sonnet-4-6',   label: '🟣 Claude Sonnet',          desc: 'Best for complex tasks' },
-  { id: 'anthropic/claude-haiku-4-5',    label: '🔵 Claude Haiku',           desc: 'Fast, lightweight' },
-  { id: 'anthropic/claude-opus-4-6',     label: '🔶 Claude Opus',            desc: 'Most powerful' },
-  { id: 'ollama/gemma3:4b',              label: '🟢 Gemma 3 4B (local)',     desc: 'Private, free, offline' },
-  { id: 'openrouter/auto',               label: '🔀 OpenRouter auto',        desc: 'Best available via OpenRouter' },
+// Grouped by provider with context window sizes
+const MODEL_OPTIONS: { id: string; label: string; desc: string; provider: string; ctx?: string }[] = [
+  { id: 'default',                       label: '⚡ Agent default',          desc: 'Use the selected agent\'s default model', provider: 'System' },
+  // Anthropic
+  { id: 'anthropic/claude-sonnet-4-6',   label: '🟣 Claude Sonnet 4.6',     desc: 'Best for complex tasks',     provider: 'Anthropic', ctx: '200k' },
+  { id: 'anthropic/claude-haiku-4-5',    label: '🔵 Claude Haiku 4.5',      desc: 'Fast, lightweight',          provider: 'Anthropic', ctx: '200k' },
+  { id: 'anthropic/claude-opus-4-6',     label: '🔶 Claude Opus 4.6',       desc: 'Most powerful',              provider: 'Anthropic', ctx: '200k' },
+  // OpenRouter
+  { id: 'openrouter/auto',               label: '🔀 OpenRouter auto',        desc: 'Best available via OpenRouter', provider: 'OpenRouter' },
+  { id: 'openrouter/google/gemini-2.5-pro', label: '🔷 Gemini 2.5 Pro',     desc: 'Google flagship',            provider: 'OpenRouter', ctx: '1M' },
+  { id: 'openrouter/deepseek/deepseek-r1', label: '🧩 DeepSeek R1',         desc: 'Reasoning model',            provider: 'OpenRouter', ctx: '128k' },
+  { id: 'openrouter/meta-llama/llama-4-maverick', label: '🦙 Llama 4 Maverick', desc: 'Open weights',          provider: 'OpenRouter', ctx: '1M' },
+  { id: 'openrouter/qwen/qwen3-235b-a22b', label: '🌐 Qwen3 235B',         desc: 'MoE reasoning',              provider: 'OpenRouter', ctx: '128k' },
+  // Ollama (local)
+  { id: 'ollama/gemma3:4b',              label: '🟢 Gemma 3 4B',            desc: 'Private, free, offline',     provider: 'Ollama', ctx: '128k' },
 ]
+
+const MODEL_PROVIDERS = Array.from(new Set(MODEL_OPTIONS.map(m => m.provider)))
 
 // Expanded file type groups
 const FILE_TYPE_GROUPS = [
@@ -533,7 +543,7 @@ function ChatTab() {
   const [showSlashPalette, setShowSlashPalette] = useState(false)
   const [slashPaletteIdx, setSlashPaletteIdx] = useState(0)
   // NEW: Tool call indicators (ephemeral, local-only)
-  const [toolIndicators, setToolIndicators] = useState<Record<string, {name:string;input:string;expanded:boolean}[]>>({})
+  const [toolIndicators, setToolIndicators] = useState<Record<string, {name:string;input:string;output?:string;expanded:boolean}[]>>({})
   // NEW: Thinking/reasoning content per stream message
   const [thinkingContent, setThinkingContent] = useState<Record<string,string>>({})
   // NEW: Approval buttons state (per message id, true = used)
@@ -586,6 +596,9 @@ function ChatTab() {
     { cmd: '/pin',     icon: '📌', desc: 'Toggle pin on current conversation' },
     { cmd: '/export',  icon: '↓',  desc: 'Export this conversation as Markdown' },
     { cmd: '/imagine', icon: '🎨', desc: 'Generate an image: /imagine a purple cat in space' },
+    { cmd: '/tasks',   icon: '📋', desc: 'Show open tasks for current sprint' },
+    { cmd: '/deploy',  icon: '🚀', desc: 'Trigger a deploy or show deploy status' },
+    { cmd: '/agents',  icon: '👥', desc: 'List active agents and their status' },
   ]
   const slashFilter = inputVal.startsWith('/') ? SLASH_COMMANDS.filter(c => c.cmd.startsWith(inputVal.split(' ')[0].toLowerCase())) : SLASH_COMMANDS
 
@@ -889,6 +902,25 @@ function ChatTab() {
       } finally {
         setLoading(false)
       }
+    } else if (cmd === '/tasks') {
+      try {
+        const r = await fetch('/api/issues')
+        const data = await r.json()
+        const open = (Array.isArray(data) ? data : []).filter((i: any) => i.status === 'open' || i.status === 'in_progress')
+        const lines = open.slice(0, 15).map((i: any) => `- **${i.task_key || '?'}** ${i.title} — _${i.status}_ (${i.priority || 'med'}) ${i.assignee ? `→ ${i.assignee}` : ''}`).join('\n')
+        const tasksMsg: ChatMessage = { id: 'tasks-'+Date.now(), role: 'assistant', content: `**Open Tasks** (${open.length})\n\n${lines || '_No open tasks_'}`, ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, tasksMsg] } : c))
+      } catch {
+        const errMsg: ChatMessage = { id: 'tasks-err-'+Date.now(), role: 'assistant', content: '❌ Could not fetch tasks', ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
+      }
+    } else if (cmd === '/deploy') {
+      const deployMsg: ChatMessage = { id: 'deploy-'+Date.now(), role: 'assistant', content: '**Deploy Status**\n\n- Vercel: auto-deploy on push to `main`\n- Last deploy: check [Vercel dashboard](https://vercel.com)\n- To trigger: push to main or run `vercel --prod`\n\n_Tip: Use the chat to ask KAOS to deploy._', ts: Date.now() }
+      setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, deployMsg] } : c))
+    } else if (cmd === '/agents') {
+      const agentLines = AGENT_OPTIONS.map(a => `- ${a.label} — ${a.desc}`).join('\n')
+      const agentsMsg: ChatMessage = { id: 'agents-'+Date.now(), role: 'assistant', content: `**Active Agents**\n\n${agentLines}\n\n_Select an agent using the dropdown above the input._`, ts: Date.now() }
+      setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, agentsMsg] } : c))
     }
   }
 
@@ -1162,6 +1194,21 @@ function ChatTab() {
                   }))
                 }
               } catch { /* not JSON */ }
+            }
+            // Tool result: capture output for tool calls
+            if (parsed.tool_result) {
+              const tr = parsed.tool_result
+              setToolIndicators(prev => {
+                const existing = prev[streamMsgId] || []
+                // Attach output to the last tool indicator (most recent tool call)
+                if (existing.length > 0) {
+                  const updated = [...existing]
+                  const last = updated[updated.length - 1]
+                  updated[updated.length - 1] = { ...last, output: typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output || tr.content || '') }
+                  return { ...prev, [streamMsgId]: updated }
+                }
+                return prev
+              })
             }
             // Reasoning/thinking blocks
             const thinkingDelta = parsed.choices?.[0]?.delta?.thinking || parsed.thinking
@@ -2102,9 +2149,22 @@ function ChatTab() {
                                 <span className="text-zinc-600 text-[9px] ml-auto">{tool.expanded ? '▲' : '▼'}</span>
                               </button>
                               {tool.expanded && (
-                                <pre className="px-3 pb-2 text-[10px] font-mono text-zinc-500 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
-                                  {tool.input}
-                                </pre>
+                                <div className="px-3 pb-2 space-y-1">
+                                  <div>
+                                    <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Input</span>
+                                    <pre className="text-[10px] font-mono text-zinc-500 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
+                                      {tool.input}
+                                    </pre>
+                                  </div>
+                                  {tool.output && (
+                                    <div>
+                                      <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Output</span>
+                                      <pre className="text-[10px] font-mono text-zinc-400 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
+                                        {tool.output}
+                                      </pre>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           ))}
@@ -2486,8 +2546,14 @@ function ChatTab() {
                   disabled={isSending}
                   className="hidden sm:block px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
                   title="Select model">
-                  {MODEL_OPTIONS.map(m => (
-                    <option key={m.id} value={m.id} title={m.desc}>{m.label}</option>
+                  {MODEL_PROVIDERS.map(provider => (
+                    <optgroup key={provider} label={provider}>
+                      {MODEL_OPTIONS.filter(m => m.provider === provider).map(m => (
+                        <option key={m.id} value={m.id} title={m.desc}>
+                          {m.label}{m.ctx ? ` (${m.ctx})` : ''}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
 

@@ -112,6 +112,23 @@ export async function POST(req: NextRequest) {
                   `data: ${JSON.stringify({ delta, id: finalId })}\n\n`
                 ))
               }
+              // Forward tool_use events to client
+              if (parsed.choices?.[0]?.delta?.tool_calls) {
+                for (const tc of parsed.choices[0].delta.tool_calls) {
+                  if (tc.function) {
+                    controller.enqueue(encoder.encode(
+                      `data: ${JSON.stringify({ tool_use: { name: tc.function.name, input: tc.function.arguments }, id: finalId })}\n\n`
+                    ))
+                  }
+                }
+              }
+              // Forward thinking/reasoning blocks
+              const thinking = parsed.choices?.[0]?.delta?.reasoning_content || parsed.choices?.[0]?.delta?.thinking
+              if (thinking) {
+                controller.enqueue(encoder.encode(
+                  `data: ${JSON.stringify({ thinking, id: finalId })}\n\n`
+                ))
+              }
             } catch { /* skip */ }
           }
         }

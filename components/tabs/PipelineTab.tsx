@@ -1,5 +1,5 @@
 'use client'
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { getPipelineStage, isBlocked, nextPRWindow, type PipelineStage, STAGE_COLORS } from '@/lib/pipeline'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
@@ -32,11 +32,54 @@ const TYPE_COLORS: Record<string, string> = {
 
 type FilterMode = 'both' | 'features' | 'issues'
 
+// Status options for mobile action sheet
+const COLUMN_OPTIONS: { label: string; status: string; color: string }[] = [
+  { label: 'Backlog', status: 'backlog', color: '#71717a' },
+  { label: 'Open', status: 'open', color: '#3b82f6' },
+  { label: 'In Progress', status: 'in_progress', color: '#f59e0b' },
+  { label: 'In Review', status: 'in_review', color: '#a855f7' },
+  { label: 'Done', status: 'done', color: '#10b981' },
+]
+
 export default function PipelineTab() {
   const [issues, setIssues] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterMode>('both')
   const [countdown, setCountdown] = useState('')
+  // Mobile long-press action sheet
+  const [actionSheetIssue, setActionSheetIssue] = useState<any>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleLongPressStart = useCallback((issue: any) => {
+    longPressTimer.current = setTimeout(() => {
+      setActionSheetIssue(issue)
+      // Haptic feedback on supported devices
+      if (navigator.vibrate) navigator.vibrate(50)
+    }, 500)
+  }, [])
+
+  const handleLongPressEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  const moveToColumn = useCallback(async (issueId: string, newStatus: string) => {
+    setActionSheetIssue(null)
+    // Optimistic update
+    setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: newStatus } : i))
+    try {
+      await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${issueId}`, {
+        method: 'PATCH',
+        headers: HEADERS,
+        body: JSON.stringify({ status: newStatus }),
+      })
+    } catch (e) {
+      console.error('Move failed:', e)
+      fetchIssues() // Refetch on error
+    }
+  }, [])
 
   useEffect(() => {
     fetchIssues()
@@ -211,7 +254,7 @@ export default function PipelineTab() {
                     <div className="space-y-1.5">
                       <span className="text-[9px] font-medium text-zinc-600 uppercase tracking-wider px-1">Features</span>
                       {data.features.map((f: any) => (
-                        <FeatureCard key={f.id} feature={f} />
+                        <FeatureCard key={f.id} feature={f} onLongPressStart={() => handleLongPressStart(f)} onLongPressEnd={handleLongPressEnd} />
                       ))}
                     </div>
                   )}
@@ -221,7 +264,7 @@ export default function PipelineTab() {
                     <div className="space-y-1.5">
                       <span className="text-[9px] font-medium text-zinc-600 uppercase tracking-wider px-1">Issues</span>
                       {data.issues.map((i: any) => (
-                        <IssueCard key={i.id} issue={i} features={issues.filter(x => x.type === 'feature')} />
+                        <IssueCard key={i.id} issue={i} features={issues.filter(x => x.type === 'feature')} onLongPressStart={() => handleLongPressStart(i)} onLongPressEnd={handleLongPressEnd} />
                       ))}
                     </div>
                   )}
@@ -246,12 +289,59 @@ export default function PipelineTab() {
           })}
         </div>
       </div>
+      {/* Mobile long-press action sheet */}
+      {actionSheetIssue && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+          onClick={() => setActionSheetIssue(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-t-2xl border border-zinc-700 shadow-2xl overflow-hidden"
+            style={{ background: '#0f0f0f' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-zinc-800">
+              <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-2" />
+              <div className="text-xs text-zinc-400 font-medium truncate">
+                {actionSheetIssue.task_key} — {actionSheetIssue.title}
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-0.5">Move to column</div>
+            </div>
+            <div className="py-1">
+              {COLUMN_OPTIONS.map(col => (
+                <button
+                  key={col.status}
+                  onClick={() => moveToColumn(actionSheetIssue.id, col.status)}
+                  disabled={actionSheetIssue.status === col.status}
+                  className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center gap-3 ${
+                    actionSheetIssue.status === col.status
+                      ? 'text-zinc-600 bg-zinc-900/50'
+                      : 'text-zinc-300 hover:bg-zinc-800/60 active:bg-zinc-800'
+                  }`}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: col.color }} />
+                  {col.label}
+                  {actionSheetIssue.status === col.status && (
+                    <span className="text-[10px] text-zinc-600 ml-auto">Current</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setActionSheetIssue(null)}
+              className="w-full px-4 py-3 text-sm text-zinc-500 hover:text-zinc-300 border-t border-zinc-800 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 /* ── Feature Card ── */
-function FeatureCard({ feature }: { feature: any }) {
+function FeatureCard({ feature, onLongPressStart, onLongPressEnd }: { feature: any; onLongPressStart?: () => void; onLongPressEnd?: () => void }) {
   const children: any[] = feature._children || []
   const doneCount = children.filter((c: any) => c.status === 'done').length
   const total = children.length
@@ -260,10 +350,14 @@ function FeatureCard({ feature }: { feature: any }) {
 
   return (
     <div
-      className={`rounded-lg border p-2 transition-colors hover:border-zinc-700 ${
+      className={`rounded-lg border p-2 transition-colors hover:border-zinc-700 select-none ${
         blocked ? 'border-red-500/60 ring-1 ring-red-500/30' : 'border-zinc-800/60'
       }`}
       style={{ background: '#0f0f0f', minHeight: 80 }}
+      onTouchStart={onLongPressStart}
+      onTouchEnd={onLongPressEnd}
+      onTouchCancel={onLongPressEnd}
+      onContextMenu={e => { if (onLongPressStart) e.preventDefault() }}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
         <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: '#3b82f620', color: '#3b82f6' }}>
@@ -294,17 +388,21 @@ function FeatureCard({ feature }: { feature: any }) {
 }
 
 /* ── Issue Card ── */
-function IssueCard({ issue, features }: { issue: any; features: any[] }) {
+function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issue: any; features: any[]; onLongPressStart?: () => void; onLongPressEnd?: () => void }) {
   const blocked = isBlocked(issue)
   const parent = issue.parent_id ? features.find((f: any) => f.id === issue.parent_id) : null
   const typeColor = TYPE_COLORS[issue.type] || '#71717a'
 
   return (
     <div
-      className={`rounded-lg border p-2 transition-colors hover:border-zinc-700 ${
+      className={`rounded-lg border p-2 transition-colors hover:border-zinc-700 select-none ${
         blocked ? 'border-red-500/60 ring-1 ring-red-500/30' : 'border-zinc-800/60'
       }`}
       style={{ background: '#0f0f0f', minHeight: 60 }}
+      onTouchStart={onLongPressStart}
+      onTouchEnd={onLongPressEnd}
+      onTouchCancel={onLongPressEnd}
+      onContextMenu={e => { if (onLongPressStart) e.preventDefault() }}
     >
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-1.5">
