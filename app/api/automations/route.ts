@@ -19,14 +19,30 @@ export async function GET() {
     if (res.ok) {
       const data = await res.json()
       const workflows: any[] = data.data ?? []
-      for (const w of workflows) {
+      // Fetch last execution for each workflow in parallel
+      const execResults = await Promise.allSettled(
+        workflows.map(w =>
+          fetch(`http://localhost:5678/api/v1/executions?workflowId=${w.id}&limit=1&includeData=false`, {
+            headers: { 'X-N8N-API-KEY': N8N_KEY }, cache: 'no-store'
+          }).then(r => r.ok ? r.json() : null).catch(() => null)
+        )
+      )
+      for (let i = 0; i < workflows.length; i++) {
+        const w = workflows[i]
         const triggerNode = (w.nodes ?? []).find((n: any) =>
           n.type === 'n8n-nodes-base.scheduleTrigger' || n.type?.includes('cron') || n.type?.includes('schedule')
         )
         const rule = triggerNode?.parameters?.rule ?? triggerNode?.parameters ?? {}
+        const cronExpr = rule?.interval?.[0]?.expression ?? null
         const hour = rule.hour ?? rule.atHour ?? 9
         const min = rule.minute ?? rule.atMinute ?? 0
-        const time = `${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}`
+        const time = cronExpr ? cronExpr : `${String(hour).padStart(2,'0')}:${String(min).padStart(2,'0')}`
+        // Last execution
+        const execResult = execResults[i]
+        const execData = execResult.status === 'fulfilled' ? (execResult as PromiseFulfilledResult<any>).value : null
+        const lastExec = execData?.data?.[0] ?? null
+        const lastRunStatus = lastExec ? (lastExec.status === 'success' ? 'ok' : 'error') : null
+        const lastRunAtMs = lastExec?.startedAt ? new Date(lastExec.startedAt).getTime() : null
         results.push({
           id: w.name.toLowerCase().replace(/\s+/g, '-'),
           name: w.name,
@@ -36,9 +52,12 @@ export async function GET() {
           days: 'daily',
           model: 'n8n',
           project: 'Ops',
-          status: w.active ? 'active' : 'planned',
+          status: w.active ? (lastRunStatus === 'error' ? 'error' : 'active') : 'planned',
           desc: w.name,
           source: 'n8n',
+          lastRunStatus,
+          lastRunAtMs,
+          n8nWorkflowId: w.id,
         })
       }
     }
