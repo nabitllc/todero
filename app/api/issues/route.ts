@@ -88,6 +88,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(data)
 }
 
+function notifyPRReview(issue: { task_key?: string; title?: string; project?: string; feature_branch?: string; pr_url?: string }) {
+  const key = issue.task_key ?? '?'
+  const msg = `🔀 **PR Ready for Review**\n**[${key}]** ${issue.title ?? ''}\nProject: ${issue.project ?? ''} · Branch: ${issue.feature_branch ?? ''}\nPR: ${issue.pr_url ?? ''}\n<@409194957098713088> ready to merge`
+  const escaped = msg.replace(/'/g, `'\\''`)
+  exec(`openclaw message send --channel discord --target "channel:1487826368170299592" --message '${escaped}'`,
+    (err) => { if (err) console.error('[discord-pr-review]', err.message) })
+}
+
 export async function PATCH(req: NextRequest) {
   const body = await req.json()
   const { id, ...fields } = body
@@ -109,6 +117,13 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // ── Fetch existing record to detect pr_url transition ──
+  const { data: before } = await supabase
+    .from('issues')
+    .select('pr_url')
+    .eq('id', id)
+    .single()
+
   const { data, error } = await supabase
     .from('issues')
     .update({ ...fields, updated_at: new Date().toISOString() })
@@ -121,6 +136,11 @@ export async function PATCH(req: NextRequest) {
   const resolvedType = fields.resolution_type ?? data?.resolution_type
   if (fields.status === 'done' && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType })
+  }
+
+  // ── PR review notification when pr_url is first set ──
+  if (fields.pr_url && !before?.pr_url && data) {
+    notifyPRReview(data)
   }
 
   return NextResponse.json(data)
