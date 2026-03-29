@@ -451,6 +451,11 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
         {issue.assignee === 'tester' && (
           <span className="text-[10px]" title="Tester assigned">🧪</span>
         )}
+        {issue.blocked_by && (
+          <span className="text-[8px] px-1 py-0.5 rounded font-semibold bg-red-500/20 text-red-400" title={`Blocked by ${issue.blocked_by}`}>
+            🔒 {issue.blocked_by}
+          </span>
+        )}
       </div>
       {parent && (
         <div className="text-[9px] text-zinc-600 truncate mt-1">
