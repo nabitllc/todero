@@ -3549,6 +3549,19 @@ export default function Home() {
                         <span className="text-zinc-600 text-[10px]">{pct}% elapsed</span>
                         <span className="text-zinc-600 text-[10px]">{dlLabel}</span>
                       </div>
+                      {proj.taskCounts && proj.taskCounts.total > 0 && (
+                        <div className="mt-3 pt-3 border-t border-zinc-800/40">
+                          <div className="flex justify-between mb-1.5">
+                            <span className="text-zinc-600 text-[10px]">Tasks</span>
+                            <span className="text-zinc-500 text-[10px]">{proj.taskCounts.done}/{proj.taskCounts.total} done</span>
+                          </div>
+                          <Bar v={proj.taskProgress} color='#10b981' bg='#0a1a12' />
+                          <div className="flex gap-3 mt-1">
+                            {proj.taskCounts.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {proj.taskCounts.inProgress} active</span>}
+                            {proj.taskCounts.open > 0 && <span className="text-zinc-600 text-[9px]">○ {proj.taskCounts.open} open</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
