@@ -25,19 +25,19 @@ function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: 
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(!open)}
-        className="text-xs bg-zinc-900 border border-zinc-700 text-zinc-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-500 flex items-center gap-1">
+        className="text-xs bg-white/5 border border-white/10 text-white/60 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-white/30 flex items-center gap-1 transition-all hover:border-white/20">
         {selected.length > 0 ? `${label} (${selected.length})` : `All ${label}s`}
-        <span className="text-zinc-600 text-[9px]">▾</span>
+        <span className="text-white/25 text-[9px]">▾</span>
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 min-w-[140px] rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+        <div className="absolute z-50 mt-1 min-w-[140px] rounded-lg border border-white/10 bg-[#0d0d0d] py-1 shadow-xl">
           {options.map(opt => (
             <button key={opt} onClick={() => onToggle(opt)}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-zinc-800 transition-colors">
-              <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selected.includes(opt) ? 'bg-blue-500 border-blue-500 text-white' : 'border-zinc-600'}`}>
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-white/5 transition-colors">
+              <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selected.includes(opt) ? 'bg-blue-500 border-blue-500 text-white' : 'border-white/10'}`}>
                 {selected.includes(opt) ? '✓' : ''}
               </span>
-              <span className="text-zinc-300">{display(opt)}</span>
+              <span className="text-white/60">{display(opt)}</span>
             </button>
           ))}
         </div>
@@ -88,7 +88,7 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <span className="text-zinc-500 text-sm">Loading features...</span>
+        <span className="text-white/40 text-sm">Loading features...</span>
       </div>
     )
   }
@@ -98,12 +98,12 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-semibold text-white">Features</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">{filtered.length} feature{filtered.length !== 1 ? 's' : ''} across projects</p>
+          <p className="text-xs text-white/40 mt-0.5">{filtered.length} feature{filtered.length !== 1 ? 's' : ''} across projects</p>
         </div>
         <div className="flex items-center gap-2">
           <FeaturesMultiSelect label="Project" options={PROJECTS} selected={projFilters} onToggle={toggleProj} />
           <FeaturesMultiSelect label="Status" options={STATUSES} selected={statusFilters} onToggle={toggleStatus} displayFn={s => s.replace('_', ' ')} />
-          {hasAnyFilter && <button onClick={clearAll} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors">Clear all</button>}
+          {hasAnyFilter && <button onClick={clearAll} className="text-[10px] text-red-500 hover:text-red-400 px-2 py-1 rounded-lg hover:bg-white/5 transition-all">Clear all</button>}
         </div>
       </div>
 
@@ -111,13 +111,13 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
       {hasAnyFilter && (
         <div className="flex items-center gap-1.5 flex-wrap">
           {projFilters.map(v => (
-            <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+            <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/5 text-white/60 border border-white/10">
               {v}
               <button onClick={() => toggleProj(v)} className="hover:text-white ml-0.5">×</button>
             </span>
           ))}
           {statusFilters.map(v => (
-            <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+            <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/5 text-white/60 border border-white/10">
               {v.replace('_', ' ')}
               <button onClick={() => toggleStatus(v)} className="hover:text-white ml-0.5">×</button>
             </span>
@@ -126,17 +126,17 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
       )}
 
       {Object.keys(grouped).length === 0 && (
-        <div className="rounded-xl border border-zinc-800/60 px-6 py-12 text-center" style={{ background: '#0f0f0f' }}>
-          <p className="text-zinc-600 text-sm">No features yet</p>
+        <div className="rounded-xl border border-white/10 bg-white/5 px-6 py-12 text-center">
+          <p className="text-white/25 text-sm">No features yet</p>
         </div>
       )}
 
       {Object.entries(grouped).map(([project, feats]) => (
         <div key={project} className="space-y-2">
-          <h3 className="text-xs font-semibold tracking-widest text-zinc-500 uppercase flex items-center gap-2">
+          <h3 className="text-xs font-semibold tracking-widest text-white/40 uppercase flex items-center gap-2">
             <span>{project}</span>
-            <span className="text-zinc-700">({feats.length})</span>
-            <div className="flex-1 h-px bg-zinc-800/70" />
+            <span className="text-white/25">({feats.length})</span>
+            <div className="flex-1 h-px bg-white/5" />
           </h3>
           <div className="space-y-2">
             {feats.map(f => (
@@ -154,8 +154,7 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
       {/* Load more */}
       {hasMore && (
         <button onClick={() => setLimit(prev => prev + 100)}
-          className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2.5 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
-          style={{background:'#0a0a0a'}}>
+          className="w-full text-center text-xs text-white/40 hover:text-white/60 py-2.5 rounded-lg border border-white/10 hover:border-white/20 transition-all bg-[#0a0a0a]">
           Load 100 more ({allFiltered.length - limit} remaining)
         </button>
       )}

@@ -50,8 +50,8 @@ export default function FeatureCard({ feature, expanded, onToggle, onViewIssues 
   const isReady = !!(feature.acceptance_criteria?.trim()) && feature.acceptance_criteria.trim() !== acPending
 
   return (
-    <div className="rounded-xl border border-zinc-800/60 overflow-hidden" style={{ background: '#0f0f0f' }}>
-      <button onClick={onToggle} className="w-full text-left px-4 py-3 hover:bg-zinc-800/30 transition-colors">
+    <div className="rounded-xl border border-white/10 overflow-hidden bg-white/5">
+      <button onClick={onToggle} className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-white text-sm font-medium truncate flex-1 min-w-0">{feature.title}</span>
           <span className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
@@ -75,35 +75,35 @@ export default function FeatureCard({ feature, expanded, onToggle, onViewIssues 
           </span>
         </div>
         {feature.description && (
-          <p className="text-zinc-500 text-xs mt-1.5 line-clamp-2">{feature.description}</p>
+          <p className="text-white/40 text-xs mt-1.5 line-clamp-2">{feature.description}</p>
         )}
         <div className="mt-2.5 flex items-center gap-3">
-          <div className="flex-1 rounded-full h-1.5" style={{ background: '#1a1a1a' }}>
-            <div className="h-1.5 rounded-full transition-all" style={{ width: pct + '%', background: '#10b981' }} />
+          <div className="flex-1 rounded-full h-1.5 bg-white/5">
+            <div className="h-1.5 rounded-full transition-all bg-emerald-500" style={{ width: pct + '%' }} />
           </div>
-          <span className="text-zinc-500 text-[10px] shrink-0">{done}/{total}</span>
+          <span className="text-white/40 text-[10px] shrink-0">{done}/{total}</span>
           {onViewIssues && (
             <button onClick={e => { e.stopPropagation(); onViewIssues() }}
-              className="text-[10px] text-blue-400 hover:text-blue-300 px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors shrink-0">
+              className="text-[10px] text-blue-500 hover:text-blue-400 px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors shrink-0">
               View Issues →
             </button>
           )}
-          <span className="text-zinc-600 text-[10px] shrink-0">{expanded ? '▲' : '▼'}</span>
+          <span className="text-white/25 text-[10px] shrink-0">{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
 
       {expanded && feature.children.length > 0 && (
-        <div className="border-t border-zinc-800/40 px-4 py-2 space-y-1.5">
+        <div className="border-t border-white/5 px-4 py-2 space-y-1.5">
           {feature.children.map(child => {
             const csc = STATUS_COLORS[child.status] ?? STATUS_COLORS.open
             return (
               <div key={child.id} className="flex items-center gap-2 py-1">
                 {child.task_key && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-white/40 shrink-0">
                     {child.task_key}
                   </span>
                 )}
-                <span className="text-zinc-300 text-xs truncate flex-1 min-w-0">{child.title}</span>
+                <span className="text-white/60 text-xs truncate flex-1 min-w-0">{child.title}</span>
                 {child.assignee && (
                   <span className="text-sm shrink-0" title={child.assignee}>
                     {ASSIGNEE_EMOJI[child.assignee.toLowerCase()] ?? '👤'}
@@ -120,8 +120,8 @@ export default function FeatureCard({ feature, expanded, onToggle, onViewIssues 
       )}
 
       {expanded && feature.children.length === 0 && (
-        <div className="border-t border-zinc-800/40 px-4 py-3">
-          <p className="text-zinc-600 text-xs">No child issues</p>
+        <div className="border-t border-white/5 px-4 py-3">
+          <p className="text-white/25 text-xs">No child issues</p>
         </div>
       )}
     </div>

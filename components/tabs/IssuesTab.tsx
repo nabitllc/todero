@@ -143,10 +143,10 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   const sprints = useMemo(() => Array.from(new Set(issues.map(i=>i.sprint).filter(Boolean))).sort().reverse(), [issues])
 
   const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <span className="text-zinc-700 ml-0.5"><ChevronUp size={10} /></span>
+    if (sortKey !== col) return <span className="text-white/10 ml-0.5"><ChevronUp size={10} /></span>
     return sortDir === 'asc'
-      ? <span className="text-zinc-400 ml-0.5"><ChevronUp size={10} /></span>
-      : <span className="text-zinc-400 ml-0.5"><ChevronDown size={10} /></span>
+      ? <span className="text-white/40 ml-0.5"><ChevronUp size={10} /></span>
+      : <span className="text-white/40 ml-0.5"><ChevronDown size={10} /></span>
   }
 
   return (
@@ -161,63 +161,63 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
               </span>
             )}
           </div>
-          <p className="text-xs text-zinc-500 mt-0.5">{filtered.length} issues{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
+          <p className="text-xs text-white/40 mt-0.5">{filtered.length} issues{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
         </div>
         <div className="relative max-w-xs flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25" />
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search by title or key..."
-            className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+            className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-white/25 focus:outline-none focus:border-white/30"
           />
         </div>
       </div>
 
       {/* Bulk actions bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-blue-900/40" style={{background:'#0a0f1a'}}>
-          <span className="text-xs text-blue-400 font-medium">{selected.size} selected</span>
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-blue-500/20 bg-blue-500/5">
+          <span className="text-xs text-blue-500 font-medium">{selected.size} selected</span>
           <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)}
-            className="bg-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-1.5 border border-zinc-700 focus:outline-none focus:border-zinc-500">
+            className="bg-white/5 text-white/60 text-xs rounded-lg px-2 py-1.5 border border-white/10 focus:outline-none focus:border-white/30">
             <option value="">Change status to…</option>
-            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+            {STATUS_OPTIONS.map(s => <option key={s} value={s} className="bg-[#0d0d0d] text-white">{s.replace(/_/g,' ')}</option>)}
           </select>
           <button onClick={handleBulkStatusChange} disabled={!bulkStatus || bulkSaving}
-            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors disabled:opacity-50">
+            className="px-3 py-1.5 rounded-lg bg-white text-black text-xs font-semibold transition-all disabled:opacity-50 hover:bg-zinc-100">
             {bulkSaving ? 'Applying…' : 'Apply'}
           </button>
           <button onClick={() => setSelected(new Set())}
-            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs transition-colors ml-auto">
+            className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 text-xs transition-all ml-auto">
             Clear
           </button>
         </div>
       )}
 
-      <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-        {loading && <div className="text-zinc-600 text-xs text-center py-8">Loading issues...</div>}
+      <div className="rounded-2xl border border-white/10 overflow-hidden bg-[#0d0d0d]">
+        {loading && <div className="text-white/25 text-xs text-center py-8">Loading issues...</div>}
 
         {!loading && (
           <div className="overflow-x-auto">
             {/* Header */}
-            <div className="hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 border-b border-zinc-800/60 bg-zinc-900/50">
+            <div className="hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 border-b border-white/5 bg-white/3">
               <button onClick={selectAll} className="flex items-center justify-center">
-                <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center ${selected.size === filtered.length && filtered.length > 0 ? 'bg-blue-600 border-blue-500 text-white' : 'border-zinc-600 text-transparent'}`}>
+                <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center ${selected.size === filtered.length && filtered.length > 0 ? 'bg-blue-500 border-blue-500 text-white' : 'border-white/10 text-transparent'}`}>
                   ✓
                 </span>
               </button>
               {([['task_key','Key'],['type','Type'],['title','Title'],['status','Status'],['priority','Pri'],['assignee','Assignee'],['sprint','Sprint']] as [SortKey,string][]).map(([key,label]) => (
                 <button key={key} onClick={() => handleSort(key)}
-                  className="flex items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors text-left">
+                  className="flex items-center text-[10px] font-semibold uppercase tracking-wider text-white/40 hover:text-white/60 transition-colors text-left">
                   {label}<SortIcon col={key} />
                 </button>
               ))}
             </div>
 
             {/* Mobile header */}
-            <div className="md:hidden grid grid-cols-[70px_1fr_80px] gap-2 px-3 py-2 border-b border-zinc-800/60 bg-zinc-900/50">
+            <div className="md:hidden grid grid-cols-[70px_1fr_80px] gap-2 px-3 py-2 border-b border-white/5 bg-white/3">
               {([['task_key','Key'],['title','Title'],['status','Status']] as [SortKey,string][]).map(([key,label]) => (
                 <button key={key} onClick={() => handleSort(key)}
-                  className="flex items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 text-left">
+                  className="flex items-center text-[10px] font-semibold uppercase tracking-wider text-white/40 hover:text-white/60 text-left">
                   {label}<SortIcon col={key} />
                 </button>
               ))}
@@ -229,42 +229,42 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                 {/* Desktop row */}
                 <div
                   onClick={() => handleExpand(issue.id)}
-                  className={'hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 cursor-pointer transition-colors border-b border-zinc-800/30 ' +
-                    (expandedId === issue.id ? 'bg-zinc-800/40' : selected.has(issue.id) ? 'bg-blue-900/20' : 'hover:bg-zinc-900/80')}
+                  className={'hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 cursor-pointer transition-colors border-b border-white/5 ' +
+                    (expandedId === issue.id ? 'bg-white/5' : selected.has(issue.id) ? 'bg-blue-500/5' : 'hover:bg-white/3')}
                 >
                   <span className="flex items-center justify-center" onClick={e => toggleSelect(issue.id, e)}>
-                    <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center cursor-pointer ${selected.has(issue.id) ? 'bg-blue-600 border-blue-500 text-white' : 'border-zinc-700 text-transparent hover:border-zinc-500'}`}>
+                    <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center cursor-pointer ${selected.has(issue.id) ? 'bg-blue-500 border-blue-500 text-white' : 'border-white/10 text-transparent hover:border-white/30'}`}>
                       ✓
                     </span>
                   </span>
-                  <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 w-fit">{issue.task_key??'—'}</span>
+                  <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-white/40 w-fit">{issue.task_key??'—'}</span>
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full w-fit border"
                     style={{background:(TYPE_COLORS[issue.type??'']??'#71717a')+'18', color:TYPE_COLORS[issue.type??'']??'#71717a', borderColor:(TYPE_COLORS[issue.type??'']??'#71717a')+'40'}}>
                     {issue.type??'task'}
                   </span>
-                  <span className="text-xs text-zinc-300 truncate">{issue.title}</span>
+                  <span className="text-xs text-white/60 truncate">{issue.title}</span>
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full w-fit"
                     style={{background:(STATUS_COLORS[issue.status]?.bg??'#27272a'), color:(STATUS_COLORS[issue.status]?.text??'#a1a1aa')}}>
                     {(issue.status??'').replace(/_/g,' ')}
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full" style={{background:PRIORITY_COLORS[issue.priority??'']??'#3f3f46'}} />
-                    <span className="text-[10px] text-zinc-500">{issue.priority??'—'}</span>
+                    <span className="text-[10px] text-white/40">{issue.priority??'—'}</span>
                   </span>
-                  <span className="text-[10px] text-zinc-400">
+                  <span className="text-[10px] text-white/40">
                     {issue.assignee ? (ASSIGNEE_MAP[issue.assignee]?.emoji??'') + ' ' + (ASSIGNEE_MAP[issue.assignee]?.name??issue.assignee) : '—'}
                   </span>
-                  <span className="text-[10px] text-zinc-500 font-mono">{issue.sprint??'—'}</span>
+                  <span className="text-[10px] text-white/40 font-mono">{issue.sprint??'—'}</span>
                 </div>
 
                 {/* Mobile row */}
                 <div
                   onClick={() => handleExpand(issue.id)}
-                  className={'md:hidden grid grid-cols-[70px_1fr_80px] gap-2 px-3 py-2.5 cursor-pointer transition-colors border-b border-zinc-800/30 ' +
-                    (expandedId === issue.id ? 'bg-zinc-800/40' : 'hover:bg-zinc-900/80')}
+                  className={'md:hidden grid grid-cols-[70px_1fr_80px] gap-2 px-3 py-2.5 cursor-pointer transition-colors border-b border-white/5 ' +
+                    (expandedId === issue.id ? 'bg-white/5' : 'hover:bg-white/3')}
                 >
-                  <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 w-fit">{issue.task_key??'—'}</span>
-                  <span className="text-[11px] text-zinc-300 truncate">{issue.title}</span>
+                  <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-white/5 text-white/40 w-fit">{issue.task_key??'—'}</span>
+                  <span className="text-[11px] text-white/60 truncate">{issue.title}</span>
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full w-fit"
                     style={{background:(STATUS_COLORS[issue.status]?.bg??'#27272a'), color:(STATUS_COLORS[issue.status]?.text??'#a1a1aa')}}>
                     {(issue.status??'').replace(/_/g,' ')}
@@ -273,40 +273,40 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
 
                 {/* Inline edit row */}
                 {expandedId === issue.id && (
-                  <div className="px-4 py-3 border-b border-zinc-800/30 bg-zinc-900/50">
+                  <div className="px-4 py-3 border-b border-white/5 bg-white/3">
                     <div className="flex flex-wrap gap-3 items-end">
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10px] text-zinc-500 uppercase font-semibold">Status</span>
+                        <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Status</span>
                         <select value={editFields.status??''} onChange={e => setEditFields(f=>({...f,status:e.target.value}))}
-                          className="bg-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-1.5 border border-zinc-700 focus:outline-none focus:border-zinc-500">
-                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+                          className="bg-white/5 text-white/60 text-xs rounded-lg px-2 py-1.5 border border-white/10 focus:outline-none focus:border-white/30">
+                          {STATUS_OPTIONS.map(s => <option key={s} value={s} className="bg-[#0d0d0d] text-white">{s.replace(/_/g,' ')}</option>)}
                         </select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10px] text-zinc-500 uppercase font-semibold">Assignee</span>
+                        <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Assignee</span>
                         <select value={editFields.assignee??''} onChange={e => setEditFields(f=>({...f,assignee:e.target.value}))}
-                          className="bg-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-1.5 border border-zinc-700 focus:outline-none focus:border-zinc-500">
-                          <option value="">Unassigned</option>
-                          {ASSIGNEE_OPTIONS.map(a => <option key={a} value={a}>{ASSIGNEE_MAP[a]?.name??a}</option>)}
+                          className="bg-white/5 text-white/60 text-xs rounded-lg px-2 py-1.5 border border-white/10 focus:outline-none focus:border-white/30">
+                          <option value="" className="bg-[#0d0d0d] text-white">Unassigned</option>
+                          {ASSIGNEE_OPTIONS.map(a => <option key={a} value={a} className="bg-[#0d0d0d] text-white">{ASSIGNEE_MAP[a]?.name??a}</option>)}
                         </select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10px] text-zinc-500 uppercase font-semibold">Sprint</span>
+                        <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Sprint</span>
                         <select value={editFields.sprint??''} onChange={e => setEditFields(f=>({...f,sprint:e.target.value}))}
-                          className="bg-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-1.5 border border-zinc-700 focus:outline-none focus:border-zinc-500">
-                          <option value="">None</option>
-                          {sprints.map(s => <option key={s} value={s!}>{s}</option>)}
+                          className="bg-white/5 text-white/60 text-xs rounded-lg px-2 py-1.5 border border-white/10 focus:outline-none focus:border-white/30">
+                          <option value="" className="bg-[#0d0d0d] text-white">None</option>
+                          {sprints.map(s => <option key={s} value={s!} className="bg-[#0d0d0d] text-white">{s}</option>)}
                         </select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10px] text-zinc-500 uppercase font-semibold">Priority</span>
+                        <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Priority</span>
                         <select value={editFields.priority??''} onChange={e => setEditFields(f=>({...f,priority:e.target.value}))}
-                          className="bg-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-1.5 border border-zinc-700 focus:outline-none focus:border-zinc-500">
-                          {PRIORITY_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                          className="bg-white/5 text-white/60 text-xs rounded-lg px-2 py-1.5 border border-white/10 focus:outline-none focus:border-white/30">
+                          {PRIORITY_OPTIONS.map(p => <option key={p} value={p} className="bg-[#0d0d0d] text-white">{p}</option>)}
                         </select>
                       </label>
                       <button onClick={handleSave} disabled={saving}
-                        className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors disabled:opacity-50">
+                        className="px-4 py-1.5 rounded-lg bg-white text-black text-xs font-semibold transition-all disabled:opacity-50 hover:bg-zinc-100">
                         {saving ? 'Saving...' : 'Save'}
                       </button>
                     </div>
@@ -316,7 +316,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
             ))}
 
             {!loading && filtered.length === 0 && (
-              <div className="text-zinc-600 text-xs text-center py-8">
+              <div className="text-white/25 text-xs text-center py-8">
                 {search ? 'No issues match your search' : 'No issues found'}
               </div>
             )}

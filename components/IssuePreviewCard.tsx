@@ -31,7 +31,7 @@ export default function IssuePreviewCard({ draft, project }: Props) {
   return (
     <div className="mt-2 bg-white/5 border border-white/10 rounded-lg p-3 text-sm">
       {state === 'done' ? (
-        <div className="flex items-center gap-2 text-green-400">
+        <div className="flex items-center gap-2 text-emerald-500">
           <CheckCircle size={14}/> Created <strong>{taskKey}</strong> — added to board
         </div>
       ) : (
@@ -45,10 +45,10 @@ export default function IssuePreviewCard({ draft, project }: Props) {
               </div>
               <div className="text-white/80 font-medium">{draft.title}</div>
             </div>
-            <button onClick={() => setState('dismissed')} className="text-white/20 hover:text-white/50 shrink-0"><X size={14}/></button>
+            <button onClick={() => setState('dismissed')} className="text-white/20 hover:text-white/50 shrink-0 transition-colors"><X size={14}/></button>
           </div>
           <button onClick={create} disabled={state === 'creating'}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded text-xs text-white transition-all disabled:opacity-50">
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs text-white transition-all disabled:opacity-50">
             <Plus size={12}/> {state === 'creating' ? 'Creating...' : 'Create Issue'}
           </button>
         </>

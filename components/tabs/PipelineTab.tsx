@@ -187,7 +187,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-zinc-500 text-sm">Loading pipeline...</div>
+        <div className="text-white/40 text-sm">Loading pipeline...</div>
       </div>
     )
   }
@@ -198,15 +198,15 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold text-white">Pipeline</span>
-          <span className="text-zinc-600 text-xs">{issues.length} items</span>
+          <span className="text-white/25 text-xs">{issues.length} items</span>
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-zinc-800 p-0.5" style={{ background: '#0a0a0a' }}>
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 p-0.5 bg-[#0a0a0a]">
           {(['both', 'features', 'issues'] as FilterMode[]).map(mode => (
             <button
               key={mode}
               onClick={() => setFilter(mode)}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors capitalize ${
-                filter === mode ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-all capitalize ${
+                filter === mode ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
               }`}
             >
               {mode === 'both' ? 'Both' : mode === 'features' ? 'Features' : 'Issues'}
@@ -227,11 +227,11 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
             return (
               <div
                 key={stage}
-                className="flex-shrink-0 rounded-xl border border-zinc-800/60 flex flex-col"
+                className="flex-shrink-0 rounded-xl border border-white/10 flex flex-col"
                 style={{ width: 240, background: '#0a0a0a', borderTop: `2px solid ${color}` }}
               >
                 {/* Room header */}
-                <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/40">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-white">{stage}</span>
                     <span
@@ -243,7 +243,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                   </div>
                   {stage === 'Building' && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                      buildingWIP >= 3 ? 'bg-red-500/20 text-red-400' : 'bg-zinc-800 text-zinc-400'
+                      buildingWIP >= 3 ? 'bg-red-500/20 text-red-500' : 'bg-white/5 text-white/40'
                     }`}>
                       {buildingWIP}/3 WIP
                     </span>
@@ -252,7 +252,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                     <span className="text-sm" title="Tester active">🧪</span>
                   )}
                   {stage === 'PR Queue' && (
-                    <span className="text-[10px] text-zinc-500">
+                    <span className="text-[10px] text-white/40">
                       {countdown}
                     </span>
                   )}
@@ -263,7 +263,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                   {/* Features row */}
                   {filter !== 'issues' && data.features.length > 0 && (
                     <div className="space-y-1.5">
-                      <span className="text-[9px] font-medium text-zinc-600 uppercase tracking-wider px-1">Features</span>
+                      <span className="text-[9px] font-medium text-white/25 uppercase tracking-wider px-1">Features</span>
                       {data.features.map((f: any) => (
                         <FeatureCard key={f.id} feature={f} onLongPressStart={() => handleLongPressStart(f)} onLongPressEnd={handleLongPressEnd} />
                       ))}
@@ -273,7 +273,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                   {/* Issues row */}
                   {filter !== 'features' && data.issues.length > 0 && (
                     <div className="space-y-1.5">
-                      <span className="text-[9px] font-medium text-zinc-600 uppercase tracking-wider px-1">Issues</span>
+                      <span className="text-[9px] font-medium text-white/25 uppercase tracking-wider px-1">Issues</span>
                       {data.issues.map((i: any) => (
                         <IssueCard key={i.id} issue={i} features={issues.filter(x => x.type === 'feature')} onLongPressStart={() => handleLongPressStart(i)} onLongPressEnd={handleLongPressEnd} />
                       ))}
@@ -281,7 +281,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                   )}
 
                   {depth === 0 && (
-                    <div className="flex items-center justify-center h-20 text-zinc-700 text-[10px]">
+                    <div className="flex items-center justify-center h-20 text-white/10 text-[10px]">
                       Empty
                     </div>
                   )}
@@ -289,7 +289,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 
                 {/* Agent sprites */}
                 {agents.length > 0 && (
-                  <div className="flex items-center gap-1 px-3 py-1.5 border-t border-zinc-800/40">
+                  <div className="flex items-center gap-1 px-3 py-1.5 border-t border-white/5">
                     {agents.map(a => (
                       <span key={a.id} title={a.id} className="text-sm cursor-default">{a.emoji}</span>
                     ))}
@@ -303,20 +303,19 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       {/* Mobile long-press action sheet */}
       {actionSheetIssue && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/90 backdrop-blur-sm"
           onClick={() => setActionSheetIssue(null)}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl border border-zinc-700 shadow-2xl overflow-hidden"
-            style={{ background: '#0f0f0f' }}
+            className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#111] shadow-2xl overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
-            <div className="px-4 py-3 border-b border-zinc-800">
-              <div className="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-2" />
-              <div className="text-xs text-zinc-400 font-medium truncate">
+            <div className="px-4 py-3 border-b border-white/5">
+              <div className="w-10 h-1 rounded-full bg-white/10 mx-auto mb-2" />
+              <div className="text-xs text-white/60 font-medium truncate">
                 {actionSheetIssue.task_key} — {actionSheetIssue.title}
               </div>
-              <div className="text-[10px] text-zinc-600 mt-0.5">Move to column</div>
+              <div className="text-[10px] text-white/25 mt-0.5">Move to column</div>
             </div>
             <div className="py-1">
               {COLUMN_OPTIONS.map(col => (
@@ -324,23 +323,23 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                   key={col.status}
                   onClick={() => moveToColumn(actionSheetIssue.id, col.status)}
                   disabled={actionSheetIssue.status === col.status}
-                  className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center gap-3 ${
+                  className={`w-full text-left px-4 py-3 text-sm transition-all flex items-center gap-3 ${
                     actionSheetIssue.status === col.status
-                      ? 'text-zinc-600 bg-zinc-900/50'
-                      : 'text-zinc-300 hover:bg-zinc-800/60 active:bg-zinc-800'
+                      ? 'text-white/25 bg-white/3'
+                      : 'text-white/60 hover:bg-white/5 active:bg-white/10'
                   }`}
                 >
                   <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: col.color }} />
                   {col.label}
                   {actionSheetIssue.status === col.status && (
-                    <span className="text-[10px] text-zinc-600 ml-auto">Current</span>
+                    <span className="text-[10px] text-white/25 ml-auto">Current</span>
                   )}
                 </button>
               ))}
             </div>
             <button
               onClick={() => setActionSheetIssue(null)}
-              className="w-full px-4 py-3 text-sm text-zinc-500 hover:text-zinc-300 border-t border-zinc-800 transition-colors"
+              className="w-full px-4 py-3 text-sm text-white/40 hover:text-white/60 border-t border-white/5 transition-all"
             >
               Cancel
             </button>
@@ -361,10 +360,10 @@ function FeatureCard({ feature, onLongPressStart, onLongPressEnd }: { feature: a
 
   return (
     <div
-      className={`rounded-lg border p-2 transition-colors hover:border-zinc-700 select-none ${
-        blocked ? 'border-red-500/60 ring-1 ring-red-500/30' : 'border-zinc-800/60'
+      className={`rounded-lg border p-2 transition-all hover:border-white/20 select-none ${
+        blocked ? 'border-red-500/60 ring-1 ring-red-500/30' : 'border-white/10'
       }`}
-      style={{ background: '#0f0f0f', minHeight: 80 }}
+      style={{ background: '#0d0d0d', minHeight: 80 }}
       onTouchStart={onLongPressStart}
       onTouchEnd={onLongPressEnd}
       onTouchCancel={onLongPressEnd}
@@ -375,23 +374,23 @@ function FeatureCard({ feature, onLongPressStart, onLongPressEnd }: { feature: a
           {feature.task_key}
         </span>
         {feature.project && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-white/40">
             {feature.project}
           </span>
         )}
       </div>
-      <div className="text-[11px] text-zinc-300 leading-tight mb-2 line-clamp-2">
+      <div className="text-[11px] text-white/60 leading-tight mb-2 line-clamp-2">
         {feature.title}
       </div>
       {total > 0 && (
         <div className="flex items-center gap-2">
-          <div className="flex-1 h-1 rounded-full bg-zinc-800 overflow-hidden">
+          <div className="flex-1 h-1 rounded-full bg-white/5 overflow-hidden">
             <div
               className="h-full rounded-full transition-all"
               style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : '#3b82f6' }}
             />
           </div>
-          <span className="text-[9px] text-zinc-500">{doneCount}/{total}</span>
+          <span className="text-[9px] text-white/40">{doneCount}/{total}</span>
         </div>
       )}
     </div>
@@ -415,13 +414,13 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
 
   return (
     <div
-      className={`rounded-lg border p-2 transition-colors hover:border-zinc-700 select-none ${
+      className={`rounded-lg border p-2 transition-all hover:border-white/20 select-none ${
         blocked ? 'border-red-500/60 ring-1 ring-red-500/30'
         : testStatus === 'failed' ? 'border-red-500/40'
         : testStatus === 'passed' ? 'border-emerald-500/40'
-        : 'border-zinc-800/60'
+        : 'border-white/10'
       }`}
-      style={{ background: '#0f0f0f', minHeight: 60 }}
+      style={{ background: '#0d0d0d', minHeight: 60 }}
       onTouchStart={onLongPressStart}
       onTouchEnd={onLongPressEnd}
       onTouchCancel={onLongPressEnd}
@@ -432,7 +431,7 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
           <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: `${typeColor}20`, color: typeColor }}>
             {issue.task_key}
           </span>
-          <span className="text-[11px] text-zinc-300 truncate max-w-[130px]">{issue.title}</span>
+          <span className="text-[11px] text-white/60 truncate max-w-[130px]">{issue.title}</span>
         </div>
         {issue.assignee && (
           <span
@@ -447,7 +446,7 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
       {/* Test tier + test status badges */}
       <div className="flex items-center gap-1.5 mt-1">
         {testTier && (
-          <span className="text-[8px] px-1 py-0.5 rounded font-semibold bg-zinc-800 text-zinc-400">
+          <span className="text-[8px] px-1 py-0.5 rounded font-semibold bg-white/5 text-white/40">
             {testTier}
           </span>
         )}
@@ -466,7 +465,7 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
         )}
       </div>
       {parent && (
-        <div className="text-[9px] text-zinc-600 truncate mt-1">
+        <div className="text-[9px] text-white/25 truncate mt-1">
           {parent.title}
         </div>
       )}
