@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import AgentOffice from '@/components/AgentOffice'
 import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search } from 'lucide-react'
 import FeaturesTab from '@/components/tabs/FeaturesTab'
+import PipelineTab from '@/components/tabs/PipelineTab'
 
 const KEMUNI_START     = new Date('2026-03-21')
 const KEMUNI_DEADLINE  = new Date('2026-04-20')
@@ -123,6 +124,7 @@ const NAV = [
   { id:'memory',       label:'Memory',       icon:'🧠' },
   { id:'board',        label:'Board',        icon:'📋' },
   { id:'features',     label:'Features',     icon:'🗺️' },
+  { id:'pipeline',     label:'Pipeline',     icon:'🏭' },
   { id:'divider' as any, label:'',           icon:'' },
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
@@ -4821,6 +4823,11 @@ export default function Home() {
           {/* ── FEATURES ── */}
           {tab==='features' && (
             <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); setTab('board'); if (typeof window !== 'undefined') localStorage.setItem('mc-tab', 'board') }} />
+          )}
+
+          {/* ── PIPELINE ── */}
+          {tab==='pipeline' && (
+            <PipelineTab />
           )}
 
           {/* ── AUTOMATIONS (n8n embed) ── */}
