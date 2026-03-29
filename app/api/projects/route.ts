@@ -14,10 +14,10 @@ export async function GET() {
     { id:'infrastructure', name:'Infrastructure', desc:'Agent System & Ops', emoji:'⚙️', startDate:'2026-03-21', deadline:'2026-04-30', totalDays:40, color:'#6b7280', borderColor:'border-zinc-800/60', bg:'#0f0f0f', bgDark:'#0f0f0f', supabaseProject:'Infrastructure' },
   ]
 
-  // Fetch task counts per project
+  // Fetch task counts per project + active features
   try {
     const res = await fetch(
-      `${SUPA}/rest/v1/issues?select=project,status&limit=1000`,
+      `${SUPA}/rest/v1/issues?select=id,title,project,status,type,parent_id&limit=2000`,
       { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }, cache: 'no-store' }
     )
     if (res.ok) {
@@ -31,12 +31,32 @@ export async function GET() {
         else if (t.status === 'in_progress' || t.status === 'in_review') counts[p].inProgress++
         else if (t.status === 'open' || t.status === 'backlog') counts[p].open++
       }
+
+      // Compute active features per project
+      const features = tasks.filter(t => t.type === 'feature')
+      const activeFeaturesByProject: Record<string, { id: string; title: string; done: number; total: number; pct: number }[]> = {}
+      for (const f of features) {
+        const children = tasks.filter(t => t.parent_id === f.id)
+        if (children.length === 0) continue
+        const done = children.filter(c => c.status === 'done' || c.status === 'closed').length
+        const open = children.length - done
+        if (done > 0 && open > 0) {
+          const proj = f.project || 'Unknown'
+          if (!activeFeaturesByProject[proj]) activeFeaturesByProject[proj] = []
+          activeFeaturesByProject[proj].push({
+            id: f.id, title: f.title, done, total: children.length,
+            pct: Math.round((done / children.length) * 100),
+          })
+        }
+      }
+
       const enriched = baseProjects.map(p => ({
         ...p,
         taskCounts: counts[p.supabaseProject] ?? { total: 0, done: 0, inProgress: 0, open: 0 },
         taskProgress: counts[p.supabaseProject]
           ? Math.round((counts[p.supabaseProject].done / Math.max(counts[p.supabaseProject].total, 1)) * 100)
           : 0,
+        activeFeatures: activeFeaturesByProject[p.supabaseProject] ?? [],
       }))
       return NextResponse.json(enriched, { headers: { 'Cache-Control': 'no-store' } })
     }

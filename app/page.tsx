@@ -3,11 +3,12 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AgentOffice from '@/components/AgentOffice'
-import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server } from 'lucide-react'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map } from 'lucide-react'
+import FeaturesTab from '@/components/tabs/FeaturesTab'
 
 const KEMUNI_START     = new Date('2026-03-21')
 const KEMUNI_DEADLINE  = new Date('2026-04-20')
-const VESPERA_DEADLINE = new Date('2026-03-29')
+const VESPERA_DEADLINE = new Date('2026-03-31')
 const VESPERA_START    = new Date('2026-03-22')
 
 function daysUntil(d: Date) { return Math.max(0, Math.ceil((d.getTime()-Date.now())/86400000)) }
@@ -110,7 +111,7 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
-  office: Building2, memory: Brain, board: Kanban, automations: Zap, chat: MessageSquare, infra: Server,
+  office: Building2, memory: Brain, board: Kanban, features: Map, automations: Zap, chat: MessageSquare, infra: Server,
 }
 
 const NAV = [
@@ -121,6 +122,7 @@ const NAV = [
   { id:'office',       label:'Office',       icon:'🏢' },
   { id:'memory',       label:'Memory',       icon:'🧠' },
   { id:'board',        label:'Board',        icon:'📋' },
+  { id:'features',     label:'Features',     icon:'🗺️' },
   { id:'divider' as any, label:'',           icon:'' },
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
@@ -3452,7 +3454,7 @@ export default function Home() {
 
   const sprintProjects = projects ?? [
     {id:'kemuni',name:'Kemuni Launch',desc:'Community & Property SaaS',emoji:'🚀',startDate:'2026-03-21',deadline:'2026-04-20',totalDays:30,color:'#ffffff',borderColor:'border-zinc-800/60',bg:'#0f0f0f',bgDark:'#0f0f0f'},
-    {id:'vespera',name:'Vespera Sprint',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-29',totalDays:7,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
+    {id:'vespera',name:'Vespera Sprint',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-31',totalDays:9,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
   ]
   const todayIdx=new Date().getDay()
   const nextRuns=getNextRuns()
@@ -3671,6 +3673,27 @@ export default function Home() {
                             {proj.taskCounts.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {proj.taskCounts.inProgress} active</span>}
                             {proj.taskCounts.open > 0 && <span className="text-zinc-600 text-[9px]">○ {proj.taskCounts.open} open</span>}
                           </div>
+                        </div>
+                      )}
+                      {proj.activeFeatures && proj.activeFeatures.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-zinc-800/40">
+                          <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-wider">Active Features</span>
+                          <div className="mt-1.5 space-y-1.5">
+                            {proj.activeFeatures.slice(0, 3).map((af: any) => (
+                              <div key={af.id}>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-zinc-400 text-[10px] truncate flex-1 min-w-0 mr-2">{af.title}</span>
+                                  <span className="text-zinc-600 text-[9px] shrink-0">{af.done}/{af.total}</span>
+                                </div>
+                                <div className="w-full rounded-full h-1 mt-0.5" style={{background:'#1a1a1a'}}>
+                                  <div className="h-1 rounded-full transition-all" style={{width:af.pct+'%',background:'#3b82f6'}} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {proj.activeFeatures.length > 3 && (
+                            <p className="text-zinc-600 text-[9px] mt-1">+{proj.activeFeatures.length - 3} more</p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -4644,6 +4667,11 @@ export default function Home() {
           {/* ── BOARD ── */}
           {tab==='board' && (
             <KanbanBoard />
+          )}
+
+          {/* ── FEATURES ── */}
+          {tab==='features' && (
+            <FeaturesTab />
           )}
 
           {/* ── AUTOMATIONS (n8n embed) ── */}
