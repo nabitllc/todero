@@ -3710,7 +3710,11 @@ export default function Home() {
               {/* Active agents */}
               <SH icon="🤖">Active Agents</SH>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {displayAgents.slice(1).filter((a:any)=>a.status!=='planned').map((a:any)=>(
+                {displayAgents.slice(1).filter((a:any)=>a.status!=='planned').sort((a:any,b:any)=>{
+                  if(a.status==='active'&&b.status!=='active') return -1
+                  if(b.status==='active'&&a.status!=='active') return 1
+                  return (a.ago??9999)-(b.ago??9999)
+                }).map((a:any)=>(
                   <div key={a.id} className="rounded-2xl p-5 border card-glow cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f',borderColor:a.color+'28'}} onClick={()=>setAgentModal(a)}>
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
@@ -3721,11 +3725,17 @@ export default function Home() {
                         <div className="flex items-center gap-1.5">
                           <p className="text-white text-sm font-semibold truncate">{a.name}</p>
                           <Dot status={a.status} />
+                          {a.ago > 1440 && ['ops','deployer','main'].includes(a.id) && (
+                            <span title="Idle >24h" className="text-yellow-500 text-xs">⚠️</span>
+                          )}
                         </div>
                         <p className="text-zinc-500 text-xs truncate">{a.role}</p>
-                        <p className="text-zinc-700 text-[10px] font-mono truncate">{a.modelShort}</p>
+                        <p className="text-zinc-700 text-[10px] font-mono truncate">
+                          {a.ago > 0 ? (a.ago < 60 ? `Active ${a.ago}m ago` : a.ago < 1440 ? `Active ${Math.floor(a.ago/60)}h ago` : `Idle ${Math.floor(a.ago/1440)}d`) : a.status === 'active' ? 'Active now' : 'Idle'}
+                        </p>
                       </div>
                     </div>
+                    {a.currentTask && <p className="text-zinc-400 text-[10px] mb-2 truncate">↳ {a.currentTask.slice(0,50)}</p>}
                     <p className="text-zinc-500 text-xs leading-relaxed mb-3">{a.desc}</p>
                     <div className="flex flex-wrap gap-1 mb-2">
                       {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
