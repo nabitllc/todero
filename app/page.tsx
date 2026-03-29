@@ -2717,7 +2717,7 @@ interface Task {
   id: string; title: string; description?: string; status: string;
   assignee?: string; project?: string; priority?: string; type?: string;
   due_date?: string; created_at?: string; updated_at?: string;
-  resolution_type?: string; acceptance_criteria?: string;
+  resolution_type?: string; acceptance_criteria?: string; sprint?: string;
   steps_to_reproduce?: string; expected_behavior?: string;
   actual_behavior?: string; environment?: string;
   pr_url?: string; blocked_by?: string;
@@ -2778,6 +2778,9 @@ function KanbanBoard() {
   const [filterProject, setFilterProject]   = useState('')
   const [filterAssignee, setFilterAssignee] = useState('')
   const [filterPriority, setFilterPriority] = useState('')
+  const [filterSprint, setFilterSprint]     = useState('')
+  const [quickAddCol, setQuickAddCol]       = useState<string|null>(null)
+  const [quickAddTitle, setQuickAddTitle]   = useState('')
   const [confirmDelete, setConfirmDelete]   = useState<string|null>(null)
   const [mobileCol, setMobileCol] = useState('open')
   const [resolutionPending, setResolutionPending] = useState<{taskId:string;source:'drag'|'edit';editFields?:Partial<Task>}|null>(null)
@@ -2854,11 +2857,13 @@ function KanbanBoard() {
     if (detailTask) { window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }
   }, [detailTask])
 
+  const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
   const filtered = tasks.filter(t => {
     if (t.status === 'closed') return false
     if (filterProject && t.project !== filterProject) return false
     if (filterAssignee && t.assignee !== filterAssignee) return false
     if (filterPriority && t.priority !== filterPriority) return false
+    if (filterSprint && t.sprint !== filterSprint) return false
     return true
   })
 
@@ -2895,6 +2900,10 @@ function KanbanBoard() {
         <select className={selectCls} value={filterPriority} onChange={e=>setFilterPriority(e.target.value)}>
           <option value="">All Priorities</option>
           {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
+        </select>
+        <select className={selectCls} value={filterSprint} onChange={e=>setFilterSprint(e.target.value)}>
+          <option value="">All Sprints</option>
+          {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
         </select>
         <button onClick={() => setShowArchive(!showArchive)}
           className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${showArchive ? 'bg-zinc-700 text-white' : 'bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}>
@@ -3020,11 +3029,26 @@ function KanbanBoard() {
                 ))}
               </div>
 
-              {/* Quick-add */}
-              <button onClick={()=>setNewTask({status:col.id,priority:'medium'})}
-                className="mx-2 mb-2 text-[10px] text-zinc-700 hover:text-zinc-500 transition-colors py-1">
-                + Add task
-              </button>
+              {/* Quick-add inline */}
+              {quickAddCol === col.id ? (
+                <form className="mx-2 mb-2 flex gap-1" onSubmit={async e=>{
+                  e.preventDefault()
+                  if(!quickAddTitle.trim()) return
+                  await createTask({title:quickAddTitle.trim(),status:col.id,priority:'medium',project:'Infrastructure',assignee:'main',type:'feature',acceptance_criteria:'To be defined'})
+                  setQuickAddTitle(''); setQuickAddCol(null)
+                }}>
+                  <input autoFocus value={quickAddTitle} onChange={e=>setQuickAddTitle(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==='Escape'){setQuickAddCol(null);setQuickAddTitle('')} }}
+                    placeholder="Task title..." className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-zinc-500 placeholder-zinc-600" />
+                  <button type="submit" className="text-[10px] px-2 py-1.5 rounded-lg bg-zinc-700 text-white hover:bg-zinc-600">Add</button>
+                  <button type="button" onClick={()=>{setQuickAddCol(null);setQuickAddTitle('')}} className="text-[10px] px-1.5 text-zinc-500 hover:text-zinc-300">✕</button>
+                </form>
+              ) : (
+                <button onClick={()=>{setQuickAddCol(col.id);setQuickAddTitle('')}}
+                  className="mx-2 mb-2 text-[10px] text-zinc-700 hover:text-zinc-400 transition-colors py-1 text-left w-[calc(100%-16px)]">
+                  + Add task
+                </button>
+              )}
             </div>
           )
         })}
