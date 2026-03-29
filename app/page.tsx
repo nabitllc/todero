@@ -237,6 +237,45 @@ function NeedsAttentionBlock() {
   )
 }
 
+// INF-76: Done-yesterday wins callout
+function DoneYesterdayWins() {
+  const [wins, setWins] = React.useState<any[]>([])
+  React.useEffect(() => {
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const now = new Date()
+    const yStart = new Date(now); yStart.setDate(now.getDate()-1); yStart.setHours(0,0,0,0)
+    const yEnd = new Date(now); yEnd.setHours(0,0,0,0)
+    fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    }).then(r => r.json()).then(data => {
+      if (Array.isArray(data) && data.length > 0) setWins(data)
+    }).catch(() => {})
+  }, [])
+  if (wins.length === 0) return null
+  const ASSIGNEE_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤' }
+  return (
+    <div className="rounded-2xl border border-emerald-900/40 p-4 md:p-5" style={{background:'linear-gradient(135deg,#071a0f 0%,#0a1a10 100%)'}}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">🏆</span>
+        <span className="text-xs font-semibold tracking-widest text-emerald-400 uppercase">Yesterday's Wins</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 font-medium">{wins.length} shipped</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {wins.map((w, i) => (
+          <div key={w.task_key || i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-emerald-900/30 text-xs"
+            style={{background:'#0a1f12'}}>
+            {w.assignee && ASSIGNEE_EMOJI[w.assignee] && <span>{ASSIGNEE_EMOJI[w.assignee]}</span>}
+            {w.task_key && <span className="font-mono text-emerald-600 text-[9px]">{w.task_key}</span>}
+            <span className="text-emerald-300 truncate max-w-[180px]">{w.title}</span>
+            {w.project && <span className="text-emerald-700 text-[9px]">{w.project}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AttentionAndShipped({agents}:{agents:any[]}) {
   const [data, setData] = React.useState<{attention:any[];shipped:any[]}>({attention:[],shipped:[]})
   React.useEffect(()=>{
@@ -308,6 +347,129 @@ const EmptyState = ({icon, message, action}: {icon:string, message:string, actio
     {action && <button className='mt-3 text-xs text-zinc-400 border border-zinc-700 px-3 py-1 rounded hover:bg-zinc-800'>{action}</button>}
   </div>
 )
+
+
+// MC-119: Risk Radar card
+function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
+  const [risks, setRisks] = React.useState<{p0Bugs: any[]; blocked: any[]; noChildren: any[]}>({ p0Bugs: [], blocked: [], noChildren: [] })
+  React.useEffect(() => {
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
+    Promise.all([
+      fetch(`${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?status=eq.blocked&assignee=not.is.null&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?type=eq.feature&status=neq.done&status=neq.closed&select=id,task_key,title,project&limit=100`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: h }).then(r => r.json()),
+    ]).then(([p0, blocked, features, children]) => {
+      const parentIds = new Set((Array.isArray(children) ? children : []).map((c: any) => c.parent_id))
+      const noChildren = (Array.isArray(features) ? features : []).filter((f: any) => !parentIds.has(f.id))
+      setRisks({ p0Bugs: Array.isArray(p0) ? p0 : [], blocked: Array.isArray(blocked) ? blocked : [], noChildren })
+    }).catch(() => {})
+  }, [])
+  const signals = [
+    { label: 'P0 Bugs (>24h)', count: risks.p0Bugs.length, items: risks.p0Bugs, icon: '\u{1F534}' },
+    { label: 'Blocked Issues', count: risks.blocked.length, items: risks.blocked, icon: '\u{1F6AB}' },
+    { label: 'Features (0 children)', count: risks.noChildren.length, items: risks.noChildren, icon: '\u26A0\uFE0F' },
+  ]
+  return (
+    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-sm">{'\u{1F6E1}\uFE0F'}</span>
+        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Risk Radar</span>
+      </div>
+      <div className="space-y-2.5">
+        {signals.map(s => {
+          const badgeColor = s.count === 0 ? '#10b981' : s.count <= 3 ? '#f59e0b' : '#ef4444'
+          const badgeBg = s.count === 0 ? '#10b98118' : s.count <= 3 ? '#f59e0b18' : '#ef444418'
+          return (
+            <div key={s.label} className="rounded-xl border border-zinc-800/40 px-3 py-2.5" style={{ background: '#0a0a0a' }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs">{s.icon}</span>
+                <span className="text-zinc-400 text-xs flex-1">{s.label}</span>
+                <button onClick={() => onNavigate('board')}
+                  className="text-xs font-bold px-2 py-0.5 rounded-full transition-colors hover:opacity-80"
+                  style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}30` }}>
+                  {s.count}
+                </button>
+              </div>
+              {s.count > 0 && (
+                <div className="mt-2 space-y-1">
+                  {s.items.slice(0, 3).map((item: any, i: number) => (
+                    <div key={item.task_key || i} className="flex items-center gap-2 text-[10px]">
+                      {item.task_key && <span className="font-mono text-zinc-500">{item.task_key}</span>}
+                      <span className="text-zinc-400 truncate">{item.title}</span>
+                    </div>
+                  ))}
+                  {s.count > 3 && <span className="text-[9px] text-zinc-600">+{s.count - 3} more</span>}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// MC-120: Today's Standup card
+function StandupCard() {
+  const [data, setData] = React.useState<{shipped: any[]; inFlight: any[]; blockers: any[]}>({ shipped: [], inFlight: [], blockers: [] })
+  React.useEffect(() => {
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
+    Promise.all([
+      fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?or=(blocked_by.not.is.null,status.eq.blocked)&status=neq.done&status=neq.closed&select=task_key,title,blocked_by,assignee&limit=5`, { headers: h }).then(r => r.json()),
+    ]).then(([shipped, inFlight, blockers]) => {
+      setData({
+        shipped: Array.isArray(shipped) ? shipped : [],
+        inFlight: Array.isArray(inFlight) ? inFlight : [],
+        blockers: Array.isArray(blockers) ? blockers : [],
+      })
+    }).catch(() => {})
+  }, [])
+  const sections = [
+    { label: 'Shipped Yesterday', icon: '\u2705', items: data.shipped, emptyMsg: 'Nothing shipped', color: '#10b981' },
+    { label: 'In Flight Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', color: '#3b82f6' },
+    { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', color: '#ef4444' },
+  ]
+  return (
+    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-sm">{'\u{1F4CB}'}</span>
+        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Today&apos;s Standup</span>
+      </div>
+      <div className="space-y-3">
+        {sections.map(s => (
+          <div key={s.label}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs">{s.icon}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: s.color }}>{s.label}</span>
+              <span className="text-[9px] text-zinc-600">({s.items.length})</span>
+            </div>
+            {s.items.length === 0 ? (
+              <p className="text-[10px] text-zinc-700 italic pl-5">{s.emptyMsg}</p>
+            ) : (
+              <div className="space-y-1 pl-5">
+                {s.items.slice(0, 5).map((item: any, i: number) => (
+                  <div key={item.task_key || i} className="flex items-center gap-2 text-xs">
+                    {item.task_key && <span className="text-[9px] font-mono text-zinc-500 shrink-0">{item.task_key}</span>}
+                    <span className="text-zinc-400 truncate">{item.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ── Chat Component ────────────────────────────────────────────────────────
 function MarkdownMessage({ content }: { content: string }) {
@@ -4443,6 +4605,14 @@ export default function Home() {
   const [liveCrons, setLiveCrons] = useState<typeof CRONS | null>(null)
   const [projects, setProjects] = useState<any[]|null>(null)
   const [deployState, setDeployState] = useState<'idle'|'loading'|'done'>('idle')
+  // INF-90: Global toast notifications
+  const [globalToasts, setGlobalToasts] = useState<{id:number;text:string;color:string}[]>([])
+  const globalToastIdRef = React.useRef(0)
+  const addGlobalToast = React.useCallback((text:string, color='#00ff88')=>{
+    const id = ++globalToastIdRef.current
+    setGlobalToasts(t => { const next = [...t, {id,text,color}]; return next.length>4?next.slice(-4):next })
+    setTimeout(()=>setGlobalToasts(t=>t.filter(x=>x.id!==id)), 4000)
+  }, [])
   // MC-112: Global sync state
   const [syncing, setSyncing] = useState(false)
   const globalSync = async () => {
@@ -4483,16 +4653,29 @@ export default function Home() {
   useEffect(() => {
     const SUPA_AR = 'https://twthgapiouiqhavrcnry.supabase.co'
     const KEY_AR = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const prevRunsRef: { current: Record<string,string> } = { current: {} }
     const fetchRuns = () => {
       fetch(`${SUPA_AR}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`, {
         headers: { apikey: KEY_AR, Authorization: `Bearer ${KEY_AR}` }
       }).then(r => r.json()).then((rows: any[]) => {
         if (!Array.isArray(rows)) return
+        const AGENT_EMOJI_MAP: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤', deployer:'🚀' }
         const byAgent: Record<string, {taskTitle:string; startedAt:string|null; status:string}> = {}
         for (const r of rows) {
           if (!byAgent[r.agent_id]) {
             byAgent[r.agent_id] = { taskTitle: (r.task_title || '').slice(0, 40), startedAt: r.started_at, status: r.status }
           }
+        }
+        // INF-90: fire toasts for new runs or completions
+        for (const [agentId, info] of Object.entries(byAgent)) {
+          const prev = prevRunsRef.current[agentId]
+          const emoji = AGENT_EMOJI_MAP[agentId] || '🤖'
+          if (prev && prev !== info.status) {
+            if (info.status === 'running') addGlobalToast(`${emoji} ${agentId} started: ${info.taskTitle}`, '#60a5fa')
+            else if (info.status === 'completed' || info.status === 'done') addGlobalToast(`${emoji} ${agentId} done: ${info.taskTitle}`, '#34d399')
+            else if (info.status === 'error') addGlobalToast(`${emoji} ${agentId} error: ${info.taskTitle}`, '#f87171')
+          }
+          prevRunsRef.current[agentId] = info.status
         }
         setAgentRunsData(byAgent)
       }).catch(() => {})
@@ -4842,6 +5025,9 @@ export default function Home() {
 
               {/* ── Needs Your Attention (INF-77) ── */}
               <NeedsAttentionBlock />
+
+              {/* INF-76: Done-yesterday wins */}
+              <DoneYesterdayWins />
 
               {/* ── Subscriptions & Balances (INF-66) ── */}
               <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
@@ -5212,7 +5398,7 @@ export default function Home() {
               {/* Lead agent card */}
               {displayAgents.length > 0 && (() => {
                 const ls0 = agentLiveStatus(displayAgents[0].id)
-                const dotColor = ls0.dot === 'green' ? 'bg-emerald-500 anim-pg' : ls0.dot === 'amber' ? 'bg-amber-500 anim-py' : 'bg-zinc-600'
+                const dotColor = ls0.dot === 'green' ? 'bg-emerald-500 dot-health-green' : ls0.dot === 'amber' ? 'bg-amber-500 dot-health-amber' : 'bg-zinc-600'
                 return <div className="flex justify-center">
                 <div className="rounded-2xl p-4 md:p-6 border border-zinc-700/50 card-glow w-full max-w-xs sm:max-w-sm cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setAgentModal(displayAgents[0])}>
                   <div className="flex items-center gap-4 mb-4">
@@ -5255,7 +5441,7 @@ export default function Home() {
                   return (a.ago??9999)-(b.ago??9999)
                 }).map((a:any)=>{
                   const ls = agentLiveStatus(a.id)
-                  const dotColor = ls.dot === 'green' ? 'bg-emerald-500 anim-pg' : ls.dot === 'amber' ? 'bg-amber-500 anim-py' : 'bg-zinc-600'
+                  const dotColor = ls.dot === 'green' ? 'bg-emerald-500 dot-health-green' : ls.dot === 'amber' ? 'bg-amber-500 dot-health-amber' : 'bg-zinc-600'
                   return (
                   <div key={a.id} className="rounded-2xl p-5 border card-glow cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f',borderColor:a.color+'28'}} onClick={()=>setAgentModal(a)}>
                     <div className="flex items-center gap-3 mb-3">
@@ -6434,6 +6620,16 @@ export default function Home() {
         </main>
       </div>
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={(t) => { setTab(t as Tab); if (typeof window !== 'undefined') localStorage.setItem('mc-tab', t) }} />
+      {/* INF-90: Global toast notifications for agent_runs */}
+      {globalToasts.length > 0 && (
+        <div style={{position:'fixed',bottom:72,right:16,zIndex:9999,display:'flex',flexDirection:'column',gap:6,pointerEvents:'none'}}>
+          {globalToasts.map(t=>(
+            <div key={t.id} style={{background:'#0f0f1aee',border:`1px solid ${t.color}40`,borderLeft:`3px solid ${t.color}`,padding:'8px 14px',borderRadius:8,fontSize:11,color:t.color,maxWidth:280,boxShadow:'0 4px 16px rgba(0,0,0,0.5)',animation:'slideIn 0.2s ease'}}>
+              {t.text}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
