@@ -8,7 +8,7 @@ const supabase = createClient(
 
 export async function GET() {
   const { data, error } = await supabase
-    .from('tasks')
+    .from('issues')
     .select('*')
     .order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { title, description, status, assignee, project, priority, type, due_date } = body
   const { data, error } = await supabase
-    .from('tasks')
+    .from('issues')
     .insert({ title, description, status, assignee, project, priority, type, due_date })
     .select()
     .single()
@@ -32,7 +32,7 @@ export async function PATCH(req: NextRequest) {
   const { id, ...fields } = body
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { data, error } = await supabase
-    .from('tasks')
+    .from('issues')
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-  const { error } = await supabase.from('tasks').delete().eq('id', id)
+  const { error } = await supabase.from('issues').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

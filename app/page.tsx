@@ -199,8 +199,8 @@ function AttentionAndShipped({agents}:{agents:any[]}) {
     const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
     const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
     Promise.all([
-      fetch(`${SUPA}/rest/v1/tasks?priority=eq.critical&status=eq.open&limit=5`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
-      fetch(`${SUPA}/rest/v1/tasks?status=eq.done&updated_at=gte.${today}T00:00:00&limit=10&order=updated_at.desc`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
+      fetch(`${SUPA}/rest/v1/issues?priority=eq.critical&status=eq.open&limit=5`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
+      fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gte.${today}T00:00:00&limit=10&order=updated_at.desc`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
     ]).then(([attn, ship])=>{
       const idleAgents = (agents||[]).filter((a:any)=>a.ago>1440&&['ops','deployer','main'].includes(a.id))
         .map((a:any)=>({title:`${a.name} idle ${Math.floor(a.ago/60)}h`,project:'agent'}))
@@ -2793,7 +2793,7 @@ function KanbanBoard() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch('/api/tasks')
+      const res = await fetch('/api/issues')
       if (res.ok) { const d = await res.json(); setTasks(d) }
     } catch { /* ignore */ }
     finally { setLoading(false) }
@@ -2802,17 +2802,17 @@ function KanbanBoard() {
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
   const createTask = async (t: Partial<Task>) => {
-    const res = await fetch('/api/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
+    const res = await fetch('/api/issues', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
     if (res.ok) { const d = await res.json(); setTasks(prev => [d, ...prev]); setNewTask(null) }
   }
 
   const updateTask = async (id: string, fields: Partial<Task>) => {
-    const res = await fetch('/api/tasks', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, ...fields}) })
+    const res = await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, ...fields}) })
     if (res.ok) { const d = await res.json(); setTasks(prev => prev.map(t => t.id===id ? d : t)); setEditTask(null) }
   }
 
   const deleteTask = async (id: string) => {
-    const res = await fetch(`/api/tasks?id=${id}`, { method:'DELETE' })
+    const res = await fetch(`/api/issues?id=${id}`, { method:'DELETE' })
     if (res.ok) { setTasks(prev => prev.filter(t => t.id!==id)); setConfirmDelete(null); setEditTask(null) }
   }
 
@@ -2820,7 +2820,7 @@ function KanbanBoard() {
     setTasks(prev => prev.map(t => t.id===id ? {...t, status:'closed'} : t))
     setClosedConfirm(id)
     setTimeout(() => setClosedConfirm(prev => prev===id ? null : prev), 2000)
-    await fetch('/api/tasks', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
+    await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
   }
 
   const handleDrop = (status: string) => {
@@ -3663,7 +3663,7 @@ export default function Home() {
                       {proj.taskCounts && proj.taskCounts.total > 0 && (
                         <div className="mt-3 pt-3 border-t border-zinc-800/40">
                           <div className="flex justify-between mb-1.5">
-                            <span className="text-zinc-600 text-[10px]">Tasks</span>
+                            <span className="text-zinc-600 text-[10px]">Issues</span>
                             <span className="text-zinc-500 text-[10px]">{proj.taskCounts.done}/{proj.taskCounts.total} done</span>
                           </div>
                           <Bar v={proj.taskProgress} color='#10b981' bg='#0a1a12' />

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { updateTaskStatus, logAgentRun } from '@/lib/tasks'
+import { updateTaskStatus, logAgentRun } from '@/lib/issues'
 
 // Called by agents when they complete a task
 // Usage: curl -X POST http://localhost:3000/api/task-done \

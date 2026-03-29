@@ -5,7 +5,7 @@ const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsI
 export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'in_review' | 'done'
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  await fetch(`${SUPA_URL}/rest/v1/tasks?id=eq.${taskId}`, {
+  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${taskId}`, {
     method: 'PATCH',
     headers: {
       'apikey': SUPA_KEY,

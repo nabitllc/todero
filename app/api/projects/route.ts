@@ -17,7 +17,7 @@ export async function GET() {
   // Fetch task counts per project
   try {
     const res = await fetch(
-      `${SUPA}/rest/v1/tasks?select=project,status&limit=1000`,
+      `${SUPA}/rest/v1/issues?select=project,status&limit=1000`,
       { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }, cache: 'no-store' }
     )
     if (res.ok) {

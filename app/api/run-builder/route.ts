@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   // Smart task selection: priority → due_date → created_at
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/tasks?assignee=eq.builder&status=eq.open&select=id,title,description,priority,due_date,project&limit=50`,
+    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.open&select=id,title,description,priority,due_date,project&limit=50`,
     { headers: HEADERS }
   )
   const tasks = await res.json() as Array<{id:string,title:string,description:string,priority:string,due_date:string|null,project:string}>
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const task = tasks[0]
 
   // Mark in_progress
-  await fetch(`${SUPA_URL}/rest/v1/tasks?id=eq.${task.id}`, {
+  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
     method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
     body: JSON.stringify({ status: 'in_progress', updated_at: new Date().toISOString() })
   })
