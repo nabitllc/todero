@@ -138,6 +138,18 @@ function notifyPRReview(issue: { task_key?: string; title?: string; project?: st
     (err) => { if (err) console.error('[discord-pr-review]', err.message) })
 }
 
+function notifyTestFailure(issue: { task_key?: string; title?: string; project?: string; description?: string }) {
+  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
+  const key = issue.task_key ?? '?'
+  // Extract failure notes from description (after "---" separator if present)
+  const desc = issue.description ?? ''
+  const failureSection = desc.includes('---') ? desc.split('---').pop()?.trim().slice(0, 300) : desc.slice(0, 300)
+  const msg = `🚨 **Test Failed: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n📝 Tester notes: ${failureSection || 'No details provided'}\n\nBuilder: pick up fix on next loop tick.`
+  const escaped = msg.replace(/'/g, `'\\''`)
+  exec(`openclaw message send --channel discord --target "channel:${DISCORD_CHANNEL}" --message '${escaped}'`,
+    (err) => { if (err) console.error('[discord-test-failure]', err.message) })
+}
+
 export async function PATCH(req: NextRequest) {
   const body = await req.json()
   const { id, ...fields } = body
@@ -159,10 +171,10 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Fetch existing record to detect pr_url transition ──
+  // ── Fetch existing record to detect pr_url and test_status transitions ──
   const { data: before } = await supabase
     .from('issues')
-    .select('pr_url')
+    .select('pr_url,test_status')
     .eq('id', id)
     .single()
 
@@ -183,6 +195,11 @@ export async function PATCH(req: NextRequest) {
   // ── PR review notification when pr_url is first set ──
   if (fields.pr_url && !before?.pr_url && data) {
     notifyPRReview(data)
+  }
+
+  // ── Tester failure notification (INF-193) ──
+  if (fields.test_status === 'failed' && before?.test_status !== 'failed' && data) {
+    notifyTestFailure(data)
   }
 
   return NextResponse.json(data)
