@@ -2824,27 +2824,49 @@ function MultiSelect({ label, options, selected, onToggle, displayFn }: {
 function SprintProgressCard() {
   const [sprintData, setSprintData] = useState<{total:number;done:number}|null>(null)
   const [priorData, setPriorData] = useState<{total:number;done:number}|null>(null)
+  const [sprintLabel, setSprintLabel] = useState('')
+  const [sprintDate, setSprintDate] = useState('')
   const [countdown, setCountdown] = useState('')
 
   useEffect(() => {
     const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
     const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
     const headers = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
-    // Current sprint
-    fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.2026-03-28&select=id,status`, { headers })
+
+    // Fetch active sprint dynamically
+    fetch(`${SUPA_URL}/rest/v1/sprints?status=eq.active&select=sprint_number,start_date,end_date&limit=1`, { headers })
       .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setSprintData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
-        }
-      }).catch(() => {})
-    // Prior sprint for velocity comparison
-    fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.2026-03-27&select=id,status`, { headers })
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) {
-          setPriorData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
-        }
+      .then(sprints => {
+        if (!Array.isArray(sprints) || sprints.length === 0) return
+        const active = sprints[0]
+        const num = active.sprint_number ?? '?'
+        const activeDate = active.start_date
+        setSprintLabel(`Sprint ${num}`)
+        setSprintDate(activeDate)
+
+        // Fetch issues for active sprint
+        fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.${activeDate}&select=id,status`, { headers })
+          .then(r => r.json())
+          .then(data => {
+            if (Array.isArray(data)) {
+              setSprintData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
+            }
+          }).catch(() => {})
+
+        // Fetch prior sprint for velocity comparison
+        fetch(`${SUPA_URL}/rest/v1/sprints?status=eq.closed&select=sprint_number,start_date&order=created_at.desc&limit=1`, { headers })
+          .then(r => r.json())
+          .then(priorSprints => {
+            if (!Array.isArray(priorSprints) || priorSprints.length === 0) return
+            const priorDate = priorSprints[0].start_date
+            fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.${priorDate}&select=id,status`, { headers })
+              .then(r => r.json())
+              .then(data => {
+                if (Array.isArray(data)) {
+                  setPriorData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
+                }
+              }).catch(() => {})
+          }).catch(() => {})
       }).catch(() => {})
   }, [])
 
@@ -2877,7 +2899,7 @@ function SprintProgressCard() {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-sm">🏃</span>
-          <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Sprint 2026-03-28</span>
+          <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">{sprintLabel || 'Sprint'}{sprintDate ? ` · ${sprintDate}` : ''}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-zinc-600">Next 7am EDT in</span>

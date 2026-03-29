@@ -72,10 +72,52 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── Auto-routing: assign issues when assignee is null or 'main' ──
+  let effectiveAssignee = assignee
+  let routingNote = ''
+  if (!effectiveAssignee || effectiveAssignee === 'main' || effectiveAssignee === 'kaos') {
+    const effectiveType = type ?? 'task'
+    const titleLower = (title ?? '').toLowerCase()
+    const descLower = (description ?? '').toLowerCase()
+
+    if (titleLower.includes('manual') || titleLower.includes('blocked') || descLower.includes('requires michael')) {
+      effectiveAssignee = 'michael'
+      routingNote = '[auto-routed to michael: manual/blocked/requires michael]'
+    } else if (titleLower.includes('research') || titleLower.includes('evaluate') || titleLower.includes('scout')) {
+      effectiveAssignee = 'scout'
+      routingNote = '[auto-routed to scout: research/evaluate/scout keyword]'
+    } else if (effectiveType === 'ops') {
+      effectiveAssignee = 'ops'
+      routingNote = '[auto-routed to ops: type=ops]'
+    } else if (effectiveType === 'task' || effectiveType === 'bug') {
+      effectiveAssignee = 'builder'
+      routingNote = `[auto-routed to builder: type=${effectiveType}]`
+    } else if (effectiveType === 'feature' || effectiveType === 'epic') {
+      if (project === 'Kemuni') {
+        effectiveAssignee = 'kemuni-sme'
+        routingNote = '[auto-routed to kemuni-sme: feature/epic + Kemuni]'
+      } else if (project === 'Vespera') {
+        effectiveAssignee = 'vespera-sme'
+        routingNote = '[auto-routed to vespera-sme: feature/epic + Vespera]'
+      } else {
+        effectiveAssignee = 'builder'
+        routingNote = `[auto-routed to builder: feature/epic + ${project}]`
+      }
+    } else {
+      effectiveAssignee = 'builder'
+      routingNote = '[auto-routed to builder: default fallback]'
+    }
+  }
+
+  const effectiveDescription = routingNote
+    ? (description ? `${description}\n\n${routingNote}` : routingNote)
+    : description
+
   const { data, error } = await supabase
     .from('issues')
     .insert({
-      title, description, status: effectiveStatus, assignee, project,
+      title, description: effectiveDescription, status: effectiveStatus,
+      assignee: effectiveAssignee, project,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
       acceptance_criteria, sprint, parent_id,
       ...(test_tier ? { test_tier } : {}),

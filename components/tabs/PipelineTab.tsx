@@ -240,6 +240,9 @@ export default function PipelineTab() {
                       {buildingWIP}/3 WIP
                     </span>
                   )}
+                  {stage === 'Testing' && issues.some(i => i.assignee === 'tester' && (i.status === 'in_review' || i.status === 'in_progress')) && (
+                    <span className="text-sm" title="Tester active">🧪</span>
+                  )}
                   {stage === 'PR Queue' && (
                     <span className="text-[10px] text-zinc-500">
                       {countdown}
@@ -392,11 +395,23 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
   const blocked = isBlocked(issue)
   const parent = issue.parent_id ? features.find((f: any) => f.id === issue.parent_id) : null
   const typeColor = TYPE_COLORS[issue.type] || '#71717a'
+  const testStatus = issue.test_status as string | undefined
+  const testTier = issue.test_tier as string | undefined
+
+  const TEST_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+    passed: { bg: '#10b98120', color: '#10b981', label: 'Passed' },
+    failed: { bg: '#ef444420', color: '#ef4444', label: 'Failed' },
+    none:   { bg: '#3f3f4620', color: '#71717a', label: 'Untested' },
+  }
+  const ts = TEST_STATUS_STYLE[testStatus ?? 'none'] ?? TEST_STATUS_STYLE.none
 
   return (
     <div
       className={`rounded-lg border p-2 transition-colors hover:border-zinc-700 select-none ${
-        blocked ? 'border-red-500/60 ring-1 ring-red-500/30' : 'border-zinc-800/60'
+        blocked ? 'border-red-500/60 ring-1 ring-red-500/30'
+        : testStatus === 'failed' ? 'border-red-500/40'
+        : testStatus === 'passed' ? 'border-emerald-500/40'
+        : 'border-zinc-800/60'
       }`}
       style={{ background: '#0f0f0f', minHeight: 60 }}
       onTouchStart={onLongPressStart}
@@ -421,8 +436,24 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
           </span>
         )}
       </div>
+      {/* Test tier + test status badges */}
+      <div className="flex items-center gap-1.5 mt-1">
+        {testTier && (
+          <span className="text-[8px] px-1 py-0.5 rounded font-semibold bg-zinc-800 text-zinc-400">
+            {testTier}
+          </span>
+        )}
+        {testStatus && testStatus !== 'none' && (
+          <span className="text-[8px] px-1.5 py-0.5 rounded font-semibold" style={{ background: ts.bg, color: ts.color }}>
+            {ts.label}
+          </span>
+        )}
+        {issue.assignee === 'tester' && (
+          <span className="text-[10px]" title="Tester assigned">🧪</span>
+        )}
+      </div>
       {parent && (
-        <div className="text-[9px] text-zinc-600 truncate">
+        <div className="text-[9px] text-zinc-600 truncate mt-1">
           {parent.title}
         </div>
       )}
