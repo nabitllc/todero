@@ -46,6 +46,9 @@ export default function IssuesTab() {
   const [expandedId, setExpandedId] = useState<string|null>(null)
   const [editFields, setEditFields] = useState<Partial<Issue>>({})
   const [saving, setSaving] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkStatus, setBulkStatus] = useState('')
+  const [bulkSaving, setBulkSaving] = useState(false)
 
   useEffect(() => {
     fetch('/api/issues').then(r=>r.json()).then(d => {
@@ -100,6 +103,42 @@ export default function IssuesTab() {
     finally { setSaving(false) }
   }
 
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    if (selected.size === filtered.length) setSelected(new Set())
+    else setSelected(new Set(filtered.map(i => i.id)))
+  }
+
+  const handleBulkStatusChange = async () => {
+    if (!bulkStatus || selected.size === 0) return
+    setBulkSaving(true)
+    try {
+      const promises = Array.from(selected).map(id =>
+        fetch('/api/issues', {
+          method: 'PATCH',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ id, status: bulkStatus })
+        }).then(r => r.ok ? r.json() : null)
+      )
+      const results = await Promise.all(promises)
+      setIssues(prev => prev.map(i => {
+        const updated = results.find((r: any) => r && r.id === i.id)
+        return updated ? updated : i
+      }))
+      setSelected(new Set())
+      setBulkStatus('')
+    } catch { /* ignore */ }
+    finally { setBulkSaving(false) }
+  }
+
   const sprints = useMemo(() => Array.from(new Set(issues.map(i=>i.sprint).filter(Boolean))).sort().reverse(), [issues])
 
   const SortIcon = ({ col }: { col: SortKey }) => {
@@ -114,7 +153,7 @@ export default function IssuesTab() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-white">Issues</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">{filtered.length} issues</p>
+          <p className="text-xs text-zinc-500 mt-0.5">{filtered.length} issues{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
         </div>
         <div className="relative max-w-xs flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
@@ -126,13 +165,38 @@ export default function IssuesTab() {
         </div>
       </div>
 
+      {/* Bulk actions bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-blue-900/40" style={{background:'#0a0f1a'}}>
+          <span className="text-xs text-blue-400 font-medium">{selected.size} selected</span>
+          <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)}
+            className="bg-zinc-800 text-zinc-300 text-xs rounded-lg px-2 py-1.5 border border-zinc-700 focus:outline-none focus:border-zinc-500">
+            <option value="">Change status to…</option>
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+          </select>
+          <button onClick={handleBulkStatusChange} disabled={!bulkStatus || bulkSaving}
+            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors disabled:opacity-50">
+            {bulkSaving ? 'Applying…' : 'Apply'}
+          </button>
+          <button onClick={() => setSelected(new Set())}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs transition-colors ml-auto">
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
         {loading && <div className="text-zinc-600 text-xs text-center py-8">Loading issues...</div>}
 
         {!loading && (
           <div className="overflow-x-auto">
             {/* Header */}
-            <div className="hidden md:grid md:grid-cols-[80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 border-b border-zinc-800/60 bg-zinc-900/50">
+            <div className="hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 border-b border-zinc-800/60 bg-zinc-900/50">
+              <button onClick={selectAll} className="flex items-center justify-center">
+                <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center ${selected.size === filtered.length && filtered.length > 0 ? 'bg-blue-600 border-blue-500 text-white' : 'border-zinc-600 text-transparent'}`}>
+                  ✓
+                </span>
+              </button>
               {([['task_key','Key'],['type','Type'],['title','Title'],['status','Status'],['priority','Pri'],['assignee','Assignee'],['sprint','Sprint']] as [SortKey,string][]).map(([key,label]) => (
                 <button key={key} onClick={() => handleSort(key)}
                   className="flex items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors text-left">
@@ -157,9 +221,14 @@ export default function IssuesTab() {
                 {/* Desktop row */}
                 <div
                   onClick={() => handleExpand(issue.id)}
-                  className={'hidden md:grid md:grid-cols-[80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 cursor-pointer transition-colors border-b border-zinc-800/30 ' +
-                    (expandedId === issue.id ? 'bg-zinc-800/40' : 'hover:bg-zinc-900/80')}
+                  className={'hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 cursor-pointer transition-colors border-b border-zinc-800/30 ' +
+                    (expandedId === issue.id ? 'bg-zinc-800/40' : selected.has(issue.id) ? 'bg-blue-900/20' : 'hover:bg-zinc-900/80')}
                 >
+                  <span className="flex items-center justify-center" onClick={e => toggleSelect(issue.id, e)}>
+                    <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center cursor-pointer ${selected.has(issue.id) ? 'bg-blue-600 border-blue-500 text-white' : 'border-zinc-700 text-transparent hover:border-zinc-500'}`}>
+                      ✓
+                    </span>
+                  </span>
                   <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 w-fit">{issue.task_key??'—'}</span>
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full w-fit border"
                     style={{background:(TYPE_COLORS[issue.type??'']??'#71717a')+'18', color:TYPE_COLORS[issue.type??'']??'#71717a', borderColor:(TYPE_COLORS[issue.type??'']??'#71717a')+'40'}}>

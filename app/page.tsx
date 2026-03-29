@@ -2757,17 +2757,27 @@ function MultiSelect({ label, options, selected, onToggle, displayFn }: {
 
 function SprintProgressCard() {
   const [sprintData, setSprintData] = useState<{total:number;done:number}|null>(null)
+  const [priorData, setPriorData] = useState<{total:number;done:number}|null>(null)
   const [countdown, setCountdown] = useState('')
 
   useEffect(() => {
     const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
     const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
     const headers = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
+    // Current sprint
     fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.2026-03-28&select=id,status`, { headers })
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) {
           setSprintData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
+        }
+      }).catch(() => {})
+    // Prior sprint for velocity comparison
+    fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.2026-03-27&select=id,status`, { headers })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setPriorData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
         }
       }).catch(() => {})
   }, [])
@@ -2792,13 +2802,16 @@ function SprintProgressCard() {
 
   if (!sprintData || sprintData.total === 0) return null
   const pct = Math.round((sprintData.done / sprintData.total) * 100)
+  const velocityDelta = priorData && priorData.done > 0
+    ? sprintData.done - priorData.done
+    : null
 
   return (
     <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-sm">🏃</span>
-          <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Sprint 1</span>
+          <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Sprint 2026-03-28</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-zinc-600">Next 7am EDT in</span>
@@ -2808,6 +2821,14 @@ function SprintProgressCard() {
       <div className="flex items-center gap-3 mb-2">
         <span className="text-white text-sm font-semibold tabular-nums">{sprintData.done}/{sprintData.total}</span>
         <span className="text-zinc-500 text-xs">done</span>
+        {velocityDelta !== null && (
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{
+            background: velocityDelta > 0 ? '#10b98120' : velocityDelta < 0 ? '#ef444420' : '#3f3f4620',
+            color: velocityDelta > 0 ? '#10b981' : velocityDelta < 0 ? '#ef4444' : '#71717a'
+          }}>
+            {velocityDelta > 0 ? '+' : ''}{velocityDelta} vs prior
+          </span>
+        )}
         <span className="ml-auto text-lg font-bold tabular-nums" style={{color: pct === 100 ? '#10b981' : pct >= 50 ? '#3b82f6' : '#f59e0b'}}>{pct}%</span>
       </div>
       <div className="w-full rounded-full h-2" style={{background:'#1a1a1a'}}>
@@ -3622,6 +3643,38 @@ export default function Home() {
   })
   const [boardFeatureFilterName, setBoardFeatureFilterName] = useState<string|undefined>(undefined)
   const [activityLimit, setActivityLimit] = useState(100)
+  const [activityFilter, setActivityFilter] = useState<'all'|'issue'|'agent'|'pr'>('all')
+  const [issueActivity, setIssueActivity] = useState<any[]>([])
+
+  // Fetch issue status changes for activity feed
+  useEffect(() => {
+    const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const headers = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
+    // Recent issues updated in last 7 days
+    const since = new Date(Date.now() - 7 * 86400000).toISOString()
+    fetch(`${SUPA_URL}/rest/v1/issues?updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`, { headers })
+      .then(r => r.json())
+      .then(data => {
+        if (!Array.isArray(data)) return
+        const entries = data.map((i: any) => {
+          const agoMin = Math.round((Date.now() - new Date(i.updated_at).getTime()) / 60000)
+          const assigneeInfo = AGENT_DISPLAY[i.assignee] || null
+          return {
+            type: 'issue',
+            emoji: i.status === 'done' ? '✅' : i.status === 'in_progress' ? '🔧' : i.status === 'in_review' ? '👁' : '📋',
+            agentId: i.assignee || 'system',
+            agentName: assigneeInfo?.name || i.assignee || 'System',
+            channel: i.task_key,
+            action: 'issue',
+            desc: `${i.title} → ${(i.status || '').replace(/_/g, ' ')}${i.resolution_type ? ` (${i.resolution_type.replace(/_/g, ' ')})` : ''}`,
+            ago: agoMin,
+            date: agoMin < 60 ? 'Today' : agoMin < 1440 ? 'Yesterday' : 'Earlier',
+          }
+        })
+        setIssueActivity(entries)
+      }).catch(() => {})
+  }, [tab])
 
   // Cmd+K search shortcut
   useEffect(() => {
@@ -4005,10 +4058,25 @@ export default function Home() {
           {/* ── ACTIVITY ── */}
           {tab==='activity' && (
             <div className="space-y-5">
-              <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${liveStatus.recentActivity.length} entries · live` : undefined}>Activity Feed</SH>
+              <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${(liveStatus.recentActivity?.length ?? 0) + issueActivity.length} entries · live` : undefined}>Activity Feed</SH>
+              {/* Filter bar */}
+              <div className="flex items-center gap-2">
+                {(['all','agent','issue','pr'] as const).map(f => (
+                  <button key={f} onClick={() => setActivityFilter(f)}
+                    className={`text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all ${activityFilter === f ? 'border-blue-600 bg-blue-900/30 text-blue-400' : 'border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'}`}>
+                    {f === 'all' ? '📡 All' : f === 'agent' ? '🤖 Agent Runs' : f === 'issue' ? '📋 Issue Changes' : '🔀 PR Events'}
+                  </button>
+                ))}
+              </div>
               {(()=>{
-                const allItems = liveStatus?.recentActivity ?? []
-                if(allItems.length === 0) return <EmptyState icon="📡" message="No activity runs recorded yet" action="Refresh" />
+                const agentItems = (liveStatus?.recentActivity ?? []).map((e: any) => ({...e, type: e.type || 'agent'}))
+                const issueItems = issueActivity
+                let allItems: any[] = []
+                if (activityFilter === 'all') allItems = [...agentItems, ...issueItems].sort((a,b) => (a.ago ?? 999) - (b.ago ?? 999))
+                else if (activityFilter === 'agent') allItems = agentItems
+                else if (activityFilter === 'issue') allItems = issueItems
+                else allItems = agentItems.filter((e: any) => e.channel?.includes('PR') || e.desc?.toLowerCase().includes('pr ') || e.desc?.toLowerCase().includes('pull'))
+                if(allItems.length === 0) return <EmptyState icon="📡" message={activityFilter === 'all' ? 'No activity runs recorded yet' : `No ${activityFilter} activity found`} action="Refresh" />
                 const items = allItems.slice(0, activityLimit)
                 // Group by date
                 const grouped: Record<string, any[]> = {}
@@ -4027,7 +4095,7 @@ export default function Home() {
                     <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
                       {entries.map((entry:any, i:number, arr:any[])=>{
                         const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
-                        const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':'#3b82f6'
+                        const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':entry.action==='issue'?'#22c55e':'#3b82f6'
                         return (
                           <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
                             <span className="text-base shrink-0 mt-0.5">{entry.emoji || (AGENT_DISPLAY[entry.agentId]?.emoji ?? '🤖')}</span>
@@ -4038,6 +4106,8 @@ export default function Home() {
                                   style={{background:actionColor+'20',color:actionColor}}>
                                   {entry.channel}
                                 </span>}
+                                {entry.type === 'issue' && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
+                                  style={{background:'#22c55e20',color:'#22c55e'}}>issue</span>}
                                 {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-zinc-800 text-zinc-500">{entry.model}</span>}
                                 <span className="ml-auto text-zinc-600 text-[10px] shrink-0">{agoStr}</span>
                               </div>
@@ -4052,11 +4122,11 @@ export default function Home() {
               })()}
 
               {/* Load more activity */}
-              {(liveStatus?.recentActivity?.length ?? 0) > activityLimit && (
+              {((liveStatus?.recentActivity?.length ?? 0) + issueActivity.length) > activityLimit && (
                 <button onClick={() => setActivityLimit(prev => prev + 100)}
                   className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2.5 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
                   style={{background:'#0a0a0a'}}>
-                  Load 100 more ({(liveStatus?.recentActivity?.length ?? 0) - activityLimit} remaining)
+                  Load 100 more
                 </button>
               )}
 
