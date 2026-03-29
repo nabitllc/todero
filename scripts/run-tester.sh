@@ -46,6 +46,31 @@ echo "$ISSUES" | jq -c '.[]' | while read -r ISSUE; do
     REPO_DIR="/Users/kemuniagent/mission-control"
   fi
 
+  # INF-183: For P0/P1, include git diff in tester prompt for code review
+  GIT_DIFF_SECTION=""
+  if [ "$TIER" = "P0" ] || [ "$TIER" = "P1" ]; then
+    cd "$REPO_DIR"
+    if [ -n "$BRANCH" ] && [ "$BRANCH" != "null" ]; then
+      DIFF_OUTPUT=$(git diff "main...$BRANCH" --stat 2>/dev/null || git diff HEAD~5 --stat 2>/dev/null || echo "Could not generate diff")
+      DIFF_DETAIL=$(git diff "main...$BRANCH" 2>/dev/null | head -500 || git diff HEAD~5 2>/dev/null | head -500 || echo "Could not generate diff")
+    else
+      DIFF_OUTPUT=$(git diff HEAD~3 --stat 2>/dev/null || echo "No branch specified")
+      DIFF_DETAIL=$(git diff HEAD~3 2>/dev/null | head -500 || echo "No branch specified")
+    fi
+    GIT_DIFF_SECTION="
+--- GIT DIFF (P0/P1 code review required) ---
+Files changed:
+$DIFF_OUTPUT
+
+Diff detail (first 500 lines):
+$DIFF_DETAIL
+--- END DIFF ---
+
+IMPORTANT: As this is a $TIER issue, you MUST review the actual code changes above.
+Verify the diff implements what the acceptance criteria require.
+If the diff does not match the AC, set passed=false."
+  fi
+
   # Build test prompt for Claude
   PROMPT="You are Tester. Review this issue against its acceptance criteria.
 
@@ -59,12 +84,15 @@ $AC
 
 Builder Notes (from description):
 $DESC
+$GIT_DIFF_SECTION
 
 Instructions:
 1. Check the git log on branch '$BRANCH' (or current branch) for recent commits related to this task
 2. Read the changed files and verify each acceptance criterion is met
-3. Run 'npm run build' to verify the build passes
-4. Output your verdict as JSON on the LAST line:
+3. Run 'npm run build' to verify the build passes$([ "$TIER" = "P0" ] || [ "$TIER" = "P1" ] && echo "
+4. Review the git diff above — explicitly reference code changes in your notes
+5. If the diff does not implement the AC, fail the review")
+$([ "$TIER" != "P0" ] && [ "$TIER" != "P1" ] && echo "4. ")Output your verdict as JSON on the LAST line:
    {\"passed\": true, \"notes\": \"All AC met. Build passes.\"}
    or
    {\"passed\": false, \"notes\": \"AC #2 not met: <reason>\"}"
