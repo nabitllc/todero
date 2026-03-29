@@ -1,12 +1,11 @@
 'use client'
 import { useState } from 'react'
 import { Plus, X, CheckCircle } from 'lucide-react'
+import { Button } from '@/components/ui'
+import { TypeBadge, PriorityBadge } from '@/components/ui'
 
 interface IssueDraft { title: string; type: string; priority: string; assignee: string; acceptance_criteria: string }
 interface Props { draft: IssueDraft; project?: string | null }
-
-const TYPE_COLORS: Record<string, string> = { feature: 'text-purple-400', bug: 'text-red-400', task: 'text-blue-400' }
-const PRIORITY_COLORS: Record<string, string> = { critical: 'text-red-400', high: 'text-orange-400', medium: 'text-yellow-400', low: 'text-green-400' }
 
 export default function IssuePreviewCard({ draft, project }: Props) {
   const [state, setState] = useState<'idle' | 'creating' | 'done' | 'dismissed'>('idle')
@@ -31,7 +30,7 @@ export default function IssuePreviewCard({ draft, project }: Props) {
   return (
     <div className="mt-2 bg-white/5 border border-white/10 rounded-lg p-3 text-sm">
       {state === 'done' ? (
-        <div className="flex items-center gap-2 text-emerald-500">
+        <div className="flex items-center gap-2 text-green-400">
           <CheckCircle size={14}/> Created <strong>{taskKey}</strong> — added to board
         </div>
       ) : (
@@ -39,18 +38,24 @@ export default function IssuePreviewCard({ draft, project }: Props) {
           <div className="flex items-start justify-between gap-2 mb-2">
             <div className="flex-1">
               <div className="flex gap-2 mb-1">
-                <span className={`text-xs capitalize ${TYPE_COLORS[draft.type] || 'text-white/50'}`}>{draft.type}</span>
-                <span className={`text-xs capitalize ${PRIORITY_COLORS[draft.priority] || 'text-white/50'}`}>{draft.priority}</span>
+                <TypeBadge value={draft.type} />
+                <PriorityBadge value={draft.priority} />
                 <span className="text-xs text-white/30">→ {draft.assignee}</span>
               </div>
               <div className="text-white/80 font-medium">{draft.title}</div>
             </div>
-            <button onClick={() => setState('dismissed')} className="text-white/20 hover:text-white/50 shrink-0 transition-colors"><X size={14}/></button>
+            <button onClick={() => setState('dismissed')} className="text-white/20 hover:text-white/50 shrink-0 transition-all" aria-label="Dismiss">
+              <X size={14}/>
+            </button>
           </div>
-          <button onClick={create} disabled={state === 'creating'}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs text-white transition-all disabled:opacity-50">
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={state === 'creating'}
+            onClick={create}
+          >
             <Plus size={12}/> {state === 'creating' ? 'Creating...' : 'Create Issue'}
-          </button>
+          </Button>
         </>
       )}
     </div>

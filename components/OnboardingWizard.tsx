@@ -1,6 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { X, ArrowRight, ArrowLeft, Sparkles, Check, ChevronDown, ChevronUp, Building2, Bot, ClipboardList, Rocket } from 'lucide-react'
+import { Button } from '@/components/ui'
+import { Input, Textarea, Select } from '@/components/ui'
+import { FormGroup } from '@/components/ui'
 
 // ── Name generators ──────────────────────────────────────────────────────────
 const GENERATED_NAMES = [
@@ -130,14 +133,14 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh' }}>
+      <div className="bg-[#0f0f0f] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh' }}>
 
         {/* ── Top bar ── */}
         <div className="flex items-center justify-between px-5 pt-5 pb-0 shrink-0">
           <span className="text-white/30 text-xs font-medium tracking-widest uppercase">New Business</span>
-          <button onClick={onClose} className="text-white/30 hover:text-white transition-colors p-1">
+          <Button variant="icon" onClick={onClose} aria-label="Close">
             <X size={16}/>
-          </button>
+          </Button>
         </div>
 
         {/* ── Tab nav ── */}
@@ -149,7 +152,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
             return (
               <div
                 key={tab.label}
-                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px select-none
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-all border-b-2 -mb-px select-none
                   ${active
                     ? 'border-white text-white'
                     : done
@@ -172,39 +175,35 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <Building2 size={18} className="text-white/50"/>
-                  <h2 className="text-lg font-semibold text-white">Name your company</h2>
+                  <h2 className="text-base font-medium text-white">Name your company</h2>
                 </div>
                 <p className="text-white/40 text-sm">This is the organization your agents will work for.</p>
               </div>
 
-              <div>
-                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Company name</label>
+              <FormGroup label="Company name">
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     value={companyName}
                     onChange={e => setCompanyName(e.target.value)}
                     placeholder="e.g. Meridian"
                     autoFocus
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 text-sm"
+                    className="rounded-xl"
                   />
-                  <button
-                    onClick={() => setCompanyName(pickRandom(GENERATED_NAMES))}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-white/40 hover:border-white/25 hover:text-white/70 text-xs transition-all whitespace-nowrap">
+                  <Button variant="secondary" size="sm" onClick={() => setCompanyName(pickRandom(GENERATED_NAMES))} className="whitespace-nowrap rounded-xl">
                     <Sparkles size={11}/> Generate
-                  </button>
+                  </Button>
                 </div>
-              </div>
+              </FormGroup>
 
-              <div>
-                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Mission / goal <span className="text-white/20 normal-case tracking-normal">optional</span></label>
-                <textarea
+              <FormGroup label="Mission / goal" helper="optional">
+                <Textarea
                   value={mission}
                   onChange={e => setMission(e.target.value)}
                   placeholder="Finance app that builds money habits in three minutes a day"
                   rows={3}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 resize-none text-sm"
+                  className="rounded-xl"
                 />
-              </div>
+              </FormGroup>
             </div>
           )}
 
@@ -214,31 +213,28 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <Bot size={18} className="text-white/50"/>
-                  <h2 className="text-lg font-semibold text-white">Create your first agent</h2>
+                  <h2 className="text-base font-medium text-white">Create your first agent</h2>
                 </div>
                 <p className="text-white/40 text-sm">Choose how this agent will run tasks.</p>
               </div>
 
               {/* Agent name */}
-              <div>
-                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Agent name</label>
+              <FormGroup label="Agent name">
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     value={agentName}
                     onChange={e => setAgentName(e.target.value)}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 text-sm"
+                    className="rounded-xl"
                   />
-                  <button
-                    onClick={() => setAgentName(pickRandom(AGENT_NAMES))}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-white/40 hover:border-white/25 hover:text-white/70 text-xs transition-all whitespace-nowrap">
+                  <Button variant="secondary" size="sm" onClick={() => setAgentName(pickRandom(AGENT_NAMES))} className="whitespace-nowrap rounded-xl">
                     <Sparkles size={11}/> Generate
-                  </button>
+                  </Button>
                 </div>
-              </div>
+              </FormGroup>
 
               {/* Adapter type */}
               <div>
-                <label className="text-white/40 text-xs uppercase tracking-wider mb-2 block">Adapter type</label>
+                <label className="text-xs text-white/50 mb-2 block">Adapter type</label>
                 <div className="grid grid-cols-2 gap-2">
                   {PRIMARY_ADAPTERS.map(a => (
                     <button
@@ -247,7 +243,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                       className={`relative flex flex-col items-start gap-0.5 p-3.5 rounded-xl border text-left transition-all
                         ${adapter === a.id ? 'border-white/40 bg-white/8' : 'border-white/10 hover:border-white/20'}`}>
                       {a.recommended && (
-                        <span className="absolute top-2 right-2 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        <span className="absolute top-2 right-2 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
                           Recommended
                         </span>
                       )}
@@ -260,7 +256,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                 {/* More adapters */}
                 <button
                   onClick={() => setShowMore(s => !s)}
-                  className="flex items-center gap-1 mt-2 text-white/30 hover:text-white/50 text-xs transition-colors">
+                  className="flex items-center gap-1 mt-2 text-white/30 hover:text-white/50 text-xs transition-all">
                   {showMore ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
                   More adapter types
                 </button>
@@ -282,17 +278,17 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
               </div>
 
               {/* Model */}
-              <div>
-                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Model</label>
-                <select
+              <FormGroup label="Model">
+                <Select
                   value={model}
                   onChange={e => setModel(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-white/30 text-sm appearance-none cursor-pointer">
+                  className="rounded-xl"
+                >
                   {MODELS.map(m => (
                     <option key={m.value} value={m.value} className="bg-[#1a1a1a] text-white">{m.label}</option>
                   ))}
-                </select>
-              </div>
+                </Select>
+              </FormGroup>
 
               {/* Environment check */}
               <div className="rounded-xl border border-white/10 bg-white/3 p-4 space-y-2">
@@ -300,21 +296,21 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                 <p className="text-white/30 text-xs leading-relaxed">
                   Runs a live probe that asks the adapter CLI to respond with hello.
                 </p>
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={runTest}
                   disabled={testStatus === 'testing'}
-                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:border-white/25 hover:text-white/70 transition-all disabled:opacity-40">
-                  {testStatus === 'testing' ? (
-                    <>
-                      <span className="w-3 h-3 border border-white/20 border-t-white/60 rounded-full animate-spin"/>
-                      Testing...
-                    </>
-                  ) : testStatus === 'ok' ? (
-                    <><Check size={12} className="text-emerald-400"/> Environment ready</>
+                  loading={testStatus === 'testing'}
+                >
+                  {testStatus === 'ok' ? (
+                    <><Check size={12} className="text-green-400"/> Environment ready</>
+                  ) : testStatus === 'testing' ? (
+                    'Testing...'
                   ) : (
                     'Test now'
                   )}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -325,39 +321,35 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <ClipboardList size={18} className="text-white/50"/>
-                  <h2 className="text-lg font-semibold text-white">Give it something to do</h2>
+                  <h2 className="text-base font-medium text-white">Give it something to do</h2>
                 </div>
                 <p className="text-white/40 text-sm">Give your agent a small task to start with — a bug fix, a research question, writing a script.</p>
               </div>
 
-              <div>
-                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Task title</label>
+              <FormGroup label="Task title">
                 <div className="flex gap-2">
-                  <input
+                  <Input
                     value={taskTitle}
                     onChange={e => setTaskTitle(e.target.value)}
                     placeholder="e.g. Define the first thing to build"
                     autoFocus
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 text-sm"
+                    className="rounded-xl"
                   />
-                  <button
-                    onClick={() => setTaskTitle(generateTaskTitle(mission))}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-white/40 hover:border-white/25 hover:text-white/70 text-xs transition-all whitespace-nowrap">
+                  <Button variant="secondary" size="sm" onClick={() => setTaskTitle(generateTaskTitle(mission))} className="whitespace-nowrap rounded-xl">
                     <Sparkles size={11}/> Generate
-                  </button>
+                  </Button>
                 </div>
-              </div>
+              </FormGroup>
 
-              <div>
-                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Description <span className="text-white/20 normal-case tracking-normal">optional</span></label>
-                <textarea
+              <FormGroup label="Description" helper="optional">
+                <Textarea
                   value={taskDesc}
                   onChange={e => setTaskDesc(e.target.value)}
                   placeholder="What needs to happen? What does done look like?"
                   rows={4}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 resize-none text-sm"
+                  className="rounded-xl"
                 />
-              </div>
+              </FormGroup>
             </div>
           )}
 
@@ -367,7 +359,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <Rocket size={18} className="text-white/50"/>
-                  <h2 className="text-lg font-semibold text-white">Ready to launch</h2>
+                  <h2 className="text-base font-medium text-white">Ready to launch</h2>
                 </div>
                 <p className="text-white/40 text-sm">Everything is set up. Launching now will create the starter task, wake the agent, and open the issue.</p>
               </div>
@@ -380,7 +372,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                     <p className="text-white text-sm font-medium truncate">{companyName}</p>
                     <p className="text-white/30 text-xs">Company</p>
                   </div>
-                  <Check size={14} className="text-emerald-400 shrink-0"/>
+                  <Check size={14} className="text-green-400 shrink-0"/>
                 </div>
 
                 <div className="flex items-center gap-3 p-3.5 rounded-xl bg-white/5 border border-white/10">
@@ -389,7 +381,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                     <p className="text-white text-sm font-medium">{agentName}{selectedAdapter ? `, ${selectedAdapter.label}` : ''} <span className="text-white/30 font-normal">(local)</span></p>
                     <p className="text-white/30 text-xs">Agent</p>
                   </div>
-                  <Check size={14} className="text-emerald-400 shrink-0"/>
+                  <Check size={14} className="text-green-400 shrink-0"/>
                 </div>
 
                 <div className="flex items-center gap-3 p-3.5 rounded-xl bg-white/5 border border-white/10">
@@ -398,46 +390,49 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                     <p className="text-white text-sm font-medium truncate">{taskTitle || '(no task)'}</p>
                     <p className="text-white/30 text-xs">Task</p>
                   </div>
-                  <Check size={14} className={`shrink-0 ${taskTitle ? 'text-emerald-400' : 'text-white/20'}`}/>
+                  <Check size={14} className={`shrink-0 ${taskTitle ? 'text-green-400' : 'text-white/20'}`}/>
                 </div>
               </div>
 
               {error && <p className="text-red-400 text-sm">{error}</p>}
 
               {/* Launch button */}
-              <button
+              <Button
+                variant="primary"
+                size="lg"
                 onClick={submit}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-2 bg-white text-black py-3 rounded-xl text-sm font-semibold disabled:opacity-50 hover:bg-zinc-100 transition-all">
-                {loading ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"/>
-                    Setting up your business...
-                  </>
-                ) : (
-                  <>Create &amp; Open Issue <ArrowRight size={14}/></>
-                )}
-              </button>
+                loading={loading}
+                className="w-full justify-center rounded-xl py-3"
+              >
+                {loading ? 'Setting up your business...' : <>Create &amp; Open Issue <ArrowRight size={14}/></>}
+              </Button>
             </div>
           )}
         </div>
 
         {/* ── Bottom nav ── */}
-        <div className="flex justify-between items-center px-6 py-4 border-t border-white/8 shrink-0">
-          <button
+        <div className="flex justify-between items-center px-6 py-4 border-t border-white/10 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setStep(s => s - 1)}
             disabled={step === 1}
-            className="flex items-center gap-1.5 text-white/40 hover:text-white text-sm transition-colors disabled:opacity-0 disabled:pointer-events-none">
+            className={step === 1 ? 'opacity-0 pointer-events-none' : ''}
+          >
             <ArrowLeft size={14}/> Back
-          </button>
+          </Button>
 
           {step < 4 && (
-            <button
+            <Button
+              variant="primary"
+              size="md"
               onClick={() => setStep(s => s + 1)}
               disabled={!canNext}
-              className="flex items-center gap-1.5 bg-white text-black px-5 py-2 rounded-xl text-sm font-semibold disabled:opacity-30 hover:bg-zinc-100 transition-all">
+              className="rounded-xl"
+            >
               Next <ArrowRight size={14}/>
-            </button>
+            </Button>
           )}
         </div>
 

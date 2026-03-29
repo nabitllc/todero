@@ -28,12 +28,13 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
   }, [refreshKey])
 
   return (
-    <div className="flex flex-col items-center gap-2 w-14 min-h-screen bg-[#060606] border-r border-white/5 py-3 shrink-0">
+    <div className="flex flex-col items-center gap-2 w-14 min-h-screen bg-[#080808] border-r border-white/5 py-3 shrink-0">
       {/* All */}
       <button
         onClick={() => onSelect(null)}
         title="All Businesses"
-        className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold transition-all
+        aria-label="All Businesses"
+        className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-white/30
           ${selected === null ? 'bg-white text-black ring-2 ring-white' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}
       >
         All
@@ -51,14 +52,14 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
             <button
               onClick={() => onSelect(b.name)}
               title={b.name}
-              className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-all
-                ${isSelected ? 'ring-2 ring-white rounded-2xl' : 'hover:rounded-2xl'}`}
-              style={{ background: isSelected ? '#1a1a1a' : '#111' }}
+              aria-label={b.name}
+              className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-all focus:outline-none focus:ring-2 focus:ring-white/30
+                ${isSelected ? 'ring-2 ring-white rounded-2xl bg-[#1a1a1a]' : 'bg-[#0f0f0f] hover:rounded-2xl'}`}
             >
               {emoji || <span className="text-xs font-bold text-white/60">{getInitials(b.name)}</span>}
             </button>
             {/* Tooltip */}
-            <div className="absolute left-14 top-1/2 -translate-y-1/2 bg-black text-white text-xs px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 border border-white/10">
+            <div className="absolute left-14 top-1/2 -translate-y-1/2 bg-[#080808] text-white text-xs px-2 py-1 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 border border-white/10">
               {b.name}
             </div>
           </div>
@@ -72,7 +73,8 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
       <button
         onClick={onNew}
         title="Add Business"
-        className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white/40 hover:text-white transition-all"
+        aria-label="Add Business"
+        className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white/40 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-white/30"
       >
         <Plus size={18} />
       </button>

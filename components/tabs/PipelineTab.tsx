@@ -200,7 +200,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
           <span className="text-lg font-semibold text-white">Pipeline</span>
           <span className="text-white/25 text-xs">{issues.length} items</span>
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-white/10 p-0.5 bg-[#0a0a0a]">
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 p-0.5 bg-[#080808]">
           {(['both', 'features', 'issues'] as FilterMode[]).map(mode => (
             <button
               key={mode}
@@ -228,7 +228,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
               <div
                 key={stage}
                 className="flex-shrink-0 rounded-xl border border-white/10 flex flex-col"
-                style={{ width: 240, background: '#0a0a0a', borderTop: `2px solid ${color}` }}
+                style={{ width: 240, background: '#080808', borderTop: `2px solid ${color}` }}
               >
                 {/* Room header */}
                 <div className="flex items-center justify-between px-3 py-2 border-b border-white/5">
@@ -307,7 +307,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
           onClick={() => setActionSheetIssue(null)}
         >
           <div
-            className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#111] shadow-2xl overflow-hidden"
+            className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#0f0f0f] shadow-2xl overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
             <div className="px-4 py-3 border-b border-white/5">
@@ -363,14 +363,14 @@ function FeatureCard({ feature, onLongPressStart, onLongPressEnd }: { feature: a
       className={`rounded-lg border p-2 transition-all hover:border-white/20 select-none ${
         blocked ? 'border-red-500/60 ring-1 ring-red-500/30' : 'border-white/10'
       }`}
-      style={{ background: '#0d0d0d', minHeight: 80 }}
+      style={{ background: '#0f0f0f', minHeight: 80 }}
       onTouchStart={onLongPressStart}
       onTouchEnd={onLongPressEnd}
       onTouchCancel={onLongPressEnd}
       onContextMenu={e => { if (onLongPressStart) e.preventDefault() }}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
-        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: '#3b82f620', color: '#3b82f6' }}>
+        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-blue-500/20 text-blue-400">
           {feature.task_key}
         </span>
         {feature.project && (
@@ -386,8 +386,8 @@ function FeatureCard({ feature, onLongPressStart, onLongPressEnd }: { feature: a
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1 rounded-full bg-white/5 overflow-hidden">
             <div
-              className="h-full rounded-full transition-all"
-              style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : '#3b82f6' }}
+              className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-400' : 'bg-blue-400'}`}
+              style={{ width: `${pct}%` }}
             />
           </div>
           <span className="text-[9px] text-white/40">{doneCount}/{total}</span>
@@ -405,12 +405,12 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
   const testStatus = issue.test_status as string | undefined
   const testTier = issue.test_tier as string | undefined
 
-  const TEST_STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
-    passed: { bg: '#10b98120', color: '#10b981', label: 'Passed' },
-    failed: { bg: '#ef444420', color: '#ef4444', label: 'Failed' },
-    none:   { bg: '#3f3f4620', color: '#71717a', label: 'Untested' },
+  const TEST_STATUS_CLASSES: Record<string, { className: string; label: string }> = {
+    passed: { className: 'bg-green-500/20 text-green-400', label: 'Passed' },
+    failed: { className: 'bg-red-500/20 text-red-400', label: 'Failed' },
+    none:   { className: 'bg-white/5 text-white/40', label: 'Untested' },
   }
-  const ts = TEST_STATUS_STYLE[testStatus ?? 'none'] ?? TEST_STATUS_STYLE.none
+  const ts = TEST_STATUS_CLASSES[testStatus ?? 'none'] ?? TEST_STATUS_CLASSES.none
 
   return (
     <div
@@ -420,7 +420,7 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
         : testStatus === 'passed' ? 'border-emerald-500/40'
         : 'border-white/10'
       }`}
-      style={{ background: '#0d0d0d', minHeight: 60 }}
+      style={{ background: '#0f0f0f', minHeight: 60 }}
       onTouchStart={onLongPressStart}
       onTouchEnd={onLongPressEnd}
       onTouchCancel={onLongPressEnd}
@@ -436,7 +436,7 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
         {issue.assignee && (
           <span
             className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-            style={{ background: '#27272a' }}
+            style={{ background: '#1a1a1a' }}
             title={issue.assignee}
           >
             {issue.assignee.charAt(0).toUpperCase()}
@@ -451,7 +451,7 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
           </span>
         )}
         {testStatus && testStatus !== 'none' && (
-          <span className="text-[8px] px-1.5 py-0.5 rounded font-semibold" style={{ background: ts.bg, color: ts.color }}>
+          <span className={`text-[8px] px-1.5 py-0.5 rounded font-semibold ${ts.className}`}>
             {ts.label}
           </span>
         )}

@@ -38,8 +38,18 @@ export async function POST(req: Request) {
     })
   }
 
-  // Store agent config in a simple JSON log for now (agents table TBD)
-  console.log('Agent config:', { businessId: business.id, agentName, model, hasKey: !!apiKey })
+  // Save agent config to agents table
+  if (agentName && business?.id) {
+    await supabase.from('agents').insert({
+      business_id: business.id,
+      name: agentName,
+      adapter: 'claude-code',
+      model: model || 'anthropic/claude-sonnet-4-6',
+      api_key_enc: apiKey || null,
+      heartbeat_every: '4h',
+      description: `First agent for ${name}`
+    })
+  }
 
   return NextResponse.json({ business, message: `${name} is ready!` })
 }

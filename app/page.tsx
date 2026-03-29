@@ -7,6 +7,8 @@ import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanba
 import FeaturesTab from '@/components/tabs/FeaturesTab'
 import PipelineTab from '@/components/tabs/PipelineTab'
 import IssuesTab from '@/components/tabs/IssuesTab'
+import AutomationsTab from '@/components/tabs/AutomationsTab'
+import ActivityTab from '@/components/tabs/ActivityTab'
 import BusinessRail from '@/components/BusinessRail'
 import OnboardingWizard from '@/components/OnboardingWizard'
 import IssuePreviewCard from '@/components/IssuePreviewCard'
@@ -174,11 +176,11 @@ function fmtMins(m: number) {
 // ── Atoms ──────────────────────────────────────────────────────────────────
 function Dot({status,sm}:{status:string;sm?:boolean}) {
   const sz = sm ? 'w-1.5 h-1.5' : 'w-2 h-2'
-  const cls = status==='active'||status==='ok' ? 'bg-emerald-500 anim-pg'
-    : status==='scheduled' ? 'bg-yellow-500 anim-py'
-    : status==='planned' ? 'bg-zinc-700'
-    : status==='error' ? 'bg-red-500'
-    : 'bg-zinc-600'
+  const cls = status==='active'||status==='ok' ? 'bg-green-400 anim-pg'
+    : status==='scheduled' ? 'bg-amber-400 anim-py'
+    : status==='planned' ? 'bg-white/20'
+    : status==='error' ? 'bg-red-400'
+    : 'bg-white/20'
   return <span className={'inline-block rounded-full shrink-0 '+sz+' '+cls} />
 }
 
@@ -187,13 +189,13 @@ function Chip({label,color}:{label:string;color?:string}) {
     <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border"
       style={color
         ?{color,borderColor:color+'40',background:color+'15'}
-        :{color:'#555',borderColor:'#2a2a2a',background:'#141414'}}>
+        :{color:'rgba(255,255,255,0.5)',borderColor:'rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)'}}>
       {label}
     </span>
   )
 }
 
-function Bar({v,color='#fff',bg='#1e1e1e'}:{v:number;color?:string;bg?:string}) {
+function Bar({v,color='#fff',bg='rgba(255,255,255,0.05)'}:{v:number;color?:string;bg?:string}) {
   return (
     <div className="w-full rounded-full h-1" style={{background:bg}}>
       <div className="h-1 rounded-full transition-all" style={{width:v+'%',background:color}} />
@@ -214,22 +216,22 @@ function NeedsAttentionBlock() {
   }, [])
   if (items.length === 0) return null
   return (
-    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
       <div className="flex items-center gap-2 mb-3">
         <span className="text-sm">🚨</span>
-        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Needs Your Attention</span>
+        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Needs Your Attention</span>
         <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/30 text-red-400 font-medium">{items.length}</span>
       </div>
       <div className="space-y-2">
         {items.slice(0, 3).map((t: any, i: number) => (
-          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-zinc-800/40" style={{ background: '#0a0a0a' }}>
+          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-white/10" style={{ background: '#0a0a0a' }}>
             <span className="text-red-400 text-xs mt-0.5">{t.priority === 'critical' ? '🔴' : '🟠'}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                {t.task_key && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">{t.task_key}</span>}
+                {t.task_key && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/40 shrink-0">{t.task_key}</span>}
                 <p className="text-white text-xs font-medium truncate">{t.title}</p>
               </div>
-              <p className="text-zinc-600 text-[10px] mt-0.5 truncate">
+              <p className="text-white/30 text-[10px] mt-0.5 truncate">
                 {t.blocked_by ? `Blocked by: ${t.blocked_by}` : t.project || 'Needs decision'}
               </p>
             </div>
@@ -298,14 +300,14 @@ function AttentionAndShipped({agents}:{agents:any[]}) {
     <div className="space-y-5">
       <div>
         <SH icon="🚨">Needs Attention</SH>
-        <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+        <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
           {data.attention.length===0
             ? <div className="px-4 py-4 flex items-center gap-2 text-emerald-400 text-sm"><span>🟢</span><span>All clear</span></div>
             : data.attention.slice(0,5).map((t:any,i:number,arr:any[])=>(
-              <div key={i} className={'flex items-center gap-3 px-4 py-3 border-l-2 border-red-800 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+              <div key={i} className={'flex items-center gap-3 px-4 py-3 border-l-2 border-red-800 '+(i<arr.length-1?'border-b border-white/10':'')}>
                 <span className="text-xs">🔴</span>
                 <div className="min-w-0 flex-1 flex items-center gap-2">
-                  {t.task_key && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">{t.task_key}</span>}
+                  {t.task_key && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/40 shrink-0">{t.task_key}</span>}
                   <p className="text-white text-xs truncate">{t.title}</p>
                   {t.project && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0" style={{background:'#ffffff10',color:'#a1a1aa',border:'1px solid #27272a'}}>{t.project}</span>}
                 </div>
@@ -317,12 +319,12 @@ function AttentionAndShipped({agents}:{agents:any[]}) {
       {data.shipped.length>0&&(
         <div>
           <SH icon="✅" sub={`${data.shipped.length} tasks`}>Shipped Today</SH>
-          <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+          <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
             {data.shipped.map((t:any,i:number,arr:any[])=>(
-              <div key={t.id||i} className={'flex items-center gap-3 px-4 py-2.5 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+              <div key={t.id||i} className={'flex items-center gap-3 px-4 py-2.5 '+(i<arr.length-1?'border-b border-white/10':'')}>
                 <span className="text-emerald-500 text-xs">✓</span>
-                <p className="text-zinc-300 text-xs truncate flex-1">{t.title}</p>
-                <span className="text-zinc-600 text-[10px] shrink-0">{t.project}</span>
+                <p className="text-white/70 text-xs truncate flex-1">{t.title}</p>
+                <span className="text-white/30 text-[10px] shrink-0">{t.project}</span>
               </div>
             ))}
           </div>
@@ -336,18 +338,18 @@ function SH({icon,children,sub}:{icon:string;children:React.ReactNode;sub?:strin
   return (
     <div className="flex items-center gap-2 mb-4">
       <span>{icon}</span>
-      <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">{children}</span>
-      {sub && <span className="text-[10px] text-zinc-700 italic">{sub}</span>}
-      <div className="flex-1 h-px bg-zinc-800/70" />
+      <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">{children}</span>
+      {sub && <span className="text-[10px] text-white/20 italic">{sub}</span>}
+      <div className="flex-1 h-px bg-white/10" />
     </div>
   )
 }
 
 const EmptyState = ({icon, message, action}: {icon:string, message:string, action?:string}) => (
-  <div className='flex flex-col items-center justify-center py-16 text-zinc-500'>
+  <div className='flex flex-col items-center justify-center py-16 text-white/50'>
     <span className='text-4xl mb-3'>{icon}</span>
     <p className='text-sm'>{message}</p>
-    {action && <button className='mt-3 text-xs text-zinc-400 border border-zinc-700 px-3 py-1 rounded hover:bg-zinc-800'>{action}</button>}
+    {action && <button className='mt-3 text-xs text-white/40 border border-white/10 px-3 py-1 rounded hover:bg-white/10'>{action}</button>}
   </div>
 )
 
@@ -377,20 +379,20 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
     { label: 'Features (0 children)', count: risks.noChildren.length, items: risks.noChildren, icon: '\u26A0\uFE0F' },
   ]
   return (
-    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
       <div className="flex items-center gap-2 mb-3">
         <span className="text-sm">{'\u{1F6E1}\uFE0F'}</span>
-        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Risk Radar</span>
+        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Risk Radar</span>
       </div>
       <div className="space-y-2.5">
         {signals.map(s => {
           const badgeColor = s.count === 0 ? '#10b981' : s.count <= 3 ? '#f59e0b' : '#ef4444'
           const badgeBg = s.count === 0 ? '#10b98118' : s.count <= 3 ? '#f59e0b18' : '#ef444418'
           return (
-            <div key={s.label} className="rounded-xl border border-zinc-800/40 px-3 py-2.5" style={{ background: '#0a0a0a' }}>
+            <div key={s.label} className="rounded-xl border border-white/10 px-3 py-2.5" style={{ background: '#0a0a0a' }}>
               <div className="flex items-center gap-2">
                 <span className="text-xs">{s.icon}</span>
-                <span className="text-zinc-400 text-xs flex-1">{s.label}</span>
+                <span className="text-white/40 text-xs flex-1">{s.label}</span>
                 <button onClick={() => onNavigate('board')}
                   className="text-xs font-bold px-2 py-0.5 rounded-full transition-colors hover:opacity-80"
                   style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}30` }}>
@@ -401,11 +403,11 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
                 <div className="mt-2 space-y-1">
                   {s.items.slice(0, 3).map((item: any, i: number) => (
                     <div key={item.task_key || i} className="flex items-center gap-2 text-[10px]">
-                      {item.task_key && <span className="font-mono text-zinc-500">{item.task_key}</span>}
-                      <span className="text-zinc-400 truncate">{item.title}</span>
+                      {item.task_key && <span className="font-mono text-white/50">{item.task_key}</span>}
+                      <span className="text-white/40 truncate">{item.title}</span>
                     </div>
                   ))}
-                  {s.count > 3 && <span className="text-[9px] text-zinc-600">+{s.count - 3} more</span>}
+                  {s.count > 3 && <span className="text-[9px] text-white/30">+{s.count - 3} more</span>}
                 </div>
               )}
             </div>
@@ -442,10 +444,10 @@ function StandupCard() {
     { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', color: '#ef4444' },
   ]
   return (
-    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
       <div className="flex items-center gap-2 mb-3">
         <span className="text-sm">{'\u{1F4CB}'}</span>
-        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Today&apos;s Standup</span>
+        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Today&apos;s Standup</span>
       </div>
       <div className="space-y-3">
         {sections.map(s => (
@@ -453,16 +455,16 @@ function StandupCard() {
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-xs">{s.icon}</span>
               <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: s.color }}>{s.label}</span>
-              <span className="text-[9px] text-zinc-600">({s.items.length})</span>
+              <span className="text-[9px] text-white/30">({s.items.length})</span>
             </div>
             {s.items.length === 0 ? (
-              <p className="text-[10px] text-zinc-700 italic pl-5">{s.emptyMsg}</p>
+              <p className="text-[10px] text-white/20 italic pl-5">{s.emptyMsg}</p>
             ) : (
               <div className="space-y-1 pl-5">
                 {s.items.slice(0, 5).map((item: any, i: number) => (
                   <div key={item.task_key || i} className="flex items-center gap-2 text-xs">
-                    {item.task_key && <span className="text-[9px] font-mono text-zinc-500 shrink-0">{item.task_key}</span>}
-                    <span className="text-zinc-400 truncate">{item.title}</span>
+                    {item.task_key && <span className="text-[9px] font-mono text-white/50 shrink-0">{item.task_key}</span>}
+                    <span className="text-white/40 truncate">{item.title}</span>
                   </div>
                 ))}
               </div>
@@ -486,22 +488,22 @@ function MarkdownMessage({ content }: { content: string }) {
         li: ({ children }) => <li className="text-sm">{children}</li>,
         code: ({ inline, children, className }: any) =>
           inline
-            ? <code className="px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-400 text-[11px] font-mono">{children}</code>
+            ? <code className="px-1.5 py-0.5 rounded bg-white/10 text-emerald-400 text-[11px] font-mono">{children}</code>
             : <CodeBlock className={className}>{children}</CodeBlock>,
         strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-        em: ({ children }) => <em className="italic text-zinc-400">{children}</em>,
+        em: ({ children }) => <em className="italic text-white/40">{children}</em>,
         h1: ({ children }) => <h1 className="text-base font-bold text-white mb-2 mt-3">{children}</h1>,
         h2: ({ children }) => <h2 className="text-sm font-bold text-white mb-1.5 mt-3">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-sm font-semibold text-zinc-200 mb-1 mt-2">{children}</h3>,
-        blockquote: ({ children }) => <blockquote className="border-l-2 border-zinc-600 pl-3 my-2 text-zinc-400 italic">{children}</blockquote>,
+        h3: ({ children }) => <h3 className="text-sm font-semibold text-white/70 mb-1 mt-2">{children}</h3>,
+        blockquote: ({ children }) => <blockquote className="border-l-2 border-white/20 pl-3 my-2 text-white/40 italic">{children}</blockquote>,
         a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">{children}</a>,
-        hr: () => <hr className="border-zinc-700 my-3" />,
+        hr: () => <hr className="border-white/10 my-3" />,
         table: ({ children }) => <div className="overflow-x-auto my-3"><table className="w-full text-sm border-collapse">{children}</table></div>,
-        thead: ({ children }) => <thead className="border-b border-zinc-700">{children}</thead>,
+        thead: ({ children }) => <thead className="border-b border-white/10">{children}</thead>,
         tbody: ({ children }) => <tbody>{children}</tbody>,
-        tr: ({ children }) => <tr className="border-b border-zinc-800 hover:bg-zinc-800/30 transition-colors">{children}</tr>,
-        th: ({ children }) => <th className="text-left px-3 py-1.5 text-xs font-semibold text-zinc-400 uppercase tracking-wider">{children}</th>,
-        td: ({ children }) => <td className="px-3 py-1.5 text-xs text-zinc-300">{children}</td>,
+        tr: ({ children }) => <tr className="border-b border-white/10 hover:bg-white/5 transition-colors">{children}</tr>,
+        th: ({ children }) => <th className="text-left px-3 py-1.5 text-xs font-semibold text-white/40 uppercase tracking-wider">{children}</th>,
+        td: ({ children }) => <td className="px-3 py-1.5 text-xs text-white/70">{children}</td>,
       }}>
       {content}
     </ReactMarkdown>
@@ -670,16 +672,16 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
 
   return (
     <div className="group relative my-2">
-      <div className="flex items-center justify-between px-3 py-1 rounded-t-lg bg-zinc-900 border border-zinc-800 border-b-0">
-        <span className="text-[9px] text-zinc-600 font-mono uppercase tracking-widest">{lang}</span>
+      <div className="flex items-center justify-between px-3 py-1 rounded-t-lg bg-[#0f0f0f] border border-white/10 border-b-0">
+        <span className="text-[9px] text-white/30 font-mono uppercase tracking-widest">{lang}</span>
         <button
           onClick={handleCopy}
-          className="opacity-0 group-hover:opacity-100 text-[10px] px-2 py-0.5 rounded transition-all text-zinc-400 hover:text-white"
+          className="opacity-0 group-hover:opacity-100 text-[10px] px-2 py-0.5 rounded transition-all text-white/40 hover:text-white"
           style={{ background: '#1a1a1a' }}>
           {copied ? '✓ Copied' : 'Copy'}
         </button>
       </div>
-      <pre className="p-3 rounded-b-lg bg-zinc-950 border border-zinc-800 overflow-x-auto">
+      <pre className="p-3 rounded-b-lg bg-[#080808] border border-white/10 overflow-x-auto">
         <code className="text-[11px] font-mono whitespace-pre">{highlighted}</code>
       </pre>
     </div>
@@ -1204,7 +1206,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
   const contextTokenEstimate = activeConv
     ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4)
     : 0
-  const contextTokenColor = contextTokenEstimate > 150000 ? 'text-red-500' : contextTokenEstimate > 50000 ? 'text-yellow-500' : 'text-zinc-600'
+  const contextTokenColor = contextTokenEstimate > 150000 ? 'text-red-500' : contextTokenEstimate > 50000 ? 'text-yellow-500' : 'text-white/30'
   const contextTokenLabel = contextTokenEstimate >= 1000
     ? `~${(contextTokenEstimate / 1000).toFixed(1)}k / 200k tokens`
     : `~${contextTokenEstimate} / 200k tokens`
@@ -1792,7 +1794,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
     <div className="flex gap-0 h-[calc(100vh-88px)] -mx-3 md:-mx-6 -my-5">
       {/* LEFT SIDEBAR — Feature 10: collapsible, hidden on mobile */}
       <div
-        className={'shrink-0 border-r border-zinc-800/60 hidden md:flex flex-col transition-all duration-200 ' + (sidebarCollapsed ? 'w-10' : 'w-64')}
+        className={'shrink-0 border-r border-white/10 hidden md:flex flex-col transition-all duration-200 ' + (sidebarCollapsed ? 'w-10' : 'w-64')}
         style={{background:'#0d0d0d'}}
         ref={sidebarRef}
       >
@@ -1801,13 +1803,13 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
           <div className="flex flex-col items-center py-2 gap-2">
             <button
               onClick={() => setSidebarCollapsed(false)}
-              className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-white transition-colors text-sm"
+              className="w-7 h-7 flex items-center justify-center text-white/50 hover:text-white transition-colors text-sm"
               title="Expand sidebar">
               ›
             </button>
             <button
               onClick={newChat}
-              className="w-7 h-7 flex items-center justify-center rounded-lg bg-zinc-800 text-white hover:bg-zinc-700 transition-all text-xs"
+              className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/15 transition-all text-xs"
               title="New Chat">
               +
             </button>
@@ -1823,7 +1825,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   onClick={() => setActiveChat(c.id)}
                   title={c.title}
                   className={'w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition-all ' +
-                    (activeChat === c.id ? 'bg-zinc-600' : 'bg-zinc-900 hover:bg-zinc-800')}>
+                    (activeChat === c.id ? 'bg-white/10' : 'bg-[#0f0f0f] hover:bg-white/10')}>
                   {AGENT_BADGE_MAP[c.agent_id || 'main'] || '💬'}
                 </button>
               ))}
@@ -1832,26 +1834,26 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
         ) : (
           <>
             {/* Sidebar header with collapse button */}
-            <div className="px-3 py-3 border-b border-zinc-800/40 flex items-center gap-2">
+            <div className="px-3 py-3 border-b border-white/10 flex items-center gap-2">
               <button
                 onClick={newChat}
-                className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 text-white text-xs font-medium hover:bg-zinc-700 transition-all flex items-center gap-2">
+                className="flex-1 px-3 py-2 rounded-lg bg-white/10 text-white text-xs font-medium hover:bg-white/15 transition-all flex items-center gap-2">
                 <span>+</span> New Chat
               </button>
               <button
                 onClick={() => setSidebarCollapsed(true)}
-                className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-white transition-colors text-sm rounded-lg hover:bg-zinc-800"
+                className="w-7 h-7 flex items-center justify-center text-white/50 hover:text-white transition-colors text-sm rounded-lg hover:bg-white/10"
                 title="Collapse sidebar">
                 ‹
               </button>
             </div>
 
             {/* Sidebar tabs: Mine / OpenClaw / Heartbeats */}
-            <div className="flex border-b border-zinc-800 shrink-0">
+            <div className="flex border-b border-white/10 shrink-0">
               {([['mine','💬','Mine'],['openclaw','🤖','OpenClaw'],['heartbeats','⏱','Beats']] as const).map(([id,icon,label])=>(
                 <button key={id} onClick={()=>setSidebarTab(id)}
                   className={'flex-1 py-2 text-[10px] font-semibold tracking-wide transition-colors flex flex-col items-center gap-0.5 ' +
-                    (sidebarTab===id ? 'text-white border-b-2 border-purple-500' : 'text-zinc-600 hover:text-zinc-400 border-b-2 border-transparent')}>
+                    (sidebarTab===id ? 'text-white border-b-2 border-purple-500' : 'text-white/30 hover:text-white/40 border-b-2 border-transparent')}>
                   <span>{icon}</span>
                   <span>{label}</span>
                 </button>
@@ -1859,11 +1861,11 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
             </div>
 
             {/* Feature 9 + 16: Project filter pills + Starred */}
-            {sidebarTab === 'mine' && <div className="px-3 py-2 border-b border-zinc-800/40 flex flex-wrap gap-1">
+            {sidebarTab === 'mine' && <div className="px-3 py-2 border-b border-white/10 flex flex-wrap gap-1">
               <button
                 onClick={() => { setProjectFilter(null); setStarredFilter(false) }}
                 className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
-                  (!projectFilter && !starredFilter ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 border-zinc-800 hover:border-zinc-700')}>
+                  (!projectFilter && !starredFilter ? 'bg-white/15 text-white border-white/20' : 'text-white/50 border-white/10 hover:border-white/10')}>
                 All
               </button>
               {Object.entries(PROJECT_TAG_COLORS).map(([proj, color]) => (
@@ -1871,7 +1873,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   key={proj}
                   onClick={() => { setProjectFilter(projectFilter === proj ? null : proj); setStarredFilter(false) }}
                   className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
-                    (projectFilter === proj ? 'text-white' : 'text-zinc-500 hover:text-zinc-300')}
+                    (projectFilter === proj ? 'text-white' : 'text-white/50 hover:text-white/70')}
                   style={projectFilter === proj
                     ? { background: color + '30', borderColor: color + '80', color }
                     : { borderColor: '#27272a' }}>
@@ -1881,16 +1883,16 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
               <button
                 onClick={() => { setStarredFilter(v => !v); setProjectFilter(null) }}
                 className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
-                  (starredFilter ? 'bg-yellow-900/40 text-yellow-400 border-yellow-700/50' : 'text-zinc-500 border-zinc-800 hover:border-zinc-700')}>
+                  (starredFilter ? 'bg-yellow-900/40 text-yellow-400 border-yellow-700/50' : 'text-white/50 border-white/10 hover:border-white/10')}>
                 ⭐ Starred
               </button>
             </div>}
 
             {/* Feature 12: Search + message search */}
             {sidebarTab === 'mine' && <>
-            <div className="px-3 py-2.5 border-b border-zinc-800/40">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800/60" style={{background:'#111'}}>
-                <svg className="w-3 h-3 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="px-3 py-2.5 border-b border-white/10">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10" style={{background:'#111'}}>
+                <svg className="w-3 h-3 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input
@@ -1901,7 +1903,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     setSearch(e.target.value)
                     if (searchMode === 'messages') { setSearchMode('title'); setSearchResults([]) }
                   }}
-                  className="bg-transparent text-xs text-zinc-300 placeholder-zinc-600 w-full outline-none"
+                  className="bg-transparent text-xs text-white/70 placeholder-white/30 w-full outline-none"
                 />
                 {searchMode === 'messages' && (
                   <button onClick={() => { setSearchMode('title'); setSearchResults([]) }} className="text-[9px] text-yellow-400 hover:text-yellow-200">✕</button>
@@ -1911,23 +1913,23 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                 <button
                   onClick={() => doMessageSearch(search)}
                   disabled={isSearching}
-                  className="mt-1.5 w-full text-[9px] px-2 py-1 rounded-lg border border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-colors text-left flex items-center gap-1.5">
+                  className="mt-1.5 w-full text-[9px] px-2 py-1 rounded-lg border border-white/10 text-white/50 hover:text-white/70 hover:border-white/20 transition-colors text-left flex items-center gap-1.5">
                   {isSearching ? '⟳ Searching messages...' : '🔍 Search message content'}
                 </button>
               )}
               {searchMode === 'messages' && searchResults.length > 0 && (
-                <p className="mt-1 text-[9px] text-zinc-600">{searchResults.length} message{searchResults.length !== 1 ? 's' : ''} found</p>
+                <p className="mt-1 text-[9px] text-white/30">{searchResults.length} message{searchResults.length !== 1 ? 's' : ''} found</p>
               )}
             </div>
 
             {/* Grouped Chats */}
             <div className="flex-1 overflow-y-auto px-2 py-2">
               {filteredChats.length === 0 ? (
-                <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
+                <p className="text-white/20 text-xs px-3 py-4">No chats yet</p>
               ) : (
                 groupedChats.map(group => (
                   <div key={group.label} className="mb-2">
-                    <p className={'text-[9px] uppercase tracking-widest font-semibold px-3 py-1.5 ' + (group.pinned ? 'text-amber-600' : 'text-zinc-700')}>
+                    <p className={'text-[9px] uppercase tracking-widest font-semibold px-3 py-1.5 ' + (group.pinned ? 'text-amber-600' : 'text-white/20')}>
                       {group.pinned ? '📌 ' : ''}{group.label}
                     </p>
                     <div className="space-y-0.5">
@@ -1951,7 +1953,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                             key={c.id}
                             className={
                               'group relative w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer ' +
-                              (activeChat === c.id ? 'bg-zinc-800 text-white' : sidebarFocusIdx === flatIdx ? 'bg-zinc-900/70 text-zinc-300 ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')
+                              (activeChat === c.id ? 'bg-white/10 text-white' : sidebarFocusIdx === flatIdx ? 'bg-[#0f0f0f]/70 text-white/70 ring-1 ring-zinc-700' : 'text-white/40 hover:text-white/70 hover:bg-[#0f0f0f]')
                             }
                             onClick={() => { setActiveChat(c.id); setSidebarFocusIdx(flatIdx) }}
                             onContextMenu={(e) => {
@@ -1972,13 +1974,13 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                               </p>
                               <div className="flex items-center gap-1 shrink-0">
                                 {/* Feature 19: forked badge */}
-                                {c.forked_from && <span className="text-[9px] text-zinc-600" title="Forked conversation">⑂</span>}
+                                {c.forked_from && <span className="text-[9px] text-white/30" title="Forked conversation">⑂</span>}
                                 <span className="text-[10px] opacity-70">{agentBadge}</span>
                               </div>
                             </div>
                             {/* Feature 2: last message preview */}
                             {preview && (
-                              <p className="text-zinc-600 text-[9px] truncate mt-0.5">{highlightedPreview}</p>
+                              <p className="text-white/30 text-[9px] truncate mt-0.5">{highlightedPreview}</p>
                             )}
                             <div className="flex items-center justify-between mt-0.5">
                               <p className="text-[9px] opacity-40">
@@ -1995,7 +1997,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                             </div>
                             <button
                               onClick={(e) => { e.stopPropagation(); deleteChat(c.id) }}
-                              className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all text-[10px] p-0.5"
+                              className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-all text-[10px] p-0.5"
                               title="Delete">
                               ✕
                             </button>
@@ -2012,22 +2014,22 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
             {/* OpenClaw / Heartbeats tab content */}
             {sidebarTab !== 'mine' && (
               <div className="flex-1 overflow-y-auto">
-                {ocLoading && <div className="p-4 text-center text-zinc-600 text-xs">Loading…</div>}
+                {ocLoading && <div className="p-4 text-center text-white/30 text-xs">Loading…</div>}
                 {!ocLoading && (() => {
                   const items = sidebarTab === 'heartbeats'
                     ? ocSessions.filter(s => s.action === 'cron' || s.channel?.includes('Cron'))
                     : ocSessions.filter(s => s.action !== 'cron' && !s.channel?.includes('Cron'))
-                  if (items.length === 0) return <div className="p-4 text-center text-zinc-600 text-xs">No sessions found</div>
+                  if (items.length === 0) return <div className="p-4 text-center text-white/30 text-xs">No sessions found</div>
                   return items.map((s: any, i: number) => (
-                    <div key={i} className="px-3 py-2.5 border-b border-zinc-900 hover:bg-zinc-900/50 cursor-default">
+                    <div key={i} className="px-3 py-2.5 border-b border-zinc-900 hover:bg-[#0f0f0f]/50 cursor-default">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-base">{s.emoji || '🤖'}</span>
-                        <span className="text-xs font-semibold text-zinc-300">{s.agentName || s.agentId}</span>
-                        <span className="ml-auto text-[9px] text-zinc-600">{s.ago != null ? `${s.ago}m ago` : ''}</span>
+                        <span className="text-xs font-semibold text-white/70">{s.agentName || s.agentId}</span>
+                        <span className="ml-auto text-[9px] text-white/30">{s.ago != null ? `${s.ago}m ago` : ''}</span>
                       </div>
                       <div className="flex items-center gap-2 pl-7">
-                        <span className="text-[10px] text-zinc-500">{s.channel}</span>
-                        {s.tokens > 0 && <span className="text-[9px] text-zinc-700">{(s.tokens/1000).toFixed(1)}k tokens</span>}
+                        <span className="text-[10px] text-white/50">{s.channel}</span>
+                        {s.tokens > 0 && <span className="text-[9px] text-white/20">{(s.tokens/1000).toFixed(1)}k tokens</span>}
                       </div>
                     </div>
                   ))
@@ -2041,22 +2043,22 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
       {/* Mobile sidebar overlay */}
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="w-72 bg-[#0d0d0d] border-r border-zinc-800 flex flex-col h-full overflow-y-auto">
-            <div className="px-3 py-3 border-b border-zinc-800/40 flex items-center gap-2">
-              <button onClick={newChat} className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 text-white text-xs font-medium hover:bg-zinc-700 transition-all flex items-center gap-2">
+          <div className="w-72 bg-[#0d0d0d] border-r border-white/10 flex flex-col h-full overflow-y-auto">
+            <div className="px-3 py-3 border-b border-white/10 flex items-center gap-2">
+              <button onClick={newChat} className="flex-1 px-3 py-2 rounded-lg bg-white/10 text-white text-xs font-medium hover:bg-white/15 transition-all flex items-center gap-2">
                 <span>+</span> New Chat
               </button>
-              <button onClick={() => setMobileSidebarOpen(false)} className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-white transition-colors text-sm rounded-lg hover:bg-zinc-800">✕</button>
+              <button onClick={() => setMobileSidebarOpen(false)} className="w-7 h-7 flex items-center justify-center text-white/50 hover:text-white transition-colors text-sm rounded-lg hover:bg-white/10">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto px-2 py-2">
               {filteredChats.length === 0 ? (
-                <p className="text-zinc-700 text-xs px-3 py-4">No chats yet</p>
+                <p className="text-white/20 text-xs px-3 py-4">No chats yet</p>
               ) : (
                 filteredChats.map(c => (
                   <div
                     key={c.id}
                     className={'w-full text-left px-3 py-2.5 rounded-lg transition-all text-xs cursor-pointer mb-0.5 ' +
-                      (activeChat === c.id ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-zinc-300 hover:bg-zinc-900')}
+                      (activeChat === c.id ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70 hover:bg-[#0f0f0f]')}
                     onClick={() => { setActiveChat(c.id); setMobileSidebarOpen(false) }}>
                     <p className="font-medium truncate">{c.pinned ? '📌 ' : ''}{c.title}</p>
                     <p className="text-[9px] opacity-40 mt-0.5">{new Date(c.updatedAt).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'})}</p>
@@ -2075,15 +2077,15 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
           <div className="flex-1 flex flex-col items-center justify-center">
             <div className="text-center">
               <div className="text-5xl mb-4">💬</div>
-              <p className="text-zinc-400 text-sm font-medium">No conversation selected</p>
-              <p className="text-zinc-700 text-xs mt-1">Click "New Chat" to start</p>
+              <p className="text-white/40 text-sm font-medium">No conversation selected</p>
+              <p className="text-white/20 text-xs mt-1">Click "New Chat" to start</p>
             </div>
           </div>
         ) : (
           <>
             {/* Header */}
-            <div className="border-b border-zinc-800/40 px-3 md:px-6 py-3 shrink-0 flex items-center justify-between gap-3">
-              <button onClick={() => setMobileSidebarOpen(true)} className="md:hidden shrink-0 p-1.5 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors text-sm" title="History">☰</button>
+            <div className="border-b border-white/10 px-3 md:px-6 py-3 shrink-0 flex items-center justify-between gap-3">
+              <button onClick={() => setMobileSidebarOpen(true)} className="md:hidden shrink-0 p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors text-sm" title="History">☰</button>
               <div className="flex-1 min-w-0">
                 {renamingTitle !== null ? (
                   <input
@@ -2095,12 +2097,12 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                       if (e.key === 'Enter') renameChat(activeConv.id, renamingTitle)
                       if (e.key === 'Escape') setRenamingTitle(null)
                     }}
-                    className="bg-transparent border-b border-zinc-600 text-white text-sm font-medium outline-none w-full"
+                    className="bg-transparent border-b border-white/20 text-white text-sm font-medium outline-none w-full"
                   />
                 ) : (
                   <div className="flex items-center gap-2">
                     <h2
-                      className="text-white text-sm font-medium truncate cursor-pointer hover:text-zinc-300 transition-colors"
+                      className="text-white text-sm font-medium truncate cursor-pointer hover:text-white/70 transition-colors"
                       title="Double-click to rename"
                       onDoubleClick={() => setRenamingTitle(activeConv.title)}>
                       {activeConv.title}
@@ -2127,7 +2129,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-semibold"
                     style={{background:'#1a1a2e',borderColor:'#3b3b6a',color:'#a29bfe'}}>
                     <span>{currentAgent.label.split(' ')[0]}</span>
-                    <span className="text-zinc-600">·</span>
+                    <span className="text-white/30">·</span>
                     <span style={{color:'#818cf8'}}>{agentModelLabel}</span>
                   </span>
                   {selectedModel !== 'default' && (
@@ -2147,13 +2149,13 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <button
                     onClick={() => { setShowContextViewer(v => !v); setShowSystemPrompt(false) }}
                     className={'text-[10px] px-2.5 py-1 rounded-lg border transition-colors font-mono ' +
-                      (showContextViewer ? 'text-emerald-300 border-emerald-800 bg-emerald-900/20' : 'text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600')}
+                      (showContextViewer ? 'text-emerald-300 border-emerald-800 bg-emerald-900/20' : 'text-white/50 border-white/10 hover:text-white/70 hover:border-white/20')}
                     title="Session context">
                     {'{ }'}
                   </button>
                   {showContextViewer && (
-                    <div className="absolute right-0 top-8 z-20 w-72 rounded-xl border border-zinc-800 shadow-2xl p-3 space-y-1.5" style={{background:'#0f0f0f'}}>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold mb-2">Session Context</p>
+                    <div className="absolute right-0 top-8 z-20 w-72 rounded-xl border border-white/10 shadow-2xl p-3 space-y-1.5" style={{background:'#0f0f0f'}}>
+                      <p className="text-[10px] text-white/50 uppercase tracking-widest font-semibold mb-2">Session Context</p>
                       {[
                         ['Session key', `mc-chat-${activeConv.id}`],
                         ['Agent', `${selectedAgent} (${currentAgent.label})`],
@@ -2164,8 +2166,8 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                         ['Forked from', activeConv.forked_from || 'original'],
                       ].map(([k, v]) => (
                         <div key={k} className="flex gap-2">
-                          <span className="text-[9px] text-zinc-600 w-24 shrink-0">{k}</span>
-                          <span className="text-[9px] text-zinc-400 break-all">{v}</span>
+                          <span className="text-[9px] text-white/30 w-24 shrink-0">{k}</span>
+                          <span className="text-[9px] text-white/40 break-all">{v}</span>
                         </div>
                       ))}
                     </div>
@@ -2176,7 +2178,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <button
                     onClick={() => { setShowSystemPrompt(v => !v); setShowContextViewer(false) }}
                     className={'text-[10px] px-2.5 py-1 rounded-lg border transition-colors flex items-center gap-1 ' +
-                      (showSystemPrompt ? 'text-blue-300 border-blue-800 bg-blue-900/30' : 'text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:border-zinc-600')}
+                      (showSystemPrompt ? 'text-blue-300 border-blue-800 bg-blue-900/30' : 'text-white/50 border-white/10 hover:text-white/70 hover:border-white/20')}
                     title="System prompt">
                     ⚙️
                     {activeConv.system_prompt && (
@@ -2184,17 +2186,17 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     )}
                   </button>
                   {showSystemPrompt && (
-                    <div className="absolute right-0 top-8 z-20 w-80 rounded-xl border border-zinc-700 shadow-2xl p-3 space-y-2" style={{background:'#0f0f0f'}}>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">System Prompt</p>
+                    <div className="absolute right-0 top-8 z-20 w-80 rounded-xl border border-white/10 shadow-2xl p-3 space-y-2" style={{background:'#0f0f0f'}}>
+                      <p className="text-[10px] text-white/50 uppercase tracking-widest font-semibold">System Prompt</p>
                       <textarea
                         rows={4}
                         value={systemPromptDraft}
                         onChange={e => setSystemPromptDraft(e.target.value)}
                         onBlur={() => saveSystemPrompt(activeConv.id, systemPromptDraft)}
                         placeholder="Optional system prompt for this conversation..."
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 placeholder-zinc-700 outline-none focus:border-zinc-600 resize-none"
+                        className="w-full bg-[#0f0f0f] border border-white/10 rounded-lg px-3 py-2 text-xs text-white/70 placeholder-zinc-700 outline-none focus:border-white/20 resize-none"
                       />
-                      <p className="text-[9px] text-zinc-700">Auto-saves on blur. Prepended to every message in this conversation.</p>
+                      <p className="text-[9px] text-white/20">Auto-saves on blur. Prepended to every message in this conversation.</p>
                     </div>
                   )}
                 </div>
@@ -2202,19 +2204,19 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                 <div className="hidden md:block relative" ref={sendToAgentRef}>
                   <button
                     onClick={() => setShowSendToAgent(v => !v)}
-                    className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors flex items-center gap-1"
+                    className="text-[10px] px-2.5 py-1 rounded-lg text-white/50 hover:text-white/70 border border-white/10 hover:border-white/20 transition-colors flex items-center gap-1"
                     title="Forward last message to another agent">
                     ↗ Send to
                     <span className="text-[8px]">▾</span>
                   </button>
                   {showSendToAgent && (
-                    <div className="absolute right-0 top-7 z-30 w-48 rounded-xl border border-zinc-800 shadow-2xl py-1" style={{background:'#0f0f0f'}}>
+                    <div className="absolute right-0 top-7 z-30 w-48 rounded-xl border border-white/10 shadow-2xl py-1" style={{background:'#0f0f0f'}}>
                       {AGENT_OPTIONS.filter(a => a.id !== selectedAgent).map(a => (
                         <button
                           key={a.id}
                           onClick={() => sendToAgent(a.id)}
-                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
-                          {a.label} <span className="text-zinc-600 text-[9px]">{a.desc}</span>
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-white/40 hover:text-white hover:bg-white/10/60 transition-colors">
+                          {a.label} <span className="text-white/30 text-[9px]">{a.desc}</span>
                         </button>
                       ))}
                     </div>
@@ -2232,25 +2234,25 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <div className="hidden md:block relative" ref={exportMenuRef}>
                     <button
                       onClick={() => setShowExportMenu(v => !v)}
-                      className="text-[10px] px-2.5 py-1 rounded-lg text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 transition-colors flex items-center gap-1">
+                      className="text-[10px] px-2.5 py-1 rounded-lg text-white/50 hover:text-white/70 border border-white/10 hover:border-white/20 transition-colors flex items-center gap-1">
                       ↓ Export
                       <span className="text-[8px]">▾</span>
                     </button>
                     {showExportMenu && (
-                      <div className="absolute right-0 top-7 z-30 w-44 rounded-xl border border-zinc-800 shadow-2xl py-1" style={{background:'#0f0f0f'}}>
+                      <div className="absolute right-0 top-7 z-30 w-44 rounded-xl border border-white/10 shadow-2xl py-1" style={{background:'#0f0f0f'}}>
                         <button
                           onClick={() => copyConvAsMarkdown(activeConv)}
-                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-white/40 hover:text-white hover:bg-white/10/60 transition-colors">
                           ⎘ Copy as Markdown
                         </button>
                         <button
                           onClick={() => downloadConvMd(activeConv)}
-                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-white/40 hover:text-white hover:bg-white/10/60 transition-colors">
                           ↓ Download .md
                         </button>
                         <button
                           onClick={printConv}
-                          className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800/60 transition-colors">
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-white/40 hover:text-white hover:bg-white/10/60 transition-colors">
                           🖨 Print / PDF
                         </button>
                       </div>
@@ -2262,13 +2264,13 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
 
             {/* KAOS is writing status bar */}
             {isSending && (
-              <div className="border-b border-zinc-800/40 px-6 py-2 shrink-0 flex items-center gap-2.5" style={{background:'#0d0d0d'}}>
+              <div className="border-b border-white/10 px-6 py-2 shrink-0 flex items-center gap-2.5" style={{background:'#0d0d0d'}}>
                 <div className="flex gap-0.5 items-center">
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'0ms'}} />
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'120ms'}} />
                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{animationDelay:'240ms'}} />
                 </div>
-                <span className="text-xs text-zinc-500">🧠 <span className="text-blue-400 font-medium">{currentAgent.label}</span> is writing…</span>
+                <span className="text-xs text-white/50">🧠 <span className="text-blue-400 font-medium">{currentAgent.label}</span> is writing…</span>
               </div>
             )}
 
@@ -2351,18 +2353,18 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmEditMessage(msg) }
                               if (e.key === 'Escape') setEditingMsgId(null)
                             }}
-                            className="px-4 py-3 rounded-lg bg-zinc-700 text-white text-sm outline-none border border-zinc-500 resize-none w-full"
+                            className="px-4 py-3 rounded-lg bg-white/15 text-white text-sm outline-none border border-white/20 resize-none w-full"
                             rows={3}
                           />
                           <div className="flex items-center gap-2 justify-end">
                             <button
                               onClick={() => setEditingMsgId(null)}
-                              className="text-xs text-zinc-500 hover:text-white px-2 py-1 rounded-lg border border-zinc-700 hover:border-zinc-500 transition-colors">
+                              className="text-xs text-white/50 hover:text-white px-2 py-1 rounded-lg border border-white/10 hover:border-white/20 transition-colors">
                               Cancel
                             </button>
                             <button
                               onClick={() => confirmEditMessage(msg)}
-                              className="text-xs text-white px-2 py-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 border border-zinc-600 transition-colors">
+                              className="text-xs text-white px-2 py-1 rounded-lg bg-white/15 hover:bg-white/10 border border-white/20 transition-colors">
                               ✓ Send
                             </button>
                           </div>
@@ -2371,29 +2373,29 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                         <>
                           {/* NEW: Tool call indicators above assistant messages */}
                           {msg.role === 'assistant' && toolIndicators[msg.id] && toolIndicators[msg.id].map((tool, ti) => (
-                            <div key={ti} className="mb-2 rounded-lg border border-zinc-700/50 bg-zinc-950 text-xs overflow-hidden">
+                            <div key={ti} className="mb-2 rounded-lg border border-white/10/50 bg-[#080808] text-xs overflow-hidden">
                               <button
                                 onClick={() => setToolIndicators(prev => ({
                                   ...prev,
                                   [msg.id]: prev[msg.id].map((t, i) => i === ti ? { ...t, expanded: !t.expanded } : t)
                                 }))}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-zinc-400 hover:text-zinc-200 transition-colors text-left">
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-white/40 hover:text-white/70 transition-colors text-left">
                                 <span>🔧</span>
                                 <span className="font-mono text-emerald-400">{tool.name}</span>
-                                <span className="text-zinc-600 text-[9px] ml-auto">{tool.expanded ? '▲' : '▼'}</span>
+                                <span className="text-white/30 text-[9px] ml-auto">{tool.expanded ? '▲' : '▼'}</span>
                               </button>
                               {tool.expanded && (
                                 <div className="px-3 pb-2 space-y-1">
                                   <div>
-                                    <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Input</span>
-                                    <pre className="text-[10px] font-mono text-zinc-500 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
+                                    <span className="text-[9px] text-white/30 uppercase tracking-wider">Input</span>
+                                    <pre className="text-[10px] font-mono text-white/50 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
                                       {tool.input}
                                     </pre>
                                   </div>
                                   {tool.output && (
                                     <div>
-                                      <span className="text-[9px] text-zinc-600 uppercase tracking-wider">Output</span>
-                                      <pre className="text-[10px] font-mono text-zinc-400 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
+                                      <span className="text-[9px] text-white/30 uppercase tracking-wider">Output</span>
+                                      <pre className="text-[10px] font-mono text-white/40 overflow-x-auto whitespace-pre-wrap break-words max-h-32">
                                         {tool.output}
                                       </pre>
                                     </div>
@@ -2404,11 +2406,11 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                           ))}
                           {/* NEW: Thinking/reasoning panel above assistant message */}
                           {msg.role === 'assistant' && thinkingContent[msg.id] && (
-                            <details className="mb-2 rounded-lg border border-zinc-700/50 overflow-hidden">
-                              <summary className="px-3 py-1.5 text-[11px] text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors select-none" style={{background:'#161616'}}>
-                                💭 Reasoning <span className="text-[9px] text-zinc-700">(click to expand)</span>
+                            <details className="mb-2 rounded-lg border border-white/10/50 overflow-hidden">
+                              <summary className="px-3 py-1.5 text-[11px] text-white/50 cursor-pointer hover:text-white/70 transition-colors select-none" style={{background:'#161616'}}>
+                                💭 Reasoning <span className="text-[9px] text-white/20">(click to expand)</span>
                               </summary>
-                              <pre className="px-3 py-2 text-[10px] font-mono text-zinc-500 whitespace-pre-wrap break-words max-h-48 overflow-y-auto" style={{background:'#111'}}>
+                              <pre className="px-3 py-2 text-[10px] font-mono text-white/50 whitespace-pre-wrap break-words max-h-48 overflow-y-auto" style={{background:'#111'}}>
                                 {thinkingContent[msg.id]}
                               </pre>
                             </details>
@@ -2417,7 +2419,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                           <div
                             className={
                               'message-bubble px-4 py-3 rounded-lg text-sm ' +
-                              (msg.role === 'user' ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-zinc-300') +
+                              (msg.role === 'user' ? 'bg-white/10 text-white' : 'bg-[#0f0f0f] text-white/70') +
                               (msg.bookmarked ? ' border-l-2 border-yellow-600/50' : '')
                             }>
                             {/* Feature 1: show image if present */}
@@ -2458,13 +2460,13 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                           }>
                             <button
                               onClick={() => copyMessage(msg.id, msg.content)}
-                              className="text-[9px] text-zinc-600 hover:text-zinc-400 flex items-center gap-1 transition-colors">
+                              className="text-[9px] text-white/30 hover:text-white/40 flex items-center gap-1 transition-colors">
                               {copiedId === msg.id ? '✓ Copied' : '⎘ Copy'}
                             </button>
                             {/* Feature 16: bookmark */}
                             <button
                               onClick={() => toggleBookmark(msg.id, !!msg.bookmarked)}
-                              className={'text-[9px] transition-colors ' + (msg.bookmarked ? 'text-yellow-500 hover:text-yellow-300' : 'text-zinc-600 hover:text-zinc-400')}
+                              className={'text-[9px] transition-colors ' + (msg.bookmarked ? 'text-yellow-500 hover:text-yellow-300' : 'text-white/30 hover:text-white/40')}
                               title={msg.bookmarked ? 'Remove bookmark' : 'Bookmark'}>
                               ★
                             </button>
@@ -2472,7 +2474,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                             {activeConv && (
                               <button
                                 onClick={() => forkConversation(activeConv, msg.id)}
-                                className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                                className="text-[9px] text-white/30 hover:text-white/40 transition-colors"
                                 title="Fork conversation from here">
                                 ⑂ Fork
                               </button>
@@ -2481,7 +2483,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                             {msg.role === 'user' && (
                               <button
                                 onClick={() => startEditMessage(msg)}
-                                className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                                className="text-[9px] text-white/30 hover:text-white/40 transition-colors"
                                 title="Edit message">
                                 ✏️
                               </button>
@@ -2498,7 +2500,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                                   body: JSON.stringify({ id: activeConv.id, messages: updated.messages })
                                 })
                               }}
-                              className="text-[10px] text-zinc-600 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded"
+                              className="text-[10px] text-white/30 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded"
                               title="Delete message">
                               🗑
                             </button>
@@ -2509,7 +2511,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                               'opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 ' +
                               (msg.role === 'user' ? 'text-right' : 'text-left')
                             }>
-                              <span className="text-[9px] text-zinc-700">
+                              <span className="text-[9px] text-white/20">
                                 {new Date(msg.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
                               </span>
                             </div>
@@ -2534,7 +2536,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     <button
                       key={i}
                       onClick={() => { setInputVal(s); textareaRef.current?.focus() }}
-                      className="px-3 py-1 rounded-full border border-zinc-700 text-zinc-400 text-[11px] hover:bg-zinc-800 hover:text-white cursor-pointer transition-colors">
+                      className="px-3 py-1 rounded-full border border-white/10 text-white/40 text-[11px] hover:bg-white/10 hover:text-white cursor-pointer transition-colors">
                       {s}
                     </button>
                   ))}
@@ -2542,10 +2544,10 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
               )}
               {loading && (
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm bg-zinc-900/50">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm bg-[#0f0f0f]/50">
                     🧠
                   </div>
-                  <div className="px-4 py-3 rounded-lg bg-zinc-900 text-zinc-500">
+                  <div className="px-4 py-3 rounded-lg bg-[#0f0f0f] text-white/50">
                     <div className="flex gap-1 items-center">
                       <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'0ms'}} />
                       <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:'150ms'}} />
@@ -2583,15 +2585,15 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
             )}
 
             {/* Input Area */}
-            <div className="border-t border-zinc-800/40 px-3 md:px-6 py-3 md:py-4 shrink-0" style={{background:'#0d0d0d', paddingBottom:'max(12px, env(safe-area-inset-bottom))'}}>
+            <div className="border-t border-white/10 px-3 md:px-6 py-3 md:py-4 shrink-0" style={{background:'#0d0d0d', paddingBottom:'max(12px, env(safe-area-inset-bottom))'}}>
               {/* Feature 1: pasted image preview */}
               {pastedImage && (
-                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60">
+                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0f0f0f] border border-white/10">
                   <img src={pastedImage} alt="paste preview" className="w-12 h-12 object-contain rounded" />
-                  <span className="text-xs text-zinc-400 flex-1">Image pasted</span>
+                  <span className="text-xs text-white/40 flex-1">Image pasted</span>
                   <button
                     onClick={() => setPastedImage(null)}
-                    className="text-zinc-600 hover:text-white text-xs ml-1">
+                    className="text-white/30 hover:text-white text-xs ml-1">
                     ✕
                   </button>
                 </div>
@@ -2609,19 +2611,19 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     selectedFile.name.endsWith('.html') ? '🌐' : '📄'
                   }</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-zinc-300 font-medium truncate">{selectedFile.name}</div>
-                    <div className="text-zinc-600 text-[9px]">{(selectedFile.content.length/1024).toFixed(1)} KB</div>
+                    <div className="text-white/70 font-medium truncate">{selectedFile.name}</div>
+                    <div className="text-white/30 text-[9px]">{(selectedFile.content.length/1024).toFixed(1)} KB</div>
                   </div>
-                  <button onClick={() => setSelectedFile(null)} className="text-zinc-600 hover:text-zinc-400 text-xs px-1">✕</button>
+                  <button onClick={() => setSelectedFile(null)} className="text-white/30 hover:text-white/40 text-xs px-1">✕</button>
                 </div>
               )}
 
               {/* NEW: Image URL preview */}
               {imageUrlPreview && (
-                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60">
+                <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#0f0f0f] border border-white/10">
                   <img src={imageUrlPreview} alt="url preview" className="w-12 h-12 object-contain rounded" onError={() => setImageUrlPreview(null)} />
-                  <span className="text-xs text-zinc-400 flex-1 truncate">{imageUrlPreview.slice(0, 50)}…</span>
-                  <button onClick={() => { setImageUrlPreview(null); setImageUrlDraft('') }} className="text-zinc-600 hover:text-white text-xs ml-1">✕</button>
+                  <span className="text-xs text-white/40 flex-1 truncate">{imageUrlPreview.slice(0, 50)}…</span>
+                  <button onClick={() => { setImageUrlPreview(null); setImageUrlDraft('') }} className="text-white/30 hover:text-white text-xs ml-1">✕</button>
                 </div>
               )}
               {/* Task 8: @-mention agent dropdown */}
@@ -2630,8 +2632,8 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   a.id.toLowerCase().includes(mentionFilter) || a.label.toLowerCase().includes(mentionFilter)
                 )
                 return filtered.length > 0 ? (
-                  <div className="mb-2 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f'}}>
-                    <p className="text-[9px] text-zinc-600 uppercase tracking-widest px-3 pt-2 pb-1">Route to agent</p>
+                  <div className="mb-2 rounded-xl border border-white/10 overflow-hidden shadow-xl" style={{background:'#0f0f0f'}}>
+                    <p className="text-[9px] text-white/30 uppercase tracking-widest px-3 pt-2 pb-1">Route to agent</p>
                     {filtered.map((a, i) => (
                       <button
                         key={a.id}
@@ -2641,11 +2643,11 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                           setShowMentionDropdown(false)
                           textareaRef.current?.focus()
                         }}
-                        className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-zinc-800/50 last:border-0 transition-colors ' +
-                          (i === mentionIdx ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900')}>
+                        className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-white/10/50 last:border-0 transition-colors ' +
+                          (i === mentionIdx ? 'bg-white/10 text-white' : 'text-white/40 hover:bg-[#0f0f0f]')}>
                         <span className="text-sm shrink-0">{a.label.split(' ')[0]}</span>
                         <span className="font-mono text-xs text-blue-400 shrink-0">@{a.id}</span>
-                        <span className="text-[10px] text-zinc-600">{a.desc}</span>
+                        <span className="text-[10px] text-white/30">{a.desc}</span>
                       </button>
                     ))}
                   </div>
@@ -2653,7 +2655,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
               })()}
               {/* NEW: Slash command palette */}
               {showSlashPalette && slashFilter.length > 0 && (
-                <div className="mb-2 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f'}}>
+                <div className="mb-2 rounded-xl border border-white/10 overflow-hidden shadow-xl" style={{background:'#0f0f0f'}}>
                   {slashFilter.map((c, i) => (
                     <button
                       key={c.cmd}
@@ -2667,11 +2669,11 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                           executeSlashCommand(c.cmd)
                         }
                       }}
-                      className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-zinc-800/50 last:border-0 transition-colors ' +
-                        (i === slashPaletteIdx ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:bg-zinc-900')}>
+                      className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-white/10/50 last:border-0 transition-colors ' +
+                        (i === slashPaletteIdx ? 'bg-white/10 text-white' : 'text-white/40 hover:bg-[#0f0f0f]')}>
                       <span className="text-base shrink-0">{c.icon}</span>
                       <span className="font-mono text-xs text-emerald-400 shrink-0">{c.cmd}</span>
-                      <span className="text-[10px] text-zinc-600">{c.desc}</span>
+                      <span className="text-[10px] text-white/30">{c.desc}</span>
                     </button>
                   ))}
                 </div>
@@ -2679,10 +2681,10 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
 
               {/* Feature 14: keyboard shortcut cheatsheet panel */}
               {showShortcuts && (
-                <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3 no-print">
+                <div className="mb-3 rounded-xl border border-white/10 bg-[#080808] p-3 no-print">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Keyboard Shortcuts</p>
-                    <button onClick={() => setShowShortcuts(false)} className="text-zinc-600 hover:text-white text-xs">✕</button>
+                    <p className="text-[10px] text-white/50 uppercase tracking-widest font-semibold">Keyboard Shortcuts</p>
+                    <button onClick={() => setShowShortcuts(false)} className="text-white/30 hover:text-white text-xs">✕</button>
                   </div>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                     {[
@@ -2694,21 +2696,21 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                       ['⌘/', 'Focus input'],
                     ].map(([key, desc]) => (
                       <div key={key} className="flex items-center gap-2">
-                        <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 font-mono">{key}</kbd>
-                        <span className="text-[10px] text-zinc-600">{desc}</span>
+                        <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-[#0f0f0f] text-white/40 font-mono">{key}</kbd>
+                        <span className="text-[10px] text-white/30">{desc}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
               {/* INF-70: Compact toolbar above input */}
-              <div className="flex items-center gap-1 px-1 py-1.5 rounded-t-xl border border-b-0 border-zinc-800/40" style={{background:'#0c0c0c', paddingBottom: 'env(safe-area-inset-bottom, 0)'}}>
+              <div className="flex items-center gap-1 px-1 py-1.5 rounded-t-xl border border-b-0 border-white/10" style={{background:'#0c0c0c', paddingBottom: 'env(safe-area-inset-bottom, 0)'}}>
                 {/* Paperclip button + file type picker */}
                 <div className="relative shrink-0" ref={fileTypePickerRef}>
                   <button
                     onClick={() => setShowFileTypePicker(p => !p)}
                     disabled={isSending}
-                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="p-1.5 rounded-lg hover:bg-white/10 transition-all text-white/50 hover:text-white/70 disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Attach file">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -2716,11 +2718,11 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     </svg>
                   </button>
                   {showFileTypePicker && (
-                    <div className="absolute bottom-8 left-0 z-50 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f', minWidth:'160px'}}>
+                    <div className="absolute bottom-8 left-0 z-50 rounded-xl border border-white/10 overflow-hidden shadow-xl" style={{background:'#0f0f0f', minWidth:'160px'}}>
                       {FILE_TYPE_GROUPS.map(g => (
                         <button key={g.label}
                           onClick={() => handleFileAttach(g.accept)}
-                          className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800/50 last:border-0">
+                          className="w-full text-left px-3 py-2 text-xs text-white/70 hover:bg-white/10 transition-colors border-b border-white/10/50 last:border-0">
                           {g.label}
                         </button>
                       ))}
@@ -2732,7 +2734,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                 <button
                   onClick={() => { setShowFileBrowser(true); setFileBrowserPath('') }}
                   disabled={isSending}
-                  className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-all text-white/50 hover:text-white/70 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
                   title="Browse workspace files">
                   📁
                 </button>
@@ -2742,13 +2744,13 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <button
                     onClick={() => setShowImageUrlInput(v => !v)}
                     disabled={isSending}
-                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
+                    className="p-1.5 rounded-lg hover:bg-white/10 transition-all text-white/50 hover:text-white/70 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
                     title="Add image by URL">
                     🔗
                   </button>
                   {showImageUrlInput && (
-                    <div className="absolute bottom-8 left-0 z-50 rounded-xl border border-zinc-700 shadow-xl p-2" style={{background:'#0f0f0f', minWidth:'240px'}}>
-                      <p className="text-[9px] text-zinc-600 mb-1.5 uppercase tracking-widest">Image URL</p>
+                    <div className="absolute bottom-8 left-0 z-50 rounded-xl border border-white/10 shadow-xl p-2" style={{background:'#0f0f0f', minWidth:'240px'}}>
+                      <p className="text-[9px] text-white/30 mb-1.5 uppercase tracking-widest">Image URL</p>
                       <input
                         autoFocus
                         type="url"
@@ -2762,9 +2764,9 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                           if (e.key === 'Escape') setShowImageUrlInput(false)
                         }}
                         placeholder="https://example.com/image.png"
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-300 placeholder-zinc-700 outline-none focus:border-zinc-600"
+                        className="w-full bg-[#0f0f0f] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 placeholder-zinc-700 outline-none focus:border-white/20"
                       />
-                      <p className="text-[9px] text-zinc-700 mt-1">Press Enter to add preview</p>
+                      <p className="text-[9px] text-white/20 mt-1">Press Enter to add preview</p>
                     </div>
                   )}
                 </div>
@@ -2773,7 +2775,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                 <button
                   onClick={() => { setInputVal('/'); setShowSlashPalette(true); textareaRef.current?.focus() }}
                   disabled={isSending}
-                  className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-mono"
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-all text-white/50 hover:text-white/70 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-mono"
                   title="Slash commands">
                   /
                 </button>
@@ -2800,7 +2802,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     }
                   }}
                   disabled={isSending}
-                  className="px-1.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800/40 text-[10px] text-zinc-400 shrink-0 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  className="px-1.5 py-1 rounded-lg bg-[#0f0f0f] border border-white/10 text-[10px] text-white/40 shrink-0 outline-none focus:border-white/20 disabled:opacity-50 cursor-pointer"
                   title="Select agent">
                   {AGENT_OPTIONS.map(a => (
                     <option key={a.id} value={a.id}>{a.label}</option>
@@ -2812,7 +2814,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   value={selectedModel}
                   onChange={e => setSelectedModel(e.target.value)}
                   disabled={isSending}
-                  className="hidden sm:block px-1.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800/40 text-[10px] text-zinc-400 shrink-0 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  className="hidden sm:block px-1.5 py-1 rounded-lg bg-[#0f0f0f] border border-white/10 text-[10px] text-white/40 shrink-0 outline-none focus:border-white/20 disabled:opacity-50 cursor-pointer"
                   title="Select model">
                   {MODEL_PROVIDERS.map(provider => (
                     <optgroup key={provider} label={provider}>
@@ -2830,7 +2832,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <button
                     onClick={() => setShowSendToAgent(v => !v)}
                     disabled={isSending}
-                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
+                    className="p-1.5 rounded-lg hover:bg-white/10 transition-all text-white/50 hover:text-white/70 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
                     title="Send to agent">
                     📤
                   </button>
@@ -2913,7 +2915,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   }}
                   disabled={isSending}
                   placeholder={isListening ? 'Listening...' : isSending ? `${currentAgent.label} is writing…` : `Message ${currentAgent.label} (${agentModelLabel})...`}
-                  className="flex-1 px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-800/60 text-white text-sm placeholder-zinc-600 outline-none focus:border-zinc-700 transition-all resize-none overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-2 rounded-lg bg-[#0f0f0f] border border-white/10 text-white text-sm placeholder-white/30 outline-none focus:border-white/10 transition-all resize-none overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{minHeight:'38px', maxHeight:'160px'}}
                 />
 
@@ -2925,7 +2927,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     title={isListening ? 'Stop listening' : 'Voice input'}
                     className={
                       'p-2 rounded-lg transition-all text-sm shrink-0 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed ' +
-                      (isListening ? 'bg-red-600 text-white anim-mic' : 'hover:bg-zinc-900 text-zinc-500 hover:text-zinc-300')
+                      (isListening ? 'bg-red-600 text-white anim-mic' : 'hover:bg-[#0f0f0f] text-white/50 hover:text-white/70')
                     }>
                     🎤
                   </button>
@@ -2943,7 +2945,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <button
                     onClick={handleSend}
                     disabled={!inputVal.trim() || isSending}
-                    className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-white shrink-0 mb-0.5">
+                    className="p-2 rounded-lg bg-white/10 hover:bg-white/15 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-white shrink-0 mb-0.5">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9-7-9-7m0 0l-9 7m9-7v7" />
                     </svg>
@@ -2952,15 +2954,15 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
               </div>
 
               <div className="hidden md:flex items-center justify-between mt-2 no-print">
-                <p className="text-zinc-700 text-[10px]">
-                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500">Enter</kbd> send ·
-                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">⇧ Enter</kbd> newline ·
-                  <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500 ml-1">⌘K</kbd> new chat ·
-                  <span className="ml-1 text-zinc-700">right-click conv to pin</span>
+                <p className="text-white/20 text-[10px]">
+                  <kbd className="px-1.5 py-0.5 rounded bg-[#0f0f0f] text-white/50">Enter</kbd> send ·
+                  <kbd className="px-1.5 py-0.5 rounded bg-[#0f0f0f] text-white/50 ml-1">⇧ Enter</kbd> newline ·
+                  <kbd className="px-1.5 py-0.5 rounded bg-[#0f0f0f] text-white/50 ml-1">⌘K</kbd> new chat ·
+                  <span className="ml-1 text-white/20">right-click conv to pin</span>
                 </p>
                 <div className="flex items-center gap-2">
                   {inputVal.length > 0 && (
-                    <span className={`text-[9px] tabular-nums font-mono ${inputVal.length > 8000 ? 'text-red-500' : inputVal.length > 4000 ? 'text-yellow-500' : 'text-zinc-700'}`}>
+                    <span className={`text-[9px] tabular-nums font-mono ${inputVal.length > 8000 ? 'text-red-500' : inputVal.length > 4000 ? 'text-yellow-500' : 'text-white/20'}`}>
                       {inputVal.length.toLocaleString()} chars · ~{Math.ceil(inputVal.length/4)} tokens
                     </span>
                   )}
@@ -2969,13 +2971,13 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                     <button
                       onClick={() => setShowPromptTemplates(v => !v)}
                       className={'text-[10px] w-5 h-5 rounded flex items-center justify-center border transition-colors ' +
-                        (showPromptTemplates ? 'border-zinc-600 text-yellow-400 bg-zinc-800' : 'border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400')}
+                        (showPromptTemplates ? 'border-white/20 text-yellow-400 bg-white/10' : 'border-white/10 text-white/30 hover:border-white/20 hover:text-white/40')}
                       title="Prompt templates">
                       💡
                     </button>
                     {showPromptTemplates && (
-                      <div className="absolute bottom-7 right-0 z-50 w-64 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden" style={{background:'#0f0f0f'}}>
-                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest px-3 pt-2.5 pb-1.5">Starter prompts</p>
+                      <div className="absolute bottom-7 right-0 z-50 w-64 rounded-xl border border-white/10 shadow-2xl overflow-hidden" style={{background:'#0f0f0f'}}>
+                        <p className="text-[9px] text-white/30 uppercase tracking-widest px-3 pt-2.5 pb-1.5">Starter prompts</p>
                         {PROMPT_TEMPLATES.map((t, i) => (
                           <button
                             key={i}
@@ -2984,7 +2986,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                               setShowPromptTemplates(false)
                               setTimeout(() => { textareaRef.current?.focus(); adjustTextarea() }, 50)
                             }}
-                            className="w-full text-left px-3 py-2 text-[11px] text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800/50 last:border-0">
+                            className="w-full text-left px-3 py-2 text-[11px] text-white/70 hover:bg-white/10 transition-colors border-b border-white/10/50 last:border-0">
                             {t.label}
                           </button>
                         ))}
@@ -2995,7 +2997,7 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                   <button
                     onClick={() => setShowShortcuts(v => !v)}
                     className={'text-[10px] w-5 h-5 rounded flex items-center justify-center border transition-colors ' +
-                      (showShortcuts ? 'border-zinc-600 text-zinc-400 bg-zinc-800' : 'border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400')}>
+                      (showShortcuts ? 'border-white/20 text-white/40 bg-white/10' : 'border-white/10 text-white/30 hover:border-white/20 hover:text-white/40')}>
                     ?
                   </button>
                 </div>
@@ -3013,27 +3015,27 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
       {/* NEW: File Browser Modal */}
       {showFileBrowser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowFileBrowser(false)}>
-          <div className="w-96 max-h-[70vh] rounded-2xl border border-zinc-700 shadow-2xl flex flex-col overflow-hidden" style={{background:'#0f0f0f'}} onClick={e => e.stopPropagation()}>
-            <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between shrink-0">
+          <div className="w-96 max-h-[70vh] rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden" style={{background:'#0f0f0f'}} onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <span>📁</span>
-                <span className="text-xs text-zinc-400 font-medium">Workspace Files</span>
-                {fileBrowserPath && <span className="text-[9px] text-zinc-600 font-mono truncate max-w-[160px]">/{fileBrowserPath}</span>}
+                <span className="text-xs text-white/40 font-medium">Workspace Files</span>
+                {fileBrowserPath && <span className="text-[9px] text-white/30 font-mono truncate max-w-[160px]">/{fileBrowserPath}</span>}
               </div>
               <div className="flex items-center gap-2">
                 {fileBrowserPath && (
                   <button
                     onClick={() => setFileBrowserPath(p => p.split('/').slice(0,-1).join('/'))}
-                    className="text-[10px] text-zinc-500 hover:text-white px-2 py-0.5 rounded border border-zinc-700 hover:border-zinc-500">
+                    className="text-[10px] text-white/50 hover:text-white px-2 py-0.5 rounded border border-white/10 hover:border-white/20">
                     ← Up
                   </button>
                 )}
-                <button onClick={() => setShowFileBrowser(false)} className="text-zinc-600 hover:text-white text-xs">✕</button>
+                <button onClick={() => setShowFileBrowser(false)} className="text-white/30 hover:text-white text-xs">✕</button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto py-1">
               {fileBrowserEntries.length === 0 ? (
-                <p className="text-zinc-600 text-xs px-4 py-3">Empty directory</p>
+                <p className="text-white/30 text-xs px-4 py-3">Empty directory</p>
               ) : (
                 fileBrowserEntries.map(entry => (
                   <button
@@ -3051,10 +3053,10 @@ function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
                         }
                       }
                     }}
-                    className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-zinc-800/60 transition-colors">
+                    className="w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-white/10/60 transition-colors">
                     <span className="text-sm shrink-0">{entry.isDir ? '📁' : '📄'}</span>
-                    <span className="text-xs text-zinc-300 truncate">{entry.name}</span>
-                    {!entry.isDir && <span className="text-[9px] text-zinc-600 ml-auto shrink-0">.{entry.name.split('.').pop()}</span>}
+                    <span className="text-xs text-white/70 truncate">{entry.name}</span>
+                    {!entry.isDir && <span className="text-[9px] text-white/30 ml-auto shrink-0">.{entry.name.split('.').pop()}</span>}
                   </button>
                 ))
               )}
@@ -3081,19 +3083,19 @@ function MultiSelect({ label, options, selected, onToggle, displayFn }: {
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(!open)}
-        className="bg-transparent border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-400 outline-none focus:border-zinc-600 flex items-center gap-1">
+        className="bg-transparent border border-white/10 rounded-lg px-2 py-1 text-xs text-white/40 outline-none focus:border-white/20 flex items-center gap-1">
         {selected.length > 0 ? `${label} (${selected.length})` : `All ${label}s`}
-        <span className="text-zinc-600 text-[9px]">▾</span>
+        <span className="text-white/30 text-[9px]">▾</span>
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 min-w-[140px] rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+        <div className="absolute z-50 mt-1 min-w-[140px] rounded-lg border border-white/10 bg-[#0f0f0f] py-1 shadow-xl">
           {options.map(opt => (
             <button key={opt} onClick={() => onToggle(opt)}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-zinc-800 transition-colors">
-              <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selected.includes(opt) ? 'bg-blue-500 border-blue-500 text-white' : 'border-zinc-600'}`}>
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-white/10 transition-colors">
+              <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selected.includes(opt) ? 'bg-blue-500 border-blue-500 text-white' : 'border-white/20'}`}>
                 {selected.includes(opt) ? '✓' : ''}
               </span>
-              <span className="text-zinc-300">{display(opt)}</span>
+              <span className="text-white/70">{display(opt)}</span>
             </button>
           ))}
         </div>
@@ -3176,20 +3178,20 @@ function SprintProgressCard() {
     : null
 
   return (
-    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-sm">🏃</span>
-          <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">{sprintLabel || 'Sprint'}{sprintDate ? ` · ${sprintDate}` : ''}</span>
+          <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">{sprintLabel || 'Sprint'}{sprintDate ? ` · ${sprintDate}` : ''}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-600">Next 7am EDT in</span>
-          <span className="text-[11px] font-mono text-zinc-400">{countdown}</span>
+          <span className="text-[10px] text-white/30">Next 7am EDT in</span>
+          <span className="text-[11px] font-mono text-white/40">{countdown}</span>
         </div>
       </div>
       <div className="flex items-center gap-3 mb-2">
         <span className="text-white text-sm font-semibold tabular-nums">{sprintData.done}/{sprintData.total}</span>
-        <span className="text-zinc-500 text-xs">done</span>
+        <span className="text-white/50 text-xs">done</span>
         {velocityDelta !== null && (
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{
             background: velocityDelta > 0 ? '#10b98120' : velocityDelta < 0 ? '#ef444420' : '#3f3f4620',
@@ -3412,9 +3414,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     return new Date(d) < new Date(new Date().toDateString())
   }
 
-  const selectCls = "bg-transparent border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-400 outline-none focus:border-zinc-600"
-  const inputCls = "w-full bg-transparent border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-zinc-600 placeholder-zinc-700"
-  const labelCls = "text-[10px] uppercase tracking-widest text-zinc-600 mb-1"
+  const selectCls = "bg-transparent border border-white/10 rounded-lg px-2 py-1 text-xs text-white/40 outline-none focus:border-white/20"
+  const inputCls = "w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-white/20 placeholder-zinc-700"
+  const labelCls = "text-[10px] uppercase tracking-widest text-white/30 mb-1"
 
   return (
     <div className="h-full flex flex-col gap-4">
@@ -3428,27 +3430,27 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             <option value="">All Sprints</option>
             {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
           </select>
-          {hasAnyFilter && <button onClick={clearAllFilters} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors">Clear all</button>}
-          <div className="flex gap-0.5 p-0.5 rounded-lg border border-zinc-800" style={{background:'#0a0a0a'}}>
+          {hasAnyFilter && <button onClick={clearAllFilters} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-white/10 transition-colors">Clear all</button>}
+          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#0a0a0a'}}>
             <button onClick={() => { setBoardGroupBy('status'); localStorage.setItem('board-group-by','status') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='status'?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='status'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
               Status
             </button>
             <button onClick={() => { setBoardGroupBy('feature'); localStorage.setItem('board-group-by','feature') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='feature'?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='feature'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
               Feature
             </button>
             <button onClick={() => { setBoardGroupBy('business'); localStorage.setItem('board-group-by','business') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='business'?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='business'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
               Business
             </button>
           </div>
           <button onClick={() => setShowArchive(!showArchive)}
-            className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${showArchive ? 'bg-zinc-700 text-white' : 'bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}>
-            📦 Archive{closedTasks.length > 0 && <span className="ml-1 text-zinc-500">({closedTasks.length})</span>}
+            className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${showArchive ? 'bg-white/15 text-white' : 'bg-white/10/60 text-white/50 hover:bg-white/10 hover:text-white/70'}`}>
+            📦 Archive{closedTasks.length > 0 && <span className="ml-1 text-white/50">({closedTasks.length})</span>}
           </button>
           {!showArchive && <button onClick={()=>setNewTask({status:'backlog',priority:'medium'})}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
+            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/10 text-white/70 hover:bg-white/15 transition-colors">
             + New Task
           </button>}
         </div>
@@ -3462,19 +3464,19 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               </span>
             )}
             {filterTypes.map(v => (
-              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/10">
                 {v}
                 <button onClick={() => removeFilter(filterTypes, setFilterTypes, v)} className="hover:text-white ml-0.5">×</button>
               </span>
             ))}
             {filterPriorities.map(v => (
-              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/10">
                 {v}
                 <button onClick={() => removeFilter(filterPriorities, setFilterPriorities, v)} className="hover:text-white ml-0.5">×</button>
               </span>
             ))}
             {filterAssignees.map(v => (
-              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/10">
                 {ASSIGNEE_MAP[v]?.name ?? v}
                 <button onClick={() => removeFilter(filterAssignees, setFilterAssignees, v)} className="hover:text-white ml-0.5">×</button>
               </span>
@@ -3502,7 +3504,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   <span className="text-amber-400 text-[10px] font-semibold shrink-0">Needs You</span>
                   <p className="text-white text-xs font-medium truncate flex-1">{t.title}</p>
                   {t.project && <Chip label={t.project} />}
-                  {(t as any).task_key && <span className="text-[9px] font-mono text-zinc-600 shrink-0">{(t as any).task_key}</span>}
+                  {(t as any).task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{(t as any).task_key}</span>}
                 </div>
               ))}
             </div>
@@ -3515,22 +3517,22 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         <div className="flex-1 flex flex-col gap-3 min-h-0">
           <div className="flex items-center gap-3 flex-wrap">
             <input type="text" placeholder="Search closed tasks..." value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
-              className="bg-transparent border border-zinc-800 rounded-lg px-3 py-1.5 text-xs text-zinc-300 outline-none focus:border-zinc-600 placeholder-zinc-700 w-52" />
+              className="bg-transparent border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/70 outline-none focus:border-white/20 placeholder-zinc-700 w-52" />
             <select className={selectCls} value={archiveProject} onChange={e => setArchiveProject(e.target.value)}>
               <option value="">All Projects</option>
               {projects.map(p => <option key={p} value={p!}>{p}</option>)}
             </select>
-            <span className="text-[10px] text-zinc-600 ml-auto">{filteredClosed.length} closed task{filteredClosed.length !== 1 ? 's' : ''}</span>
+            <span className="text-[10px] text-white/30 ml-auto">{filteredClosed.length} closed task{filteredClosed.length !== 1 ? 's' : ''}</span>
           </div>
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-            {filteredClosed.length === 0 && <p className="text-zinc-700 text-xs text-center py-8">No closed tasks</p>}
+            {filteredClosed.length === 0 && <p className="text-white/20 text-xs text-center py-8">No closed tasks</p>}
             {filteredClosed.map(t => (
-              <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-zinc-800/60 hover:border-zinc-700 transition-colors" style={{background:'#0f0f0f'}}>
-                <p className="text-sm text-zinc-300 flex-1 truncate">{t.title}</p>
+              <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/10 hover:border-white/10 transition-colors" style={{background:'#0f0f0f'}}>
+                <p className="text-sm text-white/70 flex-1 truncate">{t.title}</p>
                 {t.project && <Chip label={t.project} color={PROJECT_COLORS[t.project] || undefined} />}
                 {t.resolution_type && <Chip label={RESOLUTION_OPTIONS.find(r => r.value === t.resolution_type)?.label ?? t.resolution_type} color={RESOLUTION_BADGE_COLORS[t.resolution_type] ?? '#71717a'} />}
-                {t.assignee && ASSIGNEE_MAP[t.assignee] && <span className="text-[10px] text-zinc-500 whitespace-nowrap">{ASSIGNEE_MAP[t.assignee].emoji} {ASSIGNEE_MAP[t.assignee].name}</span>}
-                {t.updated_at && <span className="text-[10px] text-zinc-600 whitespace-nowrap">{new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+                {t.assignee && ASSIGNEE_MAP[t.assignee] && <span className="text-[10px] text-white/50 whitespace-nowrap">{ASSIGNEE_MAP[t.assignee].emoji} {ASSIGNEE_MAP[t.assignee].name}</span>}
+                {t.updated_at && <span className="text-[10px] text-white/30 whitespace-nowrap">{new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
               </div>
             ))}
           </div>
@@ -3575,12 +3577,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 acc[col.id] = group.children.filter(t => t.status === col.id).length; return acc
               }, {} as Record<string, number>)
               return (
-                <div key={group.label} className="rounded-xl border border-zinc-800/60 overflow-hidden" style={{background:'#0a0a0a'}}>
-                  <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-zinc-800/30 transition-colors"
+                <div key={group.label} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#0a0a0a'}}>
+                  <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-white/5 transition-colors"
                     style={{borderLeft: group.feature ? `3px solid ${PRIORITY_COLORS[group.feature.priority||'medium']||'#3f3f46'}` : '3px solid #27272a'}}>
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-zinc-200">{group.label}</span>
-                      {group.feature?.project && <span className="ml-2 text-[10px] text-zinc-500">{group.feature.project}</span>}
+                      <span className="text-sm font-semibold text-white/70">{group.label}</span>
+                      {group.feature?.project && <span className="ml-2 text-[10px] text-white/50">{group.feature.project}</span>}
                     </div>
                     <div className="flex gap-1.5 shrink-0">
                       {BOARD_COLUMNS.map(col => statusCounts[col.id] > 0 ? (
@@ -3590,24 +3592,24 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         </span>
                       ) : null)}
                     </div>
-                    <span className="text-[10px] text-zinc-600">{group.children.length}</span>
+                    <span className="text-[10px] text-white/30">{group.children.length}</span>
                   </div>
-                  <div className="border-t border-zinc-800/40">
+                  <div className="border-t border-white/10">
                     {group.children.map(task => {
                       const col = BOARD_COLUMNS.find(c => c.id === task.status)
                       return (
-                        <div key={task.id} className="flex items-center gap-3 px-4 py-2 hover:bg-zinc-800/20 transition-colors cursor-pointer border-b border-zinc-800/30 last:border-b-0"
+                        <div key={task.id} className="flex items-center gap-3 px-4 py-2 hover:bg-white/10/20 transition-colors cursor-pointer border-b border-white/10 last:border-b-0"
                           onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}>
                           <span className="w-2 h-2 rounded-full shrink-0" style={{background: col?.color || '#3f3f46'}} />
-                          <p className="text-sm text-zinc-300 flex-1 truncate">{task.title}</p>
+                          <p className="text-sm text-white/70 flex-1 truncate">{task.title}</p>
                           <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0"
                             style={{color: col?.color || '#71717a', background: (col?.color || '#71717a') + '18', border: `1px solid ${col?.color || '#71717a'}30`}}>
                             {col?.label || task.status}
                           </span>
                           {task.assignee && ASSIGNEE_MAP[task.assignee] && (
-                            <span className="text-[10px] text-zinc-500 shrink-0">{ASSIGNEE_MAP[task.assignee].emoji}</span>
+                            <span className="text-[10px] text-white/50 shrink-0">{ASSIGNEE_MAP[task.assignee].emoji}</span>
                           )}
-                          {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-600 shrink-0">{(task as any).task_key}</span>}
+                          {(task as any).task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{(task as any).task_key}</span>}
                         </div>
                       )
                     })}
@@ -3615,7 +3617,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </div>
               )
             })}
-            {featureGroups.length === 0 && <p className="text-zinc-700 text-xs text-center py-8">No tasks match filters</p>}
+            {featureGroups.length === 0 && <p className="text-white/20 text-xs text-center py-8">No tasks match filters</p>}
           </div>
         )
       })()}
@@ -3657,12 +3659,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 if (typeof window !== 'undefined') localStorage.setItem('board-biz-collapsed', JSON.stringify(next))
               }
               return (
-                <div key={bizKey} className="rounded-xl border border-zinc-800/60 overflow-hidden" style={{background:'#0a0a0a'}}>
+                <div key={bizKey} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#0a0a0a'}}>
                   {/* Business header */}
-                  <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors select-none">
+                  <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none">
                     <span className="text-base">{biz.emoji}</span>
-                    <span className="text-sm font-semibold text-zinc-200">{biz.label}</span>
-                    <span className="text-xs text-zinc-500 ml-1">({allBizTasks.length} issue{allBizTasks.length !== 1 ? 's' : ''})</span>
+                    <span className="text-sm font-semibold text-white/70">{biz.label}</span>
+                    <span className="text-xs text-white/50 ml-1">({allBizTasks.length} issue{allBizTasks.length !== 1 ? 's' : ''})</span>
                     <div className="flex gap-1.5 ml-2 shrink-0">
                       {BOARD_COLUMNS.map(col => { const cnt = allBizTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
                         <span key={col.id} className="text-[9px] px-1.5 py-0.5 rounded-full font-mono"
@@ -3671,11 +3673,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         </span>
                       ) : null })}
                     </div>
-                    <span className="ml-auto text-zinc-600 text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                    <span className="ml-auto text-white/30 text-xs">{isCollapsed ? '▶' : '▼'}</span>
                   </div>
                   {/* Projects nested under business */}
                   {!isCollapsed && (
-                    <div className="border-t border-zinc-800/40">
+                    <div className="border-t border-white/10">
                       {Object.entries(bizProjectGroups).map(([projName, projTasks]) => {
                         const projKey = `${bizKey}::${projName}`
                         const isProjCollapsed = collapsedBiz[projKey] ?? false
@@ -3687,10 +3689,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         return (
                           <div key={projName}>
                             {/* Project sub-header */}
-                            <div onClick={toggleProjCollapse} className="flex items-center gap-2 px-6 py-2 cursor-pointer hover:bg-zinc-800/20 transition-colors select-none border-b border-zinc-800/30" style={{background:'#0c0c0c'}}>
-                              <span className="text-zinc-500 text-xs">{isProjCollapsed ? '▸' : '▾'}</span>
-                              <span className="text-xs font-medium text-zinc-400">{projName}</span>
-                              <span className="text-[10px] text-zinc-600">({projTasks.length})</span>
+                            <div onClick={toggleProjCollapse} className="flex items-center gap-2 px-6 py-2 cursor-pointer hover:bg-white/10/20 transition-colors select-none border-b border-white/10" style={{background:'#0c0c0c'}}>
+                              <span className="text-white/50 text-xs">{isProjCollapsed ? '▸' : '▾'}</span>
+                              <span className="text-xs font-medium text-white/40">{projName}</span>
+                              <span className="text-[10px] text-white/30">({projTasks.length})</span>
                               <div className="flex gap-1 ml-auto shrink-0">
                                 {BOARD_COLUMNS.map(col => { const cnt = projTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
                                   <span key={col.id} className="text-[8px] px-1 py-0.5 rounded font-mono"
@@ -3707,16 +3709,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                   const colTasks = projTasks.filter(t => t.status === col.id)
                                   return (
                                     <div key={col.id}
-                                      className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-zinc-900/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+                                      className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
                                       style={{borderTop:`2px solid ${col.color}`, minHeight: '60px'}}
                                       onDragOver={e => e.preventDefault()}
                                       onDrop={() => handleDrop(col.id)}>
                                       <div className="flex items-center gap-2 px-3 py-1.5">
                                         <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
-                                        <span className="text-[10px] font-semibold text-zinc-500">{col.label} ({colTasks.length})</span>
+                                        <span className="text-[10px] font-semibold text-white/50">{col.label} ({colTasks.length})</span>
                                       </div>
                                       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
-                                        {colTasks.length === 0 && <div className="text-[10px] text-zinc-700 text-center py-2">—</div>}
+                                        {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
                                         {colTasks.map(task => (
                                           <div key={task.id}
                                             draggable
@@ -3731,8 +3733,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                             <p className="text-white text-xs font-medium leading-snug mb-1">{task.title}</p>
                                             <div className="flex items-center gap-1.5 flex-wrap mt-1">
                                               {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18'}}>{task.type}</span>}
-                                              {task.assignee && ASSIGNEE_MAP[task.assignee] && <span className="text-[9px] text-zinc-500">{ASSIGNEE_MAP[task.assignee].emoji}</span>}
-                                              {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-700 ml-auto">{(task as any).task_key}</span>}
+                                              {task.assignee && ASSIGNEE_MAP[task.assignee] && <span className="text-[9px] text-white/50">{ASSIGNEE_MAP[task.assignee].emoji}</span>}
+                                              {(task as any).task_key && <span className="text-[9px] font-mono text-white/20 ml-auto">{(task as any).task_key}</span>}
                                             </div>
                                           </div>
                                         ))}
@@ -3750,7 +3752,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </div>
               )
             })}
-            {allKeys.length === 0 && <p className="text-zinc-700 text-xs text-center py-8">No tasks match filters</p>}
+            {allKeys.length === 0 && <p className="text-white/20 text-xs text-center py-8">No tasks match filters</p>}
           </div>
         )
       })()}
@@ -3759,9 +3761,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {!showArchive && !groupByFeature && !groupByBusiness && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
         {BOARD_COLUMNS.map(col=>(
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
-            className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300')}
+            className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-white/10 text-white':'text-white/50 hover:text-white/70')}
             style={mobileCol===col.id?{borderBottom:`2px solid ${col.color}`}:{}}>
-            {col.label} <span className="text-zinc-600 ml-1">{filtered.filter(t=>t.status===col.id).length}</span>
+            {col.label} <span className="text-white/30 ml-1">{filtered.filter(t=>t.status===col.id).length}</span>
           </button>
         ))}
       </div>}
@@ -3772,7 +3774,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           const colTasks = filtered.filter(t => t.status===col.id)
           return (
             <div key={col.id}
-              className={`flex-shrink-0 w-full md:w-64 flex flex-col rounded-xl bg-zinc-900/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+              className={`flex-shrink-0 w-full md:w-64 flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
               style={{borderTop:`2px solid ${col.color}`}}
               onDragOver={e => e.preventDefault()}
               onDrop={() => handleDrop(col.id)}>
@@ -3780,17 +3782,17 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               <div className="flex items-center justify-between px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
-                  <span className="text-xs font-semibold text-zinc-400">{col.label} ({colTasks.length})</span>
+                  <span className="text-xs font-semibold text-white/40">{col.label} ({colTasks.length})</span>
                   {col.id === 'done' && filtered.length > 0 && (
-                    <span className="text-[10px] text-zinc-600 font-mono">{Math.round((colTasks.length / filtered.length) * 100)}%</span>
+                    <span className="text-[10px] text-white/30 font-mono">{Math.round((colTasks.length / filtered.length) * 100)}%</span>
                   )}
                 </div>
               </div>
 
               {/* Cards */}
               <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[60px]">
-                {loading && <div className="text-zinc-700 text-xs text-center py-4">Loading...</div>}
-                {!loading && colTasks.length === 0 && <div className="flex flex-col items-center py-6 text-zinc-700"><span className="text-2xl mb-1">📋</span><p className="text-[10px]">No tasks</p></div>}
+                {loading && <div className="text-white/20 text-xs text-center py-4">Loading...</div>}
+                {!loading && colTasks.length === 0 && <div className="flex flex-col items-center py-6 text-white/20"><span className="text-2xl mb-1">📋</span><p className="text-[10px]">No tasks</p></div>}
                 {colTasks.map(task => (
                   <div key={task.id}
                     draggable
@@ -3810,7 +3812,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                       )}
                       {col.id === 'done' && closedConfirm !== task.id && (
                         <button onClick={e => { e.stopPropagation(); closeTask(task.id) }}
-                          className="text-[10px] text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-zinc-800">
+                          className="text-[10px] text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-white/10">
                           × Close
                         </button>
                       )}
@@ -3823,8 +3825,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                       </div>
                     )}
                     <div className="flex items-center justify-between mb-1">
-                      {task.project && <p className="text-xs text-zinc-500">{task.project}</p>}
-                      {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-600 bg-zinc-800/60 px-1.5 py-0.5 rounded">{(task as any).task_key}</span>}
+                      {task.project && <p className="text-xs text-white/50">{task.project}</p>}
+                      {(task as any).task_key && <span className="text-[9px] font-mono text-white/30 bg-white/10/60 px-1.5 py-0.5 rounded">{(task as any).task_key}</span>}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
@@ -3840,12 +3842,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                           style={{background:PRIORITY_COLORS[task.priority]||'#3f3f46'}} />
                       )}
                       {task.assignee && ASSIGNEE_MAP[task.assignee] && (
-                        <span className="text-[10px] text-zinc-500">
+                        <span className="text-[10px] text-white/50">
                           {ASSIGNEE_MAP[task.assignee].emoji} {ASSIGNEE_MAP[task.assignee].name}
                         </span>
                       )}
                       {task.due_date && (
-                        <span className={`text-[10px] ml-auto ${isOverdue(task.due_date)?'text-red-500':'text-zinc-600'}`}>
+                        <span className={`text-[10px] ml-auto ${isOverdue(task.due_date)?'text-red-500':'text-white/30'}`}>
                           {new Date(task.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}
                         </span>
                       )}
@@ -3864,13 +3866,13 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 }}>
                   <input autoFocus value={quickAddTitle} onChange={e=>setQuickAddTitle(e.target.value)}
                     onKeyDown={e=>{ if(e.key==='Escape'){setQuickAddCol(null);setQuickAddTitle('')} }}
-                    placeholder="Task title..." className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-zinc-500 placeholder-zinc-600" />
-                  <button type="submit" className="text-[10px] px-2 py-1.5 rounded-lg bg-zinc-700 text-white hover:bg-zinc-600">Add</button>
-                  <button type="button" onClick={()=>{setQuickAddCol(null);setQuickAddTitle('')}} className="text-[10px] px-1.5 text-zinc-500 hover:text-zinc-300">✕</button>
+                    placeholder="Task title..." className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-white/20 placeholder-white/30" />
+                  <button type="submit" className="text-[10px] px-2 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/10">Add</button>
+                  <button type="button" onClick={()=>{setQuickAddCol(null);setQuickAddTitle('')}} className="text-[10px] px-1.5 text-white/50 hover:text-white/70">✕</button>
                 </form>
               ) : (
                 <button onClick={()=>{setQuickAddCol(col.id);setQuickAddTitle('')}}
-                  className="mx-2 mb-2 text-[10px] text-zinc-700 hover:text-zinc-400 transition-colors py-1 text-left w-[calc(100%-16px)]">
+                  className="mx-2 mb-2 text-[10px] text-white/20 hover:text-white/40 transition-colors py-1 text-left w-[calc(100%-16px)]">
                   + Add task
                 </button>
               )}
@@ -3882,7 +3884,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Load more */}
       {!showArchive && hasMoreBoard && (
         <button onClick={() => setBoardLimit(prev => prev + 100)}
-          className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2.5 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
+          className="w-full text-center text-xs text-white/50 hover:text-white/70 py-2.5 rounded-lg border border-white/10 hover:border-white/20 transition-all"
           style={{background:'#0a0a0a'}}>
           Load 100 more ({allFiltered.length - boardLimit} remaining)
         </button>
@@ -3891,7 +3893,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* New Task Modal */}
       {newTask && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setNewTask(null)}>
-          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
             <h3 className="text-white font-semibold text-sm">New Task</h3>
             <div><p className={labelCls}>Title *</p><input className={inputCls} placeholder="Task title..." autoFocus
               value={newTask.title??''} onChange={e=>setNewTask({...newTask,title:e.target.value})} /></div>
@@ -3925,7 +3927,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </select></div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={()=>setNewTask(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
+              <button onClick={()=>setNewTask(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
               <button onClick={()=>{if(newTask.title?.trim()) createTask(newTask)}}
                 className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-30 transition-colors"
                 disabled={!newTask.title?.trim()}>Create</button>
@@ -3937,7 +3939,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Edit/Detail Modal */}
       {editTask && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setEditTask(null)}>
-          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <h3 className="text-white font-semibold text-sm">Edit Task</h3>
               <button onClick={()=>setConfirmDelete(editTask.id)} className="text-[10px] text-red-500/60 hover:text-red-500 transition-colors">Delete</button>
@@ -3968,7 +3970,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 <input type="date" className={inputCls} value={editTask.due_date??''} onChange={e=>setEditTask({...editTask,due_date:e.target.value})} /></div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={()=>setEditTask(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
+              <button onClick={()=>setEditTask(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
               <button onClick={()=>{
                 const fields = {title:editTask.title,description:editTask.description,status:editTask.status,
                   priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date}
@@ -3988,10 +3990,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Delete confirm */}
       {confirmDelete && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60" onClick={()=>setConfirmDelete(null)}>
-          <div className="rounded-2xl border border-zinc-800 p-6 text-center space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+          <div className="rounded-2xl border border-white/10 p-6 text-center space-y-4" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
             <p className="text-white text-sm">Delete this task?</p>
             <div className="flex justify-center gap-3">
-              <button onClick={()=>setConfirmDelete(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
+              <button onClick={()=>setConfirmDelete(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
               <button onClick={()=>deleteTask(confirmDelete)} className="text-xs font-medium px-4 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors">Delete</button>
             </div>
           </div>
@@ -4001,18 +4003,18 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Resolution Type Picker */}
       {resolutionPending && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60" onClick={()=>setResolutionPending(null)}>
-          <div className="w-full max-w-sm mx-4 rounded-2xl border border-zinc-800 p-5 space-y-4" style={{background:'#18181b'}} onClick={e=>e.stopPropagation()}>
+          <div className="w-full max-w-sm mx-4 rounded-2xl border border-white/10 p-5 space-y-4" style={{background:'#18181b'}} onClick={e=>e.stopPropagation()}>
             <h3 className="text-white font-semibold text-sm text-center">How was this resolved?</h3>
             <div className="flex flex-wrap gap-2 justify-center">
               {RESOLUTION_OPTIONS.map(opt => (
                 <button key={opt.value} onClick={() => handleResolutionSelect(opt.value)}
-                  className="text-xs font-medium px-3 py-1.5 rounded-full border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-500 transition-colors">
+                  className="text-xs font-medium px-3 py-1.5 rounded-full border border-white/10 text-white/70 hover:bg-white/10 hover:border-white/20 transition-colors">
                   {opt.emoji} {opt.label}
                 </button>
               ))}
             </div>
             <div className="flex justify-center pt-1">
-              <button onClick={()=>setResolutionPending(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors">Cancel</button>
+              <button onClick={()=>setResolutionPending(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors">Cancel</button>
             </div>
           </div>
         </div>
@@ -4027,15 +4029,15 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         const stepsLines = (t.steps_to_reproduce ?? '').split('\n').filter(l => l.trim())
         return (
           <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}>
-            <div className="w-full md:w-[480px] h-full border-l border-zinc-800 overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e => e.stopPropagation()}>
+            <div className="w-full md:w-[480px] h-full border-l border-white/10 overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e => e.stopPropagation()}>
               {/* Header */}
-              <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-zinc-800" style={{background:'#0a0a0a'}}>
+              <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-white/10" style={{background:'#0a0a0a'}}>
                 <div className="flex items-center gap-2">
                   <button onClick={() => { setEditTask(t); setDetailTask(null); setBugDetailsOpen(false) }}
-                    className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1 rounded-lg hover:bg-zinc-800">Edit</button>
+                    className="text-[10px] text-white/50 hover:text-white/70 transition-colors px-2 py-1 rounded-lg hover:bg-white/10">Edit</button>
                 </div>
                 <button onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}
-                  className="text-zinc-500 hover:text-white transition-colors text-lg leading-none">&times;</button>
+                  className="text-white/50 hover:text-white transition-colors text-lg leading-none">&times;</button>
               </div>
 
               <div className="px-5 py-5 space-y-5">
@@ -4047,7 +4049,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 )}
 
                 {/* Title */}
-                {(t as any).task_key && <span className="text-[10px] font-mono text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded-full">{(t as any).task_key}</span>}
+                {(t as any).task_key && <span className="text-[10px] font-mono text-white/30 bg-white/10 px-2 py-0.5 rounded-full">{(t as any).task_key}</span>}
                 <h2 className="text-white text-lg font-semibold leading-snug">{t.title}</h2>
 
                 {/* Status + Priority badges */}
@@ -4063,22 +4065,22 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 {/* Assignee + Project */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Assignee</p>
-                    <p className="text-sm text-zinc-300">
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Assignee</p>
+                    <p className="text-sm text-white/70">
                       {t.assignee && ASSIGNEE_MAP[t.assignee] ? `${ASSIGNEE_MAP[t.assignee].emoji} ${ASSIGNEE_MAP[t.assignee].name}` : 'Unassigned'}
                     </p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Project</p>
-                    <p className="text-sm text-zinc-300">{t.project || '—'}</p>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Project</p>
+                    <p className="text-sm text-white/70">{t.project || '—'}</p>
                   </div>
                 </div>
 
                 {/* Description */}
                 {t.description && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-2">Description</p>
-                    <p className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap">{t.description}</p>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Description</p>
+                    <p className="text-sm text-white/40 leading-relaxed whitespace-pre-wrap">{t.description}</p>
                   </div>
                 )}
 
@@ -4104,7 +4106,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 {/* DoR / Acceptance Criteria */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-600">Acceptance Criteria</p>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30">Acceptance Criteria</p>
                     {hasAcceptance
                       ? <span className="w-4 h-4 rounded-full bg-green-500/20 text-green-400 text-[10px] flex items-center justify-center">✓</span>
                       : <span className="w-4 h-4 rounded-full bg-yellow-500/20 text-yellow-400 text-[10px] flex items-center justify-center">!</span>
@@ -4113,55 +4115,55 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   {hasAcceptance ? (
                     <div className="space-y-1.5">
                       {acLines.map((line, i) => (
-                        <label key={i} className="flex items-start gap-2 text-sm text-zinc-400 cursor-default">
+                        <label key={i} className="flex items-start gap-2 text-sm text-white/40 cursor-default">
                           <input type="checkbox" className="mt-1 accent-green-500 pointer-events-auto" readOnly />
                           <span>{line.replace(/^[-*•]\s*/, '')}</span>
                         </label>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-zinc-600 italic">No acceptance criteria defined</p>
+                    <p className="text-xs text-white/30 italic">No acceptance criteria defined</p>
                   )}
                 </div>
 
                 {/* Bug Details */}
                 {isBug && (
-                  <div className="border border-zinc-800 rounded-xl overflow-hidden">
+                  <div className="border border-white/10 rounded-xl overflow-hidden">
                     <button onClick={() => setBugDetailsOpen(!bugDetailsOpen)}
-                      className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium text-zinc-400 hover:bg-zinc-900/50 transition-colors">
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium text-white/40 hover:bg-[#0f0f0f]/50 transition-colors">
                       <span>🐛 Bug Details</span>
-                      <span className="text-zinc-600">{bugDetailsOpen ? '▾' : '▸'}</span>
+                      <span className="text-white/30">{bugDetailsOpen ? '▾' : '▸'}</span>
                     </button>
                     {bugDetailsOpen && (
-                      <div className="px-4 pb-4 space-y-3 border-t border-zinc-800">
+                      <div className="px-4 pb-4 space-y-3 border-t border-white/10">
                         {t.steps_to_reproduce && (
                           <div className="pt-3">
-                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1.5">Steps to Reproduce</p>
-                            <ol className="list-decimal list-inside text-sm text-zinc-400 space-y-1">
+                            <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1.5">Steps to Reproduce</p>
+                            <ol className="list-decimal list-inside text-sm text-white/40 space-y-1">
                               {stepsLines.map((s, i) => <li key={i}>{s.replace(/^\d+[.)]\s*/, '')}</li>)}
                             </ol>
                           </div>
                         )}
                         {t.expected_behavior && (
                           <div>
-                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Expected Behavior</p>
-                            <p className="text-sm text-zinc-400">{t.expected_behavior}</p>
+                            <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Expected Behavior</p>
+                            <p className="text-sm text-white/40">{t.expected_behavior}</p>
                           </div>
                         )}
                         {t.actual_behavior && (
                           <div>
-                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Actual Behavior</p>
-                            <p className="text-sm text-zinc-400">{t.actual_behavior}</p>
+                            <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Actual Behavior</p>
+                            <p className="text-sm text-white/40">{t.actual_behavior}</p>
                           </div>
                         )}
                         {t.environment && (
                           <div>
-                            <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Environment</p>
-                            <p className="text-sm text-zinc-400">{t.environment}</p>
+                            <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Environment</p>
+                            <p className="text-sm text-white/40">{t.environment}</p>
                           </div>
                         )}
                         {!t.steps_to_reproduce && !t.expected_behavior && !t.actual_behavior && !t.environment && (
-                          <p className="text-xs text-zinc-600 italic pt-3">No bug details provided</p>
+                          <p className="text-xs text-white/30 italic pt-3">No bug details provided</p>
                         )}
                       </div>
                     )}
@@ -4171,7 +4173,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 {/* PR URL */}
                 {t.pr_url && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Pull Request</p>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Pull Request</p>
                     <a href={t.pr_url} target="_blank" rel="noopener noreferrer"
                       className="text-sm text-blue-400 hover:text-blue-300 underline break-all">{t.pr_url}</a>
                   </div>
@@ -4180,19 +4182,19 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 {/* Resolution */}
                 {t.status === 'done' && t.resolution_type && (
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Resolution</p>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Resolution</p>
                     <Chip label={RESOLUTION_OPTIONS.find(r => r.value === t.resolution_type)?.label ?? t.resolution_type!}
                       color={RESOLUTION_BADGE_COLORS[t.resolution_type] ?? '#71717a'} />
                   </div>
                 )}
 
                 {/* Timestamps */}
-                <div className="pt-4 border-t border-zinc-800 flex flex-wrap gap-x-6 gap-y-1">
+                <div className="pt-4 border-t border-white/10 flex flex-wrap gap-x-6 gap-y-1">
                   {t.created_at && (
-                    <p className="text-[10px] text-zinc-600">Created: {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="text-[10px] text-white/30">Created: {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   )}
                   {t.updated_at && (
-                    <p className="text-[10px] text-zinc-600">Updated: {new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="text-[10px] text-white/30">Updated: {new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   )}
                 </div>
               </div>
@@ -4239,21 +4241,21 @@ function SearchOverlay({ open, onClose, onNavigate }: { open: boolean; onClose: 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]" style={{ background: 'rgba(0,0,0,0.80)' }} onClick={onClose}>
       <div className="w-full max-w-xl mx-4" onClick={e => e.stopPropagation()}>
-        <div className="rounded-2xl border border-zinc-700 overflow-hidden" style={{ background: '#111' }}>
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
-            <Search size={16} className="text-zinc-500 shrink-0" />
+        <div className="rounded-2xl border border-white/10 overflow-hidden" style={{ background: '#111' }}>
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+            <Search size={16} className="text-white/50 shrink-0" />
             <input ref={inputRef} value={query} onChange={e => handleChange(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') onClose() }}
-              placeholder="Search issues..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder-zinc-600" />
-            <kbd className="text-[10px] text-zinc-600 border border-zinc-700 rounded px-1.5 py-0.5">ESC</kbd>
+              placeholder="Search issues..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder-white/30" />
+            <kbd className="text-[10px] text-white/30 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
           </div>
-          {loading && <div className="px-4 py-3 text-zinc-600 text-xs">Searching...</div>}
+          {loading && <div className="px-4 py-3 text-white/30 text-xs">Searching...</div>}
           {!loading && results.length > 0 && (
             <div className="max-h-[50vh] overflow-y-auto">
               {results.map((r: any) => (
-                <button key={r.id} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800/60 transition-colors text-left border-b border-zinc-800/30 last:border-0"
+                <button key={r.id} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/10/60 transition-colors text-left border-b border-white/10 last:border-0"
                   onClick={() => { onClose(); onNavigate('board') }}>
-                  {r.task_key && <span className="text-[9px] font-mono text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded shrink-0">{r.task_key}</span>}
+                  {r.task_key && <span className="text-[9px] font-mono text-white/50 bg-white/10 px-1.5 py-0.5 rounded shrink-0">{r.task_key}</span>}
                   <span className="text-sm text-white truncate flex-1">{r.title}</span>
                   {r.project && <Chip label={r.project} color={PROJECT_COLORS[r.project] || undefined} />}
                   {r.type && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0" style={{ color: TYPE_COLORS[r.type] || '#71717a', background: (TYPE_COLORS[r.type] || '#71717a') + '18' }}>{r.type}</span>}
@@ -4262,7 +4264,7 @@ function SearchOverlay({ open, onClose, onNavigate }: { open: boolean; onClose: 
             </div>
           )}
           {!loading && query.trim() && results.length === 0 && (
-            <div className="px-4 py-6 text-center text-zinc-600 text-xs">No results found</div>
+            <div className="px-4 py-6 text-center text-white/30 text-xs">No results found</div>
           )}
         </div>
       </div>
@@ -4294,14 +4296,14 @@ function ProjectBreakdownBars({ project }: { project: string }) {
     { label: 'Issues', ...data.issues, color: '#10b981' },
   ]
   return (
-    <div className="mt-2 pt-2 border-t border-zinc-800/40 space-y-1.5">
+    <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
       {rows.map(r => (
         <div key={r.label} className="flex items-center gap-2">
-          <span className="text-[9px] text-zinc-500 w-12 shrink-0">{r.label}</span>
+          <span className="text-[9px] text-white/50 w-12 shrink-0">{r.label}</span>
           <div className="flex-1 h-1 rounded-full" style={{background:'#1a1a1a'}}>
             <div className="h-1 rounded-full transition-all" style={{width: r.total > 0 ? (r.done/r.total*100)+'%' : '0%', background: r.color}} />
           </div>
-          <span className="text-[9px] text-zinc-600 tabular-nums w-8 text-right">{r.done}/{r.total}</span>
+          <span className="text-[9px] text-white/30 tabular-nums w-8 text-right">{r.done}/{r.total}</span>
         </div>
       ))}
     </div>
@@ -4348,17 +4350,17 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
   }
 
   return (
-    <div className={`absolute top-3 right-3 z-10 rounded-xl border border-zinc-700/60 shadow-2xl transition-all ${collapsed ? 'w-10' : 'w-72'}`}
+    <div className={`absolute top-3 right-3 z-10 rounded-xl border border-white/10/60 shadow-2xl transition-all ${collapsed ? 'w-10' : 'w-72'}`}
       style={{background:'rgba(10,10,10,0.92)', backdropFilter:'blur(12px)'}}>
       {collapsed ? (
-        <button onClick={() => setCollapsed(false)} className="w-full h-10 flex items-center justify-center text-zinc-400 hover:text-white">
+        <button onClick={() => setCollapsed(false)} className="w-full h-10 flex items-center justify-center text-white/40 hover:text-white">
           <span className="text-xs">◀</span>
         </button>
       ) : (
         <div className="p-3 space-y-3 max-h-[60vh] overflow-y-auto">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Subagent Activity</span>
-            <button onClick={() => setCollapsed(true)} className="text-zinc-600 hover:text-zinc-300 text-xs">▶</button>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Subagent Activity</span>
+            <button onClick={() => setCollapsed(true)} className="text-white/30 hover:text-white/70 text-xs">▶</button>
           </div>
 
           {/* Active */}
@@ -4368,12 +4370,12 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
               {activeRuns.map((r, i) => {
                 const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
                 return (
-                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-zinc-800/30 last:border-0">
+                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 anim-pg shrink-0" />
                     <span className="text-xs">{ag.emoji}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-white text-[11px] font-medium truncate">{ag.name}</p>
-                      <p className="text-zinc-500 text-[9px] truncate">{r.task_title || 'Working...'}</p>
+                      <p className="text-white/50 text-[9px] truncate">{r.task_title || 'Working...'}</p>
                     </div>
                     {r.started_at && <span className="text-[9px] text-emerald-400/60 font-mono shrink-0">{fmtRuntime(r.started_at)}</span>}
                   </div>
@@ -4382,7 +4384,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
             </div>
           )}
           {activeRuns.length === 0 && (
-            <div className="text-zinc-600 text-[10px] text-center py-2">No active subagents</div>
+            <div className="text-white/30 text-[10px] text-center py-2">No active subagents</div>
           )}
 
           {/* Failed */}
@@ -4392,7 +4394,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
               {failedRuns.slice(0, 3).map((r, i) => {
                 const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
                 return (
-                  <div key={i} className="flex items-center gap-2 py-1 border-b border-zinc-800/30 last:border-0" style={{background:'#1a080810'}}>
+                  <div key={i} className="flex items-center gap-2 py-1 border-b border-white/10 last:border-0" style={{background:'#1a080810'}}>
                     <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
                     <span className="text-xs">{ag.emoji}</span>
                     <p className="text-red-300/80 text-[10px] truncate flex-1">{r.task_title || 'Unknown'}</p>
@@ -4405,15 +4407,15 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
           {/* Recent completed */}
           {completedRuns.length > 0 && (
             <div>
-              <div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1.5 font-semibold">Recent ({completedRuns.length})</div>
+              <div className="text-[9px] text-white/50 uppercase tracking-widest mb-1.5 font-semibold">Recent ({completedRuns.length})</div>
               {completedRuns.map((r, i) => {
                 const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
                 return (
-                  <div key={i} className="flex items-center gap-2 py-1 border-b border-zinc-800/20 last:border-0">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.status==='error'?'bg-red-500':'bg-zinc-600'}`} />
+                  <div key={i} className="flex items-center gap-2 py-1 border-b border-white/10/20 last:border-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.status==='error'?'bg-red-500':'bg-white/10'}`} />
                     <span className="text-[10px]">{ag.emoji}</span>
-                    <p className="text-zinc-400 text-[10px] truncate flex-1">{r.task_title || 'Task'}</p>
-                    {r.started_at && <span className="text-[9px] text-zinc-700 font-mono shrink-0">{fmtRuntime(r.started_at)}</span>}
+                    <p className="text-white/40 text-[10px] truncate flex-1">{r.task_title || 'Task'}</p>
+                    {r.started_at && <span className="text-[9px] text-white/20 font-mono shrink-0">{fmtRuntime(r.started_at)}</span>}
                   </div>
                 )
               })}
@@ -4667,7 +4669,7 @@ export default function Home() {
   const vLeft=daysUntil(VESPERA_DEADLINE), vElap=daysSince(VESPERA_START), vPct=miniPct(vElap,7)
 
   const sprintProjects = projects ?? [
-    {id:'kemuni',name:'Kemuni Launch',desc:'Community & Property SaaS',emoji:'🚀',startDate:'2026-03-21',deadline:'2026-04-20',totalDays:30,color:'#ffffff',borderColor:'border-zinc-800/60',bg:'#0f0f0f',bgDark:'#0f0f0f'},
+    {id:'kemuni',name:'Kemuni Launch',desc:'Community & Property SaaS',emoji:'🚀',startDate:'2026-03-21',deadline:'2026-04-20',totalDays:30,color:'#ffffff',borderColor:'border-white/10',bg:'#0f0f0f',bgDark:'#0f0f0f'},
     {id:'vespera',name:'Vespera',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-31',totalDays:9,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
   ]
   const todayIdx=new Date().getDay()
@@ -4732,25 +4734,25 @@ export default function Home() {
       )}
 
       {/* SIDEBAR */}
-      <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-zinc-800/60 sticky top-0 h-screen" style={{background:'#0a0a0a'}}>
+      <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-white/10 sticky top-0 h-screen" style={{background:'#0a0a0a'}}>
         {/* MC-118: sidebar logo height matches topbar h-11 (44px) */}
-        <div className="px-4 h-11 flex items-center border-b border-zinc-800/40 shrink-0">
+        <div className="px-4 h-11 flex items-center border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-sm font-bold text-white">N</div>
+            <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white">N</div>
             <div>
               <p className="text-white text-xs font-semibold leading-tight">Mission</p>
-              <p className="text-zinc-600 text-[10px]">Control</p>
+              <p className="text-white/30 text-[10px]">Control</p>
             </div>
           </div>
         </div>
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
           {NAV.map(item=>{
-            if (item.id === 'divider') return <div key="divider" className="border-t border-zinc-800 my-2" />
+            if (item.id === 'divider') return <div key="divider" className="border-t border-white/10 my-2" />
             const LIcon = LUCIDE_ICONS[item.id]
             return (
             <button key={item.id} onClick={()=>{ setTab(item.id as Tab); if(item.id==='chat') setUnreadChat(false); if(typeof window!=='undefined') localStorage.setItem('mc-tab',item.id) }}
               className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all border-l-2 '+(
-                tab===item.id ? 'bg-zinc-800 text-white border-white' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 border-transparent'
+                tab===item.id ? 'bg-white/10 text-white border-white' : 'text-white/50 hover:text-white/70 hover:bg-[#0f0f0f] border-transparent'
               )}>
               {LIcon ? <LIcon size={14} className="shrink-0" /> : <span className="text-sm shrink-0">{item.icon}</span>}
               <span className="text-xs font-medium">{item.label}</span>
@@ -4761,24 +4763,24 @@ export default function Home() {
             )
           })}
         </nav>
-        <div className="px-4 py-3 border-t border-zinc-800/40 space-y-1">
+        <div className="px-4 py-3 border-t border-white/10 space-y-1">
           <div className="flex items-center gap-1.5">
             <Dot status="active" sm />
-            <span className="text-zinc-600 text-[10px]">All nominal</span>
+            <span className="text-white/30 text-[10px]">All nominal</span>
           </div>
-          <p className="text-zinc-700 text-[10px] font-mono">{clock}</p>
+          <p className="text-white/20 text-[10px] font-mono">{clock}</p>
         </div>
       </aside>
 
       {/* MC-63: MOBILE BOTTOM TAB BAR — 5 key tabs + More */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-950 border-t border-zinc-800 flex justify-around px-1" style={{paddingBottom: "env(safe-area-inset-bottom, 16px)"}}>
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#080808] border-t border-white/10 flex justify-around px-1" style={{paddingBottom: "env(safe-area-inset-bottom, 16px)"}}>
         {(["overview","board","office","chat","calendar"] as Tab[]).map(id => {
           const item = NAV.find(n => n.id === id)!
           const LIcon = LUCIDE_ICONS[id]
           if (!item) return null
           return (
             <button key={id} onClick={() => { setTab(id); setShowMobileMore(false); if(id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", id) }}
-              className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-0 flex-1 text-xs transition-colors " + (tab === id ? "text-white" : "text-zinc-500")}>
+              className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-0 flex-1 text-xs transition-colors " + (tab === id ? "text-white" : "text-white/50")}>
               {LIcon ? <LIcon size={18} /> : <span>{item.icon}</span>}
               <span className="text-[9px]">{item.label.split(" ")[0]}</span>
             </button>
@@ -4786,7 +4788,7 @@ export default function Home() {
         })}
         {/* More button */}
         <button onClick={() => setShowMobileMore(v => !v)}
-          className={"flex flex-col items-center gap-0.5 px-2 py-2 flex-1 text-xs transition-colors " + (showMobileMore ? "text-white" : "text-zinc-500")}>
+          className={"flex flex-col items-center gap-0.5 px-2 py-2 flex-1 text-xs transition-colors " + (showMobileMore ? "text-white" : "text-white/50")}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
           </svg>
@@ -4796,13 +4798,13 @@ export default function Home() {
 
       {/* MOBILE MORE MENU */}
       {showMobileMore && (
-        <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-zinc-800" style={{background:'#0a0a0a', paddingBottom:0}}>
+        <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-white/10" style={{background:'#0a0a0a', paddingBottom:0}}>
           <div className="grid grid-cols-3 gap-px p-2">
             {NAV.filter(n => n.id !== 'divider' && !["overview","board","office","chat","calendar"].includes(n.id)).map(item => {
               const LIcon = LUCIDE_ICONS[item.id]
               return (
                 <button key={item.id} onClick={() => { setTab(item.id as Tab); setShowMobileMore(false); if(item.id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", item.id) }}
-                  className={"flex flex-col items-center gap-1 p-3 rounded-xl text-xs " + (tab === item.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-900")}>
+                  className={"flex flex-col items-center gap-1 p-3 rounded-xl text-xs " + (tab === item.id ? "bg-white/10 text-white" : "text-white/40 hover:bg-[#0f0f0f]")}>
                   {LIcon ? <LIcon size={20} /> : <span className="text-lg">{item.icon}</span>}
                   <span className="text-[10px]">{item.label}</span>
                 </button>
@@ -4814,16 +4816,16 @@ export default function Home() {
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col h-screen overflow-auto">
-        <header className="border-b border-zinc-800/40 px-3 md:px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20" style={{background:'#090909'}}>
+        <header className="border-b border-white/10 px-3 md:px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20" style={{background:'#090909'}}>
           <div className="flex items-center gap-2">
-            <span className="text-zinc-400 text-sm font-medium capitalize">{tab}</span>
-            <span className="text-zinc-700 text-xs">· Nabit LLC</span>
+            <span className="text-white/40 text-sm font-medium capitalize">{tab}</span>
+            <span className="text-white/20 text-xs">· Nabit LLC</span>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setSearchOpen(true)} className="text-zinc-600 hover:text-zinc-300 transition-colors" title="Search (⌘K)">
+            <button onClick={() => setSearchOpen(true)} className="text-white/30 hover:text-white/70 transition-colors" title="Search (⌘K)">
               <Search size={15} />
             </button>
-            <span className="text-zinc-600 text-xs">
+            <span className="text-white/30 text-xs">
               {new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
             </span>
           </div>
@@ -4840,7 +4842,7 @@ export default function Home() {
                 <button
                   onClick={globalSync}
                   disabled={syncing}
-                  className="text-[10px] px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 bg-zinc-900/50 transition-all flex items-center gap-1.5 disabled:opacity-50">
+                  className="text-[10px] px-3 py-1.5 rounded-lg border border-white/10 text-white/40 hover:text-white hover:border-white/20 bg-[#0f0f0f]/50 transition-all flex items-center gap-1.5 disabled:opacity-50">
                   {syncing ? (
                     <span className="w-3 h-3 border border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
                   ) : (
@@ -4862,17 +4864,17 @@ export default function Home() {
                   const urgent = left <= 3
                   const numColor = urgent ? '#ef4444' : p.color
                   return (
-                    <div key={p.name} className="rounded-2xl border border-zinc-800/60 p-5 md:p-6" style={{ background: p.bg }}>
+                    <div key={p.name} className="rounded-2xl border border-white/10 p-5 md:p-6" style={{ background: p.bg }}>
                       <div className="flex items-center gap-2 mb-3">
                         <span className="text-xl">{p.emoji}</span>
-                        <span className="text-zinc-400 text-xs font-semibold uppercase tracking-widest">{p.name}</span>
+                        <span className="text-white/40 text-xs font-semibold uppercase tracking-widest">{p.name}</span>
                         {urgent && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold animate-pulse">URGENT</span>}
                       </div>
                       <div className="flex items-baseline gap-2 mb-1">
                         <span className="text-5xl md:text-6xl font-black tabular-nums leading-none" style={{ color: numColor }}>{left}</span>
-                        <span className="text-zinc-500 text-lg font-medium">days left</span>
+                        <span className="text-white/50 text-lg font-medium">days left</span>
                       </div>
-                      <p className="text-zinc-600 text-xs mb-3">
+                      <p className="text-white/30 text-xs mb-3">
                         {p.deadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                         {' · Day '}{elap}/{p.totalDays}
                       </p>
@@ -4880,8 +4882,8 @@ export default function Home() {
                         <div className="h-2.5 rounded-full transition-all" style={{ width: pct + '%', background: numColor }} />
                       </div>
                       <div className="flex justify-between mt-1.5">
-                        <span className="text-zinc-600 text-[10px]">{pct}% elapsed</span>
-                        <span className="text-zinc-600 text-[10px]">{100 - pct}% remaining</span>
+                        <span className="text-white/30 text-[10px]">{pct}% elapsed</span>
+                        <span className="text-white/30 text-[10px]">{100 - pct}% remaining</span>
                       </div>
                     </div>
                   )
@@ -4901,10 +4903,10 @@ export default function Home() {
               <DoneYesterdayWins />
 
               {/* ── Subscriptions & Balances (INF-66) ── */}
-              <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+              <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-sm">💳</span>
-                  <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Subscriptions & Balances</span>
+                  <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Subscriptions & Balances</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
@@ -4913,7 +4915,7 @@ export default function Home() {
                     { name: 'OpenRouter', type: 'balance', note: `$${(liveStatus?.openrouter?.remaining ?? 9.57).toFixed(2)} remaining`, color: liveStatus?.openrouter?.remaining < 2 ? '#ef4444' : '#10b981', icon: '🔀' },
                     { name: 'Brave Search', type: 'subscription', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
                   ].map(s => (
-                    <div key={s.name} className="rounded-xl border border-zinc-800/40 px-3 py-2.5" style={{background:'#0a0a0a'}}>
+                    <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5" style={{background:'#0a0a0a'}}>
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-xs">{s.icon}</span>
                         <span className="text-white text-[11px] font-medium">{s.name}</span>
@@ -4930,13 +4932,13 @@ export default function Home() {
                 const sorted = [...allProjects].sort((a,b) => (a.taskProgress ?? 0) - (b.taskProgress ?? 0))
                 if (!sorted.length) return null
                 return (
-                  <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+                  <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
                         <span className="text-sm">📊</span>
-                        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Project Health</span>
+                        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Project Health</span>
                       </div>
-                      <span className="text-zinc-700 text-[10px]">sorted by progress ↑</span>
+                      <span className="text-white/20 text-[10px]">sorted by progress ↑</span>
                     </div>
                     <div className="space-y-3.5">
                       {sorted.map(proj => {
@@ -4959,19 +4961,19 @@ export default function Home() {
                                 </span>
                               </div>
                               <div className="flex items-center gap-2 shrink-0 ml-2">
-                                <span className="text-zinc-400 text-xs tabular-nums font-medium">{tc.done}<span className="text-zinc-700">/{tc.total}</span></span>
-                                <span className="text-zinc-600 text-[10px] tabular-nums w-8 text-right">{pct}%</span>
+                                <span className="text-white/40 text-xs tabular-nums font-medium">{tc.done}<span className="text-white/20">/{tc.total}</span></span>
+                                <span className="text-white/30 text-[10px] tabular-nums w-8 text-right">{pct}%</span>
                               </div>
                             </div>
                             <Bar v={pct} color={barColor} bg='#1a1a1a' />
                             {/* MC-109: Status breakdown subtext */}
                             <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[9px]">
-                              {tc.open > 0 && <span className="text-zinc-500">Open: {tc.open}</span>}
+                              {tc.open > 0 && <span className="text-white/50">Open: {tc.open}</span>}
                               {tc.inProgress > 0 && <span className="text-blue-400">In Progress: {tc.inProgress}</span>}
                               {(tc.inReview ?? 0) > 0 && <span className="text-amber-400">In Review: {tc.inReview}</span>}
                               {(tc.blocked ?? 0) > 0 && <span className="text-red-400 font-medium">Blocked: {tc.blocked}</span>}
                               {tc.open === 0 && tc.inProgress === 0 && !(tc.inReview ?? 0) && !(tc.blocked ?? 0) && (
-                                <span className="text-zinc-700">All done</span>
+                                <span className="text-white/20">All done</span>
                               )}
                             </div>
                           </div>
@@ -4986,7 +4988,7 @@ export default function Home() {
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-sm">📋</span>
-                  <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Project Progress</span>
+                  <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Project Progress</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                   {(['Vespera','Kemuni','Infrastructure','Mission Control'] as const).map(projName => {
@@ -5003,7 +5005,7 @@ export default function Home() {
                       : '—'
                     const pColor = (proj as any).color ?? '#6b7280'
                     return (
-                      <div key={projName} className="rounded-2xl border border-zinc-800/60 p-4"
+                      <div key={projName} className="rounded-2xl border border-white/10 p-4"
                         style={{ background: '#0f0f0f' }}>
                         <div className="flex items-center gap-2 mb-3">
                           <span className="text-lg">{(proj as any).emoji}</span>
@@ -5012,8 +5014,8 @@ export default function Home() {
                         {/* % done */}
                         <div className="flex items-baseline gap-1 mb-2">
                           <span className="text-2xl font-bold tabular-nums" style={{ color: pColor }}>{pct}%</span>
-                          <span className="text-zinc-600 text-[10px]">done</span>
-                          <span className="ml-auto text-zinc-500 text-[10px] tabular-nums">{tc.done}/{tc.total}</span>
+                          <span className="text-white/30 text-[10px]">done</span>
+                          <span className="ml-auto text-white/50 text-[10px] tabular-nums">{tc.done}/{tc.total}</span>
                         </div>
                         <div className="w-full rounded-full h-1.5 mb-3" style={{ background: '#1a1a1a' }}>
                           <div className="h-1.5 rounded-full transition-all" style={{ width: pct + '%', background: pColor }} />
@@ -5021,19 +5023,19 @@ export default function Home() {
                         {/* Stats grid */}
                         <div className="grid grid-cols-2 gap-2 text-[10px]">
                           <div>
-                            <span className="text-zinc-600 block">Deadline</span>
-                            <span className="text-zinc-300 font-medium">{left}d left</span>
+                            <span className="text-white/30 block">Deadline</span>
+                            <span className="text-white/70 font-medium">{left}d left</span>
                           </div>
                           <div>
-                            <span className="text-zinc-600 block">Last PR</span>
-                            <span className="text-zinc-300 font-medium">{lastPRLabel}</span>
+                            <span className="text-white/30 block">Last PR</span>
+                            <span className="text-white/70 font-medium">{lastPRLabel}</span>
                           </div>
                           <div>
-                            <span className="text-zinc-600 block">Blockers</span>
-                            <span className={blockers > 0 ? 'text-red-400 font-medium' : 'text-zinc-500'}>{blockers}</span>
+                            <span className="text-white/30 block">Blockers</span>
+                            <span className={blockers > 0 ? 'text-red-400 font-medium' : 'text-white/50'}>{blockers}</span>
                           </div>
                           <div>
-                            <span className="text-zinc-600 block">In Progress</span>
+                            <span className="text-white/30 block">In Progress</span>
                             <span className="text-blue-400 font-medium">{tc.inProgress}</span>
                           </div>
                         </div>
@@ -5065,36 +5067,36 @@ export default function Home() {
                       </div>
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-3">
                         <span className="text-3xl md:text-4xl font-bold tabular-nums" style={{color:isUrgent?'#ef4444':proj.color}}>{left}</span>
-                        <span className="text-zinc-500 text-sm"> Days</span>
-                        <span className="ml-auto text-zinc-600 text-xs">Day {elap}/{proj.totalDays}</span>
+                        <span className="text-white/50 text-sm"> Days</span>
+                        <span className="ml-auto text-white/30 text-xs">Day {elap}/{proj.totalDays}</span>
                       </div>
                       <Bar v={pct} color={proj.color} bg={proj.color==='#ffffff'?'#1e1e1e':'#1a0a2a'} />
                       <div className="flex flex-col sm:flex-row justify-between mt-1.5 gap-0.5">
-                        <span className="text-zinc-600 text-[10px]">{pct}% elapsed</span>
-                        <span className="text-zinc-600 text-[10px]">{dlLabel}</span>
+                        <span className="text-white/30 text-[10px]">{pct}% elapsed</span>
+                        <span className="text-white/30 text-[10px]">{dlLabel}</span>
                       </div>
                       {proj.taskCounts && proj.taskCounts.total > 0 && (
-                        <div className="mt-3 pt-3 border-t border-zinc-800/40">
+                        <div className="mt-3 pt-3 border-t border-white/10">
                           <div className="flex justify-between mb-1.5">
-                            <span className="text-zinc-600 text-[10px]">Issues</span>
-                            <span className="text-zinc-500 text-[10px]">{proj.taskCounts.done}/{proj.taskCounts.total} done</span>
+                            <span className="text-white/30 text-[10px]">Issues</span>
+                            <span className="text-white/50 text-[10px]">{proj.taskCounts.done}/{proj.taskCounts.total} done</span>
                           </div>
                           <Bar v={proj.taskProgress} color='#10b981' bg='#0a1a12' />
                           <div className="flex gap-3 mt-1">
                             {proj.taskCounts.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {proj.taskCounts.inProgress} active</span>}
-                            {proj.taskCounts.open > 0 && <span className="text-zinc-600 text-[9px]">○ {proj.taskCounts.open} open</span>}
+                            {proj.taskCounts.open > 0 && <span className="text-white/30 text-[9px]">○ {proj.taskCounts.open} open</span>}
                           </div>
                         </div>
                       )}
                       {proj.activeFeatures && proj.activeFeatures.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-zinc-800/40">
-                          <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-wider">Active Features</span>
+                        <div className="mt-3 pt-3 border-t border-white/10">
+                          <span className="text-white/30 text-[10px] font-semibold uppercase tracking-wider">Active Features</span>
                           <div className="mt-1.5 space-y-1.5">
                             {proj.activeFeatures.slice(0, 3).map((af: any) => (
                               <div key={af.id}>
                                 <div className="flex items-center justify-between">
-                                  <span className="text-zinc-400 text-[10px] truncate flex-1 min-w-0 mr-2">{af.title}</span>
-                                  <span className="text-zinc-600 text-[9px] shrink-0">{af.done}/{af.total}</span>
+                                  <span className="text-white/40 text-[10px] truncate flex-1 min-w-0 mr-2">{af.title}</span>
+                                  <span className="text-white/30 text-[9px] shrink-0">{af.done}/{af.total}</span>
                                 </div>
                                 <div className="w-full rounded-full h-1 mt-0.5" style={{background:'#1a1a1a'}}>
                                   <div className="h-1 rounded-full transition-all" style={{width:af.pct+'%',background:'#3b82f6'}} />
@@ -5103,7 +5105,7 @@ export default function Home() {
                             ))}
                           </div>
                           {proj.activeFeatures.length > 3 && (
-                            <p className="text-zinc-600 text-[9px] mt-1">+{proj.activeFeatures.length - 3} more</p>
+                            <p className="text-white/30 text-[9px] mt-1">+{proj.activeFeatures.length - 3} more</p>
                           )}
                         </div>
                       )}
@@ -5115,12 +5117,12 @@ export default function Home() {
               {/* Live Activity Feed (mini) */}
               <div>
                 <SH icon="📡" sub={liveStatus?.recentActivity?.length ? '● live' : undefined}>Recent Activity</SH>
-                <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+                <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
                   {(liveStatus?.recentActivity ?? []).slice(0,5).map((entry:any, i:number, arr:any[])=>{
                     const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
                     const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':'#3b82f6'
                     return (
-                      <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+                      <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-white/10':'')}>
                         <span className="text-base shrink-0 mt-0.5">{entry.emoji || (AGENT_DISPLAY[entry.agentId]?.emoji ?? '🤖')}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -5129,21 +5131,21 @@ export default function Home() {
                               style={{background:actionColor+'20',color:actionColor}}>
                               {entry.channel}
                             </span>}
-                            {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-zinc-800 text-zinc-500">{entry.model}</span>}
-                            <span className="ml-auto text-zinc-600 text-[10px] shrink-0">{agoStr}</span>
+                            {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-white/10 text-white/50">{entry.model}</span>}
+                            <span className="ml-auto text-white/30 text-[10px] shrink-0">{agoStr}</span>
                           </div>
-                          <p className="text-zinc-500 text-[10px] mt-0.5 truncate">{entry.desc}</p>
+                          <p className="text-white/50 text-[10px] mt-0.5 truncate">{entry.desc}</p>
                         </div>
                       </div>
                     )
                   })}
                   {(!liveStatus?.recentActivity || liveStatus.recentActivity.length === 0) && (
-                    <p className="text-zinc-700 text-xs px-4 py-4">No activity yet — loading...</p>
+                    <p className="text-white/20 text-xs px-4 py-4">No activity yet — loading...</p>
                   )}
                 </div>
                 {(liveStatus?.recentActivity?.length ?? 0) > 5 && (
                   <button onClick={()=>{ setTab('activity'); if(typeof window!=='undefined') localStorage.setItem('mc-tab','activity') }}
-                    className="mt-2 w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
+                    className="mt-2 w-full text-center text-xs text-white/50 hover:text-white/70 py-2 rounded-lg border border-white/10 hover:border-white/20 transition-all"
                     style={{background:'#0a0a0a'}}>
                     View All Activity →
                   </button>
@@ -5154,118 +5156,30 @@ export default function Home() {
           )}
 
           {/* ── ACTIVITY ── */}
+          {/* ── ACTIVITY ── */}
           {tab==='activity' && (
-            <div className="space-y-5">
-              {/* MC-114: Activity header with Sync button */}
-              <div className="flex items-center justify-between">
-                <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${(liveStatus.recentActivity?.length ?? 0) + issueActivity.length} entries` : undefined}>Activity Feed</SH>
-                <div className="flex items-center gap-2 shrink-0">
-                  {statusAt > 0 && (()=>{
-                    const syncAgo = Math.round((Date.now() - statusAt) / 60000)
-                    const isFresh = syncAgo < 2
-                    return (
-                      <span className={`text-[10px] font-mono ${isFresh ? 'text-emerald-400' : 'text-zinc-600'}`}>
-                        {isFresh ? '● Live' : `Synced ${syncAgo}m ago`}
-                      </span>
-                    )
-                  })()}
-                  <button
-                    onClick={() => {
-                      fetch('/api/status').then(r => r.json()).then(d => { setLiveStatus(d); setStatusAt(Date.now()) }).catch(() => {})
-                    }}
-                    className="text-[10px] px-2.5 py-1 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 bg-zinc-900/50 transition-all">
-                    Sync
-                  </button>
-                </div>
-              </div>
-              {/* Filter bar */}
-              <div className="flex items-center gap-2">
-                {(['all','agent','issue','pr'] as const).map(f => (
-                  <button key={f} onClick={() => setActivityFilter(f)}
-                    className={`text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all ${activityFilter === f ? 'border-blue-600 bg-blue-900/30 text-blue-400' : 'border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'}`}>
-                    {f === 'all' ? '📡 All' : f === 'agent' ? '🤖 Agent Runs' : f === 'issue' ? '📋 Issue Changes' : '🔀 PR Events'}
-                  </button>
-                ))}
-              </div>
-              {(()=>{
-                const agentItems = (liveStatus?.recentActivity ?? []).map((e: any) => ({...e, type: e.type || 'agent'}))
-                const issueItems = issueActivity
-                let allItems: any[] = []
-                if (activityFilter === 'all') allItems = [...agentItems, ...issueItems].sort((a,b) => (a.ago ?? 999) - (b.ago ?? 999))
-                else if (activityFilter === 'agent') allItems = agentItems
-                else if (activityFilter === 'issue') allItems = issueItems
-                else allItems = agentItems.filter((e: any) => e.channel?.includes('PR') || e.desc?.toLowerCase().includes('pr ') || e.desc?.toLowerCase().includes('pull'))
-                if(allItems.length === 0) return <EmptyState icon="📡" message={activityFilter === 'all' ? 'No activity runs recorded yet' : `No ${activityFilter} activity found`} action="Refresh" />
-                const items = allItems.slice(0, activityLimit)
-                // Group by date
-                const grouped: Record<string, any[]> = {}
-                for(const entry of items){
-                  const dateKey = entry.date || (entry.ago < 60 ? 'Today' : entry.ago < 1440 ? 'Yesterday' : 'Earlier')
-                  if(!grouped[dateKey]) grouped[dateKey] = []
-                  grouped[dateKey].push(entry)
-                }
-                return Object.entries(grouped).map(([date, entries])=>(
-                  <div key={date}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-widest">{date}</span>
-                      <div className="flex-1 h-px bg-zinc-800/50" />
-                      <span className="text-zinc-700 text-[10px]">{entries.length}</span>
-                    </div>
-                    <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-                      {entries.map((entry:any, i:number, arr:any[])=>{
-                        const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
-                        const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':entry.action==='issue'?'#22c55e':'#3b82f6'
-                        return (
-                          <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
-                            <span className="text-base shrink-0 mt-0.5">{entry.emoji || (AGENT_DISPLAY[entry.agentId]?.emoji ?? '🤖')}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-white text-xs font-medium">{entry.agentName || AGENT_DISPLAY[entry.agentId]?.name || entry.agentId}</span>
-                                {entry.channel && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
-                                  style={{background:actionColor+'20',color:actionColor}}>
-                                  {entry.channel}
-                                </span>}
-                                {entry.type === 'issue' && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
-                                  style={{background:'#22c55e20',color:'#22c55e'}}>issue</span>}
-                                {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-zinc-800 text-zinc-500">{entry.model}</span>}
-                                <span className="ml-auto text-zinc-600 text-[10px] shrink-0">{agoStr}</span>
-                              </div>
-                              <p className="text-zinc-500 text-[10px] mt-0.5 truncate">{entry.desc}</p>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))
-              })()}
-
-              {/* Load more activity */}
-              {((liveStatus?.recentActivity?.length ?? 0) + issueActivity.length) > activityLimit && (
-                <button onClick={() => setActivityLimit(prev => prev + 100)}
-                  className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2.5 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
-                  style={{background:'#0a0a0a'}}>
-                  Load 100 more
-                </button>
-              )}
-
-              {/* Needs Attention + Shipped Today */}
-              <AttentionAndShipped agents={displayAgents} />
-            </div>
+            <ActivityTab
+              liveStatus={liveStatus}
+              statusAt={statusAt}
+              setLiveStatus={setLiveStatus}
+              setStatusAt={setStatusAt}
+              issueActivity={issueActivity}
+              displayAgents={displayAgents}
+            />
           )}
 
           {/* ── TEAM ── */}
           {tab==='team' && (
             <div className="space-y-6">
-              {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-zinc-600 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
+              {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
               {displayAgents.length === 0 && <EmptyState icon="👥" message="No agents registered yet" />}
 
               {/* Lead agent card */}
               {displayAgents.length > 0 && (() => {
                 const ls0 = agentLiveStatus(displayAgents[0].id)
-                const dotColor = ls0.dot === 'green' ? 'bg-emerald-500 dot-health-green' : ls0.dot === 'amber' ? 'bg-amber-500 dot-health-amber' : 'bg-zinc-600'
+                const dotColor = ls0.dot === 'green' ? 'bg-emerald-500 dot-health-green' : ls0.dot === 'amber' ? 'bg-amber-500 dot-health-amber' : 'bg-white/10'
                 return <div className="flex justify-center">
-                <div className="rounded-2xl p-4 md:p-6 border border-zinc-700/50 card-glow w-full max-w-xs sm:max-w-sm cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setAgentModal(displayAgents[0])}>
+                <div className="rounded-2xl p-4 md:p-6 border border-white/10/50 card-glow w-full max-w-xs sm:max-w-sm cursor-pointer hover:border-white/20 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setAgentModal(displayAgents[0])}>
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{background:'#1a1a1a'}}>
                       {displayAgents[0].emoji}
@@ -5274,15 +5188,15 @@ export default function Home() {
                       <div className="flex items-center gap-2">
                         <p className="text-white font-semibold">{displayAgents[0].name}</p>
                         <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`} title={ls0.label} />
-                        {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{displayAgents[0].modelShort}</span>}
+                        {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgents[0].modelShort}</span>}
                       </div>
-                      <p className="text-zinc-500 text-xs">{displayAgents[0].role}</p>
+                      <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
                       {ls0.dot === 'green' && <p className="text-emerald-400/80 text-[10px] font-mono mt-0.5 truncate max-w-[200px]">↳ {ls0.label}</p>}
                       {ls0.dot === 'amber' && <p className="text-amber-400/70 text-[10px] font-mono mt-0.5">{ls0.label}</p>}
-                      {ls0.dot === 'grey' && <p className="text-zinc-600 text-[10px] font-mono mt-0.5">Idle</p>}
+                      {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">Idle</p>}
                     </div>
                   </div>
-                  <p className="text-zinc-500 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
+                  <p className="text-white/50 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {displayAgents[0].capabilities.map((c:string)=><Chip key={c} label={c}/>)}
                   </div>
@@ -5306,9 +5220,9 @@ export default function Home() {
                   return (a.ago??9999)-(b.ago??9999)
                 }).map((a:any)=>{
                   const ls = agentLiveStatus(a.id)
-                  const dotColor = ls.dot === 'green' ? 'bg-emerald-500 dot-health-green' : ls.dot === 'amber' ? 'bg-amber-500 dot-health-amber' : 'bg-zinc-600'
+                  const dotColor = ls.dot === 'green' ? 'bg-emerald-500 dot-health-green' : ls.dot === 'amber' ? 'bg-amber-500 dot-health-amber' : 'bg-white/10'
                   return (
-                  <div key={a.id} className="rounded-2xl p-5 border card-glow cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f',borderColor:a.color+'28'}} onClick={()=>setAgentModal(a)}>
+                  <div key={a.id} className="rounded-2xl p-5 border card-glow cursor-pointer hover:border-white/20 transition-colors" style={{background:'#0f0f0f',borderColor:a.color+'28'}} onClick={()=>setAgentModal(a)}>
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
                         style={{background:a.color+'18',border:'1px solid '+a.color+'30'}}>
@@ -5318,16 +5232,16 @@ export default function Home() {
                         <div className="flex items-center gap-1.5">
                           <p className="text-white text-sm font-semibold truncate">{a.name}</p>
                           <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={ls.label} />
-                          {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{a.modelShort}</span>}
+                          {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
                         </div>
-                        <p className="text-zinc-500 text-xs truncate">{a.role}</p>
-                        <p className={`text-[10px] font-mono truncate ${ls.dot==='green'?'text-emerald-400/80':ls.dot==='amber'?'text-amber-400/70':'text-zinc-700'}`}>
+                        <p className="text-white/50 text-xs truncate">{a.role}</p>
+                        <p className={`text-[10px] font-mono truncate ${ls.dot==='green'?'text-emerald-400/80':ls.dot==='amber'?'text-amber-400/70':'text-white/20'}`}>
                           {ls.dot === 'green' ? `↳ ${ls.label}` : ls.label}
                         </p>
                       </div>
                     </div>
                     {ls.dot === 'green' && (a.currentTask || agentRunsData[a.id]?.taskTitle) && <p className="text-emerald-400/60 text-[10px] mb-2 truncate">↳ {(a.currentTask || agentRunsData[a.id]?.taskTitle || '').slice(0,40)}</p>}
-                    <p className="text-zinc-500 text-xs leading-relaxed mb-3">{a.desc}</p>
+                    <p className="text-white/50 text-xs leading-relaxed mb-3">{a.desc}</p>
                     <div className="flex flex-wrap gap-1 mb-2">
                       {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
                     </div>
@@ -5341,7 +5255,7 @@ export default function Home() {
                 <SH icon="📋">Planned Agents</SH>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {displayAgents.filter((a:any)=>a.status==='planned').map((a:any)=>(
-                    <div key={a.id} className="rounded-2xl p-5 border border-dashed cursor-pointer hover:border-zinc-600 transition-colors opacity-60 hover:opacity-90" style={{background:'#0a0a0a',borderColor:a.color+'20'}} onClick={()=>setAgentModal(a)}>
+                    <div key={a.id} className="rounded-2xl p-5 border border-dashed cursor-pointer hover:border-white/20 transition-colors opacity-60 hover:opacity-90" style={{background:'#0a0a0a',borderColor:a.color+'20'}} onClick={()=>setAgentModal(a)}>
                       <div className="flex items-center gap-3 mb-3">
                         <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
                           style={{background:a.color+'10',border:'1px dashed '+a.color+'25'}}>
@@ -5349,21 +5263,21 @@ export default function Home() {
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-zinc-400 text-sm font-semibold truncate">{a.name}</p>
-                            <span className="text-[8px] px-1.5 py-0.5 rounded-full border border-zinc-700 text-zinc-500 bg-zinc-900 font-semibold uppercase">Planned</span>
-                            {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{a.modelShort}</span>}
+                            <p className="text-white/40 text-sm font-semibold truncate">{a.name}</p>
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full border border-white/10 text-white/50 bg-[#0f0f0f] font-semibold uppercase">Planned</span>
+                            {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
                           </div>
-                          <p className="text-zinc-600 text-xs truncate">{a.role}</p>
+                          <p className="text-white/30 text-xs truncate">{a.role}</p>
                         </div>
                       </div>
-                      <p className="text-zinc-600 text-xs leading-relaxed mb-3">{a.desc}</p>
+                      <p className="text-white/30 text-xs leading-relaxed mb-3">{a.desc}</p>
                       <div className="flex flex-wrap gap-1 mb-2">
                         {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
                       </div>
                       {(a as any).activatesWhen && (
-                        <div className="mt-2 pt-2 border-t border-zinc-800/40">
-                          <span className="text-[9px] text-zinc-600">Activates: </span>
-                          <span className="text-[9px] text-zinc-500">{(a as any).activatesWhen}</span>
+                        <div className="mt-2 pt-2 border-t border-white/10">
+                          <span className="text-[9px] text-white/30">Activates: </span>
+                          <span className="text-[9px] text-white/50">{(a as any).activatesWhen}</span>
                         </div>
                       )}
                     </div>
@@ -5375,7 +5289,7 @@ export default function Home() {
               {/* Agent Detail Modal */}
               {agentModal && (
                 <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setAgentModal(null)}>
-                  <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                  <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl shrink-0" style={{background:agentModal.color+'18',border:'1px solid '+agentModal.color+'30'}}>
                         {agentModal.emoji}
@@ -5384,22 +5298,22 @@ export default function Home() {
                         <div className="flex items-center gap-2">
                           <p className="text-white font-semibold text-lg">{agentModal.name}</p>
                           <Dot status={agentModal.status} />
-                          {agentModal.status==='planned' && <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-zinc-700 text-zinc-500 bg-zinc-900 font-semibold uppercase">Planned</span>}
+                          {agentModal.status==='planned' && <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-white/10 text-white/50 bg-[#0f0f0f] font-semibold uppercase">Planned</span>}
                         </div>
-                        <p className="text-zinc-500 text-sm">{agentModal.role}</p>
+                        <p className="text-white/50 text-sm">{agentModal.role}</p>
                       </div>
-                      <button onClick={()=>setAgentModal(null)} className="ml-auto text-zinc-600 hover:text-white text-lg">✕</button>
+                      <button onClick={()=>setAgentModal(null)} className="ml-auto text-white/30 hover:text-white text-lg">✕</button>
                     </div>
                     <div className="space-y-3">
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Model</p><p className="text-zinc-300 text-sm font-mono">{agentModal.model}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Description</p><p className="text-zinc-300 text-sm leading-relaxed">{agentModal.desc}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Capabilities</p><div className="flex flex-wrap gap-1.5">{agentModal.capabilities.map((c:string)=><Chip key={c} label={c} color={agentModal.color}/>)}</div></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Status</p><p className="text-zinc-300 text-sm">{agentModal.status}</p></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Model</p><p className="text-white/70 text-sm font-mono">{agentModal.model}</p></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Description</p><p className="text-white/70 text-sm leading-relaxed">{agentModal.desc}</p></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Capabilities</p><div className="flex flex-wrap gap-1.5">{agentModal.capabilities.map((c:string)=><Chip key={c} label={c} color={agentModal.color}/>)}</div></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Status</p><p className="text-white/70 text-sm">{agentModal.status}</p></div>
                       {agentModal.status !== 'planned' && (
-                        <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Current Task</p><p className="text-zinc-300 text-sm italic">{act(agentModal.id)}</p></div>
+                        <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Current Task</p><p className="text-white/70 text-sm italic">{act(agentModal.id)}</p></div>
                       )}
                       {(agentModal as any).activatesWhen && (
-                        <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider mb-1">Activates When</p><p className="text-zinc-300 text-sm">{(agentModal as any).activatesWhen}</p></div>
+                        <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Activates When</p><p className="text-white/70 text-sm">{(agentModal as any).activatesWhen}</p></div>
                       )}
                     </div>
                   </div>
@@ -5454,10 +5368,10 @@ export default function Home() {
               {/* View toggle */}
               <div className="flex items-center justify-between">
                 <SH icon="📅">Calendar</SH>
-                <div className="flex gap-1 bg-zinc-900 rounded-lg p-0.5 border border-zinc-800/60">
+                <div className="flex gap-1 bg-[#0f0f0f] rounded-lg p-0.5 border border-white/10">
                   {(['week','month'] as const).map(v=>(
                     <button key={v} onClick={()=>setCalendarView(v)}
-                      className={'px-3 py-1 text-[11px] font-semibold rounded-md transition-all '+(calView===v?'bg-white text-black':'text-zinc-500 hover:text-zinc-300')}>
+                      className={'px-3 py-1 text-[11px] font-semibold rounded-md transition-all '+(calView===v?'bg-white text-black':'text-white/50 hover:text-white/70')}>
                       {v === 'week' ? 'Week' : 'Month'}
                     </button>
                   ))}
@@ -5471,7 +5385,7 @@ export default function Home() {
                     <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs"
                       style={{borderColor:s.color+'40',background:s.color+'10',color:s.color}}>
                       <span className="font-semibold">{s.name}</span>
-                      <span className="text-zinc-500 font-mono text-[10px]">{s.start} — {s.end}</span>
+                      <span className="text-white/50 font-mono text-[10px]">{s.start} — {s.end}</span>
                     </div>
                   ))}
                 </div>
@@ -5487,8 +5401,8 @@ export default function Home() {
                       onClick={()=>setCronModal(c)}>
                       <Dot status="active" sm />
                       <span className="text-xs font-medium" style={{color:pColor(c.project)}}>{cronLabel(c)}</span>
-                      <span className="text-zinc-600 text-[10px]">· {c.time}</span>
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">{c.model}</span>
+                      <span className="text-white/30 text-[10px]">· {c.time}</span>
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/40 font-mono">{c.model}</span>
                     </div>
                   ))}
                 </div>
@@ -5501,7 +5415,7 @@ export default function Home() {
                   {/* Day headers */}
                   {DAYS.map((day,di)=>(
                     <div key={day} className={'text-center text-[10px] font-semibold py-1 rounded-lg '+(
-                      di===todayIdx && calView==='week' ? 'bg-white text-black' : 'text-zinc-500 bg-zinc-900/50'
+                      di===todayIdx && calView==='week' ? 'bg-white text-black' : 'text-white/50 bg-[#0f0f0f]/50'
                     )}>
                       {day}
                     </div>
@@ -5526,7 +5440,7 @@ export default function Home() {
                           opacity: calView==='month'&&!isCurrentMonth?0.4:1,
                         }}>
                         <div className="flex items-center justify-between mb-1">
-                          <span className={'text-[10px] font-mono '+(isToday?'text-white font-bold':'text-zinc-500')}>{d.getDate()}</span>
+                          <span className={'text-[10px] font-mono '+(isToday?'text-white font-bold':'text-white/50')}>{d.getDate()}</span>
                           {inSprints.map((s,si)=>(
                             <span key={si} className="text-[7px] px-1 rounded" style={{background:s.color+'20',color:s.color}}>{s.name.slice(0,3)}</span>
                           ))}
@@ -5539,7 +5453,7 @@ export default function Home() {
                             {iss.task_key}: {iss.title?.slice(0,20)}
                           </div>
                         ))}
-                        {dayIssues.length>3 && <div className="text-[8px] text-zinc-600">+{dayIssues.length-3} more</div>}
+                        {dayIssues.length>3 && <div className="text-[8px] text-white/30">+{dayIssues.length-3} more</div>}
                         {/* Cron events (compact in month view) */}
                         {calView==='week' && dayCrons.slice(0,3).map((c:any)=>(
                           <div key={c.id} className="text-[9px] leading-tight mb-0.5 px-1 py-0.5 rounded truncate cursor-pointer hover:brightness-125"
@@ -5549,7 +5463,7 @@ export default function Home() {
                           </div>
                         ))}
                         {calView==='month' && dayCrons.length>0 && (
-                          <div className="text-[8px] text-zinc-600">{dayCrons.length} cron{dayCrons.length>1?'s':''}</div>
+                          <div className="text-[8px] text-white/30">{dayCrons.length} cron{dayCrons.length>1?'s':''}</div>
                         )}
                       </div>
                     )
@@ -5560,14 +5474,14 @@ export default function Home() {
                 <SH icon="⏭">Next Up</SH>
                 <div className="space-y-2">
                   {nextRuns.map(({cron,mins},i)=>(
-                    <div key={cron.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 rounded-xl border border-zinc-800/60 cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setCronModal(cron)}>
+                    <div key={cron.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 rounded-xl border border-white/10 cursor-pointer hover:border-white/20 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setCronModal(cron)}>
                       <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-                        <span className="text-zinc-600 text-xs shrink-0">#{i+1}</span>
+                        <span className="text-white/30 text-xs shrink-0">#{i+1}</span>
                         <Dot status={cron.status} />
                         <span className="font-mono text-xs text-white truncate">{cron.id}</span>
                       </div>
                       <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-                        <span className="text-zinc-500 text-xs truncate">{cron.desc}</span>
+                        <span className="text-white/50 text-xs truncate">{cron.desc}</span>
                         <span className="text-xs font-semibold tabular-nums shrink-0" style={{color:mins<60?'#f59e0b':'#6b7280'}}>
                           in {fmtMins(mins)}
                         </span>
@@ -5581,7 +5495,7 @@ export default function Home() {
               {/* Automations / Crons */}
               <div>
                 <SH icon="🤖">Automations</SH>
-                <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+                <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
                   {/* Group by source */}
                   {(['openclaw-cron','n8n','openclaw'] as const).map(src => {
                     const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src)
@@ -5589,17 +5503,17 @@ export default function Home() {
                     const srcLabel = src === 'openclaw-cron' ? '⚡ OpenClaw Crons' : src === 'n8n' ? '🔧 n8n Workflows' : '💓 Heartbeats'
                     return (
                       <div key={src}>
-                        <div className="px-4 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600 border-b border-zinc-800/60" style={{background:'#080808'}}>{srcLabel}</div>
+                        <div className="px-4 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-white/30 border-b border-white/10" style={{background:'#080808'}}>{srcLabel}</div>
                         {group.map((c:any,i:number,arr:any[])=>{
                           const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
                           const isError = c.status === 'error' || (c.consecutiveErrors ?? 0) > 0
                           return (
-                            <div key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors '+(i<arr.length-1?'border-b border-zinc-800/40':'')}
+                            <div key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-white/5 transition-colors '+(i<arr.length-1?'border-b border-white/10':'')}
                               style={isError ? {background:'#1a0808'} : {}}
                               onClick={()=>setCronModal(c)}>
                               <div className="flex items-center gap-2 sm:gap-4">
-                                <span className="font-mono text-xs text-zinc-400 shrink-0">{c.time}</span>
-                                <span className="text-zinc-600 text-[10px] shrink-0">{c.days}</span>
+                                <span className="font-mono text-xs text-white/40 shrink-0">{c.time}</span>
+                                <span className="text-white/30 text-[10px] shrink-0">{c.days}</span>
                                 <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
                                   style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
                                   {c.model}
@@ -5609,8 +5523,8 @@ export default function Home() {
                               </div>
                               <div className="flex items-center gap-2 min-w-0">
                                 <Chip label={c.project} color={pColor(c.project)} />
-                                <span className="text-zinc-300 text-xs truncate">{c.name || c.desc}</span>
-                                {c.lastRunAtMs && <span className="text-zinc-600 text-[9px] shrink-0 ml-auto">{Math.round((Date.now()-c.lastRunAtMs)/60000)}m ago</span>}
+                                <span className="text-white/70 text-xs truncate">{c.name || c.desc}</span>
+                                {c.lastRunAtMs && <span className="text-white/30 text-[9px] shrink-0 ml-auto">{Math.round((Date.now()-c.lastRunAtMs)/60000)}m ago</span>}
                               </div>
                             </div>
                           )
@@ -5624,23 +5538,23 @@ export default function Home() {
               {/* Cron Detail Modal */}
               {cronModal && (
                 <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
-                  <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
+                  <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
                     <div className="flex items-center justify-between">
                       <h3 className="text-white font-semibold text-sm">{cronModal.id}</h3>
-                      <button onClick={()=>setCronModal(null)} className="text-zinc-600 hover:text-white text-lg">✕</button>
+                      <button onClick={()=>setCronModal(null)} className="text-white/30 hover:text-white text-lg">✕</button>
                     </div>
                     <div className="space-y-2.5">
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Description</p><p className="text-zinc-300 text-sm">{cronModal.desc}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Time</p><p className="text-zinc-300 text-sm font-mono">{cronModal.time}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Schedule</p><p className="text-zinc-300 text-sm">{cronModal.days}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Runner</p><p className="text-zinc-300 text-sm font-mono">{cronModal.model}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-zinc-300 text-sm">{cronModal.status}</span></div></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Description</p><p className="text-white/70 text-sm">{cronModal.desc}</p></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Time</p><p className="text-white/70 text-sm font-mono">{cronModal.time}</p></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Schedule</p><p className="text-white/70 text-sm">{cronModal.days}</p></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Runner</p><p className="text-white/70 text-sm font-mono">{cronModal.model}</p></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
+                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-white/70 text-sm">{cronModal.status}</span></div></div>
                       {(cronModal as any).source === 'openclaw-cron' && <>
-                        {(cronModal as any).sessionTarget && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-zinc-300 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
-                        {(cronModal as any).lastRunAtMs && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-zinc-300 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
-                        {(cronModal as any).lastRunStatus && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Status</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
-                        {(cronModal as any).consecutiveErrors > 0 && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Consecutive Errors</p><p className="text-red-400 text-sm font-mono">{(cronModal as any).consecutiveErrors}</p></div>}
+                        {(cronModal as any).sessionTarget && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-white/70 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
+                        {(cronModal as any).lastRunAtMs && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-white/70 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
+                        {(cronModal as any).lastRunStatus && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Last Status</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
+                        {(cronModal as any).consecutiveErrors > 0 && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Consecutive Errors</p><p className="text-red-400 text-sm font-mono">{(cronModal as any).consecutiveErrors}</p></div>}
                       </>}
                     </div>
                   </div>
@@ -5664,12 +5578,12 @@ export default function Home() {
               <div className="flex flex-col md:flex-row gap-4">
 
                 {/* ══ CANVAS ══ */}
-                <div className="flex-1 rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0d0d0d'}}>
+                <div className="flex-1 rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0d0d0d'}}>
                   {/* Titlebar */}
-                  <div className="px-4 py-2 border-b border-zinc-800/40 flex items-center gap-2">
+                  <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
                     <Dot status="active" sm />
-                    <span className="text-zinc-400 text-xs font-medium">Nabit LLC — Office Floor</span>
-                    <span className="ml-auto text-zinc-700 text-[10px]">{floorAgents.length} on floor · {playroomAgents.length} waiting</span>
+                    <span className="text-white/40 text-xs font-medium">Nabit LLC — Office Floor</span>
+                    <span className="ml-auto text-white/20 text-[10px]">{floorAgents.length} on floor · {playroomAgents.length} waiting</span>
                   </div>
 
                   {/* Top-down room — strict orthographic, no angle */}
@@ -5917,27 +5831,27 @@ export default function Home() {
                 </div>
 
                 {/* ── LIVE FEED ── */}
-                <div className="w-60 shrink-0 rounded-2xl border border-zinc-800/60 flex flex-col" style={{background:'#0f0f0f'}}>
-                  <div className="px-4 py-2.5 border-b border-zinc-800/40 flex items-center gap-2">
+                <div className="w-60 shrink-0 rounded-2xl border border-white/10 flex flex-col" style={{background:'#0f0f0f'}}>
+                  <div className="px-4 py-2.5 border-b border-white/10 flex items-center gap-2">
                     <Dot status="active" sm />
-                    <p className="text-zinc-400 text-xs font-semibold">Live Activity</p>
+                    <p className="text-white/40 text-xs font-semibold">Live Activity</p>
                   </div>
                   <div className="flex-1 p-3 space-y-2 overflow-hidden">
                     {feed.map((entry,i)=>{
                       const agent=ALL_AGENTS.find(a=>a.id===entry.agentId)
                       if(!agent) return null
                       return (
-                        <div key={i} className="rounded-lg p-2.5 border border-zinc-800/40" style={{background:'#141414'}}>
+                        <div key={i} className="rounded-lg p-2.5 border border-white/10" style={{background:'#141414'}}>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-sm">{agent.emoji}</span>
                             <span className="text-xs font-medium" style={{color:agent.color}}>{agent.name}</span>
-                            <span className="ml-auto text-[9px] text-zinc-600">{entry.ago}m ago</span>
+                            <span className="ml-auto text-[9px] text-white/30">{entry.ago}m ago</span>
                           </div>
                           <span className="text-[9px] px-1.5 py-0.5 rounded font-medium"
                             style={{background:ACTION_COLORS[entry.action]+'20',color:ACTION_COLORS[entry.action]}}>
                             {entry.action}
                           </span>
-                          <p className="text-zinc-500 text-[10px] leading-relaxed mt-1">{entry.desc}</p>
+                          <p className="text-white/50 text-[10px] leading-relaxed mt-1">{entry.desc}</p>
                         </div>
                       )
                     })}
@@ -5962,8 +5876,8 @@ export default function Home() {
                           </div>
                           <Dot status={a.status} />
                         </div>
-                        <p className="text-zinc-600 text-[9px] italic mb-1">{act(a.id)}</p>
-                        <span className="text-zinc-700 text-[9px] font-mono">{a.modelShort}</span>
+                        <p className="text-white/30 text-[9px] italic mb-1">{act(a.id)}</p>
+                        <span className="text-white/20 text-[9px] font-mono">{a.modelShort}</span>
                       </div>
                     ))}
                   </div>
@@ -5976,13 +5890,13 @@ export default function Home() {
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <div style={{width:16,height:16,borderRadius:'50%',background:'#c0392b',color:'white',fontSize:9,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{i+1}</div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-zinc-400 text-xs font-semibold truncate">{a.emoji} {a.name}</p>
-                            <p className="text-zinc-600 text-[9px]">{a.role}</p>
+                            <p className="text-white/40 text-xs font-semibold truncate">{a.emoji} {a.name}</p>
+                            <p className="text-white/30 text-[9px]">{a.role}</p>
                           </div>
                           <span className="text-[8px] px-1 py-0.5 rounded border border-dashed shrink-0" style={{color:a.color+'70',borderColor:a.color+'30'}}>planned</span>
                         </div>
-                        <p className="text-zinc-700 text-[9px] font-mono mb-1">{a.modelShort}</p>
-                        <p className="text-zinc-600 text-[9px] leading-relaxed"><span className="text-zinc-700">When: </span>{(a as any).activatesWhen}</p>
+                        <p className="text-white/20 text-[9px] font-mono mb-1">{a.modelShort}</p>
+                        <p className="text-white/30 text-[9px] leading-relaxed"><span className="text-white/20">When: </span>{(a as any).activatesWhen}</p>
                       </div>
                     ))}
                   </div>
@@ -5997,32 +5911,32 @@ export default function Home() {
             <div className="flex gap-0 h-[calc(100vh-88px)] -mx-6 -my-5">
 
               {/* Left panel */}
-              <div className={`${openMem ? 'hidden md:flex' : 'flex'} w-full md:w-64 shrink-0 border-r border-zinc-800/60 flex-col overflow-hidden`} style={{background:'#0d0d0d'}}>
+              <div className={`${openMem ? 'hidden md:flex' : 'flex'} w-full md:w-64 shrink-0 border-r border-white/10 flex-col overflow-hidden`} style={{background:'#0d0d0d'}}>
                 {/* Search */}
-                <div className="px-3 py-3 border-b border-zinc-800/40">
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800/60" style={{background:'#111'}}>
-                    <svg className="w-3 h-3 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="px-3 py-3 border-b border-white/10">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10" style={{background:'#111'}}>
+                    <svg className="w-3 h-3 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                    <span className="text-zinc-600 text-xs">Search memory...</span>
+                    <span className="text-white/30 text-xs">Search memory...</span>
                   </div>
                 </div>
 
                 {/* Long-Term Memory card */}
-                <div className="px-3 py-2.5 border-b border-zinc-800/40 flex items-center gap-2.5">
+                <div className="px-3 py-2.5 border-b border-white/10 flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm"
                     style={{background:'linear-gradient(135deg,#4f46e5,#7c3aed)'}}>
                     🧠
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-xs font-semibold">Long-Term Memory</p>
-                    <p className="text-zinc-600 text-[10px]">MEMORY.md · updated daily</p>
+                    <p className="text-white/30 text-[10px]">MEMORY.md · updated daily</p>
                   </div>
                 </div>
 
                 {/* DAILY JOURNAL header */}
                 <div className="px-4 pt-3 pb-1 flex items-center justify-between">
-                  <span className="text-zinc-500 text-[10px] font-semibold uppercase tracking-widest">Daily Journal</span>
+                  <span className="text-white/50 text-[10px] font-semibold uppercase tracking-widest">Daily Journal</span>
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                     style={{background:'#3b82f620',color:'#3b82f6'}}>
                     {memFiles.length} entries
@@ -6032,7 +5946,7 @@ export default function Home() {
                 {/* File list */}
                 <div className="flex-1 overflow-y-auto">
                   {memFiles.length===0 ? (
-                    <p className="text-zinc-700 text-xs px-4 py-3">No memory files yet.</p>
+                    <p className="text-white/20 text-xs px-4 py-3">No memory files yet.</p>
                   ) : (
                     (['today','yesterday','week','month','older'] as const).map(group => {
                       const grouped = (memFiles as any[]).filter(f=>f.group===group)
@@ -6046,13 +5960,13 @@ export default function Home() {
                         <div key={group} className="mb-0.5">
                           {/* Group header */}
                           <div className="flex items-center gap-2 px-4 py-1.5">
-                            <svg className="w-3 h-3 text-zinc-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3 h-3 text-white/20 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isCompact ? "M9 5l7 7-7 7" : "M19 9l-7 7-7-7"} />
                             </svg>
-                            <span className="text-zinc-600 text-[10px] font-semibold uppercase tracking-wider">
+                            <span className="text-white/30 text-[10px] font-semibold uppercase tracking-wider">
                               {labels[group]}
                             </span>
-                            <span className="text-zinc-700 text-[10px]">({grouped.length})</span>
+                            <span className="text-white/20 text-[10px]">({grouped.length})</span>
                           </div>
                           {/* Files */}
                           {!isCompact && grouped.map((f:any)=>(
@@ -6060,8 +5974,8 @@ export default function Home() {
                               onClick={()=>setOpenMem(openMem===f.filename?null:f.filename)}
                               className={'w-full text-left px-4 py-2 border-l-2 transition-all '+(
                                 openMem===f.filename
-                                  ? 'border-l-indigo-500 bg-zinc-800/70'
-                                  : 'border-l-transparent hover:bg-zinc-900/50 hover:border-l-zinc-700'
+                                  ? 'border-l-indigo-500 bg-white/10'
+                                  : 'border-l-transparent hover:bg-[#0f0f0f]/50 hover:border-l-zinc-700'
                               )}>
                               <div className="flex items-center gap-2">
                                 {/* Calendar icon */}
@@ -6072,15 +5986,15 @@ export default function Home() {
                                   <line x1="8" y1="2" x2="8" y2="6" strokeWidth="2"/>
                                   <line x1="3" y1="10" x2="21" y2="10" strokeWidth="2"/>
                                 </svg>
-                                <span className={'text-xs font-medium '+(openMem===f.filename?'text-white':'text-zinc-400')}>
+                                <span className={'text-xs font-medium '+(openMem===f.filename?'text-white':'text-white/40')}>
                                   {f.label}
                                 </span>
                               </div>
-                              <p className="text-zinc-600 text-[10px] mt-0.5 pl-5">{f.kb} KB · {f.words} words</p>
+                              <p className="text-white/30 text-[10px] mt-0.5 pl-5">{f.kb} KB · {f.words} words</p>
                             </button>
                           ))}
                           {isCompact && grouped.length>0 && (
-                            <p className="text-zinc-700 text-[10px] px-4 pb-1.5">
+                            <p className="text-white/20 text-[10px] px-4 pb-1.5">
                               {grouped.length} file{grouped.length>1?'s':''} — click to expand
                             </p>
                           )}
@@ -6093,7 +6007,7 @@ export default function Home() {
 
               {/* Right panel: journal view */}
               <div className={`${openMem ? 'flex' : 'hidden md:flex'} flex-1 flex-col overflow-hidden`} style={{background:'#0a0a0a'}}>
-              {openMem && <button onClick={()=>setOpenMem(null)} className="md:hidden shrink-0 flex items-center gap-2 px-4 py-3 border-b border-zinc-800/40 text-zinc-400 text-xs hover:text-white">
+              {openMem && <button onClick={()=>setOpenMem(null)} className="md:hidden shrink-0 flex items-center gap-2 px-4 py-3 border-b border-white/10 text-white/40 text-xs hover:text-white">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
                 Back to list
               </button>}
@@ -6103,8 +6017,8 @@ export default function Home() {
                     <div className="text-center">
                       <div className="w-12 h-12 rounded-2xl mx-auto mb-4 flex items-center justify-center text-2xl"
                         style={{background:'linear-gradient(135deg,#4f46e5,#7c3aed)'}}>🧠</div>
-                      <p className="text-zinc-400 text-sm font-medium">Select a journal entry</p>
-                      <p className="text-zinc-700 text-xs mt-1">Session logs appear on the left</p>
+                      <p className="text-white/40 text-sm font-medium">Select a journal entry</p>
+                      <p className="text-white/20 text-xs mt-1">Session logs appear on the left</p>
                     </div>
                   </div>
                 ) : (()=>{
@@ -6116,12 +6030,12 @@ export default function Home() {
                   return (
                     <div className="px-8 py-7 max-w-3xl">
                       {/* Header */}
-                      <div className="mb-7 pb-5 border-b border-zinc-800/50">
+                      <div className="mb-7 pb-5 border-b border-white/10/50">
                         <p className="text-indigo-400 text-xs font-semibold uppercase tracking-widest mb-1">Daily Journal</p>
                         <h1 className="text-white text-xl font-bold mb-1">
-                          Journal: <span className="text-zinc-300 font-medium">{file.date}</span>
+                          Journal: <span className="text-white/70 font-medium">{file.date}</span>
                         </h1>
-                        <p className="text-zinc-500 text-sm">
+                        <p className="text-white/50 text-sm">
                           {fullDate} &nbsp;·&nbsp; {file.kb} KB &nbsp;·&nbsp; {file.words} words
                         </p>
                       </div>
@@ -6151,12 +6065,12 @@ export default function Home() {
                                     const hasLabel = colonIdx>0 && colonIdx<40
                                     return (
                                       <div key={j} className="flex gap-2">
-                                        <span className="text-zinc-700 mt-1.5 shrink-0">·</span>
-                                        <p className="text-zinc-300 text-sm leading-relaxed">
+                                        <span className="text-white/20 mt-1.5 shrink-0">·</span>
+                                        <p className="text-white/70 text-sm leading-relaxed">
                                           {hasLabel ? (
                                             <>
                                               <span className="text-white font-semibold">{b.slice(0,colonIdx)}</span>
-                                              <span className="text-zinc-400">{b.slice(colonIdx)}</span>
+                                              <span className="text-white/40">{b.slice(colonIdx)}</span>
                                             </>
                                           ) : b}
                                         </p>
@@ -6165,7 +6079,7 @@ export default function Home() {
                                   })}
                                 </div>
                               ) : (
-                                <p className="text-zinc-400 text-sm leading-relaxed">{entry.body.slice(0,400)}</p>
+                                <p className="text-white/40 text-sm leading-relaxed">{entry.body.slice(0,400)}</p>
                               )}
                             </div>
                           </div>
@@ -6199,127 +6113,10 @@ export default function Home() {
             <IssuesTab projectFilter={selectedBusiness} />
           )}
 
-          {/* ── AUTOMATIONS (n8n embed) ── */}
+          {/* ── AUTOMATIONS ── */}
           {tab==='automations' && (
-            <div className="space-y-5">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">Automations</h2>
-                  <p className="text-xs text-zinc-500 mt-0.5">All scheduled jobs — OpenClaw crons, n8n workflows, and heartbeats</p>
-                </div>
-                <a href="https://n8n.nabit.work" target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors">
-                  Open n8n editor ↗
-                </a>
-              </div>
-              {/* INF-68: Project filter */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {['All', 'Infrastructure', 'Vespera', 'Kemuni', 'Mission Control'].map(pf => {
-                  const count = pf === 'All' ? displayCrons.length : displayCrons.filter((c:any) => c.project === pf).length
-                  if (pf !== 'All' && count === 0) return null
-                  return (
-                    <button key={pf} onClick={() => setAutoProjectFilter(pf === 'All' ? null : pf)}
-                      className={`text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-lg border transition-all ${(autoProjectFilter === null && pf === 'All') || autoProjectFilter === pf ? 'border-blue-600 bg-blue-900/30 text-blue-400' : 'border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'}`}>
-                      {pf} ({count})
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Stats row */}
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  {label:'Total jobs', value: displayCrons.length, color:'#a855f7'},
-                  {label:'Active', value: displayCrons.filter((c:any)=>c.status==='active'||c.status==='ok').length, color:'#10b981'},
-                  {label:'Errors', value: displayCrons.filter((c:any)=>c.status==='error'||(c as any).consecutiveErrors>0).length, color:'#ef4444'},
-                ].map(s=>(
-                  <div key={s.label} className="rounded-xl border border-zinc-800/60 px-4 py-3" style={{background:'#0f0f0f'}}>
-                    <div className="text-xl font-bold" style={{color:s.color}}>{s.value}</div>
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wider mt-0.5">{s.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Grouped cron list */}
-              <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-                {(['openclaw-cron','n8n','openclaw'] as const).map(src => {
-                  const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src && (!autoProjectFilter || c.project === autoProjectFilter))
-                  if (group.length === 0) return null
-                  const srcLabel = src === 'openclaw-cron' ? '⚡ OpenClaw Crons' : src === 'n8n' ? '🔧 n8n Workflows' : '💓 Heartbeats'
-                  return (
-                    <div key={src}>
-                      <div className="px-4 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-zinc-600 border-b border-zinc-800/60" style={{background:'#080808'}}>{srcLabel}</div>
-                      {group.map((c:any, i:number, arr:any[]) => {
-                        const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
-                        const isError = c.status === 'error' || (c.consecutiveErrors ?? 0) > 0
-                        return (
-                          <div key={c.id}
-                            className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors ' + (i<arr.length-1?'border-b border-zinc-800/40':'')}
-                            style={isError ? {background:'#1a0808'} : {}}
-                            onClick={()=>setCronModal(c)}>
-                            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                              <Dot status={isError ? 'error' : c.status} sm />
-                              <span className="font-mono text-xs text-zinc-400 w-12 shrink-0">{c.time}</span>
-                              <span className="text-zinc-600 text-[10px] w-14 shrink-0">{c.days}</span>
-                              <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
-                                style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
-                                {c.model}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <Chip label={c.project} color={pColor(c.project)} />
-                              <span className="text-zinc-300 text-xs truncate">{c.name || c.desc}</span>
-                              {isError && <span className="text-[9px] text-red-400 shrink-0">⚠ {c.consecutiveErrors}x</span>}
-                              {c.lastRunAtMs && <span className="text-zinc-600 text-[9px] shrink-0 ml-auto">{Math.round((Date.now()-c.lastRunAtMs)/60000)}m ago</span>}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Cron Detail Modal (INF-68 enhanced) */}
-              {cronModal && (
-                <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
-                  <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-white font-semibold text-sm">{(cronModal as any).name || cronModal.id}</h3>
-                      <button onClick={()=>setCronModal(null)} className="text-zinc-600 hover:text-white text-lg">✕</button>
-                    </div>
-                    <div className="space-y-2.5">
-                      {(cronModal as any).desc && (cronModal as any).desc !== (cronModal as any).name && (
-                        <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Description</p><p className="text-zinc-400 text-sm">{(cronModal as any).desc}</p></div>
-                      )}
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Schedule</p><p className="text-zinc-300 text-sm font-mono">{cronModal.time} · {cronModal.days}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Runner</p><p className="text-zinc-300 text-sm font-mono">{cronModal.model}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Source</p><p className="text-zinc-300 text-sm font-mono">{(cronModal as any).source ?? 'n8n'}</p></div>
-                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-zinc-300 text-sm">{cronModal.status}</span></div></div>
-                      {/* Last run info — shown for all sources */}
-                      {(cronModal as any).lastRunAtMs && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-zinc-300 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
-                      {(cronModal as any).lastRunStatus && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Result</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus==='ok'||( cronModal as any).lastRunStatus==='success'?'text-emerald-400':'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
-                      {(cronModal as any).source === 'openclaw-cron' && <>
-                        {(cronModal as any).sessionTarget && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-zinc-300 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
-                        {(cronModal as any).consecutiveErrors > 0 && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Consecutive Errors</p><p className="text-red-400 text-sm font-mono">{(cronModal as any).consecutiveErrors}</p></div>}
-                      </>}
-                      {/* Enable/disable indicator */}
-                      <div className="pt-2 border-t border-zinc-800/50">
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-600 text-[10px] uppercase tracking-wider">Enabled</span>
-                          <span className={`text-sm font-medium ${cronModal.status === 'planned' ? 'text-zinc-500' : 'text-emerald-400'}`}>
-                            {cronModal.status === 'planned' ? 'Disabled' : 'Active'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <AutomationsTab displayCrons={displayCrons} />
           )}
-
           {/* ── CHAT ── */}
           {tab==='chat' && (
             <ChatTab selectedBusiness={selectedBusiness} />
@@ -6371,26 +6168,26 @@ export default function Home() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <SH icon="🔌">Services</SH>
                 <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap">
-                  {ls && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-zinc-700 text-[10px]">Updated {agoSec}s ago</span></>}
+                  {ls && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/20 text-[10px]">Updated {agoSec}s ago</span></>}
                   {!ls && <span className="text-yellow-600 text-[10px]">Loading…</span>}
-                  <span className="text-zinc-700 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">↻ {statusCountdown}s</span>
-                  <button onClick={()=>{fetchStatus();setStatusCountdown(30)}} className="text-zinc-600 hover:text-zinc-400 text-[10px] border border-zinc-800 rounded px-2 py-0.5 transition-colors">Refresh</button>
+                  <span className="text-white/20 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">↻ {statusCountdown}s</span>
+                  <button onClick={()=>{fetchStatus();setStatusCountdown(30)}} className="text-white/30 hover:text-white/40 text-[10px] border border-white/10 rounded px-2 py-0.5 transition-colors">Refresh</button>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {liveInfra.map(svc=>(
-                  <div key={svc.name} className="rounded-xl p-3 md:p-4 border border-zinc-800/60 flex items-start gap-3 card-glow" style={{background:'#0f0f0f'}}>
+                  <div key={svc.name} className="rounded-xl p-3 md:p-4 border border-white/10 flex items-start gap-3 card-glow" style={{background:'#0f0f0f'}}>
                     <Dot status={svc.status} />
                     <div>
                       <p className="text-white text-sm font-medium">{svc.name}</p>
-                      <p className="text-zinc-600 text-xs mt-0.5">{svc.note}</p>
+                      <p className="text-white/30 text-xs mt-0.5">{svc.note}</p>
                     </div>
                   </div>
                 ))}
               </div>
 
               <SH icon="💬">Heartbeat Schedule</SH>
-              <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+              <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
                 {(heartbeats.length > 0 ? heartbeats : [
                   {agentId:'main', enabled:true, every:'4h'},
                   {agentId:'scout', enabled:false, every:'disabled'},
@@ -6398,10 +6195,10 @@ export default function Home() {
                   {agentId:'kemuni-sme', enabled:false, every:'disabled'},
                   {agentId:'vespera-sme', enabled:false, every:'disabled'},
                 ]).map((hb:any, i:number, arr:any[])=>(
-                  <div key={hb.agentId} className={'flex items-center gap-3 md:gap-4 px-4 md:px-5 py-3 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
+                  <div key={hb.agentId} className={'flex items-center gap-3 md:gap-4 px-4 md:px-5 py-3 '+(i<arr.length-1?'border-b border-white/10':'')}>
                     <Dot status={hb.enabled ? 'active' : 'planned'} />
                     <span className="font-mono text-xs text-white shrink-0">{hb.agentId}</span>
-                    <span className="text-zinc-500 text-xs flex-1">{hb.enabled ? `every ${hb.every}` : 'disabled'}</span>
+                    <span className="text-white/50 text-xs flex-1">{hb.enabled ? `every ${hb.every}` : 'disabled'}</span>
                     <span className="text-[10px] px-2 py-0.5 rounded-full border" style={hb.enabled
                       ? {color:'#10b981',borderColor:'#10b98140',background:'#10b98115'}
                       : {color:'#52525b',borderColor:'#27272a',background:'#18181b'}}>
@@ -6412,21 +6209,21 @@ export default function Home() {
               </div>
 
               <SH icon="📊">Token Usage</SH>
-              <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+              <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
                 <div className="flex items-end justify-between mb-4">
                   <div className="flex items-baseline gap-4 md:gap-6 flex-wrap">
                     <div>
-                      <p className="text-zinc-500 text-[10px] mb-1 uppercase tracking-wider">Today</p>
+                      <p className="text-white/50 text-[10px] mb-1 uppercase tracking-wider">Today</p>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-2xl font-bold text-white">${todayCost.toFixed(2)}</span>
-                        <span className="text-zinc-600 text-xs">{(todayTokens/1000).toFixed(0)}k tok</span>
+                        <span className="text-white/30 text-xs">{(todayTokens/1000).toFixed(0)}k tok</span>
                       </div>
                     </div>
                     <div>
-                      <p className="text-zinc-500 text-[10px] mb-1 uppercase tracking-wider">All-time</p>
+                      <p className="text-white/50 text-[10px] mb-1 uppercase tracking-wider">All-time</p>
                       <div className="flex items-baseline gap-1.5">
                         <span className="text-2xl font-bold text-white">${usageCost.toFixed(2)}</span>
-                        <span className="text-zinc-600 text-xs">{(usageTokens/1000).toFixed(0)}k tok</span>
+                        <span className="text-white/30 text-xs">{(usageTokens/1000).toFixed(0)}k tok</span>
                       </div>
                     </div>
                   </div>
@@ -6438,24 +6235,24 @@ export default function Home() {
                     return (
                       <div key={model}>
                         <div className="flex justify-between mb-1">
-                          <span className="text-zinc-400 text-xs font-mono">{model.split('/').pop()}</span>
-                          <span className="text-zinc-500 text-xs">${(cost as number).toFixed(3)} ({pct}%)</span>
+                          <span className="text-white/40 text-xs font-mono">{model.split('/').pop()}</span>
+                          <span className="text-white/50 text-xs">${(cost as number).toFixed(3)} ({pct}%)</span>
                         </div>
                         <Bar v={pct} color={model.includes('haiku')?'#a855f7':'#3b82f6'} bg="#1a1a2a"/>
                       </div>
                     )
                   })}
-                  {Object.keys(usageByModel).length === 0 && <p className="text-zinc-700 text-xs">No session data yet</p>}
+                  {Object.keys(usageByModel).length === 0 && <p className="text-white/20 text-xs">No session data yet</p>}
                 </div>
               </div>
 
               <SH icon="🖥">Hardware</SH>
-              <div className="rounded-2xl border border-zinc-800/60 p-5" style={{background:'#0f0f0f'}}>
+              <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
                 <div className="flex items-start gap-4">
                   <span className="text-3xl">🖥️</span>
                   <div>
                     <p className="text-white font-medium text-sm">Mac mini · Apple Silicon · 8GB · arm64</p>
-                    <p className="text-zinc-500 text-xs mt-0.5">Dedicated OpenClaw machine · macOS 26.3.1 · Node 22.22.1</p>
+                    <p className="text-white/50 text-xs mt-0.5">Dedicated OpenClaw machine · macOS 26.3.1 · Node 22.22.1</p>
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {['OpenClaw :18789','n8n :5678','Ollama :11434','Mission Control :3000','Cloudflare Tunnel'].map(l=><Chip key={l} label={l}/>)}
                     </div>
@@ -6464,19 +6261,19 @@ export default function Home() {
               </div>
 
               <SH icon="💳">OpenRouter Balance</SH>
-              <div className="rounded-2xl border border-zinc-800/60 p-5" style={{background:'#0f0f0f'}}>
+              <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
                 <div className="flex items-end justify-between mb-3">
                   <div>
-                    <p className="text-zinc-500 text-xs mb-1">Monthly credit</p>
+                    <p className="text-white/50 text-xs mb-1">Monthly credit</p>
                     <div className="flex items-baseline gap-2">
                       <span className="text-3xl font-bold text-white">${orRemaining.toFixed(2)}</span>
-                      <span className="text-zinc-600 text-sm">/ ${orLimit.toFixed(2)}</span>
+                      <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
                     </div>
                   </div>
-                  <p className="text-zinc-600 text-xs">${orUsed.toFixed(3)} used · resets monthly</p>
+                  <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used · resets monthly</p>
                 </div>
                 <Bar v={orPct} color="#3b82f6" bg="#1a1a2a" />
-                <p className="text-zinc-700 text-xs mt-2">Daily billing report via n8n → Telegram</p>
+                <p className="text-white/20 text-xs mt-2">Daily billing report via n8n → Telegram</p>
               </div>
             </div>
             )
