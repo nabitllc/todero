@@ -201,7 +201,7 @@ function AttentionAndShipped({agents}:{agents:any[]}) {
     const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
     const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
     Promise.all([
-      fetch(`${SUPA}/rest/v1/issues?priority=eq.critical&status=eq.open&limit=5`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
+      fetch(`${SUPA}/rest/v1/issues?priority=eq.critical&status=in.(open,backlog)&select=task_key,title,project,assignee&limit=5`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
       fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gte.${today}T00:00:00&limit=10&order=updated_at.desc`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
     ]).then(([attn, ship])=>{
       const idleAgents = (agents||[]).filter((a:any)=>a.ago>1440&&['ops','deployer','main'].includes(a.id))
@@ -215,13 +215,14 @@ function AttentionAndShipped({agents}:{agents:any[]}) {
         <SH icon="🚨">Needs Attention</SH>
         <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
           {data.attention.length===0
-            ? <div className="px-4 py-4 flex items-center gap-2 text-emerald-400 text-sm"><span>✅</span><span>Nothing needs attention right now</span></div>
+            ? <div className="px-4 py-4 flex items-center gap-2 text-emerald-400 text-sm"><span>✅</span><span>All clear</span></div>
             : data.attention.slice(0,5).map((t:any,i:number,arr:any[])=>(
               <div key={i} className={'flex items-center gap-3 px-4 py-3 border-l-2 border-red-800 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
                 <span className="text-xs">🔴</span>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 flex items-center gap-2">
+                  {t.task_key && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">{t.task_key}</span>}
                   <p className="text-white text-xs truncate">{t.title}</p>
-                  <p className="text-zinc-500 text-[10px]">{t.project}</p>
+                  {t.project && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0" style={{background:'#ffffff10',color:'#a1a1aa',border:'1px solid #27272a'}}>{t.project}</span>}
                 </div>
               </div>
             ))
@@ -2715,6 +2716,41 @@ function ChatTab() {
 }
 
 // ── Task types ────────────────────────────────────────────────────────────
+function MultiSelect({ label, options, selected, onToggle, displayFn }: {
+  label: string; options: string[]; selected: string[]; onToggle: (v: string) => void; displayFn?: (v: string) => string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+  const display = displayFn ?? ((v: string) => v)
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(!open)}
+        className="bg-transparent border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-400 outline-none focus:border-zinc-600 flex items-center gap-1">
+        {selected.length > 0 ? `${label} (${selected.length})` : `All ${label}s`}
+        <span className="text-zinc-600 text-[9px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 min-w-[140px] rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+          {options.map(opt => (
+            <button key={opt} onClick={() => onToggle(opt)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-zinc-800 transition-colors">
+              <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selected.includes(opt) ? 'bg-blue-500 border-blue-500 text-white' : 'border-zinc-600'}`}>
+                {selected.includes(opt) ? '✓' : ''}
+              </span>
+              <span className="text-zinc-300">{display(opt)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Task {
   id: string; title: string; description?: string; status: string;
   assignee?: string; project?: string; priority?: string; type?: string;
@@ -2722,7 +2758,7 @@ interface Task {
   resolution_type?: string; acceptance_criteria?: string; sprint?: string;
   steps_to_reproduce?: string; expected_behavior?: string;
   actual_behavior?: string; environment?: string;
-  pr_url?: string; blocked_by?: string;
+  pr_url?: string; blocked_by?: string; parent_id?: string;
 }
 
 const RESOLUTION_OPTIONS: { value: string; label: string; emoji: string }[] = [
@@ -2775,15 +2811,15 @@ const TYPE_COLORS: Record<string,string> = {
   feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b',
 }
 
-function KanbanBoard() {
+function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }: { featureFilter?: string; featureFilterName?: string; onClearFeatureFilter?: () => void }) {
   const [tasks, setTasks]         = useState<Task[]>([])
   const [loading, setLoading]     = useState(true)
   const [dragId, setDragId]       = useState<string|null>(null)
   const [editTask, setEditTask]   = useState<Task|null>(null)
   const [newTask, setNewTask]     = useState<Partial<Task>|null>(null)
-  const [filterProject, setFilterProject]   = useState('')
-  const [filterAssignee, setFilterAssignee] = useState('')
-  const [filterPriority, setFilterPriority] = useState('')
+  const [filterTypes, setFilterTypes]       = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.types ?? [] } catch { return [] } })
+  const [filterPriorities, setFilterPriorities] = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.priorities ?? [] } catch { return [] } })
+  const [filterAssignees, setFilterAssignees]   = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.assignees ?? [] } catch { return [] } })
   const [filterSprint, setFilterSprint]     = useState('')
   const [quickAddCol, setQuickAddCol]       = useState<string|null>(null)
   const [quickAddTitle, setQuickAddTitle]   = useState('')
@@ -2796,6 +2832,29 @@ function KanbanBoard() {
   const [archiveSearch, setArchiveSearch] = useState('')
   const [archiveProject, setArchiveProject] = useState('')
   const [closedConfirm, setClosedConfirm] = useState<string|null>(null)
+  const [boardLimit, setBoardLimit] = useState(100)
+
+  // Persist multiselect filters to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('board-filters', JSON.stringify({ types: filterTypes, priorities: filterPriorities, assignees: filterAssignees }))
+    }
+  }, [filterTypes, filterPriorities, filterAssignees])
+
+  const toggleFilter = (arr: string[], setArr: (v: string[]) => void, val: string) => {
+    setBoardLimit(100)
+    setArr(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
+  }
+  const removeFilter = (arr: string[], setArr: (v: string[]) => void, val: string) => {
+    setBoardLimit(100)
+    setArr(arr.filter(v => v !== val))
+  }
+  const clearAllFilters = () => {
+    setBoardLimit(100)
+    setFilterTypes([]); setFilterPriorities([]); setFilterAssignees([]); setFilterSprint('')
+    if (onClearFeatureFilter) onClearFeatureFilter()
+  }
+  const hasAnyFilter = filterTypes.length > 0 || filterPriorities.length > 0 || filterAssignees.length > 0 || filterSprint !== '' || !!featureFilter
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -2864,14 +2923,17 @@ function KanbanBoard() {
   }, [detailTask])
 
   const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
-  const filtered = tasks.filter(t => {
+  const allFiltered = tasks.filter(t => {
     if (t.status === 'closed') return false
-    if (filterProject && t.project !== filterProject) return false
-    if (filterAssignee && t.assignee !== filterAssignee) return false
-    if (filterPriority && t.priority !== filterPriority) return false
+    if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
+    if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
+    if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee ?? '')) return false
     if (filterSprint && t.sprint !== filterSprint) return false
+    if (featureFilter && (t as any).parent_id !== featureFilter) return false
     return true
   })
+  const filtered = allFiltered.slice(0, boardLimit)
+  const hasMoreBoard = allFiltered.length > boardLimit
 
   const closedTasks = tasks.filter(t => t.status === 'closed')
   const filteredClosed = closedTasks
@@ -2881,6 +2943,7 @@ function KanbanBoard() {
 
   const projects = Array.from(new Set(tasks.map(t=>t.project).filter(Boolean)))
   const assignees = Array.from(new Set(tasks.map(t=>t.assignee).filter(Boolean)))
+  const types = Array.from(new Set(tasks.map(t=>t.type).filter(Boolean)))
 
   const isOverdue = (d?: string) => {
     if (!d) return false
@@ -2893,32 +2956,55 @@ function KanbanBoard() {
 
   return (
     <div className="h-full flex flex-col gap-4">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <select className={selectCls} value={filterProject} onChange={e=>setFilterProject(e.target.value)}>
-          <option value="">All Projects</option>
-          {projects.map(p=><option key={p} value={p!}>{p}</option>)}
-        </select>
-        <select className={selectCls} value={filterAssignee} onChange={e=>setFilterAssignee(e.target.value)}>
-          <option value="">All Assignees</option>
-          {assignees.map(a=><option key={a} value={a!}>{ASSIGNEE_MAP[a!]?.name??a}</option>)}
-        </select>
-        <select className={selectCls} value={filterPriority} onChange={e=>setFilterPriority(e.target.value)}>
-          <option value="">All Priorities</option>
-          {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
-        </select>
-        <select className={selectCls} value={filterSprint} onChange={e=>setFilterSprint(e.target.value)}>
-          <option value="">All Sprints</option>
-          {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
-        </select>
-        <button onClick={() => setShowArchive(!showArchive)}
-          className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${showArchive ? 'bg-zinc-700 text-white' : 'bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}>
-          📦 Archive{closedTasks.length > 0 && <span className="ml-1 text-zinc-500">({closedTasks.length})</span>}
-        </button>
-        {!showArchive && <button onClick={()=>setNewTask({status:'backlog',priority:'medium'})}
-          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
-          + New Task
-        </button>}
+      {/* Toolbar — multiselect filters */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <MultiSelect label="Type" options={types as string[]} selected={filterTypes} onToggle={v => toggleFilter(filterTypes, setFilterTypes, v)} />
+          <MultiSelect label="Priority" options={['critical','high','medium','low']} selected={filterPriorities} onToggle={v => toggleFilter(filterPriorities, setFilterPriorities, v)} />
+          <MultiSelect label="Assignee" options={assignees as string[]} selected={filterAssignees} onToggle={v => toggleFilter(filterAssignees, setFilterAssignees, v)} displayFn={v => ASSIGNEE_MAP[v]?.name ?? v} />
+          <select className={selectCls} value={filterSprint} onChange={e=>{setFilterSprint(e.target.value); setBoardLimit(100)}}>
+            <option value="">All Sprints</option>
+            {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
+          </select>
+          {hasAnyFilter && <button onClick={clearAllFilters} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors">Clear all</button>}
+          <button onClick={() => setShowArchive(!showArchive)}
+            className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${showArchive ? 'bg-zinc-700 text-white' : 'bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}>
+            📦 Archive{closedTasks.length > 0 && <span className="ml-1 text-zinc-500">({closedTasks.length})</span>}
+          </button>
+          {!showArchive && <button onClick={()=>setNewTask({status:'backlog',priority:'medium'})}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
+            + New Task
+          </button>}
+        </div>
+        {/* Active filter chips */}
+        {hasAnyFilter && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {featureFilter && featureFilterName && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                Feature: {featureFilterName}
+                <button onClick={onClearFeatureFilter} className="hover:text-white ml-0.5">×</button>
+              </span>
+            )}
+            {filterTypes.map(v => (
+              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                {v}
+                <button onClick={() => removeFilter(filterTypes, setFilterTypes, v)} className="hover:text-white ml-0.5">×</button>
+              </span>
+            ))}
+            {filterPriorities.map(v => (
+              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                {v}
+                <button onClick={() => removeFilter(filterPriorities, setFilterPriorities, v)} className="hover:text-white ml-0.5">×</button>
+              </span>
+            ))}
+            {filterAssignees.map(v => (
+              <span key={v} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
+                {ASSIGNEE_MAP[v]?.name ?? v}
+                <button onClick={() => removeFilter(filterAssignees, setFilterAssignees, v)} className="hover:text-white ml-0.5">×</button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Archive View */}
@@ -3062,6 +3148,15 @@ function KanbanBoard() {
           )
         })}
       </div>}
+
+      {/* Load more */}
+      {!showArchive && hasMoreBoard && (
+        <button onClick={() => setBoardLimit(prev => prev + 100)}
+          className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2.5 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
+          style={{background:'#0a0a0a'}}>
+          Load 100 more ({allFiltered.length - boardLimit} remaining)
+        </button>
+      )}
 
       {/* New Task Modal */}
       {newTask && (
@@ -3425,7 +3520,7 @@ export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
     if(typeof window!=='undefined'){
       const saved = localStorage.getItem('mc-tab') as Tab|null
-      if(saved && ['overview','activity','team','calendar','automations','office','memory','board','chat','infra'].includes(saved)) return saved
+      if(saved && ['overview','activity','team','calendar','automations','office','memory','board','features','chat','infra'].includes(saved)) return saved
     }
     return 'overview'
   })
@@ -3450,6 +3545,15 @@ export default function Home() {
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
   const [runningWorkflow, setRunningWorkflow] = useState<string|null>(null)
+  const [boardFeatureFilter, setBoardFeatureFilter] = useState<string|undefined>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('feature') ?? undefined
+    }
+    return undefined
+  })
+  const [boardFeatureFilterName, setBoardFeatureFilterName] = useState<string|undefined>(undefined)
+  const [activityLimit, setActivityLimit] = useState(100)
 
   // Cmd+K search shortcut
   useEffect(() => {
@@ -3832,8 +3936,9 @@ export default function Home() {
             <div className="space-y-5">
               <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${liveStatus.recentActivity.length} entries · live` : undefined}>Activity Feed</SH>
               {(()=>{
-                const items = liveStatus?.recentActivity ?? []
-                if(items.length === 0) return <EmptyState icon="📡" message="No activity runs recorded yet" action="Refresh" />
+                const allItems = liveStatus?.recentActivity ?? []
+                if(allItems.length === 0) return <EmptyState icon="📡" message="No activity runs recorded yet" action="Refresh" />
+                const items = allItems.slice(0, activityLimit)
                 // Group by date
                 const grouped: Record<string, any[]> = {}
                 for(const entry of items){
@@ -3874,6 +3979,15 @@ export default function Home() {
                   </div>
                 ))
               })()}
+
+              {/* Load more activity */}
+              {(liveStatus?.recentActivity?.length ?? 0) > activityLimit && (
+                <button onClick={() => setActivityLimit(prev => prev + 100)}
+                  className="w-full text-center text-xs text-zinc-500 hover:text-zinc-300 py-2.5 rounded-lg border border-zinc-800/40 hover:border-zinc-600 transition-all"
+                  style={{background:'#0a0a0a'}}>
+                  Load 100 more ({(liveStatus?.recentActivity?.length ?? 0) - activityLimit} remaining)
+                </button>
+              )}
 
               {/* Needs Attention + Shipped Today */}
               <AttentionAndShipped agents={displayAgents} />
@@ -4701,12 +4815,12 @@ export default function Home() {
 
           {/* ── BOARD ── */}
           {tab==='board' && (
-            <KanbanBoard />
+            <KanbanBoard featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} />
           )}
 
           {/* ── FEATURES ── */}
           {tab==='features' && (
-            <FeaturesTab />
+            <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); setTab('board'); if (typeof window !== 'undefined') localStorage.setItem('mc-tab', 'board') }} />
           )}
 
           {/* ── AUTOMATIONS (n8n embed) ── */}

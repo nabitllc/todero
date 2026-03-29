@@ -30,20 +30,24 @@ interface Issue {
 interface Feature {
   id: string; title: string; description?: string; project?: string;
   priority?: string; status: string; children: Issue[];
+  acceptance_criteria?: string;
 }
 
 interface Props {
   feature: Feature
   expanded: boolean
   onToggle: () => void
+  onViewIssues?: () => void
 }
 
-export default function FeatureCard({ feature, expanded, onToggle }: Props) {
+export default function FeatureCard({ feature, expanded, onToggle, onViewIssues }: Props) {
   const done = feature.children.filter(c => c.status === 'done' || c.status === 'closed').length
   const total = feature.children.length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
   const sc = STATUS_COLORS[feature.status] ?? STATUS_COLORS.open
   const projColor = PROJECT_COLORS[feature.project ?? ''] ?? '#6b7280'
+  const acPending = 'Acceptance criteria pending — update before sprint.'
+  const isReady = !!(feature.acceptance_criteria?.trim()) && feature.acceptance_criteria.trim() !== acPending
 
   return (
     <div className="rounded-xl border border-zinc-800/60 overflow-hidden" style={{ background: '#0f0f0f' }}>
@@ -62,6 +66,13 @@ export default function FeatureCard({ feature, expanded, onToggle }: Props) {
             style={{ background: sc.bg, color: sc.text }}>
             {feature.status.replace('_', ' ')}
           </span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
+            title={isReady ? 'Acceptance criteria defined' : 'Missing acceptance criteria'}
+            style={isReady
+              ? { background: '#10b98118', color: '#10b981', border: '1px solid #10b98130' }
+              : { background: '#f59e0b18', color: '#f59e0b', border: '1px solid #f59e0b30' }}>
+            {isReady ? 'Ready' : 'Not Ready'}
+          </span>
         </div>
         {feature.description && (
           <p className="text-zinc-500 text-xs mt-1.5 line-clamp-2">{feature.description}</p>
@@ -71,6 +82,12 @@ export default function FeatureCard({ feature, expanded, onToggle }: Props) {
             <div className="h-1.5 rounded-full transition-all" style={{ width: pct + '%', background: '#10b981' }} />
           </div>
           <span className="text-zinc-500 text-[10px] shrink-0">{done}/{total}</span>
+          {onViewIssues && (
+            <button onClick={e => { e.stopPropagation(); onViewIssues() }}
+              className="text-[10px] text-blue-400 hover:text-blue-300 px-1.5 py-0.5 rounded hover:bg-zinc-800 transition-colors shrink-0">
+              View Issues →
+            </button>
+          )}
           <span className="text-zinc-600 text-[10px] shrink-0">{expanded ? '▲' : '▼'}</span>
         </div>
       </button>
