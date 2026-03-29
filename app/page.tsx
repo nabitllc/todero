@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AgentOffice from '@/components/AgentOffice'
-import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map } from 'lucide-react'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search } from 'lucide-react'
 import FeaturesTab from '@/components/tabs/FeaturesTab'
 
 const KEMUNI_START     = new Date('2026-03-21')
@@ -2771,6 +2771,10 @@ const PROJECT_COLORS: Record<string,string> = {
   Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280', OpenClaw:'#10b981',
 }
 
+const TYPE_COLORS: Record<string,string> = {
+  feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b',
+}
+
 function KanbanBoard() {
   const [tasks, setTasks]         = useState<Task[]>([])
   const [loading, setLoading]     = useState(true)
@@ -3008,7 +3012,7 @@ function KanbanBoard() {
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
-                      {task.type && <Chip label={task.type} />}
+                      {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18',border:`1px solid ${(TYPE_COLORS[task.type]||'#71717a')}30`}}>{task.type}</span>}
                       {task.status === 'done' && task.resolution_type && (
                         <Chip label={RESOLUTION_OPTIONS.find(r=>r.value===task.resolution_type)?.label ?? task.resolution_type}
                           color={RESOLUTION_BADGE_COLORS[task.resolution_type] ?? '#71717a'} />
@@ -3350,6 +3354,72 @@ function KanbanBoard() {
   )
 }
 
+// ── Search Overlay ──────────────────────────────────────────────────────────
+function SearchOverlay({ open, onClose, onNavigate }: { open: boolean; onClose: () => void; onNavigate: (tab: string) => void }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  useEffect(() => {
+    if (open) { setQuery(''); setResults([]); setTimeout(() => inputRef.current?.focus(), 50) }
+  }, [open])
+
+  const doSearch = useCallback((q: string) => {
+    if (!q.trim()) { setResults([]); return }
+    setLoading(true)
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    fetch(`${SUPA}/rest/v1/issues?title=ilike.*${encodeURIComponent(q)}*&limit=20&order=updated_at.desc`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    }).then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setResults(data)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  const handleChange = (val: string) => {
+    setQuery(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSearch(val), 300)
+  }
+
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]" style={{ background: 'rgba(0,0,0,0.80)' }} onClick={onClose}>
+      <div className="w-full max-w-xl mx-4" onClick={e => e.stopPropagation()}>
+        <div className="rounded-2xl border border-zinc-700 overflow-hidden" style={{ background: '#111' }}>
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800">
+            <Search size={16} className="text-zinc-500 shrink-0" />
+            <input ref={inputRef} value={query} onChange={e => handleChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+              placeholder="Search issues..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder-zinc-600" />
+            <kbd className="text-[10px] text-zinc-600 border border-zinc-700 rounded px-1.5 py-0.5">ESC</kbd>
+          </div>
+          {loading && <div className="px-4 py-3 text-zinc-600 text-xs">Searching...</div>}
+          {!loading && results.length > 0 && (
+            <div className="max-h-[50vh] overflow-y-auto">
+              {results.map((r: any) => (
+                <button key={r.id} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800/60 transition-colors text-left border-b border-zinc-800/30 last:border-0"
+                  onClick={() => { onClose(); onNavigate('board') }}>
+                  {r.task_key && <span className="text-[9px] font-mono text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded shrink-0">{r.task_key}</span>}
+                  <span className="text-sm text-white truncate flex-1">{r.title}</span>
+                  {r.project && <Chip label={r.project} color={PROJECT_COLORS[r.project] || undefined} />}
+                  {r.type && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0" style={{ color: TYPE_COLORS[r.type] || '#71717a', background: (TYPE_COLORS[r.type] || '#71717a') + '18' }}>{r.type}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          {!loading && query.trim() && results.length === 0 && (
+            <div className="px-4 py-6 text-center text-zinc-600 text-xs">No results found</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
@@ -3367,6 +3437,7 @@ export default function Home() {
   const [tick, setTick]     = useState(0)
   const [hoverDesk, setHoverDesk] = useState<string|null>(null)
   const [showMobileMore, setShowMobileMore] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [liveStatus, setLiveStatus] = useState<any>(null)
   const [statusAt, setStatusAt] = useState<number>(0)
   const [agoSec, setAgoSec] = useState<number>(0)
@@ -3379,6 +3450,15 @@ export default function Home() {
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
   const [runningWorkflow, setRunningWorkflow] = useState<string|null>(null)
+
+  // Cmd+K search shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(v => !v) }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // Listen for unread event from ChatTab
   useEffect(() => {
@@ -3454,7 +3534,7 @@ export default function Home() {
 
   const sprintProjects = projects ?? [
     {id:'kemuni',name:'Kemuni Launch',desc:'Community & Property SaaS',emoji:'🚀',startDate:'2026-03-21',deadline:'2026-04-20',totalDays:30,color:'#ffffff',borderColor:'border-zinc-800/60',bg:'#0f0f0f',bgDark:'#0f0f0f'},
-    {id:'vespera',name:'Vespera Sprint',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-31',totalDays:9,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
+    {id:'vespera',name:'Vespera',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-31',totalDays:9,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
   ]
   const todayIdx=new Date().getDay()
   const nextRuns=getNextRuns()
@@ -3566,15 +3646,20 @@ export default function Home() {
       )}
 
       {/* MAIN */}
-      <div className="flex-1 flex flex-col min-h-screen overflow-auto">
+      <div className="flex-1 flex flex-col h-screen overflow-auto">
         <header className="border-b border-zinc-800/40 px-3 md:px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20" style={{background:'#090909'}}>
           <div className="flex items-center gap-2">
             <span className="text-zinc-400 text-sm font-medium capitalize">{tab}</span>
             <span className="text-zinc-700 text-xs">· Nabit LLC</span>
           </div>
-          <span className="text-zinc-600 text-xs">
-            {new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
-          </span>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setSearchOpen(true)} className="text-zinc-600 hover:text-zinc-300 transition-colors" title="Search (⌘K)">
+              <Search size={15} />
+            </button>
+            <span className="text-zinc-600 text-xs">
+              {new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
+            </span>
+          </div>
         </header>
 
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
@@ -3812,9 +3897,10 @@ export default function Home() {
                       <div className="flex items-center gap-2">
                         <p className="text-white font-semibold">{displayAgents[0].name}</p>
                         <Dot status={displayAgents[0].status} />
+                        {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{displayAgents[0].modelShort}</span>}
                       </div>
                       <p className="text-zinc-500 text-xs">{displayAgents[0].role}</p>
-                      <p className="text-zinc-700 text-[10px] font-mono mt-0.5">{displayAgents[0].model}</p>
+                      <p className="text-amber-600/60 text-[10px] font-mono mt-0.5">Never audited</p>
                     </div>
                   </div>
                   <p className="text-zinc-500 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
@@ -3848,6 +3934,7 @@ export default function Home() {
                         <div className="flex items-center gap-1.5">
                           <p className="text-white text-sm font-semibold truncate">{a.name}</p>
                           <Dot status={a.status} />
+                          {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{a.modelShort}</span>}
                           {a.ago > 1440 && ['ops','deployer','main'].includes(a.id) && (
                             <span title="Idle >24h" className="text-yellow-500 text-xs">⚠️</span>
                           )}
@@ -3856,6 +3943,7 @@ export default function Home() {
                         <p className="text-zinc-700 text-[10px] font-mono truncate">
                           {a.ago > 0 ? (a.ago < 60 ? `Active ${a.ago}m ago` : a.ago < 1440 ? `Active ${Math.floor(a.ago/60)}h ago` : `Idle ${Math.floor(a.ago/1440)}d`) : a.status === 'active' ? 'Active now' : 'Idle'}
                         </p>
+                        <p className="text-amber-600/60 text-[10px] font-mono truncate">Never audited</p>
                       </div>
                     </div>
                     {a.currentTask && <p className="text-zinc-400 text-[10px] mb-2 truncate">↳ {a.currentTask.slice(0,50)}</p>}
@@ -3882,9 +3970,9 @@ export default function Home() {
                           <div className="flex items-center gap-1.5">
                             <p className="text-zinc-400 text-sm font-semibold truncate">{a.name}</p>
                             <span className="text-[8px] px-1.5 py-0.5 rounded-full border border-zinc-700 text-zinc-500 bg-zinc-900 font-semibold uppercase">Planned</span>
+                            {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{a.modelShort}</span>}
                           </div>
                           <p className="text-zinc-600 text-xs truncate">{a.role}</p>
-                          <p className="text-zinc-700 text-[10px] font-mono truncate">{a.modelShort}</p>
                         </div>
                       </div>
                       <p className="text-zinc-600 text-xs leading-relaxed mb-3">{a.desc}</p>
@@ -3902,59 +3990,6 @@ export default function Home() {
                 </div>
               </>)}
 
-              {/* Activity Feed (moved from Overview) */}
-              <div>
-                <SH icon="📋" sub={liveStatus?.recentActivity?.length ? `${liveStatus.recentActivity.length} entries` : undefined}>Live Activity Feed</SH>
-                <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-                  {(liveStatus?.recentActivity ?? []).slice(0,10).map((entry:any, i:number, arr:any[])=>{
-                    const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
-                    const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':'#3b82f6'
-                    return (
-                      <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
-                        <span className="text-base shrink-0 mt-0.5">{entry.emoji}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-white text-xs font-medium">{entry.agentName}</span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
-                              style={{background:actionColor+'20',color:actionColor}}>
-                              {entry.channel}
-                            </span>
-                            <span className="ml-auto text-zinc-600 text-[10px] shrink-0">{agoStr}</span>
-                          </div>
-                          <p className="text-zinc-500 text-[10px] mt-0.5 truncate">{entry.desc}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {(!liveStatus?.recentActivity || liveStatus.recentActivity.length === 0) && (
-                    <p className="text-zinc-700 text-xs px-4 py-4">No activity yet — loading...</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Model Routing */}
-              <div>
-                <SH icon="🧠">Model Routing</SH>
-                <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
-                  {[
-                    {role:'Orchestration · KAOS (main)', model:'claude-sonnet-4-6', cost:'Max sub'},
-                    {role:'Coding · Builder 🔨', model:'claude-sonnet-4-6', cost:'Max sub'},
-                    {role:'Research · Scout 🔍', model:'ollama/gemma3:4b', cost:'Free — local'},
-                    {role:'Content · Quill ✍️  Community · Echo 📢', model:'ollama/gemma3:4b', cost:'Free — local'},
-                    {role:'QA · Ralph 🧪', model:'claude-sonnet-4-6', cost:'Max sub'},
-                    {role:'Heartbeat + lightweight crons', model:'claude-haiku-4-5', cost:'Max sub'},
-                    {role:'n8n automations', model:'n8n only', cost:'~$0/run'},
-                  ].map((r,i,arr)=>(
-                    <div key={r.role} className={'flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 sm:py-3.5 '+(i<arr.length-1?'border-b border-zinc-800/40':'')}>
-                      <span className="text-zinc-400 text-xs flex-1">{r.role}</span>
-                      <div className="flex items-center gap-2 sm:gap-4">
-                        <span className="font-mono text-xs text-zinc-400">{r.model}</span>
-                        <span className="text-zinc-600 text-xs text-right">{r.cost}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
 
               {/* Agent Detail Modal */}
               {agentModal && (
@@ -4932,6 +4967,7 @@ export default function Home() {
 
         </main>
       </div>
+      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={(t) => { setTab(t as Tab); if (typeof window !== 'undefined') localStorage.setItem('mc-tab', t) }} />
     </div>
   )
 }
