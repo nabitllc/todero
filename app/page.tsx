@@ -3000,7 +3000,10 @@ function KanbanBoard() {
                         </button>
                       )}
                     </div>
-                    {task.project && <p className="text-xs text-zinc-500 mb-2">{task.project}</p>}
+                    <div className="flex items-center justify-between mb-1">
+                      {task.project && <p className="text-xs text-zinc-500">{task.project}</p>}
+                      {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-600 bg-zinc-800/60 px-1.5 py-0.5 rounded">{(task as any).task_key}</span>}
+                    </div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
                       {task.type && <Chip label={task.type} />}
@@ -3207,6 +3210,7 @@ function KanbanBoard() {
                 )}
 
                 {/* Title */}
+                {(t as any).task_key && <span className="text-[10px] font-mono text-zinc-600 bg-zinc-800 px-2 py-0.5 rounded-full">{(t as any).task_key}</span>}
                 <h2 className="text-white text-lg font-semibold leading-snug">{t.title}</h2>
 
                 {/* Status + Priority badges */}
