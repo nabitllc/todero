@@ -14,15 +14,17 @@ export async function GET() {
     { id:'infrastructure', name:'Infrastructure', desc:'Agent System & Ops', emoji:'⚙️', startDate:'2026-03-21', deadline:'2026-04-30', totalDays:40, color:'#6b7280', borderColor:'border-zinc-800/60', bg:'#0f0f0f', bgDark:'#0f0f0f', supabaseProject:'Infrastructure' },
   ]
 
-  // Fetch task counts per project + active features
+  // Fetch task counts per project + active features + blockers + last PR
   try {
     const res = await fetch(
-      `${SUPA}/rest/v1/issues?select=id,title,project,status,type,parent_id&limit=2000`,
+      `${SUPA}/rest/v1/issues?select=id,title,project,status,type,parent_id,blocked_by,pr_url,updated_at&limit=2000`,
       { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }, cache: 'no-store' }
     )
     if (res.ok) {
       const tasks: any[] = await res.json()
       const counts: Record<string, { total: number; done: number; inProgress: number; open: number }> = {}
+      const blockerCounts: Record<string, number> = {}
+      const lastPRDates: Record<string, string | null> = {}
       for (const t of tasks) {
         const p = t.project || 'Unknown'
         if (!counts[p]) counts[p] = { total: 0, done: 0, inProgress: 0, open: 0 }
@@ -30,6 +32,16 @@ export async function GET() {
         if (t.status === 'done' || t.status === 'closed') counts[p].done++
         else if (t.status === 'in_progress' || t.status === 'in_review') counts[p].inProgress++
         else if (t.status === 'open' || t.status === 'backlog') counts[p].open++
+        // Count open blockers
+        if (t.blocked_by && t.status !== 'done' && t.status !== 'closed') {
+          blockerCounts[p] = (blockerCounts[p] || 0) + 1
+        }
+        // Track last PR merged date per project
+        if (t.pr_url && t.status === 'done' && t.updated_at) {
+          if (!lastPRDates[p] || t.updated_at > lastPRDates[p]!) {
+            lastPRDates[p] = t.updated_at
+          }
+        }
       }
 
       // Compute active features per project
@@ -57,6 +69,8 @@ export async function GET() {
           ? Math.round((counts[p.supabaseProject].done / Math.max(counts[p.supabaseProject].total, 1)) * 100)
           : 0,
         activeFeatures: activeFeaturesByProject[p.supabaseProject] ?? [],
+        blockerCount: blockerCounts[p.supabaseProject] ?? 0,
+        lastPRDate: lastPRDates[p.supabaseProject] ?? null,
       }))
       return NextResponse.json(enriched, { headers: { 'Cache-Control': 'no-store' } })
     }

@@ -4142,6 +4142,67 @@ export default function Home() {
                 )
               })()}
 
+              {/* ── Per-Project Progress Reports (INF-65) ── */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-sm">📋</span>
+                  <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Project Progress</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                  {(['Vespera','Kemuni','Infrastructure','Mission Control'] as const).map(projName => {
+                    const proj = sprintProjects.find((p: any) => p.supabaseProject === projName || p.name?.includes(projName))
+                    if (!proj) return null
+                    const tc = (proj as any).taskCounts ?? { total: 0, done: 0, inProgress: 0, open: 0 }
+                    const pct = tc.total > 0 ? Math.round((tc.done / tc.total) * 100) : 0
+                    const dl = new Date((proj as any).deadline)
+                    const left = daysUntil(dl)
+                    const blockers = (proj as any).blockerCount ?? 0
+                    const lastPR = (proj as any).lastPRDate
+                    const lastPRLabel = lastPR
+                      ? new Date(lastPR).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : '—'
+                    const pColor = (proj as any).color ?? '#6b7280'
+                    return (
+                      <div key={projName} className="rounded-2xl border border-zinc-800/60 p-4"
+                        style={{ background: '#0f0f0f' }}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-lg">{(proj as any).emoji}</span>
+                          <span className="text-white text-xs font-semibold truncate">{projName}</span>
+                        </div>
+                        {/* % done */}
+                        <div className="flex items-baseline gap-1 mb-2">
+                          <span className="text-2xl font-bold tabular-nums" style={{ color: pColor }}>{pct}%</span>
+                          <span className="text-zinc-600 text-[10px]">done</span>
+                          <span className="ml-auto text-zinc-500 text-[10px] tabular-nums">{tc.done}/{tc.total}</span>
+                        </div>
+                        <div className="w-full rounded-full h-1.5 mb-3" style={{ background: '#1a1a1a' }}>
+                          <div className="h-1.5 rounded-full transition-all" style={{ width: pct + '%', background: pColor }} />
+                        </div>
+                        {/* Stats grid */}
+                        <div className="grid grid-cols-2 gap-2 text-[10px]">
+                          <div>
+                            <span className="text-zinc-600 block">Deadline</span>
+                            <span className="text-zinc-300 font-medium">{left}d left</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-600 block">Last PR</span>
+                            <span className="text-zinc-300 font-medium">{lastPRLabel}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-600 block">Blockers</span>
+                            <span className={blockers > 0 ? 'text-red-400 font-medium' : 'text-zinc-500'}>{blockers}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-600 block">In Progress</span>
+                            <span className="text-blue-400 font-medium">{tc.inProgress}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
               {/* Sprint Progress Card (MC-102) */}
               <SprintProgressCard />
 
