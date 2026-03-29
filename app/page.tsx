@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AgentOffice from '@/components/AgentOffice'
@@ -188,6 +188,58 @@ function Bar({v,color='#fff',bg='#1e1e1e'}:{v:number;color?:string;bg?:string}) 
   return (
     <div className="w-full rounded-full h-1" style={{background:bg}}>
       <div className="h-1 rounded-full transition-all" style={{width:v+'%',background:color}} />
+    </div>
+  )
+}
+
+function AttentionAndShipped({agents}:{agents:any[]}) {
+  const [data, setData] = React.useState<{attention:any[];shipped:any[]}>({attention:[],shipped:[]})
+  React.useEffect(()=>{
+    const today = new Date().toISOString().slice(0,10)
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    Promise.all([
+      fetch(`${SUPA}/rest/v1/tasks?priority=eq.critical&status=eq.open&limit=5`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
+      fetch(`${SUPA}/rest/v1/tasks?status=eq.done&updated_at=gte.${today}T00:00:00&limit=10&order=updated_at.desc`,{headers:{apikey:KEY,Authorization:`Bearer ${KEY}`}}).then(r=>r.json()),
+    ]).then(([attn, ship])=>{
+      const idleAgents = (agents||[]).filter((a:any)=>a.ago>1440&&['ops','deployer','main'].includes(a.id))
+        .map((a:any)=>({title:`${a.name} idle ${Math.floor(a.ago/60)}h`,project:'agent'}))
+      setData({attention:[...(Array.isArray(attn)?attn:[]),...idleAgents], shipped:Array.isArray(ship)?ship:[]})
+    }).catch(()=>{})
+  },[])
+  return (
+    <div className="space-y-5">
+      <div>
+        <SH icon="🚨">Needs Attention</SH>
+        <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+          {data.attention.length===0
+            ? <div className="px-4 py-4 flex items-center gap-2 text-emerald-400 text-sm"><span>✅</span><span>Nothing needs attention right now</span></div>
+            : data.attention.slice(0,5).map((t:any,i:number,arr:any[])=>(
+              <div key={i} className={'flex items-center gap-3 px-4 py-3 border-l-2 border-red-800 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+                <span className="text-xs">🔴</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-white text-xs truncate">{t.title}</p>
+                  <p className="text-zinc-500 text-[10px]">{t.project}</p>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+      {data.shipped.length>0&&(
+        <div>
+          <SH icon="✅" sub={`${data.shipped.length} tasks`}>Shipped Today</SH>
+          <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
+            {data.shipped.map((t:any,i:number,arr:any[])=>(
+              <div key={t.id||i} className={'flex items-center gap-3 px-4 py-2.5 '+(i<arr.length-1?'border-b border-zinc-800/30':'')}>
+                <span className="text-emerald-500 text-xs">✓</span>
+                <p className="text-zinc-300 text-xs truncate flex-1">{t.title}</p>
+                <span className="text-zinc-600 text-[10px] shrink-0">{t.project}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -3295,6 +3347,7 @@ export default function Home() {
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
+  const [runningWorkflow, setRunningWorkflow] = useState<string|null>(null)
 
   // Listen for unread event from ChatTab
   useEffect(() => {
@@ -3326,6 +3379,15 @@ export default function Home() {
     const cd=setInterval(()=>setAgentsCountdown(s=>Math.max(0,s-1)),1000)
     return ()=>{ clearInterval(t); clearInterval(cd) }
   },[])
+  // Faster 30s polling when on office tab
+  useEffect(() => {
+    if (tab !== 'office') return
+    const interval = setInterval(async () => {
+      const res = await fetch('/api/agents')
+      if (res.ok) { const data = await res.json(); if (Array.isArray(data)) setLiveAgents(data) }
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [tab])
   useEffect(()=>{
     if(!statusAt) return
     const t=setInterval(()=>setAgoSec(Math.floor((Date.now()-statusAt)/1000)),1000)
@@ -3604,6 +3666,9 @@ export default function Home() {
                   </div>
                 ))
               })()}
+
+              {/* Needs Attention + Shipped Today */}
+              <AttentionAndShipped agents={displayAgents} />
             </div>
           )}
 

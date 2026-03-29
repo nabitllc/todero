@@ -14,6 +14,12 @@ const AGENT_META: Record<string, { name: string; emoji: string; role: string; co
   'builder':     { name: 'Builder',     emoji: '🔨', role: 'Coding Agent',           color: '#f59e0b', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true },
   'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true },
   'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true },
+  'ux':          { name: 'UX Designer',      emoji: '🎨', role: 'UX & Design Agent',        color: '#ec4899', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false },
+  'po':          { name: 'Product Owner',    emoji: '📋', role: 'Product Owner',             color: '#f59e0b', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false },
+  'growth':      { name: 'Growth',           emoji: '📈', role: 'Growth Strategist',         color: '#10b981', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false },
+  'security':    { name: 'Security',         emoji: '🔐', role: 'Security Auditor',          color: '#ef4444', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false },
+  'community':   { name: 'Community Mgr',    emoji: '🖤', role: 'Community Manager',         color: '#a78bfa', capabilities: ['Social Content', 'Brand Voice', 'Colombia Goth'], floor: false },
+  'content':     { name: 'Content Creator',  emoji: '✍️', role: 'Content Creator',           color: '#60a5fa', capabilities: ['Blog', 'SEO', 'Email', 'Help Docs'], floor: false },
   'auditor':     { name: 'Auditor',     emoji: '🔎', role: 'System Truth Enforcer',  color: '#ef4444', capabilities: ['Drift Detection', 'Config Audit', 'Task Hygiene'], floor: true },
 }
 
@@ -43,6 +49,10 @@ export async function GET() {
         : rawModel.includes('gemma') ? 'Gemma 3 4B'
         : rawModel.split('/').pop() ?? rawModel
 
+      const lastUpdatedAt = a.lastUpdatedAt ?? 0
+      const agoMin = lastUpdatedAt ? Math.round((now - lastUpdatedAt) / 60000) : null
+      const currentTask = (a.currentTask ?? a.task ?? '').slice(0, 80) || null
+
       return {
         id: a.id,
         name: meta.name ?? a.name ?? a.id,
@@ -57,6 +67,9 @@ export async function GET() {
         floor: meta.floor,
         workspace: a.workspaceDir,
         sessions: a.sessionsCount ?? 0,
+        ago: agoMin,
+        lastUpdatedAt,
+        currentTask,
       }
     })
 
