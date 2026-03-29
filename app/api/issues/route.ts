@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { exec } from 'child_process'
 
 const DISCORD_CHANNEL = '1487584901678104698'
 const PROJECT_EMOJI: Record<string, string> = {
@@ -17,9 +16,16 @@ function notifyDiscord(issue: { task_key?: string; title?: string; project?: str
   const key = issue.task_key ?? '?'
   const res = RES_LABEL[issue.resolution_type ?? ''] ?? issue.resolution_type ?? 'done'
   const msg = `${emoji} **[${key}]** ${issue.title ?? ''} · _${res}_`
-  const escaped = msg.replace(/'/g, `'\\''`)
-  exec(`openclaw message send --channel discord --target "channel:${DISCORD_CHANNEL}" --message '${escaped}'`,
-    (err) => { if (err) console.error('[discord-notify]', err.message) })
+
+  fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
+    },
+    body: JSON.stringify({ content: msg })
+  }).catch(err => console.error('[discord-notify]', err))
 }
 
 const supabase = createClient(
@@ -133,9 +139,16 @@ export async function POST(req: NextRequest) {
 function notifyPRReview(issue: { task_key?: string; title?: string; project?: string; feature_branch?: string; pr_url?: string }) {
   const key = issue.task_key ?? '?'
   const msg = `🔀 **PR Ready for Review**\n**[${key}]** ${issue.title ?? ''}\nProject: ${issue.project ?? ''} · Branch: ${issue.feature_branch ?? ''}\nPR: ${issue.pr_url ?? ''}\n<@409194957098713088> ready to merge`
-  const escaped = msg.replace(/'/g, `'\\''`)
-  exec(`openclaw message send --channel discord --target "channel:1487826368170299592" --message '${escaped}'`,
-    (err) => { if (err) console.error('[discord-pr-review]', err.message) })
+
+  fetch(`https://discord.com/api/v10/channels/1487826368170299592/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
+    },
+    body: JSON.stringify({ content: msg })
+  }).catch(err => console.error('[discord-pr-review]', err))
 }
 
 function notifyTestFailure(issue: { task_key?: string; title?: string; project?: string; description?: string }) {
@@ -145,9 +158,16 @@ function notifyTestFailure(issue: { task_key?: string; title?: string; project?:
   const desc = issue.description ?? ''
   const failureSection = desc.includes('---') ? desc.split('---').pop()?.trim().slice(0, 300) : desc.slice(0, 300)
   const msg = `🚨 **Test Failed: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n📝 Tester notes: ${failureSection || 'No details provided'}\n\nBuilder: pick up fix on next loop tick.`
-  const escaped = msg.replace(/'/g, `'\\''`)
-  exec(`openclaw message send --channel discord --target "channel:${DISCORD_CHANNEL}" --message '${escaped}'`,
-    (err) => { if (err) console.error('[discord-test-failure]', err.message) })
+
+  fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
+    },
+    body: JSON.stringify({ content: msg })
+  }).catch(err => console.error('[discord-test-failure]', err))
 }
 
 export async function PATCH(req: NextRequest) {
