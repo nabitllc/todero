@@ -5026,6 +5026,12 @@ export default function Home() {
               {/* ── Needs Your Attention (INF-77) ── */}
               <NeedsAttentionBlock />
 
+              {/* MC-119: Risk Radar + MC-120: Standup */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <RiskRadarCard onNavigate={(t) => { setTab(t as Tab); if(typeof window!=='undefined') localStorage.setItem('mc-tab', t) }} />
+                <StandupCard />
+              </div>
+
               {/* INF-76: Done-yesterday wins */}
               <DoneYesterdayWins />
 
