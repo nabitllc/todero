@@ -117,6 +117,8 @@ export async function GET() {
         status: d.state || d.readyState || 'UNKNOWN',
         url: d.url || '',
         createdAt: d.createdAt || d.created || 0,
+        commitSha: d.meta?.githubCommitSha || d.gitSource?.sha || '',
+        branch: d.meta?.githubCommitRef || d.gitSource?.ref || '',
       },
     }
   } else {

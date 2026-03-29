@@ -7,35 +7,41 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const SUPA_AGENTS = ['main','scout','ops','kemuni-sme','vespera-sme','builder','tester','deployer'] as const;
 
 type AgentRunStatus = 'working' | 'idle' | 'never';
-interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; }
+interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; todayTasks: number; todayErrors: number; estimatedCost: number; }
 
 async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=100`,
+    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
     { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
   );
   if (!res.ok) return {};
   const rows: any[] = await res.json();
   const now = Date.now();
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayMs = todayStart.getTime();
   const result: Record<string, AgentRunInfo> = {};
-  // Group by agent_id — first occurrence is most recent (ordered desc)
+  // Aggregate per-agent: most recent status + today's task count + cost
+  const agentRows: Record<string, any[]> = {};
   for (const row of rows) {
     const aid = row.agent_id;
-    if (result[aid]) continue; // already have most recent
-    const startMs = row.started_at ? new Date(row.started_at).getTime() : 0;
+    if (!agentRows[aid]) agentRows[aid] = [];
+    agentRows[aid].push(row);
+  }
+  for (const [aid, aRows] of Object.entries(agentRows)) {
+    const latest = aRows[0]; // most recent (ordered desc)
+    const startMs = latest.started_at ? new Date(latest.started_at).getTime() : 0;
     const ageMin = (now - startMs) / 60000;
-    let st: AgentRunStatus = 'idle';
-    if (row.status === 'running' || ageMin < 5) st = 'working';
-    else if (ageMin >= 30) st = 'idle';
-    else st = 'working'; // between 5-30min with non-running status still counts as recent
-    // Refine: only 'working' if status=running OR started_at < 5min ago
-    if (row.status === 'running' || ageMin < 5) st = 'working';
-    else st = 'idle';
-    result[aid] = { status: st, taskTitle: (row.task_title || '').slice(0, 35), startedAt: row.started_at };
+    const st: AgentRunStatus = (latest.status === 'running' || ageMin < 5) ? 'working' : 'idle';
+    const todayRuns = aRows.filter(r => r.started_at && new Date(r.started_at).getTime() >= todayMs);
+    const todayTasks = todayRuns.filter(r => r.status !== 'error').length;
+    const todayErrors = todayRuns.filter(r => r.status === 'error').length;
+    // Estimate cost: ~$0.003 per 1k tokens, fallback to $0.01 per run
+    const estimatedCost = todayRuns.reduce((sum: number, r: any) => sum + (r.tokens_used ? (r.tokens_used / 1000) * 0.003 : 0.01), 0);
+    result[aid] = { status: st, taskTitle: (latest.task_title || '').slice(0, 35), startedAt: latest.started_at, todayTasks, todayErrors, estimatedCost };
   }
   // Fill missing agents as 'never'
   for (const id of SUPA_AGENTS) {
-    if (!result[id]) result[id] = { status: 'never', taskTitle: '', startedAt: null };
+    if (!result[id]) result[id] = { status: 'never', taskTitle: '', startedAt: null, todayTasks: 0, todayErrors: 0, estimatedCost: 0 };
   }
   return result;
 }
@@ -595,7 +601,7 @@ function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:any){
   ctx.globalAlpha=1;ctx.restore();
 }
 
-function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean,boardTasksMap:Record<string,string>={},subagentCount:number=0){
+function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0){
   const visible=ag.active||BENCH_POS[ag.id];
   if(!visible) return;
   ctx.save();applyCamera(ctx,cam);
@@ -630,24 +636,46 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
   ctx.beginPath();ctx.ellipse(px+ox,py+hs+T*0.022+oy+dy2,hs*0.65,T*0.022,0,0,Math.PI*2);ctx.fill();
   const bA=Math.round((0.7+moodN*0.3)*255).toString(16).padStart(2,"0");
   const bodyCol=isInc?"#ff2222":(active?color+bA:"#3a3a5e"+bA);
-  // State transition glow
+  // MC-19: Enhanced state transition animation — glow + scale pulse + fade
+  let transScale=1;
   if(ag.glowTick>0){
     ag.glowTick--;
     const glowAlpha=ag.glowTick/60;
-    ctx.shadowColor=color;ctx.shadowBlur=sz*0.8*glowAlpha;
-    ctx.beginPath();ctx.arc(px+ox,py+dy2+oy,hs+T*0.15,0,Math.PI*2);
-    ctx.fillStyle=color+Math.round(glowAlpha*40).toString(16).padStart(2,"0");ctx.fill();
+    // Scale pulse: brief enlarge then settle (easeOutElastic-ish)
+    const t2=1-glowAlpha;
+    transScale=1+0.12*Math.sin(t2*Math.PI)*Math.max(0,1-t2*1.5);
+    ctx.shadowColor=color;ctx.shadowBlur=sz*1.0*glowAlpha;
+    // Outer ring pulse
+    ctx.beginPath();ctx.arc(px+ox,py+dy2+oy,hs+T*0.15+T*0.1*glowAlpha,0,Math.PI*2);
+    ctx.fillStyle=color+Math.round(glowAlpha*50).toString(16).padStart(2,"0");ctx.fill();
+    // Inner glow
+    ctx.beginPath();ctx.arc(px+ox,py+dy2+oy,hs+T*0.05,0,Math.PI*2);
+    ctx.fillStyle=color+Math.round(glowAlpha*25).toString(16).padStart(2,"0");ctx.fill();
     ctx.shadowBlur=0;
   }
   if(darkAlpha>0.05){ctx.shadowColor=isInc?"#ff2222":color;ctx.shadowBlur=sz*0.22*darkAlpha;}
-  ctx.fillStyle=bodyCol;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz);ctx.shadowBlur=0;
+  // Apply scale for transition animation
+  const asz=sz*transScale,ahs=asz/2;
+  ctx.fillStyle=bodyCol;ctx.fillRect(px-ahs+ox,py-ahs+dy2+oy,asz,asz);ctx.shadowBlur=0;
   const fw=sz*0.44,fh=sz*0.31;
   ctx.fillStyle="#ffffffdd";ctx.fillRect(px-fw/2+ox,py-sz*0.17+dy2+oy,fw,fh);
   ctx.fillStyle="#111";
   if(facing!=="up"){
     ctx.fillRect(px-fw*0.34+ox,py-sz*0.09+dy2+oy,fw*0.14,fh*0.3);
     ctx.fillRect(px+fw*0.2+ox, py-sz*0.09+dy2+oy,fw*0.14,fh*0.3);
-    ctx.beginPath();ctx.arc(px+ox,py+sz*0.08+dy2+oy,fw*0.17,0.1*Math.PI,0.9*Math.PI);
+    // MC-17: Expression based on mood — happy/neutral/stressed
+    const moodVal=mood||88;
+    ctx.beginPath();
+    if(moodVal>=90){
+      // Happy: upward smile
+      ctx.arc(px+ox,py+sz*0.06+dy2+oy,fw*0.19,0.1*Math.PI,0.9*Math.PI);
+    } else if(moodVal<=60){
+      // Stressed: frown
+      ctx.arc(px+ox,py+sz*0.14+dy2+oy,fw*0.17,1.1*Math.PI,1.9*Math.PI);
+    } else {
+      // Neutral: flat line
+      ctx.moveTo(px-fw*0.15+ox,py+sz*0.09+dy2+oy);ctx.lineTo(px+fw*0.15+ox,py+sz*0.09+dy2+oy);
+    }
     ctx.strokeStyle="#111";ctx.lineWidth=sz*0.04;ctx.stroke();
   }
   ctx.fillStyle=isInc?"#ff2222":color;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz*0.18);
@@ -723,6 +751,14 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
       ctx.fillStyle="#4a4a6a";
       ctx.fillText(`idle ${idleText}`,px,py+hs+T*0.35+dy2+oy);
     }
+  }
+  // Cost ticker — small label below idle timer
+  if(agentCost>0&&active){
+    const cPx=Math.max(8,Math.round(T*0.09));
+    ctx.font=`${cPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+    const costText=agentCost>=1?`$${agentCost.toFixed(2)}`:`${(agentCost*100).toFixed(1)}¢`;
+    ctx.fillStyle="#4a6a5a";
+    ctx.fillText(`💰 ${costText}`,px,py+hs+T*0.48+dy2+oy);
   }
   // Sub-agent activity badge — only for orchestrator when sub-agents are active
   if(ag.id===ORCHESTRATOR_ID&&subagentCount>0){
@@ -844,7 +880,8 @@ export default function AgentOffice(){
   });
   const [meetingLogs,setMeetingLogs] = useState<any[]>([]);
   const [incidentLog,setIncidentLog] = useState<any[]>([]); // persistent incident history
-  const [soundOn,setSoundOn]         = useState(true);
+  const [soundOn,setSoundOn]         = useState(()=>{try{return localStorage.getItem("office_sound")!=="off";}catch{return true;}});
+  const [volume,setVolume]           = useState(()=>{try{return parseInt(localStorage.getItem("office_volume")||"50",10);}catch{return 50;}});
   const [incident,setIncident]       = useState<any>(null);
   const [showConfig,setShowConfig]   = useState(false);
   const [configAgent,setConfigAgent] = useState<any>(null);
@@ -875,6 +912,7 @@ export default function AgentOffice(){
   const liveRunsRef                  = useRef<Record<string, AgentRunInfo>>({})
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
   const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
+  const zoomTargetRef                = useRef<{x:number,y:number,z:number}|null>(null); // MC-21: smooth zoom target
   const [showSettings,setShowSettings] = useState(false);
   const [theme,setTheme] = useState<"A"|"B">(()=>{
     try{return (localStorage.getItem("office_theme")||"A") as "A"|"B";}catch{return "A";}
@@ -886,15 +924,20 @@ export default function AgentOffice(){
   const sessionStartTs = useRef(Date.now());
   const [isMobile, setIsMobile] = useState(false);
   const [canvasScale, setCanvasScale] = useState(1);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(()=>{try{return localStorage.getItem("office_sidebar_collapsed")==="true";}catch{return false;}});
   useEffect(() => {
     const check = () => {
-      setIsMobile(window.innerWidth < 768);
-      setCanvasScale(Math.min(1, window.innerWidth / 900));
+      const w=window.innerWidth;
+      setIsMobile(w < 768);
+      setCanvasScale(Math.min(1, w / 900));
+      // Auto-collapse sidebar on narrow screens
+      if(w<1024&&w>=768) setSidebarCollapsed(true);
     };
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+  const toggleSidebar=()=>{setSidebarCollapsed(p=>{const next=!p;try{localStorage.setItem("office_sidebar_collapsed",String(next));}catch(e){}return next;});};
 
   const addToast=useCallback((text:string,color="#00ff88")=>{
     const id=feedIdRef.current++;
@@ -906,7 +949,7 @@ export default function AgentOffice(){
   },[]);
 
   useEffect(()=>{ if(feedRef.current) feedRef.current.scrollTop=feedRef.current.scrollHeight; },[feed]);
-  useEffect(()=>{const i=()=>{if(!audioRef.current)audioRef.current=createAudio();};window.addEventListener("click",i,{once:true});return()=>window.removeEventListener("click",i);},[]);
+  useEffect(()=>{const i=()=>{if(!audioRef.current){audioRef.current=createAudio();if(audioRef.current?.master)audioRef.current.master.gain.value=volume/100*0.15;}};window.addEventListener("click",i,{once:true});return()=>window.removeEventListener("click",i);},[volume]);
   useEffect(()=>()=>{if(simRef.current?.agents)saveMemory(simRef.current.agents);},[]);
 
   useEffect(()=>{minimapRef.current=showMinimap;},[showMinimap]);
@@ -1324,11 +1367,21 @@ export default function AgentOffice(){
       if(!pausedRef.current&&!replayModeRef.current){
         simTick++;
 
-        // Mood based on real performance: working = energized, idle long = neutral
+        // MC-17: Mood from real performance metrics (agent_runs data)
         if(simTick%360===0) agents.forEach(ag=>{
-          if(ag.state==="working") ag.mood=Math.min(100,(ag.mood||88)+2); // Working boosts mood
-          else if(ag.tasksCompleted>0) ag.mood=Math.max(80,Math.min(95,(ag.mood||88)-0.3)); // Idle but productive = stable
-          else ag.mood=Math.max(70,(ag.mood||88)-0.5); // Never worked = slowly drops to neutral
+          const run=liveRunsRef.current[ag.id];
+          if(!run){ag.mood=Math.max(70,(ag.mood||88)-0.3);return;}
+          const {todayTasks,todayErrors}=run;
+          const errorRate=todayTasks>0?todayErrors/(todayTasks+todayErrors):0;
+          // Happy: >5 tasks done today, low error rate
+          if(todayTasks>=5&&errorRate<0.1) ag.mood=Math.min(100,(ag.mood||88)+3);
+          // Stressed: blocked/high error rate
+          else if(errorRate>0.3||todayErrors>=3) ag.mood=Math.max(50,(ag.mood||88)-3);
+          // Neutral: normal activity
+          else if(todayTasks>0) ag.mood=Math.max(75,Math.min(95,(ag.mood||88)+0.5));
+          // No activity
+          else if(ag.state==="working") ag.mood=Math.min(95,(ag.mood||88)+1);
+          else ag.mood=Math.max(70,(ag.mood||88)-0.3);
         });
 
         agents.forEach(ag=>{
@@ -1409,6 +1462,15 @@ export default function AgentOffice(){
       const cam=camRef.current;
       const W=canvas.width,H=canvas.height;
 
+      // MC-21: Smooth zoom animation
+      const zt=zoomTargetRef.current;
+      if(zt){
+        const lerp=0.08;
+        cam.x+=(zt.x-cam.x)*lerp;cam.y+=(zt.y-cam.y)*lerp;cam.z+=(zt.z-cam.z)*lerp;
+        if(Math.abs(cam.x-zt.x)<0.5&&Math.abs(cam.y-zt.y)<0.5&&Math.abs(cam.z-zt.z)<0.01) zoomTargetRef.current=null;
+        clampCam(cam,W,H);
+      }
+
       let drawAgentsArr=agents;
       if(replayModeRef.current&&replayFrames.current.length){
         const idx=Math.min(replayCurRef.current,replayFrames.current.length-1);
@@ -1453,7 +1515,7 @@ export default function AgentOffice(){
       }
       drawParticles(ctx,particles,cam);
       drawChatBubbles(ctx,chatBubbles.current,T2,cam);
-      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0));
+      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0));
       if(minimapRef.current)drawMinimap(ctx,T2,drawAgentsArr,cam,W,H,showLegendRef.current);
 
       // Hover tooltip
@@ -1580,13 +1642,33 @@ export default function AgentOffice(){
       simRef.current?.agents?.forEach((ag:any)=>{const d=Math.hypot(ag.px-wx,ag.py-wy);if(d<bestD){bestD=d;best=ag;}});
       if(best) setCtxMenu({agentId:best.id,screenX:e.clientX,screenY:e.clientY});
     }
+    // MC-21: Double-click to zoom to agent
+    function onDblClick(e:MouseEvent){
+      const p=c2w(e);const cam2=camRef.current;
+      const wx=(p.x-cam2.x)/cam2.z,wy=(p.y-cam2.y)/cam2.z,T2=tileRef.current;
+      let best:any=null,bestD=T2*1.2;
+      simRef.current?.agents?.forEach((ag:any)=>{const d=Math.hypot(ag.px-wx,ag.py-wy);if(d<bestD){bestD=d;best=ag;}});
+      if(best){
+        // Zoom in to agent: center on them at 2.2x zoom
+        const targetZ=2.2;
+        const targetX=canvas!.width/2-best.px*targetZ;
+        const targetY=canvas!.height/2-best.py*targetZ;
+        zoomTargetRef.current={x:targetX,y:targetY,z:targetZ};
+        setSelectedId(best.id);setDetail({...best});
+      } else {
+        // Double-click on empty space: zoom out to default
+        zoomTargetRef.current={x:0,y:0,z:1};
+        setSelectedId(null);setDetail(null);
+      }
+    }
     canvas.addEventListener("wheel",onWheel,{passive:false});
     canvas.addEventListener("mousedown",onDown);
+    canvas.addEventListener("dblclick",onDblClick);
     canvas.addEventListener("contextmenu",onContextMenu);
     window.addEventListener("mousemove",onMove);
     window.addEventListener("mouseup",onUp);
     canvas.style.cursor="grab";
-    return()=>{canvas.removeEventListener("wheel",onWheel);canvas.removeEventListener("mousedown",onDown);canvas.removeEventListener("contextmenu",onContextMenu);window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);};
+    return()=>{canvas.removeEventListener("wheel",onWheel);canvas.removeEventListener("mousedown",onDown);canvas.removeEventListener("dblclick",onDblClick);canvas.removeEventListener("contextmenu",onContextMenu);window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);};
   },[]);
 
   const promoteAgent=useCallback((agId:string)=>{
@@ -1622,7 +1704,8 @@ export default function AgentOffice(){
   };
 
   const togglePause=()=>{pausedRef.current=!pausedRef.current;setPaused(p=>!p);};
-  const toggleSound=()=>{soundRef.current=!soundRef.current;setSoundOn(s=>!s);};
+  const toggleSound=()=>{const next=!soundRef.current;soundRef.current=next;setSoundOn(next);try{localStorage.setItem("office_sound",next?"on":"off");}catch(e){}};
+  const changeVolume=(v:number)=>{setVolume(v);if(v===0){soundRef.current=false;setSoundOn(false);}else{soundRef.current=true;setSoundOn(true);}if(audioRef.current?.master)audioRef.current.master.gain.value=v/100*0.15;try{localStorage.setItem("office_volume",String(v));localStorage.setItem("office_sound",v>0?"on":"off");}catch(e){}};
   const toggleMinimap=()=>{minimapRef.current=!minimapRef.current;setShowMinimap(s=>!s);};
   const toggleDepGraph=()=>{depGraphRef.current=!depGraphRef.current;setShowDepGraph(s=>!s);};
   const openConfig=(ag:any)=>{setConfigAgent(ag);setConfigEdits({name:ag.name,color:ag.color,workBurst:ag.personality.workBurst,focusDuration:ag.personality.focusDuration});setShowConfig(true);};
@@ -1706,15 +1789,12 @@ export default function AgentOffice(){
             </div>
             <div style={{marginTop:12}}>
               <div style={{fontSize:10,color:"#6a6a8e",marginBottom:6,letterSpacing:"0.1em"}}>VOLUME</div>
-              <input type="range" min="0" max="100" value={soundOn?50:0}
-                onChange={(e:any)=>{
-                  const v=+e.target.value;
-                  if(v===0){soundRef.current=false;setSoundOn(false);}
-                  else{soundRef.current=true;setSoundOn(true);if(audioRef.current?.master)audioRef.current.master.gain.value=v/100*0.15;}
-                }}
+              <input type="range" min="0" max="100" value={volume}
+                onChange={(e:any)=>changeVolume(+e.target.value)}
                 style={{width:"100%",accentColor:"#6C5CE7"}}/>
               <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
                 <span style={{fontSize:9,color:"#4a4a6a"}}>🔇</span>
+                <span style={{fontSize:9,color:"#4a4a6a"}}>{volume}%</span>
                 <span style={{fontSize:9,color:"#4a4a6a"}}>🔊</span>
               </div>
             </div>
@@ -1771,6 +1851,7 @@ export default function AgentOffice(){
             <span style={{fontSize:11,color:"#3a3a5e"}}>·</span>
             <span style={{fontSize:12,fontWeight:700,color:"#6C5CE7"}}>{stats.completed}</span>
             <span style={{fontSize:11,color:"#6a6a8e"}}>done</span>
+            {(()=>{const totalCost=Object.values(liveRunsRef.current).reduce((s,r)=>s+(r?.estimatedCost||0),0);return totalCost>0?<><span style={{fontSize:11,color:"#3a3a5e"}}>·</span><span style={{fontSize:12,fontWeight:700,color:"#4a6a5a"}}>${totalCost.toFixed(2)}</span><span style={{fontSize:11,color:"#6a6a8e"}}>today</span></>:null;})()}
           </div>
           {!isMobile && <>
           {/* Theme switcher */}
@@ -1790,7 +1871,10 @@ export default function AgentOffice(){
           <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Toggle minimap">🗺</button>
           <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Settings">⌨</button>
           <button onClick={()=>{const el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen?.();}} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Fullscreen">⛶</button>
-          <button onClick={toggleSound} style={{background:"transparent",border:"1px solid #2a2a4a",color:soundOn?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
+          <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 6px",background:"#0a0a18",border:"1px solid #1a1a2e",borderRadius:3}}>
+            <button onClick={toggleSound} style={{background:"transparent",border:"none",color:soundOn?"#8892b0":"#6a6a8e",padding:"0 2px",fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
+            <input type="range" min="0" max="100" value={volume} onChange={(e:any)=>changeVolume(+e.target.value)} style={{width:50,height:3,accentColor:"#6C5CE7"}}/>
+          </div>
           </>}
           <button onClick={togglePause} style={{background:"transparent",border:"1px solid #2a2a4a",color:paused?"#00ff88":"#8892b0",padding:"3px 11px",borderRadius:3,fontSize:12,fontWeight:600,letterSpacing:"0.08em",cursor:"pointer",fontFamily:"inherit"}}>{paused?"▶ RUN":"⏸ LIVE"}</button>
         </div>
@@ -1851,11 +1935,24 @@ export default function AgentOffice(){
           </div>
         )}
 
+        {/* Sidebar toggle button */}
+        {!isMobile&&(
+          <button onClick={toggleSidebar} style={{position:"absolute",right:sidebarCollapsed?40:316,top:52,zIndex:200,background:theme==="B"?"#0a1510":"#0b0b14",border:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,borderRight:"none",borderRadius:"4px 0 0 4px",padding:"4px 3px",cursor:"pointer",color:"#6a6a8e",fontSize:11,fontFamily:"inherit"}}>{sidebarCollapsed?"◀":"▶"}</button>
+        )}
         {/* Sidebar */}
-        <div style={{width:320,flexShrink:0,display:isMobile?"none":"flex",flexDirection:"column",background:theme==="B"?"#0a1510":"#0b0b14",borderLeft:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden"}}>
+        <div style={{width:sidebarCollapsed?44:320,flexShrink:0,display:isMobile?"none":"flex",flexDirection:"column",background:theme==="B"?"#0a1510":"#0b0b14",borderLeft:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden",transition:"width 0.2s ease"}}>
 
+          {/* Collapsed sidebar: icon-only panel indicators */}
+          {sidebarCollapsed&&(
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 0"}}>
+              {detail&&<button onClick={()=>toggleSidebar()} style={{background:"transparent",border:"none",color:detail.color,fontSize:16,cursor:"pointer",padding:"4px"}} title={detail.name}>{detail.emoji}</button>}
+              {[{id:"feed",icon:"📡",label:"Feed"},{id:"flow",icon:"✓",label:"Tasks"},{id:"meetings",icon:"📅",label:"Meetings"},{id:"board",icon:"🏆",label:"Leaderboard"},{id:"incidents",icon:"🚨",label:"Incidents"},{id:"deps",icon:"🔗",label:"Dependencies"}].map(p=>(
+                <button key={p.id} onClick={()=>{if(!openPanels.has(p.id))togglePanel(p.id);toggleSidebar();}} style={{background:openPanels.has(p.id)?"#1a1a2e":"transparent",border:"none",color:openPanels.has(p.id)?"#a29bfe":"#4a4a6a",fontSize:13,cursor:"pointer",padding:"5px 4px",borderRadius:3,width:32,textAlign:"center"}} title={p.label}>{p.icon}</button>
+              ))}
+            </div>
+          )}
           {/* Detail panel — shows when an agent is selected on canvas */}
-          {detail&&(
+          {!sidebarCollapsed&&detail&&(
             <div style={{flexShrink:0,borderBottom:"1px solid #1a1a2e",overflowY:"auto",maxHeight:"45%"}}>
               <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>
                 <span>AGENT DETAIL{detail.id===ORCHESTRATOR_ID?" 👑":""}</span>
@@ -1947,7 +2044,7 @@ export default function AgentOffice(){
           )}
 
           {/* Expandable panels — all in one scrollable container */}
-          <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
+          <div style={{flex:1,minHeight:0,overflowY:"auto",display:sidebarCollapsed?"none":"block"}}>
 
             {/* ▼ ACTIVITY FEED — always expanded */}
             <div>
@@ -2186,7 +2283,7 @@ export default function AgentOffice(){
           </div>{/* end expandable panels */}
 
           {/* Stats bar */}
-          <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",display:"flex",padding:"6px 0"}}>
+          <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",display:sidebarCollapsed?"none":"flex",padding:"6px 0"}}>
             {[{l:"DONE",v:stats.completed,c:"#6C5CE7"},{l:"ACTIVE",v:stats.working,c:"#00ff88"},{l:"MTG",v:stats.meeting,c:"#FDCB6E"},{l:"IDLE",v:stats.idle,c:"#3a3a5e"}].map((s,i,arr)=>(
               <div key={s.l} style={{flex:1,textAlign:"center",borderRight:i<arr.length-1?"1px solid #1a1a2e":"none"}}>
                 <div style={{fontSize:16,fontWeight:700,color:s.c,lineHeight:1}}>{s.v}</div>
