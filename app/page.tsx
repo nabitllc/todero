@@ -3072,7 +3072,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
   const [archiveProject, setArchiveProject] = useState('')
   const [closedConfirm, setClosedConfirm] = useState<string|null>(null)
   const [boardLimit, setBoardLimit] = useState(100)
-  const [groupByFeature, setGroupByFeature] = useState(() => { try { return localStorage.getItem('board-group-by') === 'feature' } catch { return false } })
+  const [boardGroupBy, setBoardGroupBy] = useState<'status'|'feature'|'business'>(() => { try { return (localStorage.getItem('board-group-by') as 'status'|'feature'|'business') || 'status' } catch { return 'status' } })
+  const groupByFeature = boardGroupBy === 'feature'
+  const groupByBusiness = boardGroupBy === 'business'
+  const [collapsedBiz, setCollapsedBiz] = useState<Record<string,boolean>>(() => { try { return JSON.parse(localStorage.getItem('board-biz-collapsed') ?? '{}') } catch { return {} } })
 
   // Persist multiselect filters to localStorage
   useEffect(() => {
@@ -3208,13 +3211,17 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
           </select>
           {hasAnyFilter && <button onClick={clearAllFilters} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors">Clear all</button>}
           <div className="flex gap-0.5 p-0.5 rounded-lg border border-zinc-800" style={{background:'#0a0a0a'}}>
-            <button onClick={() => { setGroupByFeature(false); localStorage.setItem('board-group-by','status') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${!groupByFeature?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
+            <button onClick={() => { setBoardGroupBy('status'); localStorage.setItem('board-group-by','status') }}
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='status'?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
               Status
             </button>
-            <button onClick={() => { setGroupByFeature(true); localStorage.setItem('board-group-by','feature') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${groupByFeature?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
+            <button onClick={() => { setBoardGroupBy('feature'); localStorage.setItem('board-group-by','feature') }}
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='feature'?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
               Feature
+            </button>
+            <button onClick={() => { setBoardGroupBy('business'); localStorage.setItem('board-group-by','business') }}
+              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='business'?'bg-zinc-700 text-white':'text-zinc-500 hover:text-zinc-300'}`}>
+              Business
             </button>
           </div>
           <button onClick={() => setShowArchive(!showArchive)}
@@ -3367,8 +3374,115 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
         )
       })()}
 
+      {/* Business-grouped view */}
+      {!showArchive && groupByBusiness && (() => {
+        const BIZ_MAP: Record<string, {label: string; emoji: string}> = {
+          'Vespera': { label: 'Vespera', emoji: '🖤' },
+          'Kemuni': { label: 'Kemuni', emoji: '🚀' },
+          'Mission Control': { label: 'Mission Control', emoji: '🧠' },
+          'Infrastructure': { label: 'Infrastructure', emoji: '⚙️' },
+          'KAOS': { label: 'KAOS', emoji: '🤖' },
+        }
+        const bizOrder = ['Vespera', 'Kemuni', 'Mission Control', 'Infrastructure', 'KAOS']
+        // Group by project field
+        const bizGroups: Record<string, typeof filtered> = {}
+        for (const t of filtered) {
+          const key = BIZ_MAP[t.project ?? ''] ? (t.project ?? 'Other') : 'Other'
+          if (!bizGroups[key]) bizGroups[key] = []
+          bizGroups[key].push(t)
+        }
+        const allKeys = [...bizOrder.filter(k => bizGroups[k]), ...Object.keys(bizGroups).filter(k => !bizOrder.includes(k) && bizGroups[k])]
+        return (
+          <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
+            {allKeys.map(bizKey => {
+              const biz = BIZ_MAP[bizKey] || { label: bizKey, emoji: '📁' }
+              const bizTasks = bizGroups[bizKey] || []
+              const isCollapsed = collapsedBiz[bizKey] ?? false
+              const toggleCollapse = () => {
+                const next = { ...collapsedBiz, [bizKey]: !isCollapsed }
+                setCollapsedBiz(next)
+                if (typeof window !== 'undefined') localStorage.setItem('board-biz-collapsed', JSON.stringify(next))
+              }
+              return (
+                <div key={bizKey} className="rounded-xl border border-zinc-800/60 overflow-hidden" style={{background:'#0a0a0a'}}>
+                  {/* Business header */}
+                  <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors select-none">
+                    <span className="text-base">{biz.emoji}</span>
+                    <span className="text-sm font-semibold text-zinc-200">{biz.label}</span>
+                    <span className="text-xs text-zinc-500 ml-1">({bizTasks.length} issue{bizTasks.length !== 1 ? 's' : ''})</span>
+                    <div className="flex gap-1.5 ml-2 shrink-0">
+                      {BOARD_COLUMNS.map(col => { const cnt = bizTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
+                        <span key={col.id} className="text-[9px] px-1.5 py-0.5 rounded-full font-mono"
+                          style={{color: col.color, background: col.color + '18', border: `1px solid ${col.color}30`}}>
+                          {col.label[0]} {cnt}
+                        </span>
+                      ) : null })}
+                    </div>
+                    <span className="ml-auto text-zinc-600 text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                  </div>
+                  {/* Kanban columns per business */}
+                  {!isCollapsed && (
+                    <div className="border-t border-zinc-800/40">
+                      {/* Mobile col tabs */}
+                      <div className="flex md:hidden gap-1 px-3 py-1.5 overflow-x-auto">
+                        {BOARD_COLUMNS.map(col => (
+                          <button key={col.id} onClick={e => { e.stopPropagation(); setMobileCol(col.id) }}
+                            className={'text-xs px-2.5 py-1 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300')}>
+                            {col.label} <span className="text-zinc-600 ml-0.5">{bizTasks.filter(t => t.status===col.id).length}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-3 overflow-x-auto p-3">
+                        {BOARD_COLUMNS.map(col => {
+                          const colTasks = bizTasks.filter(t => t.status === col.id)
+                          return (
+                            <div key={col.id}
+                              className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-zinc-900/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+                              style={{borderTop:`2px solid ${col.color}`, minHeight: '80px'}}
+                              onDragOver={e => e.preventDefault()}
+                              onDrop={() => handleDrop(col.id)}>
+                              <div className="flex items-center gap-2 px-3 py-2">
+                                <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
+                                <span className="text-[10px] font-semibold text-zinc-500">{col.label} ({colTasks.length})</span>
+                              </div>
+                              <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[40px]">
+                                {colTasks.length === 0 && <div className="text-[10px] text-zinc-700 text-center py-3">—</div>}
+                                {colTasks.map(task => (
+                                  <div key={task.id}
+                                    draggable
+                                    onDragStart={() => setDragId(task.id)}
+                                    onDragEnd={() => setDragId(null)}
+                                    onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
+                                    className={`rounded-xl border p-2.5 cursor-pointer transition-colors border-l-2 ${
+                                      task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
+                                    } ${dragId===task.id ? 'opacity-50' : ''}`}
+                                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a',
+                                      borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}>
+                                    <p className="text-white text-xs font-medium leading-snug mb-1">{task.title}</p>
+                                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                      {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18'}}>{task.type}</span>}
+                                      {task.assignee && ASSIGNEE_MAP[task.assignee] && <span className="text-[9px] text-zinc-500">{ASSIGNEE_MAP[task.assignee].emoji}</span>}
+                                      {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-700 ml-auto">{(task as any).task_key}</span>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {allKeys.length === 0 && <p className="text-zinc-700 text-xs text-center py-8">No tasks match filters</p>}
+          </div>
+        )
+      })()}
+
       {/* Mobile column tabs */}
-      {!showArchive && !groupByFeature && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
+      {!showArchive && !groupByFeature && !groupByBusiness && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
         {BOARD_COLUMNS.map(col=>(
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
             className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300')}
@@ -3379,7 +3493,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
       </div>}
 
       {/* Columns */}
-      {!showArchive && !groupByFeature && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
+      {!showArchive && !groupByFeature && !groupByBusiness && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => t.status===col.id)
           return (
