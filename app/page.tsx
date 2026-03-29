@@ -135,7 +135,7 @@ const NAV = [
 type Tab = typeof NAV[number]['id']
 
 // Chat types
-interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean }
+interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string }
 interface ChatConversation { id: string; title: string; model: string; messages: ChatMessage[]; createdAt: number; updatedAt: number; pinned?: boolean; project?: string|null; agent_id?: string; system_prompt?: string|null; forked_from?: string|null }
 
 const FLOOR_DESKS = [
@@ -1182,6 +1182,7 @@ function ChatTab() {
         content: '',
         model: 'kaos',
         ts: Date.now(),
+        agent_id: selectedAgent,
       }
 
       setChats(prev => prev.map(c =>
@@ -2132,7 +2133,21 @@ function ChatTab() {
               {activeConv.messages.length === 0 ? (
                 <EmptyState icon="💬" message="No messages yet — start the conversation" />
               ) : (
-                activeConv.messages.map(msg => (
+                activeConv.messages.map(msg => {
+                  // MC-37: Handoff indicator
+                  if (msg.agent_id === '__handoff__') {
+                    return (
+                      <div key={msg.id} className="flex items-center gap-3 py-2">
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
+                        <span className="text-[10px] text-blue-400/70 font-medium px-3 py-1 rounded-full border border-blue-500/20 bg-blue-500/5 whitespace-nowrap">
+                          {msg.content.replace(/\*\*/g, '')}
+                        </span>
+                        <div className="flex-1 h-px bg-gradient-to-r from-transparent via-blue-500/30 to-transparent" />
+                      </div>
+                    )
+                  }
+                  const msgAgent = msg.agent_id || selectedAgent
+                  return (
                   <div
                     key={msg.id}
                     className={'group flex gap-3 ' + (msg.role === 'user' ? 'flex-row-reverse' : '')}>
@@ -2140,7 +2155,7 @@ function ChatTab() {
                     <div
                       className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm mt-0.5"
                       style={{ background: msg.role === 'user' ? '#1e1e1e' : '#3b82f620' }}>
-                      {msg.role === 'user' ? '👤' : (AGENT_BADGE_MAP[selectedAgent] || '🧠')}
+                      {msg.role === 'user' ? '👤' : (AGENT_BADGE_MAP[msgAgent] || '🧠')}
                     </div>
 
                     {/* Bubble */}
@@ -2323,7 +2338,8 @@ function ChatTab() {
                       )}
                     </div>
                   </div>
-                ))
+                  )
+                })
               )}
               {/* Feature 13: follow-up suggestions */}
               {followUpSuggestions.length > 0 && !isSending && (
@@ -2581,7 +2597,22 @@ function ChatTab() {
                 {/* Agent selector */}
                 <select
                   value={selectedAgent}
-                  onChange={e => setSelectedAgent(e.target.value)}
+                  onChange={e => {
+                    const prev = selectedAgent
+                    const next = e.target.value
+                    setSelectedAgent(next)
+                    // MC-37: Show handoff indicator in chat
+                    if (activeConv && prev !== next && activeConv.messages.length > 0) {
+                      const handoffMsg: ChatMessage = {
+                        id: 'handoff-' + Date.now(),
+                        role: 'assistant',
+                        content: `**Agent handoff**: ${AGENT_OPTIONS.find(a=>a.id===prev)?.label || prev} → ${AGENT_OPTIONS.find(a=>a.id===next)?.label || next}`,
+                        ts: Date.now(),
+                        agent_id: '__handoff__',
+                      }
+                      setChats(cs => cs.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, handoffMsg] } : c))
+                    }
+                  }}
                   disabled={isSending}
                   className="px-1.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800/40 text-[10px] text-zinc-400 shrink-0 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
                   title="Select agent">
@@ -3036,6 +3067,7 @@ const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
   'vespera-sme': {emoji:'🖤', name:'Vespera SME'},
   builder:       {emoji:'🔨', name:'Builder'},
   tester:        {emoji:'🧪', name:'Tester'},
+  michael:       {emoji:'👤', name:'Michael'},
 }
 
 const PRIORITY_COLORS: Record<string,string> = {
@@ -3264,6 +3296,33 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
         )}
       </div>
 
+      {/* MC-127: Michael's "Needs You" queue */}
+      {!showArchive && (() => {
+        const michaelTasks = tasks.filter(t => t.assignee === 'michael' && t.status !== 'done' && t.status !== 'closed')
+        if (michaelTasks.length === 0) return null
+        return (
+          <div className="rounded-xl border-2 border-amber-500/30 p-3 mb-2" style={{background:'#1a1508'}}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-amber-400 text-sm font-semibold">👤 Needs You</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-medium">{michaelTasks.length}</span>
+            </div>
+            <div className="space-y-1.5">
+              {michaelTasks.map(t => (
+                <div key={t.id}
+                  onClick={() => { setDetailTask(t); setBugDetailsOpen(false) }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/20 cursor-pointer hover:bg-amber-900/10 transition-colors"
+                  style={{background:'#151005'}}>
+                  <span className="text-amber-400 text-[10px] font-semibold shrink-0">Needs You</span>
+                  <p className="text-white text-xs font-medium truncate flex-1">{t.title}</p>
+                  {t.project && <Chip label={t.project} />}
+                  {(t as any).task_key && <span className="text-[9px] font-mono text-zinc-600 shrink-0">{(t as any).task_key}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Archive View */}
       {showArchive && (
         <div className="flex-1 flex flex-col gap-3 min-h-0">
@@ -3376,28 +3435,35 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
 
       {/* Business-grouped view */}
       {!showArchive && groupByBusiness && (() => {
-        const BIZ_MAP: Record<string, {label: string; emoji: string}> = {
-          'Vespera': { label: 'Vespera', emoji: '🖤' },
-          'Kemuni': { label: 'Kemuni', emoji: '🚀' },
-          'Mission Control': { label: 'Mission Control', emoji: '🧠' },
-          'Infrastructure': { label: 'Infrastructure', emoji: '⚙️' },
-          'KAOS': { label: 'KAOS', emoji: '🤖' },
+        const BIZ_PROJECTS: Record<string, {label: string; emoji: string; projects: string[]}> = {
+          'Vespera':          { label: 'Vespera',          emoji: '🖤', projects: ['Vespera'] },
+          'Kemuni':           { label: 'Kemuni',           emoji: '🚀', projects: ['Kemuni'] },
+          'Mission Control':  { label: 'Mission Control',  emoji: '🧠', projects: ['Mission Control'] },
+          'Infrastructure':   { label: 'Infrastructure',   emoji: '⚙️', projects: ['Infrastructure', 'KAOS'] },
         }
-        const bizOrder = ['Vespera', 'Kemuni', 'Mission Control', 'Infrastructure', 'KAOS']
-        // Group by project field
-        const bizGroups: Record<string, typeof filtered> = {}
+        const bizOrder = ['Vespera', 'Kemuni', 'Mission Control', 'Infrastructure']
+        // Reverse map: project → business
+        const projToBiz: Record<string, string> = {}
+        for (const [biz, info] of Object.entries(BIZ_PROJECTS)) {
+          for (const p of info.projects) projToBiz[p] = biz
+        }
+        // Group tasks by business → project
+        const bizGroups: Record<string, Record<string, typeof filtered>> = {}
         for (const t of filtered) {
-          const key = BIZ_MAP[t.project ?? ''] ? (t.project ?? 'Other') : 'Other'
-          if (!bizGroups[key]) bizGroups[key] = []
-          bizGroups[key].push(t)
+          const biz = projToBiz[t.project ?? ''] ?? 'Other'
+          const proj = t.project ?? 'Unassigned'
+          if (!bizGroups[biz]) bizGroups[biz] = {}
+          if (!bizGroups[biz][proj]) bizGroups[biz][proj] = []
+          bizGroups[biz][proj].push(t)
         }
         const allKeys = [...bizOrder.filter(k => bizGroups[k]), ...Object.keys(bizGroups).filter(k => !bizOrder.includes(k) && bizGroups[k])]
         return (
           <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
             {allKeys.map(bizKey => {
-              const biz = BIZ_MAP[bizKey] || { label: bizKey, emoji: '📁' }
-              const bizTasks = bizGroups[bizKey] || []
-              const isCollapsed = collapsedBiz[bizKey] ?? false
+              const biz = BIZ_PROJECTS[bizKey] || { label: bizKey, emoji: '📁', projects: [] }
+              const bizProjectGroups = bizGroups[bizKey] || {}
+              const allBizTasks = Object.values(bizProjectGroups).flat()
+              const isCollapsed = collapsedBiz[bizKey] ?? true
               const toggleCollapse = () => {
                 const next = { ...collapsedBiz, [bizKey]: !isCollapsed }
                 setCollapsedBiz(next)
@@ -3409,9 +3475,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
                   <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-zinc-800/30 transition-colors select-none">
                     <span className="text-base">{biz.emoji}</span>
                     <span className="text-sm font-semibold text-zinc-200">{biz.label}</span>
-                    <span className="text-xs text-zinc-500 ml-1">({bizTasks.length} issue{bizTasks.length !== 1 ? 's' : ''})</span>
+                    <span className="text-xs text-zinc-500 ml-1">({allBizTasks.length} issue{allBizTasks.length !== 1 ? 's' : ''})</span>
                     <div className="flex gap-1.5 ml-2 shrink-0">
-                      {BOARD_COLUMNS.map(col => { const cnt = bizTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
+                      {BOARD_COLUMNS.map(col => { const cnt = allBizTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
                         <span key={col.id} className="text-[9px] px-1.5 py-0.5 rounded-full font-mono"
                           style={{color: col.color, background: col.color + '18', border: `1px solid ${col.color}30`}}>
                           {col.label[0]} {cnt}
@@ -3420,57 +3486,78 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
                     </div>
                     <span className="ml-auto text-zinc-600 text-xs">{isCollapsed ? '▶' : '▼'}</span>
                   </div>
-                  {/* Kanban columns per business */}
+                  {/* Projects nested under business */}
                   {!isCollapsed && (
                     <div className="border-t border-zinc-800/40">
-                      {/* Mobile col tabs */}
-                      <div className="flex md:hidden gap-1 px-3 py-1.5 overflow-x-auto">
-                        {BOARD_COLUMNS.map(col => (
-                          <button key={col.id} onClick={e => { e.stopPropagation(); setMobileCol(col.id) }}
-                            className={'text-xs px-2.5 py-1 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-zinc-800 text-white':'text-zinc-500 hover:text-zinc-300')}>
-                            {col.label} <span className="text-zinc-600 ml-0.5">{bizTasks.filter(t => t.status===col.id).length}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex gap-3 overflow-x-auto p-3">
-                        {BOARD_COLUMNS.map(col => {
-                          const colTasks = bizTasks.filter(t => t.status === col.id)
-                          return (
-                            <div key={col.id}
-                              className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-zinc-900/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
-                              style={{borderTop:`2px solid ${col.color}`, minHeight: '80px'}}
-                              onDragOver={e => e.preventDefault()}
-                              onDrop={() => handleDrop(col.id)}>
-                              <div className="flex items-center gap-2 px-3 py-2">
-                                <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
-                                <span className="text-[10px] font-semibold text-zinc-500">{col.label} ({colTasks.length})</span>
-                              </div>
-                              <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[40px]">
-                                {colTasks.length === 0 && <div className="text-[10px] text-zinc-700 text-center py-3">—</div>}
-                                {colTasks.map(task => (
-                                  <div key={task.id}
-                                    draggable
-                                    onDragStart={() => setDragId(task.id)}
-                                    onDragEnd={() => setDragId(null)}
-                                    onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                                    className={`rounded-xl border p-2.5 cursor-pointer transition-colors border-l-2 ${
-                                      task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
-                                    } ${dragId===task.id ? 'opacity-50' : ''}`}
-                                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a',
-                                      borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}>
-                                    <p className="text-white text-xs font-medium leading-snug mb-1">{task.title}</p>
-                                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                                      {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18'}}>{task.type}</span>}
-                                      {task.assignee && ASSIGNEE_MAP[task.assignee] && <span className="text-[9px] text-zinc-500">{ASSIGNEE_MAP[task.assignee].emoji}</span>}
-                                      {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-700 ml-auto">{(task as any).task_key}</span>}
-                                    </div>
-                                  </div>
-                                ))}
+                      {Object.entries(bizProjectGroups).map(([projName, projTasks]) => {
+                        const projKey = `${bizKey}::${projName}`
+                        const isProjCollapsed = collapsedBiz[projKey] ?? false
+                        const toggleProjCollapse = () => {
+                          const next = { ...collapsedBiz, [projKey]: !isProjCollapsed }
+                          setCollapsedBiz(next)
+                          if (typeof window !== 'undefined') localStorage.setItem('board-biz-collapsed', JSON.stringify(next))
+                        }
+                        return (
+                          <div key={projName}>
+                            {/* Project sub-header */}
+                            <div onClick={toggleProjCollapse} className="flex items-center gap-2 px-6 py-2 cursor-pointer hover:bg-zinc-800/20 transition-colors select-none border-b border-zinc-800/30" style={{background:'#0c0c0c'}}>
+                              <span className="text-zinc-500 text-xs">{isProjCollapsed ? '▸' : '▾'}</span>
+                              <span className="text-xs font-medium text-zinc-400">{projName}</span>
+                              <span className="text-[10px] text-zinc-600">({projTasks.length})</span>
+                              <div className="flex gap-1 ml-auto shrink-0">
+                                {BOARD_COLUMNS.map(col => { const cnt = projTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
+                                  <span key={col.id} className="text-[8px] px-1 py-0.5 rounded font-mono"
+                                    style={{color: col.color, background: col.color + '12'}}>
+                                    {cnt}
+                                  </span>
+                                ) : null })}
                               </div>
                             </div>
-                          )
-                        })}
-                      </div>
+                            {/* Issue cards for this project */}
+                            {!isProjCollapsed && (
+                              <div className="flex gap-3 overflow-x-auto p-3">
+                                {BOARD_COLUMNS.map(col => {
+                                  const colTasks = projTasks.filter(t => t.status === col.id)
+                                  return (
+                                    <div key={col.id}
+                                      className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-zinc-900/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+                                      style={{borderTop:`2px solid ${col.color}`, minHeight: '60px'}}
+                                      onDragOver={e => e.preventDefault()}
+                                      onDrop={() => handleDrop(col.id)}>
+                                      <div className="flex items-center gap-2 px-3 py-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
+                                        <span className="text-[10px] font-semibold text-zinc-500">{col.label} ({colTasks.length})</span>
+                                      </div>
+                                      <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
+                                        {colTasks.length === 0 && <div className="text-[10px] text-zinc-700 text-center py-2">—</div>}
+                                        {colTasks.map(task => (
+                                          <div key={task.id}
+                                            draggable
+                                            onDragStart={() => setDragId(task.id)}
+                                            onDragEnd={() => setDragId(null)}
+                                            onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
+                                            className={`rounded-xl border p-2.5 cursor-pointer transition-colors border-l-2 ${
+                                              task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-zinc-600'
+                                            } ${dragId===task.id ? 'opacity-50' : ''}`}
+                                            style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a',
+                                              borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}>
+                                            <p className="text-white text-xs font-medium leading-snug mb-1">{task.title}</p>
+                                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                              {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18'}}>{task.type}</span>}
+                                              {task.assignee && ASSIGNEE_MAP[task.assignee] && <span className="text-[9px] text-zinc-500">{ASSIGNEE_MAP[task.assignee].emoji}</span>}
+                                              {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-700 ml-auto">{(task as any).task_key}</span>}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -3964,6 +4051,161 @@ function SearchOverlay({ open, onClose, onNavigate }: { open: boolean; onClose: 
   )
 }
 
+// MC-111: Epic/Feature/Issue breakdown per project card
+function ProjectBreakdownBars({ project }: { project: string }) {
+  const [data, setData] = useState<{epics:{done:number;total:number};features:{done:number;total:number};issues:{done:number;total:number}}|null>(null)
+  useEffect(() => {
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    fetch(`${SUPA}/rest/v1/issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    }).then(r => r.json()).then((rows: any[]) => {
+      if (!Array.isArray(rows)) return
+      const count = (type: string) => {
+        const matching = rows.filter(r => r.type === type)
+        return { done: matching.filter(r => r.status === 'done').length, total: matching.length }
+      }
+      setData({ epics: count('epic'), features: count('feature'), issues: { done: rows.filter(r => !['epic','feature'].includes(r.type) && r.status === 'done').length, total: rows.filter(r => !['epic','feature'].includes(r.type)).length } })
+    }).catch(() => {})
+  }, [project])
+  if (!data) return null
+  const rows = [
+    { label: 'Epics', ...data.epics, color: '#a855f7' },
+    { label: 'Features', ...data.features, color: '#3b82f6' },
+    { label: 'Issues', ...data.issues, color: '#10b981' },
+  ]
+  return (
+    <div className="mt-2 pt-2 border-t border-zinc-800/40 space-y-1.5">
+      {rows.map(r => (
+        <div key={r.label} className="flex items-center gap-2">
+          <span className="text-[9px] text-zinc-500 w-12 shrink-0">{r.label}</span>
+          <div className="flex-1 h-1 rounded-full" style={{background:'#1a1a1a'}}>
+            <div className="h-1 rounded-full transition-all" style={{width: r.total > 0 ? (r.done/r.total*100)+'%' : '0%', background: r.color}} />
+          </div>
+          <span className="text-[9px] text-zinc-600 tabular-nums w-8 text-right">{r.done}/{r.total}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// MC-172: Office activity panel showing live subagent data
+function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}> }) {
+  const [runs, setRuns] = useState<any[]>([])
+  const [collapsed, setCollapsed] = useState(false)
+
+  useEffect(() => {
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const fetchRuns = () => {
+      fetch(`${SUPA}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`, {
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
+      }).then(r => r.json()).then(data => {
+        if (Array.isArray(data)) setRuns(data)
+      }).catch(() => {})
+    }
+    fetchRuns()
+    const iv = setInterval(fetchRuns, 30000)
+    return () => clearInterval(iv)
+  }, [])
+
+  const AGENT_NAMES: Record<string,{name:string;emoji:string}> = {
+    main:{name:'KAOS',emoji:'🧠'}, scout:{name:'Scout',emoji:'🔍'}, ops:{name:'Ops',emoji:'⚙️'},
+    'kemuni-sme':{name:'Kemuni SME',emoji:'🚀'}, 'vespera-sme':{name:'Vespera SME',emoji:'🖤'},
+    builder:{name:'Builder',emoji:'🔨'}, tester:{name:'Tester',emoji:'🧪'}, deployer:{name:'Deployer',emoji:'🚀'},
+  }
+
+  const activeRuns = runs.filter(r => {
+    if (r.status === 'running') return true
+    if (!r.started_at) return false
+    return (Date.now() - new Date(r.started_at).getTime()) < 300000 // 5 min
+  })
+  const completedRuns = runs.filter(r => r.status !== 'running' && (r.started_at ? (Date.now() - new Date(r.started_at).getTime()) >= 300000 : true)).slice(0, 10)
+  const failedRuns = runs.filter(r => r.status === 'error')
+
+  const fmtRuntime = (startedAt: string) => {
+    const mins = Math.round((Date.now() - new Date(startedAt).getTime()) / 60000)
+    return mins < 1 ? '<1m' : mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`
+  }
+
+  return (
+    <div className={`absolute top-3 right-3 z-10 rounded-xl border border-zinc-700/60 shadow-2xl transition-all ${collapsed ? 'w-10' : 'w-72'}`}
+      style={{background:'rgba(10,10,10,0.92)', backdropFilter:'blur(12px)'}}>
+      {collapsed ? (
+        <button onClick={() => setCollapsed(false)} className="w-full h-10 flex items-center justify-center text-zinc-400 hover:text-white">
+          <span className="text-xs">◀</span>
+        </button>
+      ) : (
+        <div className="p-3 space-y-3 max-h-[60vh] overflow-y-auto">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Subagent Activity</span>
+            <button onClick={() => setCollapsed(true)} className="text-zinc-600 hover:text-zinc-300 text-xs">▶</button>
+          </div>
+
+          {/* Active */}
+          {activeRuns.length > 0 && (
+            <div>
+              <div className="text-[9px] text-emerald-400/70 uppercase tracking-widest mb-1.5 font-semibold">Active ({activeRuns.length})</div>
+              {activeRuns.map((r, i) => {
+                const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-zinc-800/30 last:border-0">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 anim-pg shrink-0" />
+                    <span className="text-xs">{ag.emoji}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white text-[11px] font-medium truncate">{ag.name}</p>
+                      <p className="text-zinc-500 text-[9px] truncate">{r.task_title || 'Working...'}</p>
+                    </div>
+                    {r.started_at && <span className="text-[9px] text-emerald-400/60 font-mono shrink-0">{fmtRuntime(r.started_at)}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {activeRuns.length === 0 && (
+            <div className="text-zinc-600 text-[10px] text-center py-2">No active subagents</div>
+          )}
+
+          {/* Failed */}
+          {failedRuns.length > 0 && (
+            <div>
+              <div className="text-[9px] text-red-400/70 uppercase tracking-widest mb-1.5 font-semibold">Failed</div>
+              {failedRuns.slice(0, 3).map((r, i) => {
+                const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1 border-b border-zinc-800/30 last:border-0" style={{background:'#1a080810'}}>
+                    <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                    <span className="text-xs">{ag.emoji}</span>
+                    <p className="text-red-300/80 text-[10px] truncate flex-1">{r.task_title || 'Unknown'}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Recent completed */}
+          {completedRuns.length > 0 && (
+            <div>
+              <div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1.5 font-semibold">Recent ({completedRuns.length})</div>
+              {completedRuns.map((r, i) => {
+                const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1 border-b border-zinc-800/20 last:border-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.status==='error'?'bg-red-500':'bg-zinc-600'}`} />
+                    <span className="text-[10px]">{ag.emoji}</span>
+                    <p className="text-zinc-400 text-[10px] truncate flex-1">{r.task_title || 'Task'}</p>
+                    {r.started_at && <span className="text-[9px] text-zinc-700 font-mono shrink-0">{fmtRuntime(r.started_at)}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
@@ -3989,6 +4231,19 @@ export default function Home() {
   const [liveCrons, setLiveCrons] = useState<typeof CRONS | null>(null)
   const [projects, setProjects] = useState<any[]|null>(null)
   const [deployState, setDeployState] = useState<'idle'|'loading'|'done'>('idle')
+  // MC-112: Global sync state
+  const [syncing, setSyncing] = useState(false)
+  const globalSync = async () => {
+    setSyncing(true)
+    await Promise.all([
+      fetch('/api/status').then(r=>r.json()).then(d=>{ setLiveStatus(d); setStatusAt(Date.now()) }).catch(()=>{}),
+      fetch('/api/agents').then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setLiveAgents(d) }).catch(()=>{}),
+      fetch('/api/automations').then(r=>r.json()).then(d=>{ if(Array.isArray(d)) setLiveCrons(d) }).catch(()=>{}),
+      fetch('/api/projects').then(r=>r.json()).then(d=>{ if(Array.isArray(d)&&d.length>0) setProjects(d) }).catch(()=>{}),
+    ])
+    setStatusCountdown(30)
+    setSyncing(false)
+  }
 
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
@@ -4011,6 +4266,8 @@ export default function Home() {
   const [autoProjectFilter, setAutoProjectFilter] = useState<string|null>(null)
   // INF-81: agent_runs data from Supabase (30s refresh)
   const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:string}>>({})
+  // MC-173: open sprint issues per agent
+  const [agentIssueCounts, setAgentIssueCounts] = useState<Record<string, number>>({})
   useEffect(() => {
     const SUPA_AR = 'https://twthgapiouiqhavrcnry.supabase.co'
     const KEY_AR = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -4028,8 +4285,18 @@ export default function Home() {
         setAgentRunsData(byAgent)
       }).catch(() => {})
     }
-    fetchRuns()
-    const iv = setInterval(fetchRuns, 30000)
+    const fetchAgentIssues = () => {
+      fetch(`${SUPA_AR}/rest/v1/issues?status=in.(open,in_progress,in_review)&sprint=not.is.null&select=assignee&limit=500`, {
+        headers: { apikey: KEY_AR, Authorization: `Bearer ${KEY_AR}` }
+      }).then(r => r.json()).then((rows: any[]) => {
+        if (!Array.isArray(rows)) return
+        const counts: Record<string, number> = {}
+        for (const r of rows) { if (r.assignee) counts[r.assignee] = (counts[r.assignee] || 0) + 1 }
+        setAgentIssueCounts(counts)
+      }).catch(() => {})
+    }
+    fetchRuns(); fetchAgentIssues()
+    const iv = setInterval(() => { fetchRuns(); fetchAgentIssues() }, 30000)
     return () => clearInterval(iv)
   }, [])
 
@@ -4176,6 +4443,21 @@ export default function Home() {
     const a=ACTIVITIES[id]||['Idle'];return a[tick%a.length]
   }
 
+  // MC-173: compute live status for each agent
+  const agentLiveStatus = (agentId: string): {dot: 'green'|'amber'|'grey'; label: string} => {
+    const ar = agentRunsData[agentId]
+    if (ar?.startedAt) {
+      const mins = Math.round((Date.now() - new Date(ar.startedAt).getTime()) / 60000)
+      if (ar.status === 'running' || mins < 5) {
+        return { dot: 'green', label: ar.taskTitle || 'Working...' }
+      }
+    }
+    if ((agentIssueCounts[agentId] ?? 0) > 0) {
+      return { dot: 'amber', label: `${agentIssueCounts[agentId]} open issue${agentIssueCounts[agentId] > 1 ? 's' : ''}` }
+    }
+    return { dot: 'grey', label: 'Idle' }
+  }
+
   const rawFeed = (liveStatus?.recentActivity && liveStatus.recentActivity.length > 0) ? liveStatus.recentActivity : LIVE_FEED
   const feed = Array.from({length:5},(_,i)=>rawFeed[(feedIdx+i)%rawFeed.length])
   const displayAgents = (liveAgents && liveAgents.length > 0 ? liveAgents : ALL_AGENTS) as typeof ALL_AGENTS
@@ -4290,6 +4572,21 @@ export default function Home() {
           {/* ── OVERVIEW ── */}
           {tab==='overview' && (
             <div className="space-y-5">
+
+              {/* MC-112: Sync button */}
+              <div className="flex justify-end">
+                <button
+                  onClick={globalSync}
+                  disabled={syncing}
+                  className="text-[10px] px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 bg-zinc-900/50 transition-all flex items-center gap-1.5 disabled:opacity-50">
+                  {syncing ? (
+                    <span className="w-3 h-3 border border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
+                  ) : (
+                    <span>↻</span>
+                  )}
+                  {syncing ? 'Syncing...' : 'Sync'}
+                </button>
+              </div>
 
               {/* ── Hero Countdown Timers (INF-75) ── */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -4469,6 +4766,8 @@ export default function Home() {
                             <span className="text-blue-400 font-medium">{tc.inProgress}</span>
                           </div>
                         </div>
+                        {/* MC-111: Epic/Feature/Issue breakdown */}
+                        <ProjectBreakdownBars project={projName} />
                       </div>
                     )
                   })}
@@ -4691,7 +4990,10 @@ export default function Home() {
               {displayAgents.length === 0 && <EmptyState icon="👥" message="No agents registered yet" />}
 
               {/* Lead agent card */}
-              {displayAgents.length > 0 && <div className="flex justify-center">
+              {displayAgents.length > 0 && (() => {
+                const ls0 = agentLiveStatus(displayAgents[0].id)
+                const dotColor = ls0.dot === 'green' ? 'bg-emerald-500 anim-pg' : ls0.dot === 'amber' ? 'bg-amber-500 anim-py' : 'bg-zinc-600'
+                return <div className="flex justify-center">
                 <div className="rounded-2xl p-4 md:p-6 border border-zinc-700/50 card-glow w-full max-w-xs sm:max-w-sm cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setAgentModal(displayAgents[0])}>
                   <div className="flex items-center gap-4 mb-4">
                     <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{background:'#1a1a1a'}}>
@@ -4700,11 +5002,13 @@ export default function Home() {
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-white font-semibold">{displayAgents[0].name}</p>
-                        <Dot status={displayAgents[0].status} />
+                        <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`} title={ls0.label} />
                         {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{displayAgents[0].modelShort}</span>}
                       </div>
                       <p className="text-zinc-500 text-xs">{displayAgents[0].role}</p>
-                      <p className="text-amber-600/60 text-[10px] font-mono mt-0.5">Never audited</p>
+                      {ls0.dot === 'green' && <p className="text-emerald-400/80 text-[10px] font-mono mt-0.5 truncate max-w-[200px]">↳ {ls0.label}</p>}
+                      {ls0.dot === 'amber' && <p className="text-amber-400/70 text-[10px] font-mono mt-0.5">{ls0.label}</p>}
+                      {ls0.dot === 'grey' && <p className="text-zinc-600 text-[10px] font-mono mt-0.5">Idle</p>}
                     </div>
                   </div>
                   <p className="text-zinc-500 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
@@ -4712,7 +5016,8 @@ export default function Home() {
                     {displayAgents[0].capabilities.map((c:string)=><Chip key={c} label={c}/>)}
                   </div>
                 </div>
-              </div>}
+              </div>
+              })()}
               <div className="flex justify-center">
                 <div className="w-px h-6 bg-gradient-to-b from-zinc-600 to-transparent" />
               </div>
@@ -4724,10 +5029,14 @@ export default function Home() {
               <SH icon="🤖">Active Agents</SH>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {displayAgents.slice(1).filter((a:any)=>a.status!=='planned').sort((a:any,b:any)=>{
-                  if(a.status==='active'&&b.status!=='active') return -1
-                  if(b.status==='active'&&a.status!=='active') return 1
+                  const la = agentLiveStatus(a.id).dot, lb = agentLiveStatus(b.id).dot
+                  const pri = (d: string) => d==='green'?0:d==='amber'?1:2
+                  if(pri(la)!==pri(lb)) return pri(la)-pri(lb)
                   return (a.ago??9999)-(b.ago??9999)
-                }).map((a:any)=>(
+                }).map((a:any)=>{
+                  const ls = agentLiveStatus(a.id)
+                  const dotColor = ls.dot === 'green' ? 'bg-emerald-500 anim-pg' : ls.dot === 'amber' ? 'bg-amber-500 anim-py' : 'bg-zinc-600'
+                  return (
                   <div key={a.id} className="rounded-2xl p-5 border card-glow cursor-pointer hover:border-zinc-600 transition-colors" style={{background:'#0f0f0f',borderColor:a.color+'28'}} onClick={()=>setAgentModal(a)}>
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl shrink-0"
@@ -4737,32 +5046,23 @@ export default function Home() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <p className="text-white text-sm font-semibold truncate">{a.name}</p>
-                          <Dot status={a.status} />
+                          <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={ls.label} />
                           {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">{a.modelShort}</span>}
-                          {a.ago > 1440 && ['ops','deployer','main'].includes(a.id) && (
-                            <span title="Idle >24h" className="text-yellow-500 text-xs">⚠️</span>
-                          )}
                         </div>
                         <p className="text-zinc-500 text-xs truncate">{a.role}</p>
-                        <p className="text-zinc-700 text-[10px] font-mono truncate">
-                          {(()=>{
-                            const ar = agentRunsData[a.id]
-                            if (ar?.startedAt) {
-                              const mins = Math.round((Date.now() - new Date(ar.startedAt).getTime()) / 60000)
-                              return mins < 1 ? 'Active just now' : mins < 60 ? `Active ${mins}m ago` : mins < 1440 ? `Active ${Math.floor(mins/60)}h ago` : `Idle ${Math.floor(mins/1440)}d`
-                            }
-                            return a.ago > 0 ? (a.ago < 60 ? `Active ${a.ago}m ago` : a.ago < 1440 ? `Active ${Math.floor(a.ago/60)}h ago` : `Idle ${Math.floor(a.ago/1440)}d`) : a.status === 'active' ? 'Active now' : 'Idle'
-                          })()}
+                        <p className={`text-[10px] font-mono truncate ${ls.dot==='green'?'text-emerald-400/80':ls.dot==='amber'?'text-amber-400/70':'text-zinc-700'}`}>
+                          {ls.dot === 'green' ? `↳ ${ls.label}` : ls.label}
                         </p>
                       </div>
                     </div>
-                    {(a.currentTask || agentRunsData[a.id]?.taskTitle) && <p className="text-zinc-400 text-[10px] mb-2 truncate">↳ {(a.currentTask || agentRunsData[a.id]?.taskTitle || '').slice(0,40)}</p>}
+                    {ls.dot === 'green' && (a.currentTask || agentRunsData[a.id]?.taskTitle) && <p className="text-emerald-400/60 text-[10px] mb-2 truncate">↳ {(a.currentTask || agentRunsData[a.id]?.taskTitle || '').slice(0,40)}</p>}
                     <p className="text-zinc-500 text-xs leading-relaxed mb-3">{a.desc}</p>
                     <div className="flex flex-wrap gap-1 mb-2">
                       {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* Planned agents */}
@@ -5080,8 +5380,10 @@ export default function Home() {
 
           {/* ── OFFICE ── */}
           {tab==='office' && (
-            <div className="h-[calc(100vh-88px)] -mx-6 -my-5">
+            <div className="h-[calc(100vh-88px)] -mx-6 -my-5 relative">
               <AgentOffice />
+              {/* MC-172: Live subagent activity overlay */}
+              <OfficeActivityPanel agentRunsData={agentRunsData} />
             </div>
           )}
 
