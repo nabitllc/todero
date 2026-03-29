@@ -117,10 +117,9 @@ export async function PATCH(req: NextRequest) {
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Instant Discord notification on done (except noise resolutions) ──
-  const noiseResolutions = ['duplicate', 'cannot_reproduce']
+  // ── Instant Discord notification on every done ──
   const resolvedType = fields.resolution_type ?? data?.resolution_type
-  if (fields.status === 'done' && !noiseResolutions.includes(resolvedType) && data) {
+  if (fields.status === 'done' && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType })
   }
 
