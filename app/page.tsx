@@ -3595,6 +3595,60 @@ export default function Home() {
                 })}
               </div>
 
+              {/* ── Project Health Card ── */}
+              {(()=>{
+                const allProjects = sprintProjects.filter(p => p.taskCounts && p.taskCounts.total > 0)
+                const sorted = [...allProjects].sort((a,b) => (a.taskProgress ?? 0) - (b.taskProgress ?? 0))
+                if (!sorted.length) return null
+                return (
+                  <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">📊</span>
+                        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Project Health</span>
+                      </div>
+                      <span className="text-zinc-700 text-[10px]">sorted by progress ↑</span>
+                    </div>
+                    <div className="space-y-3.5">
+                      {sorted.map(proj => {
+                        const tc = proj.taskCounts!
+                        const pct = proj.taskProgress ?? 0
+                        const isLow = pct < 30
+                        const isMid = pct >= 30 && pct < 70
+                        const barColor = isLow ? '#ef4444' : isMid ? '#f59e0b' : '#10b981'
+                        const statusLabel = isLow ? 'Needs work' : isMid ? 'In progress' : 'Nearly done'
+                        const statusColor = isLow ? '#ef4444' : isMid ? '#f59e0b' : '#10b981'
+                        return (
+                          <div key={proj.id}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-base shrink-0">{proj.emoji}</span>
+                                <span className="text-white text-xs font-medium truncate">{proj.name}</span>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-medium"
+                                  style={{background: statusColor+'18', color: statusColor}}>
+                                  {statusLabel}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 ml-2">
+                                <span className="text-zinc-400 text-xs tabular-nums font-medium">{tc.done}<span className="text-zinc-700">/{tc.total}</span></span>
+                                <span className="text-zinc-600 text-[10px] tabular-nums w-8 text-right">{pct}%</span>
+                              </div>
+                            </div>
+                            <Bar v={pct} color={barColor} bg='#1a1a1a' />
+                            {(tc.inProgress > 0 || tc.open > 0) && (
+                              <div className="flex gap-3 mt-1">
+                                {tc.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {tc.inProgress} in progress</span>}
+                                {tc.open > 0 && <span className="text-zinc-600 text-[9px]">○ {tc.open} open</span>}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+
               {/* Live Activity Feed (mini) */}
               <div>
                 <SH icon="📡" sub={liveStatus?.recentActivity?.length ? '● live' : undefined}>Recent Activity</SH>
