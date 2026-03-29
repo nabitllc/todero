@@ -226,7 +226,7 @@ export async function PATCH(req: NextRequest) {
   // ── Fetch existing record to detect pr_url and test_status transitions ──
   const { data: before } = await supabase
     .from('issues')
-    .select('pr_url,test_status,fail_count,acceptance_criteria')
+    .select('pr_url,test_status,fail_count,acceptance_criteria,parent_id,assignee,title,task_key')
     .eq('id', id)
     .single()
 
@@ -269,6 +269,47 @@ export async function PATCH(req: NextRequest) {
     if ((data.fail_count ?? 0) >= 3) {
       notifyEscalation(data)
     }
+  }
+
+  // ── INF-258: UX gate — when UX review child is marked done, complete the parent ──
+  if (fields.status === 'done' && before?.assignee === 'ux' && before?.parent_id) {
+    const parentId = before.parent_id
+    const uxKey = before.task_key ?? data?.task_key ?? '?'
+
+    // Mark parent issue as done (UX approved)
+    const { data: parentData } = await supabase
+      .from('issues')
+      .update({
+        status: 'done',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', parentId)
+      .select()
+      .single()
+
+    if (parentData) {
+      notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
+      console.log(`[ux-gate] ${uxKey} approved → parent ${parentData.task_key} marked done`)
+    }
+  }
+
+  // ── INF-258: UX gate — when UX review child fails, create fix task and reopen parent ──
+  if (isNewFailure && before?.assignee === 'ux' && before?.parent_id && data) {
+    const uxNotes = (data.description ?? '').slice(0, 300)
+    // Create fix task assigned to builder
+    await supabase.from('issues').insert({
+      title: `UX Fix: ${before.title ?? data.title}`,
+      description: `UX review failed for parent issue. Fix the following UX issues:\n\n${uxNotes}`,
+      project: 'Mission Control',
+      type: 'task',
+      priority: 'high',
+      assignee: 'builder',
+      acceptance_criteria: 'Address all UX review feedback. Re-submit for UX review.',
+      sprint: new Date().toISOString().split('T')[0],
+      parent_id: before.parent_id,
+      test_tier: 'P2'
+    })
+    console.log(`[ux-gate] UX review failed for ${data.task_key} → fix task created for builder`)
   }
 
   return NextResponse.json(data)

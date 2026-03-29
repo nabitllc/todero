@@ -1,11 +1,12 @@
 // lib/pipeline.ts
-export type PipelineStage = "Backlog" | "Definition" | "Building" | "Testing" | "PR Queue" | "Merged"
+export type PipelineStage = "Backlog" | "Definition" | "Building" | "Testing" | "UX Review" | "PR Queue" | "Merged"
 
 export const STAGE_COLORS: Record<PipelineStage, string> = {
   Backlog: "zinc",
   Definition: "blue",
   Building: "amber",
   Testing: "purple",
+  "UX Review": "pink",
   "PR Queue": "green",
   Merged: "emerald"
 }
@@ -25,7 +26,14 @@ export function getPipelineStage(issue: any, children?: any[]): PipelineStage {
 
   if (issue.status === "in_progress") return "Building"
   if (issue.status === "in_review") {
-    if (issue.test_status === "passed") return "PR Queue"
+    // INF-258: UX gate — test passed but still in_review means awaiting UX review
+    if (issue.test_status === "passed") {
+      // Check if there's a pending UX review child (issue stays in_review until UX approves)
+      if (children && children.some((c: any) => c.assignee === "ux" && c.status !== "done")) {
+        return "UX Review"
+      }
+      return "PR Queue"
+    }
     return "Testing"
   }
 

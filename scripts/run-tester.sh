@@ -16,7 +16,7 @@ IN_REVIEW_COUNT=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.in_review&select=
 echo "[tester] $IN_REVIEW_COUNT issues in_review"
 
 # Fetch in_review issues, ordered by priority (P0/P1 first)
-ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.in_review&select=id,title,description,acceptance_criteria,task_key,project,test_tier,feature_branch&order=priority.asc&limit=5" \
+ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.in_review&select=id,title,description,acceptance_criteria,task_key,project,test_tier,feature_branch,type&order=priority.asc&limit=5" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY")
 
 COUNT=$(echo "$ISSUES" | jq 'length')
@@ -110,10 +110,36 @@ $([ "$TIER" != "P0" ] && [ "$TIER" != "P1" ] && echo "4. ")Output your verdict a
 
   if [ "$PASSED" = "true" ]; then
     echo "[tester] $KEY: PASSED — $NOTES"
-    # Set test_status=passed, status=done
-    curl -sf -X PATCH "$MC_API/issues" \
-      -H "Content-Type: application/json" \
-      -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"status\":\"done\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\"}" >/dev/null
+
+    # ── INF-258: UX pipeline gate for UI issues ──
+    # P0/P1 Mission Control feature/task issues get UX review before done
+    ISSUE_TYPE=$(echo "$ISSUE" | jq -r '.type // ""')
+    UX_GATE=false
+    if { [ "$TIER" = "P0" ] || [ "$TIER" = "P1" ]; } && \
+       [ "$PROJECT" = "Mission Control" ] && \
+       { [ "$ISSUE_TYPE" = "feature" ] || [ "$ISSUE_TYPE" = "task" ]; }; then
+      UX_GATE=true
+    fi
+
+    if [ "$UX_GATE" = "true" ]; then
+      echo "[tester] $KEY: UX gate triggered — creating UX review issue"
+      # Mark test_status=passed but keep in_review (awaiting UX)
+      curl -sf -X PATCH "$MC_API/issues" \
+        -H "Content-Type: application/json" \
+        -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\n**Status:** Awaiting UX review before done.\"}" >/dev/null
+
+      # Create UX review child issue
+      UX_AC="Review $KEY against design-system.md. Check: color tokens, spacing scale, typography, component consistency, responsive behavior, accessibility basics. Approve or create fix tasks."
+      curl -sf -X POST "$MC_API/issues" \
+        -H "Content-Type: application/json" \
+        -d "{\"title\":\"UX Review: $KEY — $TITLE\",\"description\":\"UX review gate for $KEY. Review the UI changes on branch $BRANCH against design-system.md standards.\",\"project\":\"Mission Control\",\"type\":\"task\",\"priority\":\"high\",\"assignee\":\"ux\",\"acceptance_criteria\":\"$UX_AC\",\"sprint\":\"$(date -u +%Y-%m-%d)\",\"parent_id\":\"$ID\",\"test_tier\":\"P2\"}" >/dev/null
+      echo "[tester] $KEY: UX review issue created, assigned to ux agent"
+    else
+      # No UX gate — mark done directly
+      curl -sf -X PATCH "$MC_API/issues" \
+        -H "Content-Type: application/json" \
+        -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"status\":\"done\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\"}" >/dev/null
+    fi
   else
     echo "[tester] $KEY: FAILED — $NOTES"
     # Set test_status=failed, status=open for Builder to fix

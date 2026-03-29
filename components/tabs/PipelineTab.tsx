@@ -6,13 +6,14 @@ const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 const HEADERS = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': 'application/json' }
 
-const STAGES: PipelineStage[] = ["Backlog", "Definition", "Building", "Testing", "PR Queue", "Merged"]
+const STAGES: PipelineStage[] = ["Backlog", "Definition", "Building", "Testing", "UX Review", "PR Queue", "Merged"]
 
 const STAGE_HEX: Record<PipelineStage, string> = {
   Backlog: '#71717a',
   Definition: '#3b82f6',
   Building: '#f59e0b',
   Testing: '#a855f7',
+  "UX Review": '#ec4899',
   "PR Queue": '#22c55e',
   Merged: '#10b981',
 }
@@ -143,6 +144,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       Definition: { features: [], issues: [] },
       Building: { features: [], issues: [] },
       Testing: { features: [], issues: [] },
+      "UX Review": { features: [], issues: [] },
       "PR Queue": { features: [], issues: [] },
       Merged: { features: [], issues: [] },
     }
@@ -167,7 +169,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   // Find which agents are in which stage
   const agentStageMap = useMemo(() => {
     const map: Record<PipelineStage, typeof AGENTS> = {
-      Backlog: [], Definition: [], Building: [], Testing: [], "PR Queue": [], Merged: []
+      Backlog: [], Definition: [], Building: [], Testing: [], "UX Review": [], "PR Queue": [], Merged: []
     }
     for (const agent of AGENTS) {
       const agentIssue = issues.find(i => i.assignee === agent.id && i.status === 'in_progress')
