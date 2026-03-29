@@ -686,7 +686,7 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
   )
 }
 
-function ChatTab() {
+function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
   const [chats, setChats] = useState<ChatConversation[]>([])
   const [activeChat, setActiveChat] = useState<string|null>(null)
   const [search, setSearch] = useState('')
@@ -1286,6 +1286,7 @@ function ChatTab() {
     const isFirstMsg = convToUse.messages.length === 0
     const title = isFirstMsg ? msgContent.slice(0, 40) : convToUse.title
     setFollowUpSuggestions([])
+    setIssueDraft(null)
 
     const userMsg: ChatMessage = {
       id: msgId,
@@ -2519,6 +2520,12 @@ function ChatTab() {
                   </div>
                   )
                 })
+              )}
+              {/* MC-184: NL issue preview card */}
+              {issueDraft && !isSending && (
+                <div className="pl-11">
+                  <IssuePreviewCard draft={issueDraft} project={selectedBusiness} />
+                </div>
               )}
               {/* Feature 13: follow-up suggestions */}
               {followUpSuggestions.length > 0 && !isSending && (
@@ -4472,6 +4479,7 @@ export default function Home() {
   // MC-176: Business rail state
   const [selectedBusiness, setSelectedBusiness] = useState<string|null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [businessRailRefresh, setBusinessRailRefresh] = useState(0)
   const [boardFeatureFilter, setBoardFeatureFilter] = useState<string|undefined>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -4712,12 +4720,13 @@ export default function Home() {
         selected={selectedBusiness}
         onSelect={setSelectedBusiness}
         onNew={() => setShowOnboarding(true)}
+        refreshKey={businessRailRefresh}
       />
 
       {/* MC-179: ONBOARDING WIZARD */}
       {showOnboarding && (
         <OnboardingWizard
-          onComplete={(name) => { setSelectedBusiness(name); setShowOnboarding(false) }}
+          onComplete={(name) => { setSelectedBusiness(name); setShowOnboarding(false); setBusinessRailRefresh(k => k + 1) }}
           onClose={() => setShowOnboarding(false)}
         />
       )}
@@ -6313,7 +6322,7 @@ export default function Home() {
 
           {/* ── CHAT ── */}
           {tab==='chat' && (
-            <ChatTab />
+            <ChatTab selectedBusiness={selectedBusiness} />
           )}
 
           {/* ── INFRA ── */}

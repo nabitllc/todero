@@ -1,6 +1,24 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+function detectIssueDraft(userMessage: string): { title: string; type: string; priority: string; assignee: string; acceptance_criteria: string } | null {
+  const lower = userMessage.toLowerCase()
+  const isFeature = /\b(add|build|create|make|implement|i want|we need|let's build)\b/.test(lower)
+  const isBug = /\b(fix|bug|broken|error|not working|issue with)\b/.test(lower)
+  if (!isFeature && !isBug) return null
+
+  const type = isBug ? 'bug' : 'feature'
+  const title = userMessage.length > 60 ? userMessage.slice(0, 57) + '...' : userMessage
+
+  return {
+    title,
+    type,
+    priority: isBug ? 'high' : 'medium',
+    assignee: 'builder',
+    acceptance_criteria: `${title} works as expected and passes review.`
+  }
+}
+
 const OPENCLAW_GATEWAY = 'http://127.0.0.1:18789'
 const OPENCLAW_TOKEN = 'eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0'
 
@@ -30,6 +48,9 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch { return errorStream('Invalid request body') }
 
   const { messages, conversationId, assistantMsgId, agentId, modelOverride } = body
+  // Detect issue draft from last user message
+  const lastUserMsg = [...(messages || [])].reverse().find((m: any) => m.role === 'user')
+  const issueDraft = lastUserMsg ? detectIssueDraft(lastUserMsg.content) : null
   if (!messages || !conversationId) return errorStream('messages and conversationId required')
 
   const resolvedAgent = agentId || 'main'
@@ -97,7 +118,7 @@ export async function POST(req: NextRequest) {
               } catch { /* non-fatal — client will poll */ }
 
               controller.enqueue(encoder.encode(
-                `data: ${JSON.stringify({ done: true, id: finalId })}\n\n`
+                `data: ${JSON.stringify({ done: true, id: finalId, issue_draft: issueDraft })}\n\n`
               ))
               continue
             }
