@@ -4068,6 +4068,25 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
                   </div>
                 )}
 
+                {/* INF-118: DoR Status Indicator */}
+                {(() => {
+                  const dorMissing: string[] = []
+                  if (!t.acceptance_criteria?.trim()) dorMissing.push('acceptance_criteria')
+                  if (!t.description?.trim()) dorMissing.push('description')
+                  if (!t.sprint) dorMissing.push('sprint')
+                  if (!t.assignee) dorMissing.push('assignee')
+                  if (isBug && !t.steps_to_reproduce?.trim()) dorMissing.push('steps_to_reproduce')
+                  const dorReady = dorMissing.length === 0
+                  return (
+                    <div className={`rounded-xl px-3 py-2 border ${dorReady ? 'border-green-500/30 bg-green-500/5' : 'border-yellow-500/30 bg-yellow-500/5'}`}>
+                      <span className={`text-xs font-semibold ${dorReady ? 'text-green-400' : 'text-yellow-400'}`}>
+                        {dorReady ? '\u2713 DoR Ready' : '\u26A0 DoR Incomplete'}
+                      </span>
+                      {!dorReady && <p className="text-[10px] text-yellow-400/70 mt-1">Missing: {dorMissing.join(', ')}</p>}
+                    </div>
+                  )
+                })()}
+
                 {/* DoR / Acceptance Criteria */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -4388,194 +4407,6 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-// ── MC-119: Risk Radar Card ─────────────────────────────────────────────────
-function RiskRadarCard() {
-  const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-  const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-
-  const [p0Bugs, setP0Bugs] = useState<any[]>([])
-  const [blocked, setBlocked] = useState<any[]>([])
-  const [emptyFeatures, setEmptyFeatures] = useState<any[]>([])
-
-  useEffect(() => {
-    const fetchData = async () => {
-      const headers = { apikey: KEY, Authorization: `Bearer ${KEY}` }
-      const cutoff24h = new Date(Date.now() - 24 * 3600000).toISOString()
-      const cutoff4h  = new Date(Date.now() - 4  * 3600000).toISOString()
-
-      // P0 bugs open >24h
-      const bugsRes = await fetch(
-        `${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=neq.done&status=neq.backlog&created_at=lt.${cutoff24h}&select=task_key,title,project,created_at&limit=10`,
-        { headers }
-      ).then(r => r.json()).catch(() => [])
-      if (Array.isArray(bugsRes)) setP0Bugs(bugsRes)
-
-      // Blocked issues >4h
-      const blockedRes = await fetch(
-        `${SUPA}/rest/v1/issues?status=eq.blocked&updated_at=lt.${cutoff4h}&select=task_key,title,assignee,blocked_by&limit=10`,
-        { headers }
-      ).then(r => r.json()).catch(() => [])
-      if (Array.isArray(blockedRes)) setBlocked(blockedRes)
-
-      // Features with 0 child tasks
-      const featuresRes = await fetch(
-        `${SUPA}/rest/v1/issues?type=eq.feature&status=neq.done&status=neq.backlog&select=id,task_key,title,project&limit=50`,
-        { headers }
-      ).then(r => r.json()).catch(() => [])
-      if (Array.isArray(featuresRes)) {
-        const allTasksRes = await fetch(
-          `${SUPA}/rest/v1/issues?type=neq.feature&type=neq.epic&parent_id=not.is.null&select=parent_id&limit=1000`,
-          { headers }
-        ).then(r => r.json()).catch(() => [])
-        const parentIds = new Set((Array.isArray(allTasksRes) ? allTasksRes : []).map((t: any) => t.parent_id))
-        setEmptyFeatures(featuresRes.filter((f: any) => !parentIds.has(f.id)))
-      }
-    }
-    fetchData()
-  }, [])
-
-  const badge = (n: number) => {
-    const color = n === 0 ? '#10b981' : n <= 3 ? '#f59e0b' : '#ef4444'
-    return (
-      <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full px-1.5 text-[10px] font-bold tabular-nums"
-        style={{ background: color + '22', color }}>
-        {n}
-      </span>
-    )
-  }
-
-  const signals = [
-    { label: 'P0 bugs open >24h', count: p0Bugs.length, items: p0Bugs, icon: '🐛', filter: 'type=bug&priority=critical' },
-    { label: 'Blocked issues >4h', count: blocked.length, items: blocked, icon: '🚧', filter: 'status=blocked' },
-    { label: 'Features with 0 tasks (not DoF-ready)', count: emptyFeatures.length, items: emptyFeatures, icon: '📋', filter: 'type=feature' },
-  ]
-
-  return (
-    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-sm">🎯</span>
-        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Risk Radar</span>
-      </div>
-      <div className="space-y-3">
-        {signals.map(s => (
-          <div key={s.label}>
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">{s.icon}</span>
-                <span className="text-zinc-300 text-xs">{s.label}</span>
-              </div>
-              {badge(s.count)}
-            </div>
-            {s.count > 0 && (
-              <div className="ml-6 space-y-0.5">
-                {s.items.slice(0, 3).map((item: any) => (
-                  <div key={item.id || item.task_key} className="flex items-center gap-1.5">
-                    <span className="text-[9px] text-zinc-600 font-mono">{item.task_key}</span>
-                    <span className="text-[9px] text-zinc-500 truncate">{item.title}</span>
-                  </div>
-                ))}
-                {s.count > 3 && <span className="text-[9px] text-zinc-600">+{s.count - 3} more</span>}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// ── MC-120: Today's Standup Card ────────────────────────────────────────────
-function StandupCard() {
-  const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-  const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-
-  const [shipped, setShipped] = useState<any[]>([])
-  const [inFlight, setInFlight] = useState<any[]>([])
-  const [blockers, setBlockers] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const headers = { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
-    const stale4h  = new Date(Date.now() - 4  * 3600000).toISOString()
-
-    Promise.all([
-      // Shipped yesterday (done in last 24h)
-      fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gt.${since24h}&select=task_key,title,project,assignee&order=updated_at.desc&limit=10`, { headers }).then(r => r.json()).catch(() => []),
-      // In flight
-      fetch(`${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,project,assignee&order=updated_at.desc&limit=10`, { headers }).then(r => r.json()).catch(() => []),
-      // Blockers: blocked_by set OR stale >4h in_progress
-      fetch(`${SUPA}/rest/v1/issues?or=(status.eq.blocked,and(status.eq.in_progress,updated_at.lt.${stale4h}))&select=task_key,title,project,assignee,blocked_by&limit=10`, { headers }).then(r => r.json()).catch(() => []),
-    ]).then(([s, f, b]) => {
-      if (Array.isArray(s)) setShipped(s)
-      if (Array.isArray(f)) setInFlight(f)
-      if (Array.isArray(b)) setBlockers(b)
-      setLoading(false)
-    })
-  }, [])
-
-  const PROJECT_EMOJI: Record<string, string> = { Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️' }
-
-  const Section = ({ title, icon, items, emptyText, color, viewTab }: {
-    title: string; icon: string; items: any[]; emptyText: string; color: string; viewTab?: string
-  }) => (
-    <div>
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="text-sm">{icon}</span>
-        <span className="text-[11px] font-semibold" style={{ color }}>{title}</span>
-        {items.length > 0 && (
-          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
-            style={{ background: color + '22', color }}>
-            {items.length}
-          </span>
-        )}
-      </div>
-      {loading ? (
-        <div className="text-zinc-700 text-[10px] ml-6">Loading...</div>
-      ) : items.length === 0 ? (
-        <div className="text-zinc-700 text-[10px] ml-6">{emptyText}</div>
-      ) : (
-        <div className="ml-6 space-y-1">
-          {items.slice(0, 5).map((item: any) => (
-            <div key={item.task_key} className="flex items-center gap-1.5">
-              <span className="text-[9px]">{PROJECT_EMOJI[item.project] ?? '📌'}</span>
-              <span className="text-[9px] text-zinc-600 font-mono shrink-0">{item.task_key}</span>
-              <span className="text-[10px] text-zinc-400 truncate flex-1">{item.title}</span>
-              {item.assignee && <span className="text-[9px] text-zinc-600 shrink-0">{item.assignee}</span>}
-            </div>
-          ))}
-          {items.length > 5 && (
-            <button className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors">
-              +{items.length - 5} more →
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-
-  return (
-    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-sm">☀️</span>
-        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Today&apos;s Standup</span>
-        <span className="text-zinc-700 text-[10px] ml-auto">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-        </span>
-      </div>
-      <div className="space-y-4 divide-y divide-zinc-800/40">
-        <Section title="Shipped Yesterday" icon="✅" items={shipped} emptyText="Nothing shipped in last 24h" color="#10b981" />
-        <div className="pt-3">
-          <Section title="In Flight Today" icon="⚡" items={inFlight} emptyText="No active issues right now" color="#3b82f6" />
-        </div>
-        <div className="pt-3">
-          <Section title="Blockers" icon="🚨" items={blockers} emptyText="No blockers — clear runway!" color="#ef4444" />
-        </div>
-      </div>
     </div>
   )
 }
@@ -5182,12 +5013,6 @@ export default function Home() {
 
               {/* Sprint Progress Card (MC-102) */}
               <SprintProgressCard />
-
-              {/* MC-119 + MC-120: Risk Radar + Standup Cards side by side */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <StandupCard />
-                <RiskRadarCard />
-              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sprintProjects.map(proj=>{
