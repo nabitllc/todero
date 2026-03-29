@@ -1953,9 +1953,20 @@ function ChatTab() {
                     </button>
                   </div>
                 )}
-                {/* Feature 8: model display + Feature 15: context budget */}
-                <div className="flex items-center gap-2 mt-0.5">
-                  <p className="text-zinc-500 text-xs">{currentAgent.label} — {agentModelLabel}</p>
+                {/* INF-83: Model selector pill + Feature 15: context budget */}
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-semibold"
+                    style={{background:'#1a1a2e',borderColor:'#3b3b6a',color:'#a29bfe'}}>
+                    <span>{currentAgent.label.split(' ')[0]}</span>
+                    <span className="text-zinc-600">·</span>
+                    <span style={{color:'#818cf8'}}>{agentModelLabel}</span>
+                  </span>
+                  {selectedModel !== 'default' && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-medium"
+                      style={{background:'#0f1a0f',borderColor:'#1a3a1a',color:'#34d399'}}>
+                      {MODEL_OPTIONS.find(m=>m.id===selectedModel)?.label.replace(/^[^ ]+ /,'') || selectedModel}
+                    </span>
+                  )}
                   {activeConv.messages.length > 0 && (
                     <span className={`text-[9px] tabular-nums ${contextTokenColor}`}>{contextTokenLabel}</span>
                   )}
@@ -3628,6 +3639,13 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
                         </button>
                       )}
                     </div>
+                    {/* INF-100: blocked_by flag */}
+                    {task.blocked_by && (
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold mb-1"
+                        style={{background:'#2a0808',color:'#f87171',border:'1px solid #4a1010'}}>
+                        🚫 Blocked
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mb-1">
                       {task.project && <p className="text-xs text-zinc-500">{task.project}</p>}
                       {(task as any).task_key && <span className="text-[9px] font-mono text-zinc-600 bg-zinc-800/60 px-1.5 py-0.5 rounded">{(task as any).task_key}</span>}
@@ -3723,6 +3741,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
                 <input className={inputCls} placeholder="e.g. feature, bug" value={newTask.type??''} onChange={e=>setNewTask({...newTask,type:e.target.value})} /></div>
               <div><p className={labelCls}>Due Date</p>
                 <input type="date" className={inputCls} value={newTask.due_date??''} onChange={e=>setNewTask({...newTask,due_date:e.target.value})} /></div>
+              {/* INF-101: Sprint field */}
+              <div><p className={labelCls}>Sprint</p>
+                <select className={inputCls} value={newTask.sprint??''} onChange={e=>setNewTask({...newTask,sprint:e.target.value||undefined})}>
+                  <option value="">None</option>
+                  {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
+                </select></div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={()=>setNewTask(null)} className="text-xs text-zinc-500 px-3 py-1.5 rounded-lg hover:bg-zinc-900">Cancel</button>
@@ -4206,6 +4230,194 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
   )
 }
 
+// ── MC-119: Risk Radar Card ─────────────────────────────────────────────────
+function RiskRadarCard() {
+  const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+  const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+
+  const [p0Bugs, setP0Bugs] = useState<any[]>([])
+  const [blocked, setBlocked] = useState<any[]>([])
+  const [emptyFeatures, setEmptyFeatures] = useState<any[]>([])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const headers = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+      const cutoff24h = new Date(Date.now() - 24 * 3600000).toISOString()
+      const cutoff4h  = new Date(Date.now() - 4  * 3600000).toISOString()
+
+      // P0 bugs open >24h
+      const bugsRes = await fetch(
+        `${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=neq.done&status=neq.backlog&created_at=lt.${cutoff24h}&select=task_key,title,project,created_at&limit=10`,
+        { headers }
+      ).then(r => r.json()).catch(() => [])
+      if (Array.isArray(bugsRes)) setP0Bugs(bugsRes)
+
+      // Blocked issues >4h
+      const blockedRes = await fetch(
+        `${SUPA}/rest/v1/issues?status=eq.blocked&updated_at=lt.${cutoff4h}&select=task_key,title,assignee,blocked_by&limit=10`,
+        { headers }
+      ).then(r => r.json()).catch(() => [])
+      if (Array.isArray(blockedRes)) setBlocked(blockedRes)
+
+      // Features with 0 child tasks
+      const featuresRes = await fetch(
+        `${SUPA}/rest/v1/issues?type=eq.feature&status=neq.done&status=neq.backlog&select=id,task_key,title,project&limit=50`,
+        { headers }
+      ).then(r => r.json()).catch(() => [])
+      if (Array.isArray(featuresRes)) {
+        const allTasksRes = await fetch(
+          `${SUPA}/rest/v1/issues?type=neq.feature&type=neq.epic&parent_id=not.is.null&select=parent_id&limit=1000`,
+          { headers }
+        ).then(r => r.json()).catch(() => [])
+        const parentIds = new Set((Array.isArray(allTasksRes) ? allTasksRes : []).map((t: any) => t.parent_id))
+        setEmptyFeatures(featuresRes.filter((f: any) => !parentIds.has(f.id)))
+      }
+    }
+    fetchData()
+  }, [])
+
+  const badge = (n: number) => {
+    const color = n === 0 ? '#10b981' : n <= 3 ? '#f59e0b' : '#ef4444'
+    return (
+      <span className="inline-flex items-center justify-center min-w-[20px] h-5 rounded-full px-1.5 text-[10px] font-bold tabular-nums"
+        style={{ background: color + '22', color }}>
+        {n}
+      </span>
+    )
+  }
+
+  const signals = [
+    { label: 'P0 bugs open >24h', count: p0Bugs.length, items: p0Bugs, icon: '🐛', filter: 'type=bug&priority=critical' },
+    { label: 'Blocked issues >4h', count: blocked.length, items: blocked, icon: '🚧', filter: 'status=blocked' },
+    { label: 'Features with 0 tasks (not DoF-ready)', count: emptyFeatures.length, items: emptyFeatures, icon: '📋', filter: 'type=feature' },
+  ]
+
+  return (
+    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-sm">🎯</span>
+        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Risk Radar</span>
+      </div>
+      <div className="space-y-3">
+        {signals.map(s => (
+          <div key={s.label}>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">{s.icon}</span>
+                <span className="text-zinc-300 text-xs">{s.label}</span>
+              </div>
+              {badge(s.count)}
+            </div>
+            {s.count > 0 && (
+              <div className="ml-6 space-y-0.5">
+                {s.items.slice(0, 3).map((item: any) => (
+                  <div key={item.id || item.task_key} className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-zinc-600 font-mono">{item.task_key}</span>
+                    <span className="text-[9px] text-zinc-500 truncate">{item.title}</span>
+                  </div>
+                ))}
+                {s.count > 3 && <span className="text-[9px] text-zinc-600">+{s.count - 3} more</span>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── MC-120: Today's Standup Card ────────────────────────────────────────────
+function StandupCard() {
+  const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+  const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+
+  const [shipped, setShipped] = useState<any[]>([])
+  const [inFlight, setInFlight] = useState<any[]>([])
+  const [blockers, setBlockers] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const headers = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
+    const stale4h  = new Date(Date.now() - 4  * 3600000).toISOString()
+
+    Promise.all([
+      // Shipped yesterday (done in last 24h)
+      fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gt.${since24h}&select=task_key,title,project,assignee&order=updated_at.desc&limit=10`, { headers }).then(r => r.json()).catch(() => []),
+      // In flight
+      fetch(`${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,project,assignee&order=updated_at.desc&limit=10`, { headers }).then(r => r.json()).catch(() => []),
+      // Blockers: blocked_by set OR stale >4h in_progress
+      fetch(`${SUPA}/rest/v1/issues?or=(status.eq.blocked,and(status.eq.in_progress,updated_at.lt.${stale4h}))&select=task_key,title,project,assignee,blocked_by&limit=10`, { headers }).then(r => r.json()).catch(() => []),
+    ]).then(([s, f, b]) => {
+      if (Array.isArray(s)) setShipped(s)
+      if (Array.isArray(f)) setInFlight(f)
+      if (Array.isArray(b)) setBlockers(b)
+      setLoading(false)
+    })
+  }, [])
+
+  const PROJECT_EMOJI: Record<string, string> = { Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️' }
+
+  const Section = ({ title, icon, items, emptyText, color, viewTab }: {
+    title: string; icon: string; items: any[]; emptyText: string; color: string; viewTab?: string
+  }) => (
+    <div>
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="text-sm">{icon}</span>
+        <span className="text-[11px] font-semibold" style={{ color }}>{title}</span>
+        {items.length > 0 && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold"
+            style={{ background: color + '22', color }}>
+            {items.length}
+          </span>
+        )}
+      </div>
+      {loading ? (
+        <div className="text-zinc-700 text-[10px] ml-6">Loading...</div>
+      ) : items.length === 0 ? (
+        <div className="text-zinc-700 text-[10px] ml-6">{emptyText}</div>
+      ) : (
+        <div className="ml-6 space-y-1">
+          {items.slice(0, 5).map((item: any) => (
+            <div key={item.task_key} className="flex items-center gap-1.5">
+              <span className="text-[9px]">{PROJECT_EMOJI[item.project] ?? '📌'}</span>
+              <span className="text-[9px] text-zinc-600 font-mono shrink-0">{item.task_key}</span>
+              <span className="text-[10px] text-zinc-400 truncate flex-1">{item.title}</span>
+              {item.assignee && <span className="text-[9px] text-zinc-600 shrink-0">{item.assignee}</span>}
+            </div>
+          ))}
+          {items.length > 5 && (
+            <button className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors">
+              +{items.length - 5} more →
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-sm">☀️</span>
+        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Today&apos;s Standup</span>
+        <span className="text-zinc-700 text-[10px] ml-auto">
+          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+        </span>
+      </div>
+      <div className="space-y-4 divide-y divide-zinc-800/40">
+        <Section title="Shipped Yesterday" icon="✅" items={shipped} emptyText="Nothing shipped in last 24h" color="#10b981" />
+        <div className="pt-3">
+          <Section title="In Flight Today" icon="⚡" items={inFlight} emptyText="No active issues right now" color="#3b82f6" />
+        </div>
+        <div className="pt-3">
+          <Section title="Blockers" icon="🚨" items={blockers} emptyText="No blockers — clear runway!" color="#ef4444" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
@@ -4473,7 +4685,8 @@ export default function Home() {
 
       {/* SIDEBAR */}
       <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-zinc-800/60 sticky top-0 h-screen" style={{background:'#0a0a0a'}}>
-        <div className="px-4 py-4 border-b border-zinc-800/40">
+        {/* MC-118: sidebar logo height matches topbar h-11 (44px) */}
+        <div className="px-4 h-11 flex items-center border-b border-zinc-800/40 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-sm font-bold text-white">N</div>
             <div>
@@ -4509,14 +4722,15 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* MOBILE BOTTOM TAB BAR */}
+      {/* MC-63: MOBILE BOTTOM TAB BAR — 5 key tabs + More */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-zinc-950 border-t border-zinc-800 flex justify-around px-1" style={{paddingBottom: "env(safe-area-inset-bottom, 16px)"}}>
-        {(["overview","office","calendar","chat"] as Tab[]).map(id => {
+        {(["overview","board","office","chat","calendar"] as Tab[]).map(id => {
           const item = NAV.find(n => n.id === id)!
           const LIcon = LUCIDE_ICONS[id]
+          if (!item) return null
           return (
             <button key={id} onClick={() => { setTab(id); setShowMobileMore(false); if(id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", id) }}
-              className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-[50px] text-xs " + (tab === id ? "text-white" : "text-zinc-500")}>
+              className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-0 flex-1 text-xs transition-colors " + (tab === id ? "text-white" : "text-zinc-500")}>
               {LIcon ? <LIcon size={18} /> : <span>{item.icon}</span>}
               <span className="text-[9px]">{item.label.split(" ")[0]}</span>
             </button>
@@ -4524,7 +4738,7 @@ export default function Home() {
         })}
         {/* More button */}
         <button onClick={() => setShowMobileMore(v => !v)}
-          className={"flex flex-col items-center gap-0.5 px-2 py-2 min-w-[50px] text-xs " + (showMobileMore ? "text-white" : "text-zinc-500")}>
+          className={"flex flex-col items-center gap-0.5 px-2 py-2 flex-1 text-xs transition-colors " + (showMobileMore ? "text-white" : "text-zinc-500")}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
           </svg>
@@ -4536,7 +4750,7 @@ export default function Home() {
       {showMobileMore && (
         <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-zinc-800" style={{background:'#0a0a0a', paddingBottom:0}}>
           <div className="grid grid-cols-3 gap-px p-2">
-            {NAV.filter(n => n.id !== 'divider' && !["overview","office","calendar","chat"].includes(n.id)).map(item => {
+            {NAV.filter(n => n.id !== 'divider' && !["overview","board","office","chat","calendar"].includes(n.id)).map(item => {
               const LIcon = LUCIDE_ICONS[item.id]
               return (
                 <button key={item.id} onClick={() => { setTab(item.id as Tab); setShowMobileMore(false); if(item.id==='chat') setUnreadChat(false); localStorage.setItem("mc-tab", item.id) }}
@@ -4776,6 +4990,12 @@ export default function Home() {
 
               {/* Sprint Progress Card (MC-102) */}
               <SprintProgressCard />
+
+              {/* MC-119 + MC-120: Risk Radar + Standup Cards side by side */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <StandupCard />
+                <RiskRadarCard />
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sprintProjects.map(proj=>{
