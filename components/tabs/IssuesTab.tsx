@@ -72,7 +72,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
     })
     return list
-  }, [issues, search, sortKey, sortDir])
+  }, [issues, search, sortKey, sortDir, projectFilter])
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -153,7 +153,14 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-white">Issues</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-white">Issues</h2>
+            {projectFilter && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:'#3b82f620',color:'#3b82f6',border:'1px solid #3b82f640'}}>
+                {projectFilter}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-zinc-500 mt-0.5">{filtered.length} issues{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
         </div>
         <div className="relative max-w-xs flex-1">
