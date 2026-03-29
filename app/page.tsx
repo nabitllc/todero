@@ -198,6 +198,45 @@ function Bar({v,color='#fff',bg='#1e1e1e'}:{v:number;color?:string;bg?:string}) 
   )
 }
 
+function NeedsAttentionBlock() {
+  const [items, setItems] = React.useState<any[]>([])
+  React.useEffect(() => {
+    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    fetch(`${SUPA}/rest/v1/issues?assignee=eq.main&status=in.(open,backlog)&priority=in.(critical,high)&select=task_key,title,project,priority,blocked_by,description&order=priority.asc&limit=5`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    }).then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setItems(data)
+    }).catch(() => {})
+  }, [])
+  if (items.length === 0) return null
+  return (
+    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-sm">🚨</span>
+        <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Needs Your Attention</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/30 text-red-400 font-medium">{items.length}</span>
+      </div>
+      <div className="space-y-2">
+        {items.slice(0, 3).map((t: any, i: number) => (
+          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-zinc-800/40" style={{ background: '#0a0a0a' }}>
+            <span className="text-red-400 text-xs mt-0.5">{t.priority === 'critical' ? '🔴' : '🟠'}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                {t.task_key && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">{t.task_key}</span>}
+                <p className="text-white text-xs font-medium truncate">{t.title}</p>
+              </div>
+              <p className="text-zinc-600 text-[10px] mt-0.5 truncate">
+                {t.blocked_by ? `Blocked by: ${t.blocked_by}` : t.project || 'Needs decision'}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AttentionAndShipped({agents}:{agents:any[]}) {
   const [data, setData] = React.useState<{attention:any[];shipped:any[]}>({attention:[],shipped:[]})
   React.useEffect(()=>{
@@ -2460,21 +2499,22 @@ function ChatTab() {
                   </div>
                 </div>
               )}
-              <div className="flex items-end gap-2">
+              {/* INF-70: Compact toolbar above input */}
+              <div className="flex items-center gap-1 px-1 py-1.5 rounded-t-xl border border-b-0 border-zinc-800/40" style={{background:'#0c0c0c', paddingBottom: 'env(safe-area-inset-bottom, 0)'}}>
                 {/* Paperclip button + file type picker */}
-                <div className="relative shrink-0 hidden sm:block" ref={fileTypePickerRef}>
+                <div className="relative shrink-0" ref={fileTypePickerRef}>
                   <button
                     onClick={() => setShowFileTypePicker(p => !p)}
                     disabled={isSending}
-                    className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Attach file">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                     </svg>
                   </button>
                   {showFileTypePicker && (
-                    <div className="absolute bottom-10 left-0 z-50 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f', minWidth:'160px'}}>
+                    <div className="absolute bottom-8 left-0 z-50 rounded-xl border border-zinc-700 overflow-hidden shadow-xl" style={{background:'#0f0f0f', minWidth:'160px'}}>
                       {FILE_TYPE_GROUPS.map(g => (
                         <button key={g.label}
                           onClick={() => handleFileAttach(g.accept)}
@@ -2486,26 +2526,26 @@ function ChatTab() {
                   )}
                 </div>
 
-                {/* NEW: File browser button */}
+                {/* File browser */}
                 <button
                   onClick={() => { setShowFileBrowser(true); setFileBrowserPath('') }}
                   disabled={isSending}
-                  className="hidden sm:block p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                  className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
                   title="Browse workspace files">
                   📁
                 </button>
 
-                {/* NEW: Image URL input button */}
-                <div className="hidden sm:block relative shrink-0">
+                {/* Image URL input */}
+                <div className="relative shrink-0">
                   <button
                     onClick={() => setShowImageUrlInput(v => !v)}
                     disabled={isSending}
-                    className="p-2 rounded-lg hover:bg-zinc-900 transition-all text-zinc-500 hover:text-zinc-300 mb-0.5 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
                     title="Add image by URL">
                     🔗
                   </button>
                   {showImageUrlInput && (
-                    <div className="absolute bottom-10 left-0 z-50 rounded-xl border border-zinc-700 shadow-xl p-2" style={{background:'#0f0f0f', minWidth:'240px'}}>
+                    <div className="absolute bottom-8 left-0 z-50 rounded-xl border border-zinc-700 shadow-xl p-2" style={{background:'#0f0f0f', minWidth:'240px'}}>
                       <p className="text-[9px] text-zinc-600 mb-1.5 uppercase tracking-widest">Image URL</p>
                       <input
                         autoFocus
@@ -2527,12 +2567,23 @@ function ChatTab() {
                   )}
                 </div>
 
+                {/* Slash commands */}
+                <button
+                  onClick={() => { setInputVal('/'); setShowSlashPalette(true); textareaRef.current?.focus() }}
+                  disabled={isSending}
+                  className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-mono"
+                  title="Slash commands">
+                  /
+                </button>
+
+                <div className="flex-1" />
+
                 {/* Agent selector */}
                 <select
                   value={selectedAgent}
                   onChange={e => setSelectedAgent(e.target.value)}
                   disabled={isSending}
-                  className="px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  className="px-1.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800/40 text-[10px] text-zinc-400 shrink-0 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
                   title="Select agent">
                   {AGENT_OPTIONS.map(a => (
                     <option key={a.id} value={a.id}>{a.label}</option>
@@ -2544,7 +2595,7 @@ function ChatTab() {
                   value={selectedModel}
                   onChange={e => setSelectedModel(e.target.value)}
                   disabled={isSending}
-                  className="hidden sm:block px-2 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800/60 text-xs text-zinc-400 shrink-0 mb-0.5 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
+                  className="hidden sm:block px-1.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800/40 text-[10px] text-zinc-400 shrink-0 outline-none focus:border-zinc-600 disabled:opacity-50 cursor-pointer"
                   title="Select model">
                   {MODEL_PROVIDERS.map(provider => (
                     <optgroup key={provider} label={provider}>
@@ -2557,6 +2608,19 @@ function ChatTab() {
                   ))}
                 </select>
 
+                {/* Send-to-agent button */}
+                {showSendToAgent !== undefined && (
+                  <button
+                    onClick={() => setShowSendToAgent(v => !v)}
+                    disabled={isSending}
+                    className="p-1.5 rounded-lg hover:bg-zinc-800 transition-all text-zinc-500 hover:text-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
+                    title="Send to agent">
+                    📤
+                  </button>
+                )}
+              </div>
+              {/* Input row — native messaging feel */}
+              <div className="flex items-end gap-2" style={{paddingBottom: 'env(safe-area-inset-bottom, 0)'}}>
                 {/* Auto-grow textarea */}
                 <textarea
                   ref={textareaRef}
@@ -3829,6 +3893,31 @@ export default function Home() {
   const [issueActivity, setIssueActivity] = useState<any[]>([])
   const [calendarView, setCalendarView] = useState<'week'|'month'>('week')
   const [calendarIssues, setCalendarIssues] = useState<any[]>([])
+  // INF-68: Automations project filter
+  const [autoProjectFilter, setAutoProjectFilter] = useState<string|null>(null)
+  // INF-81: agent_runs data from Supabase (30s refresh)
+  const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:string}>>({})
+  useEffect(() => {
+    const SUPA_AR = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY_AR = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const fetchRuns = () => {
+      fetch(`${SUPA_AR}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`, {
+        headers: { apikey: KEY_AR, Authorization: `Bearer ${KEY_AR}` }
+      }).then(r => r.json()).then((rows: any[]) => {
+        if (!Array.isArray(rows)) return
+        const byAgent: Record<string, {taskTitle:string; startedAt:string|null; status:string}> = {}
+        for (const r of rows) {
+          if (!byAgent[r.agent_id]) {
+            byAgent[r.agent_id] = { taskTitle: (r.task_title || '').slice(0, 40), startedAt: r.started_at, status: r.status }
+          }
+        }
+        setAgentRunsData(byAgent)
+      }).catch(() => {})
+    }
+    fetchRuns()
+    const iv = setInterval(fetchRuns, 30000)
+    return () => clearInterval(iv)
+  }, [])
 
   // Fetch issues with due_date for calendar
   useEffect(() => {
@@ -4088,6 +4177,71 @@ export default function Home() {
           {tab==='overview' && (
             <div className="space-y-5">
 
+              {/* ── Hero Countdown Timers (INF-75) ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {([
+                  { name: 'Vespera', emoji: '🦇', deadline: VESPERA_DEADLINE, start: VESPERA_START, totalDays: 9, color: '#a855f7', bg: 'linear-gradient(135deg, #0f0a14 0%, #1a0e24 100%)' },
+                  { name: 'Kemuni', emoji: '🚀', deadline: KEMUNI_DEADLINE, start: KEMUNI_START, totalDays: 30, color: '#3b82f6', bg: 'linear-gradient(135deg, #0a0f1a 0%, #0e1a2e 100%)' },
+                ] as const).map(p => {
+                  const left = daysUntil(p.deadline)
+                  const elap = daysSince(p.start)
+                  const pct = miniPct(elap, p.totalDays)
+                  const urgent = left <= 3
+                  const numColor = urgent ? '#ef4444' : p.color
+                  return (
+                    <div key={p.name} className="rounded-2xl border border-zinc-800/60 p-5 md:p-6" style={{ background: p.bg }}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-xl">{p.emoji}</span>
+                        <span className="text-zinc-400 text-xs font-semibold uppercase tracking-widest">{p.name}</span>
+                        {urgent && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold animate-pulse">URGENT</span>}
+                      </div>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-5xl md:text-6xl font-black tabular-nums leading-none" style={{ color: numColor }}>{left}</span>
+                        <span className="text-zinc-500 text-lg font-medium">days left</span>
+                      </div>
+                      <p className="text-zinc-600 text-xs mb-3">
+                        {p.deadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                        {' · Day '}{elap}/{p.totalDays}
+                      </p>
+                      <div className="w-full rounded-full h-2.5" style={{ background: '#1a1a1a' }}>
+                        <div className="h-2.5 rounded-full transition-all" style={{ width: pct + '%', background: numColor }} />
+                      </div>
+                      <div className="flex justify-between mt-1.5">
+                        <span className="text-zinc-600 text-[10px]">{pct}% elapsed</span>
+                        <span className="text-zinc-600 text-[10px]">{100 - pct}% remaining</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* ── Needs Your Attention (INF-77) ── */}
+              <NeedsAttentionBlock />
+
+              {/* ── Subscriptions & Balances (INF-66) ── */}
+              <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-sm">💳</span>
+                  <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Subscriptions & Balances</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { name: 'Claude Pro', type: 'subscription', note: '$20/mo · Active', color: '#a855f7', icon: '🧠' },
+                    { name: 'Vercel Pro', type: 'subscription', note: '$20/mo · Renews Apr 24', color: '#ffffff', icon: '▲' },
+                    { name: 'OpenRouter', type: 'balance', note: `$${(liveStatus?.openrouter?.remaining ?? 9.57).toFixed(2)} remaining`, color: liveStatus?.openrouter?.remaining < 2 ? '#ef4444' : '#10b981', icon: '🔀' },
+                    { name: 'Brave Search', type: 'subscription', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
+                  ].map(s => (
+                    <div key={s.name} className="rounded-xl border border-zinc-800/40 px-3 py-2.5" style={{background:'#0a0a0a'}}>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-xs">{s.icon}</span>
+                        <span className="text-white text-[11px] font-medium">{s.name}</span>
+                      </div>
+                      <p className="text-[10px]" style={{color: s.color}}>{s.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* ── Project Health Card ── */}
               {(()=>{
                 const allProjects = sprintProjects.filter(p => p.taskCounts && p.taskCounts.total > 0)
@@ -4128,12 +4282,16 @@ export default function Home() {
                               </div>
                             </div>
                             <Bar v={pct} color={barColor} bg='#1a1a1a' />
-                            {(tc.inProgress > 0 || tc.open > 0) && (
-                              <div className="flex gap-3 mt-1">
-                                {tc.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {tc.inProgress} in progress</span>}
-                                {tc.open > 0 && <span className="text-zinc-600 text-[9px]">○ {tc.open} open</span>}
-                              </div>
-                            )}
+                            {/* MC-109: Status breakdown subtext */}
+                            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[9px]">
+                              {tc.open > 0 && <span className="text-zinc-500">Open: {tc.open}</span>}
+                              {tc.inProgress > 0 && <span className="text-blue-400">In Progress: {tc.inProgress}</span>}
+                              {(tc.inReview ?? 0) > 0 && <span className="text-amber-400">In Review: {tc.inReview}</span>}
+                              {(tc.blocked ?? 0) > 0 && <span className="text-red-400 font-medium">Blocked: {tc.blocked}</span>}
+                              {tc.open === 0 && tc.inProgress === 0 && !(tc.inReview ?? 0) && !(tc.blocked ?? 0) && (
+                                <span className="text-zinc-700">All done</span>
+                              )}
+                            </div>
                           </div>
                         )
                       })}
@@ -4314,7 +4472,28 @@ export default function Home() {
           {/* ── ACTIVITY ── */}
           {tab==='activity' && (
             <div className="space-y-5">
-              <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${(liveStatus.recentActivity?.length ?? 0) + issueActivity.length} entries · live` : undefined}>Activity Feed</SH>
+              {/* MC-114: Activity header with Sync button */}
+              <div className="flex items-center justify-between">
+                <SH icon="📡" sub={liveStatus?.recentActivity?.length ? `${(liveStatus.recentActivity?.length ?? 0) + issueActivity.length} entries` : undefined}>Activity Feed</SH>
+                <div className="flex items-center gap-2 shrink-0">
+                  {statusAt > 0 && (()=>{
+                    const syncAgo = Math.round((Date.now() - statusAt) / 60000)
+                    const isFresh = syncAgo < 2
+                    return (
+                      <span className={`text-[10px] font-mono ${isFresh ? 'text-emerald-400' : 'text-zinc-600'}`}>
+                        {isFresh ? '● Live' : `Synced ${syncAgo}m ago`}
+                      </span>
+                    )
+                  })()}
+                  <button
+                    onClick={() => {
+                      fetch('/api/status').then(r => r.json()).then(d => { setLiveStatus(d); setStatusAt(Date.now()) }).catch(() => {})
+                    }}
+                    className="text-[10px] px-2.5 py-1 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 bg-zinc-900/50 transition-all">
+                    Sync
+                  </button>
+                </div>
+              </div>
               {/* Filter bar */}
               <div className="flex items-center gap-2">
                 {(['all','agent','issue','pr'] as const).map(f => (
@@ -4452,12 +4631,18 @@ export default function Home() {
                         </div>
                         <p className="text-zinc-500 text-xs truncate">{a.role}</p>
                         <p className="text-zinc-700 text-[10px] font-mono truncate">
-                          {a.ago > 0 ? (a.ago < 60 ? `Active ${a.ago}m ago` : a.ago < 1440 ? `Active ${Math.floor(a.ago/60)}h ago` : `Idle ${Math.floor(a.ago/1440)}d`) : a.status === 'active' ? 'Active now' : 'Idle'}
+                          {(()=>{
+                            const ar = agentRunsData[a.id]
+                            if (ar?.startedAt) {
+                              const mins = Math.round((Date.now() - new Date(ar.startedAt).getTime()) / 60000)
+                              return mins < 1 ? 'Active just now' : mins < 60 ? `Active ${mins}m ago` : mins < 1440 ? `Active ${Math.floor(mins/60)}h ago` : `Idle ${Math.floor(mins/1440)}d`
+                            }
+                            return a.ago > 0 ? (a.ago < 60 ? `Active ${a.ago}m ago` : a.ago < 1440 ? `Active ${Math.floor(a.ago/60)}h ago` : `Idle ${Math.floor(a.ago/1440)}d`) : a.status === 'active' ? 'Active now' : 'Idle'
+                          })()}
                         </p>
-                        <p className="text-amber-600/60 text-[10px] font-mono truncate">Never audited</p>
                       </div>
                     </div>
-                    {a.currentTask && <p className="text-zinc-400 text-[10px] mb-2 truncate">↳ {a.currentTask.slice(0,50)}</p>}
+                    {(a.currentTask || agentRunsData[a.id]?.taskTitle) && <p className="text-zinc-400 text-[10px] mb-2 truncate">↳ {(a.currentTask || agentRunsData[a.id]?.taskTitle || '').slice(0,40)}</p>}
                     <p className="text-zinc-500 text-xs leading-relaxed mb-3">{a.desc}</p>
                     <div className="flex flex-wrap gap-1 mb-2">
                       {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}
@@ -5330,7 +5515,7 @@ export default function Home() {
           {/* ── AUTOMATIONS (n8n embed) ── */}
           {tab==='automations' && (
             <div className="space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Automations</h2>
                   <p className="text-xs text-zinc-500 mt-0.5">All scheduled jobs — OpenClaw crons, n8n workflows, and heartbeats</p>
@@ -5339,6 +5524,19 @@ export default function Home() {
                   className="text-xs text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors">
                   Open n8n editor ↗
                 </a>
+              </div>
+              {/* INF-68: Project filter */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {['All', 'Infrastructure', 'Vespera', 'Kemuni', 'Mission Control'].map(pf => {
+                  const count = pf === 'All' ? displayCrons.length : displayCrons.filter((c:any) => c.project === pf).length
+                  if (pf !== 'All' && count === 0) return null
+                  return (
+                    <button key={pf} onClick={() => setAutoProjectFilter(pf === 'All' ? null : pf)}
+                      className={`text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-lg border transition-all ${(autoProjectFilter === null && pf === 'All') || autoProjectFilter === pf ? 'border-blue-600 bg-blue-900/30 text-blue-400' : 'border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'}`}>
+                      {pf} ({count})
+                    </button>
+                  )
+                })}
               </div>
 
               {/* Stats row */}
@@ -5358,7 +5556,7 @@ export default function Home() {
               {/* Grouped cron list */}
               <div className="rounded-2xl border border-zinc-800/60 overflow-hidden" style={{background:'#0f0f0f'}}>
                 {(['openclaw-cron','n8n','openclaw'] as const).map(src => {
-                  const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src)
+                  const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src && (!autoProjectFilter || c.project === autoProjectFilter))
                   if (group.length === 0) return null
                   const srcLabel = src === 'openclaw-cron' ? '⚡ OpenClaw Crons' : src === 'n8n' ? '🔧 n8n Workflows' : '💓 Heartbeats'
                   return (
@@ -5395,7 +5593,7 @@ export default function Home() {
                 })}
               </div>
 
-              {/* Cron Detail Modal */}
+              {/* Cron Detail Modal (INF-68 enhanced) */}
               {cronModal && (
                 <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setCronModal(null)}>
                   <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-zinc-800 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#0a0a0a'}} onClick={e=>e.stopPropagation()}>
@@ -5404,16 +5602,30 @@ export default function Home() {
                       <button onClick={()=>setCronModal(null)} className="text-zinc-600 hover:text-white text-lg">✕</button>
                     </div>
                     <div className="space-y-2.5">
+                      {(cronModal as any).desc && (cronModal as any).desc !== (cronModal as any).name && (
+                        <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Description</p><p className="text-zinc-400 text-sm">{(cronModal as any).desc}</p></div>
+                      )}
                       <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Schedule</p><p className="text-zinc-300 text-sm font-mono">{cronModal.time} · {cronModal.days}</p></div>
                       <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Runner</p><p className="text-zinc-300 text-sm font-mono">{cronModal.model}</p></div>
                       <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
+                      <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Source</p><p className="text-zinc-300 text-sm font-mono">{(cronModal as any).source ?? 'n8n'}</p></div>
                       <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-zinc-300 text-sm">{cronModal.status}</span></div></div>
+                      {/* Last run info — shown for all sources */}
+                      {(cronModal as any).lastRunAtMs && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-zinc-300 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
+                      {(cronModal as any).lastRunStatus && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Result</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus==='ok'||( cronModal as any).lastRunStatus==='success'?'text-emerald-400':'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
                       {(cronModal as any).source === 'openclaw-cron' && <>
                         {(cronModal as any).sessionTarget && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-zinc-300 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
-                        {(cronModal as any).lastRunAtMs && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-zinc-300 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
-                        {(cronModal as any).lastRunStatus && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Last Status</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus==='ok'?'text-emerald-400':'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
                         {(cronModal as any).consecutiveErrors > 0 && <div><p className="text-zinc-600 text-[10px] uppercase tracking-wider">Consecutive Errors</p><p className="text-red-400 text-sm font-mono">{(cronModal as any).consecutiveErrors}</p></div>}
                       </>}
+                      {/* Enable/disable indicator */}
+                      <div className="pt-2 border-t border-zinc-800/50">
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-600 text-[10px] uppercase tracking-wider">Enabled</span>
+                          <span className={`text-sm font-medium ${cronModal.status === 'planned' ? 'text-zinc-500' : 'text-emerald-400'}`}>
+                            {cronModal.status === 'planned' ? 'Disabled' : 'Active'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

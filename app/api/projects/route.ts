@@ -22,19 +22,21 @@ export async function GET() {
     )
     if (res.ok) {
       const tasks: any[] = await res.json()
-      const counts: Record<string, { total: number; done: number; inProgress: number; open: number }> = {}
+      const counts: Record<string, { total: number; done: number; inProgress: number; inReview: number; open: number; blocked: number }> = {}
       const blockerCounts: Record<string, number> = {}
       const lastPRDates: Record<string, string | null> = {}
       for (const t of tasks) {
         const p = t.project || 'Unknown'
-        if (!counts[p]) counts[p] = { total: 0, done: 0, inProgress: 0, open: 0 }
+        if (!counts[p]) counts[p] = { total: 0, done: 0, inProgress: 0, inReview: 0, open: 0, blocked: 0 }
         counts[p].total++
         if (t.status === 'done' || t.status === 'closed') counts[p].done++
-        else if (t.status === 'in_progress' || t.status === 'in_review') counts[p].inProgress++
+        else if (t.status === 'in_progress') counts[p].inProgress++
+        else if (t.status === 'in_review') counts[p].inReview++
         else if (t.status === 'open' || t.status === 'backlog') counts[p].open++
         // Count open blockers
         if (t.blocked_by && t.status !== 'done' && t.status !== 'closed') {
           blockerCounts[p] = (blockerCounts[p] || 0) + 1
+          counts[p].blocked++
         }
         // Track last PR merged date per project
         if (t.pr_url && t.status === 'done' && t.updated_at) {
@@ -64,7 +66,7 @@ export async function GET() {
 
       const enriched = baseProjects.map(p => ({
         ...p,
-        taskCounts: counts[p.supabaseProject] ?? { total: 0, done: 0, inProgress: 0, open: 0 },
+        taskCounts: counts[p.supabaseProject] ?? { total: 0, done: 0, inProgress: 0, inReview: 0, open: 0, blocked: 0 },
         taskProgress: counts[p.supabaseProject]
           ? Math.round((counts[p.supabaseProject].done / Math.max(counts[p.supabaseProject].total, 1)) * 100)
           : 0,

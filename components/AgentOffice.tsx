@@ -957,6 +957,8 @@ export default function AgentOffice(){
   const [boardTasks, setBoardTasks]  = useState<Record<string,string>>({}) // agentId → task title
   const boardTasksRef                = useRef<Record<string,string>>({})
   const subagentCountRef             = useRef<number>(0)
+  // MC-45: Active subagent sessions for temporary sprites
+  const subagentSessionsRef          = useRef<{id:string;name:string;emoji:string;color:string;task:string;startedAt:number}[]>([])
   const liveRunsRef                  = useRef<Record<string, AgentRunInfo>>({})
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
   const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
@@ -1092,6 +1094,22 @@ export default function AgentOffice(){
           a.ago != null && a.ago < 10
         ).length
         subagentCountRef.current = activeSubagents
+
+        // MC-45: Build subagent sessions from active agent_runs (non-main agents working recently)
+        const liveRuns = liveRunsRef.current
+        const subSessions: typeof subagentSessionsRef.current = []
+        const SUB_AGENT_MAP: Record<string,{name:string;emoji:string;color:string}> = {
+          builder:{name:'Builder',emoji:'🔨',color:'#0984E3'}, tester:{name:'Tester',emoji:'🧪',color:'#E84393'},
+          deployer:{name:'Deployer',emoji:'🚀',color:'#00CEC9'}, scout:{name:'Scout',emoji:'🔍',color:'#00B894'},
+        }
+        for (const [aid, info] of Object.entries(liveRuns)) {
+          if (aid === 'main' || !info || info.status !== 'working') continue
+          const meta = SUB_AGENT_MAP[aid]
+          if (meta) {
+            subSessions.push({ id: aid, ...meta, task: info.taskTitle, startedAt: info.startedAt ? new Date(info.startedAt).getTime() : Date.now() })
+          }
+        }
+        subagentSessionsRef.current = subSessions
 
         agents.forEach((ag:any)=>{
           if(!ag.active) return;
@@ -1567,6 +1585,46 @@ export default function AgentOffice(){
       drawParticles(ctx,particles,cam);
       drawChatBubbles(ctx,chatBubbles.current,T2,cam);
       drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0));
+
+      // MC-45: Draw temporary subagent sprites near KAOS
+      const orchAg = drawAgentsArr.find((a:any) => a.id === ORCHESTRATOR_ID)
+      if (orchAg && subagentSessionsRef.current.length > 0) {
+        ctx.save()
+        applyCamera(ctx, cam)
+        const baseX = orchAg.px + T2 * 2.5
+        const baseY = orchAg.py - T2 * 0.5
+        subagentSessionsRef.current.forEach((sub, i) => {
+          const sx = baseX + (i % 2) * T2 * 1.8
+          const sy = baseY + Math.floor(i / 2) * T2 * 1.5
+          const bobY = Math.sin(now / 800 + i * 1.2) * 3
+          const spriteSize = T2 * 0.3
+          // Glow ring
+          ctx.beginPath()
+          ctx.arc(sx, sy + bobY, spriteSize * 1.3, 0, Math.PI * 2)
+          ctx.fillStyle = sub.color + '18'
+          ctx.fill()
+          ctx.strokeStyle = sub.color + '44'
+          ctx.lineWidth = 1
+          ctx.stroke()
+          // Emoji
+          const emPx = Math.max(10, Math.round(T2 * 0.25))
+          ctx.font = `${emPx}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.fillText(sub.emoji, sx, sy + bobY + emPx * 0.35)
+          // Name + task label
+          const lPx = Math.max(6, Math.round(T2 * 0.1))
+          ctx.font = `bold ${lPx}px 'IBM Plex Mono', monospace`
+          ctx.fillStyle = sub.color
+          ctx.fillText(sub.name, sx, sy + bobY + spriteSize + lPx * 1.2)
+          if (sub.task) {
+            ctx.font = `${lPx}px 'IBM Plex Mono', monospace`
+            ctx.fillStyle = '#888'
+            ctx.fillText(sub.task.slice(0, 20), sx, sy + bobY + spriteSize + lPx * 2.5)
+          }
+        })
+        ctx.restore()
+      }
+
       if(minimapRef.current)drawMinimap(ctx,T2,drawAgentsArr,cam,W,H,showLegendRef.current);
 
       // Hover tooltip

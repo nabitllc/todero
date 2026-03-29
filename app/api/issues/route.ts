@@ -151,6 +151,24 @@ function notifyPRReview(issue: { task_key?: string; title?: string; project?: st
   }).catch(err => console.error('[discord-pr-review]', err))
 }
 
+function notifyEscalation(issue: { task_key?: string; title?: string; project?: string; acceptance_criteria?: string; description?: string }) {
+  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
+  const key = issue.task_key ?? '?'
+  const ac = (issue.acceptance_criteria ?? '').slice(0, 300)
+  const desc = (issue.description ?? '').slice(0, 300)
+  const msg = `🚨🚨 **ESCALATION: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n⚠️ **3 failed reviews — escalated to KAOS**\n📋 AC: ${ac}\n📝 Notes: ${desc}\n\n<@409194957098713088> manual investigation required.`
+
+  fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
+    },
+    body: JSON.stringify({ content: msg })
+  }).catch(err => console.error('[discord-escalation]', err))
+}
+
 function notifyTestFailure(issue: { task_key?: string; title?: string; project?: string; description?: string }) {
   const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
   const key = issue.task_key ?? '?'
@@ -194,9 +212,22 @@ export async function PATCH(req: NextRequest) {
   // ── Fetch existing record to detect pr_url and test_status transitions ──
   const { data: before } = await supabase
     .from('issues')
-    .select('pr_url,test_status')
+    .select('pr_url,test_status,fail_count,acceptance_criteria')
     .eq('id', id)
     .single()
+
+  // ── INF-181: Increment fail_count on test_status=failed ──
+  const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
+  if (isNewFailure) {
+    const currentFailCount = (before?.fail_count ?? 0)
+    fields.fail_count = currentFailCount + 1
+
+    // At fail_count=3: escalate to KAOS
+    if (fields.fail_count >= 3) {
+      fields.status = 'blocked'
+      fields.assignee = 'main'
+    }
+  }
 
   const { data, error } = await supabase
     .from('issues')
@@ -218,8 +249,12 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── Tester failure notification (INF-193) ──
-  if (fields.test_status === 'failed' && before?.test_status !== 'failed' && data) {
+  if (isNewFailure && data) {
     notifyTestFailure(data)
+    // ── INF-181: Escalation at 3 failures ──
+    if ((data.fail_count ?? 0) >= 3) {
+      notifyEscalation(data)
+    }
   }
 
   return NextResponse.json(data)
