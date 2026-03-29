@@ -18,17 +18,29 @@ export async function POST(req: NextRequest) {
 
   // Smart task selection: priority → due_date → created_at
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.open&select=id,title,description,priority,due_date,project&limit=50`,
+    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.open&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key&limit=50`,
     { headers: HEADERS }
   )
-  const tasks = await res.json() as Array<{id:string,title:string,description:string,priority:string,due_date:string|null,project:string}>
+  const tasks = await res.json() as Array<{id:string,title:string,description:string,priority:string,due_date:string|null,project:string,acceptance_criteria:string|null,task_key:string|null}>
 
   if (!tasks.length) {
     return NextResponse.json({ message: 'No open builder tasks' })
   }
 
-  // Sort: priority first, then due_date (nulls last), then project=Vespera first
-  tasks.sort((a, b) => {
+  // ── DoR gate: require acceptance_criteria before Builder runs ──
+  const dorReady = tasks.filter(t => t.acceptance_criteria?.trim())
+  const dorBlocked = tasks.filter(t => !t.acceptance_criteria?.trim())
+
+  if (dorBlocked.length > 0 && dorReady.length === 0) {
+    return NextResponse.json({
+      error: 'All open Builder issues are missing acceptance_criteria. Fix DoR before running Builder.',
+      blocked: dorBlocked.map(t => ({ id: t.id, key: t.task_key, title: t.title }))
+    }, { status: 422 })
+  }
+
+  // Only pick from DoR-ready issues
+  const readyTasks = dorReady
+  readyTasks.sort((a, b) => {
     const pa = PRIORITY_ORDER.indexOf(a.priority)
     const pb = PRIORITY_ORDER.indexOf(b.priority)
     if (pa !== pb) return pa - pb
@@ -40,7 +52,7 @@ export async function POST(req: NextRequest) {
     return 0
   })
 
-  const task = tasks[0]
+  const task = readyTasks[0]
 
   // Mark in_progress
   await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {

@@ -17,10 +17,33 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { title, description, status, assignee, project, priority, type, due_date } = body
+  const { title, description, status, assignee, project, priority, type, due_date,
+          acceptance_criteria, sprint, parent_id, test_tier, resolution_type,
+          feature_branch, pr_url, created_by, task_key, task_number } = body
+
+  // ── Enforcement: no issue without title + project + acceptance_criteria ──
+  const missing: string[] = []
+  if (!title?.trim())                missing.push('title')
+  if (!project?.trim())              missing.push('project')
+  if (!acceptance_criteria?.trim())  missing.push('acceptance_criteria')
+
+  if (missing.length > 0) {
+    return NextResponse.json(
+      { error: `Cannot create issue — missing required fields: ${missing.join(', ')}. Every issue must have acceptance criteria before work begins.` },
+      { status: 422 }
+    )
+  }
+
   const { data, error } = await supabase
     .from('issues')
-    .insert({ title, description, status, assignee, project, priority, type, due_date })
+    .insert({
+      title, description, status: status ?? 'open', assignee, project,
+      priority: priority ?? 'medium', type: type ?? 'task', due_date,
+      acceptance_criteria, sprint, parent_id, test_tier: test_tier ?? 'P2',
+      resolution_type, feature_branch, pr_url,
+      created_by: created_by ?? 'kaos',
+      ...(task_key ? { task_key, task_number } : {})
+    })
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
