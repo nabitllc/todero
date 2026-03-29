@@ -1,49 +1,97 @@
 'use client'
 import { useState } from 'react'
-import { X, ArrowRight, ArrowLeft, Sparkles, Check } from 'lucide-react'
+import { X, ArrowRight, ArrowLeft, Sparkles, Check, ChevronDown, ChevronUp, Building2, Bot, ClipboardList, Rocket } from 'lucide-react'
 
-const BUSINESS_TYPES = [
-  { id: 'saas', label: 'SaaS', emoji: '☁️' },
-  { id: 'ecommerce', label: 'eCommerce', emoji: '🛒' },
-  { id: 'logistics', label: 'Logistics', emoji: '🚚' },
-  { id: 'brand', label: 'Brand', emoji: '✨' },
-  { id: 'internal', label: 'Internal', emoji: '🏢' },
-  { id: 'other', label: 'Other', emoji: '🔧' },
+// ── Name generators ──────────────────────────────────────────────────────────
+const GENERATED_NAMES = [
+  'Meridian', 'Solace', 'Vantage', 'Axiom', 'Luminary', 'Keystone',
+  'Foundry', 'Catalyst', 'Prism', 'Verdant', 'Paragon', 'Nexus',
+  'Stratum', 'Alcove', 'Harbinger', 'Pinnacle', 'Cobalt', 'Ember',
+  'Flux', 'Helix', 'Indigo', 'Lattice', 'Mosaic', 'Onyx',
+  'Quasar', 'Radiant', 'Seraph', 'Tether', 'Umbra', 'Vesper',
+  'Warden', 'Xenon', 'Yield', 'Zephyr', 'Atlas', 'Beacon',
 ]
 
-const AGENT_OPTIONS = [
-  { id: 'builder', name: 'Builder', emoji: '🔨', role: 'Coding Agent', desc: 'Ships features and fixes bugs. Your primary dev agent — always on.', always: true },
-  { id: 'scout', name: 'Scout', emoji: '🔍', role: 'Research Agent', desc: 'Scans market trends, competitors, and opportunities each morning.' },
-  { id: 'ops', name: 'Ops', emoji: '⚙️', role: 'Operations Agent', desc: 'Monitors infra health, deployments, and system reliability.' },
-  { id: 'tester', name: 'Tester', emoji: '🧪', role: 'QA Agent', desc: 'Reviews all code changes and catches bugs before they ship.' },
-  { id: 'po', name: 'PO', emoji: '📋', role: 'Product Owner', desc: 'Structures features, writes specs, and keeps the backlog tidy.' },
+const AGENT_NAMES = [
+  'Forge', 'Volt', 'Cipher', 'Nexus', 'Apex', 'Titan', 'Vega', 'Nova',
+  'Orion', 'Blaze', 'Ridge', 'Zane', 'Coda', 'Drift', 'Echo', 'Flint',
+  'Grove', 'Haven', 'Iris', 'Jade',
+]
+
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]
+}
+
+// ── Context-aware task generator ─────────────────────────────────────────────
+function generateTaskTitle(mission: string): string {
+  const v = mission.toLowerCase()
+  if (/launch|users|customers/.test(v)) return 'Define target user and first feature'
+  if (/revenue|money|business|profit/.test(v)) return 'Map out revenue model and pricing'
+  if (/app|software|platform|saas/.test(v)) return 'Sketch core user flow and MVP scope'
+  if (/community|people|connect/.test(v)) return 'Define community value proposition'
+  if (/finance|money|budget|habit/.test(v)) return 'Map out the core money habit loop'
+  return 'Define the first thing to build'
+}
+
+// ── Adapter types ─────────────────────────────────────────────────────────────
+const PRIMARY_ADAPTERS = [
+  { id: 'claude-code', label: 'Claude Code', desc: 'Local Claude agent', recommended: true },
+  { id: 'codex', label: 'Codex', desc: 'Local Codex agent', recommended: true },
+]
+const MORE_ADAPTERS = [
+  { id: 'gemini-cli', label: 'Gemini CLI', desc: 'Google Gemini local agent' },
+  { id: 'opencode', label: 'OpenCode', desc: 'Open source coding agent' },
+  { id: 'pi', label: 'Pi', desc: 'Inflection Pi agent' },
+  { id: 'cursor', label: 'Cursor', desc: 'AI-powered IDE agent' },
+  { id: 'openclaw-gateway', label: 'OpenClaw Gateway', desc: 'Remote via OpenClaw' },
+]
+
+const MODELS = [
+  { label: 'Default', value: 'default' },
+  { label: 'Claude Sonnet (Anthropic)', value: 'anthropic/claude-sonnet-4-6' },
+  { label: 'Claude Haiku (Anthropic)', value: 'anthropic/claude-haiku-4-5' },
+  { label: 'GPT-4o (OpenAI)', value: 'openai/gpt-4o' },
+  { label: 'Gemini Pro (Google)', value: 'google/gemini-pro' },
+  { label: 'Local (Ollama)', value: 'ollama/local' },
+]
+
+// ── Tab bar ───────────────────────────────────────────────────────────────────
+const TABS = [
+  { label: 'Company', icon: Building2 },
+  { label: 'Agent',   icon: Bot },
+  { label: 'Task',    icon: ClipboardList },
+  { label: 'Launch',  icon: Rocket },
 ]
 
 interface Props { onClose: () => void; onComplete: (businessName: string) => void }
 
 export default function OnboardingWizard({ onClose, onComplete }: Props) {
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(1) // 1–4
+
   // Step 1
-  const [name, setName] = useState('')
-  const [type, setType] = useState('saas')
-  const [tagline, setTagline] = useState('')
+  const [companyName, setCompanyName] = useState('')
+  const [mission, setMission] = useState('')
+
   // Step 2
-  const [goal, setGoal] = useState('')
-  const [targetDate, setTargetDate] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 30)
-    return d.toISOString().split('T')[0]
-  })
-  const [successMetric, setSuccessMetric] = useState('')
+  const [agentName, setAgentName] = useState('Builder')
+  const [adapter, setAdapter] = useState('claude-code')
+  const [model, setModel] = useState('default')
+  const [showMore, setShowMore] = useState(false)
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok'>('idle')
+
   // Step 3
-  const [agents, setAgents] = useState(['builder', 'tester'])
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskDesc, setTaskDesc] = useState('')
+
   // Step 4
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [done, setDone] = useState(false)
 
-  const toggleAgent = (id: string) => {
-    if (id === 'builder') return
-    setAgents(a => a.includes(id) ? a.filter(x => x !== id) : [...a, id])
+  const selectedAdapter = [...PRIMARY_ADAPTERS, ...MORE_ADAPTERS].find(a => a.id === adapter)
+
+  const runTest = () => {
+    setTestStatus('testing')
+    setTimeout(() => setTestStatus('ok'), 1500)
   }
 
   const submit = async () => {
@@ -53,248 +101,346 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
       const res = await fetch('/api/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, type, goal, agents, targetDate, successMetric, tagline })
+        body: JSON.stringify({
+          name: companyName,
+          type: 'saas',
+          vision: mission,
+          agentName,
+          model: model === 'default' ? 'anthropic/claude-sonnet-4-6' : model,
+          apiKey: '',
+          taskTitle,
+          taskDescription: taskDesc,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setDone(true)
-      setTimeout(() => onComplete(name), 1200)
-    } catch (e: any) {
-      setError(e.message)
+      onComplete(companyName)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Something went wrong')
       setLoading(false)
     }
   }
 
-  const canNext1 = name.trim().length > 0
-  const canNext2 = goal.trim().length > 0
-
-  const TOTAL_STEPS = 4
+  const canNext = [
+    companyName.trim().length > 0,   // step 1
+    agentName.trim().length > 0,     // step 2
+    taskTitle.trim().length > 0,     // step 3
+    true,                            // step 4
+  ][step - 1]
 
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0f0f0f] border border-white/10 rounded-2xl w-full max-w-lg p-6 relative shadow-2xl">
-        <button onClick={onClose} className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors">
-          <X size={18}/>
-        </button>
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh' }}>
 
-        {/* Progress dots */}
-        <div className="flex gap-1.5 mb-6">
-          {Array.from({length: TOTAL_STEPS}, (_, i) => (
-            <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i + 1 <= step ? 'bg-white' : 'bg-white/10'}`} />
-          ))}
+        {/* ── Top bar ── */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-0 shrink-0">
+          <span className="text-white/30 text-xs font-medium tracking-widest uppercase">New Business</span>
+          <button onClick={onClose} className="text-white/30 hover:text-white transition-colors p-1">
+            <X size={16}/>
+          </button>
         </div>
 
-        {/* Step label */}
-        <p className="text-white/30 text-xs font-semibold uppercase tracking-widest mb-2">Step {step} of {TOTAL_STEPS}</p>
-
-        {/* ── STEP 1: What are you building? ── */}
-        {step === 1 && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-bold text-white">What are you building?</h2>
-              <p className="text-white/40 text-sm mt-1">Give your business a name and type.</p>
-            </div>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="Business name (e.g. ZNZ Express)"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30 text-sm"
-            />
-            <div className="grid grid-cols-3 gap-2">
-              {BUSINESS_TYPES.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => setType(t.id)}
-                  className={`py-2.5 px-3 rounded-xl text-sm border transition-all flex flex-col items-center gap-1
-                    ${type === t.id ? 'border-white bg-white/10 text-white' : 'border-white/10 text-white/50 hover:border-white/30 hover:text-white/70'}`}>
-                  <span className="text-xl">{t.emoji}</span>
-                  <span className="text-xs">{t.label}</span>
-                </button>
-              ))}
-            </div>
-            <input
-              value={tagline}
-              onChange={e => setTagline(e.target.value)}
-              placeholder="One-line description (optional)"
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30 text-sm"
-            />
-          </div>
-        )}
-
-        {/* ── STEP 2: Mission this month ── */}
-        {step === 2 && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-bold text-white">{"What's your mission this month?"}</h2>
-              <p className="text-white/40 text-sm mt-1">Set a clear goal and target date.</p>
-            </div>
-            <div>
-              <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Primary goal *</label>
-              <textarea
-                value={goal}
-                onChange={e => setGoal(e.target.value)}
-                placeholder="e.g. Launch beta to 10 users, get first paying customer"
-                rows={3}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30 resize-none text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Target date</label>
-                <input
-                  type="date"
-                  value={targetDate}
-                  onChange={e => setTargetDate(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30 text-sm"
-                />
+        {/* ── Tab nav ── */}
+        <div className="flex border-b border-white/10 mt-4 px-2 shrink-0">
+          {TABS.map((tab, i) => {
+            const active = step === i + 1
+            const done   = step >  i + 1
+            const Icon   = tab.icon
+            return (
+              <div
+                key={tab.label}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px select-none
+                  ${active
+                    ? 'border-white text-white'
+                    : done
+                      ? 'border-transparent text-white/40'
+                      : 'border-transparent text-white/20'}`}>
+                <Icon size={12}/>
+                {tab.label}
+                {done && <Check size={10} className="text-white/40 ml-0.5"/>}
               </div>
-              <div>
-                <label className="text-white/50 text-xs uppercase tracking-wider mb-1.5 block">Success metric</label>
-                <input
-                  value={successMetric}
-                  onChange={e => setSuccessMetric(e.target.value)}
-                  placeholder="e.g. 10 signups"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30 text-sm"
-                />
-              </div>
-            </div>
-          </div>
-        )}
+            )
+          })}
+        </div>
 
-        {/* ── STEP 3: Build your team ── */}
-        {step === 3 && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-bold text-white">Build your team</h2>
-              <p className="text-white/40 text-sm mt-1">Choose which agents will work on {name || 'your project'}.</p>
-            </div>
-            <div className="space-y-2">
-              {AGENT_OPTIONS.map(a => {
-                const active = agents.includes(a.id)
-                return (
+        {/* ── Step content ── */}
+        <div className="overflow-y-auto flex-1 px-6 py-6">
+
+          {/* STEP 1 — Company */}
+          {step === 1 && (
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Building2 size={18} className="text-white/50"/>
+                  <h2 className="text-lg font-semibold text-white">Name your company</h2>
+                </div>
+                <p className="text-white/40 text-sm">This is the organization your agents will work for.</p>
+              </div>
+
+              <div>
+                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Company name</label>
+                <div className="flex gap-2">
+                  <input
+                    value={companyName}
+                    onChange={e => setCompanyName(e.target.value)}
+                    placeholder="e.g. Meridian"
+                    autoFocus
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 text-sm"
+                  />
                   <button
-                    key={a.id}
-                    onClick={() => toggleAgent(a.id)}
-                    className={`w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all
-                      ${active ? 'border-white/30 bg-white/5' : 'border-white/10 hover:border-white/20'}
-                      ${a.always ? 'cursor-default' : 'cursor-pointer'}`}>
-                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors
-                      ${active ? 'bg-white border-white' : 'border-white/30'}`}>
-                      {active && <Check size={11} className="text-black" />}
-                    </div>
-                    <span className="text-2xl shrink-0">{a.emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-white">{a.name}</span>
-                        <span className="text-[10px] text-white/30">{a.role}</span>
-                        {a.always && <span className="text-[10px] text-white/30 italic">(always on)</span>}
-                      </div>
-                      <p className="text-xs text-white/40 mt-0.5 leading-snug">{a.desc}</p>
-                    </div>
+                    onClick={() => setCompanyName(pickRandom(GENERATED_NAMES))}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-white/40 hover:border-white/25 hover:text-white/70 text-xs transition-all whitespace-nowrap">
+                    <Sparkles size={11}/> Generate
                   </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── STEP 4: Launch ── */}
-        {step === 4 && (
-          <div className="space-y-5">
-            <div>
-              <h2 className="text-xl font-bold text-white">{"You're ready. Launch."}</h2>
-              <p className="text-white/40 text-sm mt-1">Here's what we'll set up for you.</p>
-            </div>
-
-            {/* Summary card */}
-            <div className="rounded-xl border border-white/10 p-4 space-y-3" style={{background:'#141414'}}>
-              <div className="flex items-start gap-3">
-                <span className="text-2xl">{BUSINESS_TYPES.find(t => t.id === type)?.emoji || '🚀'}</span>
-                <div>
-                  <p className="text-white font-semibold text-base">{name}</p>
-                  {tagline && <p className="text-white/50 text-xs mt-0.5">{tagline}</p>}
-                  <p className="text-white/30 text-xs mt-0.5 capitalize">{type}</p>
                 </div>
               </div>
-              {goal && (
-                <div className="border-t border-white/5 pt-3">
-                  <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Mission</p>
-                  <p className="text-white/80 text-sm">{goal}</p>
-                  {successMetric && <p className="text-white/40 text-xs mt-1">✓ {successMetric}</p>}
+
+              <div>
+                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Mission / goal <span className="text-white/20 normal-case tracking-normal">optional</span></label>
+                <textarea
+                  value={mission}
+                  onChange={e => setMission(e.target.value)}
+                  placeholder="Finance app that builds money habits in three minutes a day"
+                  rows={3}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 resize-none text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2 — Agent */}
+          {step === 2 && (
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Bot size={18} className="text-white/50"/>
+                  <h2 className="text-lg font-semibold text-white">Create your first agent</h2>
                 </div>
-              )}
-              <div className="border-t border-white/5 pt-3">
-                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2">Team</p>
-                <div className="flex flex-wrap gap-2">
-                  {agents.map(id => {
-                    const a = AGENT_OPTIONS.find(x => x.id === id)
-                    return a ? (
-                      <span key={id} className="text-xs px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white/70">
-                        {a.emoji} {a.name}
-                      </span>
-                    ) : null
-                  })}
+                <p className="text-white/40 text-sm">Choose how this agent will run tasks.</p>
+              </div>
+
+              {/* Agent name */}
+              <div>
+                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Agent name</label>
+                <div className="flex gap-2">
+                  <input
+                    value={agentName}
+                    onChange={e => setAgentName(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 text-sm"
+                  />
+                  <button
+                    onClick={() => setAgentName(pickRandom(AGENT_NAMES))}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-white/40 hover:border-white/25 hover:text-white/70 text-xs transition-all whitespace-nowrap">
+                    <Sparkles size={11}/> Generate
+                  </button>
                 </div>
               </div>
-              <div className="border-t border-white/5 pt-3">
-                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">What happens next</p>
-                <div className="space-y-1">
-                  {['Sprint 1 created', '3 starter issues added to Board', '"Welcome to ' + name + '!" issue created', 'Team assigned to project'].map((item, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-white/50">
-                      <span className="text-green-400">✓</span>
-                      {item}
-                    </div>
+
+              {/* Adapter type */}
+              <div>
+                <label className="text-white/40 text-xs uppercase tracking-wider mb-2 block">Adapter type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {PRIMARY_ADAPTERS.map(a => (
+                    <button
+                      key={a.id}
+                      onClick={() => setAdapter(a.id)}
+                      className={`relative flex flex-col items-start gap-0.5 p-3.5 rounded-xl border text-left transition-all
+                        ${adapter === a.id ? 'border-white/40 bg-white/8' : 'border-white/10 hover:border-white/20'}`}>
+                      {a.recommended && (
+                        <span className="absolute top-2 right-2 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          Recommended
+                        </span>
+                      )}
+                      <span className={`text-sm font-medium ${adapter === a.id ? 'text-white' : 'text-white/60'}`}>{a.label}</span>
+                      <span className="text-xs text-white/30">{a.desc}</span>
+                    </button>
                   ))}
                 </div>
+
+                {/* More adapters */}
+                <button
+                  onClick={() => setShowMore(s => !s)}
+                  className="flex items-center gap-1 mt-2 text-white/30 hover:text-white/50 text-xs transition-colors">
+                  {showMore ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+                  More adapter types
+                </button>
+
+                {showMore && (
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {MORE_ADAPTERS.map(a => (
+                      <button
+                        key={a.id}
+                        onClick={() => setAdapter(a.id)}
+                        className={`flex flex-col items-start gap-0.5 p-3 rounded-xl border text-left transition-all
+                          ${adapter === a.id ? 'border-white/40 bg-white/8' : 'border-white/10 hover:border-white/20'}`}>
+                        <span className={`text-sm font-medium ${adapter === a.id ? 'text-white' : 'text-white/50'}`}>{a.label}</span>
+                        <span className="text-xs text-white/25">{a.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Model */}
+              <div>
+                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Model</label>
+                <select
+                  value={model}
+                  onChange={e => setModel(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-white/30 text-sm appearance-none cursor-pointer">
+                  {MODELS.map(m => (
+                    <option key={m.value} value={m.value} className="bg-[#1a1a1a] text-white">{m.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Environment check */}
+              <div className="rounded-xl border border-white/10 bg-white/3 p-4 space-y-2">
+                <p className="text-white/50 text-xs font-medium">Adapter environment check</p>
+                <p className="text-white/30 text-xs leading-relaxed">
+                  Runs a live probe that asks the adapter CLI to respond with hello.
+                </p>
+                <button
+                  onClick={runTest}
+                  disabled={testStatus === 'testing'}
+                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:border-white/25 hover:text-white/70 transition-all disabled:opacity-40">
+                  {testStatus === 'testing' ? (
+                    <>
+                      <span className="w-3 h-3 border border-white/20 border-t-white/60 rounded-full animate-spin"/>
+                      Testing...
+                    </>
+                  ) : testStatus === 'ok' ? (
+                    <><Check size={12} className="text-emerald-400"/> Environment ready</>
+                  ) : (
+                    'Test now'
+                  )}
+                </button>
               </div>
             </div>
+          )}
 
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-
-            {done && (
-              <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
-                <Check size={16}/> Launched! Switching to your board...
+          {/* STEP 3 — Task */}
+          {step === 3 && (
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <ClipboardList size={18} className="text-white/50"/>
+                  <h2 className="text-lg font-semibold text-white">Give it something to do</h2>
+                </div>
+                <p className="text-white/40 text-sm">Give your agent a small task to start with — a bug fix, a research question, writing a script.</p>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Navigation */}
-        <div className="flex justify-between mt-6 gap-3">
-          {step > 1 ? (
-            <button
-              onClick={() => setStep(s => s - 1)}
-              disabled={loading || done}
-              className="flex items-center gap-2 text-white/50 hover:text-white text-sm transition-colors disabled:opacity-30">
-              <ArrowLeft size={14}/> Back
-            </button>
-          ) : <div />}
+              <div>
+                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Task title</label>
+                <div className="flex gap-2">
+                  <input
+                    value={taskTitle}
+                    onChange={e => setTaskTitle(e.target.value)}
+                    placeholder="e.g. Define the first thing to build"
+                    autoFocus
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 text-sm"
+                  />
+                  <button
+                    onClick={() => setTaskTitle(generateTaskTitle(mission))}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-white/40 hover:border-white/25 hover:text-white/70 text-xs transition-all whitespace-nowrap">
+                    <Sparkles size={11}/> Generate
+                  </button>
+                </div>
+              </div>
 
-          {step < 4 ? (
+              <div>
+                <label className="text-white/40 text-xs uppercase tracking-wider mb-1.5 block">Description <span className="text-white/20 normal-case tracking-normal">optional</span></label>
+                <textarea
+                  value={taskDesc}
+                  onChange={e => setTaskDesc(e.target.value)}
+                  placeholder="What needs to happen? What does done look like?"
+                  rows={4}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/25 focus:outline-none focus:border-white/30 resize-none text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4 — Launch */}
+          {step === 4 && (
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Rocket size={18} className="text-white/50"/>
+                  <h2 className="text-lg font-semibold text-white">Ready to launch</h2>
+                </div>
+                <p className="text-white/40 text-sm">Everything is set up. Launching now will create the starter task, wake the agent, and open the issue.</p>
+              </div>
+
+              {/* Summary checklist */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-base">🏢</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{companyName}</p>
+                    <p className="text-white/30 text-xs">Company</p>
+                  </div>
+                  <Check size={14} className="text-emerald-400 shrink-0"/>
+                </div>
+
+                <div className="flex items-center gap-3 p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-base">🤖</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium">{agentName}{selectedAdapter ? `, ${selectedAdapter.label}` : ''} <span className="text-white/30 font-normal">(local)</span></p>
+                    <p className="text-white/30 text-xs">Agent</p>
+                  </div>
+                  <Check size={14} className="text-emerald-400 shrink-0"/>
+                </div>
+
+                <div className="flex items-center gap-3 p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-base">📋</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">{taskTitle || '(no task)'}</p>
+                    <p className="text-white/30 text-xs">Task</p>
+                  </div>
+                  <Check size={14} className={`shrink-0 ${taskTitle ? 'text-emerald-400' : 'text-white/20'}`}/>
+                </div>
+              </div>
+
+              {error && <p className="text-red-400 text-sm">{error}</p>}
+
+              {/* Launch button */}
+              <button
+                onClick={submit}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 bg-white text-black py-3 rounded-xl text-sm font-semibold disabled:opacity-50 hover:bg-zinc-100 transition-all">
+                {loading ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin"/>
+                    Setting up your business...
+                  </>
+                ) : (
+                  <>Create &amp; Open Issue <ArrowRight size={14}/></>
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Bottom nav ── */}
+        <div className="flex justify-between items-center px-6 py-4 border-t border-white/8 shrink-0">
+          <button
+            onClick={() => setStep(s => s - 1)}
+            disabled={step === 1}
+            className="flex items-center gap-1.5 text-white/40 hover:text-white text-sm transition-colors disabled:opacity-0 disabled:pointer-events-none">
+            <ArrowLeft size={14}/> Back
+          </button>
+
+          {step < 4 && (
             <button
               onClick={() => setStep(s => s + 1)}
-              disabled={(step === 1 && !canNext1) || (step === 2 && !canNext2)}
-              className="flex items-center gap-2 bg-white text-black px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-30 hover:bg-zinc-100 transition-all ml-auto">
+              disabled={!canNext}
+              className="flex items-center gap-1.5 bg-white text-black px-5 py-2 rounded-xl text-sm font-semibold disabled:opacity-30 hover:bg-zinc-100 transition-all">
               Next <ArrowRight size={14}/>
-            </button>
-          ) : (
-            <button
-              onClick={submit}
-              disabled={loading || done}
-              className="flex items-center gap-2 bg-white text-black px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 hover:bg-zinc-100 transition-all ml-auto">
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin inline-block"/>
-                  Creating...
-                </span>
-              ) : done ? (
-                <span className="flex items-center gap-2"><Check size={14}/> Done!</span>
-              ) : (
-                <span className="flex items-center gap-2"><Sparkles size={14}/> Launch {name} →</span>
-              )}
             </button>
           )}
         </div>
+
       </div>
     </div>
   )
