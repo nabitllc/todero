@@ -26,10 +26,10 @@ export function getPipelineStage(issue: any, children?: any[]): PipelineStage {
 
   if (issue.status === "in_progress") return "Building"
   if (issue.status === "in_review") {
-    // INF-258: UX gate — test passed but still in_review means awaiting UX review
+    // INF-258/INF-259: Design gate — test passed but still in_review means awaiting Designer review
     if (issue.test_status === "passed") {
-      // Check if there's a pending UX review child (issue stays in_review until UX approves)
-      if (children && children.some((c: any) => c.assignee === "ux" && c.status !== "done")) {
+      // Check if there's a pending Designer/UX review child (issue stays in_review until approved)
+      if (children && children.some((c: any) => (c.assignee === "designer" || c.assignee === "ux") && c.status !== "done")) {
         return "UX Review"
       }
       return "PR Queue"

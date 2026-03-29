@@ -1,7 +1,7 @@
 #!/bin/bash
 # INF-171: Tester agent — reviews in_review issues against acceptance criteria
 # Called by n8n or manually. Reviews P0/P1 first, then P2.
-# Sets test_status=passed → status=done, or test_status=failed → status=open with notes.
+# Sets test_status=passed → status=done (or Designer gate for MC/Vespera), or test_status=failed → status=open with notes.
 set -euo pipefail
 
 SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
@@ -111,31 +111,28 @@ $([ "$TIER" != "P0" ] && [ "$TIER" != "P1" ] && echo "4. ")Output your verdict a
   if [ "$PASSED" = "true" ]; then
     echo "[tester] $KEY: PASSED — $NOTES"
 
-    # ── INF-258: UX pipeline gate for UI issues ──
-    # P0/P1 Mission Control feature/task issues get UX review before done
-    ISSUE_TYPE=$(echo "$ISSUE" | jq -r '.type // ""')
-    UX_GATE=false
-    if { [ "$TIER" = "P0" ] || [ "$TIER" = "P1" ]; } && \
-       [ "$PROJECT" = "Mission Control" ] && \
-       { [ "$ISSUE_TYPE" = "feature" ] || [ "$ISSUE_TYPE" = "task" ]; }; then
-      UX_GATE=true
+    # ── INF-258 + INF-259: Designer pipeline gate for UI issues ──
+    # MC and Vespera issues get Designer review after Tester passes
+    DESIGNER_GATE=false
+    if [ "$PROJECT" = "Mission Control" ] || [ "$PROJECT" = "Vespera" ]; then
+      DESIGNER_GATE=true
     fi
 
-    if [ "$UX_GATE" = "true" ]; then
-      echo "[tester] $KEY: UX gate triggered — creating UX review issue"
-      # Mark test_status=passed but keep in_review (awaiting UX)
+    if [ "$DESIGNER_GATE" = "true" ]; then
+      echo "[tester] $KEY: Designer gate triggered — creating Designer review issue"
+      # Mark test_status=passed but keep in_review (awaiting Designer)
       curl -sf -X PATCH "$MC_API/issues" \
         -H "Content-Type: application/json" \
-        -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\n**Status:** Awaiting UX review before done.\"}" >/dev/null
+        -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\n**Status:** Awaiting Designer review before done.\"}" >/dev/null
 
-      # Create UX review child issue
-      UX_AC="Review $KEY against design-system.md. Check: color tokens, spacing scale, typography, component consistency, responsive behavior, accessibility basics. Approve or create fix tasks."
+      # Create Designer review child issue
+      DESIGNER_AC="Review $KEY against design-system.md. Check: color tokens, spacing scale, typography, component consistency, responsive behavior, accessibility basics. Approve (close original → done) or reject (create fix task for builder)."
       curl -sf -X POST "$MC_API/issues" \
         -H "Content-Type: application/json" \
-        -d "{\"title\":\"UX Review: $KEY — $TITLE\",\"description\":\"UX review gate for $KEY. Review the UI changes on branch $BRANCH against design-system.md standards.\",\"project\":\"Mission Control\",\"type\":\"task\",\"priority\":\"high\",\"assignee\":\"ux\",\"acceptance_criteria\":\"$UX_AC\",\"sprint\":\"$(date -u +%Y-%m-%d)\",\"parent_id\":\"$ID\",\"test_tier\":\"P2\"}" >/dev/null
-      echo "[tester] $KEY: UX review issue created, assigned to ux agent"
+        -d "{\"title\":\"Designer Review: $KEY — $TITLE\",\"description\":\"Designer review gate for $KEY. Review the UI changes on branch $BRANCH against design-system.md standards. If approved, close parent issue. If rejected, create a fix task assigned to builder.\",\"project\":\"$PROJECT\",\"type\":\"task\",\"priority\":\"high\",\"assignee\":\"designer\",\"acceptance_criteria\":\"$DESIGNER_AC\",\"sprint\":\"$(date -u +%Y-%m-%d)\",\"parent_id\":\"$ID\",\"test_tier\":\"P2\"}" >/dev/null
+      echo "[tester] $KEY: Designer review issue created, assigned to designer agent"
     else
-      # No UX gate — mark done directly
+      # No Designer gate — mark done directly
       curl -sf -X PATCH "$MC_API/issues" \
         -H "Content-Type: application/json" \
         -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"status\":\"done\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\"}" >/dev/null
