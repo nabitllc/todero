@@ -1,3 +1,10 @@
+// LAYOUT STRUCTURE — DO NOT BREAK:
+// <div min-h-screen flex>
+//   <BusinessRail />          ← w-14, always visible
+//   <aside hidden lg:flex>    ← sidebar, desktop only
+//   <main flex-1>             ← content
+//   <MobileNav lg:hidden>     ← mobile bottom nav, hidden on desktop
+// </div>
 'use client'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
