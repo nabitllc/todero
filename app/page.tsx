@@ -3,9 +3,10 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AgentOffice from '@/components/AgentOffice'
-import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search } from 'lucide-react'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List } from 'lucide-react'
 import FeaturesTab from '@/components/tabs/FeaturesTab'
 import PipelineTab from '@/components/tabs/PipelineTab'
+import IssuesTab from '@/components/tabs/IssuesTab'
 
 const KEMUNI_START     = new Date('2026-03-21')
 const KEMUNI_DEADLINE  = new Date('2026-04-20')
@@ -112,7 +113,7 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
-  office: Building2, memory: Brain, board: Kanban, features: Map, automations: Zap, chat: MessageSquare, infra: Server,
+  office: Building2, memory: Brain, board: Kanban, features: Map, issues: List, automations: Zap, chat: MessageSquare, infra: Server,
 }
 
 const NAV = [
@@ -125,6 +126,7 @@ const NAV = [
   { id:'board',        label:'Board',        icon:'📋' },
   { id:'features',     label:'Features',     icon:'🗺️' },
   { id:'pipeline',     label:'Pipeline',     icon:'🏭' },
+  { id:'issues',       label:'Issues',       icon:'📝' },
   { id:'divider' as any, label:'',           icon:'' },
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
@@ -2753,6 +2755,68 @@ function MultiSelect({ label, options, selected, onToggle, displayFn }: {
   )
 }
 
+function SprintProgressCard() {
+  const [sprintData, setSprintData] = useState<{total:number;done:number}|null>(null)
+  const [countdown, setCountdown] = useState('')
+
+  useEffect(() => {
+    const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const headers = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
+    fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.2026-03-28&select=id,status`, { headers })
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setSprintData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
+        }
+      }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const update = () => {
+      const now = new Date()
+      // Target: next 7am EDT (UTC-4)
+      const target = new Date(now)
+      target.setUTCHours(11, 0, 0, 0) // 7am EDT = 11:00 UTC
+      if (target <= now) target.setDate(target.getDate() + 1)
+      const diff = target.getTime() - now.getTime()
+      const h = Math.floor(diff / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      const s = Math.floor((diff % 60000) / 1000)
+      setCountdown(`${h}h ${m}m ${s}s`)
+    }
+    update()
+    const t = setInterval(update, 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  if (!sprintData || sprintData.total === 0) return null
+  const pct = Math.round((sprintData.done / sprintData.total) * 100)
+
+  return (
+    <div className="rounded-2xl border border-zinc-800/60 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">🏃</span>
+          <span className="text-xs font-semibold tracking-widest text-zinc-500 uppercase">Sprint 1</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-600">Next 7am EDT in</span>
+          <span className="text-[11px] font-mono text-zinc-400">{countdown}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 mb-2">
+        <span className="text-white text-sm font-semibold tabular-nums">{sprintData.done}/{sprintData.total}</span>
+        <span className="text-zinc-500 text-xs">done</span>
+        <span className="ml-auto text-lg font-bold tabular-nums" style={{color: pct === 100 ? '#10b981' : pct >= 50 ? '#3b82f6' : '#f59e0b'}}>{pct}%</span>
+      </div>
+      <div className="w-full rounded-full h-2" style={{background:'#1a1a1a'}}>
+        <div className="h-2 rounded-full transition-all duration-500" style={{width: pct+'%', background: pct === 100 ? '#10b981' : pct >= 50 ? '#3b82f6' : '#f59e0b'}} />
+      </div>
+    </div>
+  )
+}
+
 interface Task {
   id: string; title: string; description?: string; status: string;
   assignee?: string; project?: string; priority?: string; type?: string;
@@ -3061,8 +3125,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter }:
               <div className="flex items-center justify-between px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
-                  <span className="text-xs font-semibold text-zinc-400">{col.label}</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500">{colTasks.length}</span>
+                  <span className="text-xs font-semibold text-zinc-400">{col.label} ({colTasks.length})</span>
+                  {col.id === 'done' && filtered.length > 0 && (
+                    <span className="text-[10px] text-zinc-600 font-mono">{Math.round((colTasks.length / filtered.length) * 100)}%</span>
+                  )}
                 </div>
               </div>
 
@@ -3522,7 +3588,7 @@ export default function Home() {
   const [tab, setTab]       = useState<Tab>(()=>{
     if(typeof window!=='undefined'){
       const saved = localStorage.getItem('mc-tab') as Tab|null
-      if(saved && ['overview','activity','team','calendar','automations','office','memory','board','features','chat','infra'].includes(saved)) return saved
+      if(saved && ['overview','activity','team','calendar','automations','office','memory','board','features','pipeline','issues','chat','infra'].includes(saved)) return saved
     }
     return 'overview'
   })
@@ -3827,6 +3893,9 @@ export default function Home() {
                   </div>
                 )
               })()}
+
+              {/* Sprint Progress Card (MC-102) */}
+              <SprintProgressCard />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sprintProjects.map(proj=>{
@@ -4828,6 +4897,11 @@ export default function Home() {
           {/* ── PIPELINE ── */}
           {tab==='pipeline' && (
             <PipelineTab />
+          )}
+
+          {/* ── ISSUES ── */}
+          {tab==='issues' && (
+            <IssuesTab />
           )}
 
           {/* ── AUTOMATIONS (n8n embed) ── */}
