@@ -3805,6 +3805,19 @@ export default function Home() {
   const [activityLimit, setActivityLimit] = useState(100)
   const [activityFilter, setActivityFilter] = useState<'all'|'issue'|'agent'|'pr'>('all')
   const [issueActivity, setIssueActivity] = useState<any[]>([])
+  const [calendarView, setCalendarView] = useState<'week'|'month'>('week')
+  const [calendarIssues, setCalendarIssues] = useState<any[]>([])
+
+  // Fetch issues with due_date for calendar
+  useEffect(() => {
+    const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const headers = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
+    fetch(`${SUPA_URL}/rest/v1/issues?due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`, { headers })
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setCalendarIssues(data) })
+      .catch(() => {})
+  }, [])
 
   // Fetch issue status changes for activity feed
   useEffect(() => {
@@ -4443,8 +4456,75 @@ export default function Home() {
           )}
 
           {/* ── CALENDAR ── */}
-          {tab==='calendar' && (
+          {tab==='calendar' && (()=>{
+            const calIssues = (calendarIssues ?? []) as any[]
+            const calSprints = (sprintProjects ?? []) as any[]
+            const calView = calendarView
+            // Helper: get week dates
+            const getWeekDates = () => {
+              const now = new Date()
+              const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay())
+              return Array.from({length:7},(_,i)=>{ const d=new Date(startOfWeek); d.setDate(startOfWeek.getDate()+i); return d })
+            }
+            // Helper: get month dates grid (6 weeks)
+            const getMonthDates = () => {
+              const now = new Date()
+              const first = new Date(now.getFullYear(), now.getMonth(), 1)
+              const startDay = first.getDay()
+              const start = new Date(first); start.setDate(1 - startDay)
+              return Array.from({length:42},(_,i)=>{ const d=new Date(start); d.setDate(start.getDate()+i); return d })
+            }
+            const dates = calView === 'week' ? getWeekDates() : getMonthDates()
+            const todayStr = new Date().toISOString().slice(0,10)
+            // Group issues by due_date
+            const issuesByDate: Record<string,any[]> = {}
+            calIssues.forEach((iss:any) => {
+              if (!iss.due_date) return
+              const d = iss.due_date.slice(0,10)
+              if (!issuesByDate[d]) issuesByDate[d] = []
+              issuesByDate[d].push(iss)
+            })
+            // Sprint ranges
+            const sprintRanges = calSprints.map((p:any)=>({
+              name: p.name || p.id,
+              color: p.color || '#3b82f6',
+              start: p.startDate || p.start_date,
+              end: p.deadline || p.end_date,
+            })).filter(s=>s.start && s.end)
+            const isInSprint = (dateStr:string, s:any) => dateStr >= s.start && dateStr <= s.end
+            const projColor = (p:string) => p==='Vespera'?'#a855f7':p==='Kemuni'?'#3b82f6':p==='Infrastructure'?'#f59e0b':'#6b7280'
+            // Cron label helper
+            const cronLabel = (c:any) => (c.name || c.desc || c.id.replace(/-/g,' '))
+
+            return (
             <div className="space-y-5">
+              {/* View toggle */}
+              <div className="flex items-center justify-between">
+                <SH icon="📅">Calendar</SH>
+                <div className="flex gap-1 bg-zinc-900 rounded-lg p-0.5 border border-zinc-800/60">
+                  {(['week','month'] as const).map(v=>(
+                    <button key={v} onClick={()=>setCalendarView(v)}
+                      className={'px-3 py-1 text-[11px] font-semibold rounded-md transition-all '+(calView===v?'bg-white text-black':'text-zinc-500 hover:text-zinc-300')}>
+                      {v === 'week' ? 'Week' : 'Month'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sprint boundary blocks */}
+              {sprintRanges.length>0 && (
+                <div className="flex flex-wrap gap-2">
+                  {sprintRanges.map((s,i)=>(
+                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs"
+                      style={{borderColor:s.color+'40',background:s.color+'10',color:s.color}}>
+                      <span className="font-semibold">{s.name}</span>
+                      <span className="text-zinc-500 font-mono text-[10px]">{s.start} — {s.end}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Always Running */}
               <div>
                 <SH icon="⚡">Always Running</SH>
                 <div className="flex flex-wrap gap-2">
@@ -4453,42 +4533,72 @@ export default function Home() {
                       style={{background:pColor(c.project)+'15',borderColor:pColor(c.project)+'40'}}
                       onClick={()=>setCronModal(c)}>
                       <Dot status="active" sm />
-                      <span className="text-xs font-medium" style={{color:pColor(c.project)}}>{c.id}</span>
+                      <span className="text-xs font-medium" style={{color:pColor(c.project)}}>{cronLabel(c)}</span>
                       <span className="text-zinc-600 text-[10px]">· {c.time}</span>
                       <span className="text-[9px] px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">{c.model}</span>
                     </div>
                   ))}
                 </div>
               </div>
+
+              {/* Calendar Grid */}
               <div>
-                <SH icon="📅">This Week</SH>
-                <div className="overflow-x-auto -mx-1 px-1"><div className="grid grid-cols-7 gap-1.5 min-w-[580px]">
-                  {DAYS.map((day,di)=>{
-                    const dayCrons = CRONS.filter(c=>{
+                <SH icon={calView==='week'?"📅":"🗓"}>{ calView==='week'?'This Week':'This Month'}</SH>
+                <div className="overflow-x-auto -mx-1 px-1"><div className={'grid grid-cols-7 gap-1 min-w-[580px]'}>
+                  {/* Day headers */}
+                  {DAYS.map((day,di)=>(
+                    <div key={day} className={'text-center text-[10px] font-semibold py-1 rounded-lg '+(
+                      di===todayIdx && calView==='week' ? 'bg-white text-black' : 'text-zinc-500 bg-zinc-900/50'
+                    )}>
+                      {day}
+                    </div>
+                  ))}
+                  {/* Date cells */}
+                  {dates.map((d,i)=>{
+                    const ds = d.toISOString().slice(0,10)
+                    const isToday = ds === todayStr
+                    const isCurrentMonth = d.getMonth() === new Date().getMonth()
+                    const dayIssues = issuesByDate[ds] || []
+                    const dayCrons = displayCrons.filter((c:any)=>{
                       if(c.days==='daily') return true
-                      if(c.days===day) return true
+                      if(c.days===DAYS[d.getDay()]) return true
                       return false
                     })
+                    const inSprints = sprintRanges.filter(s=>isInSprint(ds,s))
                     return (
-                    <div key={day} className="flex flex-col gap-1.5">
-                      <div className={'text-center text-[10px] font-semibold py-1.5 rounded-lg '+(
-                        di===todayIdx ? 'bg-white text-black' : 'text-zinc-500 bg-zinc-900/50'
-                      )}>
-                        {day}
-                        {di===todayIdx && <div className="text-[9px] font-normal opacity-60">today</div>}
-                      </div>
-                      {dayCrons.map(c=>(
-                        <div key={c.id} className={'rounded-lg px-2 py-1.5 border cursor-pointer hover:brightness-125 transition-all '+(c.status==='planned'?'border-dashed':'')}
-                          style={{background: c.status==='planned'?'#1e0a2e': c.project==='Kemuni'||c.project==='Ops'&&c.model!=='n8n'?'#1e293b':'#1a1a1a',
-                            borderColor: c.status==='planned'?'#a855f750': c.project==='Kemuni'?'#3b82f650':'#6b728050'}}
-                          onClick={()=>setCronModal(c)}>
-                          <p className="text-[11px] text-zinc-500 font-mono leading-tight">{c.time}</p>
-                          <p className={'text-[13px] mt-0.5 font-medium leading-tight '+(c.status==='planned'?'text-purple-400':c.project==='Kemuni'?'text-blue-300':'text-zinc-400')}>{c.id.replace(/-/g,' ')}</p>
-                          <span className="inline-block text-[9px] px-1 py-0.5 rounded mt-1 font-mono" style={{background:'#ffffff08',color:'#888'}}>{c.model}</span>
-                          {c.status==='planned' && <p className="text-[10px] text-purple-800">planned</p>}
+                      <div key={i} className={'rounded-lg border p-1.5 min-h-[60px] '+(calView==='month'?'min-h-[48px]':'')}
+                        style={{
+                          background: isToday?'#1a1a30':inSprints.length>0?(inSprints[0].color+'08'):'#0a0a0a',
+                          borderColor: isToday?'#ffffff30':inSprints.length>0?(inSprints[0].color+'25'):'#1e1e1e',
+                          opacity: calView==='month'&&!isCurrentMonth?0.4:1,
+                        }}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={'text-[10px] font-mono '+(isToday?'text-white font-bold':'text-zinc-500')}>{d.getDate()}</span>
+                          {inSprints.map((s,si)=>(
+                            <span key={si} className="text-[7px] px-1 rounded" style={{background:s.color+'20',color:s.color}}>{s.name.slice(0,3)}</span>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                        {/* Issue due dates */}
+                        {dayIssues.slice(0,3).map((iss:any)=>(
+                          <div key={iss.id} className="text-[9px] leading-tight mb-0.5 px-1 py-0.5 rounded truncate cursor-pointer hover:brightness-125"
+                            style={{background:projColor(iss.project)+'18',color:projColor(iss.project),borderLeft:`2px solid ${projColor(iss.project)}`}}
+                            title={`${iss.task_key}: ${iss.title}`}>
+                            {iss.task_key}: {iss.title?.slice(0,20)}
+                          </div>
+                        ))}
+                        {dayIssues.length>3 && <div className="text-[8px] text-zinc-600">+{dayIssues.length-3} more</div>}
+                        {/* Cron events (compact in month view) */}
+                        {calView==='week' && dayCrons.slice(0,3).map((c:any)=>(
+                          <div key={c.id} className="text-[9px] leading-tight mb-0.5 px-1 py-0.5 rounded truncate cursor-pointer hover:brightness-125"
+                            style={{background:'#ffffff06',color:'#888'}}
+                            onClick={()=>setCronModal(c)}>
+                            {c.time} {cronLabel(c)}
+                          </div>
+                        ))}
+                        {calView==='month' && dayCrons.length>0 && (
+                          <div className="text-[8px] text-zinc-600">{dayCrons.length} cron{dayCrons.length>1?'s':''}</div>
+                        )}
+                      </div>
                     )
                   })}
                 </div></div>
@@ -4584,7 +4694,7 @@ export default function Home() {
                 </div>
               )}
             </div>
-          )}
+          )})()}
 
           {/* ── OFFICE ── */}
           {tab==='office' && (

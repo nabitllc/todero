@@ -364,7 +364,7 @@ function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:numbe
 }
 
 // ─── Draw furniture ───────────────────────────────────────────────────────────
-function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A){
+function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A,liveRuns:Record<string,AgentRunInfo>={}){
   ctx.save();applyCamera(ctx,cam);
 
   // ── Dependency graph overlay ──
@@ -442,12 +442,28 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
         ctx.fillRect(mx2+dw*0.04,my2+dh*0.08+l*(mh/5.5),mw*(0.25+0.5*((l+Math.floor(t2))%2))*mood,dh*0.07);
       }
     } else {
-      ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.6,dh*0.05);
-      if(Math.floor(now*0.002)%2===0){
-        ctx.fillStyle=(orchAg?.color||"#6C5CE7")+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.26,dh*0.06,dh*0.06);
+      // MC-15: Orchestrator health indicators when idle
+      const orchRun=liveRuns[ORCHESTRATOR_ID];
+      if(orchRun&&orchRun.status!=='never'){
+        const hColor=orchRun.todayErrors>2?'#ff4444':orchRun.todayErrors>0?'#f59e0b':'#00ff88';
+        const hPx=Math.max(9,Math.round(T*0.10));
+        ctx.font=`${hPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="left";
+        ctx.beginPath();ctx.arc(mx2+dw*0.06,my2+dh*0.12,T*0.04,0,Math.PI*2);ctx.fillStyle=hColor;ctx.fill();
+        const ago=orchRun.startedAt?Math.round((Date.now()-new Date(orchRun.startedAt).getTime())/60000):0;
+        const agoStr=ago<60?`${ago}m`:ago<1440?`${Math.floor(ago/60)}h`:`${Math.floor(ago/1440)}d`;
+        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr}`,mx2+dw*0.12,my2+dh*0.16);
+        ctx.fillStyle="#00ff88";ctx.fillText(`${orchRun.todayTasks} tasks`,mx2+dw*0.04,my2+dh*0.30);
+        if(orchRun.todayErrors>0){ctx.fillStyle="#ff4444";ctx.fillText(`${orchRun.todayErrors} err`,mx2+dw*0.04,my2+dh*0.44);}
+        ctx.font=`bold ${Math.round(T*0.11)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+        ctx.fillStyle="#1e1e40";ctx.fillText("STANDBY",x+dw/2,my2+mh*0.72);
+      } else {
+        ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.6,dh*0.05);
+        if(Math.floor(now*0.002)%2===0){
+          ctx.fillStyle=(orchAg?.color||"#6C5CE7")+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.26,dh*0.06,dh*0.06);
+        }
+        ctx.font=`bold ${Math.round(T*0.13)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+        ctx.fillStyle="#1e1e40";ctx.fillText("STANDBY",x+dw/2,my2+mh*0.72);
       }
-      ctx.font=`bold ${Math.round(T*0.13)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-      ctx.fillStyle="#1e1e40";ctx.fillText("STANDBY",x+dw/2,my2+mh*0.72);
     }
     ctx.fillStyle="#141424";
     ctx.fillRect(x+dw/2-T*0.05,y+dh*0.76,T*0.1,dh*0.13);
@@ -496,15 +512,32 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
       }
       if(darkAlpha>0.05){ctx.shadowColor=ag.color;ctx.shadowBlur=T*0.25*darkAlpha;ctx.strokeStyle=ag.color+"22";ctx.strokeRect(mx2,my2,mw,mh);ctx.shadowBlur=0;}
     } else {
-      // Idle monitor — show status indicator
-      ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.5,dh*0.06);
-      // Blinking cursor
-      if(Math.floor(now*0.002)%2===0){
-        ctx.fillStyle=ag.color+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.28,dh*0.06,dh*0.06);
+      // MC-15: Health indicators on idle monitors
+      const run=liveRuns[id];
+      if(run&&run.status!=='never'){
+        const hColor=run.todayErrors>2?'#ff4444':run.todayErrors>0?'#f59e0b':'#00ff88';
+        const hPx=Math.max(8,Math.round(T*0.09));
+        ctx.font=`${hPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="left";
+        // Status dot
+        ctx.beginPath();ctx.arc(mx2+dw*0.06,my2+dh*0.15,T*0.04,0,Math.PI*2);ctx.fillStyle=hColor;ctx.fill();
+        // Last run time
+        const ago=run.startedAt?Math.round((Date.now()-new Date(run.startedAt).getTime())/60000):0;
+        const agoStr=ago<60?`${ago}m`:ago<1440?`${Math.floor(ago/60)}h`:`${Math.floor(ago/1440)}d`;
+        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr}`,mx2+dw*0.12,my2+dh*0.19);
+        // Tasks today
+        ctx.fillStyle="#00ff88";ctx.fillText(`${run.todayTasks} tasks`,mx2+dw*0.04,my2+dh*0.38);
+        // Errors
+        if(run.todayErrors>0){
+          ctx.fillStyle="#ff4444";ctx.fillText(`${run.todayErrors} err`,mx2+dw*0.04,my2+dh*0.55);
+        }
+      } else {
+        ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.5,dh*0.06);
+        if(Math.floor(now*0.002)%2===0){
+          ctx.fillStyle=ag.color+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.28,dh*0.06,dh*0.06);
+        }
+        ctx.font=`bold ${Math.round(T*0.11)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+        ctx.fillStyle="#1e1e40";ctx.fillText("IDLE",x+dw/2,my2+mh*0.75);
       }
-      // "IDLE" text on screen
-      ctx.font=`bold ${Math.round(T*0.11)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-      ctx.fillStyle="#1e1e40";ctx.fillText("IDLE",x+dw/2,my2+mh*0.75);
     }
     ctx.fillStyle="#111122";
     ctx.fillRect(x+dw/2-T*0.04,y+dh*0.75,T*0.08,dh*0.13);
@@ -565,8 +598,23 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
     ctx.fillStyle="#24243e";ctx.beginPath();ctx.roundRect(cx+T*0.02,cy+T*0.02,cW-T*0.04,cH*0.5,T*0.02);ctx.fill();
   });
   if(activeMeeting&&darkAlpha>0.04){ctx.shadowColor="#FDCB6E";ctx.shadowBlur=T*0.3*darkAlpha;ctx.strokeStyle="#FDCB6E33";ctx.lineWidth=T*0.025;ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();ctx.shadowBlur=0;}
+  // MC-16: Show agents at conference table based on real sessions
+  const meetingAgents=agents.filter(a=>a.state==="meeting"||a.state==="moving_to_meeting");
+  if(!activeMeeting&&meetingAgents.length>=2){
+    // Multiple agents active simultaneously but not in formal meeting — show collaboration
+    ctx.strokeStyle="#00ff8844";ctx.lineWidth=T*0.02;
+    ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();
+  }
   ctx.font=`bold ${Math.round(T*0.15)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-  if(activeMeeting&&topic){ctx.fillStyle="#FDCB6E";ctx.fillText("⬡ "+topic,tcx+tw/2,tcy+th+T*0.3);}
+  if(activeMeeting&&topic){
+    ctx.fillStyle="#FDCB6E";ctx.fillText("⬡ "+topic,tcx+tw/2,tcy+th+T*0.3);
+    // MC-16: Show participant names
+    const pNames=meetingAgents.map(a=>a.name).join(", ");
+    if(pNames){
+      ctx.font=`${Math.round(T*0.10)}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle="#FDCB6E88";ctx.fillText(pNames,tcx+tw/2,tcy+th+T*0.48);
+    }
+  }
   else if(incidentActive){ctx.fillStyle="#ff4444";ctx.fillText("🚨 INCIDENT",tcx+tw/2,tcy+th+T*0.3);}
   else{ctx.fillStyle="#252550";ctx.fillText("Conference Table",tcx+tw/2,tcy+th+T*0.3);}
 
@@ -914,6 +962,8 @@ export default function AgentOffice(){
   const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
   const zoomTargetRef                = useRef<{x:number,y:number,z:number}|null>(null); // MC-21: smooth zoom target
   const [showSettings,setShowSettings] = useState(false);
+  const [simSpeed,setSimSpeed] = useState(1); // MC-91: simulation speed 0.5x/1x/2x
+  const simSpeedRef = useRef(1);
   const [theme,setTheme] = useState<"A"|"B">(()=>{
     try{return (localStorage.getItem("office_theme")||"A") as "A"|"B";}catch{return "A";}
   });
@@ -958,6 +1008,7 @@ export default function AgentOffice(){
   useEffect(()=>{depGraphRef.current=showDepGraph;},[showDepGraph]);
   useEffect(()=>{showLegendRef.current=showLegend;},[showLegend]);
   useEffect(()=>{replayModeRef.current=replayMode;},[replayMode]);
+  useEffect(()=>{simSpeedRef.current=simSpeed;},[simSpeed]);
 
   // ── Board task polling ─────────────────────────────────────────────────
   useEffect(()=>{
@@ -1489,7 +1540,7 @@ export default function AgentOffice(){
       drawFloor(ctx,T2,cam,darkAlpha,!!incidentData,thm,showGridRef.current);
       // Use meetingRef (real data) OR meeting (simulation), real data takes priority
       const activeMeetingTopic=meetingRef.current?.topic||meeting?.topic||null;
-      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!(meetingRef.current||meeting),activeMeetingTopic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm);
+      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!(meetingRef.current||meeting),activeMeetingTopic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm,liveRunsRef.current);
       // Connection lines: working agents → orchestrator
       const orchAgent2=drawAgentsArr.find((a:any)=>a.id===ORCHESTRATOR_ID);
       if(orchAgent2){
@@ -1708,6 +1759,15 @@ export default function AgentOffice(){
   const changeVolume=(v:number)=>{setVolume(v);if(v===0){soundRef.current=false;setSoundOn(false);}else{soundRef.current=true;setSoundOn(true);}if(audioRef.current?.master)audioRef.current.master.gain.value=v/100*0.15;try{localStorage.setItem("office_volume",String(v));localStorage.setItem("office_sound",v>0?"on":"off");}catch(e){}};
   const toggleMinimap=()=>{minimapRef.current=!minimapRef.current;setShowMinimap(s=>!s);};
   const toggleDepGraph=()=>{depGraphRef.current=!depGraphRef.current;setShowDepGraph(s=>!s);};
+  // MC-91: Export replay as JSON (last 60s of frames)
+  const exportReplay=()=>{
+    const frames=replayFrames.current.slice(-600); // ~60s at 10fps
+    const blob=new Blob([JSON.stringify({frames,exportedAt:new Date().toISOString()},null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`office-replay-${Date.now()}.json`;a.click();
+    URL.revokeObjectURL(url);
+    addToast("Replay exported","#6C5CE7");
+  };
   const openConfig=(ag:any)=>{setConfigAgent(ag);setConfigEdits({name:ag.name,color:ag.color,workBurst:ag.personality.workBurst,focusDuration:ag.personality.focusDuration});setShowConfig(true);};
   const saveConfig=()=>{
     if(!configAgent||!simRef.current?.agents) return;
@@ -1871,6 +1931,15 @@ export default function AgentOffice(){
           <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Toggle minimap">🗺</button>
           <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Settings">⌨</button>
           <button onClick={()=>{const el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen?.();}} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Fullscreen">⛶</button>
+          {/* MC-91: Speed control */}
+          <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 6px",background:"#0a0a18",border:"1px solid #1a1a2e",borderRadius:3}}>
+            <span style={{fontSize:9,color:"#6a6a8e"}}>⏩</span>
+            {([0.5,1,2] as const).map(s=>(
+              <button key={s} onClick={()=>setSimSpeed(s)} style={{background:simSpeed===s?"#6C5CE7":"transparent",border:"none",borderRadius:2,color:simSpeed===s?"#fff":"#6a6a8e",padding:"1px 5px",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:simSpeed===s?700:400}}>{s}x</button>
+            ))}
+          </div>
+          {/* MC-91: Export replay */}
+          <button onClick={exportReplay} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:10,cursor:"pointer",fontFamily:"inherit"}} title="Export replay JSON">📦</button>
           <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 6px",background:"#0a0a18",border:"1px solid #1a1a2e",borderRadius:3}}>
             <button onClick={toggleSound} style={{background:"transparent",border:"none",color:soundOn?"#8892b0":"#6a6a8e",padding:"0 2px",fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
             <input type="range" min="0" max="100" value={volume} onChange={(e:any)=>changeVolume(+e.target.value)} style={{width:50,height:3,accentColor:"#6C5CE7"}}/>
@@ -1977,6 +2046,14 @@ export default function AgentOffice(){
                     {detail.state?.replace(/_/g," ")}
                   </div>
                 </div>
+                {/* MC-91: Show model info */}
+                {(()=>{const liveRun=liveRunsRef.current[detail.id];return liveRun?(
+                  <div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap"}}>
+                    <span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:"#1a1a2e",color:"#8892b0"}}>Issue: {liveRun.taskTitle||"None"}</span>
+                    <span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:"#1a1a2e",color:"#8892b0"}}>Today: {liveRun.todayTasks} tasks</span>
+                    {liveRun.todayErrors>0&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:"#2a0808",color:"#ff4444"}}>{liveRun.todayErrors} errors</span>}
+                  </div>
+                ):null})()}
                 <div style={{display:"flex",gap:12,marginBottom:8}}>
                   <div style={{textAlign:"center"}}><div style={{fontSize:14,color:detail.color,fontWeight:700}}>{detail.tasksCompleted}</div><div style={{fontSize:10,color:"#6a6a8e"}}>TASKS</div></div>
                   <div style={{textAlign:"center"}}><div style={{fontSize:14,color:"#FDCB6E",fontWeight:700}}>{detail.meetingsAttended}</div><div style={{fontSize:10,color:"#6a6a8e"}}>MEETINGS</div></div>
@@ -1991,53 +2068,48 @@ export default function AgentOffice(){
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* KAOS-specific: command terminal + status updates (dependency chains moved to expandable panel) */}
-              {detail&&detail.id===ORCHESTRATOR_ID&&(
-                <div style={{borderTop:"1px solid #1e1e35",padding:"8px 11px"}}>
-                  <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>COMMAND TERMINAL</div>
-                  <div style={{display:"flex",alignItems:"center",gap:4,background:"#0a0a18",borderRadius:4,padding:"4px 8px",border:"1px solid #1e1e35"}}>
-                    <span style={{color:"#6C5CE7",fontSize:12,fontWeight:700}}>❯</span>
-                    <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
-                      onKeyDown={(e:any)=>{if(e.key==="Enter"&&nlInput.trim()&&!nlLoading){
-                        setNlLoading(true);
-                        const userMsg=nlInput.trim();
-                        addFeed(`❯ ${userMsg}`,"#6C5CE7");
-                        fetch("http://127.0.0.1:18789/v1/chat/completions",{method:"POST",
-                          headers:{"Content-Type":"application/json","Authorization":"Bearer eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0"},
-                          body:JSON.stringify({model:"main",messages:[{role:"user",content:userMsg}]})
-                        }).then(r=>r.json()).then(data=>{
-                          const reply=data.choices?.[0]?.message?.content||"No response";
-                          const short=reply.length>200?reply.slice(0,200)+"…":reply;
-                          addFeed(`🧠 ${short}`,"#a29bfe");
-                          addToast("KAOS responded","#6C5CE7");
-                          const rEntry={id:feedIdRef.current++,ts:nowts(),sender:"KAOS",senderColor:"#6C5CE7",receiver:"You",text:short};
-                          dialogueRef.current=[rEntry,...dialogueRef.current].slice(0,40);
-                          setDialogue([...dialogueRef.current]);
-                          setNlInput("");setNlLoading(false);
-                        }).catch(()=>{addToast("Gateway error","#ff4444");setNlLoading(false);});
-                      }}}
-                      placeholder="Send a message to KAOS…"
-                      disabled={nlLoading}
-                      style={{flex:1,background:"transparent",border:"none",color:"#e0e0ff",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,outline:"none"}}/>
-                  </div>
-                  {nlLoading&&<div style={{fontSize:10,color:"#6C5CE7",marginTop:3}}>⟳ thinking…</div>}
-
-                  {dialogue.length>0&&(
-                    <div style={{marginTop:8}}>
-                      <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>AGENT UPDATES</div>
-                      {dialogue.slice(0,5).map((d:any)=>(
-                        <div key={d.id} style={{marginBottom:4,padding:"4px 7px",background:"#0f0f22",borderRadius:3,borderLeft:`2px solid ${d.senderColor}`}}>
+                {/* MC-13: View real session log */}
+                <div style={{marginTop:6}}>
+                  <button onClick={()=>{
+                    setLoadingLog(true);
+                    fetch(`/api/status`).then(r=>r.json()).then(data=>{
+                      const activity:any[]=data.recentActivity||[];
+                      const agentLogs=activity.filter((a:any)=>a.agentId===detail.id).slice(0,10);
+                      setSessionLog(agentLogs);
+                      setLoadingLog(false);
+                    }).catch(()=>{setSessionLog([]);setLoadingLog(false);});
+                  }} style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:4,color:"#a29bfe",padding:"4px 10px",fontSize:10,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
+                    {loadingLog?"Loading…":"View Session Log"}
+                  </button>
+                  {sessionLog.length>0&&(
+                    <div style={{marginTop:6,maxHeight:150,overflowY:"auto",background:"#06060e",border:"1px solid #1e1e35",borderRadius:4,padding:"4px 6px"}}>
+                      {sessionLog.map((entry:any,i:number)=>(
+                        <div key={i} style={{padding:"3px 0",borderBottom:i<sessionLog.length-1?"1px solid #1a1a2e":"none",fontSize:10}}>
                           <div style={{display:"flex",justifyContent:"space-between"}}>
-                            <span style={{color:d.senderColor,fontSize:10,fontWeight:700}}>{d.sender}</span>
-                            <span style={{color:"#4a4a6a",fontSize:9}}>{d.ts}</span>
+                            <span style={{color:entry.action==='code'?'#3b82f6':entry.action==='research'?'#a855f7':'#8892b0',fontWeight:600}}>{entry.action||'activity'}</span>
+                            <span style={{color:"#4a4a6a",fontSize:9}}>{entry.ago!=null?`${entry.ago}m ago`:''}</span>
                           </div>
-                          <div style={{color:"#8892b0",fontSize:10,lineHeight:1.5,marginTop:1}}>{d.text}</div>
+                          <div style={{color:"#7a7a98",lineHeight:1.4,wordBreak:"break-word"}}>{entry.desc||entry.channel||'—'}</div>
                         </div>
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* KAOS-specific: read-only exec terminal (MC-18) */}
+              {detail&&detail.id===ORCHESTRATOR_ID&&(
+                <div style={{borderTop:"1px solid #1e1e35",padding:"8px 11px"}}>
+                  <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>EXEC OUTPUT</div>
+                  <div style={{background:"#06060e",border:"1px solid #1e1e35",borderRadius:4,padding:"6px 8px",maxHeight:180,overflowY:"auto",fontFamily:"'IBM Plex Mono',monospace"}}>
+                    {feed.slice(-10).map((e:any)=>(
+                      <div key={e.id} style={{display:"flex",gap:5,alignItems:"flex-start",marginBottom:2}}>
+                        <span style={{color:"#4a4a6a",fontSize:9,flexShrink:0,marginTop:1}}>{e.ts}</span>
+                        <span style={{color:e.color,fontSize:10,lineHeight:1.5,wordBreak:"break-word"}}>{e.text}</span>
+                      </div>
+                    ))}
+                    {feed.length===0&&<div style={{color:"#4a4a6a",fontSize:10,textAlign:"center",padding:"8px 0"}}>No exec output yet</div>}
+                  </div>
                 </div>
               )}
             </div>
@@ -2307,6 +2379,23 @@ export default function AgentOffice(){
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* MC-24: Sticky status bar at bottom */}
+      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",height:28,
+        background:theme==="B"?"#0a1510":"#08081a",borderTop:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,
+        fontFamily:"'IBM Plex Mono',monospace",fontSize:10,color:"#6a6a8e",gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{color:"#00ff88",fontWeight:700}}>{stats.working}</span><span>active</span>
+          <span style={{color:"#3a3a5e"}}>·</span>
+          <span style={{color:"#FDCB6E",fontWeight:700}}>{stats.meeting}</span><span>in meeting</span>
+          <span style={{color:"#3a3a5e"}}>·</span>
+          <span style={{color:"#6C5CE7",fontWeight:700}}>{stats.completed}</span><span>done</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {(()=>{const totalCost=Object.values(liveRunsRef.current).reduce((s,r)=>s+(r?.estimatedCost||0),0);return totalCost>0?<span style={{color:"#4a6a5a"}}>💰 ${totalCost.toFixed(2)} today</span>:null;})()}
+          <span style={{color:"#4a4a6a"}}>{new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})} ET</span>
         </div>
       </div>
     </div>
