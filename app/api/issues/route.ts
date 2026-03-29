@@ -7,10 +7,16 @@ const PROJECT_EMOJI: Record<string, string> = {
   Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️'
 }
 
-function notifyDiscord(issue: { task_key?: string; title?: string; project?: string }) {
+const RES_LABEL: Record<string, string> = {
+  code_change: 'shipped', config_change: 'config', by_design: 'by design',
+  wont_fix: 'won\'t fix', canceled: 'canceled'
+}
+
+function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string }) {
   const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
   const key = issue.task_key ?? '?'
-  const msg = `${emoji} **[${key}]** ${issue.title ?? ''}`
+  const res = RES_LABEL[issue.resolution_type ?? ''] ?? issue.resolution_type ?? 'done'
+  const msg = `${emoji} **[${key}]** ${issue.title ?? ''} · _${res}_`
   const escaped = msg.replace(/'/g, `'\\''`)
   exec(`openclaw message send --channel discord --target "channel:${DISCORD_CHANNEL}" --message '${escaped}'`,
     (err) => { if (err) console.error('[discord-notify]', err.message) })
@@ -111,9 +117,11 @@ export async function PATCH(req: NextRequest) {
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Instant Discord notification on done + code_change ──
-  if (fields.status === 'done' && fields.resolution_type === 'code_change' && data) {
-    notifyDiscord(data)
+  // ── Instant Discord notification on done (except noise resolutions) ──
+  const noiseResolutions = ['duplicate', 'cannot_reproduce']
+  const resolvedType = fields.resolution_type ?? data?.resolution_type
+  if (fields.status === 'done' && !noiseResolutions.includes(resolvedType) && data) {
+    notifyDiscord({ ...data, resolution_type: resolvedType })
   }
 
   return NextResponse.json(data)
