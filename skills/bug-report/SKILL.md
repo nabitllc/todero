@@ -21,6 +21,9 @@ Content-Type: application/json
 | `sprint` | Today's date in `YYYY-MM-DD` format |
 | `description` | What happened, what was expected, error message/stack trace |
 | `acceptance_criteria` | What "fixed" looks like — specific, testable |
+| `parent_id` | UUID of the parent feature issue (**required** — bugs must belong to a feature) |
+
+> **Hierarchy rule:** Every bug must have a `parent_id` pointing to a feature issue (not a task, epic, or ops). If unsure which feature it belongs to, query `GET /api/issues` and find the closest feature in the same project, or create a catch-all bug-tracking feature first.
 
 ## Severity Guide
 
@@ -84,6 +87,30 @@ When you encounter a bug or blocker:
 
 1. Determine severity using the guide above
 2. Capture the error message and stack trace
-3. POST the bug using the payload format
-4. Log: `Bug [task_key] created — [title]`
-5. Continue with remaining work if possible
+3. Find the parent feature UUID (query `GET /api/issues?task_key=MC-XXX` or search by project+type=feature)
+4. POST the bug using the payload format (include `parent_id`)
+5. Log: `Bug [task_key] created — [title]`
+6. Continue with remaining work if possible
+
+### Shell script (preferred for agents)
+
+```bash
+# Usage
+skills/bug-report/scripts/bug-report.sh \
+  --title "Short description of the bug" \
+  --project "Mission Control" \
+  --priority "high" \
+  --parent-id "uuid-of-parent-feature" \
+  --description "What happened, expected vs actual, stack trace" \
+  --ac "Bug is fixed — specific test that confirms it"
+
+# Flags
+#   --title        Required. Short bug description.
+#   --project      Required. Project name.
+#   --parent-id    Required. UUID of parent feature issue.
+#   --priority     Optional. critical|high|medium|low (default: medium)
+#   --assignee     Optional. Default: builder
+#   --sprint       Optional. Default: today's date (YYYY-MM-DD)
+#   --description  Optional. Full description (defaults to title if omitted)
+#   --ac           Optional. Acceptance criteria (defaults to generic)
+```
