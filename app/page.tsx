@@ -7,7 +7,7 @@
 // </div>
 'use client'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List } from 'lucide-react'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings } from 'lucide-react'
 import { AGENT_DISPLAY, CRONS, LIVE_FEED, getNextRuns, ALL_AGENTS, PROJECT_COLORS, TYPE_COLORS, DEFAULT_SPRINT_PROJECTS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
 import { Dot, Chip } from '@/lib/mc-atoms'
 import BusinessRail from '@/components/BusinessRail'
@@ -25,10 +25,11 @@ import IssuesTab from '@/components/tabs/IssuesTab'
 import AutomationsTab from '@/components/tabs/AutomationsTab'
 import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
+import SettingsTab from '@/components/tabs/SettingsTab'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
-  office: Building2, memory: Brain, board: Kanban, features: Map, issues: List, automations: Zap, chat: MessageSquare, infra: Server,
+  office: Building2, memory: Brain, board: Kanban, features: Map, issues: List, automations: Zap, chat: MessageSquare, infra: Server, settings: Settings,
 }
 
 const NAV = [
@@ -46,6 +47,7 @@ const NAV = [
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
   { id:'infra',        label:'Infra',        icon:'⚙️' },
+  { id:'settings',     label:'Settings',     icon:'⚙️' },
 ] as const
 type Tab = typeof NAV[number]['id']
 
@@ -104,7 +106,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('mc-tab') as Tab | null
-      if (saved && ['overview','activity','team','calendar','automations','office','memory','board','features','pipeline','issues','chat','infra'].includes(saved)) return saved
+      if (saved && ['overview','activity','team','calendar','automations','office','memory','board','features','pipeline','issues','chat','infra','settings'].includes(saved)) return saved
     }
     return 'overview'
   })
@@ -353,6 +355,7 @@ export default function Home() {
           {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} />}
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
+          {tab === 'settings' && <SettingsTab />}
         </main>
       </div>
 
