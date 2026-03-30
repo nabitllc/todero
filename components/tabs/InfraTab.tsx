@@ -1,8 +1,32 @@
 'use client'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Dot, Chip, Bar, SH } from '@/lib/mc-atoms'
 import { Button, EmptyState } from '@/components/ui'
-import { Server } from 'lucide-react'
+import { Server, Rocket } from 'lucide-react'
+
+interface DeployRecord {
+  id: string
+  project: string
+  branch: string
+  commit_sha: string | null
+  commit_message: string | null
+  status: string
+  source: string
+  url: string | null
+  triggered_by: string | null
+  duration_ms: number | null
+  error_message: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  ready: 'text-green-400 border-green-500/30 bg-green-500/10',
+  building: 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10',
+  pending: 'text-blue-400 border-blue-500/30 bg-blue-500/10',
+  error: 'text-red-400 border-red-500/30 bg-red-500/10',
+  canceled: 'text-white/40 border-white/10 bg-white/5',
+}
 
 export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefresh }: {
   liveStatus: any
@@ -10,6 +34,15 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
   statusCountdown: number
   onRefresh: () => void
 }) {
+            const [deploys, setDeploys] = useState<DeployRecord[]>([])
+            const [deploysLoaded, setDeploysLoaded] = useState(false)
+
+            useEffect(() => {
+              fetch('/api/deploy-history?limit=20')
+                .then(r => r.json())
+                .then(d => { if (Array.isArray(d)) setDeploys(d); setDeploysLoaded(true) })
+                .catch(() => setDeploysLoaded(true))
+            }, [])
             const ls = liveStatus
             const orRemaining = ls?.openrouter?.remaining ?? 9.57
             const orLimit = ls?.openrouter?.limit ?? 10
@@ -128,6 +161,38 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                   })}
                   {Object.keys(usageByModel).length === 0 && <EmptyState icon={Server} title="No session data yet" className="py-4" />}
                 </div>
+              </div>
+
+              <SH icon="\ud83d\ude80">Deploy History</SH>
+              <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
+                {!deploysLoaded && <div className="px-5 py-4 text-white/30 text-xs">Loading deploys…</div>}
+                {deploysLoaded && deploys.length === 0 && <EmptyState icon={Rocket} title="No deploys recorded yet" className="py-6" />}
+                {deploys.map((d, i) => {
+                  const ago = Math.round((Date.now() - new Date(d.created_at).getTime()) / 60000)
+                  const agoLabel = ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.round(ago/60)}h ago` : `${Math.round(ago/1440)}d ago`
+                  const dur = d.duration_ms ? `${(d.duration_ms/1000).toFixed(1)}s` : null
+                  return (
+                    <div key={d.id} className={'flex items-center gap-3 px-4 md:px-5 py-3 ' + (i < deploys.length - 1 ? 'border-b border-white/10' : '')}>
+                      <Dot status={d.status === 'ready' ? 'ok' : d.status === 'error' ? 'warn' : d.status === 'building' ? 'scheduled' : 'planned'} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-white text-xs font-medium truncate">{d.project}</span>
+                          <span className="text-white/30 text-[10px] font-mono">{d.branch}</span>
+                          {d.commit_sha && <span className="text-white/20 text-[10px] font-mono">{d.commit_sha.slice(0, 7)}</span>}
+                        </div>
+                        {d.commit_message && <p className="text-white/30 text-[10px] mt-0.5 truncate">{d.commit_message}</p>}
+                        {d.error_message && <p className="text-red-400/60 text-[10px] mt-0.5 truncate">{d.error_message}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {dur && <span className="text-white/20 text-[10px]">{dur}</span>}
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${STATUS_STYLE[d.status] ?? STATUS_STYLE.canceled}`}>
+                          {d.status}
+                        </span>
+                        <span className="text-white/20 text-[10px]">{agoLabel}</span>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
 
               <SH icon="\ud83d\udda5">Hardware</SH>
