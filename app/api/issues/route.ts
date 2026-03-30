@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { title, description, status, assignee, project, priority, type, due_date,
           acceptance_criteria, sprint, parent_id, severity, resolution_type,
-          feature_branch, pr_url, task_key: _clientKey, task_number: _clientNum } = body
+          feature_branch, pr_url, task_key: _clientKey, task_number: _clientNum, owner } = body
 
   // ── Enforcement: no issue without title + project + acceptance_criteria ──
   const missing: string[] = []
@@ -140,6 +140,27 @@ export async function POST(req: NextRequest) {
       { error: 'Feature requires: description' },
       { status: 422 }
     )
+  }
+
+  // ── Auto-set owner if not provided, based on type+project ──
+  let effectiveOwner = owner
+  if (!effectiveOwner) {
+    const issueType = type ?? 'task'
+    if (issueType === 'task' || issueType === 'bug') {
+      effectiveOwner = 'builder'
+    } else if (issueType === 'feature') {
+      if (project === 'Kemuni') effectiveOwner = 'kemuni-sme'
+      else if (project === 'Vespera') effectiveOwner = 'vespera-sme'
+      else effectiveOwner = 'main'
+    } else if (issueType === 'epic') {
+      effectiveOwner = 'main'
+    } else if (issueType === 'ops') {
+      effectiveOwner = 'ops'
+    } else if (issueType === 'research') {
+      effectiveOwner = 'scout'
+    } else {
+      effectiveOwner = 'builder'
+    }
   }
 
   // ── Sprint required for non-backlog issues ──
@@ -247,6 +268,7 @@ export async function POST(req: NextRequest) {
       ...(severity ? { severity } : {}),
       resolution_type, feature_branch, pr_url,
       task_key: generated.task_key, task_number: generated.task_number,
+      owner: effectiveOwner,
     })
     .select()
     .single()
@@ -344,7 +366,7 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
-    // To 'open': require priority, sprint, assignee, acceptance_criteria, severity, AND reviewer (set by PO/KAOS)
+    // To 'open': require priority, sprint, assignee, acceptance_criteria, severity, reviewer, AND owner (set by PO/KAOS)
     if (fields.status === 'open') {
       const missing: string[] = []
       if (!merged.priority) missing.push('priority')
@@ -360,6 +382,12 @@ export async function PATCH(req: NextRequest) {
       if (!merged.reviewer) {
         return NextResponse.json(
           { error: 'reviewer is required before moving to open. Set the reviewer (e.g. tester, designer, po) during backlog grooming.' },
+          { status: 400 }
+        )
+      }
+      if (!merged.owner) {
+        return NextResponse.json(
+          { error: 'owner is required before moving to open. Set the permanent accountable party (e.g. builder, ops, kemuni-sme) during backlog grooming.' },
           { status: 400 }
         )
       }
@@ -535,6 +563,15 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // ── Owner immutability: once open (or beyond), owner cannot be changed ──
+  if (fields.owner !== undefined) {
+    const currentStatus = before?.status ?? ''
+    const isOpenOrBeyond = ['open', 'in_progress', 'in_review', 'done', 'blocked'].includes(currentStatus)
+    if (isOpenOrBeyond) {
+      delete fields.owner  // silently ignore owner changes after open
+    }
+  }
+
   // Try update with all fields; if column doesn't exist, retry without unknown fields
   let { data, error } = await supabase
     .from('issues')
@@ -549,7 +586,7 @@ export async function PATCH(req: NextRequest) {
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
                         'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test',
                         'rejection_count', 'last_rejected_at', 'last_rejection_reason',
-                        'reviewer', 'reviewed_by']) {
+                        'reviewer', 'reviewed_by', 'owner']) {
       delete safeFields[col]
     }
     const retry = await supabase
