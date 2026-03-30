@@ -87,6 +87,11 @@ const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
   builder:       {emoji:'🔨', name:'Builder'},
   tester:        {emoji:'🧪', name:'Tester'},
   michael:       {emoji:'👤', name:'Michael'},
+  designer:      {emoji:'🎨', name:'Designer'},
+  auditor:       {emoji:'🔎', name:'Auditor'},
+  growth:        {emoji:'📈', name:'Growth'},
+  po:            {emoji:'📋', name:'PO'},
+  ux:            {emoji:'🎨', name:'Designer'}, // legacy alias → same display name as designer
 }
 
 const PRIORITY_COLORS: Record<string,string> = {
@@ -224,7 +229,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (projectFilter && (t as any).project !== projectFilter) return false
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
     if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
-    if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee ?? '')) return false
+    if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee?.toLowerCase() ?? '')) return false
     if (filterSprint && t.sprint !== filterSprint) return false
     if (featureFilter && (t as any).parent_id !== featureFilter) return false
     if (boardSearch.trim() && !t.title.toLowerCase().includes(boardSearch.trim().toLowerCase())) return false
@@ -234,7 +239,26 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const hasMoreBoard = allFiltered.length > boardLimit
 
   const projects = Array.from(new Set(tasks.map(t=>t.project).filter(Boolean)))
-  const assignees = Array.from(new Set(tasks.map(t=>t.assignee).filter(Boolean)))
+  const assignees = (() => {
+    const seenKeys = new Set<string>()
+    const seenDisplayNames = new Set<string>()
+    const result: string[] = []
+    for (const t of tasks) {
+      if (!t.assignee) continue
+      const key = t.assignee.toLowerCase()
+      const displayName = ASSIGNEE_MAP[key]?.name ?? key
+      if (!seenKeys.has(key) && !seenDisplayNames.has(displayName)) {
+        seenKeys.add(key)
+        seenDisplayNames.add(displayName)
+        result.push(key)
+      }
+    }
+    return result.sort((a, b) => {
+      const da = ASSIGNEE_MAP[a]?.name ?? a
+      const db = ASSIGNEE_MAP[b]?.name ?? b
+      return da.localeCompare(db)
+    })
+  })()
   const types = Array.from(new Set(tasks.map(t=>t.type).filter(Boolean)))
 
   const isOverdue = (d?: string) => {
@@ -277,18 +301,23 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               Business
             </button>
           </div>
-          {/* Status filter pills */}
-          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#080808'}}>
-            {(['active','done','backlog','all'] as const).map(f => (
-              <button key={f} onClick={() => setStatusFilter(f)}
-                className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${statusFilter===f?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
-          </div>
           <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium'})} className="ml-auto">
             + New Task
           </Button>
+        </div>
+        {/* Status filter pills */}
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+          {(['active','done','backlog','all'] as const).map(f => (
+            <button key={f} onClick={() => setStatusFilter(f)}
+              className={`text-xs px-3 py-1 rounded-full shrink-0 transition-colors ${
+                statusFilter === f
+                  ? 'bg-white text-black font-medium'
+                  : 'bg-white/10 text-white/50 hover:text-white/70'
+              }`}>
+              {f === 'active' ? 'Active' : f.charAt(0).toUpperCase() + f.slice(1)}
+              {statusFilter === f ? ' ✓' : ''}
+            </button>
+          ))}
         </div>
         {/* Active filter chips */}
         {hasAnyFilter && (
