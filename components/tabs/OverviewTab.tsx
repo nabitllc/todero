@@ -362,12 +362,45 @@ export default function OverviewTab({
   onNavigate: (tab: string) => void
   projectFilter?: string | null
 }) {
+  const [sprintRunning, setSprintRunning] = useState(false)
+  const [sprintToast, setSprintToast] = useState<{text: string; ok: boolean} | null>(null)
+
+  const handleRunSprint = async () => {
+    setSprintRunning(true)
+    setSprintToast(null)
+    try {
+      const res = await fetch('/api/run-sprint', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        setSprintToast({ text: `🚀 Sprint started: ${data.task ?? data.message ?? 'Builder is working'}`, ok: true })
+      } else {
+        setSprintToast({ text: data.message ?? 'Sprint trigger failed', ok: false })
+      }
+    } catch {
+      setSprintToast({ text: 'Could not reach sprint API', ok: false })
+    } finally {
+      setSprintRunning(false)
+      setTimeout(() => setSprintToast(null), 5000)
+    }
+  }
+
   return (
     <>
             <div className="space-y-5">
 
-              {/* MC-112: Sync button */}
-              <div className="flex justify-end">
+              {/* MC-112: Sync button + Run Sprint */}
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={handleRunSprint}
+                  disabled={sprintRunning}
+                  className="text-[10px] px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 hover:border-emerald-400/50 bg-emerald-500/5 transition-all flex items-center gap-1.5 disabled:opacity-50 font-medium">
+                  {sprintRunning ? (
+                    <span className="w-3 h-3 border border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin inline-block" />
+                  ) : (
+                    <span>▶</span>
+                  )}
+                  {sprintRunning ? 'Starting...' : 'Run Sprint'}
+                </button>
                 <button
                   onClick={globalSync}
                   disabled={syncing}
@@ -380,6 +413,11 @@ export default function OverviewTab({
                   {syncing ? 'Syncing...' : 'Sync'}
                 </button>
               </div>
+              {sprintToast && (
+                <div className={`rounded-xl border px-4 py-3 text-xs font-medium ${sprintToast.ok ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' : 'border-red-500/30 bg-red-500/5 text-red-400'}`}>
+                  {sprintToast.text}
+                </div>
+              )}
 
               {/* ── Hero Countdown Timers (INF-75) ── */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -520,7 +558,7 @@ export default function OverviewTab({
                   <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Project Progress</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                  {(['Vespera','Kemuni','Infrastructure','Mission Control'] as const).map(projName => {
+                  {(['Vespera','Kemuni','Infrastructure','Todero'] as const).map(projName => {
                     const proj = sprintProjects.find((p: any) => p.supabaseProject === projName || p.name?.includes(projName))
                     if (!proj) return null
                     const tc = (proj as any).taskCounts ?? { total: 0, done: 0, inProgress: 0, open: 0 }

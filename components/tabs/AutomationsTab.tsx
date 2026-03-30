@@ -27,7 +27,7 @@ export default function AutomationsTab({ displayCrons }: AutomationsTabProps) {
       </div>
       {/* Project filter */}
       <div className="flex items-center gap-2 flex-wrap">
-        {['All', 'Infrastructure', 'Vespera', 'Kemuni', 'Mission Control'].map(pf => {
+        {['All', 'Infrastructure', 'Vespera', 'Kemuni', 'Todero'].map(pf => {
           const count = pf === 'All' ? displayCrons.length : displayCrons.filter((c:any) => c.project === pf).length
           if (pf !== 'All' && count === 0) return null
           return (

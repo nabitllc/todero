@@ -343,7 +343,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               Business
             </button>
           </div>
-          <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium'})} className="ml-auto">
+          <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium',sprint:new Date().toISOString().split('T')[0],project:projectFilter??undefined,assignee:'builder',type:'task'})} className="ml-auto">
             + New Task
           </Button>
         </div>
@@ -506,9 +506,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           'Vespera':          { label: 'Vespera',          emoji: '🖤', projects: ['Vespera'] },
           'Kemuni':           { label: 'Kemuni',           emoji: '🚀', projects: ['Kemuni'] },
           'Mission Control':  { label: 'Mission Control',  emoji: '🧠', projects: ['Mission Control'] },
+          'Todero':          { label: 'Todero',          emoji: '🧠', projects: ['Todero'] },
           'Infrastructure':   { label: 'Infrastructure',   emoji: '⚙️', projects: ['Infrastructure', 'KAOS'] },
         }
-        const bizOrder = ['Vespera', 'Kemuni', 'Mission Control', 'Infrastructure']
+        const bizOrder = ['Vespera', 'Kemuni', 'Mission Control', 'Todero', 'Infrastructure']
         // Reverse map: project → business
         const projToBiz: Record<string, string> = {}
         for (const [biz, info] of Object.entries(BIZ_PROJECTS)) {
@@ -769,7 +770,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* New Task Modal */}
       {newTask && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setNewTask(null)}>
-          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
+          <div className="w-full max-w-lg md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <h3 className="text-white font-semibold text-sm">New Task</h3>
             <FormGroup label="Title" required>
               <Input placeholder="Task title..." autoFocus
@@ -794,25 +795,62 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 <Input placeholder="e.g. Kemuni" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} />
               </FormGroup>
               <FormGroup label="Assignee">
-                <Select value={newTask.assignee??''} onChange={e=>setNewTask({...newTask,assignee:e.target.value})}>
+                <Select value={newTask.assignee??''} onChange={e=>{
+                  const assignee = e.target.value
+                  setNewTask({...newTask, assignee})
+                }}>
                   <option value="" className="bg-[#0f0f0f] text-white">Unassigned</option>
                   {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k} className="bg-[#0f0f0f] text-white">{v.emoji} {v.name}</option>)}
                 </Select>
               </FormGroup>
               <FormGroup label="Type">
-                <Input placeholder="e.g. feature, bug" value={newTask.type??''} onChange={e=>setNewTask({...newTask,type:e.target.value})} />
+                <Select value={newTask.type??''} onChange={e=>{
+                  const t = e.target.value
+                  // Feature 4: auto-set assignee to builder for task/bug
+                  const autoAssignee = (t === 'task' || t === 'bug') ? 'builder' : newTask.assignee
+                  setNewTask({...newTask, type: t, assignee: autoAssignee ?? ''})
+                }}>
+                  <option value="" className="bg-[#0f0f0f] text-white">Select type</option>
+                  {['feature','task','bug','ops','epic','subtask'].map(t=><option key={t} value={t} className="bg-[#0f0f0f] text-white">{t}</option>)}
+                </Select>
               </FormGroup>
               <FormGroup label="Due Date">
                 <Input type="date" value={newTask.due_date??''} onChange={e=>setNewTask({...newTask,due_date:e.target.value})} />
               </FormGroup>
-              {/* INF-101: Sprint field */}
+              {/* Sprint field — defaults to today */}
               <FormGroup label="Sprint">
                 <Select value={newTask.sprint??''} onChange={e=>setNewTask({...newTask,sprint:e.target.value||undefined})}>
                   <option value="" className="bg-[#0f0f0f] text-white">None</option>
-                  {sprints.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>)}
+                  {(() => { const today = new Date().toISOString().split('T')[0]; const opts = sprints.includes(today) ? sprints : [today, ...sprints]; return opts.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>) })()}
+                </Select>
+              </FormGroup>
+              {/* Feature 1: Severity */}
+              <FormGroup label="Severity">
+                <Select value={(newTask as any).severity??''} onChange={e=>setNewTask({...newTask, severity: e.target.value||undefined} as any)}>
+                  <option value="" className="bg-[#0f0f0f] text-white">None</option>
+                  {['S0','S1','S2','S3'].map(s=><option key={s} value={s} className="bg-[#0f0f0f] text-white">{s}</option>)}
+                </Select>
+              </FormGroup>
+              {/* Feature 1: Owner */}
+              <FormGroup label="Owner">
+                <Select value={(newTask as any).owner??''} onChange={e=>setNewTask({...newTask, owner: e.target.value||undefined} as any)}>
+                  <option value="" className="bg-[#0f0f0f] text-white">None</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k} className="bg-[#0f0f0f] text-white">{v.emoji} {v.name}</option>)}
+                </Select>
+              </FormGroup>
+              {/* Feature 1: Reviewer */}
+              <FormGroup label="Reviewer">
+                <Select value={(newTask as any).reviewer??''} onChange={e=>setNewTask({...newTask, reviewer: e.target.value||undefined} as any)}>
+                  <option value="" className="bg-[#0f0f0f] text-white">None</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k} className="bg-[#0f0f0f] text-white">{v.emoji} {v.name}</option>)}
                 </Select>
               </FormGroup>
             </div>
+            {/* Feature 1: Acceptance Criteria */}
+            <FormGroup label="Acceptance Criteria">
+              <Textarea placeholder="Done when..." rows={3}
+                value={(newTask as any).acceptance_criteria??''} onChange={e=>setNewTask({...newTask, acceptance_criteria: e.target.value} as any)} />
+            </FormGroup>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={()=>setNewTask(null)}>Cancel</Button>
               <Button variant="primary" size="sm" onClick={()=>{if(newTask.title?.trim()) createTask(newTask)}}
@@ -825,7 +863,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Edit/Detail Modal */}
       {editTask && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setEditTask(null)}>
-          <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
+          <div className="w-full max-w-lg md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <h3 className="text-white font-semibold text-sm">Edit Task</h3>
               <Button variant="danger" size="sm" onClick={()=>setConfirmDelete(editTask.id)}>Delete</Button>
@@ -862,12 +900,40 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               <FormGroup label="Due Date">
                 <Input type="date" value={editTask.due_date??''} onChange={e=>setEditTask({...editTask,due_date:e.target.value})} />
               </FormGroup>
+              {/* Feature 1: Severity */}
+              <FormGroup label="Severity">
+                <Select value={(editTask as any).severity??''} onChange={e=>setEditTask({...editTask, severity: e.target.value||undefined} as any)}>
+                  <option value="" className="bg-[#0f0f0f] text-white">None</option>
+                  {['S0','S1','S2','S3'].map(s=><option key={s} value={s} className="bg-[#0f0f0f] text-white">{s}</option>)}
+                </Select>
+              </FormGroup>
+              {/* Feature 1: Owner */}
+              <FormGroup label="Owner">
+                <Select value={(editTask as any).owner??''} onChange={e=>setEditTask({...editTask, owner: e.target.value||undefined} as any)}>
+                  <option value="" className="bg-[#0f0f0f] text-white">None</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k} className="bg-[#0f0f0f] text-white">{v.emoji} {v.name}</option>)}
+                </Select>
+              </FormGroup>
+              {/* Feature 1: Reviewer */}
+              <FormGroup label="Reviewer">
+                <Select value={(editTask as any).reviewer??''} onChange={e=>setEditTask({...editTask, reviewer: e.target.value||undefined} as any)}>
+                  <option value="" className="bg-[#0f0f0f] text-white">None</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k} className="bg-[#0f0f0f] text-white">{v.emoji} {v.name}</option>)}
+                </Select>
+              </FormGroup>
             </div>
+            {/* Feature 1: Acceptance Criteria */}
+            <FormGroup label="Acceptance Criteria">
+              <Textarea rows={3} placeholder="Done when..."
+                value={(editTask as any).acceptance_criteria??''} onChange={e=>setEditTask({...editTask, acceptance_criteria: e.target.value} as any)} />
+            </FormGroup>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" size="sm" onClick={()=>setEditTask(null)}>Cancel</Button>
               <Button variant="primary" size="sm" onClick={()=>{
                 const fields = {title:editTask.title,description:editTask.description,status:editTask.status,
-                  priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date}
+                  priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date,
+                  severity:(editTask as any).severity,owner:(editTask as any).owner,reviewer:(editTask as any).reviewer,
+                  acceptance_criteria:(editTask as any).acceptance_criteria}
                 const origTask = tasks.find(t=>t.id===editTask.id)
                 if (editTask.status==='completed' && origTask?.status!=='completed') {
                   setResolutionPending({taskId:editTask.id,source:'edit',editFields:fields})

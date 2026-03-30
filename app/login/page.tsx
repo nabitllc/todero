@@ -88,7 +88,7 @@ export default function Login() {
             🧠
           </div>
           <h1 className="text-white text-xl font-semibold">KAOS</h1>
-          <p className="text-white/40 text-sm mt-1">Mission Control</p>
+          <p className="text-white/40 text-sm mt-1">Todero</p>
         </div>
         <Suspense fallback={<LoginFormFallback />}>
           <LoginFormInner />

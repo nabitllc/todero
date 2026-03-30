@@ -54,8 +54,17 @@ type Tab = typeof NAV[number]['id']
 
 const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','automations','chat','infra','settings']
 
+// Feature 5: internal tabs hidden from alpha view unless dev mode enabled
+const DEV_ONLY_TABS = new Set(['memory', 'infra', 'pipeline'])
+const isDevMode = () => {
+  if (typeof window === 'undefined') return false
+  if (process.env.NEXT_PUBLIC_DEV_MODE === 'true') return true
+  const params = new URLSearchParams(window.location.search)
+  return params.get('dev') === '1'
+}
+
 const BIZ_EMOJI: Record<string, string> = {
-  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠',
+  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
   'Infrastructure': '⚙️', 'KAOS': '🤖',
 }
 
@@ -348,6 +357,10 @@ export default function Home() {
     pushURL(name, tab)
   }, [tab, pushURL])
 
+  // Feature 5: dev mode check (runs once on mount)
+  const [devMode, setDevMode] = useState(false)
+  useEffect(() => { setDevMode(isDevMode()) }, [])
+
   return (
     <div className="min-h-screen flex bg-neutral-950">
       <BusinessRail selected={selectedBusiness} onSelect={selectBusiness} onNew={() => setShowOnboarding(true)} refreshKey={businessRailRefresh} />
@@ -358,12 +371,14 @@ export default function Home() {
         <div className="px-4 h-11 flex items-center border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white">N</div>
-            <div><p className="text-white text-xs font-semibold leading-tight">Mission</p><p className="text-white/30 text-[10px]">Control</p></div>
+            <div><p className="text-white text-xs font-semibold leading-tight">Todero</p></div>
           </div>
         </div>
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
           {NAV.map(item => {
             if (item.id === 'divider') return <div key="divider" className="border-t border-white/10 my-2" />
+            // Feature 5: hide dev-only tabs unless dev mode
+            if (!devMode && DEV_ONLY_TABS.has(item.id)) return null
             const LIcon = LUCIDE_ICONS[item.id]
             return (
               <button key={item.id} onClick={() => { navigate(item.id); if (item.id === 'chat') setUnreadChat(false) }}
@@ -398,7 +413,7 @@ export default function Home() {
       {showMobileMore && (
         <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-white/10 bg-neutral-950">
           <div className="grid grid-cols-3 gap-px p-2">
-            {NAV.filter(n => n.id !== 'divider' && !['overview','board','office','chat','calendar'].includes(n.id)).map(item => {
+            {NAV.filter(n => n.id !== 'divider' && !['overview','board','office','chat','calendar'].includes(n.id) && (devMode || !DEV_ONLY_TABS.has(n.id))).map(item => {
               const LIcon = LUCIDE_ICONS[item.id]
               return <button key={item.id} onClick={() => { navigate(item.id); setShowMobileMore(false); if (item.id === 'chat') setUnreadChat(false) }}
                 className={'flex flex-col items-center gap-1 p-3 rounded-xl text-xs ' + (tab === item.id ? 'bg-white/10 text-white' : 'text-white/40 hover:bg-white/5')}>

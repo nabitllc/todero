@@ -5,7 +5,7 @@ import { Plus } from 'lucide-react'
 interface Business { id: string; name: string; type: string; status: string }
 
 const EMOJI: Record<string, string> = {
-  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠',
+  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
   'Infrastructure': '⚙️', 'KAOS': '🤖'
 }
 

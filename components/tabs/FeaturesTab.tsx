@@ -10,7 +10,7 @@ interface Issue {
   parent_id?: string; task_key?: string; acceptance_criteria?: string;
 }
 
-const PROJECTS = ['Vespera', 'Kemuni', 'Mission Control', 'Infrastructure']
+const PROJECTS = ['Vespera', 'Kemuni', 'Todero', 'Infrastructure']
 const STATUSES = ['open', 'in_progress', 'done', 'backlog', 'in_review']
 
 function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: {

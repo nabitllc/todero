@@ -149,7 +149,7 @@ export default function SettingsTab() {
       {/* INF-223: Theme selector */}
       <div className="mb-8">
         <h2 className="text-sm font-semibold text-white mb-1">Appearance</h2>
-        <p className="text-xs text-white/30 mb-3">Choose a color theme for Mission Control</p>
+        <p className="text-xs text-white/30 mb-3">Choose a color theme for Todero</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {THEME_IDS.map(tid => {
             const t = THEMES[tid]

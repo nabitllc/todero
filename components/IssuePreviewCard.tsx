@@ -19,7 +19,7 @@ export default function IssuePreviewCard({ draft, project }: Props) {
       const res = await fetch('/api/issues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...draft, project: project || 'Mission Control', sprint: new Date().toISOString().split('T')[0] })
+        body: JSON.stringify({ ...draft, project: project || 'Todero', sprint: new Date().toISOString().split('T')[0] })
       })
       const data = await res.json()
       setTaskKey(data.task_key || '?')

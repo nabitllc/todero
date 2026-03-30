@@ -432,9 +432,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // Feature 7: unread document title
   useEffect(() => {
     if (unreadChat) {
-      document.title = '● Mission Control'
+      document.title = '● Todero'
     } else {
-      document.title = 'Mission Control'
+      document.title = 'Todero'
     }
   }, [unreadChat])
 
@@ -442,7 +442,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   useEffect(() => {
     setUnreadChat(false)
     unreadChatRef.current = false
-    document.title = 'Mission Control'
+    document.title = 'Todero'
   }, [])
 
   // Detect when user scrolls up (so we don't hijack scroll during streaming)

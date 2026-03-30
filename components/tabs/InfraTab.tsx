@@ -258,7 +258,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                     <p className="text-white font-medium text-sm">Mac mini \u00b7 Apple Silicon \u00b7 8GB \u00b7 arm64</p>
                     <p className="text-white/50 text-xs mt-0.5">Dedicated OpenClaw machine \u00b7 macOS 26.3.1 \u00b7 Node 22.22.1</p>
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {['OpenClaw :18789','n8n :5678','Ollama :11434','Mission Control :3000','Cloudflare Tunnel'].map(l=><Chip key={l} label={l}/>)}
+                      {['OpenClaw :18789','n8n :5678','Ollama :11434','Todero :3000','Cloudflare Tunnel'].map(l=><Chip key={l} label={l}/>)}
                     </div>
                   </div>
                 </div>
