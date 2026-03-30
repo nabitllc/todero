@@ -2061,13 +2061,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                           }>
                             <button
                               onClick={() => copyMessage(msg.id, msg.content)}
-                              className="text-[9px] text-white/30 hover:text-white/40 flex items-center gap-1 transition-colors">
+                              className="text-[9px] p-1.5 rounded text-white/30 hover:text-white/40 flex items-center gap-1 transition-colors focus:outline-none focus:ring-1 focus:ring-white/20">
                               {copiedId === msg.id ? '✓ Copied' : '⎘ Copy'}
                             </button>
                             {/* Feature 16: bookmark */}
                             <button
                               onClick={() => toggleBookmark(msg.id, !!msg.bookmarked)}
-                              className={'text-[9px] transition-colors ' + (msg.bookmarked ? 'text-yellow-500 hover:text-yellow-300' : 'text-white/30 hover:text-white/40')}
+                              className={'text-[9px] p-1.5 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-white/20 ' + (msg.bookmarked ? 'text-yellow-500 hover:text-yellow-300' : 'text-white/30 hover:text-white/40')}
                               title={msg.bookmarked ? 'Remove bookmark' : 'Bookmark'}>
                               ★
                             </button>
@@ -2075,7 +2075,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                             {activeConv && (
                               <button
                                 onClick={() => forkConversation(activeConv, msg.id)}
-                                className="text-[9px] text-white/30 hover:text-white/40 transition-colors"
+                                className="text-[9px] p-1.5 rounded text-white/30 hover:text-white/40 transition-colors focus:outline-none focus:ring-1 focus:ring-white/20"
                                 title="Fork conversation from here">
                                 ⑂ Fork
                               </button>
@@ -2084,7 +2084,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                             {msg.role === 'user' && (
                               <button
                                 onClick={() => startEditMessage(msg)}
-                                className="text-[9px] text-white/30 hover:text-white/40 transition-colors"
+                                className="text-[9px] p-1.5 rounded text-white/30 hover:text-white/40 transition-colors focus:outline-none focus:ring-1 focus:ring-white/20"
                                 title="Edit message">
                                 ✏️
                               </button>
@@ -2099,7 +2099,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                                 ))
                                 fetch(`/api/chat/messages?id=${msg.id}`, { method: 'DELETE' })
                               }}
-                              className="text-[9px] text-white/30 hover:text-red-400 transition-colors"
+                              className="text-[9px] p-1.5 rounded text-white/30 hover:text-red-400 transition-colors focus:outline-none focus:ring-1 focus:ring-white/20"
                               title="Delete message">
                               🗑
                             </button>
