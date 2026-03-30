@@ -53,12 +53,27 @@ const TYPE_EMOJI: Record<string, string> = {
   task: '📋', bug: '🐛', feature: '✨', epic: '🏔️', ops: '⚙️', research: '🔍'
 }
 
+const RESOLUTION_LABELS: Record<string, string> = {
+  code_change: 'Code Change',
+  config_change: 'Config Change',
+  no_action: 'No Action',
+  duplicate: 'Duplicate',
+  by_design: 'By Design',
+  wont_fix: "Won't Fix",
+  cancelled: 'Cancelled',
+  canceled: 'Cancelled',
+  not_reproducible: 'Not Reproducible',
+  deferred: 'Deferred',
+  completed: 'Completed',
+}
+
 function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string; type?: string }) {
   const key = issue.task_key ?? '?'
   const status = issue.status ?? 'completed'
   const statusEmoji = STATUS_EMOJI[status] ?? '✅'
   const typeEmoji = TYPE_EMOJI[issue.type ?? 'task'] ?? '📋'
-  const resType = issue.resolution_type ?? status
+  const rawResType = issue.resolution_type ?? status
+  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
   const ts = new Date().toLocaleString('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric',
@@ -73,7 +88,8 @@ function notifyCompletedTask(issue: Record<string, unknown>, toStatus: string) {
   const key = issue.task_key ?? '?'
   const statusEmoji = STATUS_EMOJI[toStatus] ?? '✅'
   const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
-  const resType = (issue.resolution_type as string) ?? toStatus
+  const rawResType = (issue.resolution_type as string) ?? toStatus
+  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
   const ts = new Date().toLocaleString('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric',
