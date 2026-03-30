@@ -18,7 +18,7 @@ function NeedsAttentionBlock() {
   }, [])
   if (items.length === 0) return null
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-sm">🚨</span>
         <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Needs Your Attention</span>
@@ -26,7 +26,7 @@ function NeedsAttentionBlock() {
       </div>
       <div className="space-y-2">
         {items.slice(0, 3).map((t: any, i: number) => (
-          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-white/10" style={{ background: '#080808' }}>
+          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-white/10 bg-[#080808]">
             <span className="text-red-400 text-xs mt-0.5">{t.priority === 'critical' ? '🔴' : '🟠'}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -107,7 +107,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
     { label: 'Features (0 children)', count: risks.noChildren.length, items: risks.noChildren, icon: '\u26A0\uFE0F' },
   ]
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-sm">{'\u{1F6E1}\uFE0F'}</span>
         <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Risk Radar</span>
@@ -174,7 +174,7 @@ function StandupCard() {
     { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', colorClass: 'text-red-400' },
   ]
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-sm">{'\u{1F4CB}'}</span>
         <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Today&apos;s Standup</span>
@@ -281,7 +281,7 @@ function SprintProgressCard() {
     : null
 
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-sm">🏃</span>
@@ -296,16 +296,13 @@ function SprintProgressCard() {
         <span className="text-white text-sm font-semibold tabular-nums">{sprintData.done}/{sprintData.total}</span>
         <span className="text-white/50 text-xs">done</span>
         {velocityDelta !== null && (
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{
-            background: velocityDelta > 0 ? '#10b98120' : velocityDelta < 0 ? '#ef444420' : '#3f3f4620',
-            color: velocityDelta > 0 ? '#10b981' : velocityDelta < 0 ? '#ef4444' : '#71717a'
-          }}>
+          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${velocityDelta > 0 ? 'bg-green-500/10 text-green-400' : velocityDelta < 0 ? 'bg-red-500/10 text-red-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
             {velocityDelta > 0 ? '+' : ''}{velocityDelta} vs prior
           </span>
         )}
         <span className={`ml-auto text-lg font-bold tabular-nums ${pct === 100 ? 'text-green-500' : pct >= 50 ? 'text-blue-500' : 'text-amber-500'}`}>{pct}%</span>
       </div>
-      <div className="w-full rounded-full h-2" style={{background:'#1a1a1a'}}>
+      <div className="w-full rounded-full h-2 bg-[#1a1a1a]">
         <div className={`h-2 rounded-full transition-all duration-500 ${pct === 100 ? 'bg-green-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{width: pct+'%'}} />
       </div>
     </div>
@@ -435,7 +432,7 @@ export default function OverviewTab({
               <DoneYesterdayWins />
 
               {/* ── Subscriptions & Balances (INF-66) ── */}
-              <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+              <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-sm">💳</span>
                   <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Subscriptions & Balances</span>
@@ -447,7 +444,7 @@ export default function OverviewTab({
                     { name: 'OpenRouter', type: 'balance', note: `$${(liveStatus?.openrouter?.remaining ?? 9.57).toFixed(2)} remaining`, color: liveStatus?.openrouter?.remaining < 2 ? '#ef4444' : '#10b981', icon: '🔀' },
                     { name: 'Brave Search', type: 'subscription', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
                   ].map(s => (
-                    <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5" style={{background:'#080808'}}>
+                    <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5 bg-[#080808]">
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-xs">{s.icon}</span>
                         <span className="text-white text-[11px] font-medium">{s.name}</span>
@@ -649,7 +646,7 @@ export default function OverviewTab({
               {/* Live Activity Feed (mini) */}
               <div>
                 <SH icon="📡" sub={liveStatus?.recentActivity?.length ? '● live' : undefined}>Recent Activity</SH>
-                <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
+                <div className="rounded-2xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
                   {(liveStatus?.recentActivity ?? []).slice(0,5).map((entry:any, i:number, arr:any[])=>{
                     const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
                     const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':'#3b82f6'
@@ -677,8 +674,7 @@ export default function OverviewTab({
                 </div>
                 {(liveStatus?.recentActivity?.length ?? 0) > 5 && (
                   <button onClick={()=> onNavigate('activity')}
-                    className="mt-2 w-full text-center text-xs text-white/50 hover:text-white/70 py-2 rounded-lg border border-white/10 hover:border-white/20 transition-all"
-                    style={{background:'#080808'}}>
+                    className="mt-2 w-full text-center text-xs text-white/50 hover:text-white/70 py-2 rounded-lg border border-white/10 hover:border-white/20 transition-all bg-[#080808]">
                     View All Activity →
                   </button>
                 )}
