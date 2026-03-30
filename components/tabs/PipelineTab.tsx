@@ -261,7 +261,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                   </div>
                   {stage === 'Building' && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                      buildingWIP >= 3 ? 'bg-red-500/20 text-red-500' : 'bg-white/5 text-white/40'
+                      buildingWIP >= 3 ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-white/40'
                     }`}>
                       {buildingWIP}/3 WIP
                     </span>

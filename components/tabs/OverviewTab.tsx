@@ -598,7 +598,7 @@ export default function OverviewTab({
                         <span className="text-xl">{proj.emoji}</span>
                       </div>
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-3">
-                        <span className="text-3xl md:text-4xl font-bold tabular-nums" style={{color:isUrgent?'#ef4444':proj.color}}>{left}</span>
+                        <span className={`text-3xl md:text-4xl font-bold tabular-nums ${isUrgent ? 'text-red-400' : 'text-white'}`}>{left}</span>
                         <span className="text-white/50 text-sm"> Days</span>
                         <span className="ml-auto text-white/30 text-xs">Day {elap}/{proj.totalDays}</span>
                       </div>

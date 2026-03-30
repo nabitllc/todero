@@ -367,7 +367,7 @@ export default function Home() {
             const LIcon = LUCIDE_ICONS[item.id]
             return (
               <button key={item.id} onClick={() => { navigate(item.id); if (item.id === 'chat') setUnreadChat(false) }}
-                className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all border-l-2 ' + (tab === item.id ? 'bg-white/10 text-white border-white' : 'text-white/50 hover:text-white/70 hover:bg-white/5 border-transparent')}>
+                className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-200 border-l-2 ' + (tab === item.id ? 'bg-white/10 text-white border-white' : 'text-white/50 hover:text-white/70 hover:bg-white/5 border-transparent')}>
                 {LIcon ? <LIcon size={14} className="shrink-0" /> : <span className="text-sm shrink-0">{item.icon}</span>}
                 <span className="text-xs font-medium">{item.label}</span>
                 {item.id === 'chat' && unreadChat && tab !== 'chat' && <span className="ml-auto w-2 h-2 rounded-full bg-red-500 shrink-0 animate-pulse" />}

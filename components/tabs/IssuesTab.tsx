@@ -201,7 +201,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
             {/* Header */}
             <div className="hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 border-b border-white/10 bg-white/3">
               <button onClick={selectAll} className="flex items-center justify-center">
-                <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center ${selected.size === filtered.length && filtered.length > 0 ? 'bg-blue-500 border-blue-500 text-white' : 'border-white/10 text-transparent'}`}>
+                <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center ${selected.size === filtered.length && filtered.length > 0 ? 'bg-white text-black border-white' : 'border-white/10 text-transparent'}`}>
                   ✓
                 </span>
               </button>
@@ -233,7 +233,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                     (expandedId === issue.id ? 'bg-white/5' : selected.has(issue.id) ? 'bg-blue-500/5' : 'hover:bg-white/3')}
                 >
                   <span className="flex items-center justify-center" onClick={e => toggleSelect(issue.id, e)}>
-                    <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center cursor-pointer ${selected.has(issue.id) ? 'bg-blue-500 border-blue-500 text-white' : 'border-white/10 text-transparent hover:border-white/30'}`}>
+                    <span className={`w-3.5 h-3.5 rounded border text-[8px] flex items-center justify-center cursor-pointer ${selected.has(issue.id) ? 'bg-white text-black border-white' : 'border-white/10 text-transparent hover:border-white/30'}`}>
                       ✓
                     </span>
                   </span>
