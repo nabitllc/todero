@@ -241,7 +241,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                       key={a.id}
                       onClick={() => setAdapter(a.id)}
                       className={`relative flex flex-col items-start gap-0.5 p-3.5 rounded-xl border text-left transition-all
-                        ${adapter === a.id ? 'border-white/40 bg-white/8' : 'border-white/10 hover:border-white/20'}`}>
+                        ${adapter === a.id ? 'border-white/40 bg-white/10' : 'border-white/10 hover:border-white/20'}`}>
                       {a.recommended && (
                         <span className="absolute top-2 right-2 text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
                           Recommended
@@ -268,7 +268,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                         key={a.id}
                         onClick={() => setAdapter(a.id)}
                         className={`flex flex-col items-start gap-0.5 p-3 rounded-xl border text-left transition-all
-                          ${adapter === a.id ? 'border-white/40 bg-white/8' : 'border-white/10 hover:border-white/20'}`}>
+                          ${adapter === a.id ? 'border-white/40 bg-white/10' : 'border-white/10 hover:border-white/20'}`}>
                         <span className={`text-sm font-medium ${adapter === a.id ? 'text-white' : 'text-white/50'}`}>{a.label}</span>
                         <span className="text-xs text-white/25">{a.desc}</span>
                       </button>
@@ -291,7 +291,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
               </FormGroup>
 
               {/* Environment check */}
-              <div className="rounded-xl border border-white/10 bg-white/3 p-4 space-y-2">
+              <div className="rounded-xl border border-white/10 bg-[#0f0f0f] p-4 space-y-2">
                 <p className="text-white/50 text-xs font-medium">Adapter environment check</p>
                 <p className="text-white/30 text-xs leading-relaxed">
                   Runs a live probe that asks the adapter CLI to respond with hello.

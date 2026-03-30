@@ -22,9 +22,17 @@ interface Props {
 
 export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: Props) {
   const [businesses, setBusinesses] = useState<Business[]>([])
+  const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState(false)
 
   useEffect(() => {
-    fetch('/api/businesses').then(r => r.json()).then(setBusinesses).catch(() => {})
+    setLoading(true)
+    setFetchError(false)
+    fetch('/api/businesses')
+      .then(r => r.json())
+      .then(setBusinesses)
+      .catch(() => setFetchError(true))
+      .finally(() => setLoading(false))
   }, [refreshKey])
 
   return (
@@ -43,8 +51,22 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
       {/* Divider */}
       <div className="w-6 h-px bg-white/10 my-1" />
 
+      {/* Loading skeleton */}
+      {loading && (
+        <>
+          <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse" />
+          <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse" />
+          <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse" />
+        </>
+      )}
+
+      {/* Error state */}
+      {!loading && fetchError && (
+        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/20 text-xs" title="Failed to load businesses">!</div>
+      )}
+
       {/* Business list */}
-      {businesses.filter(b => b.status === 'active').map(b => {
+      {!loading && businesses.filter(b => b.status === 'active').map(b => {
         const emoji = EMOJI[b.name]
         const isSelected = selected === b.name
         return (

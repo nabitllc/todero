@@ -300,8 +300,9 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                   )}
 
                   {depth === 0 && (
-                    <div className="flex items-center justify-center h-20 text-white/10 text-[10px]">
-                      Empty
+                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                      <span className="text-2xl mb-2 opacity-20">📋</span>
+                      <p className="text-xs text-white/30">Nothing here yet</p>
                     </div>
                   )}
                 </div>

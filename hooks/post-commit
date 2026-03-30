@@ -1,0 +1,16 @@
+#!/bin/bash
+# MC-203/MC-204: Auto-restart MC server after commits
+# The LaunchAgent (com.nabit.mission-control) keeps the server alive.
+# Kicking it restarts with the latest build.
+
+echo "[post-commit] Rebuilding Next.js..."
+cd /Users/kemuniagent/mission-control
+/opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>/tmp/mc-build.log
+
+if [ $? -eq 0 ]; then
+  echo "[post-commit] Build succeeded. Restarting MC server..."
+  launchctl kickstart -k "gui/$(id -u)/com.nabit.mission-control" 2>/dev/null || true
+  echo "[post-commit] MC server restarted."
+else
+  echo "[post-commit] ⚠ Build failed — server NOT restarted. Check /tmp/mc-build.log"
+fi
