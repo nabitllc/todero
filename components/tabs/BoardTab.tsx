@@ -118,10 +118,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [resolutionPending, setResolutionPending] = useState<{taskId:string;source:'drag'|'edit';editFields?:Partial<Task>}|null>(null)
   const [detailTask, setDetailTask] = useState<Task|null>(null)
   const [bugDetailsOpen, setBugDetailsOpen] = useState(false)
-  const [showArchive, setShowArchive] = useState(false)
-  const [archiveSearch, setArchiveSearch] = useState('')
-  const [archiveProject, setArchiveProject] = useState('')
   const [closedConfirm, setClosedConfirm] = useState<string|null>(null)
+  const [statusFilter, setStatusFilter] = useState<'active'|'all'|'done'|'backlog'>('active')
+  const [boardSearch, setBoardSearch] = useState('')
   const [boardLimit, setBoardLimit] = useState(100)
   const [boardGroupBy, setBoardGroupBy] = useState<'status'|'feature'|'business'>(() => { try { return (localStorage.getItem('board-group-by') as 'status'|'feature'|'business') || 'status' } catch { return 'status' } })
   const groupByFeature = boardGroupBy === 'feature'
@@ -219,22 +218,20 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
   const allFiltered = tasks.filter(t => {
     if (t.status === 'closed') return false
+    if (statusFilter === 'active' && !['open', 'in_progress', 'in_review'].includes(t.status)) return false
+    if (statusFilter === 'done' && t.status !== 'done') return false
+    if (statusFilter === 'backlog' && t.status !== 'backlog') return false
     if (projectFilter && (t as any).project !== projectFilter) return false
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
     if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
     if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee ?? '')) return false
     if (filterSprint && t.sprint !== filterSprint) return false
     if (featureFilter && (t as any).parent_id !== featureFilter) return false
+    if (boardSearch.trim() && !t.title.toLowerCase().includes(boardSearch.trim().toLowerCase())) return false
     return true
   })
   const filtered = allFiltered.slice(0, boardLimit)
   const hasMoreBoard = allFiltered.length > boardLimit
-
-  const closedTasks = tasks.filter(t => t.status === 'closed')
-  const filteredClosed = closedTasks
-    .filter(t => !archiveProject || t.project === archiveProject)
-    .filter(t => !archiveSearch || t.title.toLowerCase().includes(archiveSearch.toLowerCase()))
-    .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
 
   const projects = Array.from(new Set(tasks.map(t=>t.project).filter(Boolean)))
   const assignees = Array.from(new Set(tasks.map(t=>t.assignee).filter(Boolean)))
@@ -258,6 +255,14 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             {sprints.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>)}
           </Select>
           {hasAnyFilter && <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-400 hover:text-red-300">Clear all</Button>}
+          {/* Search bar */}
+          <Input
+            placeholder="Search tasks…"
+            value={boardSearch}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBoardSearch(e.target.value)}
+            className="w-40 text-xs py-1"
+          />
+          {/* Group by pills */}
           <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#080808'}}>
             <button onClick={() => { setBoardGroupBy('status'); localStorage.setItem('board-group-by','status') }}
               className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='status'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
@@ -272,12 +277,18 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               Business
             </button>
           </div>
-          <Button variant={showArchive ? 'primary' : 'secondary'} size="sm" onClick={() => setShowArchive(!showArchive)} className="ml-auto">
-            📦 Archive{closedTasks.length > 0 && <span className="ml-1 text-white/50">({closedTasks.length})</span>}
-          </Button>
-          {!showArchive && <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium'})}>
+          {/* Status filter pills */}
+          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#080808'}}>
+            {(['active','done','backlog','all'] as const).map(f => (
+              <button key={f} onClick={() => setStatusFilter(f)}
+                className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${statusFilter===f?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
+                {f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+          <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium'})} className="ml-auto">
             + New Task
-          </Button>}
+          </Button>
         </div>
         {/* Active filter chips */}
         {hasAnyFilter && (
@@ -311,7 +322,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       </div>
 
       {/* MC-127: Michael's "Needs You" queue */}
-      {!showArchive && (() => {
+      {(() => {
         const michaelTasks = tasks.filter(t => t.assignee === 'michael' && t.status !== 'done' && t.status !== 'closed')
         if (michaelTasks.length === 0) return null
         return (
@@ -336,35 +347,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         )
       })()}
 
-      {/* Archive View */}
-      {showArchive && (
-        <div className="flex-1 flex flex-col gap-3 min-h-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Input placeholder="Search closed tasks..." value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
-              className="w-52 text-xs py-1.5" />
-            <Select value={archiveProject} onChange={e => setArchiveProject(e.target.value)} className="w-auto text-xs py-1">
-              <option value="" className="bg-[#0f0f0f] text-white">All Projects</option>
-              {projects.map(p => <option key={p} value={p!} className="bg-[#0f0f0f] text-white">{p}</option>)}
-            </Select>
-            <span className="text-[10px] text-white/30 ml-auto">{filteredClosed.length} closed task{filteredClosed.length !== 1 ? 's' : ''}</span>
-          </div>
-          <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-            {filteredClosed.length === 0 && <EmptyState icon={Kanban} title="No closed tasks" />}
-            {filteredClosed.map(t => (
-              <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/10 hover:border-white/10 transition-colors" style={{background:'#0f0f0f'}}>
-                <p className="text-sm text-white/70 flex-1 truncate">{t.title}</p>
-                {t.project && <Chip label={t.project} color={PROJECT_COLORS[t.project] || undefined} />}
-                {t.resolution_type && <Chip label={RESOLUTION_OPTIONS.find(r => r.value === t.resolution_type)?.label ?? t.resolution_type} color={RESOLUTION_BADGE_COLORS[t.resolution_type] ?? '#71717a'} />}
-                {t.assignee && ASSIGNEE_MAP[t.assignee] && <span className="text-[10px] text-white/50 whitespace-nowrap">{ASSIGNEE_MAP[t.assignee].emoji} {ASSIGNEE_MAP[t.assignee].name}</span>}
-                {t.updated_at && <span className="text-[10px] text-white/30 whitespace-nowrap">{new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* MC-87: Feature-grouped view */}
-      {!showArchive && groupByFeature && (() => {
+      {groupByFeature && (() => {
         // Group tasks by parent_id (feature)
         const features = tasks.filter(t => t.type === 'feature' || t.type === 'epic')
         const featureGroups: { feature: Task | null; label: string; children: Task[] }[] = []
@@ -447,7 +431,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Business-grouped view */}
-      {!showArchive && groupByBusiness && (() => {
+      {groupByBusiness && (() => {
         const BIZ_PROJECTS: Record<string, {label: string; emoji: string; projects: string[]}> = {
           'Vespera':          { label: 'Vespera',          emoji: '🖤', projects: ['Vespera'] },
           'Kemuni':           { label: 'Kemuni',           emoji: '🚀', projects: ['Kemuni'] },
@@ -582,7 +566,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Mobile column tabs */}
-      {!showArchive && !groupByFeature && !groupByBusiness && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
+      {!groupByFeature && !groupByBusiness && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
         {BOARD_COLUMNS.map(col=>(
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
             className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-white/10 text-white':'text-white/50 hover:text-white/70')}
@@ -593,7 +577,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       </div>}
 
       {/* Columns */}
-      {!showArchive && !groupByFeature && !groupByBusiness && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
+      {!groupByFeature && !groupByBusiness && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => t.status===col.id)
           return (
@@ -705,7 +689,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       </div>}
 
       {/* Load more */}
-      {!showArchive && hasMoreBoard && (
+      {hasMoreBoard && (
         <Button variant="secondary" size="sm" onClick={() => setBoardLimit(prev => prev + 100)} className="w-full justify-center">
           Load 100 more ({allFiltered.length - boardLimit} remaining)
         </Button>
