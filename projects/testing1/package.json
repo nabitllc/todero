@@ -1,0 +1,11 @@
+{
+  "name": "testing1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Testing1 project",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "dev": "ts-node src/index.ts",
+    "test": "echo \"No tests configured yet\""
+  }
+}
