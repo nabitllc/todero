@@ -79,18 +79,27 @@ MC API: http://localhost:3000/api/issues
 
 Step 1: Fetch your open issues:
 GET ${SUPA}/rest/v1/issues?assignee=eq.builder&status=eq.open&acceptance_criteria=not.is.null&sprint=not.is.null&order=priority.asc&limit=10&select=*
-Headers: apikey: $SK, Authorization: Bearer $SK
+Headers: apikey: \$SK, Authorization: Bearer \$SK
 
 Step 2: For each issue in order:
 - Read title + description + acceptance_criteria carefully
-- IMMEDIATELY set status=in_progress: PATCH ${SUPA}/rest/v1/issues?id=eq.<uuid> with {\"status\":\"in_progress\"} (Headers: apikey + Authorization Bearer $SK, Content-Type: application/json)
+- CHECK FOR REJECTION: If reviewer_notes is set on the issue, this task was previously reviewed and rejected. Read reviewer_notes carefully before starting — they describe what to fix.
+- IMMEDIATELY set status=in_progress via MC API: PATCH http://localhost:3000/api/issues with {\"id\":\"<uuid>\",\"status\":\"in_progress\"} (Content-Type: application/json)
 - If project is 'Vespera': work in $VES_DIR
 - If project is 'Mission Control' or 'Infrastructure': work in $MC_DIR
-- Implement the change
+- Implement the change (if rejected, address all reviewer_notes before submitting again)
 - Run npm run build (fix all TypeScript errors before committing)
 - git add -A && git commit -m 'feat(TASK_KEY): description [skip ci]'
-- Leave implementation notes: what you built, what you tested, any edge cases
-- Move to in_review (NOT done): PATCH ${SUPA}/rest/v1/issues?id=eq.<uuid> with {\"status\":\"in_review\", \"description\":\"<append your implementation notes to existing description>\"} (same headers)
+- Prepare a regression_test string — the exact command or manual steps to verify no regression (e.g. \"npm run build && npm test\" or \"manual: verify X on mobile\"). This is REQUIRED.
+- Move to in_review via MC API (NOT done): PATCH http://localhost:3000/api/issues with:
+  {
+    \"id\": \"<uuid>\",
+    \"status\": \"in_review\",
+    \"implementation_notes\": \"<what you built, what you tested, any edge cases>\",
+    \"commit_sha\": \"<git rev-parse HEAD output>\",
+    \"regression_test\": \"<command or manual steps to verify no regression>\"
+  }
+  If regression_test is empty, the API will reject the request — you MUST provide it.
 - DO NOT mark status=done — Tester does that after review
 
 ⚠️ PARTIAL WORK RULE: If you run out of time or cannot complete a task, you MUST either:

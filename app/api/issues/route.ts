@@ -292,7 +292,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    // To 'in_review': require (feature_branch OR commit_sha OR pr_url) AND implementation_notes
+    // To 'in_review': require (feature_branch OR commit_sha OR pr_url), implementation_notes, AND regression_test
     // Fallback: accept implementation notes in description (for backward compat before DB migration)
     if (fields.status === 'in_review') {
       const hasImplNotes = merged.implementation_notes ||
@@ -307,6 +307,13 @@ export async function PATCH(req: NextRequest) {
       if (!hasRef) {
         return NextResponse.json(
           { error: 'Cannot move to in_review: at least one of feature_branch, commit_sha, or pr_url is required.' },
+          { status: 400 }
+        )
+      }
+      // MC-349: regression_test required — builder must describe how to verify no regression
+      if (!merged.regression_test?.trim()) {
+        return NextResponse.json(
+          { error: 'Cannot move to in_review: regression_test is required. Describe the command or manual steps to verify no regression (e.g. "npm run build && npm test" or "manual: verify X on mobile").' },
           { status: 400 }
         )
       }
@@ -342,6 +349,39 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // ── MC-349: Auto-set timestamps + worked_by on status transitions ──
+  if (fields.status) {
+    const now = new Date().toISOString()
+
+    // → in_progress: set started_at (only if not already set), set worked_by = assignee
+    if (fields.status === 'in_progress') {
+      if (!before?.started_at && !fields.started_at) {
+        fields.started_at = now
+      }
+      // worked_by captures who actually worked the task (for rejection routing later)
+      const effectiveAssignee = fields.assignee ?? before?.assignee
+      if (effectiveAssignee && !fields.worked_by) {
+        fields.worked_by = effectiveAssignee
+      }
+    }
+
+    // → in_review: set submitted_at
+    if (fields.status === 'in_review') {
+      fields.submitted_at = now
+    }
+
+    // → done: set completed_at
+    if (fields.status === 'done') {
+      fields.completed_at = now
+    }
+
+    // → open (rejection routing): if assignee not explicitly provided, route back to worked_by
+    // This handles Tester rejecting a task back to the original builder
+    if (fields.status === 'open' && !fields.assignee && before?.worked_by) {
+      fields.assignee = before.worked_by
+    }
+  }
+
   // ── INF-181: Increment fail_count on test_status=failed ──
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
   if (isNewFailure) {
@@ -366,7 +406,8 @@ export async function PATCH(req: NextRequest) {
   // Graceful fallback: strip fields that don't exist as columns yet (pre-migration)
   if (error?.code === '42703') {
     const safeFields = { ...fields }
-    for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count']) {
+    for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
+                        'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test']) {
       delete safeFields[col]
     }
     const retry = await supabase
