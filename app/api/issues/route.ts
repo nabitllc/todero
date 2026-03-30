@@ -258,28 +258,82 @@ export async function PATCH(req: NextRequest) {
   }
   if (!id) return NextResponse.json({ error: 'id or task_key required' }, { status: 400 })
 
-  // ── Sprint required if moving out of backlog ──
-  if (fields.status && fields.status !== 'backlog' && !fields.sprint) {
-    // Check if existing issue already has a sprint
-    const { data: existing } = await supabase
-      .from('issues')
-      .select('sprint')
-      .eq('id', id)
-      .single()
-    if (!existing?.sprint) {
+  // ── Fetch existing record for transition validation ──
+  const { data: before } = await supabase
+    .from('issues')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  // ── MC-314: Transition validation — enforce required fields per status change ──
+  if (fields.status) {
+    const merged = { ...before, ...fields }
+
+    // Backlog constraint: reject if sprint is set
+    if (fields.status === 'backlog' && (fields.sprint || (!('sprint' in fields) && before?.sprint))) {
+      return NextResponse.json(
+        { error: 'Cannot move to backlog: sprint must be null. Backlog issues cannot have a sprint assigned.' },
+        { status: 400 }
+      )
+    }
+
+    // To 'open': require priority, sprint, assignee, acceptance_criteria
+    if (fields.status === 'open') {
+      const missing: string[] = []
+      if (!merged.priority) missing.push('priority')
+      if (!merged.sprint) missing.push('sprint')
+      if (!merged.assignee) missing.push('assignee')
+      if (!merged.acceptance_criteria) missing.push('acceptance_criteria')
+      if (missing.length > 0) {
+        return NextResponse.json(
+          { error: `Cannot move to open: missing required fields: ${missing.join(', ')}. All open issues need priority, sprint, assignee, and acceptance_criteria.` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // To 'in_review': require (feature_branch OR commit_sha OR pr_url) AND implementation_notes
+    if (fields.status === 'in_review') {
+      if (!merged.implementation_notes) {
+        return NextResponse.json(
+          { error: 'Cannot move to in_review: implementation_notes is required. Builder must include handoff notes for the reviewer.' },
+          { status: 400 }
+        )
+      }
+      if (!merged.feature_branch && !merged.commit_sha && !merged.pr_url) {
+        return NextResponse.json(
+          { error: 'Cannot move to in_review: at least one of feature_branch, commit_sha, or pr_url is required.' },
+          { status: 400 }
+        )
+      }
+      // Auto-set assignee=tester if not explicitly provided
+      if (!fields.assignee) {
+        fields.assignee = 'tester'
+      }
+    }
+
+    // To 'done': require resolution_type AND reviewer_notes AND test_status='passed'
+    if (fields.status === 'done') {
+      const missing: string[] = []
+      if (!merged.resolution_type) missing.push('resolution_type')
+      if (!merged.reviewer_notes) missing.push('reviewer_notes')
+      if (merged.test_status !== 'passed') missing.push('test_status=passed')
+      if (missing.length > 0) {
+        return NextResponse.json(
+          { error: `Cannot move to done: missing required fields: ${missing.join(', ')}. Tester must set resolution_type, reviewer_notes, and test_status=passed.` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Sprint required if moving to open/in_progress/in_review
+    if (['open', 'in_progress', 'in_review'].includes(fields.status) && !merged.sprint) {
       return NextResponse.json(
         { error: 'sprint is required before moving issue out of backlog. Set sprint (YYYY-MM-DD) first.' },
         { status: 422 }
       )
     }
   }
-
-  // ── Fetch existing record to detect pr_url and test_status transitions ──
-  const { data: before } = await supabase
-    .from('issues')
-    .select('pr_url,test_status,fail_count,acceptance_criteria,parent_id,assignee,title,task_key')
-    .eq('id', id)
-    .single()
 
   // ── INF-181: Increment fail_count on test_status=failed ──
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
