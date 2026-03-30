@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exec as execAsync } from 'child_process'
 
+// ── Enum constants (single source of truth) ───────────────────────────────────
+const VALID_TYPES = ['epic', 'feature', 'task', 'bug', 'ops', 'research']
+const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low']
+const VALID_SEVERITIES = ['S0', 'S1', 'S2', 'S3']
+const VALID_STATUSES = ['backlog', 'defined', 'open', 'in_progress', 'code_review', 'product_review', 'approved', 'released', 'completed', 'closed', 'blocked', 'draft', 'active']
+const VALID_RESOLUTION_TYPES = ['code_change', 'config_change', 'no_action', 'duplicate', 'by_design', 'wont_fix', 'cancelled', 'canceled', 'not_reproducible', 'deferred', 'completed']
+
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'tester': 'tester',
@@ -129,6 +136,50 @@ const supabase = createClient(
   'https://twthgapiouiqhavrcnry.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 )
+
+// ── Hierarchy validation ──────────────────────────────────────────────────────
+async function validateHierarchy(
+  type: string,
+  parentId: string | null | undefined
+): Promise<{ error: string } | null> {
+  if (type === 'task' || type === 'bug') {
+    if (!parentId) {
+      return { error: `type=${type} requires parent_id pointing to a feature issue` }
+    }
+    const { data: parent, error: dbErr } = await supabase
+      .from('issues')
+      .select('id, type, task_key')
+      .eq('id', parentId)
+      .maybeSingle()
+    if (dbErr || !parent) {
+      return { error: `parent_id ${parentId} does not exist` }
+    }
+    if (parent.type !== 'feature') {
+      return { error: `type=${type} requires parent to be a feature, but parent ${parent.task_key} is type=${parent.type}` }
+    }
+  } else if (type === 'feature') {
+    if (!parentId) {
+      return { error: `type=feature requires parent_id pointing to an epic issue` }
+    }
+    const { data: parent, error: dbErr } = await supabase
+      .from('issues')
+      .select('id, type, task_key')
+      .eq('id', parentId)
+      .maybeSingle()
+    if (dbErr || !parent) {
+      return { error: `parent_id ${parentId} does not exist` }
+    }
+    if (parent.type !== 'epic') {
+      return { error: `type=feature requires parent to be an epic, but parent ${parent.task_key} is type=${parent.type}` }
+    }
+  } else if (type === 'epic') {
+    if (parentId) {
+      return { error: `type=epic should not have a parent_id (epics are top-level)` }
+    }
+  }
+  // ops, research: parent_id optional — no validation needed
+  return null
+}
 
 // ── Task key generation ───────────────────────────────────────────────────────
 const PROJECT_PREFIX: Record<string, string> = {
@@ -446,9 +497,47 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── Enum validation ──
+  if (type && !VALID_TYPES.includes(type)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'type': "${type}". Allowed values: ${VALID_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (priority && !VALID_PRIORITIES.includes(priority)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'priority': "${priority}". Allowed values: ${VALID_PRIORITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (severity && !VALID_SEVERITIES.includes(severity)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'severity': "${severity}". Allowed values: ${VALID_SEVERITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (status && !VALID_STATUSES.includes(status)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'status': "${status}". Allowed values: ${VALID_STATUSES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (resolution_type && !VALID_RESOLUTION_TYPES.includes(resolution_type)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'resolution_type': "${resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+
   // ── DoF: features require description ──
   if (type === 'feature' && !description?.trim()) {
     return NextResponse.json({ error: 'Feature requires: description' }, { status: 422 })
+  }
+
+  // ── Hierarchy validation ──
+  const hierarchyErr = await validateHierarchy(type ?? 'task', parent_id)
+  if (hierarchyErr) {
+    return NextResponse.json({ error: hierarchyErr.error }, { status: 400 })
   }
 
   // ── Auto-set owner ──
@@ -478,22 +567,25 @@ export async function POST(req: NextRequest) {
   // ── Auto-routing ──
   let effectiveAssignee = assignee
   let routingNote = ''
-  if (!effectiveAssignee || effectiveAssignee === 'main' || effectiveAssignee === 'kaos') {
+  if (!effectiveAssignee) {
     const effectiveType = type ?? 'task'
-    const titleLower = (title ?? '').toLowerCase()
-    const descLower = (description ?? '').toLowerCase()
-    if (titleLower.includes('manual') || titleLower.includes('blocked') || descLower.includes('requires michael')) {
-      effectiveAssignee = 'michael'; routingNote = '[auto-routed to michael: manual/blocked/requires michael]'
-    } else if (titleLower.includes('research') || titleLower.includes('evaluate') || titleLower.includes('scout')) {
-      effectiveAssignee = 'scout'; routingNote = '[auto-routed to scout: research/evaluate/scout keyword]'
+    const projectStr = project ?? ''
+    if (effectiveType === 'task' || effectiveType === 'bug') {
+      effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: type=${effectiveType}]`
     } else if (effectiveType === 'ops') {
       effectiveAssignee = 'ops'; routingNote = '[auto-routed to ops: type=ops]'
-    } else if (effectiveType === 'task' || effectiveType === 'bug') {
-      effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: type=${effectiveType}]`
-    } else if (effectiveType === 'feature' || effectiveType === 'epic') {
-      if (project === 'Kemuni') { effectiveAssignee = 'kemuni-sme'; routingNote = '[auto-routed to kemuni-sme: feature/epic + Kemuni]' }
-      else if (project === 'Vespera') { effectiveAssignee = 'vespera-sme'; routingNote = '[auto-routed to vespera-sme: feature/epic + Vespera]' }
-      else { effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: feature/epic + ${project}]` }
+    } else if (effectiveType === 'research') {
+      effectiveAssignee = 'scout'; routingNote = '[auto-routed to scout: type=research]'
+    } else if (effectiveType === 'feature') {
+      if (projectStr.includes('Vespera') || projectStr.includes('VES')) {
+        effectiveAssignee = 'vespera-sme'; routingNote = `[auto-routed to vespera-sme: type=feature + project=${projectStr}]`
+      } else if (projectStr.includes('Kemuni') || projectStr.includes('KEM')) {
+        effectiveAssignee = 'kemuni-sme'; routingNote = `[auto-routed to kemuni-sme: type=feature + project=${projectStr}]`
+      } else {
+        effectiveAssignee = 'main'; routingNote = `[auto-routed to main: type=feature + project=${projectStr}]`
+      }
+    } else if (effectiveType === 'epic') {
+      effectiveAssignee = 'main'; routingNote = '[auto-routed to main: type=epic]'
     } else {
       effectiveAssignee = 'builder'; routingNote = '[auto-routed to builder: default fallback]'
     }
@@ -502,6 +594,13 @@ export async function POST(req: NextRequest) {
   const effectiveDescription = routingNote
     ? (description ? `${description}\n\n${routingNote}` : routingNote)
     : description
+
+  // Log auto-routing to implementation_notes
+  const autoRoutingNote = routingNote ? `Auto-assigned: ${routingNote.replace(/^\[|\]$/g, '')}` : ''
+  const existingImplNotes = (body.implementation_notes as string | undefined) ?? ''
+  const effectiveImplNotes = autoRoutingNote
+    ? (existingImplNotes ? `${existingImplNotes}\n${autoRoutingNote}` : autoRoutingNote)
+    : existingImplNotes || undefined
 
   // ── Dedup guard: reject duplicate tester/reviewer issues ──
   const isTesterIssue = (title ?? '').startsWith('🧪 Tester:') || (title ?? '').includes('Tester: Review')
@@ -552,6 +651,7 @@ export async function POST(req: NextRequest) {
       resolution_type, feature_branch, pr_url,
       task_key: generated.task_key, task_number: generated.task_number,
       owner: effectiveOwner,
+      ...(effectiveImplNotes ? { implementation_notes: effectiveImplNotes } : {}),
     })
     .select()
     .single()
@@ -593,6 +693,38 @@ export async function PATCH(req: NextRequest) {
       { error: 'Issue is closed and read-only.' },
       { status: 403 }
     )
+  }
+
+  // ── Enum validation on PATCH ──
+  if (fields.priority && !VALID_PRIORITIES.includes(fields.priority as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'priority': "${fields.priority}". Allowed values: ${VALID_PRIORITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.severity && !VALID_SEVERITIES.includes(fields.severity as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'severity': "${fields.severity}". Allowed values: ${VALID_SEVERITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.resolution_type && !VALID_RESOLUTION_TYPES.includes(fields.resolution_type as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'resolution_type': "${fields.resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+
+  // ── Hierarchy validation on PATCH (when parent_id or type changes) ──
+  if (fields.parent_id !== undefined || fields.type !== undefined) {
+    const effectiveType = (fields.type ?? before?.type) as string | undefined
+    const effectiveParentId = (fields.parent_id !== undefined ? fields.parent_id : before?.parent_id) as string | null | undefined
+    if (effectiveType) {
+      const hierErr = await validateHierarchy(effectiveType, effectiveParentId)
+      if (hierErr) {
+        return NextResponse.json({ error: hierErr.error }, { status: 400 })
+      }
+    }
   }
 
   // ── Status transition validation ──
