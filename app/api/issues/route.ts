@@ -39,7 +39,7 @@ const RES_LABEL: Record<string, string> = {
 
 function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string }) {
   const key = issue.task_key ?? '?'
-  const statusLabel = issue.status === 'approved' ? 'approved' : 'completed'
+  const statusLabel = issue.status === 'approved' ? 'approved' : issue.status === 'closed' ? 'closed' : 'completed'
   const assignee = issue.assignee ?? 'unknown'
   const project = issue.project ?? ''
 
@@ -363,6 +363,14 @@ export async function PATCH(req: NextRequest) {
     .eq('id', id)
     .single()
 
+  // ── Closed issues are read-only — reject all PATCH requests ──
+  if (before?.status === 'closed') {
+    return NextResponse.json(
+      { error: 'Issue is closed and read-only.' },
+      { status: 403 }
+    )
+  }
+
   // ── MC-314: Transition validation — enforce required fields per status change ──
   if (fields.status) {
   // ── Task 5: Role-based transition conditions ──
@@ -657,9 +665,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Instant Discord notification on approved or completed ──
+  // ── Instant Discord notification on approved, completed, or closed ──
   const resolvedType = fields.resolution_type ?? data?.resolution_type
-  if ((fields.status === 'approved' || fields.status === 'completed') && data) {
+  if ((fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 

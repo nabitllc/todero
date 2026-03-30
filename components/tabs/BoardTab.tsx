@@ -65,11 +65,39 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
 }
 
 const BOARD_COLUMNS = [
-  { id:'backlog',     label:'Backlog',      color:'#3f3f46' },
-  { id:'open',        label:'Open',         color:'#3b82f6' },
-  { id:'in_progress', label:'In Progress',  color:'#eab308' },
-  { id:'in_review',   label:'In Review',    color:'#a855f7' },
-  { id:'done',        label:'Done',         color:'#22c55e' },
+  { id:'backlog',    label:'Backlog',          color:'#71717a', statuses:['backlog'] },
+  { id:'open',       label:'Open',             color:'#3b82f6', statuses:['open'] },
+  { id:'in_progress',label:'In Progress',      color:'#818cf8', statuses:['in_progress'] },
+  { id:'in_review',  label:'In Review',        color:'#f97316', statuses:['code_review','product_review'] },
+  { id:'approved',   label:'Ready for Deploy', color:'#22c55e', statuses:['approved'] },
+  { id:'completed',  label:'Completed',        color:'#14b8a6', statuses:['completed','released'] },
+]
+
+const STATUS_CHIP_COLORS: Record<string,string> = {
+  backlog:         'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+  open:            'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  in_progress:     'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+  code_review:     'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  product_review:  'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  approved:        'bg-green-500/20 text-green-400 border-green-500/30',
+  released:        'bg-teal-500/20 text-teal-400 border-teal-500/30',
+  completed:       'bg-green-600/20 text-green-400 border-green-600/30',
+  closed:          'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+  cancelled:       'bg-red-500/20 text-red-400 border-red-500/30',
+  blocked:         'bg-red-500/20 text-red-400 border-red-500/30',
+}
+
+const ALL_STATUSES = [
+  { value:'backlog',         label:'Backlog' },
+  { value:'open',            label:'Open' },
+  { value:'in_progress',     label:'In Progress' },
+  { value:'code_review',     label:'Code Review' },
+  { value:'product_review',  label:'Product Review' },
+  { value:'approved',        label:'Approved' },
+  { value:'completed',       label:'Completed' },
+  { value:'released',        label:'Released' },
+  { value:'closed',          label:'Closed' },
+  { value:'cancelled',       label:'Cancelled' },
 ]
 
 const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
@@ -182,13 +210,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
   }
 
-  const handleDrop = (status: string) => {
+  const handleDrop = (colId: string) => {
     if (!dragId) return
-    if (status === 'done') {
-      setResolutionPending({ taskId: dragId, source: 'drag' })
-      setDragId(null)
-      return
-    }
+    const col = BOARD_COLUMNS.find(c => c.id === colId)
+    const status = col?.statuses[0] ?? colId
     updateTask(dragId, { status })
     setTasks(prev => prev.map(t => t.id===dragId ? {...t, status} : t))
     setDragId(null)
@@ -218,9 +243,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
   const allFiltered = tasks.filter(t => {
-    if (t.status === 'closed') return false
-    if (statusFilter === 'active' && !['open', 'in_progress', 'in_review'].includes(t.status)) return false
-    if (statusFilter === 'done' && t.status !== 'done') return false
+    if (t.status === 'closed' || t.status === 'cancelled') return false
+    if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved'].includes(t.status)) return false
+    if (statusFilter === 'done' && !['completed', 'released'].includes(t.status)) return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false
     if (projectFilter && (t as any).project !== projectFilter) return false
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
@@ -428,7 +453,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
             {featureGroups.map(group => {
               const statusCounts = BOARD_COLUMNS.reduce((acc, col) => {
-                acc[col.id] = group.children.filter(t => t.status === col.id).length; return acc
+                acc[col.id] = group.children.filter(t => col.statuses.includes(t.status)).length; return acc
               }, {} as Record<string, number>)
               return (
                 <div key={group.label} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#080808'}}>
@@ -450,15 +475,14 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   </div>
                   <div className="border-t border-white/10">
                     {group.children.map(task => {
-                      const col = BOARD_COLUMNS.find(c => c.id === task.status)
+                      const col = BOARD_COLUMNS.find(c => c.statuses.includes(task.status))
                       return (
                         <div key={task.id} className="flex items-center gap-3 px-4 py-2 hover:bg-white/10/20 transition-colors cursor-pointer border-b border-white/10 last:border-b-0"
                           onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}>
                           <span className="w-2 h-2 rounded-full shrink-0" style={{background: col?.color || '#3f3f46'}} />
                           <p className="text-sm text-white/70 flex-1 truncate">{task.title}</p>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0"
-                            style={{color: col?.color || '#71717a', background: (col?.color || '#71717a') + '18', border: `1px solid ${col?.color || '#71717a'}30`}}>
-                            {col?.label || task.status}
+                          <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${STATUS_CHIP_COLORS[task.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>
+                            {task.status.replace(/_/g,' ')}
                           </span>
                           {task.assignee && ASSIGNEE_MAP[task.assignee] && (
                             <span className="text-[10px] text-white/50 shrink-0">{ASSIGNEE_MAP[task.assignee].emoji}</span>
@@ -520,7 +544,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                     <span className="text-sm font-semibold text-white/70">{biz.label}</span>
                     <span className="text-xs text-white/50 ml-1">({allBizTasks.length} issue{allBizTasks.length !== 1 ? 's' : ''})</span>
                     <div className="flex gap-1.5 ml-2 shrink-0">
-                      {BOARD_COLUMNS.map(col => { const cnt = allBizTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
+                      {BOARD_COLUMNS.map(col => { const cnt = allBizTasks.filter(t => col.statuses.includes(t.status)).length; return cnt > 0 ? (
                         <span key={col.id} className="text-[9px] px-1.5 py-0.5 rounded-full font-mono"
                           style={{color: col.color, background: col.color + '18', border: `1px solid ${col.color}30`}}>
                           {col.label[0]} {cnt}
@@ -548,7 +572,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                               <span className="text-xs font-medium text-white/40">{projName}</span>
                               <span className="text-[10px] text-white/30">({projTasks.length})</span>
                               <div className="flex gap-1 ml-auto shrink-0">
-                                {BOARD_COLUMNS.map(col => { const cnt = projTasks.filter(t => t.status === col.id).length; return cnt > 0 ? (
+                                {BOARD_COLUMNS.map(col => { const cnt = projTasks.filter(t => col.statuses.includes(t.status)).length; return cnt > 0 ? (
                                   <span key={col.id} className="text-[8px] px-1 py-0.5 rounded font-mono"
                                     style={{color: col.color, background: col.color + '12'}}>
                                     {cnt}
@@ -560,7 +584,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                             {!isProjCollapsed && (
                               <div className="flex gap-3 overflow-x-auto p-3">
                                 {BOARD_COLUMNS.map(col => {
-                                  const colTasks = projTasks.filter(t => t.status === col.id)
+                                  const colTasks = projTasks.filter(t => col.statuses.includes(t.status))
                                   return (
                                     <div key={col.id}
                                       className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
@@ -617,7 +641,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
             className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-white/10 text-white':'text-white/50 hover:text-white/70')}
             style={mobileCol===col.id?{borderBottom:`2px solid ${col.color}`}:{}}>
-            {col.label} <span className="text-white/30 ml-1">{filtered.filter(t=>t.status===col.id).length}</span>
+            {col.label} <span className="text-white/30 ml-1">{filtered.filter(t=>col.statuses.includes(t.status)).length}</span>
           </button>
         ))}
       </div>}
@@ -625,7 +649,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {/* Columns */}
       {!groupByFeature && !groupByBusiness && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
-          const colTasks = filtered.filter(t => t.status===col.id)
+          const colTasks = filtered.filter(t => col.statuses.includes(t.status))
           return (
             <div key={col.id}
               className={`flex-shrink-0 w-full md:w-64 flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
@@ -637,7 +661,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
                   <span className="text-xs font-semibold text-white/40">{col.label} ({colTasks.length})</span>
-                  {col.id === 'done' && filtered.length > 0 && (
+                  {col.id === 'completed' && filtered.length > 0 && (
                     <span className="text-[10px] text-white/30 font-mono">{Math.round((colTasks.length / filtered.length) * 100)}%</span>
                   )}
                 </div>
@@ -661,10 +685,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                     onMouseLeave={e=>{const bc=dragId===task.id?'#555':'#27272a';e.currentTarget.style.borderRightColor=bc;e.currentTarget.style.borderTopColor=bc;e.currentTarget.style.borderBottomColor=bc}}>
                     <div className="flex items-start justify-between gap-1">
                       <p className="text-white text-sm font-medium leading-snug mb-1">{task.title}</p>
-                      {col.id === 'done' && closedConfirm === task.id && (
+                      {col.id === 'completed' && closedConfirm === task.id && (
                         <span className="text-[10px] text-green-400 whitespace-nowrap animate-pulse">Archived ✓</span>
                       )}
-                      {col.id === 'done' && closedConfirm !== task.id && (
+                      {col.id === 'completed' && closedConfirm !== task.id && (
                         <button onClick={e => { e.stopPropagation(); closeTask(task.id) }}
                           className="text-[10px] text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-white/10">
                           × Close
@@ -684,7 +708,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                     <div className="flex flex-wrap items-center gap-1.5">
                       {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
                       {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18',border:`1px solid ${(TYPE_COLORS[task.type]||'#71717a')}30`}}>{task.type}</span>}
-                      {task.status === 'done' && task.resolution_type && (
+                      {task.status && <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${STATUS_CHIP_COLORS[task.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>{task.status.replace(/_/g,' ')}</span>}
+                      {task.resolution_type && (
                         <Chip label={RESOLUTION_OPTIONS.find(r=>r.value===task.resolution_type)?.label ?? task.resolution_type}
                           color={RESOLUTION_BADGE_COLORS[task.resolution_type] ?? '#71717a'} />
                       )}
@@ -714,7 +739,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 <form className="mx-2 mb-2 flex gap-1" onSubmit={async e=>{
                   e.preventDefault()
                   if(!quickAddTitle.trim()) return
-                  await createTask({title:quickAddTitle.trim(),status:col.id,priority:'medium',project:'Infrastructure',assignee:'main',type:'feature',acceptance_criteria:'To be defined'})
+                  await createTask({title:quickAddTitle.trim(),status:col.statuses[0],priority:'medium',project:'Infrastructure',assignee:'main',type:'feature',acceptance_criteria:'To be defined'})
                   setQuickAddTitle(''); setQuickAddCol(null)
                 }}>
                   <Input autoFocus value={quickAddTitle} onChange={e=>setQuickAddTitle(e.target.value)}
@@ -757,7 +782,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             <div className="grid grid-cols-2 gap-3">
               <FormGroup label="Status">
                 <Select value={newTask.status??'backlog'} onChange={e=>setNewTask({...newTask,status:e.target.value})}>
-                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id} className="bg-[#0f0f0f] text-white">{c.label}</option>)}
+                  {ALL_STATUSES.map(s=><option key={s.value} value={s.value} className="bg-[#0f0f0f] text-white">{s.label}</option>)}
                 </Select>
               </FormGroup>
               <FormGroup label="Priority">
@@ -814,7 +839,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             <div className="grid grid-cols-2 gap-3">
               <FormGroup label="Status">
                 <Select value={editTask.status} onChange={e=>setEditTask({...editTask,status:e.target.value})}>
-                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id} className="bg-[#0f0f0f] text-white">{c.label}</option>)}
+                  {ALL_STATUSES.map(s=><option key={s.value} value={s.value} className="bg-[#0f0f0f] text-white">{s.label}</option>)}
                 </Select>
               </FormGroup>
               <FormGroup label="Priority">
@@ -844,7 +869,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 const fields = {title:editTask.title,description:editTask.description,status:editTask.status,
                   priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date}
                 const origTask = tasks.find(t=>t.id===editTask.id)
-                if (editTask.status==='done' && origTask?.status!=='done') {
+                if (editTask.status==='completed' && origTask?.status!=='completed') {
                   setResolutionPending({taskId:editTask.id,source:'edit',editFields:fields})
                 } else {
                   updateTask(editTask.id,fields)
@@ -921,10 +946,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
                 {/* Status + Priority badges */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {t.status && (() => {
-                    const col = BOARD_COLUMNS.find(c => c.id === t.status)
-                    return col ? <Chip label={col.label} color={col.color} /> : null
-                  })()}
+                  {t.status && (
+                    <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border ${STATUS_CHIP_COLORS[t.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>
+                      {t.status.replace(/_/g,' ')}
+                    </span>
+                  )}
                   {t.priority && <Chip label={t.priority} color={PRIORITY_COLORS[t.priority]} />}
                   {t.type && <Chip label={t.type} />}
                 </div>
@@ -1047,7 +1073,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 )}
 
                 {/* Resolution */}
-                {t.status === 'done' && t.resolution_type && (
+                {['completed','released'].includes(t.status) && t.resolution_type && (
                   <div>
                     <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Resolution</p>
                     <Chip label={RESOLUTION_OPTIONS.find(r => r.value === t.resolution_type)?.label ?? t.resolution_type!}
