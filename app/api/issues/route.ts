@@ -37,12 +37,21 @@ const RES_LABEL: Record<string, string> = {
   cannot_reproduce: '❓ cannot reproduce'
 }
 
-function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string }) {
-  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
+function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string }) {
   const key = issue.task_key ?? '?'
-  const res = RES_LABEL[issue.resolution_type ?? ''] ?? issue.resolution_type ?? 'done'
-  const tier = issue.severity ? ` · ${issue.severity}` : ''
-  const msg = `${emoji} **[${key}]** ${issue.title ?? ''} · ${res}${tier}`
+  const statusLabel = issue.status === 'approved' ? 'approved' : 'completed'
+  const assignee = issue.assignee ?? 'unknown'
+  const project = issue.project ?? ''
+
+  // Format timestamp in EST
+  const ts = new Date().toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    hour12: true
+  }) + ' EST'
+
+  const msg = `✅ **[${key}]** — ${issue.title ?? ''} (${project}) moved to **${statusLabel}** by ${assignee} at ${ts}`
 
   fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
     method: 'POST',
@@ -648,10 +657,10 @@ export async function PATCH(req: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Instant Discord notification on every completed ──
+  // ── Instant Discord notification on approved or completed ──
   const resolvedType = fields.resolution_type ?? data?.resolution_type
-  if (fields.status === 'completed' && data) {
-    notifyDiscord({ ...data, resolution_type: resolvedType })
+  if ((fields.status === 'approved' || fields.status === 'completed') && data) {
+    notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
   // ── Item 4: Immediately activate next agent on status transition ──
