@@ -7,7 +7,7 @@
 // </div>
 'use client'
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings } from 'lucide-react'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings, ChevronRight } from 'lucide-react'
 import { AGENT_DISPLAY, CRONS, LIVE_FEED, getNextRuns, ALL_AGENTS, PROJECT_COLORS, TYPE_COLORS, DEFAULT_SPRINT_PROJECTS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
 import { Dot, Chip } from '@/lib/mc-atoms'
 import BusinessRail from '@/components/BusinessRail'
@@ -50,6 +50,45 @@ const NAV = [
   { id:'settings',     label:'Settings',     icon:'⚙️' },
 ] as const
 type Tab = typeof NAV[number]['id']
+
+const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','automations','chat','infra','settings']
+
+const BIZ_EMOJI: Record<string, string> = {
+  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠',
+  'Infrastructure': '⚙️', 'KAOS': '🤖',
+}
+
+function bizToSlug(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '-')
+}
+
+function slugToBizName(slug: string): string {
+  const special: Record<string, string> = { 'kaos': 'KAOS' }
+  if (special[slug]) return special[slug]
+  return slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
+function parseURL(): { tab: string; business: string | null } {
+  if (typeof window === 'undefined') return { tab: 'overview', business: null }
+  const parts = window.location.pathname.split('/').filter(Boolean)
+  if (parts[0] === 'b' && parts[1]) {
+    const biz = slugToBizName(parts[1])
+    const tab = parts[2] && VALID_TABS.includes(parts[2]) ? parts[2] : 'overview'
+    return { tab, business: biz }
+  }
+  if (parts[0] && VALID_TABS.includes(parts[0])) {
+    return { tab: parts[0], business: null }
+  }
+  return { tab: 'overview', business: null }
+}
+
+function buildPath(business: string | null, tab: string): string {
+  if (business) {
+    const slug = bizToSlug(business)
+    return tab === 'overview' ? `/b/${slug}` : `/b/${slug}/${tab}`
+  }
+  return tab === 'overview' ? '/' : `/${tab}`
+}
 
 function SearchOverlay({ open, onClose, onNavigate }: { open: boolean; onClose: () => void; onNavigate: (tab: string) => void }) {
   const [query, setQuery] = useState('')
@@ -105,8 +144,10 @@ function SearchOverlay({ open, onClose, onNavigate }: { open: boolean; onClose: 
 export default function Home() {
   const [tab, setTab] = useState<Tab>(() => {
     if (typeof window !== 'undefined') {
+      const fromURL = parseURL()
+      if (fromURL.tab && VALID_TABS.includes(fromURL.tab)) return fromURL.tab as Tab
       const saved = localStorage.getItem('mc-tab') as Tab | null
-      if (saved && ['overview','activity','team','calendar','automations','office','memory','board','features','pipeline','issues','chat','infra','settings'].includes(saved)) return saved
+      if (saved && VALID_TABS.includes(saved)) return saved
     }
     return 'overview'
   })
@@ -145,7 +186,13 @@ export default function Home() {
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
-  const [selectedBusiness, setSelectedBusiness] = useState<string | null>(null)
+  const [selectedBusiness, setSelectedBusiness] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const fromURL = parseURL()
+      if (fromURL.business) return fromURL.business
+    }
+    return null
+  })
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [businessRailRefresh, setBusinessRailRefresh] = useState(0)
   const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(() => {
@@ -230,6 +277,23 @@ export default function Home() {
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
   }, [])
 
+  // Browser back/forward
+  useEffect(() => {
+    const onPop = () => {
+      const { tab: t, business } = parseURL()
+      if (VALID_TABS.includes(t)) { setTab(t as Tab); localStorage.setItem('mc-tab', t) }
+      setSelectedBusiness(business)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  // Replace initial history entry so back works correctly
+  useEffect(() => {
+    window.history.replaceState({ biz: selectedBusiness, tab }, '', buildPath(selectedBusiness, tab))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Unread chat event
   useEffect(() => {
     const h = () => setUnreadChat(true)
@@ -265,12 +329,28 @@ export default function Home() {
   const displayAgents = (liveAgents && liveAgents.length > 0 ? liveAgents : ALL_AGENTS) as typeof ALL_AGENTS
   const displayCrons = (liveCrons && liveCrons.length > 0 ? liveCrons : CRONS) as typeof CRONS
 
-  const navigate = (t: string) => { setTab(t as Tab); if (typeof window !== 'undefined') localStorage.setItem('mc-tab', t) }
+  const pushURL = useCallback((biz: string | null, t: string) => {
+    const path = buildPath(biz, t)
+    if (window.location.pathname !== path) window.history.pushState({ biz, tab: t }, '', path)
+  }, [])
+
+  const navigate = useCallback((t: string) => {
+    setTab(t as Tab)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mc-tab', t)
+      pushURL(selectedBusiness, t)
+    }
+  }, [selectedBusiness, pushURL])
+
+  const selectBusiness = useCallback((name: string | null) => {
+    setSelectedBusiness(name)
+    pushURL(name, tab)
+  }, [tab, pushURL])
 
   return (
     <div className="min-h-screen flex bg-neutral-950">
-      <BusinessRail selected={selectedBusiness} onSelect={setSelectedBusiness} onNew={() => setShowOnboarding(true)} refreshKey={businessRailRefresh} />
-      {showOnboarding && <OnboardingWizard onComplete={(name) => { setSelectedBusiness(name); setShowOnboarding(false); setBusinessRailRefresh(k => k + 1) }} onClose={() => setShowOnboarding(false)} />}
+      <BusinessRail selected={selectedBusiness} onSelect={selectBusiness} onNew={() => setShowOnboarding(true)} refreshKey={businessRailRefresh} />
+      {showOnboarding && <OnboardingWizard onComplete={(name) => { selectBusiness(name); setShowOnboarding(false); setBusinessRailRefresh(k => k + 1) }} onClose={() => setShowOnboarding(false)} />}
 
       {/* SIDEBAR */}
       <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-white/10 sticky top-0 h-screen bg-neutral-950">
@@ -330,21 +410,56 @@ export default function Home() {
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col h-screen overflow-auto">
+        {/* Breadcrumb header */}
         <header className="border-b border-white/10 px-3 md:px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20 bg-neutral-950">
-          <div className="flex items-center gap-2">
-            <span className="text-white/40 text-sm font-medium capitalize">{tab}</span>
-            <span className="text-white/20 text-xs">· Nabit LLC</span>
-          </div>
-          <div className="flex items-center gap-3">
+          <nav className="flex items-center gap-1 min-w-0 overflow-hidden">
+            <button onClick={() => { selectBusiness(null); navigate('overview') }}
+              className={`text-sm shrink-0 transition-colors ${selectedBusiness || tab !== 'overview' ? 'text-white/40 hover:text-white/70' : 'text-white font-medium'}`}>
+              All
+            </button>
+            {selectedBusiness && (
+              <>
+                <ChevronRight size={12} className="text-white/20 shrink-0" />
+                <button onClick={() => { navigate('overview') }}
+                  className={`text-sm shrink-0 transition-colors ${tab !== 'overview' ? 'text-white/40 hover:text-white/70' : 'text-white font-medium'}`}>
+                  {BIZ_EMOJI[selectedBusiness] || ''} {selectedBusiness}
+                </button>
+              </>
+            )}
+            {tab !== 'overview' && (
+              <>
+                <ChevronRight size={12} className="text-white/20 shrink-0" />
+                <span className="text-white text-sm font-medium capitalize truncate">{tab}</span>
+              </>
+            )}
+          </nav>
+          <div className="flex items-center gap-3 shrink-0">
             <button onClick={() => setSearchOpen(true)} className="text-white/30 hover:text-white/70 transition-colors" title="Search (⌘K)"><Search size={15} /></button>
-            <span className="text-white/30 text-xs">{new Date().toLocaleDateString('en-US', {weekday:'short',month:'short',day:'numeric'})}</span>
+            <span className="text-white/30 text-xs hidden sm:inline">{new Date().toLocaleDateString('en-US', {weekday:'short',month:'short',day:'numeric'})}</span>
           </div>
         </header>
 
+        {/* Business context header */}
+        {selectedBusiness && (
+          <div className="px-4 md:px-6 py-3 border-b border-white/10 bg-[#0a0a0a]">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{BIZ_EMOJI[selectedBusiness] || '🏢'}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-white text-sm font-semibold truncate">{selectedBusiness}</h2>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-medium">Business</span>
+                  <span className="flex items-center gap-1 text-[9px] text-emerald-400"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Active</span>
+                </div>
+                <p className="text-white/30 text-[10px] mt-0.5">Viewing all {selectedBusiness} data across tabs</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
-          {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} />}
-          {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} displayAgents={displayAgents} />}
-          {tab === 'team' && <AgentsTab displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} />}
+          {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
+          {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
+          {tab === 'team' && <AgentsTab displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
           {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} openMem={openMem} setOpenMem={setOpenMem} />}

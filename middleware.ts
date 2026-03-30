@@ -15,14 +15,20 @@ export function middleware(req: NextRequest) {
 
   // Check auth cookie
   const auth = req.cookies.get('mc-auth')?.value
-  if (auth === PASSWORD) {
-    return NextResponse.next()
+  if (auth !== PASSWORD) {
+    // Redirect to login
+    const loginUrl = new URL('/login', req.url)
+    loginUrl.searchParams.set('from', req.nextUrl.pathname)
+    return NextResponse.redirect(loginUrl)
   }
 
-  // Redirect to login
-  const loginUrl = new URL('/login', req.url)
-  loginUrl.searchParams.set('from', req.nextUrl.pathname)
-  return NextResponse.redirect(loginUrl)
+  // SPA routing: rewrite all client paths to / so page.tsx handles routing via pushState
+  const { pathname } = req.nextUrl
+  if (pathname !== '/' && !pathname.includes('.')) {
+    return NextResponse.rewrite(new URL('/', req.url))
+  }
+
+  return NextResponse.next()
 }
 
 export const config = {

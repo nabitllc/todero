@@ -356,12 +356,14 @@ export default function OverviewTab({
   liveStatus,
   sprintProjects,
   onNavigate,
+  projectFilter,
 }: {
   globalSync: () => Promise<void>
   syncing: boolean
   liveStatus: any
   sprintProjects: any[]
   onNavigate: (tab: string) => void
+  projectFilter?: string | null
 }) {
   return (
     <>

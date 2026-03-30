@@ -12,6 +12,7 @@ export default function AgentsTab({
   act,
   agentModal,
   setAgentModal,
+  projectFilter,
 }: {
   displayAgents: any[]
   agentLiveStatus: (agentId: string) => { dot: 'green'|'amber'|'grey'; label: string }
@@ -20,6 +21,7 @@ export default function AgentsTab({
   act: (id: string) => string
   agentModal: any
   setAgentModal: (a: any) => void
+  projectFilter?: string | null
 }) {
   return (
             <div className="space-y-6">

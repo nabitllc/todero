@@ -62,10 +62,11 @@ interface ActivityTabProps {
   setStatusAt: (t: number) => void
   issueActivity: any[]
   displayAgents: any[]
+  projectFilter?: string | null
 }
 
 export default function ActivityTab({
-  liveStatus, statusAt, setLiveStatus, setStatusAt, issueActivity, displayAgents
+  liveStatus, statusAt, setLiveStatus, setStatusAt, issueActivity, displayAgents, projectFilter
 }: ActivityTabProps) {
   const [activityFilter, setActivityFilter] = useState<'all'|'issue'|'agent'|'pr'>('all')
   const [activityLimit, setActivityLimit] = useState(100)

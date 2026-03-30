@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Button, Input, Textarea, Select, FormGroup, EmptyState, Badge } from '@/components/ui'
-import { Kanban } from 'lucide-react'
+import { Kanban, Search, X } from 'lucide-react'
 import { Chip } from '@/lib/mc-atoms'
 
 function MultiSelect({ label, options, selected, onToggle, displayFn }: {
@@ -48,6 +48,7 @@ interface Task {
   steps_to_reproduce?: string; expected_behavior?: string;
   actual_behavior?: string; environment?: string;
   pr_url?: string; blocked_by?: string; parent_id?: string;
+  task_key?: string;
 }
 
 const RESOLUTION_OPTIONS: { value: string; label: string; emoji: string }[] = [
@@ -127,6 +128,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [statusFilter, setStatusFilter] = useState<'active'|'all'|'done'|'backlog'>('active')
   const [boardSearch, setBoardSearch] = useState('')
   const [boardLimit, setBoardLimit] = useState(100)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [boardGroupBy, setBoardGroupBy] = useState<'status'|'feature'|'business'>(() => { try { return (localStorage.getItem('board-group-by') as 'status'|'feature'|'business') || 'status' } catch { return 'status' } })
   const groupByFeature = boardGroupBy === 'feature'
   const groupByBusiness = boardGroupBy === 'business'
@@ -232,7 +235,13 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee?.toLowerCase() ?? '')) return false
     if (filterSprint && t.sprint !== filterSprint) return false
     if (featureFilter && (t as any).parent_id !== featureFilter) return false
-    if (boardSearch.trim() && !t.title.toLowerCase().includes(boardSearch.trim().toLowerCase())) return false
+    if (boardSearch.trim()) {
+      const q = boardSearch.trim().toLowerCase()
+      const matchTitle = t.title.toLowerCase().includes(q)
+      const matchKey = (t.task_key || '').toLowerCase().includes(q)
+      const matchAssignee = (ASSIGNEE_MAP[t.assignee?.toLowerCase() ?? '']?.name ?? t.assignee ?? '').toLowerCase().includes(q)
+      if (!matchTitle && !matchKey && !matchAssignee) return false
+    }
     return true
   })
   const filtered = allFiltered.slice(0, boardLimit)
@@ -279,13 +288,28 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             {sprints.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>)}
           </Select>
           {hasAnyFilter && <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-400 hover:text-red-300">Clear all</Button>}
-          {/* Search bar */}
-          <Input
-            placeholder="Search tasks…"
-            value={boardSearch}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBoardSearch(e.target.value)}
-            className="w-40 text-xs py-1"
-          />
+          {/* Search bar — collapses to icon on mobile */}
+          <div className="relative flex items-center">
+            <button onClick={() => { setMobileSearchOpen(v => !v); setTimeout(() => searchInputRef.current?.focus(), 50) }}
+              className="md:hidden text-white/40 hover:text-white/70 p-1 rounded transition-colors">
+              <Search size={14} />
+            </button>
+            <div className={`${mobileSearchOpen ? 'flex' : 'hidden'} md:flex items-center relative`}>
+              <Search size={12} className="absolute left-2 text-white/30 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                placeholder="Search title, key, assignee…"
+                value={boardSearch}
+                onChange={e => setBoardSearch(e.target.value)}
+                className="w-48 bg-transparent border border-white/10 rounded-lg text-xs text-white py-1 pl-7 pr-6 outline-none focus:border-white/20 placeholder-white/30"
+              />
+              {boardSearch && (
+                <button onClick={() => setBoardSearch('')} className="absolute right-2 text-white/30 hover:text-white/70">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
           {/* Group by pills */}
           <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#080808'}}>
             <button onClick={() => { setBoardGroupBy('status'); localStorage.setItem('board-group-by','status') }}
