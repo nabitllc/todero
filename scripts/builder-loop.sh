@@ -100,7 +100,7 @@ Step 2: For each issue in order:
     \"commit_sha\": \"<git rev-parse HEAD output>\",
     \"regression_test\": \"<command or manual steps to verify no regression>\"
   }
-  The API will auto-assign the correct reviewer based on test_tier (P0=designer, P1=tester, P2=po, P3=main).
+  The API will auto-assign the correct reviewer based on severity (S0=designer, S1=tester, S2=po, S3=main).
   If regression_test is empty, the API will reject the request — you MUST provide it.
 - ⚠️ NEVER create new tester/reviewer child issues. NEVER POST a new issue for review.
   Just PATCH the original issue to status=in_review. The API handles reviewer routing.

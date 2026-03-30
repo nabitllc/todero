@@ -564,10 +564,10 @@ export async function PATCH(req: NextRequest) {
       if (toStatus === 'open') {
         const missingFields: string[] = []
         if (!merged.priority) missingFields.push('priority')
+        if (!merged.severity) missingFields.push('severity')
         if (!merged.sprint) missingFields.push('sprint')
         if (!merged.assignee) missingFields.push('assignee')
         if (!merged.acceptance_criteria) missingFields.push('acceptance_criteria')
-        if (!merged.severity) return NextResponse.json({ error: 'severity is required before moving to open.' }, { status: 400 })
         if (!merged.reviewer) return NextResponse.json({ error: 'reviewer is required before moving to open.' }, { status: 400 })
         if (!merged.owner) return NextResponse.json({ error: 'owner is required before moving to open.' }, { status: 400 })
         if (missingFields.length > 0) {
