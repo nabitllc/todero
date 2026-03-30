@@ -37,11 +37,11 @@ const RES_LABEL: Record<string, string> = {
   cannot_reproduce: '❓ cannot reproduce'
 }
 
-function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; test_tier?: string }) {
+function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string }) {
   const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
   const key = issue.task_key ?? '?'
   const res = RES_LABEL[issue.resolution_type ?? ''] ?? issue.resolution_type ?? 'done'
-  const tier = issue.test_tier ? ` · ${issue.test_tier}` : ''
+  const tier = issue.severity ? ` · ${issue.severity}` : ''
   const msg = `${emoji} **[${key}]** ${issue.title ?? ''} · ${res}${tier}`
 
   fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
@@ -118,7 +118,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const { title, description, status, assignee, project, priority, type, due_date,
-          acceptance_criteria, sprint, parent_id, test_tier, resolution_type,
+          acceptance_criteria, sprint, parent_id, severity, resolution_type,
           feature_branch, pr_url, task_key: _clientKey, task_number: _clientNum } = body
 
   // ── Enforcement: no issue without title + project + acceptance_criteria ──
@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
       assignee: effectiveAssignee, project,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
       acceptance_criteria, sprint, parent_id,
-      ...(test_tier ? { test_tier } : {}),
+      ...(severity ? { severity } : {}),
       resolution_type, feature_branch, pr_url,
       task_key: generated.task_key, task_number: generated.task_number,
     })
@@ -344,13 +344,19 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
-    // To 'open': require priority, sprint, assignee, acceptance_criteria
+    // To 'open': require priority, sprint, assignee, acceptance_criteria, AND severity (set by PO/KAOS)
     if (fields.status === 'open') {
       const missing: string[] = []
       if (!merged.priority) missing.push('priority')
       if (!merged.sprint) missing.push('sprint')
       if (!merged.assignee) missing.push('assignee')
       if (!merged.acceptance_criteria) missing.push('acceptance_criteria')
+      if (!merged.severity) {
+        return NextResponse.json(
+          { error: 'severity is required before moving to open. Set S0-S3 based on change risk.' },
+          { status: 400 }
+        )
+      }
       if (missing.length > 0) {
         return NextResponse.json(
           { error: `Cannot move to open: missing required fields: ${missing.join(', ')}. All open issues need priority, sprint, assignee, and acceptance_criteria.` },
@@ -384,20 +390,20 @@ export async function PATCH(req: NextRequest) {
           { status: 400 }
         )
       }
-      // Auto-set reviewer assignee based on test_tier (not hardcoded tester)
-      // P0: designer (UX + functional), P1: tester (QA), P2: po (spot-check), P3: main (quick check)
+      // Auto-set reviewer assignee based on severity (not hardcoded tester)
+      // S0: designer (UX + functional), S1: tester (QA), S2: po (spot-check), S3: main (quick check)
       if (!fields.assignee) {
-        const tier = fields.test_tier ?? before?.test_tier
-        if (tier === 'P0') {
+        const tier = fields.severity ?? before?.severity
+        if (tier === 'S0') {
           fields.assignee = 'designer'
-        } else if (tier === 'P1') {
+        } else if (tier === 'S1') {
           fields.assignee = 'tester'
-        } else if (tier === 'P2') {
+        } else if (tier === 'S2') {
           fields.assignee = 'po'
-        } else if (tier === 'P3') {
+        } else if (tier === 'S3') {
           fields.assignee = 'main'
         } else {
-          fields.assignee = 'tester'  // fallback if test_tier not set
+          fields.assignee = 'tester'  // fallback if severity not set
         }
       }
     }
@@ -592,7 +598,7 @@ export async function PATCH(req: NextRequest) {
       acceptance_criteria: 'Address all UX review feedback. Re-submit for UX review.',
       sprint: new Date().toISOString().split('T')[0],
       parent_id: before.parent_id,
-      test_tier: 'P2'
+      severity: 'S2'
     })
     console.log(`[ux-gate] UX review failed for ${data.task_key} → fix task created for builder`)
   }
