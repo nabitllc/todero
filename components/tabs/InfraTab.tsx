@@ -28,6 +28,46 @@ const STATUS_STYLE: Record<string, string> = {
   canceled: 'text-white/40 border-white/10 bg-white/5',
 }
 
+// INF-204: Sparkline SVG component for 7-day cost trend
+function CostSparkline({ data }: { data: { date: string; cost: number }[] }) {
+  if (!data || data.length < 2) return null
+  const costs = data.map(d => d.cost)
+  const max = Math.max(...costs, 0.01)
+  const w = 180
+  const h = 40
+  const pad = 2
+  const points = costs.map((c, i) => {
+    const x = pad + (i / (costs.length - 1)) * (w - pad * 2)
+    const y = h - pad - (c / max) * (h - pad * 2)
+    return `${x},${y}`
+  })
+  const lastCost = costs[costs.length - 1]
+  const prevCost = costs[costs.length - 2]
+  const trend = lastCost > prevCost ? '#ef4444' : lastCost < prevCost ? '#22c55e' : '#666'
+  return (
+    <div className="flex items-center gap-2">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
+        <polyline
+          points={points.join(' ')}
+          fill="none"
+          stroke={trend}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Dot on last point */}
+        {(() => {
+          const lastPt = points[points.length - 1].split(',')
+          return <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill={trend} />
+        })()}
+      </svg>
+      <div className="text-[9px] text-white/30">
+        {data.map(d => d.date.slice(5)).join(' · ')}
+      </div>
+    </div>
+  )
+}
+
 export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefresh }: {
   liveStatus: any
   agoSec: number
@@ -36,12 +76,19 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
 }) {
             const [deploys, setDeploys] = useState<DeployRecord[]>([])
             const [deploysLoaded, setDeploysLoaded] = useState(false)
+            // INF-204: 7-day cost history for sparkline
+            const [costHistory, setCostHistory] = useState<{ date: string; cost: number; tokens: number }[]>([])
 
             useEffect(() => {
               fetch('/api/deploy-history?limit=20')
                 .then(r => r.json())
                 .then(d => { if (Array.isArray(d)) setDeploys(d); setDeploysLoaded(true) })
                 .catch(() => setDeploysLoaded(true))
+              // INF-204: fetch cost history
+              fetch('/api/settings/cost-history')
+                .then(r => r.json())
+                .then(d => { if (Array.isArray(d)) setCostHistory(d) })
+                .catch(() => {})
             }, [])
             const ls = liveStatus
             const orRemaining = ls?.openrouter?.remaining ?? 9.57
@@ -146,6 +193,13 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                   </div>
                   {ls && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg" title="Live"/>}
                 </div>
+                {/* INF-204: 7-day cost trend sparkline */}
+                {costHistory.length > 0 && (
+                  <div className="mb-4 p-3 rounded-xl border border-white/5" style={{ background: '#0a0a0a' }}>
+                    <p className="text-white/30 text-[9px] uppercase tracking-widest mb-2">7-Day Cost Trend</p>
+                    <CostSparkline data={costHistory} />
+                  </div>
+                )}
                 <div className="space-y-2">
                   {Object.entries(usageByModel).sort((a,b)=>b[1]-a[1]).map(([model, cost])=>{
                     const pct = usageCost > 0 ? Math.round((cost/usageCost)*100) : 0

@@ -8,6 +8,31 @@ import IssuePreviewCard from '@/components/IssuePreviewCard'
 interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string }
 interface ChatConversation { id: string; title: string; model: string; messages: ChatMessage[]; createdAt: number; updatedAt: number; pinned?: boolean; project?: string|null; agent_id?: string; system_prompt?: string|null; forked_from?: string|null }
 
+// MC-157: Auto-scroll lock indicator types
+interface ScrollLockState {
+  locked: boolean            // true = user scrolled up, auto-scroll paused
+  missedMessages: number     // count of new messages since lock engaged
+  lastScrollTop: number      // last scroll position for lock detection
+}
+
+// MC-160: Character/token counter types
+interface InputCounterState {
+  charCount: number
+  tokenEstimate: number
+  charLimit: number          // visual warning threshold for chars
+  tokenLimit: number         // visual warning threshold for tokens
+}
+
+// MC-134: File preview card types
+interface FilePreviewMeta {
+  name: string
+  extension: string
+  sizeKB: number
+  icon: string
+  language: string | null
+  truncated: boolean
+}
+
 const EmptyState = ({icon, message, action}: {icon:string, message:string, action?:string}) => (
   <div className='flex flex-col items-center justify-center py-16 text-white/50'>
     <span className='text-4xl mb-3'>{icon}</span>
@@ -240,6 +265,8 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [copiedId, setCopiedId] = useState<string|null>(null)
   const [lastUserMsg, setLastUserMsg] = useState<ChatMessage|null>(null)
   const [userScrolledUp, setUserScrolledUp] = useState(false)
+  // MC-158: scroll lock indicator core state
+  const [scrollLockState, setScrollLockState] = useState<ScrollLockState>({ locked: false, missedMessages: 0, lastScrollTop: 0 })
   const [renamingTitle, setRenamingTitle] = useState<string|null>(null)
   const [selectedAgent, setSelectedAgent] = useState<string>('main')
   const [selectedModel, setSelectedModel] = useState<string>('default')
@@ -419,27 +446,44 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   }, [])
 
   // Detect when user scrolls up (so we don't hijack scroll during streaming)
+  // MC-158: also track scroll lock state and last scroll position
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
     const onScroll = () => {
       const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
       setUserScrolledUp(!atBottom)
+      setScrollLockState(prev => ({
+        ...prev,
+        locked: !atBottom,
+        lastScrollTop: container.scrollTop,
+        // Reset missed count when user scrolls back to bottom
+        missedMessages: atBottom ? 0 : prev.missedMessages,
+      }))
     }
     container.addEventListener('scroll', onScroll, { passive: true })
     return () => container.removeEventListener('scroll', onScroll)
   }, [activeChat])
 
   // Auto-scroll to bottom only when user hasn't scrolled up
+  // MC-158: increment missed messages when new messages arrive while locked
+  const prevMsgCountRef = useRef(0)
   useEffect(() => {
+    const currentCount = activeConv?.messages.length ?? 0
+    if (userScrolledUp && currentCount > prevMsgCountRef.current) {
+      const delta = currentCount - prevMsgCountRef.current
+      setScrollLockState(prev => ({ ...prev, missedMessages: prev.missedMessages + delta }))
+    }
     if (!userScrolledUp) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
+    prevMsgCountRef.current = currentCount
   }, [chats, loading, userScrolledUp])
 
-  // Scroll to bottom when switching chats
+  // Scroll to bottom when switching chats — reset lock state
   useEffect(() => {
     setUserScrolledUp(false)
+    setScrollLockState({ locked: false, missedMessages: 0, lastScrollTop: 0 })
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'instant' }), 50)
   }, [activeChat])
 
@@ -1501,10 +1545,26 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                               togglePin(c.id, !c.pinned)
                             }}
                           >
-                            {/* Feature 3: agent badge */}
+                            {/* MC-150: agent badge + double-click inline rename */}
                             <div className="flex items-center justify-between gap-1">
+                              {renamingTitle !== null && activeChat === c.id ? (
+                                <input
+                                  autoFocus
+                                  value={renamingTitle}
+                                  onChange={e => setRenamingTitle(e.target.value)}
+                                  onBlur={() => renameChat(c.id, renamingTitle)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') renameChat(c.id, renamingTitle)
+                                    if (e.key === 'Escape') setRenamingTitle(null)
+                                  }}
+                                  onClick={e => e.stopPropagation()}
+                                  className="flex-1 bg-transparent border-b border-purple-500/50 text-white text-xs font-medium outline-none px-0 py-0 min-w-0"
+                                  style={{ lineHeight: '1.4' }}
+                                />
+                              ) : (
                               <p
                                 className="font-medium truncate flex-1 pr-1"
+                                title="Double-click to rename"
                                 onDoubleClick={(e) => {
                                   e.stopPropagation()
                                   setActiveChat(c.id)
@@ -1512,6 +1572,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                                 }}>
                                 {c.pinned ? '📌 ' : ''}{c.title}
                               </p>
+                              )}
                               <div className="flex items-center gap-1 shrink-0">
                                 {/* Feature 19: forked badge */}
                                 {c.forked_from && <span className="text-[9px] text-white/30" title="Forked conversation">⑂</span>}
@@ -2111,15 +2172,30 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Back to bottom button — fixed bottom-right of chat column */}
+            {/* MC-159: Auto-scroll lock indicator + back to bottom */}
             {userScrolledUp && (
-              <div className="absolute bottom-24 right-6 z-40">
+              <div className="absolute bottom-24 right-6 z-40 flex flex-col items-end gap-2">
+                {/* Lock indicator pill */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium"
+                  style={{ background: '#18181b', border: '1px solid #f59e0b88', color: '#fbbf24' }}>
+                  <span>🔒</span>
+                  <span>Auto-scroll paused</span>
+                  {scrollLockState.missedMessages > 0 && (
+                    <span className="ml-1 px-1.5 py-0 rounded-full text-[9px] font-bold" style={{ background: '#a855f7', color: '#fff' }}>
+                      {scrollLockState.missedMessages} new
+                    </span>
+                  )}
+                </div>
                 <button
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold shadow-xl transition-all"
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold shadow-xl transition-all hover:scale-105"
                   style={{ background: '#18181b', border: '2px solid #a855f7', color: '#e4d4f4', boxShadow: '0 0 12px #a855f744' }}
-                  onClick={() => { setUserScrolledUp(false); messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
-                  title="Back to bottom">
-                  ↓ Back to bottom
+                  onClick={() => {
+                    setUserScrolledUp(false)
+                    setScrollLockState(prev => ({ ...prev, locked: false, missedMessages: 0 }))
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+                  }}
+                  title="Resume auto-scroll">
+                  🔓 Resume scroll
                 </button>
               </div>
             )}
@@ -2138,25 +2214,51 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   </button>
                 </div>
               )}
-              {selectedFile && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs mb-2"
-                  style={{background:'#1a1a2e', border:'1px solid #2a2a4a'}}>
-                  <span className="text-base">{
-                    selectedFile.name.endsWith('.ts')||selectedFile.name.endsWith('.tsx') ? '🟦' :
-                    selectedFile.name.endsWith('.js')||selectedFile.name.endsWith('.jsx') ? '🟨' :
-                    selectedFile.name.endsWith('.py') ? '🐍' :
-                    selectedFile.name.endsWith('.md') ? '📝' :
-                    selectedFile.name.endsWith('.json') ? '📋' :
-                    selectedFile.name.endsWith('.css') ? '🎨' :
-                    selectedFile.name.endsWith('.html') ? '🌐' : '📄'
-                  }</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-white/70 font-medium truncate">{selectedFile.name}</div>
-                    <div className="text-white/30 text-[9px]">{(selectedFile.content.length/1024).toFixed(1)} KB</div>
+              {/* MC-134: File type preview card on attach */}
+              {selectedFile && (() => {
+                const ext = selectedFile.name.split('.').pop()?.toLowerCase() || ''
+                const FILE_ICON_MAP: Record<string, { icon: string; color: string; lang: string }> = {
+                  ts: { icon: '🟦', color: '#3178c6', lang: 'TypeScript' },
+                  tsx: { icon: '🟦', color: '#3178c6', lang: 'TypeScript React' },
+                  js: { icon: '🟨', color: '#f7df1e', lang: 'JavaScript' },
+                  jsx: { icon: '🟨', color: '#f7df1e', lang: 'JavaScript React' },
+                  py: { icon: '🐍', color: '#3776ab', lang: 'Python' },
+                  rs: { icon: '🦀', color: '#dea584', lang: 'Rust' },
+                  go: { icon: '🔵', color: '#00add8', lang: 'Go' },
+                  md: { icon: '📝', color: '#888', lang: 'Markdown' },
+                  json: { icon: '📋', color: '#999', lang: 'JSON' },
+                  css: { icon: '🎨', color: '#264de4', lang: 'CSS' },
+                  html: { icon: '🌐', color: '#e34c26', lang: 'HTML' },
+                  sql: { icon: '🗄️', color: '#336791', lang: 'SQL' },
+                  yml: { icon: '⚙️', color: '#cb171e', lang: 'YAML' },
+                  yaml: { icon: '⚙️', color: '#cb171e', lang: 'YAML' },
+                  sh: { icon: '💻', color: '#89e051', lang: 'Shell' },
+                  csv: { icon: '📊', color: '#217346', lang: 'CSV' },
+                }
+                const meta = FILE_ICON_MAP[ext] || { icon: '📄', color: '#888', lang: ext.toUpperCase() || 'Text' }
+                const sizeKB = selectedFile.content.length / 1024
+                const lineCount = selectedFile.content.split('\n').length
+                const truncated = selectedFile.content.length > 32768
+                return (
+                  <div className="rounded-xl mb-2 overflow-hidden" style={{ border: `1px solid ${meta.color}40`, background: `${meta.color}08` }}>
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0" style={{ background: `${meta.color}20` }}>
+                        {meta.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white/80 text-xs font-medium truncate">{selectedFile.name}</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[9px] px-1.5 py-0 rounded-full" style={{ background: `${meta.color}25`, color: meta.color }}>{meta.lang}</span>
+                          <span className="text-white/30 text-[9px]">{sizeKB.toFixed(1)} KB</span>
+                          <span className="text-white/30 text-[9px]">{lineCount} lines</span>
+                          {truncated && <span className="text-yellow-500 text-[9px]">⚠ 32KB limit</span>}
+                        </div>
+                      </div>
+                      <button onClick={() => setSelectedFile(null)} className="text-white/30 hover:text-white/50 text-sm px-1 transition-colors">✕</button>
+                    </div>
                   </div>
-                  <button onClick={() => setSelectedFile(null)} className="text-white/30 hover:text-white/40 text-xs px-1">✕</button>
-                </div>
-              )}
+                )
+              })()}
 
               {/* NEW: Image URL preview */}
               {imageUrlPreview && (
@@ -2501,11 +2603,31 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   <span className="ml-1 text-white/20">right-click conv to pin</span>
                 </p>
                 <div className="flex items-center gap-2">
-                  {inputVal.length > 0 && (
-                    <span className={`text-[9px] tabular-nums font-mono ${inputVal.length > 8000 ? 'text-red-500' : inputVal.length > 4000 ? 'text-yellow-500' : 'text-white/20'}`}>
-                      {inputVal.length.toLocaleString()} chars · ~{Math.ceil(inputVal.length/4)} tokens
-                    </span>
-                  )}
+                  {/* MC-162: Enhanced character/token counter with progress indicator */}
+                  {(() => {
+                    const charCount = inputVal.length
+                    const tokenEstimate = Math.ceil(charCount / 4)
+                    const charLimit = 10000
+                    const tokenLimit = 2500
+                    const pct = Math.min(100, Math.round((charCount / charLimit) * 100))
+                    const color = charCount > charLimit ? '#ef4444' : charCount > charLimit * 0.7 ? '#eab308' : '#555'
+                    return charCount > 0 ? (
+                      <div className="flex items-center gap-1.5">
+                        {/* MC-161: Mini progress arc */}
+                        <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
+                          <circle cx="8" cy="8" r="6" fill="none" stroke="#222" strokeWidth="2" />
+                          <circle cx="8" cy="8" r="6" fill="none" stroke={color} strokeWidth="2"
+                            strokeDasharray={`${pct * 0.377} 37.7`}
+                            strokeLinecap="round"
+                            transform="rotate(-90 8 8)" />
+                        </svg>
+                        <span className={`text-[9px] tabular-nums font-mono`} style={{ color }}>
+                          {charCount.toLocaleString()} chars · ~{tokenEstimate.toLocaleString()} tok
+                          {charCount > charLimit && ' ⚠'}
+                        </span>
+                      </div>
+                    ) : null
+                  })()}
                   {/* Task 7: Prompt templates popover */}
                   <div className="relative" ref={promptTemplatesRef}>
                     <button

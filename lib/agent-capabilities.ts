@@ -47,3 +47,45 @@ export function getFloorAgents(): AgentCapability[] {
 export function getPlannedAgents(): AgentCapability[] {
   return Object.values(AGENT_REGISTRY).filter(a => !a.floor)
 }
+
+// INF-237: Core logic for agent capability registry operations
+
+export function getAgentCapabilities(id: string): string[] {
+  return AGENT_REGISTRY[id as AgentId]?.capabilities ?? []
+}
+
+export function hasCapability(agentId: string, capability: string): boolean {
+  const caps = getAgentCapabilities(agentId)
+  return caps.some(c => c.toLowerCase() === capability.toLowerCase())
+}
+
+export function findAgentsByCapability(capability: string): AgentCapability[] {
+  return Object.values(AGENT_REGISTRY).filter(a =>
+    a.capabilities.some(c => c.toLowerCase().includes(capability.toLowerCase()))
+  )
+}
+
+export function getRegistrySummary(): { total: number; floor: number; planned: number; capabilities: string[] } {
+  const all = Object.values(AGENT_REGISTRY)
+  const allCaps = new Set(all.flatMap(a => a.capabilities))
+  return {
+    total: all.length,
+    floor: all.filter(a => a.floor).length,
+    planned: all.filter(a => !a.floor).length,
+    capabilities: Array.from(allCaps).sort(),
+  }
+}
+
+// Persist capability update to API
+export async function updateAgentCapability(agentId: string, updates: { capabilities?: string[]; role?: string; description?: string; floor?: boolean }): Promise<boolean> {
+  try {
+    const res = await fetch('/api/agents', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: agentId, ...updates }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
