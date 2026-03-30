@@ -1,5 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { exec as execAsync } from 'child_process'
+
+// Item 4: Assignee → OpenClaw agent ID mapping for immediate activation
+const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
+  'tester': 'tester',
+  'scout': 'scout',
+  'ops': 'ops',
+  'kemuni-sme': 'kemuni-sme',
+  'vespera-sme': 'vespera-sme',
+  'main': 'main',
+  'KAOS': 'main',
+  'builder': 'main',   // builder isn't a real OpenClaw agent yet — notify main
+  'michael': null,     // human — skip
+}
+
+// Fire-and-forget: activate agent immediately on status transition
+function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string) {
+  const agentId = ASSIGNEE_AGENT_MAP[assignee]
+  if (!agentId) return
+  const msg = status === 'in_review'
+    ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
+    : `Issue ${taskKey} is ready: ${title}. Pick it up and start work.`
+  const cmd = `openclaw agent --agent ${agentId} --message ${JSON.stringify(msg)} 2>/dev/null`
+  execAsync(cmd, { timeout: 30000 }, () => {}) // fire-and-forget
+}
 
 const DISCORD_CHANNEL = '1487584901678104698'
 const PROJECT_EMOJI: Record<string, string> = {
@@ -452,6 +477,15 @@ export async function PATCH(req: NextRequest) {
   const resolvedType = fields.resolution_type ?? data?.resolution_type
   if (fields.status === 'done' && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType })
+  }
+
+  // ── Item 4: Immediately activate next agent on status transition ──
+  // Fire-and-forget: don't wait, don't block, polling automations are the fallback
+  if (fields.status && data) {
+    const newAssignee = data.assignee ?? fields.assignee
+    if (newAssignee && (fields.status === 'open' || fields.status === 'in_review')) {
+      activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
+    }
   }
 
   // ── PR review notification when pr_url is first set ──
