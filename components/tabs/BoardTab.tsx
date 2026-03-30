@@ -68,7 +68,7 @@ const BOARD_COLUMNS = [
   { id:'backlog',    label:'Backlog',          color:'#71717a', statuses:['backlog'] },
   { id:'open',       label:'Open',             color:'#3b82f6', statuses:['open'] },
   { id:'in_progress',label:'In Progress',      color:'#818cf8', statuses:['in_progress'] },
-  { id:'in_review',  label:'In Review',        color:'#f97316', statuses:['code_review','product_review'] },
+  { id:'in_review',  label:'In Review',        color:'#f97316', statuses:['in_review','code_review','product_review'] },
   { id:'approved',   label:'Ready for Deploy', color:'#22c55e', statuses:['approved'] },
   { id:'completed',  label:'Completed',        color:'#14b8a6', statuses:['completed','released'] },
 ]
@@ -146,7 +146,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [detailTask, setDetailTask] = useState<Task|null>(null)
   const [bugDetailsOpen, setBugDetailsOpen] = useState(false)
   const [closedConfirm, setClosedConfirm] = useState<string|null>(null)
-  const [statusFilter, setStatusFilter] = useState<'active'|'all'|'done'|'backlog'>('active')
+  const [statusFilter, setStatusFilter] = useState<'active'|'all'|'closed'|'backlog'>('active')
   const [boardSearch, setBoardSearch] = useState('')
   const [boardLimit, setBoardLimit] = useState(100)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -243,9 +243,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
   const allFiltered = tasks.filter(t => {
-    if (t.status === 'closed' || t.status === 'cancelled') return false
-    if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved'].includes(t.status)) return false
-    if (statusFilter === 'done' && !['completed', 'released'].includes(t.status)) return false
+    if (statusFilter !== 'closed' && (t.status === 'closed' || t.status === 'cancelled')) return false
+    if (statusFilter === 'active' && !['open', 'in_progress', 'in_review', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
+    if (statusFilter === 'closed' && t.status !== 'closed') return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false
     if (projectFilter && (t as any).project !== projectFilter) return false
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
@@ -349,14 +349,14 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         </div>
         {/* Status filter pills */}
         <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-          {(['active','done','backlog','all'] as const).map(f => (
+          {(['active','closed','backlog','all'] as const).map(f => (
             <button key={f} onClick={() => setStatusFilter(f)}
               className={`text-xs px-3 py-1 rounded-full shrink-0 transition-colors ${
                 statusFilter === f
                   ? 'bg-white text-black font-medium'
                   : 'bg-white/10 text-white/50 hover:text-white/70'
               }`}>
-              {f === 'active' ? 'Active' : f.charAt(0).toUpperCase() + f.slice(1)}
+              {f === 'active' ? 'Active' : f === 'closed' ? 'Closed' : f.charAt(0).toUpperCase() + f.slice(1)}
               {statusFilter === f ? ' ✓' : ''}
             </button>
           ))}
