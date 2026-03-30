@@ -192,13 +192,55 @@ export async function POST(req: NextRequest) {
     ? (description ? `${description}\n\n${routingNote}` : routingNote)
     : description
 
+  // ── Dedup guard: reject duplicate tester/reviewer issues ──
+  // If a review/tester issue with same title OR same parent_id+type already exists
+  // and is not done/cancelled, block creation to prevent runaway duplicates
+  const isTesterIssue = (title ?? '').startsWith('🧪 Tester:') || (title ?? '').includes('Tester: Review')
+  if (isTesterIssue || type === 'review') {
+    // Check by exact title match
+    const { data: existingByTitle } = await supabase
+      .from('issues')
+      .select('id, task_key, status')
+      .eq('title', title)
+      .not('status', 'in', '("done","cancelled")')
+      .maybeSingle()
+    if (existingByTitle) {
+      return NextResponse.json(
+        { error: `Duplicate review issue blocked: "${title}" already exists as ${existingByTitle.task_key} (${existingByTitle.status}). Update the existing issue instead.` },
+        { status: 409 }
+      )
+    }
+    // Check by parent_id+type
+    if (parent_id && type === 'review') {
+      const { data: existingByParent } = await supabase
+        .from('issues')
+        .select('id, task_key, status')
+        .eq('parent_id', parent_id)
+        .eq('type', 'review')
+        .not('status', 'in', '("done","cancelled")')
+        .maybeSingle()
+      if (existingByParent) {
+        return NextResponse.json(
+          { error: `Duplicate review issue blocked: parent ${parent_id} already has a review issue (${existingByParent.task_key}). Update the existing one instead.` },
+          { status: 409 }
+        )
+      }
+    }
+  }
+
+  // ── Default new issues to backlog if not explicitly set ──
+  // Tester/review issues should never auto-open
+  const finalStatus = isTesterIssue || type === 'review'
+    ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
+    : effectiveStatus
+
   // MC-210: Always generate task_key server-side to prevent race conditions
   const generated = await generateTaskKey(project)
 
   const { data, error } = await supabase
     .from('issues')
     .insert({
-      title, description: effectiveDescription, status: effectiveStatus,
+      title, description: effectiveDescription, status: finalStatus,
       assignee: effectiveAssignee, project,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
       acceptance_criteria, sprint, parent_id,
