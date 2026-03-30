@@ -330,7 +330,7 @@ function notifyTestFailure(issue: { task_key?: string; title?: string; project?:
 
 export async function PATCH(req: NextRequest) {
   const body = await req.json()
-  const { id: rawId, task_key, ...fields } = body
+  const { id: rawId, task_key, transitioned_by: _transitionedBy, ...fields } = body
 
   // ── Resolve UUID: accept either id (UUID) or task_key (e.g. INF-254) ──
   let id = rawId
@@ -356,6 +356,46 @@ export async function PATCH(req: NextRequest) {
 
   // ── MC-314: Transition validation — enforce required fields per status change ──
   if (fields.status) {
+  // ── Task 5: Role-based transition conditions ──
+  if (fields.status && before?.status && fields.status !== before.status) {
+    const fromStatus = before.status as string
+    const toStatus = fields.status as string
+    const transitionedBy: string | undefined = _transitionedBy as string | undefined
+    const issueReviewer = fields.reviewer ?? before?.reviewer
+
+    // blocked → open: any agent (assignee) can transition back — no restriction
+    // backlog → open: only po or main can transition
+    if (fromStatus === 'backlog' && toStatus === 'open') {
+      if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
+        return NextResponse.json(
+          { error: 'Only po or main can execute this transition' },
+          { status: 403 }
+        )
+      }
+    }
+
+    // code_review → approved or code_review → open: only reviewer can transition
+    if (fromStatus === 'code_review' && (toStatus === 'approved' || toStatus === 'open')) {
+      if (!transitionedBy || transitionedBy !== issueReviewer) {
+        return NextResponse.json(
+          { error: `Only ${issueReviewer ?? 'reviewer'} can execute this transition` },
+          { status: 403 }
+        )
+      }
+    }
+
+    // product_review → completed or product_review → open: only reviewer can transition
+    if (fromStatus === 'product_review' && (toStatus === 'completed' || toStatus === 'open')) {
+      if (!transitionedBy || transitionedBy !== issueReviewer) {
+        return NextResponse.json(
+          { error: `Only ${issueReviewer ?? 'reviewer'} can execute this transition` },
+          { status: 403 }
+        )
+      }
+    }
+  }
+
+
     const merged = { ...before, ...fields }
 
     // Backlog constraint: reject if sprint is set
@@ -451,9 +491,17 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    // To 'done': require resolution_type AND reviewer_notes AND test_status='passed'
-    // Fallback: accept reviewer notes in description (for backward compat before DB migration)
+    // ── Retired status guard: 'done' is retired, use 'completed' or 'closed' ──
     if (fields.status === 'done') {
+      return NextResponse.json(
+        { error: "done is retired, use completed or closed" },
+        { status: 400 }
+      )
+    }
+
+    // To 'completed': require resolution_type AND reviewer_notes AND test_status='passed'
+    // Fallback: accept reviewer notes in description (for backward compat before DB migration)
+    if (fields.status === 'completed') {
       const hasReviewerNotes = merged.reviewer_notes ||
         (merged.description && /REVIEW/i.test(merged.description))
       const missing: string[] = []
@@ -462,7 +510,7 @@ export async function PATCH(req: NextRequest) {
       if (merged.test_status !== 'passed') missing.push('test_status=passed')
       if (missing.length > 0) {
         return NextResponse.json(
-          { error: `Cannot move to done: missing required fields: ${missing.join(', ')}. Tester must set resolution_type, reviewer_notes, and test_status=passed.` },
+          { error: `Cannot move to completed: missing required fields: ${missing.join(', ')}. Tester must set resolution_type, reviewer_notes, and test_status=passed.` },
           { status: 400 }
         )
       }
@@ -525,8 +573,8 @@ export async function PATCH(req: NextRequest) {
       fields.submitted_at = now
     }
 
-    // → done: set completed_at and reviewed_by (whoever is assignee at completion time)
-    if (fields.status === 'done') {
+    // → completed: set completed_at and reviewed_by (whoever is assignee at completion time)
+    if (fields.status === 'completed') {
       fields.completed_at = now
       const completingAssignee = fields.assignee ?? before?.assignee
       if (completingAssignee && !fields.reviewed_by) {
@@ -600,9 +648,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Instant Discord notification on every done ──
+  // ── Instant Discord notification on every completed ──
   const resolvedType = fields.resolution_type ?? data?.resolution_type
-  if (fields.status === 'done' && data) {
+  if (fields.status === 'completed' && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType })
   }
 
@@ -630,7 +678,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── INF-258: UX gate — when UX review child is marked done, complete the parent ──
-  if (fields.status === 'done' && before?.assignee === 'ux' && before?.parent_id) {
+  if (fields.status === 'completed' && before?.assignee === 'ux' && before?.parent_id) {
     const parentId = before.parent_id
     const uxKey = before.task_key ?? data?.task_key ?? '?'
 
@@ -688,7 +736,7 @@ export async function PATCH(req: NextRequest) {
         .select('id, status')
         .eq('parent_id', parentId);
 
-      const allDone = children && children.length > 0 && children.every(c => c.status === 'done');
+      const allDone = children && children.length > 0 && children.every(c => c.status === 'completed' || c.status === 'done');
 
       if (allDone) {
         await supabase
