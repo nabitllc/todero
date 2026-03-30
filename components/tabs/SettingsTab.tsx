@@ -2,6 +2,8 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { StatusDot } from '@/components/ui/StatusDot'
+import { THEMES, THEME_IDS } from '@/lib/theme'
+import type { ThemeId } from '@/lib/theme'
 
 interface UsageData {
   supabase: { dbBytes: number | null; dbLimitBytes: number; plan: string; lastChecked: string }
@@ -118,10 +120,64 @@ export default function SettingsTab() {
     )
   }
 
+  // INF-223: Theme selector state
+  const [currentTheme, setCurrentTheme] = useState<ThemeId>('dark')
+  const [themeSaving, setThemeSaving] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/theme').then(r => r.json()).then(d => { if (d.themeId) setCurrentTheme(d.themeId) }).catch(() => {})
+  }, [])
+
+  const handleThemeChange = async (themeId: ThemeId) => {
+    setCurrentTheme(themeId)
+    setThemeSaving(true)
+    try {
+      await fetch('/api/theme', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ themeId }) })
+      // Apply theme to body
+      const t = THEMES[themeId]
+      document.body.style.background = t.bg
+      document.documentElement.style.setProperty('--mc-bg', t.bg)
+      document.documentElement.style.setProperty('--mc-surface', t.surface)
+    } catch { /* ignore */ }
+    setThemeSaving(false)
+  }
+
   const dbPct = data.supabase.dbBytes != null ? (data.supabase.dbBytes / data.supabase.dbLimitBytes) * 100 : null
 
   return (
     <div>
+      {/* INF-223: Theme selector */}
+      <div className="mb-8">
+        <h2 className="text-sm font-semibold text-white mb-1">Appearance</h2>
+        <p className="text-xs text-white/30 mb-3">Choose a color theme for Mission Control</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {THEME_IDS.map(tid => {
+            const t = THEMES[tid]
+            const active = tid === currentTheme
+            return (
+              <button
+                key={tid}
+                onClick={() => handleThemeChange(tid)}
+                disabled={themeSaving}
+                className={'rounded-xl p-3 border transition-all text-left ' +
+                  (active ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-white/10 hover:border-white/20')}
+                style={{ background: t.surface }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-4 h-4 rounded-full" style={{ background: t.accent }} />
+                  <span className="text-xs font-medium" style={{ color: t.textPrimary }}>{t.label}</span>
+                </div>
+                <div className="flex gap-1">
+                  <div className="w-6 h-3 rounded" style={{ background: t.bg }} />
+                  <div className="w-6 h-3 rounded" style={{ background: t.surface }} />
+                  <div className="w-6 h-3 rounded" style={{ background: t.accent }} />
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-sm font-semibold text-white">Usage & Limits</h2>

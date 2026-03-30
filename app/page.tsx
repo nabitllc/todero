@@ -26,6 +26,7 @@ import AutomationsTab from '@/components/tabs/AutomationsTab'
 import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
+import QuickActionFab from '@/components/QuickActionFab'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -474,6 +475,11 @@ export default function Home() {
         </main>
       </div>
 
+      <QuickActionFab
+        onNavigate={navigate}
+        onCreateIssue={() => navigate('board')}
+        onStartChat={() => navigate('chat')}
+      />
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={navigate} />
       {globalToasts.length > 0 && (
         <div className="fixed bottom-[72px] right-4 z-[9999] flex flex-col gap-1.5 pointer-events-none">
