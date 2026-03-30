@@ -9,6 +9,7 @@ const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsI
 const HEADERS = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': 'application/json' }
 
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
+const WIP_LIMIT_IN_PROGRESS = 3
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get('x-internal-secret')
@@ -16,45 +17,70 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Smart task selection: priority → due_date → created_at
-  const res = await fetch(
-    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.open&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key&limit=50`,
+  // ── INF-184: WIP limit check — max 3 in_progress ──
+  const wipRes = await fetch(
+    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.in_progress&select=id`,
     { headers: HEADERS }
   )
-  const tasks = await res.json() as Array<{id:string,title:string,description:string,priority:string,due_date:string|null,project:string,acceptance_criteria:string|null,task_key:string|null}>
-
-  if (!tasks.length) {
-    return NextResponse.json({ message: 'No open builder tasks' })
-  }
-
-  // ── DoR gate: auto-fix missing acceptance_criteria instead of blocking ──
-  const dorReady = tasks.filter(t => t.acceptance_criteria?.trim())
-  const dorBlocked = tasks.filter(t => !t.acceptance_criteria?.trim())
-
-  // Auto-generate acceptance_criteria for blocked issues so they don't stay orphaned
-  if (dorBlocked.length > 0) {
-    await Promise.all(dorBlocked.map(t =>
-      fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${t.id}`, {
-        method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-        body: JSON.stringify({
-          acceptance_criteria: `Complete: ${t.title}. Verify the implementation works as described and all related tests pass.`,
-          updated_at: new Date().toISOString()
-        })
-      })
-    ))
-    // Now all tasks are DoR-ready
-    dorBlocked.forEach(t => {
-      t.acceptance_criteria = `Complete: ${t.title}. Verify the implementation works as described and all related tests pass.`
-      dorReady.push(t)
+  const wipIssues = await wipRes.json() as Array<{ id: string }>
+  if (Array.isArray(wipIssues) && wipIssues.length >= WIP_LIMIT_IN_PROGRESS) {
+    return NextResponse.json({
+      message: `WIP limit reached: ${wipIssues.length}/${WIP_LIMIT_IN_PROGRESS} in_progress. Finish current work first.`,
+      wip: wipIssues.length
     })
   }
 
-  if (dorReady.length === 0) {
-    return NextResponse.json({ message: 'No open builder issues' })
+  // ── INF-179: DoR gate — only fetch issues with ALL required fields ──
+  // description, test_tier, acceptance_criteria must all be present
+  const res = await fetch(
+    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.open&description=not.is.null&test_tier=not.is.null&acceptance_criteria=not.is.null&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,test_tier&limit=50`,
+    { headers: HEADERS }
+  )
+  const tasks = await res.json() as Array<{
+    id: string; title: string; description: string; priority: string;
+    due_date: string | null; project: string; acceptance_criteria: string | null;
+    task_key: string | null; feature_branch: string | null;
+    blocked_by: string | null; test_tier: string | null
+  }>
+
+  if (!tasks.length) {
+    return NextResponse.json({ message: 'No DoR-ready builder tasks (need description, test_tier, acceptance_criteria)' })
   }
 
-  // Only pick from DoR-ready issues
-  const readyTasks = dorReady
+  // ── INF-186: Dependency blocking — skip issues where blocked_by issue is not done ──
+  const blockedByIds = tasks
+    .filter(t => t.blocked_by)
+    .map(t => t.blocked_by!)
+  let blockerStatuses: Record<string, string> = {}
+  if (blockedByIds.length > 0) {
+    // Fetch status of blocking issues (could be task_key or id)
+    const blockerRes = await fetch(
+      `${SUPA_URL}/rest/v1/issues?or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
+      { headers: HEADERS }
+    )
+    const blockers = await blockerRes.json() as Array<{ id: string; task_key: string | null; status: string }>
+    if (Array.isArray(blockers)) {
+      for (const b of blockers) {
+        blockerStatuses[b.id] = b.status
+        if (b.task_key) blockerStatuses[b.task_key] = b.status
+      }
+    }
+  }
+
+  const readyTasks = tasks.filter(t => {
+    if (!t.blocked_by) return true
+    const blockerStatus = blockerStatuses[t.blocked_by]
+    return blockerStatus === 'done'
+  })
+
+  if (readyTasks.length === 0) {
+    return NextResponse.json({
+      message: 'All DoR-ready tasks are blocked by unfinished dependencies',
+      blocked: tasks.filter(t => t.blocked_by).map(t => ({ task_key: t.task_key, blocked_by: t.blocked_by }))
+    })
+  }
+
+  // Sort by priority → due_date → Vespera first
   readyTasks.sort((a, b) => {
     const pa = PRIORITY_ORDER.indexOf(a.priority)
     const pb = PRIORITY_ORDER.indexOf(b.priority)
@@ -69,6 +95,17 @@ export async function POST(req: NextRequest) {
 
   const task = readyTasks[0]
 
+  // ── INF-180: Branch strategy — auto-set feature_branch if null ──
+  let branch = task.feature_branch
+  if (!branch && task.task_key) {
+    branch = `feat/${task.task_key.toLowerCase()}`
+    // Persist feature_branch on the issue
+    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+      method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ feature_branch: branch, updated_at: new Date().toISOString() })
+    })
+  }
+
   // Mark in_progress
   await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
     method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
@@ -82,20 +119,25 @@ export async function POST(req: NextRequest) {
   })
   const [run] = await runRes.json()
 
-  // Spawn Builder
+  // Spawn Builder — checkout correct branch
   const prompt = `You are Builder. Complete this task for nabitllc/vespera:
 Task: ${task.title}
 Description: ${task.description || 'See task title'}
 Project: ${task.project}
+Branch: ${branch || 'main'}
 
-Work on main branch (if small fix) or create branch feature/${task.id.slice(0,8)} for larger changes.
+${branch ? `Checkout branch ${branch} (create if needed): git checkout -b ${branch} 2>/dev/null || git checkout ${branch}` : 'Work on main branch.'}
 Add [skip ci] to all commits. npm run build must pass.
 When done: curl -s -X POST http://localhost:3000/api/task-done -H 'x-internal-secret: kaos-internal-2026' -H 'Content-Type: application/json' -d '{"taskId":"${task.id}","taskTitle":"${task.title}","agentId":"builder","status":"done"}'
 Then: /opt/homebrew/bin/openclaw system event --text "Done: Builder completed ${task.title}" --mode now`
 
-  const repoDir = `/tmp/builder-${task.id.slice(0,8)}`
+  const repoDir = `/tmp/builder-${task.id.slice(0, 8)}`
   execAsync(`git clone https://github.com/nabitllc/vespera.git ${repoDir} 2>/dev/null; cd ${repoDir} && claude --permission-mode bypassPermissions --print '${prompt.replace(/'/g, "\\'")}' 2>&1 &`)
     .catch(console.error)
 
-  return NextResponse.json({ ok: true, task: task.title, runId: run?.id, priority: task.priority })
+  return NextResponse.json({
+    ok: true, task: task.title, taskKey: task.task_key,
+    branch, runId: run?.id, priority: task.priority,
+    wip: (wipIssues?.length ?? 0) + 1
+  })
 }

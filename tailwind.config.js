@@ -8,6 +8,11 @@ module.exports = {
     extend: {
       colors: {
         bg: '#0a0a0a',
+        surface: {
+          page: '#080808',
+          card: '#0f0f0f',
+          elevated: '#1a1a1a',
+        },
       },
     },
   },

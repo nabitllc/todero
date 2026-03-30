@@ -43,6 +43,15 @@ export async function GET() {
         const lastExec = execData?.data?.[0] ?? null
         const lastRunStatus = lastExec ? (lastExec.status === 'success' ? 'ok' : 'error') : null
         const lastRunAtMs = lastExec?.startedAt ? new Date(lastExec.startedAt).getTime() : null
+        // INF-68: Smart project assignment based on workflow name/tags
+        const wNameLower = (w.name ?? '').toLowerCase()
+        const wProject = wNameLower.includes('vespera') ? 'Vespera'
+          : wNameLower.includes('kemuni') ? 'Kemuni'
+          : (wNameLower.includes('mission control') || wNameLower.includes('mc ') || wNameLower.includes('dashboard')) ? 'Mission Control'
+          : (wNameLower.includes('infra') || wNameLower.includes('agent') || wNameLower.includes('builder') || wNameLower.includes('tester') || wNameLower.includes('scout') || wNameLower.includes('deploy') || wNameLower.includes('billing') || wNameLower.includes('heartbeat') || wNameLower.includes('dor') || wNameLower.includes('backlog')) ? 'Infrastructure'
+          : 'Infrastructure'
+        // Extract description from workflow settings or nodes
+        const wDesc = w.settings?.description ?? w.meta?.description ?? ''
         results.push({
           id: w.name.toLowerCase().replace(/\s+/g, '-'),
           name: w.name,
@@ -51,13 +60,14 @@ export async function GET() {
           min: typeof min === 'number' ? min : 0,
           days: 'daily',
           model: 'n8n',
-          project: 'Ops',
+          project: wProject,
           status: w.active ? (lastRunStatus === 'error' ? 'error' : 'active') : 'planned',
-          desc: w.name,
+          desc: wDesc || w.name,
           source: 'n8n',
           lastRunStatus,
           lastRunAtMs,
           n8nWorkflowId: w.id,
+          nodeCount: (w.nodes ?? []).length,
         })
       }
     }

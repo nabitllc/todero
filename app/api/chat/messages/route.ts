@@ -39,16 +39,28 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
+// DELETE /api/chat/messages?id=X — delete a single message by ID
 // DELETE /api/chat/messages?conversation_id=X&after_ts=Y — delete messages with created_at >= Y
 // DELETE /api/chat/messages?conversation_id=X&clear=true — delete ALL messages in conversation
 export async function DELETE(req: NextRequest) {
   const url = new URL(req.url)
+  const id = url.searchParams.get('id')
   const conversation_id = url.searchParams.get('conversation_id')
   const clear = url.searchParams.get('clear')
   const after_ts = url.searchParams.get('after_ts')
 
+  // Per-message delete by ID
+  if (id) {
+    const { error } = await supabase
+      .from('chat_messages')
+      .delete()
+      .eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   if (!conversation_id) {
-    return NextResponse.json({ error: 'conversation_id required' }, { status: 400 })
+    return NextResponse.json({ error: 'conversation_id or id required' }, { status: 400 })
   }
 
   if (clear === 'true') {

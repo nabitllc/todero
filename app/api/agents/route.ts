@@ -1,8 +1,11 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 
 const execAsync = promisify(exec)
+const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 
 // Maps OpenClaw agent IDs to display metadata
 const AGENT_META: Record<string, { name: string; emoji: string; role: string; color: string; capabilities: string[]; floor: boolean; [key: string]: any }> = {
@@ -15,6 +18,7 @@ const AGENT_META: Record<string, { name: string; emoji: string; role: string; co
   'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true },
   'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true },
   'ux':          { name: 'UX Designer',      emoji: '🎨', role: 'UX & Design Agent',        color: '#ec4899', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false },
+  'designer':    { name: 'Designer',        emoji: '🖌️', role: 'Design Review Agent',      color: '#d946ef', capabilities: ['Design System', 'UI Review', 'Visual QA', 'Accessibility'], floor: false },
   'po':          { name: 'Product Owner',    emoji: '📋', role: 'Product Owner',             color: '#f59e0b', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false },
   'growth':      { name: 'Growth',           emoji: '📈', role: 'Growth Strategist',         color: '#10b981', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false },
   'security':    { name: 'Security',         emoji: '🔐', role: 'Security Auditor',          color: '#ef4444', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false },
@@ -77,5 +81,68 @@ export async function GET() {
   } catch (e) {
     // Fallback: return empty so UI uses hardcoded defaults
     return NextResponse.json([], { headers: { 'Cache-Control': 'no-store' } })
+  }
+}
+
+// INF-237: Agent capability registry — persist capabilities to Supabase agent_memory
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { agent_id, capabilities, role, description } = body
+    if (!agent_id) return NextResponse.json({ error: 'agent_id required' }, { status: 400 })
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+    const value = JSON.stringify({
+      capabilities: capabilities ?? [],
+      role: role ?? null,
+      description: description ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    const { error } = await supabase.from('agent_memory').upsert(
+      { agent_id, key: 'capability_registry', value },
+      { onConflict: 'agent_id,key' }
+    )
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}
+
+// INF-237: Update agent capabilities
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { agent_id, capabilities, role, description, floor } = body
+    if (!agent_id) return NextResponse.json({ error: 'agent_id required' }, { status: 400 })
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+    // Read existing
+    const { data: existing } = await supabase
+      .from('agent_memory')
+      .select('value')
+      .eq('agent_id', agent_id)
+      .eq('key', 'capability_registry')
+      .single()
+
+    const current = existing?.value ? (typeof existing.value === 'string' ? JSON.parse(existing.value) : existing.value) : {}
+    const merged = {
+      ...current,
+      ...(capabilities !== undefined ? { capabilities } : {}),
+      ...(role !== undefined ? { role } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(floor !== undefined ? { floor } : {}),
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase.from('agent_memory').upsert(
+      { agent_id, key: 'capability_registry', value: JSON.stringify(merged) },
+      { onConflict: 'agent_id,key' }
+    )
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true, data: merged })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

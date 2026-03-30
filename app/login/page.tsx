@@ -1,15 +1,16 @@
 'use client'
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Button } from '@/components/ui'
+import { Input } from '@/components/ui'
 
-// Isolated to its own component so useSearchParams doesn't cause full-page Suspense bailout
 function LoginFormInner() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const from = searchParams.get('from') ?? '/'
+  const from = searchParams?.get('from') ?? '/'
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,110 +31,64 @@ function LoginFormInner() {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <div>
-        <input
+        <Input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Enter password"
           autoFocus
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            borderRadius: 12,
-            background: '#111',
-            border: '1px solid #333',
-            color: '#fff',
-            fontSize: 14,
-            outline: 'none',
-            boxSizing: 'border-box',
-          }}
+          error={error}
+          className="rounded-xl"
         />
-        {error && <p style={{ color: '#f87171', fontSize: 12, marginTop: 6 }}>Incorrect password</p>}
+        {error && <p className="text-red-400 text-xs mt-1.5">Incorrect password</p>}
       </div>
-      <button
+      <Button
         type="submit"
+        variant="primary"
         disabled={!password || loading}
-        style={{
-          width: '100%',
-          padding: '12px 0',
-          borderRadius: 12,
-          background: password && !loading ? '#3f3f46' : '#27272a',
-          border: 'none',
-          color: '#fff',
-          fontSize: 14,
-          fontWeight: 500,
-          cursor: password && !loading ? 'pointer' : 'not-allowed',
-          opacity: password && !loading ? 1 : 0.5,
-        }}
+        loading={loading}
+        className="w-full justify-center rounded-xl py-3"
       >
         {loading ? 'Authenticating...' : 'Enter'}
-      </button>
+      </Button>
     </form>
   )
 }
 
 function LoginFormFallback() {
   return (
-    <form style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <form className="flex flex-col gap-3">
       <div>
-        <input
+        <Input
           type="password"
           placeholder="Enter password"
           autoFocus
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            borderRadius: 12,
-            background: '#111',
-            border: '1px solid #333',
-            color: '#fff',
-            fontSize: 14,
-            outline: 'none',
-            boxSizing: 'border-box',
-          }}
+          className="rounded-xl"
         />
       </div>
-      <button
+      <Button
+        variant="primary"
         disabled
-        style={{
-          width: '100%',
-          padding: '12px 0',
-          borderRadius: 12,
-          background: '#27272a',
-          border: 'none',
-          color: '#fff',
-          fontSize: 14,
-          fontWeight: 500,
-          opacity: 0.5,
-        }}
+        className="w-full justify-center rounded-xl py-3"
       >
         Enter
-      </button>
+      </Button>
     </form>
   )
 }
 
 export default function Login() {
   return (
-    <div style={{
-      minHeight: '100dvh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#080808',
-    }}>
-      <div style={{ width: '100%', maxWidth: 360, padding: '0 24px' }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: 16,
-            background: '#27272a',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 28, margin: '0 auto 16px',
-          }}>🧠</div>
-          <h1 style={{ color: '#fff', fontSize: 20, fontWeight: 700, margin: 0 }}>KAOS</h1>
-          <p style={{ color: '#71717a', fontSize: 14, margin: '4px 0 0' }}>Mission Control</p>
+    <div className="min-h-dvh flex items-center justify-center bg-[#080808]">
+      <div className="w-full max-w-[360px] px-6">
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-[28px] mx-auto mb-4">
+            🧠
+          </div>
+          <h1 className="text-white text-xl font-semibold">KAOS</h1>
+          <p className="text-white/40 text-sm mt-1">Todero</p>
         </div>
         <Suspense fallback={<LoginFormFallback />}>
           <LoginFormInner />

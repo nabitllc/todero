@@ -7,35 +7,41 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const SUPA_AGENTS = ['main','scout','ops','kemuni-sme','vespera-sme','builder','tester','deployer'] as const;
 
 type AgentRunStatus = 'working' | 'idle' | 'never';
-interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; }
+interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; todayTasks: number; todayErrors: number; estimatedCost: number; }
 
 async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=100`,
+    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
     { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
   );
   if (!res.ok) return {};
   const rows: any[] = await res.json();
   const now = Date.now();
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayMs = todayStart.getTime();
   const result: Record<string, AgentRunInfo> = {};
-  // Group by agent_id — first occurrence is most recent (ordered desc)
+  // Aggregate per-agent: most recent status + today's task count + cost
+  const agentRows: Record<string, any[]> = {};
   for (const row of rows) {
     const aid = row.agent_id;
-    if (result[aid]) continue; // already have most recent
-    const startMs = row.started_at ? new Date(row.started_at).getTime() : 0;
+    if (!agentRows[aid]) agentRows[aid] = [];
+    agentRows[aid].push(row);
+  }
+  for (const [aid, aRows] of Object.entries(agentRows)) {
+    const latest = aRows[0]; // most recent (ordered desc)
+    const startMs = latest.started_at ? new Date(latest.started_at).getTime() : 0;
     const ageMin = (now - startMs) / 60000;
-    let st: AgentRunStatus = 'idle';
-    if (row.status === 'running' || ageMin < 5) st = 'working';
-    else if (ageMin >= 30) st = 'idle';
-    else st = 'working'; // between 5-30min with non-running status still counts as recent
-    // Refine: only 'working' if status=running OR started_at < 5min ago
-    if (row.status === 'running' || ageMin < 5) st = 'working';
-    else st = 'idle';
-    result[aid] = { status: st, taskTitle: (row.task_title || '').slice(0, 35), startedAt: row.started_at };
+    const st: AgentRunStatus = (latest.status === 'running' || ageMin < 5) ? 'working' : 'idle';
+    const todayRuns = aRows.filter(r => r.started_at && new Date(r.started_at).getTime() >= todayMs);
+    const todayTasks = todayRuns.filter(r => r.status !== 'error').length;
+    const todayErrors = todayRuns.filter(r => r.status === 'error').length;
+    // Estimate cost: ~$0.003 per 1k tokens, fallback to $0.01 per run
+    const estimatedCost = todayRuns.reduce((sum: number, r: any) => sum + (r.tokens_used ? (r.tokens_used / 1000) * 0.003 : 0.01), 0);
+    result[aid] = { status: st, taskTitle: (latest.task_title || '').slice(0, 35), startedAt: latest.started_at, todayTasks, todayErrors, estimatedCost };
   }
   // Fill missing agents as 'never'
   for (const id of SUPA_AGENTS) {
-    if (!result[id]) result[id] = { status: 'never', taskTitle: '', startedAt: null };
+    if (!result[id]) result[id] = { status: 'never', taskTitle: '', startedAt: null, todayTasks: 0, todayErrors: 0, estimatedCost: 0 };
   }
   return result;
 }
@@ -358,7 +364,7 @@ function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:numbe
 }
 
 // ─── Draw furniture ───────────────────────────────────────────────────────────
-function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A){
+function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A,liveRuns:Record<string,AgentRunInfo>={}){
   ctx.save();applyCamera(ctx,cam);
 
   // ── Dependency graph overlay ──
@@ -436,12 +442,28 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
         ctx.fillRect(mx2+dw*0.04,my2+dh*0.08+l*(mh/5.5),mw*(0.25+0.5*((l+Math.floor(t2))%2))*mood,dh*0.07);
       }
     } else {
-      ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.6,dh*0.05);
-      if(Math.floor(now*0.002)%2===0){
-        ctx.fillStyle=(orchAg?.color||"#6C5CE7")+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.26,dh*0.06,dh*0.06);
+      // MC-15: Orchestrator health indicators when idle
+      const orchRun=liveRuns[ORCHESTRATOR_ID];
+      if(orchRun&&orchRun.status!=='never'){
+        const hColor=orchRun.todayErrors>2?'#ff4444':orchRun.todayErrors>0?'#f59e0b':'#00ff88';
+        const hPx=Math.max(9,Math.round(T*0.10));
+        ctx.font=`${hPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="left";
+        ctx.beginPath();ctx.arc(mx2+dw*0.06,my2+dh*0.12,T*0.04,0,Math.PI*2);ctx.fillStyle=hColor;ctx.fill();
+        const ago=orchRun.startedAt?Math.round((Date.now()-new Date(orchRun.startedAt).getTime())/60000):0;
+        const agoStr=ago<60?`${ago}m`:ago<1440?`${Math.floor(ago/60)}h`:`${Math.floor(ago/1440)}d`;
+        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr}`,mx2+dw*0.12,my2+dh*0.16);
+        ctx.fillStyle="#00ff88";ctx.fillText(`${orchRun.todayTasks} tasks`,mx2+dw*0.04,my2+dh*0.30);
+        if(orchRun.todayErrors>0){ctx.fillStyle="#ff4444";ctx.fillText(`${orchRun.todayErrors} err`,mx2+dw*0.04,my2+dh*0.44);}
+        ctx.font=`bold ${Math.round(T*0.11)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+        ctx.fillStyle="#1e1e40";ctx.fillText("STANDBY",x+dw/2,my2+mh*0.72);
+      } else {
+        ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.6,dh*0.05);
+        if(Math.floor(now*0.002)%2===0){
+          ctx.fillStyle=(orchAg?.color||"#6C5CE7")+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.26,dh*0.06,dh*0.06);
+        }
+        ctx.font=`bold ${Math.round(T*0.13)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+        ctx.fillStyle="#1e1e40";ctx.fillText("STANDBY",x+dw/2,my2+mh*0.72);
       }
-      ctx.font=`bold ${Math.round(T*0.13)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-      ctx.fillStyle="#1e1e40";ctx.fillText("STANDBY",x+dw/2,my2+mh*0.72);
     }
     ctx.fillStyle="#141424";
     ctx.fillRect(x+dw/2-T*0.05,y+dh*0.76,T*0.1,dh*0.13);
@@ -490,15 +512,32 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
       }
       if(darkAlpha>0.05){ctx.shadowColor=ag.color;ctx.shadowBlur=T*0.25*darkAlpha;ctx.strokeStyle=ag.color+"22";ctx.strokeRect(mx2,my2,mw,mh);ctx.shadowBlur=0;}
     } else {
-      // Idle monitor — show status indicator
-      ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.5,dh*0.06);
-      // Blinking cursor
-      if(Math.floor(now*0.002)%2===0){
-        ctx.fillStyle=ag.color+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.28,dh*0.06,dh*0.06);
+      // MC-15: Health indicators on idle monitors
+      const run=liveRuns[id];
+      if(run&&run.status!=='never'){
+        const hColor=run.todayErrors>2?'#ff4444':run.todayErrors>0?'#f59e0b':'#00ff88';
+        const hPx=Math.max(8,Math.round(T*0.09));
+        ctx.font=`${hPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="left";
+        // Status dot
+        ctx.beginPath();ctx.arc(mx2+dw*0.06,my2+dh*0.15,T*0.04,0,Math.PI*2);ctx.fillStyle=hColor;ctx.fill();
+        // Last run time
+        const ago=run.startedAt?Math.round((Date.now()-new Date(run.startedAt).getTime())/60000):0;
+        const agoStr=ago<60?`${ago}m`:ago<1440?`${Math.floor(ago/60)}h`:`${Math.floor(ago/1440)}d`;
+        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr}`,mx2+dw*0.12,my2+dh*0.19);
+        // Tasks today
+        ctx.fillStyle="#00ff88";ctx.fillText(`${run.todayTasks} tasks`,mx2+dw*0.04,my2+dh*0.38);
+        // Errors
+        if(run.todayErrors>0){
+          ctx.fillStyle="#ff4444";ctx.fillText(`${run.todayErrors} err`,mx2+dw*0.04,my2+dh*0.55);
+        }
+      } else {
+        ctx.fillStyle="#ffffff08";ctx.fillRect(mx2+dw*0.04,my2+dh*0.12,mw*0.5,dh*0.06);
+        if(Math.floor(now*0.002)%2===0){
+          ctx.fillStyle=ag.color+"33";ctx.fillRect(mx2+dw*0.04,my2+dh*0.28,dh*0.06,dh*0.06);
+        }
+        ctx.font=`bold ${Math.round(T*0.11)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+        ctx.fillStyle="#1e1e40";ctx.fillText("IDLE",x+dw/2,my2+mh*0.75);
       }
-      // "IDLE" text on screen
-      ctx.font=`bold ${Math.round(T*0.11)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-      ctx.fillStyle="#1e1e40";ctx.fillText("IDLE",x+dw/2,my2+mh*0.75);
     }
     ctx.fillStyle="#111122";
     ctx.fillRect(x+dw/2-T*0.04,y+dh*0.75,T*0.08,dh*0.13);
@@ -559,8 +598,23 @@ function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[
     ctx.fillStyle="#24243e";ctx.beginPath();ctx.roundRect(cx+T*0.02,cy+T*0.02,cW-T*0.04,cH*0.5,T*0.02);ctx.fill();
   });
   if(activeMeeting&&darkAlpha>0.04){ctx.shadowColor="#FDCB6E";ctx.shadowBlur=T*0.3*darkAlpha;ctx.strokeStyle="#FDCB6E33";ctx.lineWidth=T*0.025;ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();ctx.shadowBlur=0;}
+  // MC-16: Show agents at conference table based on real sessions
+  const meetingAgents=agents.filter(a=>a.state==="meeting"||a.state==="moving_to_meeting");
+  if(!activeMeeting&&meetingAgents.length>=2){
+    // Multiple agents active simultaneously but not in formal meeting — show collaboration
+    ctx.strokeStyle="#00ff8844";ctx.lineWidth=T*0.02;
+    ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();
+  }
   ctx.font=`bold ${Math.round(T*0.15)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-  if(activeMeeting&&topic){ctx.fillStyle="#FDCB6E";ctx.fillText("⬡ "+topic,tcx+tw/2,tcy+th+T*0.3);}
+  if(activeMeeting&&topic){
+    ctx.fillStyle="#FDCB6E";ctx.fillText("⬡ "+topic,tcx+tw/2,tcy+th+T*0.3);
+    // MC-16: Show participant names
+    const pNames=meetingAgents.map(a=>a.name).join(", ");
+    if(pNames){
+      ctx.font=`${Math.round(T*0.10)}px 'IBM Plex Mono',monospace`;
+      ctx.fillStyle="#FDCB6E88";ctx.fillText(pNames,tcx+tw/2,tcy+th+T*0.48);
+    }
+  }
   else if(incidentActive){ctx.fillStyle="#ff4444";ctx.fillText("🚨 INCIDENT",tcx+tw/2,tcy+th+T*0.3);}
   else{ctx.fillStyle="#252550";ctx.fillText("Conference Table",tcx+tw/2,tcy+th+T*0.3);}
 
@@ -595,7 +649,7 @@ function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:any){
   ctx.globalAlpha=1;ctx.restore();
 }
 
-function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean,boardTasksMap:Record<string,string>={},subagentCount:number=0){
+function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0){
   const visible=ag.active||BENCH_POS[ag.id];
   if(!visible) return;
   ctx.save();applyCamera(ctx,cam);
@@ -630,24 +684,46 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
   ctx.beginPath();ctx.ellipse(px+ox,py+hs+T*0.022+oy+dy2,hs*0.65,T*0.022,0,0,Math.PI*2);ctx.fill();
   const bA=Math.round((0.7+moodN*0.3)*255).toString(16).padStart(2,"0");
   const bodyCol=isInc?"#ff2222":(active?color+bA:"#3a3a5e"+bA);
-  // State transition glow
+  // MC-19: Enhanced state transition animation — glow + scale pulse + fade
+  let transScale=1;
   if(ag.glowTick>0){
     ag.glowTick--;
     const glowAlpha=ag.glowTick/60;
-    ctx.shadowColor=color;ctx.shadowBlur=sz*0.8*glowAlpha;
-    ctx.beginPath();ctx.arc(px+ox,py+dy2+oy,hs+T*0.15,0,Math.PI*2);
-    ctx.fillStyle=color+Math.round(glowAlpha*40).toString(16).padStart(2,"0");ctx.fill();
+    // Scale pulse: brief enlarge then settle (easeOutElastic-ish)
+    const t2=1-glowAlpha;
+    transScale=1+0.12*Math.sin(t2*Math.PI)*Math.max(0,1-t2*1.5);
+    ctx.shadowColor=color;ctx.shadowBlur=sz*1.0*glowAlpha;
+    // Outer ring pulse
+    ctx.beginPath();ctx.arc(px+ox,py+dy2+oy,hs+T*0.15+T*0.1*glowAlpha,0,Math.PI*2);
+    ctx.fillStyle=color+Math.round(glowAlpha*50).toString(16).padStart(2,"0");ctx.fill();
+    // Inner glow
+    ctx.beginPath();ctx.arc(px+ox,py+dy2+oy,hs+T*0.05,0,Math.PI*2);
+    ctx.fillStyle=color+Math.round(glowAlpha*25).toString(16).padStart(2,"0");ctx.fill();
     ctx.shadowBlur=0;
   }
   if(darkAlpha>0.05){ctx.shadowColor=isInc?"#ff2222":color;ctx.shadowBlur=sz*0.22*darkAlpha;}
-  ctx.fillStyle=bodyCol;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz);ctx.shadowBlur=0;
+  // Apply scale for transition animation
+  const asz=sz*transScale,ahs=asz/2;
+  ctx.fillStyle=bodyCol;ctx.fillRect(px-ahs+ox,py-ahs+dy2+oy,asz,asz);ctx.shadowBlur=0;
   const fw=sz*0.44,fh=sz*0.31;
   ctx.fillStyle="#ffffffdd";ctx.fillRect(px-fw/2+ox,py-sz*0.17+dy2+oy,fw,fh);
   ctx.fillStyle="#111";
   if(facing!=="up"){
     ctx.fillRect(px-fw*0.34+ox,py-sz*0.09+dy2+oy,fw*0.14,fh*0.3);
     ctx.fillRect(px+fw*0.2+ox, py-sz*0.09+dy2+oy,fw*0.14,fh*0.3);
-    ctx.beginPath();ctx.arc(px+ox,py+sz*0.08+dy2+oy,fw*0.17,0.1*Math.PI,0.9*Math.PI);
+    // MC-17: Expression based on mood — happy/neutral/stressed
+    const moodVal=mood||88;
+    ctx.beginPath();
+    if(moodVal>=90){
+      // Happy: upward smile
+      ctx.arc(px+ox,py+sz*0.06+dy2+oy,fw*0.19,0.1*Math.PI,0.9*Math.PI);
+    } else if(moodVal<=60){
+      // Stressed: frown
+      ctx.arc(px+ox,py+sz*0.14+dy2+oy,fw*0.17,1.1*Math.PI,1.9*Math.PI);
+    } else {
+      // Neutral: flat line
+      ctx.moveTo(px-fw*0.15+ox,py+sz*0.09+dy2+oy);ctx.lineTo(px+fw*0.15+ox,py+sz*0.09+dy2+oy);
+    }
     ctx.strokeStyle="#111";ctx.lineWidth=sz*0.04;ctx.stroke();
   }
   ctx.fillStyle=isInc?"#ff2222":color;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz*0.18);
@@ -723,6 +799,14 @@ function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:a
       ctx.fillStyle="#4a4a6a";
       ctx.fillText(`idle ${idleText}`,px,py+hs+T*0.35+dy2+oy);
     }
+  }
+  // Cost ticker — small label below idle timer
+  if(agentCost>0&&active){
+    const cPx=Math.max(8,Math.round(T*0.09));
+    ctx.font=`${cPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
+    const costText=agentCost>=1?`$${agentCost.toFixed(2)}`:`${(agentCost*100).toFixed(1)}¢`;
+    ctx.fillStyle="#4a6a5a";
+    ctx.fillText(`💰 ${costText}`,px,py+hs+T*0.48+dy2+oy);
   }
   // Sub-agent activity badge — only for orchestrator when sub-agents are active
   if(ag.id===ORCHESTRATOR_ID&&subagentCount>0){
@@ -844,7 +928,8 @@ export default function AgentOffice(){
   });
   const [meetingLogs,setMeetingLogs] = useState<any[]>([]);
   const [incidentLog,setIncidentLog] = useState<any[]>([]); // persistent incident history
-  const [soundOn,setSoundOn]         = useState(true);
+  const [soundOn,setSoundOn]         = useState(()=>{try{return localStorage.getItem("office_sound")!=="off";}catch{return true;}});
+  const [volume,setVolume]           = useState(()=>{try{return parseInt(localStorage.getItem("office_volume")||"50",10);}catch{return 50;}});
   const [incident,setIncident]       = useState<any>(null);
   const [showConfig,setShowConfig]   = useState(false);
   const [configAgent,setConfigAgent] = useState<any>(null);
@@ -872,10 +957,15 @@ export default function AgentOffice(){
   const [boardTasks, setBoardTasks]  = useState<Record<string,string>>({}) // agentId → task title
   const boardTasksRef                = useRef<Record<string,string>>({})
   const subagentCountRef             = useRef<number>(0)
+  // MC-45: Active subagent sessions for temporary sprites
+  const subagentSessionsRef          = useRef<{id:string;name:string;emoji:string;color:string;task:string;startedAt:number}[]>([])
   const liveRunsRef                  = useRef<Record<string, AgentRunInfo>>({})
   const [ctxMenu,setCtxMenu]         = useState<any>(null);
   const hoverAgentRef                = useRef<any>(null); // for canvas tooltip
+  const zoomTargetRef                = useRef<{x:number,y:number,z:number}|null>(null); // MC-21: smooth zoom target
   const [showSettings,setShowSettings] = useState(false);
+  const [simSpeed,setSimSpeed] = useState(1); // MC-91: simulation speed 0.5x/1x/2x
+  const simSpeedRef = useRef(1);
   const [theme,setTheme] = useState<"A"|"B">(()=>{
     try{return (localStorage.getItem("office_theme")||"A") as "A"|"B";}catch{return "A";}
   });
@@ -886,15 +976,20 @@ export default function AgentOffice(){
   const sessionStartTs = useRef(Date.now());
   const [isMobile, setIsMobile] = useState(false);
   const [canvasScale, setCanvasScale] = useState(1);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(()=>{try{return localStorage.getItem("office_sidebar_collapsed")==="true";}catch{return false;}});
   useEffect(() => {
     const check = () => {
-      setIsMobile(window.innerWidth < 768);
-      setCanvasScale(Math.min(1, window.innerWidth / 900));
+      const w=window.innerWidth;
+      setIsMobile(w < 768);
+      setCanvasScale(Math.min(1, w / 900));
+      // Auto-collapse sidebar on narrow screens
+      if(w<1024&&w>=768) setSidebarCollapsed(true);
     };
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+  const toggleSidebar=()=>{setSidebarCollapsed(p=>{const next=!p;try{localStorage.setItem("office_sidebar_collapsed",String(next));}catch(e){}return next;});};
 
   const addToast=useCallback((text:string,color="#00ff88")=>{
     const id=feedIdRef.current++;
@@ -906,7 +1001,7 @@ export default function AgentOffice(){
   },[]);
 
   useEffect(()=>{ if(feedRef.current) feedRef.current.scrollTop=feedRef.current.scrollHeight; },[feed]);
-  useEffect(()=>{const i=()=>{if(!audioRef.current)audioRef.current=createAudio();};window.addEventListener("click",i,{once:true});return()=>window.removeEventListener("click",i);},[]);
+  useEffect(()=>{const i=()=>{if(!audioRef.current){audioRef.current=createAudio();if(audioRef.current?.master)audioRef.current.master.gain.value=volume/100*0.15;}};window.addEventListener("click",i,{once:true});return()=>window.removeEventListener("click",i);},[volume]);
   useEffect(()=>()=>{if(simRef.current?.agents)saveMemory(simRef.current.agents);},[]);
 
   useEffect(()=>{minimapRef.current=showMinimap;},[showMinimap]);
@@ -915,6 +1010,7 @@ export default function AgentOffice(){
   useEffect(()=>{depGraphRef.current=showDepGraph;},[showDepGraph]);
   useEffect(()=>{showLegendRef.current=showLegend;},[showLegend]);
   useEffect(()=>{replayModeRef.current=replayMode;},[replayMode]);
+  useEffect(()=>{simSpeedRef.current=simSpeed;},[simSpeed]);
 
   // ── Board task polling ─────────────────────────────────────────────────
   useEffect(()=>{
@@ -998,6 +1094,22 @@ export default function AgentOffice(){
           a.ago != null && a.ago < 10
         ).length
         subagentCountRef.current = activeSubagents
+
+        // MC-45: Build subagent sessions from active agent_runs (non-main agents working recently)
+        const liveRuns = liveRunsRef.current
+        const subSessions: typeof subagentSessionsRef.current = []
+        const SUB_AGENT_MAP: Record<string,{name:string;emoji:string;color:string}> = {
+          builder:{name:'Builder',emoji:'🔨',color:'#0984E3'}, tester:{name:'Tester',emoji:'🧪',color:'#E84393'},
+          deployer:{name:'Deployer',emoji:'🚀',color:'#00CEC9'}, scout:{name:'Scout',emoji:'🔍',color:'#00B894'},
+        }
+        for (const [aid, info] of Object.entries(liveRuns)) {
+          if (aid === 'main' || !info || info.status !== 'working') continue
+          const meta = SUB_AGENT_MAP[aid]
+          if (meta) {
+            subSessions.push({ id: aid, ...meta, task: info.taskTitle, startedAt: info.startedAt ? new Date(info.startedAt).getTime() : Date.now() })
+          }
+        }
+        subagentSessionsRef.current = subSessions
 
         agents.forEach((ag:any)=>{
           if(!ag.active) return;
@@ -1324,11 +1436,21 @@ export default function AgentOffice(){
       if(!pausedRef.current&&!replayModeRef.current){
         simTick++;
 
-        // Mood based on real performance: working = energized, idle long = neutral
+        // MC-17: Mood from real performance metrics (agent_runs data)
         if(simTick%360===0) agents.forEach(ag=>{
-          if(ag.state==="working") ag.mood=Math.min(100,(ag.mood||88)+2); // Working boosts mood
-          else if(ag.tasksCompleted>0) ag.mood=Math.max(80,Math.min(95,(ag.mood||88)-0.3)); // Idle but productive = stable
-          else ag.mood=Math.max(70,(ag.mood||88)-0.5); // Never worked = slowly drops to neutral
+          const run=liveRunsRef.current[ag.id];
+          if(!run){ag.mood=Math.max(70,(ag.mood||88)-0.3);return;}
+          const {todayTasks,todayErrors}=run;
+          const errorRate=todayTasks>0?todayErrors/(todayTasks+todayErrors):0;
+          // Happy: >5 tasks done today, low error rate
+          if(todayTasks>=5&&errorRate<0.1) ag.mood=Math.min(100,(ag.mood||88)+3);
+          // Stressed: blocked/high error rate
+          else if(errorRate>0.3||todayErrors>=3) ag.mood=Math.max(50,(ag.mood||88)-3);
+          // Neutral: normal activity
+          else if(todayTasks>0) ag.mood=Math.max(75,Math.min(95,(ag.mood||88)+0.5));
+          // No activity
+          else if(ag.state==="working") ag.mood=Math.min(95,(ag.mood||88)+1);
+          else ag.mood=Math.max(70,(ag.mood||88)-0.3);
         });
 
         agents.forEach(ag=>{
@@ -1409,6 +1531,15 @@ export default function AgentOffice(){
       const cam=camRef.current;
       const W=canvas.width,H=canvas.height;
 
+      // MC-21: Smooth zoom animation
+      const zt=zoomTargetRef.current;
+      if(zt){
+        const lerp=0.08;
+        cam.x+=(zt.x-cam.x)*lerp;cam.y+=(zt.y-cam.y)*lerp;cam.z+=(zt.z-cam.z)*lerp;
+        if(Math.abs(cam.x-zt.x)<0.5&&Math.abs(cam.y-zt.y)<0.5&&Math.abs(cam.z-zt.z)<0.01) zoomTargetRef.current=null;
+        clampCam(cam,W,H);
+      }
+
       let drawAgentsArr=agents;
       if(replayModeRef.current&&replayFrames.current.length){
         const idx=Math.min(replayCurRef.current,replayFrames.current.length-1);
@@ -1427,7 +1558,7 @@ export default function AgentOffice(){
       drawFloor(ctx,T2,cam,darkAlpha,!!incidentData,thm,showGridRef.current);
       // Use meetingRef (real data) OR meeting (simulation), real data takes priority
       const activeMeetingTopic=meetingRef.current?.topic||meeting?.topic||null;
-      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!(meetingRef.current||meeting),activeMeetingTopic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm);
+      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!(meetingRef.current||meeting),activeMeetingTopic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm,liveRunsRef.current);
       // Connection lines: working agents → orchestrator
       const orchAgent2=drawAgentsArr.find((a:any)=>a.id===ORCHESTRATOR_ID);
       if(orchAgent2){
@@ -1453,7 +1584,47 @@ export default function AgentOffice(){
       }
       drawParticles(ctx,particles,cam);
       drawChatBubbles(ctx,chatBubbles.current,T2,cam);
-      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0));
+      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0));
+
+      // MC-45: Draw temporary subagent sprites near KAOS
+      const orchAg = drawAgentsArr.find((a:any) => a.id === ORCHESTRATOR_ID)
+      if (orchAg && subagentSessionsRef.current.length > 0) {
+        ctx.save()
+        applyCamera(ctx, cam)
+        const baseX = orchAg.px + T2 * 2.5
+        const baseY = orchAg.py - T2 * 0.5
+        subagentSessionsRef.current.forEach((sub, i) => {
+          const sx = baseX + (i % 2) * T2 * 1.8
+          const sy = baseY + Math.floor(i / 2) * T2 * 1.5
+          const bobY = Math.sin(now / 800 + i * 1.2) * 3
+          const spriteSize = T2 * 0.3
+          // Glow ring
+          ctx.beginPath()
+          ctx.arc(sx, sy + bobY, spriteSize * 1.3, 0, Math.PI * 2)
+          ctx.fillStyle = sub.color + '18'
+          ctx.fill()
+          ctx.strokeStyle = sub.color + '44'
+          ctx.lineWidth = 1
+          ctx.stroke()
+          // Emoji
+          const emPx = Math.max(10, Math.round(T2 * 0.25))
+          ctx.font = `${emPx}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.fillText(sub.emoji, sx, sy + bobY + emPx * 0.35)
+          // Name + task label
+          const lPx = Math.max(6, Math.round(T2 * 0.1))
+          ctx.font = `bold ${lPx}px 'IBM Plex Mono', monospace`
+          ctx.fillStyle = sub.color
+          ctx.fillText(sub.name, sx, sy + bobY + spriteSize + lPx * 1.2)
+          if (sub.task) {
+            ctx.font = `${lPx}px 'IBM Plex Mono', monospace`
+            ctx.fillStyle = '#888'
+            ctx.fillText(sub.task.slice(0, 20), sx, sy + bobY + spriteSize + lPx * 2.5)
+          }
+        })
+        ctx.restore()
+      }
+
       if(minimapRef.current)drawMinimap(ctx,T2,drawAgentsArr,cam,W,H,showLegendRef.current);
 
       // Hover tooltip
@@ -1580,13 +1751,33 @@ export default function AgentOffice(){
       simRef.current?.agents?.forEach((ag:any)=>{const d=Math.hypot(ag.px-wx,ag.py-wy);if(d<bestD){bestD=d;best=ag;}});
       if(best) setCtxMenu({agentId:best.id,screenX:e.clientX,screenY:e.clientY});
     }
+    // MC-21: Double-click to zoom to agent
+    function onDblClick(e:MouseEvent){
+      const p=c2w(e);const cam2=camRef.current;
+      const wx=(p.x-cam2.x)/cam2.z,wy=(p.y-cam2.y)/cam2.z,T2=tileRef.current;
+      let best:any=null,bestD=T2*1.2;
+      simRef.current?.agents?.forEach((ag:any)=>{const d=Math.hypot(ag.px-wx,ag.py-wy);if(d<bestD){bestD=d;best=ag;}});
+      if(best){
+        // Zoom in to agent: center on them at 2.2x zoom
+        const targetZ=2.2;
+        const targetX=canvas!.width/2-best.px*targetZ;
+        const targetY=canvas!.height/2-best.py*targetZ;
+        zoomTargetRef.current={x:targetX,y:targetY,z:targetZ};
+        setSelectedId(best.id);setDetail({...best});
+      } else {
+        // Double-click on empty space: zoom out to default
+        zoomTargetRef.current={x:0,y:0,z:1};
+        setSelectedId(null);setDetail(null);
+      }
+    }
     canvas.addEventListener("wheel",onWheel,{passive:false});
     canvas.addEventListener("mousedown",onDown);
+    canvas.addEventListener("dblclick",onDblClick);
     canvas.addEventListener("contextmenu",onContextMenu);
     window.addEventListener("mousemove",onMove);
     window.addEventListener("mouseup",onUp);
     canvas.style.cursor="grab";
-    return()=>{canvas.removeEventListener("wheel",onWheel);canvas.removeEventListener("mousedown",onDown);canvas.removeEventListener("contextmenu",onContextMenu);window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);};
+    return()=>{canvas.removeEventListener("wheel",onWheel);canvas.removeEventListener("mousedown",onDown);canvas.removeEventListener("dblclick",onDblClick);canvas.removeEventListener("contextmenu",onContextMenu);window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);};
   },[]);
 
   const promoteAgent=useCallback((agId:string)=>{
@@ -1622,9 +1813,19 @@ export default function AgentOffice(){
   };
 
   const togglePause=()=>{pausedRef.current=!pausedRef.current;setPaused(p=>!p);};
-  const toggleSound=()=>{soundRef.current=!soundRef.current;setSoundOn(s=>!s);};
+  const toggleSound=()=>{const next=!soundRef.current;soundRef.current=next;setSoundOn(next);try{localStorage.setItem("office_sound",next?"on":"off");}catch(e){}};
+  const changeVolume=(v:number)=>{setVolume(v);if(v===0){soundRef.current=false;setSoundOn(false);}else{soundRef.current=true;setSoundOn(true);}if(audioRef.current?.master)audioRef.current.master.gain.value=v/100*0.15;try{localStorage.setItem("office_volume",String(v));localStorage.setItem("office_sound",v>0?"on":"off");}catch(e){}};
   const toggleMinimap=()=>{minimapRef.current=!minimapRef.current;setShowMinimap(s=>!s);};
   const toggleDepGraph=()=>{depGraphRef.current=!depGraphRef.current;setShowDepGraph(s=>!s);};
+  // MC-91: Export replay as JSON (last 60s of frames)
+  const exportReplay=()=>{
+    const frames=replayFrames.current.slice(-600); // ~60s at 10fps
+    const blob=new Blob([JSON.stringify({frames,exportedAt:new Date().toISOString()},null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`office-replay-${Date.now()}.json`;a.click();
+    URL.revokeObjectURL(url);
+    addToast("Replay exported","#6C5CE7");
+  };
   const openConfig=(ag:any)=>{setConfigAgent(ag);setConfigEdits({name:ag.name,color:ag.color,workBurst:ag.personality.workBurst,focusDuration:ag.personality.focusDuration});setShowConfig(true);};
   const saveConfig=()=>{
     if(!configAgent||!simRef.current?.agents) return;
@@ -1706,15 +1907,12 @@ export default function AgentOffice(){
             </div>
             <div style={{marginTop:12}}>
               <div style={{fontSize:10,color:"#6a6a8e",marginBottom:6,letterSpacing:"0.1em"}}>VOLUME</div>
-              <input type="range" min="0" max="100" value={soundOn?50:0}
-                onChange={(e:any)=>{
-                  const v=+e.target.value;
-                  if(v===0){soundRef.current=false;setSoundOn(false);}
-                  else{soundRef.current=true;setSoundOn(true);if(audioRef.current?.master)audioRef.current.master.gain.value=v/100*0.15;}
-                }}
+              <input type="range" min="0" max="100" value={volume}
+                onChange={(e:any)=>changeVolume(+e.target.value)}
                 style={{width:"100%",accentColor:"#6C5CE7"}}/>
               <div style={{display:"flex",justifyContent:"space-between",marginTop:2}}>
                 <span style={{fontSize:9,color:"#4a4a6a"}}>🔇</span>
+                <span style={{fontSize:9,color:"#4a4a6a"}}>{volume}%</span>
                 <span style={{fontSize:9,color:"#4a4a6a"}}>🔊</span>
               </div>
             </div>
@@ -1771,6 +1969,7 @@ export default function AgentOffice(){
             <span style={{fontSize:11,color:"#3a3a5e"}}>·</span>
             <span style={{fontSize:12,fontWeight:700,color:"#6C5CE7"}}>{stats.completed}</span>
             <span style={{fontSize:11,color:"#6a6a8e"}}>done</span>
+            {(()=>{const totalCost=Object.values(liveRunsRef.current).reduce((s,r)=>s+(r?.estimatedCost||0),0);return totalCost>0?<><span style={{fontSize:11,color:"#3a3a5e"}}>·</span><span style={{fontSize:12,fontWeight:700,color:"#4a6a5a"}}>${totalCost.toFixed(2)}</span><span style={{fontSize:11,color:"#6a6a8e"}}>today</span></>:null;})()}
           </div>
           {!isMobile && <>
           {/* Theme switcher */}
@@ -1790,7 +1989,19 @@ export default function AgentOffice(){
           <button onClick={toggleMinimap} style={{background:"transparent",border:"1px solid #2a2a4a",color:showMinimap?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Toggle minimap">🗺</button>
           <button onClick={()=>setShowSettings(s=>!s)} style={{background:showSettings?"#1a1a3a":"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Settings">⌨</button>
           <button onClick={()=>{const el=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else el.requestFullscreen?.();}} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}} title="Fullscreen">⛶</button>
-          <button onClick={toggleSound} style={{background:"transparent",border:"1px solid #2a2a4a",color:soundOn?"#8892b0":"#6a6a8e",padding:"3px 9px",borderRadius:3,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
+          {/* MC-91: Speed control */}
+          <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 6px",background:"#0a0a18",border:"1px solid #1a1a2e",borderRadius:3}}>
+            <span style={{fontSize:9,color:"#6a6a8e"}}>⏩</span>
+            {([0.5,1,2] as const).map(s=>(
+              <button key={s} onClick={()=>setSimSpeed(s)} style={{background:simSpeed===s?"#6C5CE7":"transparent",border:"none",borderRadius:2,color:simSpeed===s?"#fff":"#6a6a8e",padding:"1px 5px",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:simSpeed===s?700:400}}>{s}x</button>
+            ))}
+          </div>
+          {/* MC-91: Export replay */}
+          <button onClick={exportReplay} style={{background:"transparent",border:"1px solid #2a2a4a",color:"#7a7a98",padding:"3px 9px",borderRadius:3,fontSize:10,cursor:"pointer",fontFamily:"inherit"}} title="Export replay JSON">📦</button>
+          <div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 6px",background:"#0a0a18",border:"1px solid #1a1a2e",borderRadius:3}}>
+            <button onClick={toggleSound} style={{background:"transparent",border:"none",color:soundOn?"#8892b0":"#6a6a8e",padding:"0 2px",fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>{soundOn?"🔊":"🔇"}</button>
+            <input type="range" min="0" max="100" value={volume} onChange={(e:any)=>changeVolume(+e.target.value)} style={{width:50,height:3,accentColor:"#6C5CE7"}}/>
+          </div>
           </>}
           <button onClick={togglePause} style={{background:"transparent",border:"1px solid #2a2a4a",color:paused?"#00ff88":"#8892b0",padding:"3px 11px",borderRadius:3,fontSize:12,fontWeight:600,letterSpacing:"0.08em",cursor:"pointer",fontFamily:"inherit"}}>{paused?"▶ RUN":"⏸ LIVE"}</button>
         </div>
@@ -1851,11 +2062,24 @@ export default function AgentOffice(){
           </div>
         )}
 
+        {/* Sidebar toggle button */}
+        {!isMobile&&(
+          <button onClick={toggleSidebar} style={{position:"absolute",right:sidebarCollapsed?40:316,top:52,zIndex:200,background:theme==="B"?"#0a1510":"#0b0b14",border:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,borderRight:"none",borderRadius:"4px 0 0 4px",padding:"4px 3px",cursor:"pointer",color:"#6a6a8e",fontSize:11,fontFamily:"inherit"}}>{sidebarCollapsed?"◀":"▶"}</button>
+        )}
         {/* Sidebar */}
-        <div style={{width:320,flexShrink:0,display:isMobile?"none":"flex",flexDirection:"column",background:theme==="B"?"#0a1510":"#0b0b14",borderLeft:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden"}}>
+        <div style={{width:sidebarCollapsed?44:320,flexShrink:0,display:isMobile?"none":"flex",flexDirection:"column",background:theme==="B"?"#0a1510":"#0b0b14",borderLeft:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,overflow:"hidden",transition:"width 0.2s ease"}}>
 
+          {/* Collapsed sidebar: icon-only panel indicators */}
+          {sidebarCollapsed&&(
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 0"}}>
+              {detail&&<button onClick={()=>toggleSidebar()} style={{background:"transparent",border:"none",color:detail.color,fontSize:16,cursor:"pointer",padding:"4px"}} title={detail.name}>{detail.emoji}</button>}
+              {[{id:"feed",icon:"📡",label:"Feed"},{id:"flow",icon:"✓",label:"Tasks"},{id:"meetings",icon:"📅",label:"Meetings"},{id:"board",icon:"🏆",label:"Leaderboard"},{id:"incidents",icon:"🚨",label:"Incidents"},{id:"deps",icon:"🔗",label:"Dependencies"}].map(p=>(
+                <button key={p.id} onClick={()=>{if(!openPanels.has(p.id))togglePanel(p.id);toggleSidebar();}} style={{background:openPanels.has(p.id)?"#1a1a2e":"transparent",border:"none",color:openPanels.has(p.id)?"#a29bfe":"#4a4a6a",fontSize:13,cursor:"pointer",padding:"5px 4px",borderRadius:3,width:32,textAlign:"center"}} title={p.label}>{p.icon}</button>
+              ))}
+            </div>
+          )}
           {/* Detail panel — shows when an agent is selected on canvas */}
-          {detail&&(
+          {!sidebarCollapsed&&detail&&(
             <div style={{flexShrink:0,borderBottom:"1px solid #1a1a2e",overflowY:"auto",maxHeight:"45%"}}>
               <div style={{position:"sticky",top:0,background:"#0b0b14",zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 11px 4px",fontSize:11,letterSpacing:"0.13em",color:"#6a6a8e",borderBottom:"1px solid #1e1e35"}}>
                 <span>AGENT DETAIL{detail.id===ORCHESTRATOR_ID?" 👑":""}</span>
@@ -1880,6 +2104,14 @@ export default function AgentOffice(){
                     {detail.state?.replace(/_/g," ")}
                   </div>
                 </div>
+                {/* MC-91: Show model info */}
+                {(()=>{const liveRun=liveRunsRef.current[detail.id];return liveRun?(
+                  <div style={{display:"flex",gap:6,marginBottom:6,flexWrap:"wrap"}}>
+                    <span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:"#1a1a2e",color:"#8892b0"}}>Issue: {liveRun.taskTitle||"None"}</span>
+                    <span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:"#1a1a2e",color:"#8892b0"}}>Today: {liveRun.todayTasks} tasks</span>
+                    {liveRun.todayErrors>0&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:3,background:"#2a0808",color:"#ff4444"}}>{liveRun.todayErrors} errors</span>}
+                  </div>
+                ):null})()}
                 <div style={{display:"flex",gap:12,marginBottom:8}}>
                   <div style={{textAlign:"center"}}><div style={{fontSize:14,color:detail.color,fontWeight:700}}>{detail.tasksCompleted}</div><div style={{fontSize:10,color:"#6a6a8e"}}>TASKS</div></div>
                   <div style={{textAlign:"center"}}><div style={{fontSize:14,color:"#FDCB6E",fontWeight:700}}>{detail.meetingsAttended}</div><div style={{fontSize:10,color:"#6a6a8e"}}>MEETINGS</div></div>
@@ -1894,60 +2126,55 @@ export default function AgentOffice(){
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* KAOS-specific: command terminal + status updates (dependency chains moved to expandable panel) */}
-              {detail&&detail.id===ORCHESTRATOR_ID&&(
-                <div style={{borderTop:"1px solid #1e1e35",padding:"8px 11px"}}>
-                  <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>COMMAND TERMINAL</div>
-                  <div style={{display:"flex",alignItems:"center",gap:4,background:"#0a0a18",borderRadius:4,padding:"4px 8px",border:"1px solid #1e1e35"}}>
-                    <span style={{color:"#6C5CE7",fontSize:12,fontWeight:700}}>❯</span>
-                    <input value={nlInput} onChange={(e:any)=>setNlInput(e.target.value)}
-                      onKeyDown={(e:any)=>{if(e.key==="Enter"&&nlInput.trim()&&!nlLoading){
-                        setNlLoading(true);
-                        const userMsg=nlInput.trim();
-                        addFeed(`❯ ${userMsg}`,"#6C5CE7");
-                        fetch("http://127.0.0.1:18789/v1/chat/completions",{method:"POST",
-                          headers:{"Content-Type":"application/json","Authorization":"Bearer eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0"},
-                          body:JSON.stringify({model:"main",messages:[{role:"user",content:userMsg}]})
-                        }).then(r=>r.json()).then(data=>{
-                          const reply=data.choices?.[0]?.message?.content||"No response";
-                          const short=reply.length>200?reply.slice(0,200)+"…":reply;
-                          addFeed(`🧠 ${short}`,"#a29bfe");
-                          addToast("KAOS responded","#6C5CE7");
-                          const rEntry={id:feedIdRef.current++,ts:nowts(),sender:"KAOS",senderColor:"#6C5CE7",receiver:"You",text:short};
-                          dialogueRef.current=[rEntry,...dialogueRef.current].slice(0,40);
-                          setDialogue([...dialogueRef.current]);
-                          setNlInput("");setNlLoading(false);
-                        }).catch(()=>{addToast("Gateway error","#ff4444");setNlLoading(false);});
-                      }}}
-                      placeholder="Send a message to KAOS…"
-                      disabled={nlLoading}
-                      style={{flex:1,background:"transparent",border:"none",color:"#e0e0ff",fontFamily:"'IBM Plex Mono',monospace",fontSize:11,outline:"none"}}/>
-                  </div>
-                  {nlLoading&&<div style={{fontSize:10,color:"#6C5CE7",marginTop:3}}>⟳ thinking…</div>}
-
-                  {dialogue.length>0&&(
-                    <div style={{marginTop:8}}>
-                      <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>AGENT UPDATES</div>
-                      {dialogue.slice(0,5).map((d:any)=>(
-                        <div key={d.id} style={{marginBottom:4,padding:"4px 7px",background:"#0f0f22",borderRadius:3,borderLeft:`2px solid ${d.senderColor}`}}>
+                {/* MC-13: View real session log */}
+                <div style={{marginTop:6}}>
+                  <button onClick={()=>{
+                    setLoadingLog(true);
+                    fetch(`/api/status`).then(r=>r.json()).then(data=>{
+                      const activity:any[]=data.recentActivity||[];
+                      const agentLogs=activity.filter((a:any)=>a.agentId===detail.id).slice(0,10);
+                      setSessionLog(agentLogs);
+                      setLoadingLog(false);
+                    }).catch(()=>{setSessionLog([]);setLoadingLog(false);});
+                  }} style={{background:"#1a1a2e",border:"1px solid #2a2a4a",borderRadius:4,color:"#a29bfe",padding:"4px 10px",fontSize:10,cursor:"pointer",fontFamily:"inherit",width:"100%"}}>
+                    {loadingLog?"Loading…":"View Session Log"}
+                  </button>
+                  {sessionLog.length>0&&(
+                    <div style={{marginTop:6,maxHeight:150,overflowY:"auto",background:"#06060e",border:"1px solid #1e1e35",borderRadius:4,padding:"4px 6px"}}>
+                      {sessionLog.map((entry:any,i:number)=>(
+                        <div key={i} style={{padding:"3px 0",borderBottom:i<sessionLog.length-1?"1px solid #1a1a2e":"none",fontSize:10}}>
                           <div style={{display:"flex",justifyContent:"space-between"}}>
-                            <span style={{color:d.senderColor,fontSize:10,fontWeight:700}}>{d.sender}</span>
-                            <span style={{color:"#4a4a6a",fontSize:9}}>{d.ts}</span>
+                            <span style={{color:entry.action==='code'?'#3b82f6':entry.action==='research'?'#a855f7':'#8892b0',fontWeight:600}}>{entry.action||'activity'}</span>
+                            <span style={{color:"#4a4a6a",fontSize:9}}>{entry.ago!=null?`${entry.ago}m ago`:''}</span>
                           </div>
-                          <div style={{color:"#8892b0",fontSize:10,lineHeight:1.5,marginTop:1}}>{d.text}</div>
+                          <div style={{color:"#7a7a98",lineHeight:1.4,wordBreak:"break-word"}}>{entry.desc||entry.channel||'—'}</div>
                         </div>
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* KAOS-specific: read-only exec terminal (MC-18) */}
+              {detail&&detail.id===ORCHESTRATOR_ID&&(
+                <div style={{borderTop:"1px solid #1e1e35",padding:"8px 11px"}}>
+                  <div style={{fontSize:10,color:"#6a6a8e",letterSpacing:"0.1em",marginBottom:4}}>EXEC OUTPUT</div>
+                  <div style={{background:"#06060e",border:"1px solid #1e1e35",borderRadius:4,padding:"6px 8px",maxHeight:180,overflowY:"auto",fontFamily:"'IBM Plex Mono',monospace"}}>
+                    {feed.slice(-10).map((e:any)=>(
+                      <div key={e.id} style={{display:"flex",gap:5,alignItems:"flex-start",marginBottom:2}}>
+                        <span style={{color:"#4a4a6a",fontSize:9,flexShrink:0,marginTop:1}}>{e.ts}</span>
+                        <span style={{color:e.color,fontSize:10,lineHeight:1.5,wordBreak:"break-word"}}>{e.text}</span>
+                      </div>
+                    ))}
+                    {feed.length===0&&<div style={{color:"#4a4a6a",fontSize:10,textAlign:"center",padding:"8px 0"}}>No exec output yet</div>}
+                  </div>
                 </div>
               )}
             </div>
           )}
 
           {/* Expandable panels — all in one scrollable container */}
-          <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
+          <div style={{flex:1,minHeight:0,overflowY:"auto",display:sidebarCollapsed?"none":"block"}}>
 
             {/* ▼ ACTIVITY FEED — always expanded */}
             <div>
@@ -2186,7 +2413,7 @@ export default function AgentOffice(){
           </div>{/* end expandable panels */}
 
           {/* Stats bar */}
-          <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",display:"flex",padding:"6px 0"}}>
+          <div style={{flexShrink:0,borderTop:"1px solid #1a1a2e",display:sidebarCollapsed?"none":"flex",padding:"6px 0"}}>
             {[{l:"DONE",v:stats.completed,c:"#6C5CE7"},{l:"ACTIVE",v:stats.working,c:"#00ff88"},{l:"MTG",v:stats.meeting,c:"#FDCB6E"},{l:"IDLE",v:stats.idle,c:"#3a3a5e"}].map((s,i,arr)=>(
               <div key={s.l} style={{flex:1,textAlign:"center",borderRight:i<arr.length-1?"1px solid #1a1a2e":"none"}}>
                 <div style={{fontSize:16,fontWeight:700,color:s.c,lineHeight:1}}>{s.v}</div>
@@ -2210,6 +2437,23 @@ export default function AgentOffice(){
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* MC-24: Sticky status bar at bottom */}
+      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",height:28,
+        background:theme==="B"?"#0a1510":"#08081a",borderTop:`1px solid ${theme==="B"?"#162e22":"#1a1a2e"}`,
+        fontFamily:"'IBM Plex Mono',monospace",fontSize:10,color:"#6a6a8e",gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{color:"#00ff88",fontWeight:700}}>{stats.working}</span><span>active</span>
+          <span style={{color:"#3a3a5e"}}>·</span>
+          <span style={{color:"#FDCB6E",fontWeight:700}}>{stats.meeting}</span><span>in meeting</span>
+          <span style={{color:"#3a3a5e"}}>·</span>
+          <span style={{color:"#6C5CE7",fontWeight:700}}>{stats.completed}</span><span>done</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {(()=>{const totalCost=Object.values(liveRunsRef.current).reduce((s,r)=>s+(r?.estimatedCost||0),0);return totalCost>0?<span style={{color:"#4a6a5a"}}>💰 ${totalCost.toFixed(2)} today</span>:null;})()}
+          <span style={{color:"#4a4a6a"}}>{new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})} ET</span>
         </div>
       </div>
     </div>
