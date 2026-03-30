@@ -1,22 +1,14 @@
 // ─── useAgentStatus Hook ──────────────────────────────────────────────────────
-// Extracted from AgentOffice.tsx (INF-125)
+// Extracted from AgentOffice.tsx (TOD-476)
 // Handles Supabase agent_runs polling and board task polling.
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect } from 'react';
+import {
+  SUPA_URL, SUPA_KEY, SUPA_AGENTS,
+} from '@/components/office/officeConstants';
+import type { AgentRunInfo, AgentRunStatus } from '@/components/office/officeConstants';
 
-export const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co';
-export const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';
-export const SUPA_AGENTS = ['main', 'scout', 'ops', 'kemuni-sme', 'vespera-sme', 'builder', 'tester', 'deployer'] as const;
-
-export type AgentRunStatus = 'working' | 'idle' | 'never';
-export interface AgentRunInfo {
-  status: AgentRunStatus;
-  taskTitle: string;
-  startedAt: string | null;
-  todayTasks: number;
-  todayErrors: number;
-  estimatedCost: number;
-}
+export type { AgentRunInfo, AgentRunStatus };
 
 export async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
@@ -26,7 +18,7 @@ export async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   if (!res.ok) return {};
   const rows: any[] = await res.json();
   const now = Date.now();
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const todayMs = todayStart.getTime();
   const result: Record<string, AgentRunInfo> = {};
   const agentRows: Record<string, any[]> = {};
@@ -63,13 +55,8 @@ interface UseAgentStatusOptions {
 }
 
 export function useAgentStatus({
-  simRef,
-  liveRunsRef,
-  boardTasksRef,
-  subagentCountRef,
-  subagentSessionsRef,
-  addFeed,
-  setBoardTasks,
+  simRef, liveRunsRef, boardTasksRef, subagentCountRef, subagentSessionsRef,
+  addFeed, setBoardTasks,
 }: UseAgentStatusOptions) {
   // ── Board task polling ──
   useEffect(() => {
@@ -111,16 +98,11 @@ export function useAgentStatus({
           if (!run) return;
           if (run.status === 'working') {
             if (ag.state !== 'working' && ag.state !== 'meeting' && ag.state !== 'moving_to_meeting') {
-              ag.state = 'working';
-              ag.task = run.taskTitle || 'Working';
-              ag.progress = 5;
-              ag.monologue = null;
-              ag.glowTick = 60;
-              ag.lastStateChange = Date.now();
+              ag.state = 'working'; ag.task = run.taskTitle || 'Working'; ag.progress = 5;
+              ag.monologue = null; ag.glowTick = 60; ag.lastStateChange = Date.now();
               addFeed(`${ag.emoji} ${ag.name}: ${run.taskTitle || 'Working'}`, ag.color);
             } else if (ag.state === 'working' && run.taskTitle && ag.task !== run.taskTitle) {
-              ag.task = run.taskTitle;
-              ag.progress = 5;
+              ag.task = run.taskTitle; ag.progress = 5;
             }
           } else if (run.status === 'idle') {
             if (ag.state === 'working') {
@@ -132,7 +114,6 @@ export function useAgentStatus({
             }
           }
         });
-        // Build subagent sessions
         const subSessions: typeof subagentSessionsRef.current = [];
         for (const [aid, info] of Object.entries(runs)) {
           if (aid === 'main' || !info || info.status !== 'working') continue;
@@ -147,5 +128,5 @@ export function useAgentStatus({
     pollRuns();
     const t = setInterval(pollRuns, 10000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [simRef, liveRunsRef, boardTasksRef, subagentCountRef, subagentSessionsRef, addFeed]);
+  }, [simRef, liveRunsRef, subagentCountRef, subagentSessionsRef, addFeed]);
 }
