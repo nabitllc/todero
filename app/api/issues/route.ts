@@ -46,33 +46,41 @@ function postDiscord(channelId: string, content: string) {
   }).catch(err => console.error('[discord]', err))
 }
 
-function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string }) {
+const STATUS_EMOJI: Record<string, string> = {
+  approved: '🚢', completed: '✅', closed: '✅', released: '🚀'
+}
+const TYPE_EMOJI: Record<string, string> = {
+  task: '📋', bug: '🐛', feature: '✨', epic: '🏔️', ops: '⚙️', research: '🔍'
+}
+
+function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string; type?: string }) {
   const key = issue.task_key ?? '?'
-  const statusLabel = issue.status === 'approved' ? 'approved'
-    : issue.status === 'closed' ? 'closed'
-    : 'completed'
-  const assignee = issue.assignee ?? 'unknown'
+  const status = issue.status ?? 'completed'
+  const statusEmoji = STATUS_EMOJI[status] ?? '✅'
+  const typeEmoji = TYPE_EMOJI[issue.type ?? 'task'] ?? '📋'
+  const resType = issue.resolution_type ?? status
   const ts = new Date().toLocaleString('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
     hour12: true
   }) + ' EST'
-  const msg = `✅ **[${key}]** — ${issue.title ?? ''} (${issue.project ?? ''}) moved to **${statusLabel}** by ${assignee} at ${ts}`
+  const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''} at ${ts}`
   postDiscord(COMPLETED_TASKS_CHANNEL, msg)
 }
 
 function notifyCompletedTask(issue: Record<string, unknown>, toStatus: string) {
   const key = issue.task_key ?? '?'
-  const emoji = PROJECT_EMOJI[issue.project as string ?? ''] ?? '📌'
+  const statusEmoji = STATUS_EMOJI[toStatus] ?? '✅'
+  const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
+  const resType = (issue.resolution_type as string) ?? toStatus
   const ts = new Date().toLocaleString('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
     hour12: true
   }) + ' EST'
-  const label = toStatus === 'approved' ? '✅ Approved' : '✅ Completed'
-  const msg = `${label} ${emoji} **[${key}]** — ${issue.title ?? ''} (${issue.project ?? ''}) at ${ts}`
+  const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''} at ${ts}`
   postDiscord(COMPLETED_TASKS_CHANNEL, msg)
 }
 
@@ -108,11 +116,12 @@ const supabase = createClient(
 
 // ── Task key generation ───────────────────────────────────────────────────────
 const PROJECT_PREFIX: Record<string, string> = {
-  'Mission Control': 'MC', Infrastructure: 'INF', Vespera: 'VES', Kemuni: 'KEM'
+  'Mission Control': 'MC', Infrastructure: 'INF', Vespera: 'VES', Kemuni: 'KEM',
+  Todero: 'TOD', todero: 'TOD'
 }
 
 async function generateTaskKey(project: string): Promise<{ task_key: string; task_number: number }> {
-  const prefix = PROJECT_PREFIX[project] ?? 'TASK'
+  const prefix = PROJECT_PREFIX[project] ?? 'TOD'
   try {
     const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
     if (!rpcErr && typeof seqNum === 'number') {
