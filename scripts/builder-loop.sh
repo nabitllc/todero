@@ -91,16 +91,20 @@ Step 2: For each issue in order:
 - Run npm run build (fix all TypeScript errors before committing)
 - git add -A && git commit -m 'feat(TASK_KEY): description [skip ci]'
 - Prepare a regression_test string — the exact command or manual steps to verify no regression (e.g. \"npm run build && npm test\" or \"manual: verify X on mobile\"). This is REQUIRED.
-- Move to in_review via MC API (NOT done): PATCH http://localhost:3000/api/issues with:
+- Move to in_review via MC API by PATCHing the ORIGINAL issue (NOT done, NEVER create new tester issues):
+  PATCH http://localhost:3000/api/issues with:
   {
-    \"id\": \"<uuid>\",
+    \"id\": \"<uuid of the ORIGINAL issue>\",
     \"status\": \"in_review\",
     \"implementation_notes\": \"<what you built, what you tested, any edge cases>\",
     \"commit_sha\": \"<git rev-parse HEAD output>\",
     \"regression_test\": \"<command or manual steps to verify no regression>\"
   }
+  The API will auto-assign the correct reviewer based on test_tier (P0=designer, P1=tester, P2=po, P3=main).
   If regression_test is empty, the API will reject the request — you MUST provide it.
-- DO NOT mark status=done — Tester does that after review
+- ⚠️ NEVER create new tester/reviewer child issues. NEVER POST a new issue for review.
+  Just PATCH the original issue to status=in_review. The API handles reviewer routing.
+- DO NOT mark status=done — the assigned reviewer does that after review
 
 ⚠️ PARTIAL WORK RULE: If you run out of time or cannot complete a task, you MUST either:
 (a) Commit what you have with [WIP] prefix: git add -A && git commit -m '[WIP] partial: description'

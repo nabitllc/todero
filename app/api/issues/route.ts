@@ -342,9 +342,21 @@ export async function PATCH(req: NextRequest) {
           { status: 400 }
         )
       }
-      // Auto-set assignee=tester if not explicitly provided
+      // Auto-set reviewer assignee based on test_tier (not hardcoded tester)
+      // P0: designer (UX + functional), P1: tester (QA), P2: po (spot-check), P3: main (quick check)
       if (!fields.assignee) {
-        fields.assignee = 'tester'
+        const tier = fields.test_tier ?? before?.test_tier
+        if (tier === 'P0') {
+          fields.assignee = 'designer'
+        } else if (tier === 'P1') {
+          fields.assignee = 'tester'
+        } else if (tier === 'P2') {
+          fields.assignee = 'po'
+        } else if (tier === 'P3') {
+          fields.assignee = 'main'
+        } else {
+          fields.assignee = 'tester'  // fallback if test_tier not set
+        }
       }
     }
 
