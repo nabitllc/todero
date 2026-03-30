@@ -337,7 +337,7 @@ function ProjectBreakdownBars({ project }: { project: string }) {
       {rows.map(r => (
         <div key={r.label} className="flex items-center gap-2">
           <span className="text-[9px] text-white/50 w-12 shrink-0">{r.label}</span>
-          <div className="flex-1 h-1 rounded-full" style={{background:'#1a1a1a'}}>
+          <div className="flex-1 h-1 rounded-full bg-[#1a1a1a]">
             <div className={`h-1 rounded-full transition-all ${r.colorClass}`} style={{width: r.total > 0 ? (r.done/r.total*100)+'%' : '0%'}} />
           </div>
           <span className="text-[9px] text-white/30 tabular-nums w-8 text-right">{r.done}/{r.total}</span>
@@ -461,7 +461,7 @@ export default function OverviewTab({
                 const sorted = [...allProjects].sort((a,b) => (a.taskProgress ?? 0) - (b.taskProgress ?? 0))
                 if (!sorted.length) return null
                 return (
-                  <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
+                  <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
                         <span className="text-sm">📊</span>
@@ -534,8 +534,7 @@ export default function OverviewTab({
                       : '—'
                     const pColor = (proj as any).color ?? '#6b7280'
                     return (
-                      <div key={projName} className="rounded-2xl border border-white/10 p-4"
-                        style={{ background: '#0f0f0f' }}>
+                      <div key={projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
                         <div className="flex items-center gap-2 mb-3">
                           <span className="text-lg">{(proj as any).emoji}</span>
                           <span className="text-white text-xs font-semibold truncate">{projName}</span>
