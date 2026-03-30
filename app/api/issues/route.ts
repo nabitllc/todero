@@ -344,7 +344,7 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
-    // To 'open': require priority, sprint, assignee, acceptance_criteria, AND severity (set by PO/KAOS)
+    // To 'open': require priority, sprint, assignee, acceptance_criteria, severity, AND reviewer (set by PO/KAOS)
     if (fields.status === 'open') {
       const missing: string[] = []
       if (!merged.priority) missing.push('priority')
@@ -354,6 +354,12 @@ export async function PATCH(req: NextRequest) {
       if (!merged.severity) {
         return NextResponse.json(
           { error: 'severity is required before moving to open. Set S0-S3 based on change risk.' },
+          { status: 400 }
+        )
+      }
+      if (!merged.reviewer) {
+        return NextResponse.json(
+          { error: 'reviewer is required before moving to open. Set the reviewer (e.g. tester, designer, po) during backlog grooming.' },
           { status: 400 }
         )
       }
@@ -390,20 +396,29 @@ export async function PATCH(req: NextRequest) {
           { status: 400 }
         )
       }
-      // Auto-set reviewer assignee based on severity (not hardcoded tester)
-      // S0: designer (UX + functional), S1: tester (QA), S2: po (spot-check), S3: main (quick check)
+      // Set assignee for review: use reviewer field if already set (preferred — set during grooming by PO/KAOS).
+      // Only fall back to severity-mapped default if reviewer is null (e.g. legacy issue or missed grooming).
       if (!fields.assignee) {
-        const tier = fields.severity ?? before?.severity
-        if (tier === 'S0') {
-          fields.assignee = 'designer'
-        } else if (tier === 'S1') {
-          fields.assignee = 'tester'
-        } else if (tier === 'S2') {
-          fields.assignee = 'po'
-        } else if (tier === 'S3') {
-          fields.assignee = 'main'
+        const existingReviewer = fields.reviewer ?? before?.reviewer
+        if (existingReviewer) {
+          fields.assignee = existingReviewer
         } else {
-          fields.assignee = 'tester'  // fallback if severity not set
+          // Fallback: derive from severity and also record in reviewer for future reference
+          const tier = fields.severity ?? before?.severity
+          let derivedReviewer: string
+          if (tier === 'S0') {
+            derivedReviewer = 'designer'
+          } else if (tier === 'S1') {
+            derivedReviewer = 'tester'
+          } else if (tier === 'S2') {
+            derivedReviewer = 'po'
+          } else if (tier === 'S3') {
+            derivedReviewer = 'main'
+          } else {
+            derivedReviewer = 'tester'  // last resort if severity not set
+          }
+          fields.assignee = derivedReviewer
+          fields.reviewer = derivedReviewer  // persist the fallback so it's recorded
         }
       }
     }
@@ -482,9 +497,13 @@ export async function PATCH(req: NextRequest) {
       fields.submitted_at = now
     }
 
-    // → done: set completed_at
+    // → done: set completed_at and reviewed_by (whoever is assignee at completion time)
     if (fields.status === 'done') {
       fields.completed_at = now
+      const completingAssignee = fields.assignee ?? before?.assignee
+      if (completingAssignee && !fields.reviewed_by) {
+        fields.reviewed_by = completingAssignee
+      }
     }
 
     // → open (rejection routing): if assignee not explicitly provided, route back to worked_by
@@ -529,7 +548,8 @@ export async function PATCH(req: NextRequest) {
     const safeFields = { ...fields }
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
                         'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test',
-                        'rejection_count', 'last_rejected_at', 'last_rejection_reason']) {
+                        'rejection_count', 'last_rejected_at', 'last_rejection_reason',
+                        'reviewer', 'reviewed_by']) {
       delete safeFields[col]
     }
     const retry = await supabase
