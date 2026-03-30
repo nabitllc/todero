@@ -492,6 +492,15 @@ export async function PATCH(req: NextRequest) {
     if (fields.status === 'open' && !fields.assignee && before?.worked_by) {
       fields.assignee = before.worked_by
     }
+
+    // → open from in_review (rejection): increment rejection_count, set timestamps
+    if (fields.status === 'open' && before?.status === 'in_review') {
+      fields.rejection_count = (before?.rejection_count ?? 0) + 1
+      fields.last_rejected_at = new Date().toISOString()
+      if (fields.reviewer_notes) {
+        fields.last_rejection_reason = fields.reviewer_notes
+      }
+    }
   }
 
   // ── INF-181: Increment fail_count on test_status=failed ──
@@ -519,7 +528,8 @@ export async function PATCH(req: NextRequest) {
   if (error?.code === '42703') {
     const safeFields = { ...fields }
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
-                        'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test']) {
+                        'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test',
+                        'rejection_count', 'last_rejected_at', 'last_rejection_reason']) {
       delete safeFields[col]
     }
     const retry = await supabase
