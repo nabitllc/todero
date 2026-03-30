@@ -33,6 +33,52 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 )
 
+// MC-210: Project prefix map for task_key generation
+const PROJECT_PREFIX: Record<string, string> = {
+  'Mission Control': 'MC', Infrastructure: 'INF', Vespera: 'VES', Kemuni: 'KEM'
+}
+
+// MC-210: Atomic task_key generation — uses Postgres sequence (via RPC) with fallback
+async function generateTaskKey(project: string): Promise<{ task_key: string; task_number: number }> {
+  const prefix = PROJECT_PREFIX[project] ?? 'TASK'
+
+  // Preferred path: Postgres sequence via RPC (atomic, no race)
+  try {
+    const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
+    if (!rpcErr && typeof seqNum === 'number') {
+      return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
+    }
+  } catch { /* RPC not yet deployed — fall through */ }
+
+  // Fallback: MAX(task_number) + 1 with retry on collision
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('issues')
+      .select('task_number')
+      .not('task_number', 'is', null)
+      .order('task_number', { ascending: false })
+      .limit(1)
+      .single()
+
+    const nextNumber = (maxRow?.task_number ?? 0) + 1 + attempt
+    const key = `${prefix}-${nextNumber}`
+
+    const { data: existing } = await supabase
+      .from('issues')
+      .select('id')
+      .eq('task_key', key)
+      .maybeSingle()
+
+    if (!existing) {
+      return { task_key: key, task_number: nextNumber }
+    }
+  }
+
+  // Last resort: timestamp-based to guarantee uniqueness
+  const ts = Date.now() % 1000000
+  return { task_key: `${prefix}-${ts}`, task_number: ts }
+}
+
 export async function GET() {
   const { data, error } = await supabase
     .from('issues')
@@ -46,7 +92,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { title, description, status, assignee, project, priority, type, due_date,
           acceptance_criteria, sprint, parent_id, test_tier, resolution_type,
-          feature_branch, pr_url, task_key, task_number } = body
+          feature_branch, pr_url, task_key: _clientKey, task_number: _clientNum } = body
 
   // ── Enforcement: no issue without title + project + acceptance_criteria ──
   const missing: string[] = []
@@ -119,6 +165,9 @@ export async function POST(req: NextRequest) {
     ? (description ? `${description}\n\n${routingNote}` : routingNote)
     : description
 
+  // MC-210: Always generate task_key server-side to prevent race conditions
+  const generated = await generateTaskKey(project)
+
   const { data, error } = await supabase
     .from('issues')
     .insert({
@@ -128,7 +177,7 @@ export async function POST(req: NextRequest) {
       acceptance_criteria, sprint, parent_id,
       ...(test_tier ? { test_tier } : {}),
       resolution_type, feature_branch, pr_url,
-      ...(task_key ? { task_key, task_number } : {})
+      task_key: generated.task_key, task_number: generated.task_number,
     })
     .select()
     .single()

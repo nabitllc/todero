@@ -267,7 +267,7 @@ function DoneYesterdayWins() {
   if (wins.length === 0) return null
   const ASSIGNEE_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤' }
   return (
-    <div className="rounded-2xl border border-emerald-900/40 p-4 md:p-5" style={{background:'linear-gradient(135deg,#071a0f 0%,#0a1a10 100%)'}}>
+    <div className="bg-[#0f0f0f] border border-white/10 rounded-xl p-4 md:p-5">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg">🏆</span>
         <span className="text-xs font-semibold tracking-widest text-emerald-400 uppercase">Yesterday's Wins</span>
@@ -393,16 +393,18 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
       </div>
       <div className="space-y-2.5">
         {signals.map(s => {
-          const badgeColor = s.count === 0 ? '#10b981' : s.count <= 3 ? '#f59e0b' : '#ef4444'
-          const badgeBg = s.count === 0 ? '#10b98118' : s.count <= 3 ? '#f59e0b18' : '#ef444418'
+          const badgeClass = s.count === 0
+            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+            : s.count <= 3
+              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              : 'bg-red-500/10 text-red-400 border border-red-500/20'
           return (
-            <div key={s.label} className="rounded-xl border border-white/10 px-3 py-2.5" style={{ background: '#080808' }}>
+            <div key={s.label} className="rounded-xl border border-white/10 px-3 py-2.5 bg-[#080808]">
               <div className="flex items-center gap-2">
                 <span className="text-xs">{s.icon}</span>
                 <span className="text-white/40 text-xs flex-1">{s.label}</span>
                 <button onClick={() => onNavigate('board')}
-                  className="text-xs font-bold px-2 py-0.5 rounded-full transition-colors hover:opacity-80"
-                  style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}30` }}>
+                  className={`text-xs font-bold px-2 py-0.5 rounded-full transition-colors hover:opacity-80 ${badgeClass}`}>
                   {s.count}
                 </button>
               </div>
@@ -446,9 +448,9 @@ function StandupCard() {
     }).catch(() => {})
   }, [])
   const sections = [
-    { label: 'Shipped Yesterday', icon: '\u2705', items: data.shipped, emptyMsg: 'Nothing shipped', color: '#10b981' },
-    { label: 'In Flight Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', color: '#3b82f6' },
-    { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', color: '#ef4444' },
+    { label: 'Shipped Yesterday', icon: '\u2705', items: data.shipped, emptyMsg: 'Nothing shipped', colorClass: 'text-green-400' },
+    { label: 'In Flight Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', colorClass: 'text-blue-400' },
+    { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', colorClass: 'text-red-400' },
   ]
   return (
     <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{ background: '#0f0f0f' }}>
@@ -461,7 +463,7 @@ function StandupCard() {
           <div key={s.label}>
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-xs">{s.icon}</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: s.color }}>{s.label}</span>
+              <span className={`text-[10px] font-semibold uppercase tracking-wider ${s.colorClass}`}>{s.label}</span>
               <span className="text-[9px] text-white/30">({s.items.length})</span>
             </div>
             {s.items.length === 0 ? (
