@@ -66,3 +66,30 @@ export function fmtMins(m: number) {
   const h=Math.floor(m/60), mm=m%60
   return mm ? h+'h '+mm+'m' : h+'h'
 }
+
+export const ALL_AGENTS = [
+  { id:'main',    name:'KAOS',    emoji:'🧠', role:'Chief of Staff',    status:'active',    model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#6b7280', desc:'Main orchestrator. Strategy, memory, delegation, comms.', capabilities:['Orchestration','Memory','Strategy','Comms','Delegation'], floor: true },
+  { id:'builder', name:'Builder', emoji:'🔨', role:'Coding Agent',      status:'active',    model:'anthropic/claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#3b82f6', desc:'Ships clean PRs for Vespera and Kemuni. Runs nightly from task queue.', capabilities:['Next.js','Supabase','TypeScript','APIs'], floor: true },
+  { id:'tester',  name:'Tester',  emoji:'🧪', role:'QA Reviewer',      status:'active',    model:'anthropic/claude-haiku-4-5', modelShort:'Haiku 4.5', color:'#a855f7', desc:'Reviews PRs from Builder. Catches bugs before they reach production.', capabilities:['Code Review','Testing','Bug Detection','PR Review'], floor: true },
+  { id:'scout',   name:'Scout',   emoji:'🔍', role:'Research Agent',    status:'scheduled', model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#a855f7', desc:'Morning scan: goth scene, competitors, PropTech trends.', capabilities:['Web Research','Summarization','Trends'], floor: true },
+]
+
+export const PROJECT_COLORS: Record<string,string> = { Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280', OpenClaw:'#10b981' }
+export const TYPE_COLORS: Record<string,string> = { feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b' }
+
+export const DEFAULT_SPRINT_PROJECTS = [
+  {id:'kemuni',name:'Kemuni Launch',desc:'Community & Property SaaS',emoji:'🚀',startDate:'2026-03-21',deadline:'2026-04-20',totalDays:30,color:'#ffffff',borderColor:'border-white/10',bg:'#0f0f0f',bgDark:'#0f0f0f'},
+  {id:'vespera',name:'Vespera',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-31',totalDays:9,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
+]
+
+export const ACTIVITIES: Record<string,string[]> = {
+  main:    ['Reviewing sprint goals...','Planning delegations...','Updating MEMORY.md...','Checking crons...'],
+  builder: ['Idle — awaiting task','Ready to build...','Standing by...'],
+  scout:   ['Scheduled for 8:00 AM','Queued research tasks...','Idle'],
+}
+
+// Toast color tokens
+export const TOAST_COLORS = { started: '#60a5fa', done: '#34d399', error: '#f87171', default: '#00ff88' }
+
+// Agent emoji map for toasts
+export const AGENT_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤', deployer:'🚀' }
