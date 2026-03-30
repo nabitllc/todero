@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exec as execAsync } from 'child_process'
 
-// Item 4: Assignee → OpenClaw agent ID mapping for immediate activation
+// ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'tester': 'tester',
   'scout': 'scout',
@@ -11,11 +11,10 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'vespera-sme': 'vespera-sme',
   'main': 'main',
   'KAOS': 'main',
-  'builder': 'main',   // builder isn't a real OpenClaw agent yet — notify main
-  'michael': null,     // human — skip
+  'builder': 'main',
+  'michael': null,
 }
 
-// Fire-and-forget: activate agent immediately on status transition
 function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
@@ -23,70 +22,104 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
     ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
     : `Issue ${taskKey} is ready: ${title}. Pick it up and start work.`
   const cmd = `openclaw agent --agent ${agentId} --message ${JSON.stringify(msg)} 2>/dev/null`
-  execAsync(cmd, { timeout: 30000 }, () => {}) // fire-and-forget
+  execAsync(cmd, { timeout: 30000 }, () => {})
 }
 
-const DISCORD_CHANNEL = '1487584901678104698'
+// ── Discord helpers ───────────────────────────────────────────────────────────
+const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
+const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
+
 const PROJECT_EMOJI: Record<string, string> = {
   Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️'
 }
 
-const RES_LABEL: Record<string, string> = {
-  code_change: '🚢 shipped', config_change: '⚙️ config', by_design: '✏️ by design',
-  wont_fix: '🚫 won\'t fix', canceled: '❌ canceled', duplicate: '🔁 duplicate',
-  cannot_reproduce: '❓ cannot reproduce'
+function postDiscord(channelId: string, content: string) {
+  const token = process.env.DISCORD_BOT_TOKEN ?? DISCORD_BOT_TOKEN
+  fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bot ${token}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
+    },
+    body: JSON.stringify({ content })
+  }).catch(err => console.error('[discord]', err))
 }
 
 function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string }) {
   const key = issue.task_key ?? '?'
-  const statusLabel = issue.status === 'approved' ? 'approved' : issue.status === 'closed' ? 'closed' : 'completed'
+  const statusLabel = issue.status === 'approved' ? 'approved'
+    : issue.status === 'closed' ? 'closed'
+    : 'completed'
   const assignee = issue.assignee ?? 'unknown'
-  const project = issue.project ?? ''
-
-  // Format timestamp in EST
   const ts = new Date().toLocaleString('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
     hour12: true
   }) + ' EST'
-
-  const msg = `✅ **[${key}]** — ${issue.title ?? ''} (${project}) moved to **${statusLabel}** by ${assignee} at ${ts}`
-
-  fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
-    },
-    body: JSON.stringify({ content: msg })
-  }).catch(err => console.error('[discord-notify]', err))
+  const msg = `✅ **[${key}]** — ${issue.title ?? ''} (${issue.project ?? ''}) moved to **${statusLabel}** by ${assignee} at ${ts}`
+  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
 }
 
+function notifyCompletedTask(issue: Record<string, unknown>, toStatus: string) {
+  const key = issue.task_key ?? '?'
+  const emoji = PROJECT_EMOJI[issue.project as string ?? ''] ?? '📌'
+  const ts = new Date().toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    hour12: true
+  }) + ' EST'
+  const label = toStatus === 'approved' ? '✅ Approved' : '✅ Completed'
+  const msg = `${label} ${emoji} **[${key}]** — ${issue.title ?? ''} (${issue.project ?? ''}) at ${ts}`
+  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+}
+
+function notifyPRReview(issue: { task_key?: string; title?: string; project?: string; feature_branch?: string; pr_url?: string }) {
+  const key = issue.task_key ?? '?'
+  const msg = `🔀 **PR Ready for Review**\n**[${key}]** ${issue.title ?? ''}\nProject: ${issue.project ?? ''} · Branch: ${issue.feature_branch ?? ''}\nPR: ${issue.pr_url ?? ''}\n<@409194957098713088> ready to merge`
+  postDiscord('1487826368170299592', msg)
+}
+
+function notifyEscalation(issue: { task_key?: string; title?: string; project?: string; acceptance_criteria?: string; description?: string }) {
+  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
+  const key = issue.task_key ?? '?'
+  const ac = (issue.acceptance_criteria ?? '').slice(0, 300)
+  const desc = (issue.description ?? '').slice(0, 300)
+  const msg = `🚨🚨 **ESCALATION: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n⚠️ **3 failed reviews — escalated to KAOS**\n📋 AC: ${ac}\n📝 Notes: ${desc}\n\n<@409194957098713088> manual investigation required.`
+  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+}
+
+function notifyTestFailure(issue: { task_key?: string; title?: string; project?: string; description?: string }) {
+  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
+  const key = issue.task_key ?? '?'
+  const desc = issue.description ?? ''
+  const failureSection = desc.includes('---') ? desc.split('---').pop()?.trim().slice(0, 300) : desc.slice(0, 300)
+  const msg = `🚨 **Test Failed: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n📝 Tester notes: ${failureSection || 'No details provided'}\n\nBuilder: pick up fix on next loop tick.`
+  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+}
+
+// ── Supabase ──────────────────────────────────────────────────────────────────
 const supabase = createClient(
   'https://twthgapiouiqhavrcnry.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 )
 
-// MC-210: Project prefix map for task_key generation
+// ── Task key generation ───────────────────────────────────────────────────────
 const PROJECT_PREFIX: Record<string, string> = {
   'Mission Control': 'MC', Infrastructure: 'INF', Vespera: 'VES', Kemuni: 'KEM'
 }
 
-// MC-210: Atomic task_key generation — uses Postgres sequence (via RPC) with fallback
 async function generateTaskKey(project: string): Promise<{ task_key: string; task_number: number }> {
   const prefix = PROJECT_PREFIX[project] ?? 'TASK'
-
-  // Preferred path: Postgres sequence via RPC (atomic, no race)
   try {
     const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
     if (!rpcErr && typeof seqNum === 'number') {
       return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
     }
-  } catch { /* RPC not yet deployed — fall through */ }
+  } catch { /* RPC not yet deployed */ }
 
-  // Fallback: MAX(task_number) + 1 with retry on collision
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data: maxRow } = await supabase
       .from('issues')
@@ -95,26 +128,206 @@ async function generateTaskKey(project: string): Promise<{ task_key: string; tas
       .order('task_number', { ascending: false })
       .limit(1)
       .single()
-
     const nextNumber = (maxRow?.task_number ?? 0) + 1 + attempt
     const key = `${prefix}-${nextNumber}`
-
     const { data: existing } = await supabase
       .from('issues')
       .select('id')
       .eq('task_key', key)
       .maybeSingle()
-
-    if (!existing) {
-      return { task_key: key, task_number: nextNumber }
-    }
+    if (!existing) return { task_key: key, task_number: nextNumber }
   }
 
-  // Last resort: timestamp-based to guarantee uniqueness
   const ts = Date.now() % 1000000
   return { task_key: `${prefix}-${ts}`, task_number: ts }
 }
 
+// ── Workflow types ────────────────────────────────────────────────────────────
+interface WorkflowTransition {
+  condition_role: string | null
+  validators: string[] | null
+  post_functions: Array<{ action: string; params: Record<string, unknown> }> | null
+}
+
+interface TransitionError {
+  error: string
+  field?: string
+}
+
+// ── validateWorkflowTransition ────────────────────────────────────────────────
+// Validates a Task status transition against the workflow_transitions table.
+// Returns null on success, or a TransitionError on failure.
+async function validateWorkflowTransition(
+  issue: Record<string, unknown>,
+  newStatus: string,
+  transitionedBy: string | undefined,
+  body: Record<string, unknown>
+): Promise<{ transition: WorkflowTransition; error: null } | { transition: null; error: TransitionError }> {
+  const issueType = (issue.type as string) ?? 'task'
+  const fromStatus = issue.status as string
+
+  // Only enforce workflow for task type
+  if (issueType !== 'task') {
+    return { transition: null, error: null } as unknown as { transition: WorkflowTransition; error: null }
+  }
+
+  // Look up allowed transition
+  const { data: transition, error: dbErr } = await supabase
+    .from('workflow_transitions')
+    .select('condition_role, validators, post_functions')
+    .eq('issue_type', 'task')
+    .eq('from_status', fromStatus)
+    .eq('to_status', newStatus)
+    .maybeSingle()
+
+  if (dbErr) {
+    console.error('[workflow] DB error looking up transition:', dbErr)
+    // Don't block on DB error — fall through to legacy checks
+    return { transition: null, error: null } as unknown as { transition: WorkflowTransition; error: null }
+  }
+
+  if (!transition) {
+    return {
+      transition: null,
+      error: {
+        error: `Invalid transition for task: ${fromStatus} → ${newStatus}. Check allowed transitions.`,
+        field: 'status'
+      }
+    }
+  }
+
+  // ── Condition role check ──
+  const merged = { ...issue, ...body }
+  const conditionRole = transition.condition_role
+
+  if (conditionRole === 'po_or_main') {
+    if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
+      return {
+        transition: null,
+        error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' }
+      }
+    }
+  } else if (conditionRole === 'assignee') {
+    const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
+    if (!transitionedBy || transitionedBy !== issueAssignee) {
+      return {
+        transition: null,
+        error: { error: `Only the assignee (${issueAssignee ?? 'unset'}) can execute this transition`, field: 'transitioned_by' }
+      }
+    }
+  } else if (conditionRole === 'reviewer') {
+    const issueReviewer = (body.reviewer as string) ?? (issue.reviewer as string)
+    if (!transitionedBy || transitionedBy !== issueReviewer) {
+      return {
+        transition: null,
+        error: { error: `Only the reviewer (${issueReviewer ?? 'unset'}) can execute this transition`, field: 'transitioned_by' }
+      }
+    }
+  }
+
+  // ── Validator checks ──
+  const validators: string[] = transition.validators ?? []
+  const missing: string[] = []
+
+  for (const v of validators) {
+    if (v === 'ref_required') {
+      // At least one of: commit_sha, feature_branch, pr_url
+      const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
+      if (!hasRef) {
+        missing.push('commit_sha or feature_branch or pr_url (at least one required)')
+      }
+    } else if (v === 'test_status_passed') {
+      if (merged.test_status !== 'passed') {
+        missing.push('test_status=passed')
+      }
+    } else {
+      // Standard field presence check
+      const val = merged[v]
+      if (val === undefined || val === null || val === '') {
+        missing.push(v)
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    return {
+      transition: null,
+      error: {
+        error: `Cannot move to ${newStatus}: missing required fields: ${missing.join(', ')}`,
+        field: missing[0]
+      }
+    }
+  }
+
+  return { transition: transition as WorkflowTransition, error: null }
+}
+
+// ── executePostFunctions ──────────────────────────────────────────────────────
+// Applies post-transition side effects: assignee changes, Discord notifications,
+// rejection tracking, timestamp writes.
+async function executePostFunctions(
+  issue: Record<string, unknown>,
+  toStatus: string,
+  updatedIssue: Record<string, unknown>,
+  postFunctions: Array<{ action: string; params: Record<string, unknown> }>,
+  fields: Record<string, unknown>
+): Promise<void> {
+  for (const fn of postFunctions) {
+    const { action, params } = fn
+
+    if (action === 'set_assignee') {
+      if ('to' in params && params.to === null) {
+        // Unassign
+        fields.assignee = null
+      } else if (params.from_field) {
+        const sourceField = params.from_field as string
+        // Read from updated issue or original
+        const newAssignee = (updatedIssue[sourceField] ?? issue[sourceField]) as string | null
+        if (newAssignee !== undefined) {
+          fields.assignee = newAssignee
+        }
+      }
+    }
+
+    if (action === 'notify_discord') {
+      const channelId = (params.channel as string) ?? COMPLETED_TASKS_CHANNEL
+      // Build a notification for the completed/approved transition
+      const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
+      const key = (notifyIssue.task_key ?? '?') as string
+      const emoji = PROJECT_EMOJI[(notifyIssue.project as string) ?? ''] ?? '📌'
+      const ts = new Date().toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+        hour12: true
+      }) + ' EST'
+      const label = toStatus === 'approved' ? '✅ Approved (code path)' : '✅ Completed (no-code path)'
+      const msg = `${label} ${emoji} **[${key}]** — ${notifyIssue.title ?? ''} (${notifyIssue.project ?? ''}) at ${ts}`
+      postDiscord(channelId, msg)
+    }
+
+    if (action === 'increment_rejection') {
+      fields.rejection_count = ((issue.rejection_count as number) ?? 0) + 1
+      fields.last_rejected_at = new Date().toISOString()
+    }
+
+    if (action === 'copy_field') {
+      const fromField = params.from as string
+      const toField = params.to as string
+      const value = (fields[fromField] ?? updatedIssue[fromField] ?? issue[fromField])
+      if (value !== undefined) {
+        fields[toField] = value
+      }
+    }
+
+    if (action === 'set_timestamp') {
+      const tsField = params.field as string
+      fields[tsField] = new Date().toISOString()
+    }
+  }
+}
+
+// ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET() {
   const { data, error } = await supabase
     .from('issues')
@@ -124,13 +337,14 @@ export async function GET() {
   return NextResponse.json(data)
 }
 
+// ── POST ──────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const { title, description, status, assignee, project, priority, type, due_date,
           acceptance_criteria, sprint, parent_id, severity, resolution_type,
           feature_branch, pr_url, task_key: _clientKey, task_number: _clientNum, owner } = body
 
-  // ── Enforcement: no issue without title + project + acceptance_criteria ──
+  // ── Required fields ──
   const missing: string[] = []
   if (!title?.trim())                missing.push('title')
   if (!project?.trim())              missing.push('project')
@@ -145,31 +359,22 @@ export async function POST(req: NextRequest) {
 
   // ── DoF: features require description ──
   if (type === 'feature' && !description?.trim()) {
-    return NextResponse.json(
-      { error: 'Feature requires: description' },
-      { status: 422 }
-    )
+    return NextResponse.json({ error: 'Feature requires: description' }, { status: 422 })
   }
 
-  // ── Auto-set owner if not provided, based on type+project ──
+  // ── Auto-set owner ──
   let effectiveOwner = owner
   if (!effectiveOwner) {
     const issueType = type ?? 'task'
-    if (issueType === 'task' || issueType === 'bug') {
-      effectiveOwner = 'builder'
-    } else if (issueType === 'feature') {
+    if (issueType === 'task' || issueType === 'bug') effectiveOwner = 'builder'
+    else if (issueType === 'feature') {
       if (project === 'Kemuni') effectiveOwner = 'kemuni-sme'
       else if (project === 'Vespera') effectiveOwner = 'vespera-sme'
       else effectiveOwner = 'main'
-    } else if (issueType === 'epic') {
-      effectiveOwner = 'main'
-    } else if (issueType === 'ops') {
-      effectiveOwner = 'ops'
-    } else if (issueType === 'research') {
-      effectiveOwner = 'scout'
-    } else {
-      effectiveOwner = 'builder'
-    }
+    } else if (issueType === 'epic') effectiveOwner = 'main'
+    else if (issueType === 'ops') effectiveOwner = 'ops'
+    else if (issueType === 'research') effectiveOwner = 'scout'
+    else effectiveOwner = 'builder'
   }
 
   // ── Sprint required for non-backlog issues ──
@@ -181,40 +386,27 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Auto-routing: assign issues when assignee is null or 'main' ──
+  // ── Auto-routing ──
   let effectiveAssignee = assignee
   let routingNote = ''
   if (!effectiveAssignee || effectiveAssignee === 'main' || effectiveAssignee === 'kaos') {
     const effectiveType = type ?? 'task'
     const titleLower = (title ?? '').toLowerCase()
     const descLower = (description ?? '').toLowerCase()
-
     if (titleLower.includes('manual') || titleLower.includes('blocked') || descLower.includes('requires michael')) {
-      effectiveAssignee = 'michael'
-      routingNote = '[auto-routed to michael: manual/blocked/requires michael]'
+      effectiveAssignee = 'michael'; routingNote = '[auto-routed to michael: manual/blocked/requires michael]'
     } else if (titleLower.includes('research') || titleLower.includes('evaluate') || titleLower.includes('scout')) {
-      effectiveAssignee = 'scout'
-      routingNote = '[auto-routed to scout: research/evaluate/scout keyword]'
+      effectiveAssignee = 'scout'; routingNote = '[auto-routed to scout: research/evaluate/scout keyword]'
     } else if (effectiveType === 'ops') {
-      effectiveAssignee = 'ops'
-      routingNote = '[auto-routed to ops: type=ops]'
+      effectiveAssignee = 'ops'; routingNote = '[auto-routed to ops: type=ops]'
     } else if (effectiveType === 'task' || effectiveType === 'bug') {
-      effectiveAssignee = 'builder'
-      routingNote = `[auto-routed to builder: type=${effectiveType}]`
+      effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: type=${effectiveType}]`
     } else if (effectiveType === 'feature' || effectiveType === 'epic') {
-      if (project === 'Kemuni') {
-        effectiveAssignee = 'kemuni-sme'
-        routingNote = '[auto-routed to kemuni-sme: feature/epic + Kemuni]'
-      } else if (project === 'Vespera') {
-        effectiveAssignee = 'vespera-sme'
-        routingNote = '[auto-routed to vespera-sme: feature/epic + Vespera]'
-      } else {
-        effectiveAssignee = 'builder'
-        routingNote = `[auto-routed to builder: feature/epic + ${project}]`
-      }
+      if (project === 'Kemuni') { effectiveAssignee = 'kemuni-sme'; routingNote = '[auto-routed to kemuni-sme: feature/epic + Kemuni]' }
+      else if (project === 'Vespera') { effectiveAssignee = 'vespera-sme'; routingNote = '[auto-routed to vespera-sme: feature/epic + Vespera]' }
+      else { effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: feature/epic + ${project}]` }
     } else {
-      effectiveAssignee = 'builder'
-      routingNote = '[auto-routed to builder: default fallback]'
+      effectiveAssignee = 'builder'; routingNote = '[auto-routed to builder: default fallback]'
     }
   }
 
@@ -223,11 +415,8 @@ export async function POST(req: NextRequest) {
     : description
 
   // ── Dedup guard: reject duplicate tester/reviewer issues ──
-  // If a review/tester issue with same title OR same parent_id+type already exists
-  // and is not done/cancelled, block creation to prevent runaway duplicates
   const isTesterIssue = (title ?? '').startsWith('🧪 Tester:') || (title ?? '').includes('Tester: Review')
   if (isTesterIssue || type === 'review') {
-    // Check by exact title match
     const { data: existingByTitle } = await supabase
       .from('issues')
       .select('id, task_key, status')
@@ -240,7 +429,6 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       )
     }
-    // Check by parent_id+type
     if (parent_id && type === 'review') {
       const { data: existingByParent } = await supabase
         .from('issues')
@@ -258,13 +446,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Default new issues to backlog if not explicitly set ──
-  // Tester/review issues should never auto-open
   const finalStatus = isTesterIssue || type === 'review'
     ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
     : effectiveStatus
 
-  // MC-210: Always generate task_key server-side to prevent race conditions
   const generated = await generateTaskKey(project)
 
   const { data, error } = await supabase
@@ -285,63 +470,13 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(data)
 }
 
-function notifyPRReview(issue: { task_key?: string; title?: string; project?: string; feature_branch?: string; pr_url?: string }) {
-  const key = issue.task_key ?? '?'
-  const msg = `🔀 **PR Ready for Review**\n**[${key}]** ${issue.title ?? ''}\nProject: ${issue.project ?? ''} · Branch: ${issue.feature_branch ?? ''}\nPR: ${issue.pr_url ?? ''}\n<@409194957098713088> ready to merge`
-
-  fetch(`https://discord.com/api/v10/channels/1487826368170299592/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
-    },
-    body: JSON.stringify({ content: msg })
-  }).catch(err => console.error('[discord-pr-review]', err))
-}
-
-function notifyEscalation(issue: { task_key?: string; title?: string; project?: string; acceptance_criteria?: string; description?: string }) {
-  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
-  const key = issue.task_key ?? '?'
-  const ac = (issue.acceptance_criteria ?? '').slice(0, 300)
-  const desc = (issue.description ?? '').slice(0, 300)
-  const msg = `🚨🚨 **ESCALATION: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n⚠️ **3 failed reviews — escalated to KAOS**\n📋 AC: ${ac}\n📝 Notes: ${desc}\n\n<@409194957098713088> manual investigation required.`
-
-  fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
-    },
-    body: JSON.stringify({ content: msg })
-  }).catch(err => console.error('[discord-escalation]', err))
-}
-
-function notifyTestFailure(issue: { task_key?: string; title?: string; project?: string; description?: string }) {
-  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
-  const key = issue.task_key ?? '?'
-  // Extract failure notes from description (after "---" separator if present)
-  const desc = issue.description ?? ''
-  const failureSection = desc.includes('---') ? desc.split('---').pop()?.trim().slice(0, 300) : desc.slice(0, 300)
-  const msg = `🚨 **Test Failed: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n📝 Tester notes: ${failureSection || 'No details provided'}\n\nBuilder: pick up fix on next loop tick.`
-
-  fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bot ${process.env.DISCORD_BOT_TOKEN ?? ''}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
-    },
-    body: JSON.stringify({ content: msg })
-  }).catch(err => console.error('[discord-test-failure]', err))
-}
-
+// ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
   const body = await req.json()
   const { id: rawId, task_key, transitioned_by: _transitionedBy, ...fields } = body
+  const transitionedBy = _transitionedBy as string | undefined
 
-  // ── Resolve UUID: accept either id (UUID) or task_key (e.g. INF-254) ──
+  // ── Resolve UUID ──
   let id = rawId
   if (!id && task_key) {
     const { data: lookup, error: lookupErr } = await supabase
@@ -356,14 +491,14 @@ export async function PATCH(req: NextRequest) {
   }
   if (!id) return NextResponse.json({ error: 'id or task_key required' }, { status: 400 })
 
-  // ── Fetch existing record for transition validation ──
+  // ── Fetch existing record ──
   const { data: before } = await supabase
     .from('issues')
     .select('*')
     .eq('id', id)
     .single()
 
-  // ── Closed issues are read-only — reject all PATCH requests ──
+  // ── Closed issues are read-only ──
   if (before?.status === 'closed') {
     return NextResponse.json(
       { error: 'Issue is closed and read-only.' },
@@ -371,273 +506,191 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
-  // ── MC-314: Transition validation — enforce required fields per status change ──
-  if (fields.status) {
-  // ── Task 5: Role-based transition conditions ──
+  // ── Status transition validation ──
   if (fields.status && before?.status && fields.status !== before.status) {
+    const issueType = (fields.type ?? before?.type ?? 'task') as string
     const fromStatus = before.status as string
     const toStatus = fields.status as string
-    const transitionedBy: string | undefined = _transitionedBy as string | undefined
-    const issueReviewer = fields.reviewer ?? before?.reviewer
 
-    // blocked → open: any agent (assignee) can transition back — no restriction
-    // backlog → open: only po or main can transition
-    if (fromStatus === 'backlog' && toStatus === 'open') {
-      if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
-        return NextResponse.json(
-          { error: 'Only po or main can execute this transition' },
-          { status: 403 }
-        )
-      }
-    }
-
-    // code_review → approved or code_review → open: only reviewer can transition
-    if (fromStatus === 'code_review' && (toStatus === 'approved' || toStatus === 'open')) {
-      if (!transitionedBy || transitionedBy !== issueReviewer) {
-        return NextResponse.json(
-          { error: `Only ${issueReviewer ?? 'reviewer'} can execute this transition` },
-          { status: 403 }
-        )
-      }
-    }
-
-    // product_review → completed or product_review → open: only reviewer can transition
-    if (fromStatus === 'product_review' && (toStatus === 'completed' || toStatus === 'open')) {
-      if (!transitionedBy || transitionedBy !== issueReviewer) {
-        return NextResponse.json(
-          { error: `Only ${issueReviewer ?? 'reviewer'} can execute this transition` },
-          { status: 403 }
-        )
-      }
-    }
-  }
-
-
-    const merged = { ...before, ...fields }
-
-    // Backlog constraint: reject if sprint is set
-    if (fields.status === 'backlog' && (fields.sprint || (!('sprint' in fields) && before?.sprint))) {
-      return NextResponse.json(
-        { error: 'Cannot move to backlog: sprint must be null. Backlog issues cannot have a sprint assigned.' },
-        { status: 400 }
+    // ── Task type: full workflow engine ──
+    if (issueType === 'task') {
+      const result = await validateWorkflowTransition(
+        before as Record<string, unknown>,
+        toStatus,
+        transitionedBy,
+        fields as Record<string, unknown>
       )
-    }
 
-    // To 'open': require priority, sprint, assignee, acceptance_criteria, severity, reviewer, AND owner (set by PO/KAOS)
-    if (fields.status === 'open') {
-      const missing: string[] = []
-      if (!merged.priority) missing.push('priority')
-      if (!merged.sprint) missing.push('sprint')
-      if (!merged.assignee) missing.push('assignee')
-      if (!merged.acceptance_criteria) missing.push('acceptance_criteria')
-      if (!merged.severity) {
-        return NextResponse.json(
-          { error: 'severity is required before moving to open. Set S0-S3 based on change risk.' },
-          { status: 400 }
-        )
+      if (result.error) {
+        return NextResponse.json(result.error, { status: 400 })
       }
-      if (!merged.reviewer) {
-        return NextResponse.json(
-          { error: 'reviewer is required before moving to open. Set the reviewer (e.g. tester, designer, po) during backlog grooming.' },
-          { status: 400 }
-        )
-      }
-      if (!merged.owner) {
-        return NextResponse.json(
-          { error: 'owner is required before moving to open. Set the permanent accountable party (e.g. builder, ops, kemuni-sme) during backlog grooming.' },
-          { status: 400 }
-        )
-      }
-      if (missing.length > 0) {
-        return NextResponse.json(
-          { error: `Cannot move to open: missing required fields: ${missing.join(', ')}. All open issues need priority, sprint, assignee, and acceptance_criteria.` },
-          { status: 400 }
-        )
-      }
-    }
 
-    // To 'in_review': require (feature_branch OR commit_sha OR pr_url), implementation_notes, AND regression_test
-    // Fallback: accept implementation notes in description (for backward compat before DB migration)
-    if (fields.status === 'in_review') {
-      const hasImplNotes = merged.implementation_notes ||
-        (merged.description && /IMPLEMENTATION/i.test(merged.description))
-      if (!hasImplNotes) {
-        return NextResponse.json(
-          { error: 'Cannot move to in_review: implementation_notes is required. Builder must include handoff notes for the reviewer.' },
-          { status: 400 }
-        )
-      }
-      const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
-      if (!hasRef) {
-        return NextResponse.json(
-          { error: 'Cannot move to in_review: at least one of feature_branch, commit_sha, or pr_url is required.' },
-          { status: 400 }
-        )
-      }
-      // MC-349: regression_test required — builder must describe how to verify no regression
-      if (!merged.regression_test?.trim()) {
-        return NextResponse.json(
-          { error: 'Cannot move to in_review: regression_test is required. Describe the command or manual steps to verify no regression (e.g. "npm run build && npm test" or "manual: verify X on mobile").' },
-          { status: 400 }
-        )
-      }
-      // Set assignee for review: use reviewer field if already set (preferred — set during grooming by PO/KAOS).
-      // Only fall back to severity-mapped default if reviewer is null (e.g. legacy issue or missed grooming).
-      if (!fields.assignee) {
-        const existingReviewer = fields.reviewer ?? before?.reviewer
-        if (existingReviewer) {
-          fields.assignee = existingReviewer
-        } else {
-          // Fallback: derive from severity and also record in reviewer for future reference
-          const tier = fields.severity ?? before?.severity
-          let derivedReviewer: string
-          if (tier === 'S0') {
-            derivedReviewer = 'designer'
-          } else if (tier === 'S1') {
-            derivedReviewer = 'tester'
-          } else if (tier === 'S2') {
-            derivedReviewer = 'po'
-          } else if (tier === 'S3') {
-            derivedReviewer = 'main'
-          } else {
-            derivedReviewer = 'tester'  // last resort if severity not set
-          }
-          fields.assignee = derivedReviewer
-          fields.reviewer = derivedReviewer  // persist the fallback so it's recorded
+      // If transition was found + valid, run post functions later (after DB write)
+      // (handled below after update)
+    } else {
+      // ── Legacy validation for non-task types ──
+      const issueReviewer = fields.reviewer ?? before?.reviewer
+
+      // backlog → open: only po or main
+      if (fromStatus === 'backlog' && toStatus === 'open') {
+        if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
+          return NextResponse.json(
+            { error: 'Only po or main can execute this transition' },
+            { status: 403 }
+          )
         }
       }
-    }
 
-    // ── Retired status guard: 'done' is retired, use 'completed' or 'closed' ──
-    if (fields.status === 'done') {
-      return NextResponse.json(
-        { error: "done is retired, use completed or closed" },
-        { status: 400 }
-      )
-    }
+      // code_review or product_review → transitions: reviewer only
+      if (['code_review', 'product_review'].includes(fromStatus) && ['approved', 'open', 'completed'].includes(toStatus)) {
+        if (!transitionedBy || transitionedBy !== issueReviewer) {
+          return NextResponse.json(
+            { error: `Only ${issueReviewer ?? 'reviewer'} can execute this transition` },
+            { status: 403 }
+          )
+        }
+      }
 
-    // To 'completed': require resolution_type AND reviewer_notes AND test_status='passed'
-    // Fallback: accept reviewer notes in description (for backward compat before DB migration)
-    if (fields.status === 'completed') {
-      const hasReviewerNotes = merged.reviewer_notes ||
-        (merged.description && /REVIEW/i.test(merged.description))
-      const missing: string[] = []
-      if (!merged.resolution_type) missing.push('resolution_type')
-      if (!hasReviewerNotes) missing.push('reviewer_notes')
-      if (merged.test_status !== 'passed') missing.push('test_status=passed')
-      if (missing.length > 0) {
+      // Standard validators for all types
+      const merged = { ...before, ...fields }
+
+      if (toStatus === 'backlog' && (fields.sprint || (!('sprint' in fields) && before?.sprint))) {
         return NextResponse.json(
-          { error: `Cannot move to completed: missing required fields: ${missing.join(', ')}. Tester must set resolution_type, reviewer_notes, and test_status=passed.` },
+          { error: 'Cannot move to backlog: sprint must be null. Backlog issues cannot have a sprint assigned.' },
           { status: 400 }
         )
       }
-    }
 
-    // ── MC-360: Per-type status transition validation ──
-    const issueType = (fields.type ?? before?.type ?? 'task') as string
+      if (toStatus === 'open') {
+        const missingFields: string[] = []
+        if (!merged.priority) missingFields.push('priority')
+        if (!merged.sprint) missingFields.push('sprint')
+        if (!merged.assignee) missingFields.push('assignee')
+        if (!merged.acceptance_criteria) missingFields.push('acceptance_criteria')
+        if (!merged.severity) return NextResponse.json({ error: 'severity is required before moving to open.' }, { status: 400 })
+        if (!merged.reviewer) return NextResponse.json({ error: 'reviewer is required before moving to open.' }, { status: 400 })
+        if (!merged.owner) return NextResponse.json({ error: 'owner is required before moving to open.' }, { status: 400 })
+        if (missingFields.length > 0) {
+          return NextResponse.json(
+            { error: `Cannot move to open: missing required fields: ${missingFields.join(', ')}.` },
+            { status: 400 }
+          )
+        }
+      }
 
-    // Ops & Research: cannot enter in_review
-    if (fields.status === 'in_review' && (issueType === 'ops' || issueType === 'research')) {
-      return NextResponse.json(
-        { error: `Cannot move ${issueType} issue to in_review. ${issueType} issues skip review: use backlog → open → in_progress → done.` },
-        { status: 400 }
-      )
-    }
+      if (toStatus === 'in_review') {
+        const hasImplNotes = merged.implementation_notes || (merged.description && /IMPLEMENTATION/i.test(merged.description as string))
+        if (!hasImplNotes) return NextResponse.json({ error: 'Cannot move to in_review: implementation_notes is required.' }, { status: 400 })
+        const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
+        if (!hasRef) return NextResponse.json({ error: 'Cannot move to in_review: at least one of feature_branch, commit_sha, or pr_url is required.' }, { status: 400 })
+        if (!(merged.regression_test as string)?.trim()) {
+          return NextResponse.json({ error: 'Cannot move to in_review: regression_test is required.' }, { status: 400 })
+        }
+        if (!fields.assignee) {
+          const existingReviewer = fields.reviewer ?? before?.reviewer
+          if (existingReviewer) {
+            fields.assignee = existingReviewer
+          } else {
+            const tier = fields.severity ?? before?.severity
+            let derivedReviewer: string
+            if (tier === 'S0') derivedReviewer = 'designer'
+            else if (tier === 'S1') derivedReviewer = 'tester'
+            else if (tier === 'S2') derivedReviewer = 'po'
+            else derivedReviewer = 'main'
+            fields.assignee = derivedReviewer
+            fields.reviewer = derivedReviewer
+          }
+        }
+      }
 
-    // Epic: only draft, active, completed, backlog are valid statuses
-    if (issueType === 'epic' && !['draft', 'active', 'completed', 'backlog'].includes(fields.status)) {
-      return NextResponse.json(
-        { error: `Invalid status "${fields.status}" for epic. Epics only support: draft, active, completed, backlog.` },
-        { status: 400 }
-      )
-    }
+      if (toStatus === 'done') {
+        return NextResponse.json({ error: "done is retired, use completed or closed" }, { status: 400 })
+      }
 
-    // Feature: cannot jump from backlog directly to in_review
-    if (issueType === 'feature' && fields.status === 'in_review' && before?.status === 'backlog') {
-      return NextResponse.json(
-        { error: 'Feature cannot jump from backlog to in_review. Move through open → in_progress first.' },
-        { status: 400 }
-      )
-    }
+      if (toStatus === 'completed') {
+        const hasReviewerNotes = merged.reviewer_notes || (merged.description && /REVIEW/i.test(merged.description as string))
+        const missingFields: string[] = []
+        if (!merged.resolution_type) missingFields.push('resolution_type')
+        if (!hasReviewerNotes) missingFields.push('reviewer_notes')
+        if (merged.test_status !== 'passed') missingFields.push('test_status=passed')
+        if (missingFields.length > 0) {
+          return NextResponse.json({ error: `Cannot move to completed: missing required fields: ${missingFields.join(', ')}.` }, { status: 400 })
+        }
+      }
 
-    // Sprint required if moving to open/in_progress/in_review
-    if (['open', 'in_progress', 'in_review'].includes(fields.status) && !merged.sprint) {
-      return NextResponse.json(
-        { error: 'sprint is required before moving issue out of backlog. Set sprint (YYYY-MM-DD) first.' },
-        { status: 422 }
-      )
+      // Ops/Research: cannot enter in_review
+      if (toStatus === 'in_review' && (issueType === 'ops' || issueType === 'research')) {
+        return NextResponse.json({ error: `Cannot move ${issueType} issue to in_review.` }, { status: 400 })
+      }
+
+      // Epic: limited statuses
+      if (issueType === 'epic' && !['draft', 'active', 'completed', 'backlog'].includes(toStatus)) {
+        return NextResponse.json({ error: `Invalid status "${toStatus}" for epic.` }, { status: 400 })
+      }
+
+      // Feature: no backlog → in_review jump
+      if (issueType === 'feature' && toStatus === 'in_review' && fromStatus === 'backlog') {
+        return NextResponse.json({ error: 'Feature cannot jump from backlog to in_review.' }, { status: 400 })
+      }
+
+      // Sprint required
+      if (['open', 'in_progress', 'in_review'].includes(toStatus) && !merged.sprint) {
+        return NextResponse.json({ error: 'sprint is required before moving issue out of backlog.' }, { status: 422 })
+      }
     }
   }
 
-  // ── MC-349: Auto-set timestamps + worked_by on status transitions ──
+  // ── Auto-set timestamps + worked_by ──
   if (fields.status) {
     const now = new Date().toISOString()
 
-    // → in_progress: set started_at (only if not already set), set worked_by = assignee
     if (fields.status === 'in_progress') {
-      if (!before?.started_at && !fields.started_at) {
-        fields.started_at = now
-      }
-      // worked_by captures who actually worked the task (for rejection routing later)
+      if (!before?.started_at && !fields.started_at) fields.started_at = now
       const effectiveAssignee = fields.assignee ?? before?.assignee
-      if (effectiveAssignee && !fields.worked_by) {
-        fields.worked_by = effectiveAssignee
-      }
+      if (effectiveAssignee && !fields.worked_by) fields.worked_by = effectiveAssignee
     }
 
-    // → in_review: set submitted_at
-    if (fields.status === 'in_review') {
-      fields.submitted_at = now
-    }
+    if (fields.status === 'in_review') fields.submitted_at = now
 
-    // → completed: set completed_at and reviewed_by (whoever is assignee at completion time)
     if (fields.status === 'completed') {
       fields.completed_at = now
       const completingAssignee = fields.assignee ?? before?.assignee
-      if (completingAssignee && !fields.reviewed_by) {
-        fields.reviewed_by = completingAssignee
-      }
+      if (completingAssignee && !fields.reviewed_by) fields.reviewed_by = completingAssignee
     }
 
-    // → open (rejection routing): if assignee not explicitly provided, route back to worked_by
-    // This handles Tester rejecting a task back to the original builder
+    // Rejection routing for legacy flow (non-task)
     if (fields.status === 'open' && !fields.assignee && before?.worked_by) {
       fields.assignee = before.worked_by
     }
 
-    // → open from in_review (rejection): increment rejection_count, set timestamps
-    if (fields.status === 'open' && before?.status === 'in_review') {
+    // Legacy rejection tracking for in_review → open (non-task types)
+    const issueType = (fields.type ?? before?.type ?? 'task') as string
+    if (issueType !== 'task' && fields.status === 'open' && before?.status === 'in_review') {
       fields.rejection_count = (before?.rejection_count ?? 0) + 1
-      fields.last_rejected_at = new Date().toISOString()
-      if (fields.reviewer_notes) {
-        fields.last_rejection_reason = fields.reviewer_notes
-      }
+      fields.last_rejected_at = now
+      if (fields.reviewer_notes) fields.last_rejection_reason = fields.reviewer_notes
     }
   }
 
-  // ── INF-181: Increment fail_count on test_status=failed ──
+  // ── Fail count ──
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
   if (isNewFailure) {
-    const currentFailCount = (before?.fail_count ?? 0)
-    fields.fail_count = currentFailCount + 1
-
-    // At fail_count=3: escalate to KAOS
+    fields.fail_count = (before?.fail_count ?? 0) + 1
     if (fields.fail_count >= 3) {
       fields.status = 'blocked'
       fields.assignee = 'main'
     }
   }
 
-  // ── Owner immutability: once open (or beyond), owner cannot be changed ──
+  // ── Owner immutability ──
   if (fields.owner !== undefined) {
     const currentStatus = before?.status ?? ''
-    const isOpenOrBeyond = ['open', 'in_progress', 'in_review', 'done', 'blocked'].includes(currentStatus)
-    if (isOpenOrBeyond) {
-      delete fields.owner  // silently ignore owner changes after open
+    if (['open', 'in_progress', 'in_review', 'done', 'blocked', 'code_review', 'product_review', 'approved', 'released'].includes(currentStatus)) {
+      delete fields.owner
     }
   }
 
-  // Try update with all fields; if column doesn't exist, retry without unknown fields
+  // ── DB update ──
   let { data, error } = await supabase
     .from('issues')
     .update({ ...fields, updated_at: new Date().toISOString() })
@@ -645,13 +698,13 @@ export async function PATCH(req: NextRequest) {
     .select()
     .single()
 
-  // Graceful fallback: strip fields that don't exist as columns yet (pre-migration)
+  // Graceful fallback for missing columns
   if (error?.code === '42703') {
     const safeFields = { ...fields }
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
                         'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test',
                         'rejection_count', 'last_rejected_at', 'last_rejection_reason',
-                        'reviewer', 'reviewed_by', 'owner']) {
+                        'reviewer', 'reviewed_by', 'owner', 'deployer', 'auditor', 'transitioned_by']) {
       delete safeFields[col]
     }
     const retry = await supabase
@@ -665,14 +718,54 @@ export async function PATCH(req: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Instant Discord notification on approved, completed, or closed ──
+  // ── Post functions (Task workflow engine) ──
+  if (fields.status && before?.status && fields.status !== before.status) {
+    const issueType = (fields.type ?? before?.type ?? 'task') as string
+    const toStatus = fields.status as string
+
+    if (issueType === 'task' && data) {
+      // Fetch the transition's post functions
+      const { data: transition } = await supabase
+        .from('workflow_transitions')
+        .select('post_functions')
+        .eq('issue_type', 'task')
+        .eq('from_status', before.status)
+        .eq('to_status', toStatus)
+        .maybeSingle()
+
+      if (transition?.post_functions && Array.isArray(transition.post_functions)) {
+        const postFields: Record<string, unknown> = {}
+        await executePostFunctions(
+          before as Record<string, unknown>,
+          toStatus,
+          data as Record<string, unknown>,
+          transition.post_functions as Array<{ action: string; params: Record<string, unknown> }>,
+          postFields
+        )
+
+        // Apply post-function field changes if any
+        if (Object.keys(postFields).length > 0) {
+          const { data: postData } = await supabase
+            .from('issues')
+            .update({ ...postFields, updated_at: new Date().toISOString() })
+            .eq('id', id)
+            .select()
+            .single()
+          if (postData) data = postData
+        }
+      }
+    }
+  }
+
+  // ── Legacy Discord notifications ──
   const resolvedType = fields.resolution_type ?? data?.resolution_type
-  if ((fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
+  const issueType = (fields.type ?? before?.type ?? 'task') as string
+  // Non-task types: legacy notify on approved/completed/closed
+  if (issueType !== 'task' && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
-  // ── Item 4: Immediately activate next agent on status transition ──
-  // Fire-and-forget: don't wait, don't block, polling automations are the fallback
+  // ── Activate next agent on transition ──
   if (fields.status && data) {
     const newAssignee = data.assignee ?? fields.assignee
     if (newAssignee && (fields.status === 'open' || fields.status === 'in_review')) {
@@ -685,83 +778,55 @@ export async function PATCH(req: NextRequest) {
     notifyPRReview(data)
   }
 
-  // ── Tester failure notification (INF-193) ──
+  // ── Test failure notifications ──
   if (isNewFailure && data) {
     notifyTestFailure(data)
-    // ── INF-181: Escalation at 3 failures ──
-    if ((data.fail_count ?? 0) >= 3) {
-      notifyEscalation(data)
-    }
+    if ((data.fail_count ?? 0) >= 3) notifyEscalation(data)
   }
 
-  // ── INF-258: UX gate — when UX review child is marked done, complete the parent ──
+  // ── UX gate — completed UX review child → complete parent ──
   if (fields.status === 'completed' && before?.assignee === 'ux' && before?.parent_id) {
-    const parentId = before.parent_id
-    const uxKey = before.task_key ?? data?.task_key ?? '?'
-
-    // Mark parent issue as done (UX approved)
     const { data: parentData } = await supabase
       .from('issues')
-      .update({
-        status: 'done',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', parentId)
+      .update({ status: 'done', updated_at: new Date().toISOString() })
+      .eq('id', before.parent_id)
       .select()
       .single()
-
-    if (parentData) {
-      notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
-      console.log(`[ux-gate] ${uxKey} approved → parent ${parentData.task_key} marked done`)
-    }
+    if (parentData) notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
   }
 
-  // ── INF-258: UX gate — when UX review child fails, create fix task and reopen parent ──
+  // ── UX gate — failed UX review → create fix task ──
   if (isNewFailure && before?.assignee === 'ux' && before?.parent_id && data) {
     const uxNotes = (data.description ?? '').slice(0, 300)
-    // Create fix task assigned to builder
     await supabase.from('issues').insert({
       title: `UX Fix: ${before.title ?? data.title}`,
-      description: `UX review failed for parent issue. Fix the following UX issues:\n\n${uxNotes}`,
+      description: `UX review failed. Fix the following:\n\n${uxNotes}`,
       project: 'Mission Control',
-      type: 'task',
-      priority: 'high',
-      assignee: 'builder',
-      acceptance_criteria: 'Address all UX review feedback. Re-submit for UX review.',
+      type: 'task', priority: 'high', assignee: 'builder',
+      acceptance_criteria: 'Address all UX review feedback.',
       sprint: new Date().toISOString().split('T')[0],
-      parent_id: before.parent_id,
-      severity: 'S2'
+      parent_id: before.parent_id, severity: 'S2'
     })
-    console.log(`[ux-gate] UX review failed for ${data.task_key} → fix task created for builder`)
   }
 
-  // MC-372: Epic auto-completion — if a child moves to done, check parent Epic
+  // ── Epic auto-completion ──
   if (fields.status === 'done' && data?.parent_id) {
-    const parentId = data.parent_id;
-
-    // Fetch the parent to check if it is an Epic
     const { data: parentIssue } = await supabase
       .from('issues')
       .select('id, type, status, task_key, title, project')
-      .eq('id', parentId)
-      .single();
-
+      .eq('id', data.parent_id)
+      .single()
     if (parentIssue?.type === 'epic' && parentIssue.status !== 'completed') {
-      // Fetch all children of this epic
       const { data: children } = await supabase
         .from('issues')
         .select('id, status')
-        .eq('parent_id', parentId);
-
-      const allDone = children && children.length > 0 && children.every(c => c.status === 'completed' || c.status === 'done');
-
+        .eq('parent_id', data.parent_id)
+      const allDone = children && children.length > 0 && children.every(c => c.status === 'completed' || c.status === 'done')
       if (allDone) {
         await supabase
           .from('issues')
           .update({ status: 'completed', updated_at: new Date().toISOString() })
-          .eq('id', parentId);
-
-        console.log(`[epic-auto-complete] Epic ${parentIssue.task_key} auto-completed — all ${children.length} children done`);
+          .eq('id', data.parent_id)
       }
     }
   }
@@ -769,6 +834,7 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json(data)
 }
 
+// ── DELETE ────────────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
