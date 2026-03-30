@@ -1,0 +1,9 @@
+#!/bin/sh
+# Reject commits without an issue key
+if ! grep -qE '(MC|INF|VES|KEM|TOD|TASK)-[0-9]+' "$1"; then
+  echo "❌ Commit rejected: message must include an issue key"
+  echo "   Examples: feat(MC-42): add feature"
+  echo "             fix(TOD-12): fix bug"
+  echo "             chore(INF-5): update config"
+  exit 1
+fi

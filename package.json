@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "keywords": [],
   "author": "",
