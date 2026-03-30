@@ -6,7 +6,7 @@ import { exec as execAsync } from 'child_process'
 const VALID_TYPES = ['epic', 'feature', 'task', 'bug', 'ops', 'research']
 const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low']
 const VALID_SEVERITIES = ['S0', 'S1', 'S2', 'S3']
-const VALID_STATUSES = ['backlog', 'defined', 'open', 'in_progress', 'code_review', 'product_review', 'approved', 'released', 'completed', 'closed', 'blocked', 'draft', 'active']
+const VALID_STATUSES = ['backlog', 'defined', 'open', 'in_progress', 'in_review', 'done', 'code_review', 'product_review', 'approved', 'released', 'completed', 'closed', 'blocked', 'draft', 'active']
 const VALID_RESOLUTION_TYPES = ['code_change', 'config_change', 'no_action', 'duplicate', 'by_design', 'wont_fix', 'cancelled', 'canceled', 'not_reproducible', 'deferred', 'completed']
 
 // ── Agent activation map ─────────────────────────────────────────────────────
@@ -177,7 +177,9 @@ async function validateHierarchy(
       return { error: `type=epic should not have a parent_id (epics are top-level)` }
     }
   }
-  // ops, research: parent_id optional — no validation needed
+  // ops, research: intentionally bypass hierarchy validation.
+  // These types are standalone work items that may optionally link to a parent
+  // of any type for context, without enforcing the epic→feature→task chain.
   return null
 }
 
@@ -468,7 +470,20 @@ async function executePostFunctions(
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const taskKey = new URL(req.url).searchParams.get('task_key')
+
+  if (taskKey) {
+    const { data, error } = await supabase
+      .from('issues')
+      .select('*')
+      .eq('task_key', taskKey)
+      .maybeSingle()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!data) return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
+    return NextResponse.json(data)
+  }
+
   const { data, error } = await supabase
     .from('issues')
     .select('*')
@@ -711,6 +726,12 @@ export async function PATCH(req: NextRequest) {
   if (fields.resolution_type && !VALID_RESOLUTION_TYPES.includes(fields.resolution_type as string)) {
     return NextResponse.json(
       { error: `Invalid value for 'resolution_type': "${fields.resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.status && !VALID_STATUSES.includes(fields.status as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'status': "${fields.status}". Allowed values: ${VALID_STATUSES.join(', ')}` },
       { status: 400 }
     )
   }
