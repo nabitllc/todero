@@ -26,6 +26,7 @@ import AutomationsTab from '@/components/tabs/AutomationsTab'
 import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
+import ProductBoardTab from '@/components/tabs/ProductBoardTab'
 import QuickActionFab from '@/components/QuickActionFab'
 
 const LUCIDE_ICONS: Record<string, any> = {
@@ -44,6 +45,7 @@ const NAV = [
   { id:'features',     label:'Features',     icon:'🗺️' },
   { id:'pipeline',     label:'Pipeline',     icon:'🏭' },
   { id:'issues',       label:'Issues',       icon:'📝' },
+  { id:'product-board', label:'Product Board', icon:'🗓️' },
   { id:'divider' as any, label:'',           icon:'' },
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
@@ -52,7 +54,7 @@ const NAV = [
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','automations','chat','infra','settings']
+const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
@@ -471,6 +473,7 @@ export default function Home() {
           {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} />}
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
+          {tab === 'product-board' && <ProductBoardTab />}
           {tab === 'settings' && <SettingsTab />}
         </main>
       </div>

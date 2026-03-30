@@ -6,6 +6,34 @@ import { Kanban, Search, X } from 'lucide-react'
 import { Chip } from '@/lib/mc-atoms'
 import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
 
+function StartSprintBtn() {
+  const [running, setRunning] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const handle = async () => {
+    if (running) return
+    setRunning(true)
+    try {
+      const res = await fetch('/api/run-sprint', { method: 'POST' })
+      setToast(res.ok ? '✅ Sprint started!' : `⚠️ Error ${res.status}`)
+    } catch (e: any) { setToast(`⚠️ ${e?.message ?? 'Error'}`) }
+    finally { setRunning(false); setTimeout(() => setToast(null), 4000) }
+  }
+  return (
+    <div className="relative">
+      <button onClick={handle} disabled={running}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
+        {running ? <span className="animate-spin h-3 w-3 border-2 border-white/30 border-t-white rounded-full" /> : <span>▶</span>}
+        Start Sprint
+      </button>
+      {toast && (
+        <div className="absolute top-full mt-1 left-0 z-50 bg-neutral-900 border border-white/10 text-xs text-white/80 rounded-lg px-3 py-1.5 whitespace-nowrap shadow-xl">
+          {toast}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MultiSelect({ label, options, selected, onToggle, displayFn }: {
   label: string; options: string[]; selected: string[]; onToggle: (v: string) => void; displayFn?: (v: string) => string
 }) {
@@ -343,9 +371,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               Business
             </button>
           </div>
-          <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium',sprint:new Date().toISOString().split('T')[0],project:projectFilter??undefined,assignee:'builder',type:'task'})} className="ml-auto">
-            + New Task
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <StartSprintBtn />
+            <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium',sprint:new Date().toISOString().split('T')[0],project:projectFilter??undefined,assignee:'builder',type:'task'})}>
+              + New Task
+            </Button>
+          </div>
         </div>
         {/* Status filter pills */}
         <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
