@@ -85,7 +85,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
               {failedRuns.slice(0, 3).map((r, i) => {
                 const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
                 return (
-                  <div key={i} className="flex items-center gap-2 py-1 border-b border-white/10 last:border-0" style={{background:'#1a080810'}}>
+                  <div key={i} className="flex items-center gap-2 py-1 border-b border-white/10 last:border-0 bg-red-500/5">
                     <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
                     <span className="text-xs">{ag.emoji}</span>
                     <p className="text-red-300/80 text-[10px] truncate flex-1">{r.task_title || 'Unknown'}</p>

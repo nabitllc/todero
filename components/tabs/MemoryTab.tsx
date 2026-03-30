@@ -10,7 +10,7 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
             <div className="flex gap-0 h-[calc(100vh-88px)] -mx-6 -my-5">
 
               {/* Left panel */}
-              <div className={`${openMem ? 'hidden md:flex' : 'flex'} w-full md:w-64 shrink-0 border-r border-white/10 flex-col overflow-hidden`} style={{background:'#0d0d0d'}}>
+              <div className={`${openMem ? 'hidden md:flex' : 'flex'} w-full md:w-64 shrink-0 border-r border-white/10 flex-col overflow-hidden`} style={{background:'#0f0f0f'}}>
                 {/* Search */}
                 <div className="px-3 py-3 border-b border-white/10">
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10" style={{background:'#111'}}>
@@ -149,7 +149,7 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
                                 style={{background: i%3===0?'#6366f1':i%3===1?'#8b5cf6':'#a78bfa',
                                   boxShadow:'0 0 0 3px '+(i%3===0?'#6366f120':i%3===1?'#8b5cf620':'#a78bfa20')}} />
                               {i < file.entries.length-1 && (
-                                <div className="w-px flex-1 mt-2" style={{background:'#1e1e2e',minHeight:'40px'}} />
+                                <div className="w-px flex-1 mt-2" style={{background:'rgba(255,255,255,0.05)',minHeight:'40px'}} />
                               )}
                             </div>
                             {/* Right: content */}

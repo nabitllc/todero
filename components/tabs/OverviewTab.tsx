@@ -70,8 +70,7 @@ function DoneYesterdayWins() {
       </div>
       <div className="flex flex-wrap gap-2">
         {wins.map((w, i) => (
-          <div key={w.task_key || i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-emerald-900/30 text-xs"
-            style={{background:'#0a1f12'}}>
+          <div key={w.task_key || i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-emerald-900/30 text-xs bg-emerald-500/5">
             {w.assignee && ASSIGNEE_EMOJI[w.assignee] && <span>{ASSIGNEE_EMOJI[w.assignee]}</span>}
             {w.task_key && <span className="font-mono text-emerald-600 text-[9px]">{w.task_key}</span>}
             <span className="text-emerald-300 truncate max-w-[180px]">{w.title}</span>

@@ -1,13 +1,8 @@
 'use client'
 import React, { useState } from 'react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
-
-const EmptyStateLocal = ({icon, message}: {icon: string; message: string}) => (
-  <div className="text-center py-12 text-white/30">
-    <div className="text-3xl mb-2">{icon}</div>
-    <p className="text-sm">{message}</p>
-  </div>
-)
+import { Button, EmptyState, Badge, PriorityBadge } from '@/components/ui'
+import { Radio } from 'lucide-react'
 
 function AttentionAndShipped({ agents }: { agents: any[] }) {
   const [data, setData] = React.useState<{attention:any[];shipped:any[]}>({attention:[],shipped:[]})
@@ -36,7 +31,7 @@ function AttentionAndShipped({ agents }: { agents: any[] }) {
               <div key={i.task_key} className="px-4 py-2.5 flex items-center gap-2">
                 <span className="text-[10px] font-mono text-white/30">{i.task_key}</span>
                 <span className="text-xs text-white/70 truncate flex-1">{i.title}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${i.priority === 'critical' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'}`}>{i.priority}</span>
+                <PriorityBadge value={i.priority} className="text-[9px]" />
               </div>
             ))}
           </div>
@@ -95,23 +90,22 @@ export default function ActivityTab({
               </span>
             )
           })()}
-          <button
+          <Button variant="secondary" size="sm"
             onClick={() => {
               fetch('/api/status').then(r => r.json()).then(d => { setLiveStatus(d); setStatusAt(Date.now()) }).catch(() => {})
-            }}
-            className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-white/40 hover:text-white hover:border-white/20 bg-white/5 transition-all">
+            }}>
             Sync
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Filter bar */}
       <div className="flex items-center gap-2">
         {(['all','agent','issue','pr'] as const).map(f => (
-          <button key={f} onClick={() => setActivityFilter(f)}
-            className={`text-[10px] font-semibold uppercase tracking-wider px-3 py-1.5 rounded-lg border transition-all ${activityFilter === f ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' : 'border-white/10 bg-white/5 text-white/50 hover:text-white/70 hover:border-white/20'}`}>
+          <Button key={f} variant={activityFilter === f ? 'primary' : 'secondary'} size="sm" onClick={() => setActivityFilter(f)}
+            className={activityFilter === f ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' : ''}>
             {f === 'all' ? '📡 All' : f === 'agent' ? '🤖 Agent Runs' : f === 'issue' ? '📋 Issue Changes' : '🔀 PR Events'}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -123,7 +117,7 @@ export default function ActivityTab({
         else if (activityFilter === 'agent') allItems = agentItems
         else if (activityFilter === 'issue') allItems = issueItems
         else allItems = agentItems.filter((e: any) => e.channel?.includes('PR') || e.desc?.toLowerCase().includes('pr ') || e.desc?.toLowerCase().includes('pull'))
-        if(allItems.length === 0) return <EmptyStateLocal icon="📡" message={activityFilter === 'all' ? 'No activity runs recorded yet' : `No ${activityFilter} activity found`} />
+        if(allItems.length === 0) return <EmptyState icon={Radio} title={activityFilter === 'all' ? 'No activity runs recorded yet' : `No ${activityFilter} activity found`} />
         const items = allItems.slice(0, activityLimit)
         const grouped: Record<string, any[]> = {}
         for(const entry of items){
@@ -168,10 +162,9 @@ export default function ActivityTab({
 
       {/* Load more */}
       {((liveStatus?.recentActivity?.length ?? 0) + issueActivity.length) > activityLimit && (
-        <button onClick={() => setActivityLimit(prev => prev + 100)}
-          className="w-full text-center text-xs text-white/50 hover:text-white/70 py-2.5 rounded-lg border border-white/10 hover:border-white/20 transition-all bg-[#080808]">
+        <Button variant="secondary" size="sm" onClick={() => setActivityLimit(prev => prev + 100)} className="w-full justify-center">
           Load 100 more
-        </button>
+        </Button>
       )}
 
       {/* Needs Attention + Shipped Today */}

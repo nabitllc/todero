@@ -1,7 +1,7 @@
 'use client'
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { getPipelineStage, isBlocked, nextPRWindow, type PipelineStage, STAGE_COLORS } from '@/lib/pipeline'
-import { EmptyState } from '@/components/ui'
+import { EmptyState, Button } from '@/components/ui'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -203,10 +203,9 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3">
         <p className="text-red-400 text-sm">{error}</p>
-        <button onClick={() => { setError(null); setLoading(true); fetchIssues() }}
-          className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white transition-all">
+        <Button variant="secondary" size="sm" onClick={() => { setError(null); setLoading(true); fetchIssues() }}>
           Retry
-        </button>
+        </Button>
       </div>
     )
   }
@@ -221,15 +220,15 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
         </div>
         <div className="flex items-center gap-1 rounded-lg border border-white/10 p-0.5 bg-[#080808]">
           {(['both', 'features', 'issues'] as FilterMode[]).map(mode => (
-            <button
+            <Button
               key={mode}
+              variant={filter === mode ? 'secondary' : 'ghost'}
+              size="sm"
               onClick={() => setFilter(mode)}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-all capitalize ${
-                filter === mode ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
-              }`}
+              className="text-[10px] capitalize"
             >
               {mode === 'both' ? 'Both' : mode === 'features' ? 'Features' : 'Issues'}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -357,12 +356,11 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => setActionSheetIssue(null)}
-              className="w-full px-4 py-3 text-sm text-white/40 hover:text-white/60 border-t border-white/5 transition-all"
-            >
-              Cancel
-            </button>
+            <div className="border-t border-white/5">
+              <Button variant="ghost" size="md" onClick={() => setActionSheetIssue(null)} className="w-full justify-center py-3">
+                Cancel
+              </Button>
+            </div>
           </div>
         </div>
       )}

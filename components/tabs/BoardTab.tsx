@@ -1,17 +1,9 @@
 'use client'
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-
-function Chip({label,color}:{label:string;color?:string}) {
-  return (
-    <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border"
-      style={color
-        ?{color,borderColor:color+'40',background:color+'15'}
-        :{color:'rgba(255,255,255,0.5)',borderColor:'rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)'}}>
-      {label}
-    </span>
-  )
-}
+import { Button, Input, Textarea, Select, FormGroup, EmptyState, Badge } from '@/components/ui'
+import { Kanban } from 'lucide-react'
+import { Chip } from '@/lib/mc-atoms'
 
 function MultiSelect({ label, options, selected, onToggle, displayFn }: {
   label: string; options: string[]; selected: string[]; onToggle: (v: string) => void; displayFn?: (v: string) => string
@@ -253,10 +245,6 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     return new Date(d) < new Date(new Date().toDateString())
   }
 
-  const selectCls = "bg-transparent border border-white/10 rounded-lg px-2 py-1 text-xs text-white/40 outline-none focus:border-white/20"
-  const inputCls = "w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-white/20 placeholder-white/30"
-  const labelCls = "text-[10px] uppercase tracking-widest text-white/30 mb-1"
-
   return (
     <div className="h-full flex flex-col gap-4">
       {/* Toolbar — multiselect filters */}
@@ -265,11 +253,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           <MultiSelect label="Type" options={types as string[]} selected={filterTypes} onToggle={v => toggleFilter(filterTypes, setFilterTypes, v)} />
           <MultiSelect label="Priority" options={['critical','high','medium','low']} selected={filterPriorities} onToggle={v => toggleFilter(filterPriorities, setFilterPriorities, v)} />
           <MultiSelect label="Assignee" options={assignees as string[]} selected={filterAssignees} onToggle={v => toggleFilter(filterAssignees, setFilterAssignees, v)} displayFn={v => ASSIGNEE_MAP[v]?.name ?? v} />
-          <select className={selectCls} value={filterSprint} onChange={e=>{setFilterSprint(e.target.value); setBoardLimit(100)}}>
-            <option value="">All Sprints</option>
-            {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
-          </select>
-          {hasAnyFilter && <button onClick={clearAllFilters} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-lg hover:bg-white/10 transition-colors">Clear all</button>}
+          <Select value={filterSprint} onChange={e=>{setFilterSprint(e.target.value); setBoardLimit(100)}} className="w-auto text-xs py-1">
+            <option value="" className="bg-[#0f0f0f] text-white">All Sprints</option>
+            {sprints.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>)}
+          </Select>
+          {hasAnyFilter && <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-400 hover:text-red-300">Clear all</Button>}
           <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#080808'}}>
             <button onClick={() => { setBoardGroupBy('status'); localStorage.setItem('board-group-by','status') }}
               className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='status'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
@@ -284,14 +272,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               Business
             </button>
           </div>
-          <button onClick={() => setShowArchive(!showArchive)}
-            className={`ml-auto text-xs font-medium px-3 py-1.5 rounded-lg transition-colors ${showArchive ? 'bg-white/15 text-white' : 'bg-white/10/60 text-white/50 hover:bg-white/10 hover:text-white/70'}`}>
+          <Button variant={showArchive ? 'primary' : 'secondary'} size="sm" onClick={() => setShowArchive(!showArchive)} className="ml-auto">
             📦 Archive{closedTasks.length > 0 && <span className="ml-1 text-white/50">({closedTasks.length})</span>}
-          </button>
-          {!showArchive && <button onClick={()=>setNewTask({status:'backlog',priority:'medium'})}
-            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white/10 text-white/70 hover:bg-white/15 transition-colors">
+          </Button>
+          {!showArchive && <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium'})}>
             + New Task
-          </button>}
+          </Button>}
         </div>
         {/* Active filter chips */}
         {hasAnyFilter && (
@@ -329,17 +315,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         const michaelTasks = tasks.filter(t => t.assignee === 'michael' && t.status !== 'done' && t.status !== 'closed')
         if (michaelTasks.length === 0) return null
         return (
-          <div className="rounded-xl border-2 border-amber-500/30 p-3 mb-2" style={{background:'#1a1508'}}>
+          <div className="rounded-xl border-2 border-amber-500/30 p-3 mb-2 bg-amber-500/5">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-amber-400 text-sm font-semibold">👤 Needs You</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-medium">{michaelTasks.length}</span>
+              <Badge label={String(michaelTasks.length)} className="bg-amber-500/20 text-amber-400 text-[9px]" />
             </div>
             <div className="space-y-1.5">
               {michaelTasks.map(t => (
                 <div key={t.id}
                   onClick={() => { setDetailTask(t); setBugDetailsOpen(false) }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/20 cursor-pointer hover:bg-amber-900/10 transition-colors"
-                  style={{background:'#151005'}}>
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/20 cursor-pointer hover:bg-amber-900/10 transition-colors bg-amber-500/5">
                   <span className="text-amber-400 text-[10px] font-semibold shrink-0">Needs You</span>
                   <p className="text-white text-xs font-medium truncate flex-1">{t.title}</p>
                   {t.project && <Chip label={t.project} />}
@@ -355,16 +340,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       {showArchive && (
         <div className="flex-1 flex flex-col gap-3 min-h-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <input type="text" placeholder="Search closed tasks..." value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
-              className="bg-transparent border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/70 outline-none focus:border-white/20 placeholder-white/30 w-52" />
-            <select className={selectCls} value={archiveProject} onChange={e => setArchiveProject(e.target.value)}>
-              <option value="">All Projects</option>
-              {projects.map(p => <option key={p} value={p!}>{p}</option>)}
-            </select>
+            <Input placeholder="Search closed tasks..." value={archiveSearch} onChange={e => setArchiveSearch(e.target.value)}
+              className="w-52 text-xs py-1.5" />
+            <Select value={archiveProject} onChange={e => setArchiveProject(e.target.value)} className="w-auto text-xs py-1">
+              <option value="" className="bg-[#0f0f0f] text-white">All Projects</option>
+              {projects.map(p => <option key={p} value={p!} className="bg-[#0f0f0f] text-white">{p}</option>)}
+            </Select>
             <span className="text-[10px] text-white/30 ml-auto">{filteredClosed.length} closed task{filteredClosed.length !== 1 ? 's' : ''}</span>
           </div>
           <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-            {filteredClosed.length === 0 && <p className="text-white/20 text-xs text-center py-8">No closed tasks</p>}
+            {filteredClosed.length === 0 && <EmptyState icon={Kanban} title="No closed tasks" />}
             {filteredClosed.map(t => (
               <div key={t.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/10 hover:border-white/10 transition-colors" style={{background:'#0f0f0f'}}>
                 <p className="text-sm text-white/70 flex-1 truncate">{t.title}</p>
@@ -456,7 +441,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </div>
               )
             })}
-            {featureGroups.length === 0 && <p className="text-white/20 text-xs text-center py-8">No tasks match filters</p>}
+            {featureGroups.length === 0 && <EmptyState icon={Kanban} title="No tasks match filters" />}
           </div>
         )
       })()}
@@ -591,7 +576,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </div>
               )
             })}
-            {allKeys.length === 0 && <p className="text-white/20 text-xs text-center py-8">No tasks match filters</p>}
+            {allKeys.length === 0 && <EmptyState icon={Kanban} title="No tasks match filters" />}
           </div>
         )
       })()}
@@ -630,8 +615,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
               {/* Cards */}
               <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[60px]">
-                {loading && <div className="text-white/20 text-xs text-center py-4">Loading...</div>}
-                {!loading && colTasks.length === 0 && <div className="flex flex-col items-center py-6 text-white/20"><span className="text-2xl mb-1">📋</span><p className="text-[10px]">No tasks</p></div>}
+                {loading && <div className="flex items-center justify-center py-4 gap-2 text-white/40 text-xs"><span className="animate-spin h-3 w-3 border-2 border-white/20 border-t-white/60 rounded-full" />Loading...</div>}
+                {!loading && colTasks.length === 0 && <EmptyState icon={Kanban} title="No tasks" className="py-6" />}
                 {colTasks.map(task => (
                   <div key={task.id}
                     draggable
@@ -658,8 +643,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                     </div>
                     {/* INF-100: blocked_by flag */}
                     {task.blocked_by && (
-                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold mb-1"
-                        style={{background:'#2a0808',color:'#f87171',border:'1px solid #4a1010'}}>
+                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold mb-1 bg-red-500/10 text-red-400 border border-red-500/20">
                         🚫 Blocked
                       </div>
                     )}
@@ -703,11 +687,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   await createTask({title:quickAddTitle.trim(),status:col.id,priority:'medium',project:'Infrastructure',assignee:'main',type:'feature',acceptance_criteria:'To be defined'})
                   setQuickAddTitle(''); setQuickAddCol(null)
                 }}>
-                  <input autoFocus value={quickAddTitle} onChange={e=>setQuickAddTitle(e.target.value)}
+                  <Input autoFocus value={quickAddTitle} onChange={e=>setQuickAddTitle(e.target.value)}
                     onKeyDown={e=>{ if(e.key==='Escape'){setQuickAddCol(null);setQuickAddTitle('')} }}
-                    placeholder="Task title..." className="flex-1 bg-white/10 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-white/20 placeholder-white/30" />
-                  <button type="submit" className="text-[10px] px-2 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/10">Add</button>
-                  <button type="button" onClick={()=>{setQuickAddCol(null);setQuickAddTitle('')}} className="text-[10px] px-1.5 text-white/50 hover:text-white/70">✕</button>
+                    placeholder="Task title..." className="flex-1 text-xs py-1.5" />
+                  <Button type="submit" variant="secondary" size="sm">Add</Button>
+                  <Button type="button" variant="icon" onClick={()=>{setQuickAddCol(null);setQuickAddTitle('')}}>✕</Button>
                 </form>
               ) : (
                 <button onClick={()=>{setQuickAddCol(col.id);setQuickAddTitle('')}}
@@ -722,11 +706,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
       {/* Load more */}
       {!showArchive && hasMoreBoard && (
-        <button onClick={() => setBoardLimit(prev => prev + 100)}
-          className="w-full text-center text-xs text-white/50 hover:text-white/70 py-2.5 rounded-lg border border-white/10 hover:border-white/20 transition-all"
-          style={{background:'#080808'}}>
+        <Button variant="secondary" size="sm" onClick={() => setBoardLimit(prev => prev + 100)} className="w-full justify-center">
           Load 100 more ({allFiltered.length - boardLimit} remaining)
-        </button>
+        </Button>
       )}
 
       {/* New Task Modal */}
@@ -734,42 +716,52 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setNewTask(null)}>
           <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <h3 className="text-white font-semibold text-sm">New Task</h3>
-            <div><p className={labelCls}>Title *</p><input className={inputCls} placeholder="Task title..." autoFocus
-              value={newTask.title??''} onChange={e=>setNewTask({...newTask,title:e.target.value})} /></div>
-            <div><p className={labelCls}>Description</p><textarea className={inputCls+' h-20 resize-none'} placeholder="Details..."
-              value={newTask.description??''} onChange={e=>setNewTask({...newTask,description:e.target.value})} /></div>
+            <FormGroup label="Title" required>
+              <Input placeholder="Task title..." autoFocus
+                value={newTask.title??''} onChange={e=>setNewTask({...newTask,title:e.target.value})} />
+            </FormGroup>
+            <FormGroup label="Description">
+              <Textarea placeholder="Details..." rows={3}
+                value={newTask.description??''} onChange={e=>setNewTask({...newTask,description:e.target.value})} />
+            </FormGroup>
             <div className="grid grid-cols-2 gap-3">
-              <div><p className={labelCls}>Status</p>
-                <select className={inputCls} value={newTask.status??'backlog'} onChange={e=>setNewTask({...newTask,status:e.target.value})}>
-                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-                </select></div>
-              <div><p className={labelCls}>Priority</p>
-                <select className={inputCls} value={newTask.priority??'medium'} onChange={e=>setNewTask({...newTask,priority:e.target.value})}>
-                  {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
-                </select></div>
-              <div><p className={labelCls}>Project</p>
-                <input className={inputCls} placeholder="e.g. Kemuni" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} /></div>
-              <div><p className={labelCls}>Assignee</p>
-                <select className={inputCls} value={newTask.assignee??''} onChange={e=>setNewTask({...newTask,assignee:e.target.value})}>
-                  <option value="">Unassigned</option>
-                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k}>{v.emoji} {v.name}</option>)}
-                </select></div>
-              <div><p className={labelCls}>Type</p>
-                <input className={inputCls} placeholder="e.g. feature, bug" value={newTask.type??''} onChange={e=>setNewTask({...newTask,type:e.target.value})} /></div>
-              <div><p className={labelCls}>Due Date</p>
-                <input type="date" className={inputCls} value={newTask.due_date??''} onChange={e=>setNewTask({...newTask,due_date:e.target.value})} /></div>
+              <FormGroup label="Status">
+                <Select value={newTask.status??'backlog'} onChange={e=>setNewTask({...newTask,status:e.target.value})}>
+                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id} className="bg-[#0f0f0f] text-white">{c.label}</option>)}
+                </Select>
+              </FormGroup>
+              <FormGroup label="Priority">
+                <Select value={newTask.priority??'medium'} onChange={e=>setNewTask({...newTask,priority:e.target.value})}>
+                  {['critical','high','medium','low'].map(p=><option key={p} value={p} className="bg-[#0f0f0f] text-white">{p}</option>)}
+                </Select>
+              </FormGroup>
+              <FormGroup label="Project">
+                <Input placeholder="e.g. Kemuni" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} />
+              </FormGroup>
+              <FormGroup label="Assignee">
+                <Select value={newTask.assignee??''} onChange={e=>setNewTask({...newTask,assignee:e.target.value})}>
+                  <option value="" className="bg-[#0f0f0f] text-white">Unassigned</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k} className="bg-[#0f0f0f] text-white">{v.emoji} {v.name}</option>)}
+                </Select>
+              </FormGroup>
+              <FormGroup label="Type">
+                <Input placeholder="e.g. feature, bug" value={newTask.type??''} onChange={e=>setNewTask({...newTask,type:e.target.value})} />
+              </FormGroup>
+              <FormGroup label="Due Date">
+                <Input type="date" value={newTask.due_date??''} onChange={e=>setNewTask({...newTask,due_date:e.target.value})} />
+              </FormGroup>
               {/* INF-101: Sprint field */}
-              <div><p className={labelCls}>Sprint</p>
-                <select className={inputCls} value={newTask.sprint??''} onChange={e=>setNewTask({...newTask,sprint:e.target.value||undefined})}>
-                  <option value="">None</option>
-                  {sprints.map(s=><option key={s} value={s!}>{s}</option>)}
-                </select></div>
+              <FormGroup label="Sprint">
+                <Select value={newTask.sprint??''} onChange={e=>setNewTask({...newTask,sprint:e.target.value||undefined})}>
+                  <option value="" className="bg-[#0f0f0f] text-white">None</option>
+                  {sprints.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>)}
+                </Select>
+              </FormGroup>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={()=>setNewTask(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
-              <button onClick={()=>{if(newTask.title?.trim()) createTask(newTask)}}
-                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-white/90 disabled:opacity-30 transition-colors"
-                disabled={!newTask.title?.trim()}>Create</button>
+              <Button variant="ghost" size="sm" onClick={()=>setNewTask(null)}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={()=>{if(newTask.title?.trim()) createTask(newTask)}}
+                disabled={!newTask.title?.trim()}>Create</Button>
             </div>
           </div>
         </div>
@@ -781,36 +773,44 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <div className="flex items-start justify-between">
               <h3 className="text-white font-semibold text-sm">Edit Task</h3>
-              <button onClick={()=>setConfirmDelete(editTask.id)} className="text-[10px] text-red-500/60 hover:text-red-500 transition-colors">Delete</button>
+              <Button variant="danger" size="sm" onClick={()=>setConfirmDelete(editTask.id)}>Delete</Button>
             </div>
-            <div><p className={labelCls}>Title</p><input className={inputCls}
-              value={editTask.title} onChange={e=>setEditTask({...editTask,title:e.target.value})} /></div>
-            <div><p className={labelCls}>Description</p><textarea className={inputCls+' h-20 resize-none'}
-              value={editTask.description??''} onChange={e=>setEditTask({...editTask,description:e.target.value})} /></div>
+            <FormGroup label="Title">
+              <Input value={editTask.title} onChange={e=>setEditTask({...editTask,title:e.target.value})} />
+            </FormGroup>
+            <FormGroup label="Description">
+              <Textarea rows={3} value={editTask.description??''} onChange={e=>setEditTask({...editTask,description:e.target.value})} />
+            </FormGroup>
             <div className="grid grid-cols-2 gap-3">
-              <div><p className={labelCls}>Status</p>
-                <select className={inputCls} value={editTask.status} onChange={e=>setEditTask({...editTask,status:e.target.value})}>
-                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-                </select></div>
-              <div><p className={labelCls}>Priority</p>
-                <select className={inputCls} value={editTask.priority??'medium'} onChange={e=>setEditTask({...editTask,priority:e.target.value})}>
-                  {['critical','high','medium','low'].map(p=><option key={p} value={p}>{p}</option>)}
-                </select></div>
-              <div><p className={labelCls}>Project</p>
-                <input className={inputCls} value={editTask.project??''} onChange={e=>setEditTask({...editTask,project:e.target.value})} /></div>
-              <div><p className={labelCls}>Assignee</p>
-                <select className={inputCls} value={editTask.assignee??''} onChange={e=>setEditTask({...editTask,assignee:e.target.value})}>
-                  <option value="">Unassigned</option>
-                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k}>{v.emoji} {v.name}</option>)}
-                </select></div>
-              <div><p className={labelCls}>Type</p>
-                <input className={inputCls} value={editTask.type??''} onChange={e=>setEditTask({...editTask,type:e.target.value})} /></div>
-              <div><p className={labelCls}>Due Date</p>
-                <input type="date" className={inputCls} value={editTask.due_date??''} onChange={e=>setEditTask({...editTask,due_date:e.target.value})} /></div>
+              <FormGroup label="Status">
+                <Select value={editTask.status} onChange={e=>setEditTask({...editTask,status:e.target.value})}>
+                  {BOARD_COLUMNS.map(c=><option key={c.id} value={c.id} className="bg-[#0f0f0f] text-white">{c.label}</option>)}
+                </Select>
+              </FormGroup>
+              <FormGroup label="Priority">
+                <Select value={editTask.priority??'medium'} onChange={e=>setEditTask({...editTask,priority:e.target.value})}>
+                  {['critical','high','medium','low'].map(p=><option key={p} value={p} className="bg-[#0f0f0f] text-white">{p}</option>)}
+                </Select>
+              </FormGroup>
+              <FormGroup label="Project">
+                <Input value={editTask.project??''} onChange={e=>setEditTask({...editTask,project:e.target.value})} />
+              </FormGroup>
+              <FormGroup label="Assignee">
+                <Select value={editTask.assignee??''} onChange={e=>setEditTask({...editTask,assignee:e.target.value})}>
+                  <option value="" className="bg-[#0f0f0f] text-white">Unassigned</option>
+                  {Object.entries(ASSIGNEE_MAP).map(([k,v])=><option key={k} value={k} className="bg-[#0f0f0f] text-white">{v.emoji} {v.name}</option>)}
+                </Select>
+              </FormGroup>
+              <FormGroup label="Type">
+                <Input value={editTask.type??''} onChange={e=>setEditTask({...editTask,type:e.target.value})} />
+              </FormGroup>
+              <FormGroup label="Due Date">
+                <Input type="date" value={editTask.due_date??''} onChange={e=>setEditTask({...editTask,due_date:e.target.value})} />
+              </FormGroup>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={()=>setEditTask(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
-              <button onClick={()=>{
+              <Button variant="ghost" size="sm" onClick={()=>setEditTask(null)}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={()=>{
                 const fields = {title:editTask.title,description:editTask.description,status:editTask.status,
                   priority:editTask.priority,project:editTask.project,assignee:editTask.assignee,type:editTask.type,due_date:editTask.due_date}
                 const origTask = tasks.find(t=>t.id===editTask.id)
@@ -820,7 +820,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   updateTask(editTask.id,fields)
                 }
               }}
-                className="text-xs font-medium px-4 py-1.5 rounded-lg bg-white text-black hover:bg-white/90 transition-colors">Save</button>
+              >Save</Button>
             </div>
           </div>
         </div>
@@ -832,8 +832,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           <div className="rounded-2xl border border-white/10 p-6 text-center space-y-4" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
             <p className="text-white text-sm">Delete this task?</p>
             <div className="flex justify-center gap-3">
-              <button onClick={()=>setConfirmDelete(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-[#0f0f0f]">Cancel</button>
-              <button onClick={()=>deleteTask(confirmDelete)} className="text-xs font-medium px-4 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-500 transition-colors">Delete</button>
+              <Button variant="ghost" size="sm" onClick={()=>setConfirmDelete(null)}>Cancel</Button>
+              <Button variant="danger" size="sm" onClick={()=>deleteTask(confirmDelete)}>Delete</Button>
             </div>
           </div>
         </div>
@@ -846,14 +846,14 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             <h3 className="text-white font-semibold text-sm text-center">How was this resolved?</h3>
             <div className="flex flex-wrap gap-2 justify-center">
               {RESOLUTION_OPTIONS.map(opt => (
-                <button key={opt.value} onClick={() => handleResolutionSelect(opt.value)}
-                  className="text-xs font-medium px-3 py-1.5 rounded-full border border-white/10 text-white/70 hover:bg-white/10 hover:border-white/20 transition-colors">
+                <Button key={opt.value} variant="secondary" size="sm" onClick={() => handleResolutionSelect(opt.value)}
+                  className="rounded-full">
                   {opt.emoji} {opt.label}
-                </button>
+                </Button>
               ))}
             </div>
             <div className="flex justify-center pt-1">
-              <button onClick={()=>setResolutionPending(null)} className="text-xs text-white/50 px-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors">Cancel</button>
+              <Button variant="ghost" size="sm" onClick={()=>setResolutionPending(null)}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -872,11 +872,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               {/* Header */}
               <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-white/10" style={{background:'#080808'}}>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => { setEditTask(t); setDetailTask(null); setBugDetailsOpen(false) }}
-                    className="text-[10px] text-white/50 hover:text-white/70 transition-colors px-2 py-1 rounded-lg hover:bg-white/10">Edit</button>
+                  <Button variant="ghost" size="sm" onClick={() => { setEditTask(t); setDetailTask(null); setBugDetailsOpen(false) }}>Edit</Button>
                 </div>
-                <button onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}
-                  className="text-white/50 hover:text-white transition-colors text-lg leading-none">&times;</button>
+                <Button variant="icon" onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}>&times;</Button>
               </div>
 
               <div className="px-5 py-5 space-y-5">

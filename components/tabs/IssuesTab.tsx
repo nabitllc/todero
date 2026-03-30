@@ -190,8 +190,9 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
         {fetchError && (
           <div className="flex flex-col items-center py-8 gap-3">
             <p className="text-red-400 text-sm">{fetchError}</p>
-            <button onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r=>r.json()).then(d => { setIssues(Array.isArray(d)?d:d.data??d); setFetchError(null) }).catch(()=>setFetchError('Failed to load issues')).finally(()=>setLoading(false)) }}
-              className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white transition-all">Retry</button>
+            <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r=>r.json()).then(d => { setIssues(Array.isArray(d)?d:d.data??d); setFetchError(null) }).catch(()=>setFetchError('Failed to load issues')).finally(()=>setLoading(false)) }}>
+              Retry
+            </Button>
           </div>
         )}
 

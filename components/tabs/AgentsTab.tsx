@@ -1,13 +1,8 @@
 'use client'
 import React from 'react'
 import { Chip, Dot, SH } from '@/lib/mc-atoms'
-
-const EmptyState = ({icon, message}: {icon:string; message:string}) => (
-  <div className="text-center py-12 text-white/30">
-    <div className="text-3xl mb-2">{icon}</div>
-    <p className="text-sm">{message}</p>
-  </div>
-)
+import { Button, EmptyState as EmptyStateUI } from '@/components/ui'
+import { Users } from 'lucide-react'
 
 export default function AgentsTab({
   displayAgents,
@@ -29,7 +24,7 @@ export default function AgentsTab({
   return (
             <div className="space-y-6">
               {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
-              {displayAgents.length === 0 && <EmptyState icon="👥" message="No agents registered yet" />}
+              {displayAgents.length === 0 && <EmptyStateUI icon={Users} title="No agents registered yet" />}
 
               {/* Lead agent card */}
               {displayAgents.length > 0 && (() => {
@@ -159,7 +154,7 @@ export default function AgentsTab({
                         </div>
                         <p className="text-white/50 text-sm">{agentModal.role}</p>
                       </div>
-                      <button onClick={()=>setAgentModal(null)} className="ml-auto text-white/30 hover:text-white text-lg">✕</button>
+                      <Button variant="icon" onClick={()=>setAgentModal(null)} className="ml-auto">✕</Button>
                     </div>
                     <div className="space-y-3">
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Model</p><p className="text-white/70 text-sm font-mono">{agentModal.model}</p></div>

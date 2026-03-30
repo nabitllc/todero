@@ -1,6 +1,8 @@
 'use client'
 import React from 'react'
 import { Dot, Chip, Bar, SH } from '@/lib/mc-atoms'
+import { Button, EmptyState } from '@/components/ui'
+import { Server } from 'lucide-react'
 
 export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefresh }: {
   liveStatus: any
@@ -55,7 +57,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                   {ls && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/20 text-[10px]">Updated {agoSec}s ago</span></>}
                   {!ls && <span className="text-yellow-600 text-[10px]">Loading\u2026</span>}
                   <span className="text-white/20 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">\u21bb {statusCountdown}s</span>
-                  <button onClick={()=>{onRefresh()}} className="text-white/30 hover:text-white/40 text-[10px] border border-white/10 rounded px-2 py-0.5 transition-colors">Refresh</button>
+                  <Button variant="secondary" size="sm" onClick={()=>{onRefresh()}}>Refresh</Button>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -83,9 +85,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                     <Dot status={hb.enabled ? 'active' : 'planned'} />
                     <span className="font-mono text-xs text-white shrink-0">{hb.agentId}</span>
                     <span className="text-white/50 text-xs flex-1">{hb.enabled ? `every ${hb.every}` : 'disabled'}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full border" style={hb.enabled
-                      ? {color:'#10b981',borderColor:'#10b98140',background:'#10b98115'}
-                      : {color:'#52525b',borderColor:'#27272a',background:'#18181b'}}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${hb.enabled ? 'text-green-400 border-green-500/30 bg-green-500/10' : 'text-white/40 border-white/10 bg-white/5'}`}>
                       {hb.enabled ? 'active' : 'off'}
                     </span>
                   </div>
@@ -122,11 +122,11 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                           <span className="text-white/40 text-xs font-mono">{model.split('/').pop()}</span>
                           <span className="text-white/50 text-xs">${(cost as number).toFixed(3)} ({pct}%)</span>
                         </div>
-                        <Bar v={pct} color={model.includes('haiku')?'#a855f7':'#3b82f6'} bg="#1a1a2a"/>
+                        <Bar v={pct} color={model.includes('haiku')?'#a855f7':'#3b82f6'} bg="rgba(255,255,255,0.05)"/>
                       </div>
                     )
                   })}
-                  {Object.keys(usageByModel).length === 0 && <p className="text-white/20 text-xs">No session data yet</p>}
+                  {Object.keys(usageByModel).length === 0 && <EmptyState icon={Server} title="No session data yet" className="py-4" />}
                 </div>
               </div>
 
@@ -156,7 +156,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                   </div>
                   <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used \u00b7 resets monthly</p>
                 </div>
-                <Bar v={orPct} color="#3b82f6" bg="#1a1a2a" />
+                <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />
                 <p className="text-white/20 text-xs mt-2">Daily billing report via n8n \u2192 Telegram</p>
               </div>
             </div>

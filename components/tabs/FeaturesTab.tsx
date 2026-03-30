@@ -1,7 +1,7 @@
 'use client'
 import React, { useEffect, useState, useRef } from 'react'
 import FeatureCard from './FeatureCard'
-import { Button, EmptyState } from '@/components/ui'
+import { Button, EmptyState, Badge } from '@/components/ui'
 import { Map } from 'lucide-react'
 
 interface Issue {
@@ -104,10 +104,9 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <p className="text-red-400 text-sm">{fetchError}</p>
-        <button onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r => r.json()).then(d => { if (Array.isArray(d)) setIssues(d) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}
-          className="text-xs px-3 py-1.5 rounded-lg border border-white/10 text-white/50 hover:text-white transition-all">
+        <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r => r.json()).then(d => { if (Array.isArray(d)) setIssues(d) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}>
           Retry
-        </button>
+        </Button>
       </div>
     )
   }

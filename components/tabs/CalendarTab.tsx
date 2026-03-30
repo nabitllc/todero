@@ -136,8 +136,8 @@ export default function CalendarTab({
                     return (
                       <div key={i} className={'rounded-lg border p-1.5 min-h-[60px] '+(calView==='month'?'min-h-[48px]':'')}
                         style={{
-                          background: isToday?'#1a1a30':inSprints.length>0?(inSprints[0].color+'08'):'#080808',
-                          borderColor: isToday?'#ffffff30':inSprints.length>0?(inSprints[0].color+'25'):'#1e1e1e',
+                          background: isToday?'rgba(99,102,241,0.08)':inSprints.length>0?(inSprints[0].color+'08'):'#080808',
+                          borderColor: isToday?'rgba(255,255,255,0.2)':inSprints.length>0?(inSprints[0].color+'25'):'rgba(255,255,255,0.05)',
                           opacity: calView==='month'&&!isCurrentMonth?0.4:1,
                         }}>
                         <div className="flex items-center justify-between mb-1">
@@ -158,7 +158,7 @@ export default function CalendarTab({
                         {/* Cron events (compact in month view) */}
                         {calView==='week' && dayCrons.slice(0,3).map((c:any)=>(
                           <div key={c.id} className="text-[9px] leading-tight mb-0.5 px-1 py-0.5 rounded truncate cursor-pointer hover:brightness-125"
-                            style={{background:'#ffffff06',color:'#888'}}
+                            style={{background:'rgba(255,255,255,0.03)',color:'rgba(255,255,255,0.4)'}}
                             onClick={()=>setCronModal(c)}>
                             {c.time} {cronLabel(c)}
                           </div>
@@ -210,7 +210,7 @@ export default function CalendarTab({
                           const isError = c.status === 'error' || (c.consecutiveErrors ?? 0) > 0
                           return (
                             <div key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-white/5 transition-colors '+(i<arr.length-1?'border-b border-white/10':'')}
-                              style={isError ? {background:'#1a0808'} : {}}
+                              style={isError ? {background:'rgba(239,68,68,0.05)'} : {}}
                               onClick={()=>setCronModal(c)}>
                               <div className="flex items-center gap-2 sm:gap-4">
                                 <span className="font-mono text-xs text-white/40 shrink-0">{c.time}</span>
