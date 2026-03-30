@@ -366,15 +366,16 @@ async function executePostFunctions(
       // Build a notification for the completed/approved transition
       const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
       const key = (notifyIssue.task_key ?? '?') as string
-      const emoji = PROJECT_EMOJI[(notifyIssue.project as string) ?? ''] ?? '📌'
       const ts = new Date().toLocaleString('en-US', {
         timeZone: 'America/New_York',
         month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit',
         hour12: true
       }) + ' EST'
-      const label = toStatus === 'approved' ? '✅ Approved (code path)' : '✅ Completed (no-code path)'
-      const msg = `${label} ${emoji} **[${key}]** — ${notifyIssue.title ?? ''} (${notifyIssue.project ?? ''}) at ${ts}`
+      const statusEmoji = STATUS_EMOJI[toStatus] ?? '✅'
+      const typeEmoji = TYPE_EMOJI[(notifyIssue.type as string) ?? 'task'] ?? '📋'
+      const resType = (notifyIssue.resolution_type as string) ?? toStatus
+      const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${notifyIssue.title ?? ''} at ${ts}`
       postDiscord(channelId, msg)
     }
 
