@@ -218,7 +218,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
           <span className="text-lg font-semibold text-white">Pipeline</span>
           <span className="text-white/25 text-xs">{issues.length} items</span>
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-white/10 p-0.5 bg-[#080808]">
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 p-0.5 bg-[#0f0f0f]">
           {(['both', 'features', 'issues'] as FilterMode[]).map(mode => (
             <Button
               key={mode}

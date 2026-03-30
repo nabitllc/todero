@@ -27,7 +27,7 @@ function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: 
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(!open)}
-        className="text-xs bg-white/5 border border-white/10 text-white/60 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-white/30 flex items-center gap-1 transition-all hover:border-white/20">
+        className="text-sm bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/15 transition-all flex items-center gap-1">
         {selected.length > 0 ? `${label} (${selected.length})` : `All ${label}s`}
         <span className="text-white/25 text-[9px]">▾</span>
       </button>

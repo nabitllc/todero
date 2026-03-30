@@ -303,10 +303,10 @@ function SprintProgressCard() {
             {velocityDelta > 0 ? '+' : ''}{velocityDelta} vs prior
           </span>
         )}
-        <span className="ml-auto text-lg font-bold tabular-nums" style={{color: pct === 100 ? '#10b981' : pct >= 50 ? '#3b82f6' : '#f59e0b'}}>{pct}%</span>
+        <span className={`ml-auto text-lg font-bold tabular-nums ${pct === 100 ? 'text-green-500' : pct >= 50 ? 'text-blue-500' : 'text-amber-500'}`}>{pct}%</span>
       </div>
       <div className="w-full rounded-full h-2" style={{background:'#1a1a1a'}}>
-        <div className="h-2 rounded-full transition-all duration-500" style={{width: pct+'%', background: pct === 100 ? '#10b981' : pct >= 50 ? '#3b82f6' : '#f59e0b'}} />
+        <div className={`h-2 rounded-full transition-all duration-500 ${pct === 100 ? 'bg-green-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{width: pct+'%'}} />
       </div>
     </div>
   )
@@ -331,9 +331,9 @@ function ProjectBreakdownBars({ project }: { project: string }) {
   }, [project])
   if (!data) return null
   const rows = [
-    { label: 'Epics', ...data.epics, color: '#a855f7' },
-    { label: 'Features', ...data.features, color: '#3b82f6' },
-    { label: 'Issues', ...data.issues, color: '#10b981' },
+    { label: 'Epics', ...data.epics, colorClass: 'bg-purple-500' },
+    { label: 'Features', ...data.features, colorClass: 'bg-blue-500' },
+    { label: 'Issues', ...data.issues, colorClass: 'bg-green-500' },
   ]
   return (
     <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
@@ -341,7 +341,7 @@ function ProjectBreakdownBars({ project }: { project: string }) {
         <div key={r.label} className="flex items-center gap-2">
           <span className="text-[9px] text-white/50 w-12 shrink-0">{r.label}</span>
           <div className="flex-1 h-1 rounded-full" style={{background:'#1a1a1a'}}>
-            <div className="h-1 rounded-full transition-all" style={{width: r.total > 0 ? (r.done/r.total*100)+'%' : '0%', background: r.color}} />
+            <div className={`h-1 rounded-full transition-all ${r.colorClass}`} style={{width: r.total > 0 ? (r.done/r.total*100)+'%' : '0%'}} />
           </div>
           <span className="text-[9px] text-white/30 tabular-nums w-8 text-right">{r.done}/{r.total}</span>
         </div>

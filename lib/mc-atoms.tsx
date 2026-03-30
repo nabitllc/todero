@@ -11,12 +11,26 @@ export function Dot({status,sm}:{status:string;sm?:boolean}) {
   return <span className={'inline-block rounded-full shrink-0 '+sz+' '+cls} />
 }
 
-export function Chip({label,color}:{label:string;color?:string}) {
+const HEX_TO_BADGE: Record<string, string> = {
+  '#3b82f6': 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  '#a855f7': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  '#6b7280': 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  '#10b981': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  '#ef4444': 'bg-red-500/20 text-red-400 border-red-500/30',
+  '#f97316': 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  '#3f3f46': 'bg-zinc-700/20 text-zinc-400 border-zinc-700/30',
+  '#27272a': 'bg-zinc-800/20 text-zinc-500 border-zinc-800/30',
+  '#f59e0b': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  '#71717a': 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+  '#64748b': 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+}
+
+const DEFAULT_BADGE = 'bg-white/5 text-white/50 border-white/10'
+
+export function Chip({label,color,colorClass}:{label:string;color?:string;colorClass?:string}) {
+  const cls = colorClass ?? (color ? HEX_TO_BADGE[color] : undefined) ?? DEFAULT_BADGE
   return (
-    <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border"
-      style={color
-        ?{color,borderColor:color+'40',background:color+'15'}
-        :{color:'rgba(255,255,255,0.5)',borderColor:'rgba(255,255,255,0.1)',background:'rgba(255,255,255,0.05)'}}>
+    <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border ${cls}`}>
       {label}
     </span>
   )

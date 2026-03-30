@@ -2093,15 +2093,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                             <button
                               onClick={() => {
                                 if (!activeConv) return
-                                const updated = { ...activeConv, messages: activeConv.messages.filter(m => m.id !== msg.id) }
-                                setChats(prev => prev.map(c => c.id === activeConv.id ? updated : c))
-                                fetch('/api/chat/conversations', {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ id: activeConv.id, messages: updated.messages })
-                                })
+                                setChats(prev => prev.map(c => c.id === activeConv.id
+                                  ? { ...c, messages: c.messages.filter(m => m.id !== msg.id) }
+                                  : c
+                                ))
+                                fetch(`/api/chat/messages?id=${msg.id}`, { method: 'DELETE' })
                               }}
-                              className="text-[10px] text-white/30 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded"
+                              className="text-[9px] text-white/30 hover:text-red-400 transition-colors"
                               title="Delete message">
                               🗑
                             </button>
