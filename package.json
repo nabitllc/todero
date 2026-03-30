@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "jest",
     "prepare": "git config core.hooksPath .githooks"
   },
   "keywords": [],
@@ -26,8 +27,12 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "25.5.0",
     "@types/react": "19.2.14",
+    "jest": "^30.3.0",
+    "jest-environment-node": "^30.3.0",
+    "ts-jest": "^29.4.6",
     "typescript": "5.9.3"
   }
 }

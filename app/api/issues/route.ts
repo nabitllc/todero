@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exec as execAsync } from 'child_process'
-
-// ── Enum constants (single source of truth) ───────────────────────────────────
-const VALID_TYPES = ['epic', 'feature', 'task', 'bug', 'ops', 'research']
-const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low']
-const VALID_SEVERITIES = ['S0', 'S1', 'S2', 'S3']
-const VALID_STATUSES = ['backlog', 'defined', 'open', 'in_progress', 'in_review', 'done', 'code_review', 'product_review', 'approved', 'released', 'completed', 'closed', 'blocked', 'draft', 'active']
-const VALID_RESOLUTION_TYPES = ['code_change', 'config_change', 'no_action', 'duplicate', 'by_design', 'wont_fix', 'cancelled', 'canceled', 'not_reproducible', 'deferred', 'completed']
+import {
+  PROJECT_PREFIX,
+  VALID_TYPES,
+  VALID_PRIORITIES,
+  VALID_SEVERITIES,
+  VALID_STATUSES,
+  VALID_RESOLUTION_TYPES,
+} from '@/lib/constants'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -184,10 +185,6 @@ async function validateHierarchy(
 }
 
 // ── Task key generation ───────────────────────────────────────────────────────
-const PROJECT_PREFIX: Record<string, string> = {
-  'Mission Control': 'MC', Infrastructure: 'INF', Vespera: 'VES', Kemuni: 'KEM',
-  Todero: 'TOD', todero: 'TOD'
-}
 
 async function generateTaskKey(project: string): Promise<{ task_key: string; task_number: number }> {
   const prefix = PROJECT_PREFIX[project] ?? 'TOD'
