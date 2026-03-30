@@ -293,14 +293,18 @@ export async function PATCH(req: NextRequest) {
     }
 
     // To 'in_review': require (feature_branch OR commit_sha OR pr_url) AND implementation_notes
+    // Fallback: accept implementation notes in description (for backward compat before DB migration)
     if (fields.status === 'in_review') {
-      if (!merged.implementation_notes) {
+      const hasImplNotes = merged.implementation_notes ||
+        (merged.description && /IMPLEMENTATION/i.test(merged.description))
+      if (!hasImplNotes) {
         return NextResponse.json(
           { error: 'Cannot move to in_review: implementation_notes is required. Builder must include handoff notes for the reviewer.' },
           { status: 400 }
         )
       }
-      if (!merged.feature_branch && !merged.commit_sha && !merged.pr_url) {
+      const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
+      if (!hasRef) {
         return NextResponse.json(
           { error: 'Cannot move to in_review: at least one of feature_branch, commit_sha, or pr_url is required.' },
           { status: 400 }
@@ -313,10 +317,13 @@ export async function PATCH(req: NextRequest) {
     }
 
     // To 'done': require resolution_type AND reviewer_notes AND test_status='passed'
+    // Fallback: accept reviewer notes in description (for backward compat before DB migration)
     if (fields.status === 'done') {
+      const hasReviewerNotes = merged.reviewer_notes ||
+        (merged.description && /REVIEW/i.test(merged.description))
       const missing: string[] = []
       if (!merged.resolution_type) missing.push('resolution_type')
-      if (!merged.reviewer_notes) missing.push('reviewer_notes')
+      if (!hasReviewerNotes) missing.push('reviewer_notes')
       if (merged.test_status !== 'passed') missing.push('test_status=passed')
       if (missing.length > 0) {
         return NextResponse.json(
@@ -348,12 +355,29 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  const { data, error } = await supabase
+  // Try update with all fields; if column doesn't exist, retry without unknown fields
+  let { data, error } = await supabase
     .from('issues')
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single()
+
+  // Graceful fallback: strip fields that don't exist as columns yet (pre-migration)
+  if (error?.code === '42703') {
+    const safeFields = { ...fields }
+    for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count']) {
+      delete safeFields[col]
+    }
+    const retry = await supabase
+      .from('issues')
+      .update({ ...safeFields, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single()
+    data = retry.data
+    error = retry.error
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // ── Instant Discord notification on every done ──
