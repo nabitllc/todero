@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { CostSnapshot } from '@/lib/issues'
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -19,7 +20,7 @@ export async function GET() {
 
     // Build 7-day array (newest first, then reversed)
     const now = new Date()
-    const days: { date: string; cost: number; tokens: number }[] = []
+    const days: CostSnapshot[] = []
 
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now)

@@ -1,6 +1,7 @@
 'use client'
 import React, { useEffect, useState } from 'react'
 import { Dot, Chip, Bar, SH } from '@/lib/mc-atoms'
+import type { CostSnapshot } from '@/lib/issues'
 import { Button, EmptyState } from '@/components/ui'
 import { Server, Rocket } from 'lucide-react'
 
@@ -29,7 +30,7 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 // INF-204: Sparkline SVG component for 7-day cost trend
-function CostSparkline({ data }: { data: { date: string; cost: number }[] }) {
+function CostSparkline({ data }: { data: CostSnapshot[] }) {
   if (!data || data.length < 2) return null
   const costs = data.map(d => d.cost)
   const max = Math.max(...costs, 0.01)
@@ -77,7 +78,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const [deploys, setDeploys] = useState<DeployRecord[]>([])
             const [deploysLoaded, setDeploysLoaded] = useState(false)
             // INF-204: 7-day cost history for sparkline
-            const [costHistory, setCostHistory] = useState<{ date: string; cost: number; tokens: number }[]>([])
+            const [costHistory, setCostHistory] = useState<CostSnapshot[]>([])
 
             useEffect(() => {
               fetch('/api/deploy-history?limit=20')

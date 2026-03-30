@@ -4,6 +4,47 @@ const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsI
 
 export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'in_review' | 'done'
 
+// INF-203: Cost trend sparkline data model
+export interface CostSnapshot {
+  date: string
+  cost: number
+  tokens: number
+}
+
+// INF-218: Kanban swimlane types
+export type BoardGroupBy = 'status' | 'feature' | 'business'
+
+export interface KanbanColumn {
+  id: string
+  label: string
+  color: string
+}
+
+export interface Task {
+  id: string
+  title: string
+  description?: string
+  status: string
+  assignee?: string
+  project?: string
+  priority?: string
+  type?: string
+  due_date?: string
+  created_at?: string
+  updated_at?: string
+  resolution_type?: string
+  acceptance_criteria?: string
+  sprint?: string
+  steps_to_reproduce?: string
+  expected_behavior?: string
+  actual_behavior?: string
+  environment?: string
+  pr_url?: string
+  blocked_by?: string
+  parent_id?: string
+  task_key?: string
+}
+
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${taskId}`, {
     method: 'PATCH',

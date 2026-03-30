@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Button, Input, Textarea, Select, FormGroup, EmptyState, Badge } from '@/components/ui'
 import { Kanban, Search, X } from 'lucide-react'
 import { Chip } from '@/lib/mc-atoms'
+import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
 
 function MultiSelect({ label, options, selected, onToggle, displayFn }: {
   label: string; options: string[]; selected: string[]; onToggle: (v: string) => void; displayFn?: (v: string) => string
@@ -40,16 +41,8 @@ function MultiSelect({ label, options, selected, onToggle, displayFn }: {
   )
 }
 
-interface Task {
-  id: string; title: string; description?: string; status: string;
-  assignee?: string; project?: string; priority?: string; type?: string;
-  due_date?: string; created_at?: string; updated_at?: string;
-  resolution_type?: string; acceptance_criteria?: string; sprint?: string;
-  steps_to_reproduce?: string; expected_behavior?: string;
-  actual_behavior?: string; environment?: string;
-  pr_url?: string; blocked_by?: string; parent_id?: string;
-  task_key?: string;
-}
+// Task type imported from @/lib/issues as SharedTask
+type Task = SharedTask
 
 const RESOLUTION_OPTIONS: { value: string; label: string; emoji: string }[] = [
   { value: 'code_change',       label: 'Code Change',       emoji: '✅' },
@@ -130,7 +123,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [boardLimit, setBoardLimit] = useState(100)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const [boardGroupBy, setBoardGroupBy] = useState<'status'|'feature'|'business'>(() => { try { return (localStorage.getItem('board-group-by') as 'status'|'feature'|'business') || 'status' } catch { return 'status' } })
+  const [boardGroupBy, setBoardGroupBy] = useState<BoardGroupBy>(() => { try { return (localStorage.getItem('board-group-by') as BoardGroupBy) || 'status' } catch { return 'status' } })
   const groupByFeature = boardGroupBy === 'feature'
   const groupByBusiness = boardGroupBy === 'business'
   const [collapsedBiz, setCollapsedBiz] = useState<Record<string,boolean>>(() => { try { return JSON.parse(localStorage.getItem('board-biz-collapsed') ?? '{}') } catch { return {} } })
