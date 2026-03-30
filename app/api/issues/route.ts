@@ -155,7 +155,8 @@ interface TransitionError {
 }
 
 // ── validateWorkflowTransition ────────────────────────────────────────────────
-// Validates a Task status transition against the workflow_transitions table.
+// Validates a status transition against the workflow_transitions table.
+// Supports all issue types: task, bug, feature, epic, ops, research.
 // Returns null on success, or a TransitionError on failure.
 async function validateWorkflowTransition(
   issue: Record<string, unknown>,
@@ -166,8 +167,9 @@ async function validateWorkflowTransition(
   const issueType = (issue.type as string) ?? 'task'
   const fromStatus = issue.status as string
 
-  // Only enforce workflow for task type
-  if (issueType !== 'task') {
+  // Supported types with full workflow engine
+  const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
+  if (!WORKFLOW_TYPES.includes(issueType)) {
     return { transition: null, error: null } as unknown as { transition: WorkflowTransition; error: null }
   }
 
@@ -175,14 +177,14 @@ async function validateWorkflowTransition(
   const { data: transition, error: dbErr } = await supabase
     .from('workflow_transitions')
     .select('condition_role, validators, post_functions')
-    .eq('issue_type', 'task')
+    .eq('issue_type', issueType)
     .eq('from_status', fromStatus)
     .eq('to_status', newStatus)
     .maybeSingle()
 
   if (dbErr) {
     console.error('[workflow] DB error looking up transition:', dbErr)
-    // Don't block on DB error — fall through to legacy checks
+    // Don't block on DB error — fall through
     return { transition: null, error: null } as unknown as { transition: WorkflowTransition; error: null }
   }
 
@@ -190,7 +192,7 @@ async function validateWorkflowTransition(
     return {
       transition: null,
       error: {
-        error: `Invalid transition for task: ${fromStatus} → ${newStatus}. Check allowed transitions.`,
+        error: `Invalid transition for ${issueType}: ${fromStatus} → ${newStatus}. Check allowed transitions.`,
         field: 'status'
       }
     }
@@ -207,12 +209,44 @@ async function validateWorkflowTransition(
         error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' }
       }
     }
+  } else if (conditionRole === 'po_main_sme') {
+    const allowed = ['po', 'main', 'kemuni-sme', 'vespera-sme']
+    if (!transitionedBy || !allowed.includes(transitionedBy)) {
+      return {
+        transition: null,
+        error: { error: 'Only po, main, or an SME (kemuni-sme, vespera-sme) can execute this transition', field: 'transitioned_by' }
+      }
+    }
+  } else if (conditionRole === 'po_main_ops') {
+    const allowed = ['po', 'main', 'ops']
+    if (!transitionedBy || !allowed.includes(transitionedBy)) {
+      return {
+        transition: null,
+        error: { error: 'Only po, main, or ops can execute this transition', field: 'transitioned_by' }
+      }
+    }
   } else if (conditionRole === 'assignee') {
     const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
     if (!transitionedBy || transitionedBy !== issueAssignee) {
       return {
         transition: null,
         error: { error: `Only the assignee (${issueAssignee ?? 'unset'}) can execute this transition`, field: 'transitioned_by' }
+      }
+    }
+  } else if (conditionRole === 'assignee_or_ops') {
+    const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
+    if (!transitionedBy || (transitionedBy !== issueAssignee && transitionedBy !== 'ops')) {
+      return {
+        transition: null,
+        error: { error: `Only the assignee (${issueAssignee ?? 'unset'}) or ops can execute this transition`, field: 'transitioned_by' }
+      }
+    }
+  } else if (conditionRole === 'scout_only') {
+    const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
+    if (!transitionedBy || (transitionedBy !== 'scout' && issueAssignee !== 'scout')) {
+      return {
+        transition: null,
+        error: { error: 'Only scout can execute this transition', field: 'transitioned_by' }
       }
     }
   } else if (conditionRole === 'reviewer') {
@@ -239,6 +273,18 @@ async function validateWorkflowTransition(
     } else if (v === 'test_status_passed') {
       if (merged.test_status !== 'passed') {
         missing.push('test_status=passed')
+      }
+    } else if (v === 'children_exist') {
+      // Special: check if any child issues exist for this epic
+      const issueId = issue.id as string
+      if (issueId) {
+        const { count } = await supabase
+          .from('issues')
+          .select('id', { count: 'exact', head: true })
+          .eq('parent_id', issueId)
+        if (!count || count === 0) {
+          missing.push('children_exist (epic must have at least one child issue before activating)')
+        }
       }
     } else {
       // Standard field presence check
@@ -276,17 +322,34 @@ async function executePostFunctions(
     const { action, params } = fn
 
     if (action === 'set_assignee') {
-      if ('to' in params && params.to === null) {
+      // Support both legacy `from_field` and new `source` param styles
+      const sourceKey = (params.source ?? params.from_field) as string | null | undefined
+      if (sourceKey === null || ('source' in params && params.source === null) || ('to' in params && params.to === null)) {
         // Unassign
         fields.assignee = null
-      } else if (params.from_field) {
-        const sourceField = params.from_field as string
-        // Read from updated issue or original
-        const newAssignee = (updatedIssue[sourceField] ?? issue[sourceField]) as string | null
+      } else if (sourceKey) {
+        // sourceKey is a field name — read from updated issue or original
+        const newAssignee = (updatedIssue[sourceKey] ?? issue[sourceKey]) as string | null
         if (newAssignee !== undefined) {
           fields.assignee = newAssignee
         }
       }
+    }
+
+    if (action === 'notify_kaos') {
+      // Send a message to the main KAOS agent via openclaw
+      const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
+      const key = (notifyIssue.task_key ?? '?') as string
+      const title = (notifyIssue.title ?? '') as string
+      // Fire-and-forget via openclaw message
+      fetch('http://localhost:3001/api/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: 'agent:main',
+          message: `🔬 Research completed: [${key}] ${title} — review findings and close or follow up.`
+        })
+      }).catch((e: Error) => console.warn('[notify_kaos] failed:', e.message))
     }
 
     if (action === 'notify_discord') {
@@ -512,8 +575,9 @@ export async function PATCH(req: NextRequest) {
     const fromStatus = before.status as string
     const toStatus = fields.status as string
 
-    // ── Task type: full workflow engine ──
-    if (issueType === 'task') {
+    // ── Full workflow engine (task, bug, feature, epic, ops, research) ──
+    const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
+    if (WORKFLOW_TYPES.includes(issueType)) {
       const result = await validateWorkflowTransition(
         before as Record<string, unknown>,
         toStatus,
@@ -528,114 +592,9 @@ export async function PATCH(req: NextRequest) {
       // If transition was found + valid, run post functions later (after DB write)
       // (handled below after update)
     } else {
-      // ── Legacy validation for non-task types ──
-      const issueReviewer = fields.reviewer ?? before?.reviewer
-
-      // backlog → open: only po or main
-      if (fromStatus === 'backlog' && toStatus === 'open') {
-        if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
-          return NextResponse.json(
-            { error: 'Only po or main can execute this transition' },
-            { status: 403 }
-          )
-        }
-      }
-
-      // code_review or product_review → transitions: reviewer only
-      if (['code_review', 'product_review'].includes(fromStatus) && ['approved', 'open', 'completed'].includes(toStatus)) {
-        if (!transitionedBy || transitionedBy !== issueReviewer) {
-          return NextResponse.json(
-            { error: `Only ${issueReviewer ?? 'reviewer'} can execute this transition` },
-            { status: 403 }
-          )
-        }
-      }
-
-      // Standard validators for all types
-      const merged = { ...before, ...fields }
-
-      if (toStatus === 'backlog' && (fields.sprint || (!('sprint' in fields) && before?.sprint))) {
-        return NextResponse.json(
-          { error: 'Cannot move to backlog: sprint must be null. Backlog issues cannot have a sprint assigned.' },
-          { status: 400 }
-        )
-      }
-
-      if (toStatus === 'open') {
-        const missingFields: string[] = []
-        if (!merged.priority) missingFields.push('priority')
-        if (!merged.severity) missingFields.push('severity')
-        if (!merged.sprint) missingFields.push('sprint')
-        if (!merged.assignee) missingFields.push('assignee')
-        if (!merged.acceptance_criteria) missingFields.push('acceptance_criteria')
-        if (!merged.reviewer) return NextResponse.json({ error: 'reviewer is required before moving to open.' }, { status: 400 })
-        if (!merged.owner) return NextResponse.json({ error: 'owner is required before moving to open.' }, { status: 400 })
-        if (missingFields.length > 0) {
-          return NextResponse.json(
-            { error: `Cannot move to open: missing required fields: ${missingFields.join(', ')}.` },
-            { status: 400 }
-          )
-        }
-      }
-
-      if (toStatus === 'in_review') {
-        const hasImplNotes = merged.implementation_notes || (merged.description && /IMPLEMENTATION/i.test(merged.description as string))
-        if (!hasImplNotes) return NextResponse.json({ error: 'Cannot move to in_review: implementation_notes is required.' }, { status: 400 })
-        const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
-        if (!hasRef) return NextResponse.json({ error: 'Cannot move to in_review: at least one of feature_branch, commit_sha, or pr_url is required.' }, { status: 400 })
-        if (!(merged.regression_test as string)?.trim()) {
-          return NextResponse.json({ error: 'Cannot move to in_review: regression_test is required.' }, { status: 400 })
-        }
-        if (!fields.assignee) {
-          const existingReviewer = fields.reviewer ?? before?.reviewer
-          if (existingReviewer) {
-            fields.assignee = existingReviewer
-          } else {
-            const tier = fields.severity ?? before?.severity
-            let derivedReviewer: string
-            if (tier === 'S0') derivedReviewer = 'designer'
-            else if (tier === 'S1') derivedReviewer = 'tester'
-            else if (tier === 'S2') derivedReviewer = 'po'
-            else derivedReviewer = 'main'
-            fields.assignee = derivedReviewer
-            fields.reviewer = derivedReviewer
-          }
-        }
-      }
-
-      if (toStatus === 'done') {
+      // ── Legacy validation for unknown/future types ──
+      if (fields.status === 'done') {
         return NextResponse.json({ error: "done is retired, use completed or closed" }, { status: 400 })
-      }
-
-      if (toStatus === 'completed') {
-        const hasReviewerNotes = merged.reviewer_notes || (merged.description && /REVIEW/i.test(merged.description as string))
-        const missingFields: string[] = []
-        if (!merged.resolution_type) missingFields.push('resolution_type')
-        if (!hasReviewerNotes) missingFields.push('reviewer_notes')
-        if (merged.test_status !== 'passed') missingFields.push('test_status=passed')
-        if (missingFields.length > 0) {
-          return NextResponse.json({ error: `Cannot move to completed: missing required fields: ${missingFields.join(', ')}.` }, { status: 400 })
-        }
-      }
-
-      // Ops/Research: cannot enter in_review
-      if (toStatus === 'in_review' && (issueType === 'ops' || issueType === 'research')) {
-        return NextResponse.json({ error: `Cannot move ${issueType} issue to in_review.` }, { status: 400 })
-      }
-
-      // Epic: limited statuses
-      if (issueType === 'epic' && !['draft', 'active', 'completed', 'backlog'].includes(toStatus)) {
-        return NextResponse.json({ error: `Invalid status "${toStatus}" for epic.` }, { status: 400 })
-      }
-
-      // Feature: no backlog → in_review jump
-      if (issueType === 'feature' && toStatus === 'in_review' && fromStatus === 'backlog') {
-        return NextResponse.json({ error: 'Feature cannot jump from backlog to in_review.' }, { status: 400 })
-      }
-
-      // Sprint required
-      if (['open', 'in_progress', 'in_review'].includes(toStatus) && !merged.sprint) {
-        return NextResponse.json({ error: 'sprint is required before moving issue out of backlog.' }, { status: 422 })
       }
     }
   }
@@ -718,17 +677,18 @@ export async function PATCH(req: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Post functions (Task workflow engine) ──
+  // ── Post functions (workflow engine for all supported types) ──
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
     const toStatus = fields.status as string
+    const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
 
-    if (issueType === 'task' && data) {
+    if (WORKFLOW_TYPES.includes(issueType) && data) {
       // Fetch the transition's post functions
       const { data: transition } = await supabase
         .from('workflow_transitions')
         .select('post_functions')
-        .eq('issue_type', 'task')
+        .eq('issue_type', issueType)
         .eq('from_status', before.status)
         .eq('to_status', toStatus)
         .maybeSingle()
@@ -757,11 +717,12 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Legacy Discord notifications ──
+  // ── Legacy Discord notifications (non-workflow types only) ──
   const resolvedType = fields.resolution_type ?? data?.resolution_type
   const issueType = (fields.type ?? before?.type ?? 'task') as string
-  // Non-task types: legacy notify on approved/completed/closed
-  if (issueType !== 'task' && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
+  const WORKFLOW_TYPES_NOTIFY = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
+  // Only fire legacy notify for types not yet on the workflow engine
+  if (!WORKFLOW_TYPES_NOTIFY.includes(issueType) && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
