@@ -7,15 +7,17 @@ const PROJECT_EMOJI: Record<string, string> = {
 }
 
 const RES_LABEL: Record<string, string> = {
-  code_change: 'shipped', config_change: 'config', by_design: 'by design',
-  wont_fix: 'won\'t fix', canceled: 'canceled'
+  code_change: '🚢 shipped', config_change: '⚙️ config', by_design: '✏️ by design',
+  wont_fix: '🚫 won\'t fix', canceled: '❌ canceled', duplicate: '🔁 duplicate',
+  cannot_reproduce: '❓ cannot reproduce'
 }
 
-function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string }) {
+function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; test_tier?: string }) {
   const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
   const key = issue.task_key ?? '?'
   const res = RES_LABEL[issue.resolution_type ?? ''] ?? issue.resolution_type ?? 'done'
-  const msg = `${emoji} **[${key}]** ${issue.title ?? ''} · _${res}_`
+  const tier = issue.test_tier ? ` · ${issue.test_tier}` : ''
+  const msg = `${emoji} **[${key}]** ${issue.title ?? ''} · ${res}${tier}`
 
   fetch(`https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages`, {
     method: 'POST',
