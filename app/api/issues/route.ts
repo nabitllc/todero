@@ -340,6 +340,33 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    // ── MC-360: Per-type status transition validation ──
+    const issueType = (fields.type ?? before?.type ?? 'task') as string
+
+    // Ops & Research: cannot enter in_review
+    if (fields.status === 'in_review' && (issueType === 'ops' || issueType === 'research')) {
+      return NextResponse.json(
+        { error: `Cannot move ${issueType} issue to in_review. ${issueType} issues skip review: use backlog → open → in_progress → done.` },
+        { status: 400 }
+      )
+    }
+
+    // Epic: only draft, active, completed, backlog are valid statuses
+    if (issueType === 'epic' && !['draft', 'active', 'completed', 'backlog'].includes(fields.status)) {
+      return NextResponse.json(
+        { error: `Invalid status "${fields.status}" for epic. Epics only support: draft, active, completed, backlog.` },
+        { status: 400 }
+      )
+    }
+
+    // Feature: cannot jump from backlog directly to in_review
+    if (issueType === 'feature' && fields.status === 'in_review' && before?.status === 'backlog') {
+      return NextResponse.json(
+        { error: 'Feature cannot jump from backlog to in_review. Move through open → in_progress first.' },
+        { status: 400 }
+      )
+    }
+
     // Sprint required if moving to open/in_progress/in_review
     if (['open', 'in_progress', 'in_review'].includes(fields.status) && !merged.sprint) {
       return NextResponse.json(
@@ -480,6 +507,37 @@ export async function PATCH(req: NextRequest) {
       test_tier: 'P2'
     })
     console.log(`[ux-gate] UX review failed for ${data.task_key} → fix task created for builder`)
+  }
+
+  // MC-372: Epic auto-completion — if a child moves to done, check parent Epic
+  if (fields.status === 'done' && data?.parent_id) {
+    const parentId = data.parent_id;
+
+    // Fetch the parent to check if it is an Epic
+    const { data: parentIssue } = await supabase
+      .from('issues')
+      .select('id, type, status, task_key, title, project')
+      .eq('id', parentId)
+      .single();
+
+    if (parentIssue?.type === 'epic' && parentIssue.status !== 'completed') {
+      // Fetch all children of this epic
+      const { data: children } = await supabase
+        .from('issues')
+        .select('id, status')
+        .eq('parent_id', parentId);
+
+      const allDone = children && children.length > 0 && children.every(c => c.status === 'done');
+
+      if (allDone) {
+        await supabase
+          .from('issues')
+          .update({ status: 'completed', updated_at: new Date().toISOString() })
+          .eq('id', parentId);
+
+        console.log(`[epic-auto-complete] Epic ${parentIssue.task_key} auto-completed — all ${children.length} children done`);
+      }
+    }
   }
 
   return NextResponse.json(data)
