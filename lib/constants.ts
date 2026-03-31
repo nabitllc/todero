@@ -1,11 +1,38 @@
-// ── Project prefix map (shared between API routes and tests) ─────────────────
+// ── Project prefix map (shared between API routes, migrations, and tests) ───
 export const PROJECT_PREFIX: Record<string, string> = {
   'Mission Control': 'MC',
   Infrastructure: 'INF',
   Vespera: 'VES',
   Kemuni: 'KEM',
   Todero: 'TOD',
-  todero: 'TOD',
+}
+
+const PROJECT_ALIASES: Record<string, string> = {
+  'mission control': 'Mission Control',
+  missioncontrol: 'Mission Control',
+  mc: 'Mission Control',
+  infrastructure: 'Infrastructure',
+  inf: 'Infrastructure',
+  vespera: 'Vespera',
+  ves: 'Vespera',
+  kemuni: 'Kemuni',
+  kem: 'Kemuni',
+  todero: 'Todero',
+  tod: 'Todero',
+}
+
+export function normalizeProjectName(project: string | null | undefined): string {
+  const raw = typeof project === 'string' ? project.trim() : ''
+  if (!raw) return 'Todero'
+
+  const alias = PROJECT_ALIASES[raw.toLowerCase()]
+  if (alias) return alias
+
+  return raw
+}
+
+export function getProjectPrefix(project: string | null | undefined): string {
+  return PROJECT_PREFIX[normalizeProjectName(project)] ?? 'TOD'
 }
 
 // ── Enum constants (single source of truth) ──────────────────────────────────

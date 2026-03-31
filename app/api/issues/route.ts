@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exec as execAsync } from 'child_process'
 import {
-  PROJECT_PREFIX,
   VALID_TYPES,
   VALID_PRIORITIES,
   VALID_SEVERITIES,
   VALID_STATUSES,
   VALID_RESOLUTION_TYPES,
+  normalizeProjectName,
+  getProjectPrefix,
 } from '@/lib/constants'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
@@ -215,15 +216,25 @@ async function validateHierarchy(
 // ── Task key generation ───────────────────────────────────────────────────────
 
 async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key: string; task_number: number }>> {
-  const prefix = PROJECT_PREFIX[project] ?? 'TOD'
+  const prefix = getProjectPrefix(project)
   const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
 
-  if (rpcErr || typeof seqNum !== 'number') {
-    console.warn('[issues] next_task_number RPC unavailable; falling back to DB-assigned identity', rpcErr)
-    return {}
+  if (!rpcErr && typeof seqNum === 'number') {
+    return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
   }
 
-  return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
+  console.warn('[issues] next_task_number RPC unavailable; falling back to API-assigned identity', rpcErr)
+
+  const { data: maxRow } = await supabase
+    .from('issues')
+    .select('task_number')
+    .not('task_number', 'is', null)
+    .order('task_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1
+  return { task_key: `${prefix}-${nextNumber}`, task_number: nextNumber }
 }
 
 // ── Workflow types ────────────────────────────────────────────────────────────
@@ -522,10 +533,12 @@ export async function POST(req: NextRequest) {
           acceptance_criteria, sprint, parent_id, severity, resolution_type,
           feature_branch, pr_url, task_key: _clientKey, task_number: _clientNum, owner } = body
 
+  const normalizedProject = normalizeProjectName(project)
+
   // ── Required fields ──
   const missing: string[] = []
   if (!title?.trim())                missing.push('title')
-  if (!project?.trim())              missing.push('project')
+  if (!normalizedProject.trim())     missing.push('project')
   if (!acceptance_criteria?.trim())  missing.push('acceptance_criteria')
 
   if (missing.length > 0) {
@@ -584,8 +597,8 @@ export async function POST(req: NextRequest) {
     const issueType = type ?? 'task'
     if (issueType === 'task' || issueType === 'bug') effectiveOwner = 'builder'
     else if (issueType === 'feature') {
-      if (project === 'Kemuni') effectiveOwner = 'kemuni-sme'
-      else if (project === 'Vespera') effectiveOwner = 'vespera-sme'
+      if (normalizedProject === 'Kemuni') effectiveOwner = 'kemuni-sme'
+      else if (normalizedProject === 'Vespera') effectiveOwner = 'vespera-sme'
       else effectiveOwner = 'main'
     } else if (issueType === 'epic') effectiveOwner = 'main'
     else if (issueType === 'ops') effectiveOwner = 'ops'
@@ -607,7 +620,7 @@ export async function POST(req: NextRequest) {
   let routingNote = ''
   if (!effectiveAssignee) {
     const effectiveType = type ?? 'task'
-    const projectStr = project ?? ''
+    const projectStr = normalizedProject
     if (effectiveType === 'task' || effectiveType === 'bug') {
       effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: type=${effectiveType}]`
     } else if (effectiveType === 'ops') {
@@ -676,13 +689,13 @@ export async function POST(req: NextRequest) {
     ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
     : effectiveStatus
 
-  const generatedIdentity = await prepareIssueIdentity(project)
+  const generatedIdentity = await prepareIssueIdentity(normalizedProject)
 
   const { data, error } = await supabase
     .from('issues')
     .insert({
       title, description: effectiveDescription, status: finalStatus,
-      assignee: effectiveAssignee, project,
+      assignee: effectiveAssignee, project: normalizedProject,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
       acceptance_criteria, sprint, parent_id,
       ...(severity ? { severity } : {}),

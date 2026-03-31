@@ -5,6 +5,8 @@ import {
   VALID_SEVERITIES,
   VALID_RESOLUTION_TYPES,
   PROJECT_PREFIX,
+  getProjectPrefix,
+  normalizeProjectName,
 } from '@/lib/constants'
 
 // ── Mock Supabase ────────────────────────────────────────────────────────────
@@ -167,16 +169,18 @@ describe('validateHierarchy logic', () => {
 
 // ── Task key prefix derivation ───────────────────────────────────────────────
 describe('generateTaskKey prefix logic', () => {
-  function getPrefix(project: string): string {
-    return PROJECT_PREFIX[project] ?? 'TOD'
-  }
-
   it('generates MC prefix for Mission Control', () => {
-    expect(getPrefix('Mission Control')).toBe('MC')
+    expect(getProjectPrefix('Mission Control')).toBe('MC')
+  })
+
+  it('normalizes Todero aliases before deriving prefix', () => {
+    expect(normalizeProjectName(' tod ')).toBe('Todero')
+    expect(getProjectPrefix(' tod ')).toBe('TOD')
+    expect(getProjectPrefix('todero')).toBe('TOD')
   })
 
   it('defaults to TOD for unknown project', () => {
-    expect(getPrefix('NonExistent')).toBe('TOD')
+    expect(getProjectPrefix('NonExistent')).toBe('TOD')
   })
 })
 

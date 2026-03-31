@@ -1,4 +1,4 @@
-import { PROJECT_PREFIX } from '@/lib/constants'
+import { PROJECT_PREFIX, getProjectPrefix, normalizeProjectName } from '@/lib/constants'
 
 describe('PROJECT_PREFIX map', () => {
   it('maps "Mission Control" to "MC"', () => {
@@ -21,37 +21,48 @@ describe('PROJECT_PREFIX map', () => {
     expect(PROJECT_PREFIX['Todero']).toBe('TOD')
   })
 
-  it('returns undefined for unknown projects (fallback to TOD in route)', () => {
+  it('returns undefined for unknown projects (fallback happens in helper)', () => {
     expect(PROJECT_PREFIX['Unknown']).toBeUndefined()
   })
 })
 
-describe('prefix generation logic', () => {
-  function getPrefix(project: string): string {
-    return PROJECT_PREFIX[project] ?? 'TOD'
-  }
+describe('project normalization', () => {
+  it('canonicalizes Todero aliases and whitespace', () => {
+    expect(normalizeProjectName(' Todero ')).toBe('Todero')
+    expect(normalizeProjectName('todero')).toBe('Todero')
+    expect(normalizeProjectName('TOD')).toBe('Todero')
+  })
 
+  it('canonicalizes Mission Control aliases', () => {
+    expect(normalizeProjectName('mc')).toBe('Mission Control')
+    expect(normalizeProjectName(' missioncontrol ')).toBe('Mission Control')
+  })
+})
+
+describe('prefix generation logic', () => {
   it('returns MC for Mission Control', () => {
-    expect(getPrefix('Mission Control')).toBe('MC')
+    expect(getProjectPrefix('Mission Control')).toBe('MC')
   })
 
   it('returns VES for Vespera', () => {
-    expect(getPrefix('Vespera')).toBe('VES')
+    expect(getProjectPrefix('Vespera')).toBe('VES')
   })
 
   it('returns INF for Infrastructure', () => {
-    expect(getPrefix('Infrastructure')).toBe('INF')
+    expect(getProjectPrefix('Infrastructure')).toBe('INF')
   })
 
   it('returns KEM for Kemuni', () => {
-    expect(getPrefix('Kemuni')).toBe('KEM')
+    expect(getProjectPrefix('Kemuni')).toBe('KEM')
+  })
+
+  it('returns TOD for Todero aliases', () => {
+    expect(getProjectPrefix('Todero')).toBe('TOD')
+    expect(getProjectPrefix('todero')).toBe('TOD')
+    expect(getProjectPrefix(' TOD ')).toBe('TOD')
   })
 
   it('returns TOD for unknown projects', () => {
-    expect(getPrefix('SomeRandomProject')).toBe('TOD')
-  })
-
-  it('handles case-sensitive "todero" variant', () => {
-    expect(getPrefix('todero')).toBe('TOD')
+    expect(getProjectPrefix('SomeRandomProject')).toBe('TOD')
   })
 })
