@@ -186,13 +186,13 @@ async function validateHierarchy(
 
 // ── Task key generation ───────────────────────────────────────────────────────
 
-async function generateTaskKey(project: string): Promise<{ task_key: string; task_number: number }> {
+async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key: string; task_number: number }>> {
   const prefix = PROJECT_PREFIX[project] ?? 'TOD'
   const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
 
   if (rpcErr || typeof seqNum !== 'number') {
-    console.error('[issues] next_task_number RPC unavailable; refusing non-atomic fallback', rpcErr)
-    throw new Error('Atomic task key generator unavailable. Apply the task-key sequence migration before creating more issues.')
+    console.warn('[issues] next_task_number RPC unavailable; falling back to DB-assigned identity', rpcErr)
+    return {}
   }
 
   return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
@@ -631,7 +631,7 @@ export async function POST(req: NextRequest) {
     ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
     : effectiveStatus
 
-  const generated = await generateTaskKey(project)
+  const generatedIdentity = await prepareIssueIdentity(project)
 
   const { data, error } = await supabase
     .from('issues')
@@ -642,7 +642,7 @@ export async function POST(req: NextRequest) {
       acceptance_criteria, sprint, parent_id,
       ...(severity ? { severity } : {}),
       resolution_type, feature_branch, pr_url,
-      task_key: generated.task_key, task_number: generated.task_number,
+      ...generatedIdentity,
       owner: effectiveOwner,
       ...(effectiveImplNotes ? { implementation_notes: effectiveImplNotes } : {}),
     })
