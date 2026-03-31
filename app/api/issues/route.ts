@@ -367,10 +367,14 @@ async function validateWorkflowTransition(
 
   for (const v of validators) {
     if (v === 'ref_required') {
-      // At least one of: commit_sha, feature_branch, pr_url
-      const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
-      if (!hasRef) {
-        missing.push('commit_sha or feature_branch or pr_url (at least one required)')
+      // ops and research types are exempt — they deliver outcomes, not code artifacts
+      const isExemptType = issueType === 'ops' || issueType === 'research'
+      if (!isExemptType) {
+        // At least one of: commit_sha, feature_branch, pr_url
+        const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
+        if (!hasRef) {
+          missing.push('commit_sha or feature_branch or pr_url (at least one required)')
+        }
       }
     } else if (v === 'test_status_passed') {
       if (merged.test_status !== 'passed') {
@@ -744,6 +748,32 @@ export async function PATCH(req: NextRequest) {
       { error: 'Issue is closed and read-only.' },
       { status: 403 }
     )
+  }
+
+  // ── One-at-a-time lane enforcement ──
+  // If transitioning to in_progress, ensure no other issue with the same worked_by is already in_progress.
+  if (fields.status === 'in_progress') {
+    const effectiveWorkedBy = fields.worked_by ?? fields.assignee ?? before?.assignee
+    if (effectiveWorkedBy) {
+      const { data: activeIssues } = await supabase
+        .from('issues')
+        .select('id, task_key, title, started_at')
+        .eq('worked_by', effectiveWorkedBy)
+        .eq('status', 'in_progress')
+        .neq('id', id)
+        .limit(1)
+      if (activeIssues && activeIssues.length > 0) {
+        const active = activeIssues[0]
+        return NextResponse.json(
+          {
+            error: `One-at-a-time lane enforcement: ${effectiveWorkedBy} is already working on ${active.task_key} ("${active.title}"). Complete or reset that issue before claiming a new one.`,
+            field: 'worked_by',
+            active_issue: active.task_key,
+          },
+          { status: 409 }
+        )
+      }
+    }
   }
 
   // ── Enum validation on PATCH ──
