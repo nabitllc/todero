@@ -188,33 +188,14 @@ async function validateHierarchy(
 
 async function generateTaskKey(project: string): Promise<{ task_key: string; task_number: number }> {
   const prefix = PROJECT_PREFIX[project] ?? 'TOD'
-  try {
-    const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
-    if (!rpcErr && typeof seqNum === 'number') {
-      return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
-    }
-  } catch { /* RPC not yet deployed */ }
+  const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
 
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: maxRow } = await supabase
-      .from('issues')
-      .select('task_number')
-      .not('task_number', 'is', null)
-      .order('task_number', { ascending: false })
-      .limit(1)
-      .single()
-    const nextNumber = (maxRow?.task_number ?? 0) + 1 + attempt
-    const key = `${prefix}-${nextNumber}`
-    const { data: existing } = await supabase
-      .from('issues')
-      .select('id')
-      .eq('task_key', key)
-      .maybeSingle()
-    if (!existing) return { task_key: key, task_number: nextNumber }
+  if (rpcErr || typeof seqNum !== 'number') {
+    console.error('[issues] next_task_number RPC unavailable; refusing non-atomic fallback', rpcErr)
+    throw new Error('Atomic task key generator unavailable. Apply the task-key sequence migration before creating more issues.')
   }
 
-  const ts = Date.now() % 1000000
-  return { task_key: `${prefix}-${ts}`, task_number: ts }
+  return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
 }
 
 // ── Workflow types ────────────────────────────────────────────────────────────
