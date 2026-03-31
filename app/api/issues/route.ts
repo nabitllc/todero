@@ -13,6 +13,8 @@ import {
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'tester': 'tester',
+  'designer': 'designer',
+  'ux': 'designer',
   'scout': 'scout',
   'ops': 'ops',
   'kemuni-sme': 'kemuni-sme',
@@ -26,11 +28,32 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
 function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
-  const msg = status === 'in_review'
+  const msg = (status === 'in_review' || status === 'code_review')
     ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
     : `Issue ${taskKey} is ready: ${title}. Pick it up and start work.`
   const cmd = `openclaw agent --agent ${agentId} --message ${JSON.stringify(msg)} 2>/dev/null`
   execAsync(cmd, { timeout: 30000 }, () => {})
+}
+
+function activateCodeReviewAgents(taskKey: string, title: string) {
+  activateAgentAsync('tester', taskKey, title, 'code_review')
+  activateAgentAsync('designer', taskKey, title, 'code_review')
+}
+
+function normalizeReviewStatus(value: unknown): string {
+  return typeof value === 'string' ? value.toLowerCase() : 'pending'
+}
+
+function computeDualReviewState(issue: Record<string, unknown>) {
+  const testerStatus = normalizeReviewStatus(issue.tester_status)
+  const designerStatus = normalizeReviewStatus(issue.designer_status)
+  const testerPassed = testerStatus === 'passed'
+  const designerPassed = designerStatus === 'passed'
+  const anyFailed = testerStatus === 'failed' || designerStatus === 'failed'
+  const bothPassed = testerPassed && designerPassed
+  const overallTestStatus = bothPassed ? 'passed' : anyFailed ? 'failed' : 'pending'
+
+  return { testerStatus, designerStatus, testerPassed, designerPassed, anyFailed, bothPassed, overallTestStatus }
 }
 
 // ── Discord helpers ───────────────────────────────────────────────────────────
@@ -313,6 +336,13 @@ async function validateWorkflowTransition(
         error: { error: `Only the reviewer (${issueReviewer ?? 'unset'}) can execute this transition`, field: 'transitioned_by' }
       }
     }
+  } else if (conditionRole === 'tester_or_designer') {
+    if (!transitionedBy || !['tester', 'designer', 'ux'].includes(transitionedBy)) {
+      return {
+        transition: null,
+        error: { error: 'Only tester or designer can execute this transition', field: 'transitioned_by' }
+      }
+    }
   }
 
   // ── Validator checks ──
@@ -329,6 +359,11 @@ async function validateWorkflowTransition(
     } else if (v === 'test_status_passed') {
       if (merged.test_status !== 'passed') {
         missing.push('test_status=passed')
+      }
+    } else if (v === 'dual_review_passed') {
+      const { bothPassed } = computeDualReviewState(merged)
+      if (!bothPassed) {
+        missing.push('tester_status=passed and designer_status=passed')
       }
     } else if (v === 'children_exist') {
       // Special: check if any child issues exist for this epic
@@ -443,6 +478,11 @@ async function executePostFunctions(
     if (action === 'set_timestamp') {
       const tsField = params.field as string
       fields[tsField] = new Date().toISOString()
+    }
+
+    if (action === 'activate_code_review_agents') {
+      const nextIssue = { ...issue, ...updatedIssue, ...fields }
+      activateCodeReviewAgents((nextIssue.task_key ?? '?') as string, (nextIssue.title ?? '') as string)
     }
   }
 }
@@ -767,6 +807,19 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (fields.status === 'in_review') fields.submitted_at = now
+    if (fields.status === 'code_review') {
+      fields.submitted_at = now
+      fields.assignee = 'tester'
+      fields.tester_status = 'pending'
+      fields.designer_status = 'pending'
+      if (fields.test_status === undefined) fields.test_status = 'pending'
+      if (fields.tester_notes === undefined && before?.tester_notes == null) fields.tester_notes = null
+      if (fields.designer_notes === undefined && before?.designer_notes == null) fields.designer_notes = null
+      if (fields.tested_by === undefined && before?.tested_by == null) fields.tested_by = null
+      if (fields.designed_by === undefined && before?.designed_by == null) fields.designed_by = null
+      if (fields.tester_reviewed_at === undefined && before?.tester_reviewed_at == null) fields.tester_reviewed_at = null
+      if (fields.designer_reviewed_at === undefined && before?.designer_reviewed_at == null) fields.designer_reviewed_at = null
+    }
 
     if (fields.status === 'completed') {
       fields.completed_at = now
@@ -785,6 +838,48 @@ export async function PATCH(req: NextRequest) {
       fields.rejection_count = (before?.rejection_count ?? 0) + 1
       fields.last_rejected_at = now
       if (fields.reviewer_notes) fields.last_rejection_reason = fields.reviewer_notes
+    }
+  }
+
+  // ── Dual review state ──
+  const transitioningIntoCodeReview = fields.status === 'code_review' && before?.status !== 'code_review'
+
+  if (before) {
+    if (before.status === 'code_review' && ['tester', 'designer', 'ux'].includes(transitionedBy ?? '')) {
+      if (transitionedBy === 'tester') {
+        if (fields.tester_status === undefined && (fields.tester_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
+          fields.tester_status = fields.test_status === 'failed' || fields.status === 'in_progress' ? 'failed' : 'passed'
+        }
+        fields.tested_by = transitionedBy
+        if (fields.tester_reviewed_at === undefined) fields.tester_reviewed_at = new Date().toISOString()
+      }
+
+      if (transitionedBy === 'designer' || transitionedBy === 'ux') {
+        if (fields.designer_status === undefined && (fields.designer_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
+          fields.designer_status = fields.test_status === 'failed' || fields.status === 'in_progress' ? 'failed' : 'passed'
+        }
+        fields.designed_by = transitionedBy === 'ux' ? 'designer' : transitionedBy
+        if (fields.designer_reviewed_at === undefined) fields.designer_reviewed_at = new Date().toISOString()
+      }
+    }
+
+    if (before.status === 'code_review' || transitioningIntoCodeReview || fields.tester_status !== undefined || fields.designer_status !== undefined) {
+      const dual = computeDualReviewState({ ...before, ...fields } as Record<string, unknown>)
+
+      if (before.status === 'code_review' && dual.anyFailed) {
+        fields.status = 'in_progress'
+        fields.assignee = 'builder'
+        fields.test_status = 'failed'
+        fields.rejection_count = (before?.rejection_count ?? 0) + 1
+        fields.last_rejected_at = new Date().toISOString()
+        const notes = [
+          typeof fields.tester_notes === 'string' && fields.tester_notes.trim() ? `Tester: ${fields.tester_notes.trim()}` : (typeof before.tester_notes === 'string' && before.tester_notes.trim() ? `Tester: ${before.tester_notes.trim()}` : null),
+          typeof fields.designer_notes === 'string' && fields.designer_notes.trim() ? `Designer: ${fields.designer_notes.trim()}` : (typeof before.designer_notes === 'string' && before.designer_notes.trim() ? `Designer: ${before.designer_notes.trim()}` : null),
+        ].filter(Boolean).join(' | ')
+        if (notes) fields.last_rejection_reason = notes
+      } else {
+        fields.test_status = dual.overallTestStatus
+      }
     }
   }
 
@@ -820,7 +915,9 @@ export async function PATCH(req: NextRequest) {
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
                         'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test',
                         'rejection_count', 'last_rejected_at', 'last_rejection_reason',
-                        'reviewer', 'reviewed_by', 'owner', 'deployer', 'auditor', 'transitioned_by']) {
+                        'reviewer', 'reviewed_by', 'owner', 'deployer', 'auditor', 'transitioned_by',
+                        'tester_status', 'tester_notes', 'tested_by', 'tester_reviewed_at',
+                        'designer_status', 'designer_notes', 'designed_by', 'designer_reviewed_at']) {
       delete safeFields[col]
     }
     const retry = await supabase
@@ -886,7 +983,9 @@ export async function PATCH(req: NextRequest) {
   // ── Activate next agent on transition ──
   if (fields.status && data) {
     const newAssignee = data.assignee ?? fields.assignee
-    if (newAssignee && (fields.status === 'open' || fields.status === 'in_review')) {
+    if (fields.status === 'code_review') {
+      activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
+    } else if (newAssignee && (fields.status === 'open' || fields.status === 'in_review')) {
       activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
     }
   }

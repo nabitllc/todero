@@ -13,7 +13,7 @@ export const STAGE_COLORS: Record<PipelineStage, string> = {
 
 export function getPipelineStage(issue: any, children?: any[]): PipelineStage {
   if (issue.status === "backlog") return "Backlog"
-  if (issue.status === "done") return "Merged"
+  if (["done", "completed", "released", "approved"].includes(issue.status)) return "Merged"
 
   // Feature: derive from children
   if (issue.type === "feature" && children && children.length > 0) {
@@ -25,7 +25,13 @@ export function getPipelineStage(issue: any, children?: any[]): PipelineStage {
   }
 
   if (issue.status === "in_progress") return "Building"
-  if (issue.status === "in_review") {
+  if (issue.status === "in_review" || issue.status === "code_review") {
+    if (issue.status === "code_review") {
+      if (issue.tester_status === "failed" || issue.designer_status === "failed") return "Building"
+      if (issue.tester_status === "passed" && issue.designer_status === "passed") return "PR Queue"
+      return "Testing"
+    }
+
     // INF-258/INF-259: Design gate — test passed but still in_review means awaiting Designer review
     if (issue.test_status === "passed") {
       // Check if there's a pending Designer/UX review child (issue stays in_review until approved)

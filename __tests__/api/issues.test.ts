@@ -179,3 +179,42 @@ describe('generateTaskKey prefix logic', () => {
     expect(getPrefix('NonExistent')).toBe('TOD')
   })
 })
+
+
+describe('dual review gate logic', () => {
+  function computeDualReviewState(issue: { tester_status?: string; designer_status?: string }) {
+    const testerStatus = (issue.tester_status ?? 'pending').toLowerCase()
+    const designerStatus = (issue.designer_status ?? 'pending').toLowerCase()
+    const bothPassed = testerStatus === 'passed' && designerStatus === 'passed'
+    const anyFailed = testerStatus === 'failed' || designerStatus === 'failed'
+    return {
+      bothPassed,
+      anyFailed,
+      overall: bothPassed ? 'passed' : anyFailed ? 'failed' : 'pending',
+    }
+  }
+
+  it('stays pending until both reviewer lanes pass', () => {
+    expect(computeDualReviewState({ tester_status: 'passed', designer_status: 'pending' })).toEqual({
+      bothPassed: false,
+      anyFailed: false,
+      overall: 'pending',
+    })
+  })
+
+  it('passes only when tester and designer both pass', () => {
+    expect(computeDualReviewState({ tester_status: 'passed', designer_status: 'passed' })).toEqual({
+      bothPassed: true,
+      anyFailed: false,
+      overall: 'passed',
+    })
+  })
+
+  it('fails if either reviewer fails', () => {
+    expect(computeDualReviewState({ tester_status: 'failed', designer_status: 'passed' })).toEqual({
+      bothPassed: false,
+      anyFailed: true,
+      overall: 'failed',
+    })
+  })
+})

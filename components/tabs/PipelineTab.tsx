@@ -422,6 +422,8 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
   const typeColor = TYPE_COLORS[issue.type] || '#71717a'
   const testStatus = issue.test_status as string | undefined
   const testTier = issue.test_tier as string | undefined
+  const testerStatus = issue.tester_status as string | undefined
+  const designerStatus = issue.designer_status as string | undefined
 
   const TEST_STATUS_CLASSES: Record<string, { className: string; label: string }> = {
     passed: { className: 'bg-green-500/20 text-green-400', label: 'Passed' },
@@ -471,6 +473,16 @@ function IssueCard({ issue, features, onLongPressStart, onLongPressEnd }: { issu
         {testStatus && testStatus !== 'none' && (
           <span className={`text-[8px] px-1.5 py-0.5 rounded font-semibold ${ts.className}`}>
             {ts.label}
+          </span>
+        )}
+        {issue.status === 'code_review' && testerStatus && (
+          <span className={`text-[8px] px-1 py-0.5 rounded font-semibold ${TEST_STATUS_CLASSES[testerStatus]?.className ?? 'bg-white/5 text-white/40'}`}>
+            🧪 {TEST_STATUS_CLASSES[testerStatus]?.label ?? testerStatus}
+          </span>
+        )}
+        {issue.status === 'code_review' && designerStatus && (
+          <span className={`text-[8px] px-1 py-0.5 rounded font-semibold ${TEST_STATUS_CLASSES[designerStatus]?.className ?? 'bg-white/5 text-white/40'}`}>
+            🎨 {TEST_STATUS_CLASSES[designerStatus]?.label ?? designerStatus}
           </span>
         )}
         {issue.assignee === 'tester' && (
