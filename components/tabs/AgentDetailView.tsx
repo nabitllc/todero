@@ -140,7 +140,7 @@ function DashboardTab({ agent }: { agent: Agent }) {
       <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
         isRunning
           ? 'border-emerald-500/30 bg-emerald-500/10'
-          : 'border-white/[0.06] bg-[#0f0f0f]'
+          : 'border-white/10 bg-[#0f0f0f]'
       }`}>
         <span className={`inline-block w-2 h-2 rounded-full ${
           isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-white/20'
@@ -178,7 +178,7 @@ function DashboardTab({ agent }: { agent: Agent }) {
       {/* Charts placeholder row */}
       <div className="grid grid-cols-2 gap-3">
         {['Run Activity', 'Issues by Priority', 'Issues by Status', 'Success Rate'].map(title => (
-          <div key={title} className="rounded-xl border border-white/[0.06] p-4" style={{ background: '#0f0f0f' }}>
+          <div key={title} className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
             <div className="flex items-center gap-2 mb-3">
               <BarChart3 size={14} className="text-white/30" />
               <p className="text-white/50 text-xs font-semibold">{title}</p>
@@ -197,7 +197,7 @@ function DashboardTab({ agent }: { agent: Agent }) {
         )}
         <div className="space-y-2">
           {active.slice(0, 10).map(issue => (
-            <div key={issue.id} className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/[0.06]" style={{ background: '#0f0f0f' }}>
+            <div key={issue.id} className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
               <CheckCircle2 size={12} className={statusColor(issue.status)} />
               <div className="flex-1 min-w-0">
                 <p className="text-white/70 text-xs truncate">{issue.title}</p>
@@ -281,10 +281,10 @@ function InstructionsTab({ agent }: { agent: Agent }) {
             <button
               key={t.key}
               onClick={() => setActiveFile(t.key)}
-              className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+              className={`px-2.5 py-1 rounded-lg text-xs border transition-colors focus:outline-none focus:ring-2 focus:ring-white/30 ${
                 activeFile === t.key
                   ? 'border-white/20 bg-white/10 text-white'
-                  : 'border-white/[0.06] bg-transparent text-white/40 hover:text-white/60'
+                  : 'border-white/10 bg-transparent text-white/40 hover:text-white/60'
               }`}
             >
               {t.icon} {t.label}
@@ -298,7 +298,7 @@ function InstructionsTab({ agent }: { agent: Agent }) {
         )}
       </div>
 
-      <div className="rounded-xl border border-white/[0.06] p-4 min-h-[300px] overflow-y-auto max-h-[500px]" style={{ background: '#0a0a0a' }}>
+      <div className="rounded-xl border border-white/10 p-4 min-h-[300px] overflow-y-auto max-h-[500px] bg-[#080808]">
         {loading ? (
           <p className="text-white/20 text-xs">Loading…</p>
         ) : isEditing ? (
@@ -359,7 +359,7 @@ function SkillsTab({ agent }: { agent: Agent }) {
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Built-in Capabilities</p>
         <div className="space-y-2">
           {builtIn.map(s => (
-            <div key={s.name} className="flex items-start gap-3 rounded-lg px-3 py-2 border border-white/[0.06]" style={{ background: '#0f0f0f' }}>
+            <div key={s.name} className="flex items-start gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
               <Zap size={12} className="text-amber-400 mt-0.5 shrink-0" />
               <div>
                 <p className="text-white/70 text-xs font-medium">{s.name}</p>
@@ -375,7 +375,7 @@ function SkillsTab({ agent }: { agent: Agent }) {
           <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Installed Skills</p>
           <div className="space-y-2">
             {skills.map((s: any, i: number) => (
-              <div key={i} className="flex items-start gap-3 rounded-lg px-3 py-2 border border-white/[0.06]" style={{ background: '#0f0f0f' }}>
+              <div key={i} className="flex items-start gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
                 <FileText size={12} className="text-blue-400 mt-0.5 shrink-0" />
                 <div>
                   <p className="text-white/70 text-xs font-medium">{s.name ?? s.id ?? `Skill ${i + 1}`}</p>
@@ -426,7 +426,7 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
     <div className="space-y-3">
       {loading && <p className="text-white/20 text-xs">Loading…</p>}
       {rows.map(r => (
-        <div key={r.label} className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5 border border-white/[0.06]" style={{ background: '#0f0f0f' }}>
+        <div key={r.label} className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider">{r.label}</p>
           <p className="text-white/70 text-xs font-mono break-all">{r.value ?? '—'}</p>
         </div>
@@ -465,7 +465,7 @@ function RunsTab({ agent }: { agent: Agent }) {
           <button
             key={t}
             onClick={() => setSubTab(t)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-white/30 ${
               subTab === t
                 ? 'bg-white/10 text-white border border-white/20'
                 : 'text-white/40 hover:text-white/60 border border-transparent'
@@ -478,7 +478,7 @@ function RunsTab({ agent }: { agent: Agent }) {
 
       {/* Last Session card */}
       {hasActivity && (
-        <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: '#0f0f0f' }}>
+        <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
           <div className="flex items-center gap-2 mb-3">
             <Activity size={14} className="text-emerald-400" />
             <p className="text-white/70 text-xs font-semibold">Last Session</p>
@@ -508,7 +508,7 @@ function RunsTab({ agent }: { agent: Agent }) {
       ) : filteredRuns.length > 0 ? (
         <div className="space-y-2">
           {filteredRuns.map((run: any, i: number) => (
-            <div key={run.id ?? i} className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/[0.06]" style={{ background: '#0f0f0f' }}>
+            <div key={run.id ?? i} className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
               <PlayCircle size={12} className="text-white/30" />
               <div className="flex-1 min-w-0">
                 <p className="text-white/70 text-xs truncate">{run.title ?? run.task ?? `Run #${i + 1}`}</p>
@@ -588,7 +588,7 @@ function BudgetTab({ agent }: { agent: Agent }) {
       </div>
 
       {/* Projection formula */}
-      <div className="rounded-xl border border-white/[0.06] p-3" style={{ background: '#0f0f0f' }}>
+      <div className="rounded-xl border border-white/10 p-3 bg-[#0f0f0f]">
         <p className="text-white/30 text-[10px] mb-1">Projection formula</p>
         <p className="text-white/40 text-[10px] font-mono">
           (1440/{heartbeatEvery}) × 30 × {avgTokens} / 1M × ${rate.toFixed(2)} = ${projected}/mo
@@ -596,7 +596,7 @@ function BudgetTab({ agent }: { agent: Agent }) {
       </div>
 
       {/* Budget limit */}
-      <div className="rounded-xl border border-white/[0.06] p-4 space-y-3" style={{ background: '#0f0f0f' }}>
+      <div className="rounded-xl border border-white/10 p-4 space-y-3 bg-[#0f0f0f]">
         <p className="text-white/50 text-xs font-semibold">Budget Limit</p>
         <div className="flex gap-2">
           <Input
@@ -611,7 +611,7 @@ function BudgetTab({ agent }: { agent: Agent }) {
       </div>
 
       {/* Token breakdown */}
-      <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: '#0f0f0f' }}>
+      <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
         <p className="text-white/50 text-xs font-semibold mb-3">Token Breakdown</p>
         <div className="space-y-2">
           {['Input tokens', 'Output tokens', 'Cached'].map(label => (
@@ -669,12 +669,11 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl md:rounded-2xl rounded-t-2xl border border-white/10 flex flex-col max-h-[92vh] md:max-h-[85vh]"
-        style={{ background: '#080808' }}
+        className="w-full max-w-xl md:rounded-2xl rounded-t-2xl border border-white/10 bg-[#080808] flex flex-col max-h-[92vh] md:max-h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-4 px-5 pt-5 pb-4 border-b border-white/[0.06] shrink-0">
+        <div className="flex items-center gap-4 px-5 pt-5 pb-4 border-b border-white/10 shrink-0">
           <div
             className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl shrink-0"
             style={{ background: agent.color + '18', border: '1px solid ' + agent.color + '30' }}
@@ -709,7 +708,7 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
         </div>
 
         {/* Tab bar */}
-        <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-white/[0.06] overflow-x-auto shrink-0 no-scrollbar">
+        <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-white/10 overflow-x-auto shrink-0 no-scrollbar">
           {TABS.map(tab => {
             const Icon = tab.icon
             const isActive = activeTab === tab.id
@@ -717,7 +716,7 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-colors shrink-0 ${
+                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-xs whitespace-nowrap transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-white/30 ${
                   isActive
                     ? 'bg-white/10 text-white'
                     : 'text-white/40 hover:text-white/60 hover:bg-white/5'
