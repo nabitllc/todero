@@ -1,6 +1,5 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui'
 import { Input } from '@/components/ui'
 
@@ -13,7 +12,6 @@ export default function LoginForm({ from, error: initialError }: Props) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState(initialError ?? false)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -25,8 +23,11 @@ export default function LoginForm({ from, error: initialError }: Props) {
       body: JSON.stringify({ password }),
     })
     if (res.ok) {
-      router.push(from)
-      router.refresh()
+      // MC-522: use hard navigation instead of router.push + router.refresh.
+      // On mobile, the push→refresh sequence leaves Next.js router in a
+      // pending state before hydration completes, making the app non-interactive.
+      // A hard redirect guarantees a clean, fully-hydrated page load.
+      window.location.href = from
     } else {
       setError(true)
       setLoading(false)
