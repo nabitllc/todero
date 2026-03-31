@@ -56,6 +56,11 @@ function computeDualReviewState(issue: Record<string, unknown>) {
   return { testerStatus, designerStatus, testerPassed, designerPassed, anyFailed, bothPassed, overallTestStatus }
 }
 
+function resolveReopenAssignee(issue: Record<string, unknown> | null | undefined) {
+  const preferred = issue?.owner ?? issue?.worked_by
+  return typeof preferred === 'string' && preferred.trim() ? preferred : 'builder'
+}
+
 // ── Discord helpers ───────────────────────────────────────────────────────────
 const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
 const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
@@ -827,9 +832,28 @@ export async function PATCH(req: NextRequest) {
       if (completingAssignee && !fields.reviewed_by) fields.reviewed_by = completingAssignee
     }
 
-    // Rejection routing for legacy flow (non-task)
-    if (fields.status === 'open' && !fields.assignee && before?.worked_by) {
-      fields.assignee = before.worked_by
+    if (fields.status === 'open' && !fields.assignee) {
+      fields.assignee = resolveReopenAssignee(before as Record<string, unknown> | undefined)
+    }
+
+    if (fields.status === 'approved') {
+      const deployer = typeof (fields.deployer ?? before?.deployer) === 'string' && String(fields.deployer ?? before?.deployer).trim()
+        ? String(fields.deployer ?? before?.deployer)
+        : 'deployer'
+      fields.deployer = deployer
+      fields.assignee = deployer
+    }
+
+    if (fields.status === 'released') {
+      const auditor = typeof (fields.auditor ?? before?.auditor) === 'string' && String(fields.auditor ?? before?.auditor).trim()
+        ? String(fields.auditor ?? before?.auditor)
+        : 'auditor'
+      fields.auditor = auditor
+      fields.assignee = auditor
+    }
+
+    if (fields.status === 'closed') {
+      fields.assignee = null
     }
 
     // Legacy rejection tracking for in_review → open (non-task types)
@@ -848,7 +872,7 @@ export async function PATCH(req: NextRequest) {
     if (before.status === 'code_review' && ['tester', 'designer', 'ux'].includes(transitionedBy ?? '')) {
       if (transitionedBy === 'tester') {
         if (fields.tester_status === undefined && (fields.tester_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
-          fields.tester_status = fields.test_status === 'failed' || fields.status === 'in_progress' ? 'failed' : 'passed'
+          fields.tester_status = fields.test_status === 'failed' || fields.status === 'open' ? 'failed' : 'passed'
         }
         fields.tested_by = transitionedBy
         if (fields.tester_reviewed_at === undefined) fields.tester_reviewed_at = new Date().toISOString()
@@ -856,7 +880,7 @@ export async function PATCH(req: NextRequest) {
 
       if (transitionedBy === 'designer' || transitionedBy === 'ux') {
         if (fields.designer_status === undefined && (fields.designer_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
-          fields.designer_status = fields.test_status === 'failed' || fields.status === 'in_progress' ? 'failed' : 'passed'
+          fields.designer_status = fields.test_status === 'failed' || fields.status === 'open' ? 'failed' : 'passed'
         }
         fields.designed_by = transitionedBy === 'ux' ? 'designer' : transitionedBy
         if (fields.designer_reviewed_at === undefined) fields.designer_reviewed_at = new Date().toISOString()
@@ -867,8 +891,8 @@ export async function PATCH(req: NextRequest) {
       const dual = computeDualReviewState({ ...before, ...fields } as Record<string, unknown>)
 
       if (before.status === 'code_review' && dual.anyFailed) {
-        fields.status = 'in_progress'
-        fields.assignee = 'builder'
+        fields.status = 'open'
+        fields.assignee = resolveReopenAssignee(before as Record<string, unknown>)
         fields.test_status = 'failed'
         fields.rejection_count = (before?.rejection_count ?? 0) + 1
         fields.last_rejected_at = new Date().toISOString()
@@ -985,7 +1009,7 @@ export async function PATCH(req: NextRequest) {
     const newAssignee = data.assignee ?? fields.assignee
     if (fields.status === 'code_review') {
       activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
-    } else if (newAssignee && (fields.status === 'open' || fields.status === 'in_review')) {
+    } else if (newAssignee && (fields.status === 'open' || fields.status === 'in_review' || fields.status === 'approved' || fields.status === 'released')) {
       activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
     }
   }

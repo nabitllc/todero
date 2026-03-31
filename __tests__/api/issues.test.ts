@@ -194,6 +194,32 @@ describe('dual review gate logic', () => {
     }
   }
 
+  function resolveReopenAssignee(issue: { owner?: string | null; worked_by?: string | null }) {
+    const preferred = issue.owner ?? issue.worked_by
+    return preferred && preferred.trim() ? preferred : 'builder'
+  }
+
+  function applyStatusRouting(before: { status?: string; owner?: string | null; worked_by?: string | null; deployer?: string | null; auditor?: string | null }, nextStatus: string) {
+    const fields: Record<string, unknown> = { status: nextStatus }
+
+    if (nextStatus === 'open') {
+      fields.assignee = resolveReopenAssignee(before)
+    }
+    if (nextStatus === 'approved') {
+      fields.deployer = before.deployer?.trim() ? before.deployer : 'deployer'
+      fields.assignee = fields.deployer
+    }
+    if (nextStatus === 'released') {
+      fields.auditor = before.auditor?.trim() ? before.auditor : 'auditor'
+      fields.assignee = fields.auditor
+    }
+    if (nextStatus === 'closed') {
+      fields.assignee = null
+    }
+
+    return fields
+  }
+
   it('stays pending until both reviewer lanes pass', () => {
     expect(computeDualReviewState({ tester_status: 'passed', designer_status: 'pending' })).toEqual({
       bothPassed: false,
@@ -215,6 +241,40 @@ describe('dual review gate logic', () => {
       bothPassed: false,
       anyFailed: true,
       overall: 'failed',
+    })
+  })
+
+  it('reopens failed code review work to open and routes back to owner when present', () => {
+    expect(applyStatusRouting({ status: 'code_review', owner: 'builder', worked_by: 'builder' }, 'open')).toEqual({
+      status: 'open',
+      assignee: 'builder',
+    })
+    expect(applyStatusRouting({ status: 'code_review', owner: 'main', worked_by: 'builder' }, 'open')).toEqual({
+      status: 'open',
+      assignee: 'main',
+    })
+  })
+
+  it('routes approved work to deployer', () => {
+    expect(applyStatusRouting({ deployer: null }, 'approved')).toEqual({
+      status: 'approved',
+      deployer: 'deployer',
+      assignee: 'deployer',
+    })
+  })
+
+  it('routes released work to auditor', () => {
+    expect(applyStatusRouting({ auditor: null }, 'released')).toEqual({
+      status: 'released',
+      auditor: 'auditor',
+      assignee: 'auditor',
+    })
+  })
+
+  it('clears assignee on closed', () => {
+    expect(applyStatusRouting({ owner: 'builder' }, 'closed')).toEqual({
+      status: 'closed',
+      assignee: null,
     })
   })
 })

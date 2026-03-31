@@ -63,7 +63,8 @@ Before calling the issues API, verify:
 - Builder submits code-change work to `code_review`; assignee flips to `tester` and both Tester + Designer are activated in parallel.
 - Tester reviews the functional/regression lane and records `tester_status` + `tester_notes`.
 - Designer reviews the UX/product-impact lane (including backend-only fallout checks) and records `designer_status` + `designer_notes`.
-- A code-change issue cannot move from `code_review` to `approved` until both reviewer lanes pass; if either fails it returns to `in_progress` for Builder with both note sets preserved.
+- A code-change issue cannot move from `code_review` to `approved` until both reviewer lanes pass; if either fails it returns to `open` for the issue owner/working agent with both note sets preserved.
+Approved work routes to `deployer`; released work routes to `auditor`; closing always clears assignee.
 
 ## Sprint Workflow
 
@@ -82,7 +83,8 @@ Before calling the issues API, verify:
 1. Tester updates the shared issue with `tester_status=passed|failed` plus `tester_notes`.
 2. Designer updates the same issue with `designer_status=passed|failed` plus `designer_notes`.
 3. The issue stays in `code_review` until both lanes pass.
-4. If either lane fails, the issue returns to `in_progress` and Builder addresses both note sets on the same task.
+4. If either lane fails, the issue returns to `open` and the owner/working agent addresses both note sets on the same task.
+5. `approved` assigns Deployer, `released` assigns Auditor, and `closed` always clears assignee.
 
 **Designer review scope:**
 - Designer reviews: color tokens, spacing scale, typography, component consistency, responsive behavior, accessibility

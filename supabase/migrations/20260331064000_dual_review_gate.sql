@@ -30,11 +30,11 @@ WHERE field_name IN (
 INSERT INTO issue_field_definitions (field_name, label, description, data_type, allowed_values, required_for_status, auto_set_when, auto_set_to, set_by, applies_to_types, is_required, is_system, notes)
 VALUES
   ('tester_status', 'Tester Status', 'Tester review lane status for code review.', 'enum', '["pending","passed","failed"]'::jsonb, ARRAY['code_review','approved'], 'On move to code_review', 'pending', 'api/tester', ARRAY['task','bug','feature'], false, false, 'Required as part of dual review gate for code-change work.'),
-  ('tester_notes', 'Tester Notes', 'Functional and regression review notes from tester.', 'text', NULL, NULL, NULL, NULL, 'tester', ARRAY['task','bug','feature'], false, false, 'Preserved even if the issue returns to in_progress.'),
+  ('tester_notes', 'Tester Notes', 'Functional and regression review notes from tester.', 'text', NULL, NULL, NULL, NULL, 'tester', ARRAY['task','bug','feature'], false, false, 'Preserved even if the issue returns to open.'),
   ('tested_by', 'Tested By', 'Agent who completed the tester review lane.', 'text', NULL, NULL, 'When tester submits review', 'tester', 'api', ARRAY['task','bug','feature'], false, false, NULL),
   ('tester_reviewed_at', 'Tester Reviewed At', 'Timestamp for tester review completion.', 'timestamptz', NULL, NULL, 'When tester submits review', 'now()', 'api', ARRAY['task','bug','feature'], false, true, NULL),
   ('designer_status', 'Designer Status', 'Designer review lane status for code review.', 'enum', '["pending","passed","failed"]'::jsonb, ARRAY['code_review','approved'], 'On move to code_review', 'pending', 'api/designer', ARRAY['task','bug','feature'], false, false, 'Backend-only work still receives a lighter designer check.'),
-  ('designer_notes', 'Designer Notes', 'UI/UX and product-surface review notes from designer.', 'text', NULL, NULL, NULL, NULL, 'designer', ARRAY['task','bug','feature'], false, false, 'Preserved even if the issue returns to in_progress.'),
+  ('designer_notes', 'Designer Notes', 'UI/UX and product-surface review notes from designer.', 'text', NULL, NULL, NULL, NULL, 'designer', ARRAY['task','bug','feature'], false, false, 'Preserved even if the issue returns to open.'),
   ('designed_by', 'Designed By', 'Agent who completed the designer review lane.', 'text', NULL, NULL, 'When designer submits review', 'designer', 'api', ARRAY['task','bug','feature'], false, false, NULL),
   ('designer_reviewed_at', 'Designer Reviewed At', 'Timestamp for designer review completion.', 'timestamptz', NULL, NULL, 'When designer submits review', 'now()', 'api', ARRAY['task','bug','feature'], false, true, NULL);
 
@@ -53,11 +53,16 @@ WHERE issue_type = 'task' AND from_status = 'code_review' AND to_status = 'appro
 UPDATE workflow_transitions
 SET condition_role = 'tester_or_designer',
     validators = NULL,
-    post_functions = '[{"action":"set_assignee","params":{"to":"builder"}},{"action":"increment_rejection","params":{}},{"action":"set_timestamp","params":{"field":"last_rejected_at"}}]'::jsonb
+    post_functions = '[{"action":"set_assignee","params":{"source":"owner"}},{"action":"increment_rejection","params":{}},{"action":"set_timestamp","params":{"field":"last_rejected_at"}}]'::jsonb
 WHERE issue_type = 'task' AND from_status = 'code_review' AND to_status = 'open';
 
 DELETE FROM workflow_transitions
 WHERE issue_type = 'task' AND from_status = 'code_review' AND to_status = 'in_progress';
 
-INSERT INTO workflow_transitions (issue_type, from_status, to_status, condition_role, validators, post_functions)
-VALUES ('task', 'code_review', 'in_progress', 'tester_or_designer', NULL, '[{"action":"set_assignee","params":{"to":"builder"}},{"action":"increment_rejection","params":{}},{"action":"set_timestamp","params":{"field":"last_rejected_at"}}]'::jsonb);
+UPDATE workflow_transitions
+SET post_functions = '[{"action":"set_assignee","params":{"to":"auditor"}}]'::jsonb
+WHERE issue_type = 'task' AND from_status = 'approved' AND to_status = 'released';
+
+UPDATE workflow_transitions
+SET post_functions = '[{"action":"set_assignee","params":{"to":null}}]'::jsonb
+WHERE issue_type = 'task' AND from_status = 'released' AND to_status = 'closed';
