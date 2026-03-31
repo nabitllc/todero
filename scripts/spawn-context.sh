@@ -81,4 +81,18 @@ for memfile in "${MEMORY_CANDIDATES[@]}"; do
   fi
 done
 
+# 4. self-improving/corrections.md — recent corrections (last 30 entries max)
+CORRECTIONS_FILE="${WORKSPACE}/self-improving/corrections.md"
+if [[ -f "$CORRECTIONS_FILE" ]]; then
+  echo "## Recent Corrections (self-improving)"
+  echo ""
+  # Show header + last 30 correction entries to keep context manageable
+  head -n 6 "$CORRECTIONS_FILE"
+  echo ""
+  grep -A 10 "^### " "$CORRECTIONS_FILE" | tail -n 90
+  echo ""
+  echo "---"
+  echo ""
+fi
+
 echo "# End Workspace Context"

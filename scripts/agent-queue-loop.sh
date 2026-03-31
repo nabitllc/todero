@@ -109,6 +109,14 @@ ${PROMPT}" >> "$LOG" 2>&1 || true
 
   log "Agent finished: $TASK_KEY"
 
+  # Post-task memory accumulation (TOD-489)
+  if [ -f "$MC_DIR/scripts/post-task-memory.sh" ]; then
+    log "Running post-task memory for $TASK_KEY"
+    bash "$MC_DIR/scripts/post-task-memory.sh" "$AGENT_ID" "$TASK_KEY" "$TASK_TITLE" "0" 2>>"$LOG" || {
+      log "post-task-memory failed (non-fatal)"
+    }
+  fi
+
   # Log heartbeat
   curl -sf -X POST "$SUPA_URL/rest/v1/agent_runs" \
     -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" -H "Content-Type: application/json" \
