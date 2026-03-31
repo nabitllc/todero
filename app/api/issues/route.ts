@@ -946,8 +946,8 @@ export async function PATCH(req: NextRequest) {
     .select()
     .single()
 
-  // Graceful fallback for missing columns
-  if (error?.code === '42703') {
+  // Graceful fallback for missing columns (42703 = Postgres missing column; PGRST204 = PostgREST schema cache miss)
+  if (error?.code === '42703' || error?.code === 'PGRST204' || (typeof error?.message === 'string' && error.message.includes('schema cache'))) {
     const safeFields = { ...fields }
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
                         'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test',
