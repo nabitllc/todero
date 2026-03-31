@@ -76,6 +76,58 @@ Approved work routes to `deployer`; released work routes to `auditor`; closing a
    - Designer rejects → creates fix task for builder, parent reopened.
 5. KAOS monitors progress and adjusts priorities as needed.
 
+## Delegation-First Spawn Protocol
+
+**MANDATORY**: Every named-agent spawn MUST prepend workspace context to the task prompt.
+
+### Spawn Template
+
+When KAOS spawns any named agent, the prompt MUST follow this structure:
+
+```
+<workspace-context>
+{output of: bash scripts/spawn-context.sh /path/to/workspace}
+</workspace-context>
+
+You are {AgentName}. {Task description here.}
+```
+
+### How to Use
+
+1. **Generate context** before spawning:
+   ```bash
+   CONTEXT=$(bash scripts/spawn-context.sh /Users/kemuniagent/mission-control)
+   ```
+
+2. **Prepend to prompt**:
+   ```
+   <workspace-context>
+   ${CONTEXT}
+   </workspace-context>
+
+   You are Builder. Work on MC-491: replace inline styles with Tailwind tokens...
+   ```
+
+3. **Multi-workspace spawns** (e.g., Vespera):
+   ```bash
+   CONTEXT=$(bash scripts/spawn-context.sh /path/to/vespera)
+   ```
+
+### What Gets Loaded
+
+| File | Purpose | Loaded As |
+|------|---------|-----------|
+| `SOUL.md` | Agent-specific guidelines, constraints | Full content |
+| `AGENTS.md` | Agent table, communication protocol, workflow | Key sections (agent table, comms, workflow) |
+| `self-improving/memory.md` | Learned patterns, past decisions | Full content (if exists) |
+
+### Rules
+
+- KAOS must NEVER spawn an agent without running `spawn-context.sh` first.
+- The context block must appear before any task-specific instructions.
+- If a workspace directory does not exist, skip context for that workspace (do not fail).
+- The script is idempotent and read-only — safe to run at any time.
+
 ## Tester SOUL
 
 **Code review gate:**
