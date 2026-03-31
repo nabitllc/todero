@@ -8,6 +8,13 @@
 html { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
 body { background: #080808; color: #e5e5e5; min-height: 100vh; overflow-x: hidden; }
 
+/* MC-522: Eliminate 300ms tap delay on mobile for all interactive elements.
+   Works in tandem with the viewport meta tag to ensure taps fire immediately. */
+button, a, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: #111; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }

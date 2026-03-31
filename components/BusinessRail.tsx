@@ -36,7 +36,8 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
   }, [refreshKey])
 
   return (
-    <div className="flex flex-col items-center gap-2 w-14 min-h-screen bg-[#080808] border-r border-white/5 py-3 shrink-0">
+    <div className="flex flex-col items-center gap-2 w-14 min-h-screen bg-[#080808] border-r border-white/5 py-3 shrink-0 overflow-y-auto overflow-x-hidden">
+      {/* MC-522: overflow-y-auto — rail scrolls on small phones instead of clipping under fixed nav */}
       {/* All */}
       <button
         onClick={() => onSelect(null)}

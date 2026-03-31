@@ -149,8 +149,11 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       const fromURL = parseURL()
       if (fromURL.tab && VALID_TABS.includes(fromURL.tab)) return fromURL.tab as Tab
-      const saved = localStorage.getItem('mc-tab') as Tab | null
-      if (saved && VALID_TABS.includes(saved)) return saved
+      // MC-522: wrap localStorage in try/catch — throws on iOS private browsing
+      try {
+        const saved = localStorage.getItem('mc-tab') as Tab | null
+        if (saved && VALID_TABS.includes(saved)) return saved
+      } catch (_) { /* private browsing — ignore */ }
     }
     return 'overview'
   })
@@ -284,7 +287,7 @@ export default function Home() {
   useEffect(() => {
     const onPop = () => {
       const { tab: t, business } = parseURL()
-      if (VALID_TABS.includes(t)) { setTab(t as Tab); localStorage.setItem('mc-tab', t) }
+      if (VALID_TABS.includes(t)) { setTab(t as Tab); try { localStorage.setItem('mc-tab', t) } catch (_) {} }
       setSelectedBusiness(business)
     }
     window.addEventListener('popstate', onPop)
@@ -340,7 +343,7 @@ export default function Home() {
   const navigate = useCallback((t: string) => {
     setTab(t as Tab)
     if (typeof window !== 'undefined') {
-      localStorage.setItem('mc-tab', t)
+      try { localStorage.setItem('mc-tab', t) } catch (_) { /* private browsing */ }
       pushURL(selectedBusiness, t)
     }
   }, [selectedBusiness, pushURL])
