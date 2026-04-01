@@ -1047,12 +1047,15 @@ export async function PATCH(req: NextRequest) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
-  // ── Activate next agent on transition ──
-  if (fields.status && data) {
+  // ── Activate assignee on every status transition ──
+  const NON_ACTIVATING_STATUSES = new Set(['backlog', 'defined', 'closed', 'creation'])
+  if (fields.status && data && !NON_ACTIVATING_STATUSES.has(fields.status)) {
     const newAssignee = data.assignee ?? fields.assignee
     if (fields.status === 'code_review') {
+      // code_review: activate both tester + designer
       activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
-    } else if (newAssignee && (fields.status === 'open' || fields.status === 'in_review' || fields.status === 'approved' || fields.status === 'released' || fields.status === 'product_review')) {
+    } else if (newAssignee) {
+      // All other active statuses: activate whoever the assignee is now
       activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
     }
   }
