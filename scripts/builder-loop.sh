@@ -160,11 +160,25 @@ print(resp.read().decode())
       # Skip in_review PATCH (can't submit broken code for review)
       log "Skipping in_review — broken build"
 
+      # Post-task memory: record build failure corrections (TOD-489)
+      if [ -f "$MC_DIR/scripts/post-task-memory.sh" ]; then
+        echo "$ALL_ISSUES" | python3 -c "import json,sys; [print(i.get('task_key',''),i.get('title','')[:60]) for i in json.load(sys.stdin)]" 2>/dev/null | while read -r TK TT; do
+          [ -n "$TK" ] && bash "$MC_DIR/scripts/post-task-memory.sh" builder "$TK" "$TT" "$BUILD_EXIT" 2>>"$LOG" || true
+        done
+      fi
+
       # Clean up partial files
       cd "$MC_DIR" && git clean -fd >> "$LOG" 2>&1
       log "git clean -fd complete"
     else
       log "Build verified OK"
+
+      # Post-task memory: record successful session patterns (TOD-489)
+      if [ -f "$MC_DIR/scripts/post-task-memory.sh" ]; then
+        echo "$ALL_ISSUES" | python3 -c "import json,sys; [print(i.get('task_key',''),i.get('title','')[:60]) for i in json.load(sys.stdin)]" 2>/dev/null | while read -r TK TT; do
+          [ -n "$TK" ] && bash "$MC_DIR/scripts/post-task-memory.sh" builder "$TK" "$TT" "0" 2>>"$LOG" || true
+        done
+      fi
     fi
   else
     log "No open issues for builder — idle"

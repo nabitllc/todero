@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exec as execAsync } from 'child_process'
+import {
+  VALID_TYPES,
+  VALID_PRIORITIES,
+  VALID_SEVERITIES,
+  VALID_STATUSES,
+  VALID_RESOLUTION_TYPES,
+  normalizeProjectName,
+  getProjectPrefix,
+} from '@/lib/constants'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'tester': 'tester',
+  'designer': 'designer',
+  'ux': 'designer',
   'scout': 'scout',
   'ops': 'ops',
   'kemuni-sme': 'kemuni-sme',
@@ -15,14 +26,54 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'michael': null,
 }
 
-function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string) {
+function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
-  const msg = status === 'in_review'
-    ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
-    : `Issue ${taskKey} is ready: ${title}. Pick it up and start work.`
+  let msg: string
+  if (status === 'in_review' || status === 'code_review') {
+    msg = `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
+  } else if (status === 'open' && issueId) {
+    // Include explicit PATCH-to-in_progress instruction so agent claims the issue immediately.
+    // Agents with queue-driven lanes also get a self-chain instruction (TOD-602).
+    const SELF_CHAIN_AGENTS = new Set(['builder', 'ops', 'scout', 'po'])
+    const inProgressPatch = `BEFORE starting work, PATCH to in_progress:\nPATCH http://localhost:3000/api/issues\n{"id":"${issueId}","status":"in_progress","transitioned_by":"${assignee}"}`
+    const selfChain = SELF_CHAIN_AGENTS.has(assignee)
+      ? `\n\nAfter completing this issue and patching to code_review (or completed for ops), immediately check for your next open issue and start it:\nGET http://localhost:3000/api/issues?assignee=${assignee}&status=open — if any exist, PATCH the top-priority one to in_progress and start work immediately. Do not wait for another trigger.`
+      : ''
+    msg = `Issue ${taskKey} is ready for you: ${title}.\n\n${inProgressPatch}${selfChain}`
+  } else {
+    msg = `Issue ${taskKey} is assigned to you (${status}): ${title}. Check it and take action.`
+  }
   const cmd = `openclaw agent --agent ${agentId} --message ${JSON.stringify(msg)} 2>/dev/null`
   execAsync(cmd, { timeout: 30000 }, () => {})
+}
+
+function activateCodeReviewAgents(taskKey: string, title: string) {
+  activateAgentAsync('tester', taskKey, title, 'code_review')
+  activateAgentAsync('designer', taskKey, title, 'code_review')
+}
+
+function normalizeReviewStatus(value: unknown): string {
+  const s = typeof value === 'string' ? value.toLowerCase() : 'pending'
+  // Treat 'approved' as 'passed' for dual-review gate
+  return s === 'approved' ? 'passed' : s
+}
+
+function computeDualReviewState(issue: Record<string, unknown>) {
+  const testerStatus = normalizeReviewStatus(issue.tester_status)
+  const designerStatus = normalizeReviewStatus(issue.designer_status)
+  const testerPassed = testerStatus === 'passed'
+  const designerPassed = designerStatus === 'passed'
+  const anyFailed = testerStatus === 'failed' || designerStatus === 'failed'
+  const bothPassed = testerPassed && designerPassed
+  const overallTestStatus = bothPassed ? 'passed' : anyFailed ? 'failed' : 'pending'
+
+  return { testerStatus, designerStatus, testerPassed, designerPassed, anyFailed, bothPassed, overallTestStatus }
+}
+
+function resolveReopenAssignee(issue: Record<string, unknown> | null | undefined) {
+  const preferred = issue?.owner ?? issue?.worked_by
+  return typeof preferred === 'string' && preferred.trim() ? preferred : 'builder'
 }
 
 // ── Discord helpers ───────────────────────────────────────────────────────────
@@ -53,12 +104,27 @@ const TYPE_EMOJI: Record<string, string> = {
   task: '📋', bug: '🐛', feature: '✨', epic: '🏔️', ops: '⚙️', research: '🔍'
 }
 
+const RESOLUTION_LABELS: Record<string, string> = {
+  code_change: 'Code Change',
+  config_change: 'Config Change',
+  no_action: 'No Action',
+  duplicate: 'Duplicate',
+  by_design: 'By Design',
+  wont_fix: "Won't Fix",
+  cancelled: 'Cancelled',
+  canceled: 'Cancelled',
+  not_reproducible: 'Not Reproducible',
+  deferred: 'Deferred',
+  completed: 'Completed',
+}
+
 function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string; type?: string }) {
   const key = issue.task_key ?? '?'
   const status = issue.status ?? 'completed'
   const statusEmoji = STATUS_EMOJI[status] ?? '✅'
   const typeEmoji = TYPE_EMOJI[issue.type ?? 'task'] ?? '📋'
-  const resType = issue.resolution_type ?? status
+  const rawResType = issue.resolution_type ?? status
+  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
   const ts = new Date().toLocaleString('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric',
@@ -73,7 +139,8 @@ function notifyCompletedTask(issue: Record<string, unknown>, toStatus: string) {
   const key = issue.task_key ?? '?'
   const statusEmoji = STATUS_EMOJI[toStatus] ?? '✅'
   const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
-  const resType = (issue.resolution_type as string) ?? toStatus
+  const rawResType = (issue.resolution_type as string) ?? toStatus
+  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
   const ts = new Date().toLocaleString('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric',
@@ -114,41 +181,74 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 )
 
-// ── Task key generation ───────────────────────────────────────────────────────
-const PROJECT_PREFIX: Record<string, string> = {
-  'Mission Control': 'MC', Infrastructure: 'INF', Vespera: 'VES', Kemuni: 'KEM',
-  Todero: 'TOD', todero: 'TOD'
+// ── Hierarchy validation ──────────────────────────────────────────────────────
+async function validateHierarchy(
+  type: string,
+  parentId: string | null | undefined
+): Promise<{ error: string } | null> {
+  if (type === 'task' || type === 'bug') {
+    if (!parentId) {
+      return { error: `type=${type} requires parent_id pointing to a feature issue` }
+    }
+    const { data: parent, error: dbErr } = await supabase
+      .from('issues')
+      .select('id, type, task_key')
+      .eq('id', parentId)
+      .maybeSingle()
+    if (dbErr || !parent) {
+      return { error: `parent_id ${parentId} does not exist` }
+    }
+    if (parent.type !== 'feature') {
+      return { error: `type=${type} requires parent to be a feature, but parent ${parent.task_key} is type=${parent.type}` }
+    }
+  } else if (type === 'feature') {
+    if (!parentId) {
+      return { error: `type=feature requires parent_id pointing to an epic issue` }
+    }
+    const { data: parent, error: dbErr } = await supabase
+      .from('issues')
+      .select('id, type, task_key')
+      .eq('id', parentId)
+      .maybeSingle()
+    if (dbErr || !parent) {
+      return { error: `parent_id ${parentId} does not exist` }
+    }
+    if (parent.type !== 'epic') {
+      return { error: `type=feature requires parent to be an epic, but parent ${parent.task_key} is type=${parent.type}` }
+    }
+  } else if (type === 'epic') {
+    if (parentId) {
+      return { error: `type=epic should not have a parent_id (epics are top-level)` }
+    }
+  }
+  // ops, research: intentionally bypass hierarchy validation.
+  // These types are standalone work items that may optionally link to a parent
+  // of any type for context, without enforcing the epic→feature→task chain.
+  return null
 }
 
-async function generateTaskKey(project: string): Promise<{ task_key: string; task_number: number }> {
-  const prefix = PROJECT_PREFIX[project] ?? 'TOD'
-  try {
-    const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
-    if (!rpcErr && typeof seqNum === 'number') {
-      return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
-    }
-  } catch { /* RPC not yet deployed */ }
+// ── Task key generation ───────────────────────────────────────────────────────
 
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: maxRow } = await supabase
-      .from('issues')
-      .select('task_number')
-      .not('task_number', 'is', null)
-      .order('task_number', { ascending: false })
-      .limit(1)
-      .single()
-    const nextNumber = (maxRow?.task_number ?? 0) + 1 + attempt
-    const key = `${prefix}-${nextNumber}`
-    const { data: existing } = await supabase
-      .from('issues')
-      .select('id')
-      .eq('task_key', key)
-      .maybeSingle()
-    if (!existing) return { task_key: key, task_number: nextNumber }
+async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key: string; task_number: number }>> {
+  const prefix = getProjectPrefix(project)
+  const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
+
+  if (!rpcErr && typeof seqNum === 'number') {
+    return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
   }
 
-  const ts = Date.now() % 1000000
-  return { task_key: `${prefix}-${ts}`, task_number: ts }
+  console.warn('[issues] next_task_number RPC unavailable; falling back to API-assigned identity', rpcErr)
+
+  const { data: maxRow } = await supabase
+    .from('issues')
+    .select('task_number')
+    .not('task_number', 'is', null)
+    .order('task_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1
+  return { task_key: `${prefix}-${nextNumber}`, task_number: nextNumber }
 }
 
 // ── Workflow types ────────────────────────────────────────────────────────────
@@ -266,6 +366,13 @@ async function validateWorkflowTransition(
         error: { error: `Only the reviewer (${issueReviewer ?? 'unset'}) can execute this transition`, field: 'transitioned_by' }
       }
     }
+  } else if (conditionRole === 'tester_or_designer') {
+    if (!transitionedBy || !['tester', 'designer', 'ux'].includes(transitionedBy)) {
+      return {
+        transition: null,
+        error: { error: 'Only tester or designer can execute this transition', field: 'transitioned_by' }
+      }
+    }
   }
 
   // ── Validator checks ──
@@ -274,14 +381,23 @@ async function validateWorkflowTransition(
 
   for (const v of validators) {
     if (v === 'ref_required') {
-      // At least one of: commit_sha, feature_branch, pr_url
-      const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
-      if (!hasRef) {
-        missing.push('commit_sha or feature_branch or pr_url (at least one required)')
+      // ops and research types are exempt — they deliver outcomes, not code artifacts
+      const isExemptType = issueType === 'ops' || issueType === 'research'
+      if (!isExemptType) {
+        // At least one of: commit_sha, feature_branch, pr_url
+        const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
+        if (!hasRef) {
+          missing.push('commit_sha or feature_branch or pr_url (at least one required)')
+        }
       }
     } else if (v === 'test_status_passed') {
       if (merged.test_status !== 'passed') {
         missing.push('test_status=passed')
+      }
+    } else if (v === 'dual_review_passed') {
+      const { bothPassed } = computeDualReviewState(merged)
+      if (!bothPassed) {
+        missing.push('tester_status=passed and designer_status=passed')
       }
     } else if (v === 'children_exist') {
       // Special: check if any child issues exist for this epic
@@ -366,15 +482,16 @@ async function executePostFunctions(
       // Build a notification for the completed/approved transition
       const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
       const key = (notifyIssue.task_key ?? '?') as string
-      const emoji = PROJECT_EMOJI[(notifyIssue.project as string) ?? ''] ?? '📌'
       const ts = new Date().toLocaleString('en-US', {
         timeZone: 'America/New_York',
         month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit',
         hour12: true
       }) + ' EST'
-      const label = toStatus === 'approved' ? '✅ Approved (code path)' : '✅ Completed (no-code path)'
-      const msg = `${label} ${emoji} **[${key}]** — ${notifyIssue.title ?? ''} (${notifyIssue.project ?? ''}) at ${ts}`
+      const statusEmoji = STATUS_EMOJI[toStatus] ?? '✅'
+      const typeEmoji = TYPE_EMOJI[(notifyIssue.type as string) ?? 'task'] ?? '📋'
+      const resType = (notifyIssue.resolution_type as string) ?? toStatus
+      const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${notifyIssue.title ?? ''} at ${ts}`
       postDiscord(channelId, msg)
     }
 
@@ -396,11 +513,29 @@ async function executePostFunctions(
       const tsField = params.field as string
       fields[tsField] = new Date().toISOString()
     }
+
+    if (action === 'activate_code_review_agents') {
+      const nextIssue = { ...issue, ...updatedIssue, ...fields }
+      activateCodeReviewAgents((nextIssue.task_key ?? '?') as string, (nextIssue.title ?? '') as string)
+    }
   }
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const taskKey = new URL(req.url).searchParams.get('task_key')
+
+  if (taskKey) {
+    const { data, error } = await supabase
+      .from('issues')
+      .select('*')
+      .eq('task_key', taskKey)
+      .maybeSingle()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (!data) return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
+    return NextResponse.json(data)
+  }
+
   const { data, error } = await supabase
     .from('issues')
     .select('*')
@@ -416,10 +551,12 @@ export async function POST(req: NextRequest) {
           acceptance_criteria, sprint, parent_id, severity, resolution_type,
           feature_branch, pr_url, task_key: _clientKey, task_number: _clientNum, owner } = body
 
+  const normalizedProject = normalizeProjectName(project)
+
   // ── Required fields ──
   const missing: string[] = []
   if (!title?.trim())                missing.push('title')
-  if (!project?.trim())              missing.push('project')
+  if (!normalizedProject.trim())     missing.push('project')
   if (!acceptance_criteria?.trim())  missing.push('acceptance_criteria')
 
   if (missing.length > 0) {
@@ -429,9 +566,47 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // ── Enum validation ──
+  if (type && !VALID_TYPES.includes(type)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'type': "${type}". Allowed values: ${VALID_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (priority && !VALID_PRIORITIES.includes(priority)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'priority': "${priority}". Allowed values: ${VALID_PRIORITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (severity && !VALID_SEVERITIES.includes(severity)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'severity': "${severity}". Allowed values: ${VALID_SEVERITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (status && !VALID_STATUSES.includes(status)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'status': "${status}". Allowed values: ${VALID_STATUSES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (resolution_type && !VALID_RESOLUTION_TYPES.includes(resolution_type)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'resolution_type': "${resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+
   // ── DoF: features require description ──
   if (type === 'feature' && !description?.trim()) {
     return NextResponse.json({ error: 'Feature requires: description' }, { status: 422 })
+  }
+
+  // ── Hierarchy validation ──
+  const hierarchyErr = await validateHierarchy(type ?? 'task', parent_id)
+  if (hierarchyErr) {
+    return NextResponse.json({ error: hierarchyErr.error }, { status: 400 })
   }
 
   // ── Auto-set owner ──
@@ -440,8 +615,8 @@ export async function POST(req: NextRequest) {
     const issueType = type ?? 'task'
     if (issueType === 'task' || issueType === 'bug') effectiveOwner = 'builder'
     else if (issueType === 'feature') {
-      if (project === 'Kemuni') effectiveOwner = 'kemuni-sme'
-      else if (project === 'Vespera') effectiveOwner = 'vespera-sme'
+      if (normalizedProject === 'Kemuni') effectiveOwner = 'kemuni-sme'
+      else if (normalizedProject === 'Vespera') effectiveOwner = 'vespera-sme'
       else effectiveOwner = 'main'
     } else if (issueType === 'epic') effectiveOwner = 'main'
     else if (issueType === 'ops') effectiveOwner = 'ops'
@@ -461,22 +636,25 @@ export async function POST(req: NextRequest) {
   // ── Auto-routing ──
   let effectiveAssignee = assignee
   let routingNote = ''
-  if (!effectiveAssignee || effectiveAssignee === 'main' || effectiveAssignee === 'kaos') {
+  if (!effectiveAssignee) {
     const effectiveType = type ?? 'task'
-    const titleLower = (title ?? '').toLowerCase()
-    const descLower = (description ?? '').toLowerCase()
-    if (titleLower.includes('manual') || titleLower.includes('blocked') || descLower.includes('requires michael')) {
-      effectiveAssignee = 'michael'; routingNote = '[auto-routed to michael: manual/blocked/requires michael]'
-    } else if (titleLower.includes('research') || titleLower.includes('evaluate') || titleLower.includes('scout')) {
-      effectiveAssignee = 'scout'; routingNote = '[auto-routed to scout: research/evaluate/scout keyword]'
+    const projectStr = normalizedProject
+    if (effectiveType === 'task' || effectiveType === 'bug') {
+      effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: type=${effectiveType}]`
     } else if (effectiveType === 'ops') {
       effectiveAssignee = 'ops'; routingNote = '[auto-routed to ops: type=ops]'
-    } else if (effectiveType === 'task' || effectiveType === 'bug') {
-      effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: type=${effectiveType}]`
-    } else if (effectiveType === 'feature' || effectiveType === 'epic') {
-      if (project === 'Kemuni') { effectiveAssignee = 'kemuni-sme'; routingNote = '[auto-routed to kemuni-sme: feature/epic + Kemuni]' }
-      else if (project === 'Vespera') { effectiveAssignee = 'vespera-sme'; routingNote = '[auto-routed to vespera-sme: feature/epic + Vespera]' }
-      else { effectiveAssignee = 'builder'; routingNote = `[auto-routed to builder: feature/epic + ${project}]` }
+    } else if (effectiveType === 'research') {
+      effectiveAssignee = 'scout'; routingNote = '[auto-routed to scout: type=research]'
+    } else if (effectiveType === 'feature') {
+      if (projectStr.includes('Vespera') || projectStr.includes('VES')) {
+        effectiveAssignee = 'vespera-sme'; routingNote = `[auto-routed to vespera-sme: type=feature + project=${projectStr}]`
+      } else if (projectStr.includes('Kemuni') || projectStr.includes('KEM')) {
+        effectiveAssignee = 'kemuni-sme'; routingNote = `[auto-routed to kemuni-sme: type=feature + project=${projectStr}]`
+      } else {
+        effectiveAssignee = 'main'; routingNote = `[auto-routed to main: type=feature + project=${projectStr}]`
+      }
+    } else if (effectiveType === 'epic') {
+      effectiveAssignee = 'main'; routingNote = '[auto-routed to main: type=epic]'
     } else {
       effectiveAssignee = 'builder'; routingNote = '[auto-routed to builder: default fallback]'
     }
@@ -485,6 +663,13 @@ export async function POST(req: NextRequest) {
   const effectiveDescription = routingNote
     ? (description ? `${description}\n\n${routingNote}` : routingNote)
     : description
+
+  // Log auto-routing to implementation_notes
+  const autoRoutingNote = routingNote ? `Auto-assigned: ${routingNote.replace(/^\[|\]$/g, '')}` : ''
+  const existingImplNotes = (body.implementation_notes as string | undefined) ?? ''
+  const effectiveImplNotes = autoRoutingNote
+    ? (existingImplNotes ? `${existingImplNotes}\n${autoRoutingNote}` : autoRoutingNote)
+    : existingImplNotes || undefined
 
   // ── Dedup guard: reject duplicate tester/reviewer issues ──
   const isTesterIssue = (title ?? '').startsWith('🧪 Tester:') || (title ?? '').includes('Tester: Review')
@@ -522,19 +707,20 @@ export async function POST(req: NextRequest) {
     ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
     : effectiveStatus
 
-  const generated = await generateTaskKey(project)
+  const generatedIdentity = await prepareIssueIdentity(normalizedProject)
 
   const { data, error } = await supabase
     .from('issues')
     .insert({
       title, description: effectiveDescription, status: finalStatus,
-      assignee: effectiveAssignee, project,
+      assignee: effectiveAssignee, project: normalizedProject,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
       acceptance_criteria, sprint, parent_id,
       ...(severity ? { severity } : {}),
       resolution_type, feature_branch, pr_url,
-      task_key: generated.task_key, task_number: generated.task_number,
+      ...generatedIdentity,
       owner: effectiveOwner,
+      ...(effectiveImplNotes ? { implementation_notes: effectiveImplNotes } : {}),
     })
     .select()
     .single()
@@ -578,6 +764,104 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
+  // ── KAOS backlog reset (TOD-571) ─────────────────────────────────────────
+  // main/KAOS can force-reset any non-closed issue to backlog regardless of current status.
+  // Bypasses normal workflow transition engine — governance/admin path only.
+  // Closed issues are still immutable (checked above).
+  if (fields.status === 'backlog' && before?.status !== 'backlog') {
+    const KAOS_ROLES = ['main', 'po', 'ops']
+    if (!transitionedBy || !KAOS_ROLES.includes(transitionedBy)) {
+      return NextResponse.json(
+        { error: 'Only main/po/ops can reset an issue to backlog.', field: 'transitioned_by' },
+        { status: 403 }
+      )
+    }
+    // Auditability: stamp who reset it and when
+    fields.implementation_notes = fields.implementation_notes
+      ?? `Backlog reset by ${transitionedBy} at ${new Date().toISOString()}.`
+    // Clear execution state so issue re-enters pipeline cleanly
+    // Bypass workflow engine for this transition — governance/admin path
+    const { data: resetData, error: resetErr } = await supabase
+      .from('issues')
+      .update({
+        ...fields,
+        status: 'backlog',
+        worked_by: null,
+        started_at: null,
+        submitted_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single()
+    if (resetErr) return NextResponse.json({ error: resetErr.message }, { status: 500 })
+    return NextResponse.json(resetData)
+  }
+
+  // ── One-at-a-time lane enforcement ──
+  // If transitioning to in_progress, ensure no other issue with the same worked_by is already in_progress.
+  if (fields.status === 'in_progress') {
+    const effectiveWorkedBy = fields.worked_by ?? fields.assignee ?? before?.assignee
+    if (effectiveWorkedBy) {
+      const { data: activeIssues } = await supabase
+        .from('issues')
+        .select('id, task_key, title, started_at')
+        .eq('worked_by', effectiveWorkedBy)
+        .eq('status', 'in_progress')
+        .neq('id', id)
+        .limit(1)
+      if (activeIssues && activeIssues.length > 0) {
+        const active = activeIssues[0]
+        return NextResponse.json(
+          {
+            error: `One-at-a-time lane enforcement: ${effectiveWorkedBy} is already working on ${active.task_key} ("${active.title}"). Complete or reset that issue before claiming a new one.`,
+            field: 'worked_by',
+            active_issue: active.task_key,
+          },
+          { status: 409 }
+        )
+      }
+    }
+  }
+
+  // ── Enum validation on PATCH ──
+  if (fields.priority && !VALID_PRIORITIES.includes(fields.priority as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'priority': "${fields.priority}". Allowed values: ${VALID_PRIORITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.severity && !VALID_SEVERITIES.includes(fields.severity as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'severity': "${fields.severity}". Allowed values: ${VALID_SEVERITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.resolution_type && !VALID_RESOLUTION_TYPES.includes(fields.resolution_type as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'resolution_type': "${fields.resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.status && !VALID_STATUSES.includes(fields.status as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'status': "${fields.status}". Allowed values: ${VALID_STATUSES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+
+  // ── Hierarchy validation on PATCH (when parent_id or type changes) ──
+  if (fields.parent_id !== undefined || fields.type !== undefined) {
+    const effectiveType = (fields.type ?? before?.type) as string | undefined
+    const effectiveParentId = (fields.parent_id !== undefined ? fields.parent_id : before?.parent_id) as string | null | undefined
+    if (effectiveType) {
+      const hierErr = await validateHierarchy(effectiveType, effectiveParentId)
+      if (hierErr) {
+        return NextResponse.json({ error: hierErr.error }, { status: 400 })
+      }
+    }
+  }
+
   // ── Status transition validation ──
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
@@ -619,6 +903,19 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (fields.status === 'in_review') fields.submitted_at = now
+    if (fields.status === 'code_review') {
+      fields.submitted_at = now
+      fields.assignee = 'tester'
+      fields.tester_status = 'pending'
+      fields.designer_status = 'pending'
+      if (fields.test_status === undefined) fields.test_status = 'pending'
+      if (fields.tester_notes === undefined && before?.tester_notes == null) fields.tester_notes = null
+      if (fields.designer_notes === undefined && before?.designer_notes == null) fields.designer_notes = null
+      if (fields.tested_by === undefined && before?.tested_by == null) fields.tested_by = null
+      if (fields.designed_by === undefined && before?.designed_by == null) fields.designed_by = null
+      if (fields.tester_reviewed_at === undefined && before?.tester_reviewed_at == null) fields.tester_reviewed_at = null
+      if (fields.designer_reviewed_at === undefined && before?.designer_reviewed_at == null) fields.designer_reviewed_at = null
+    }
 
     if (fields.status === 'completed') {
       fields.completed_at = now
@@ -626,9 +923,28 @@ export async function PATCH(req: NextRequest) {
       if (completingAssignee && !fields.reviewed_by) fields.reviewed_by = completingAssignee
     }
 
-    // Rejection routing for legacy flow (non-task)
-    if (fields.status === 'open' && !fields.assignee && before?.worked_by) {
-      fields.assignee = before.worked_by
+    if (fields.status === 'open' && !fields.assignee) {
+      fields.assignee = resolveReopenAssignee(before as Record<string, unknown> | undefined)
+    }
+
+    if (fields.status === 'approved') {
+      const deployer = typeof (fields.deployer ?? before?.deployer) === 'string' && String(fields.deployer ?? before?.deployer).trim()
+        ? String(fields.deployer ?? before?.deployer)
+        : 'deployer'
+      fields.deployer = deployer
+      fields.assignee = deployer
+    }
+
+    if (fields.status === 'released') {
+      const auditor = typeof (fields.auditor ?? before?.auditor) === 'string' && String(fields.auditor ?? before?.auditor).trim()
+        ? String(fields.auditor ?? before?.auditor)
+        : 'auditor'
+      fields.auditor = auditor
+      fields.assignee = auditor
+    }
+
+    if (fields.status === 'closed') {
+      fields.assignee = null
     }
 
     // Legacy rejection tracking for in_review → open (non-task types)
@@ -637,6 +953,52 @@ export async function PATCH(req: NextRequest) {
       fields.rejection_count = (before?.rejection_count ?? 0) + 1
       fields.last_rejected_at = now
       if (fields.reviewer_notes) fields.last_rejection_reason = fields.reviewer_notes
+    }
+  }
+
+  // ── Dual review state ──
+  const transitioningIntoCodeReview = fields.status === 'code_review' && before?.status !== 'code_review'
+
+  if (before) {
+    if (before.status === 'code_review' && ['tester', 'designer', 'ux'].includes(transitionedBy ?? '')) {
+      if (transitionedBy === 'tester') {
+        if (fields.tester_status === undefined && (fields.tester_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
+          fields.tester_status = fields.test_status === 'failed' || fields.status === 'open' ? 'failed' : 'passed'
+        }
+        fields.tested_by = transitionedBy
+        if (fields.tester_reviewed_at === undefined) fields.tester_reviewed_at = new Date().toISOString()
+      }
+
+      if (transitionedBy === 'designer' || transitionedBy === 'ux') {
+        if (fields.designer_status === undefined && (fields.designer_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
+          fields.designer_status = fields.test_status === 'failed' || fields.status === 'open' ? 'failed' : 'passed'
+        }
+        fields.designed_by = transitionedBy === 'ux' ? 'designer' : transitionedBy
+        if (fields.designer_reviewed_at === undefined) fields.designer_reviewed_at = new Date().toISOString()
+      }
+    }
+
+    if (before.status === 'code_review' || transitioningIntoCodeReview || fields.tester_status !== undefined || fields.designer_status !== undefined) {
+      const dual = computeDualReviewState({ ...before, ...fields } as Record<string, unknown>)
+
+      if (before.status === 'code_review' && dual.anyFailed) {
+        fields.status = 'open'
+        fields.assignee = resolveReopenAssignee(before as Record<string, unknown>)
+        fields.test_status = 'failed'
+        fields.rejection_count = (before?.rejection_count ?? 0) + 1
+        fields.last_rejected_at = new Date().toISOString()
+        const notes = [
+          typeof fields.tester_notes === 'string' && fields.tester_notes.trim() ? `Tester: ${fields.tester_notes.trim()}` : (typeof before.tester_notes === 'string' && before.tester_notes.trim() ? `Tester: ${before.tester_notes.trim()}` : null),
+          typeof fields.designer_notes === 'string' && fields.designer_notes.trim() ? `Designer: ${fields.designer_notes.trim()}` : (typeof before.designer_notes === 'string' && before.designer_notes.trim() ? `Designer: ${before.designer_notes.trim()}` : null),
+        ].filter(Boolean).join(' | ')
+        if (notes) fields.last_rejection_reason = notes
+      } else {
+        fields.test_status = dual.overallTestStatus
+        // Auto-advance to approved when both tester + designer pass
+        if (dual.bothPassed && before.status === 'code_review') {
+          fields.status = 'approved'
+        }
+      }
     }
   }
 
@@ -666,13 +1028,15 @@ export async function PATCH(req: NextRequest) {
     .select()
     .single()
 
-  // Graceful fallback for missing columns
-  if (error?.code === '42703') {
+  // Graceful fallback for missing columns (42703 = Postgres missing column; PGRST204 = PostgREST schema cache miss)
+  if (error?.code === '42703' || error?.code === 'PGRST204' || (typeof error?.message === 'string' && error.message.includes('schema cache'))) {
     const safeFields = { ...fields }
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
                         'started_at', 'submitted_at', 'completed_at', 'worked_by', 'regression_test',
                         'rejection_count', 'last_rejected_at', 'last_rejection_reason',
-                        'reviewer', 'reviewed_by', 'owner', 'deployer', 'auditor', 'transitioned_by']) {
+                        'reviewer', 'reviewed_by', 'owner', 'deployer', 'auditor', 'transitioned_by',
+                        'tester_status', 'tester_notes', 'tested_by', 'tester_reviewed_at',
+                        'designer_status', 'designer_notes', 'designed_by', 'designer_reviewed_at']) {
       delete safeFields[col]
     }
     const retry = await supabase
@@ -735,11 +1099,17 @@ export async function PATCH(req: NextRequest) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
-  // ── Activate next agent on transition ──
-  if (fields.status && data) {
+  // ── Activate assignee on every status transition ──
+  const NON_ACTIVATING_STATUSES = new Set(['backlog', 'defined', 'closed', 'creation'])
+  if (fields.status && data && !NON_ACTIVATING_STATUSES.has(fields.status)) {
     const newAssignee = data.assignee ?? fields.assignee
-    if (newAssignee && (fields.status === 'open' || fields.status === 'in_review')) {
-      activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
+    if (fields.status === 'code_review') {
+      // code_review: activate both tester + designer
+      activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
+    } else if (newAssignee) {
+      // All other active statuses: activate whoever the assignee is now
+      // Pass issueId so activation message can include explicit PATCH-to-in_progress instruction
+      activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status, data.id as string | undefined)
     }
   }
 

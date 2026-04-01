@@ -60,9 +60,11 @@ Before calling the issues API, verify:
 - Agents communicate via Supabase `agent_runs` table and issue status transitions.
 - KAOS delegates work by creating issues assigned to the appropriate agent.
 - Builder picks up `open` issues assigned to `builder` with `acceptance_criteria` set.
-- Tester reviews `in_review` issues and sets `test_status` to `passed` or `failed`.
-- For MC/Vespera issues that pass, Tester creates a Designer review child issue instead of marking done directly.
-- Designer reviews against design-system.md, then approves (parent → done) or rejects (creates fix task for builder).
+- Builder submits code-change work to `code_review`; assignee flips to `tester` and both Tester + Designer are activated in parallel.
+- Tester reviews the functional/regression lane and records `tester_status` + `tester_notes`.
+- Designer reviews the UX/product-impact lane (including backend-only fallout checks) and records `designer_status` + `designer_notes`.
+- A code-change issue cannot move from `code_review` to `approved` until both reviewer lanes pass; if either fails it returns to `open` for the issue owner/working agent with both note sets preserved.
+Approved work routes to `deployer`; released work routes to `auditor`; closing always clears assignee.
 
 ## Sprint Workflow
 
@@ -74,18 +76,68 @@ Before calling the issues API, verify:
    - Designer rejects → creates fix task for builder, parent reopened.
 5. KAOS monitors progress and adjusts priorities as needed.
 
+## Delegation-First Spawn Protocol
+
+**MANDATORY**: Every named-agent spawn MUST prepend workspace context to the task prompt.
+
+### Spawn Template
+
+When KAOS spawns any named agent, the prompt MUST follow this structure:
+
+```
+<workspace-context>
+{output of: bash scripts/spawn-context.sh /path/to/workspace}
+</workspace-context>
+
+You are {AgentName}. {Task description here.}
+```
+
+### How to Use
+
+1. **Generate context** before spawning:
+   ```bash
+   CONTEXT=$(bash scripts/spawn-context.sh /Users/kemuniagent/mission-control)
+   ```
+
+2. **Prepend to prompt**:
+   ```
+   <workspace-context>
+   ${CONTEXT}
+   </workspace-context>
+
+   You are Builder. Work on MC-491: replace inline styles with Tailwind tokens...
+   ```
+
+3. **Multi-workspace spawns** (e.g., Vespera):
+   ```bash
+   CONTEXT=$(bash scripts/spawn-context.sh /path/to/vespera)
+   ```
+
+### What Gets Loaded
+
+| File | Purpose | Loaded As |
+|------|---------|-----------|
+| `SOUL.md` | Agent-specific guidelines, constraints | Full content |
+| `AGENTS.md` | Agent table, communication protocol, workflow | Key sections (agent table, comms, workflow) |
+| `self-improving/memory.md` | Learned patterns, past decisions | Full content (if exists) |
+
+### Rules
+
+- KAOS must NEVER spawn an agent without running `spawn-context.sh` first.
+- The context block must appear before any task-specific instructions.
+- If a workspace directory does not exist, skip context for that workspace (do not fail).
+- The script is idempotent and read-only — safe to run at any time.
+
 ## Tester SOUL
 
-**After every Tester pass on a Mission Control or Vespera issue, the Tester MUST:**
+**Code review gate:**
 
-1. Keep the parent issue in `in_review` status with `test_status=passed`
-2. Create a Designer review child issue assigned to `designer`
-3. The Designer review issue includes acceptance criteria referencing `design-system.md`
-4. Do NOT mark the parent issue as `done` — Designer does that after approval
+1. Tester updates the shared issue with `tester_status=passed|failed` plus `tester_notes`.
+2. Designer updates the same issue with `designer_status=passed|failed` plus `designer_notes`.
+3. The issue stays in `code_review` until both lanes pass.
+4. If either lane fails, the issue returns to `open` and the owner/working agent addresses both note sets on the same task.
+5. `approved` assigns Deployer, `released` assigns Auditor, and `closed` always clears assignee.
 
-**Why:** UI issues need design-system compliance review before shipping. The Designer agent reviews against design-system.md and either approves (closes parent) or rejects (creates a fix task for builder).
-
-**Designer Review Flow:**
+**Designer review scope:**
 - Designer reviews: color tokens, spacing scale, typography, component consistency, responsive behavior, accessibility
-- If approved: Designer marks parent issue `done`
-- If rejected: Designer creates a fix task assigned to `builder` with specific UI issues, reopens parent issue
+- Backend-only work still gets a lighter Designer check for user-flow or UX fallout

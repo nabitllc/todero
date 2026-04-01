@@ -2,7 +2,7 @@
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 
-export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'in_review' | 'done'
+export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'in_review' | 'code_review' | 'approved' | 'completed' | 'done'
 
 // INF-203: Cost trend sparkline data model
 export interface CostSnapshot {
@@ -43,6 +43,15 @@ export interface Task {
   blocked_by?: string
   parent_id?: string
   task_key?: string
+  test_status?: string
+  tester_status?: string
+  tester_notes?: string
+  tested_by?: string
+  tester_reviewed_at?: string
+  designer_status?: string
+  designer_notes?: string
+  designed_by?: string
+  designer_reviewed_at?: string
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {

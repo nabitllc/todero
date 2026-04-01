@@ -3,6 +3,7 @@ import React from 'react'
 import { Chip, Dot, SH } from '@/lib/mc-atoms'
 import { Button, EmptyState as EmptyStateUI } from '@/components/ui'
 import { Users } from 'lucide-react'
+import AgentDetailView from '@/components/tabs/AgentDetailView'
 
 export default function AgentsTab({
   displayAgents,
@@ -140,38 +141,9 @@ export default function AgentsTab({
               </>)}
 
 
-              {/* Agent Detail Modal */}
+              {/* Agent Detail View */}
               {agentModal && (
-                <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={()=>setAgentModal(null)}>
-                  <div className="w-full max-w-md md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-4 max-h-[90vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center text-2xl md:text-3xl shrink-0" style={{background:agentModal.color+'18',border:'1px solid '+agentModal.color+'30'}}>
-                        {agentModal.emoji}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-white font-semibold text-lg">{agentModal.name}</p>
-                          <Dot status={agentModal.status} />
-                          {agentModal.status==='planned' && <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-white/10 text-white/50 bg-[#0f0f0f] font-semibold uppercase">Planned</span>}
-                        </div>
-                        <p className="text-white/50 text-sm">{agentModal.role}</p>
-                      </div>
-                      <Button variant="icon" onClick={()=>setAgentModal(null)} className="ml-auto">✕</Button>
-                    </div>
-                    <div className="space-y-3">
-                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Model</p><p className="text-white/70 text-sm font-mono">{agentModal.model}</p></div>
-                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Description</p><p className="text-white/70 text-sm leading-relaxed">{agentModal.desc}</p></div>
-                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Capabilities</p><div className="flex flex-wrap gap-1.5">{agentModal.capabilities.map((c:string)=><Chip key={c} label={c} color={agentModal.color}/>)}</div></div>
-                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Status</p><p className="text-white/70 text-sm">{agentModal.status}</p></div>
-                      {agentModal.status !== 'planned' && (
-                        <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Current Task</p><p className="text-white/70 text-sm italic">{act(agentModal.id)}</p></div>
-                      )}
-                      {(agentModal as any).activatesWhen && (
-                        <div><p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Activates When</p><p className="text-white/70 text-sm">{(agentModal as any).activatesWhen}</p></div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} />
               )}
             </div>
   )

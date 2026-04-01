@@ -1,0 +1,46 @@
+name: Commit Message Check
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  check-commit-messages:
+    name: Validate commit messages contain issue key
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit messages
+        run: |
+          # Check all commits in PR or push
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.event.after }}"
+          fi
+
+          COMMITS=$(git log --format="%H %s" ${BASE}..${HEAD} 2>/dev/null || git log --format="%H %s" -10)
+          FAILED=0
+
+          while IFS= read -r line; do
+            HASH=$(echo "$line" | cut -d' ' -f1)
+            MSG=$(echo "$line" | cut -d' ' -f2-)
+            if ! echo "$MSG" | grep -qE '(MC|INF|VES|KEM|TOD|TASK)-[0-9]+'; then
+              echo "❌ Missing issue key: $MSG ($HASH)"
+              FAILED=1
+            else
+              echo "✅ OK: $MSG"
+            fi
+          done <<< "$COMMITS"
+
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "All commit messages must include an issue key like: feat(MC-42): description"
+            exit 1
+          fi
