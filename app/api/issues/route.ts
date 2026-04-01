@@ -54,7 +54,9 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
 }
 
 function normalizeReviewStatus(value: unknown): string {
-  return typeof value === 'string' ? value.toLowerCase() : 'pending'
+  const s = typeof value === 'string' ? value.toLowerCase() : 'pending'
+  // Treat 'approved' as 'passed' for dual-review gate
+  return s === 'approved' ? 'passed' : s
 }
 
 function computeDualReviewState(issue: Record<string, unknown>) {
