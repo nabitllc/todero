@@ -26,12 +26,23 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'michael': null,
 }
 
-function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string) {
+function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
-  const msg = (status === 'in_review' || status === 'code_review')
-    ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
-    : `Issue ${taskKey} is ready: ${title}. Pick it up and start work.`
+  let msg: string
+  if (status === 'in_review' || status === 'code_review') {
+    msg = `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
+  } else if (status === 'open' && issueId) {
+    // Include explicit PATCH-to-in_progress instruction so agent claims the issue immediately.
+    // Builder also gets a self-chain instruction to pick up the next issue after code_review.
+    const inProgressPatch = `BEFORE starting work, PATCH to in_progress:\nPATCH http://localhost:3000/api/issues\n{"id":"${issueId}","status":"in_progress","transitioned_by":"${assignee}"}`
+    const selfChain = assignee === 'builder'
+      ? `\n\nAfter moving this issue to code_review, immediately check for your next open issue and pick it up:\nGET http://localhost:3000/api/issues?assignee=builder&status=open — if any exist, PATCH the top-priority one to in_progress and start work.`
+      : ''
+    msg = `Issue ${taskKey} is ready for you: ${title}.\n\n${inProgressPatch}${selfChain}`
+  } else {
+    msg = `Issue ${taskKey} is assigned to you (${status}): ${title}. Check it and take action.`
+  }
   const cmd = `openclaw agent --agent ${agentId} --message ${JSON.stringify(msg)} 2>/dev/null`
   execAsync(cmd, { timeout: 30000 }, () => {})
 }
@@ -1090,7 +1101,8 @@ export async function PATCH(req: NextRequest) {
       activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
     } else if (newAssignee) {
       // All other active statuses: activate whoever the assignee is now
-      activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
+      // Pass issueId so activation message can include explicit PATCH-to-in_progress instruction
+      activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status, data.id as string | undefined)
     }
   }
 
