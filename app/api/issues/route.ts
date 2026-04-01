@@ -34,10 +34,11 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
     msg = `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
   } else if (status === 'open' && issueId) {
     // Include explicit PATCH-to-in_progress instruction so agent claims the issue immediately.
-    // Builder also gets a self-chain instruction to pick up the next issue after code_review.
+    // Agents with queue-driven lanes also get a self-chain instruction (TOD-602).
+    const SELF_CHAIN_AGENTS = new Set(['builder', 'ops', 'scout', 'po'])
     const inProgressPatch = `BEFORE starting work, PATCH to in_progress:\nPATCH http://localhost:3000/api/issues\n{"id":"${issueId}","status":"in_progress","transitioned_by":"${assignee}"}`
-    const selfChain = assignee === 'builder'
-      ? `\n\nAfter moving this issue to code_review, immediately check for your next open issue and pick it up:\nGET http://localhost:3000/api/issues?assignee=builder&status=open — if any exist, PATCH the top-priority one to in_progress and start work.`
+    const selfChain = SELF_CHAIN_AGENTS.has(assignee)
+      ? `\n\nAfter completing this issue and patching to code_review (or completed for ops), immediately check for your next open issue and start it:\nGET http://localhost:3000/api/issues?assignee=${assignee}&status=open — if any exist, PATCH the top-priority one to in_progress and start work immediately. Do not wait for another trigger.`
       : ''
     msg = `Issue ${taskKey} is ready for you: ${title}.\n\n${inProgressPatch}${selfChain}`
   } else {
