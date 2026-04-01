@@ -159,6 +159,7 @@ const TYPE_COLORS: Record<string,string> = {
 function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, projectFilter }: { featureFilter?: string; featureFilterName?: string; onClearFeatureFilter?: () => void; projectFilter?: string | null }) {
   const [tasks, setTasks]         = useState<Task[]>([])
   const [loading, setLoading]     = useState(true)
+  const [loadError, setLoadError] = useState<string|null>(null)
   const [dragId, setDragId]       = useState<string|null>(null)
   const [editTask, setEditTask]   = useState<Task|null>(null)
   const [newTask, setNewTask]     = useState<Partial<Task>|null>(null)
@@ -207,11 +208,22 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const hasAnyFilter = filterTypes.length > 0 || filterPriorities.length > 0 || filterAssignees.length > 0 || filterSprint !== '' || !!featureFilter
 
   const fetchTasks = useCallback(async () => {
+    setLoadError(null)
     try {
       const res = await fetch('/api/issues')
-      if (res.ok) { const d = await res.json(); setTasks(d) }
-    } catch { /* ignore */ }
-    finally { setLoading(false) }
+      if (res.ok) {
+        const d = await res.json()
+        setTasks(d)
+      } else {
+        let msg = `Failed to load issues (HTTP ${res.status})`
+        try { const e = await res.json(); if (e?.error) msg = e.error } catch {}
+        setLoadError(msg)
+      }
+    } catch (e: any) {
+      setLoadError(e?.message ?? 'Network error — could not reach /api/issues')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
@@ -422,6 +434,21 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           </div>
         )}
       </div>
+
+      {/* TOD-654: Truthful error state — never silently show empty board on fetch failure */}
+      {loadError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/8 px-4 py-3 flex items-start gap-3">
+          <span className="text-red-400 text-sm shrink-0">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-red-400 text-sm font-medium">Failed to load issues</p>
+            <p className="text-red-400/70 text-xs mt-0.5 break-all">{loadError}</p>
+          </div>
+          <button onClick={fetchTasks}
+            className="shrink-0 text-xs px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 font-medium transition-colors">
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* MC-127: Michael's "Needs You" queue */}
       {(() => {
