@@ -750,6 +750,40 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
+  // ── KAOS backlog reset (TOD-571) ─────────────────────────────────────────
+  // main/KAOS can force-reset any non-closed issue to backlog regardless of current status.
+  // Bypasses normal workflow transition engine — governance/admin path only.
+  // Closed issues are still immutable (checked above).
+  if (fields.status === 'backlog' && before?.status !== 'backlog') {
+    const KAOS_ROLES = ['main', 'po', 'ops']
+    if (!transitionedBy || !KAOS_ROLES.includes(transitionedBy)) {
+      return NextResponse.json(
+        { error: 'Only main/po/ops can reset an issue to backlog.', field: 'transitioned_by' },
+        { status: 403 }
+      )
+    }
+    // Auditability: stamp who reset it and when
+    fields.implementation_notes = fields.implementation_notes
+      ?? `Backlog reset by ${transitionedBy} at ${new Date().toISOString()}.`
+    // Clear execution state so issue re-enters pipeline cleanly
+    // Bypass workflow engine for this transition — governance/admin path
+    const { data: resetData, error: resetErr } = await supabase
+      .from('issues')
+      .update({
+        ...fields,
+        status: 'backlog',
+        worked_by: null,
+        started_at: null,
+        submitted_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single()
+    if (resetErr) return NextResponse.json({ error: resetErr.message }, { status: 500 })
+    return NextResponse.json(resetData)
+  }
+
   // ── One-at-a-time lane enforcement ──
   // If transitioning to in_progress, ensure no other issue with the same worked_by is already in_progress.
   if (fields.status === 'in_progress') {
