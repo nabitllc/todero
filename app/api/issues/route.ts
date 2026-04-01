@@ -1052,7 +1052,7 @@ export async function PATCH(req: NextRequest) {
     const newAssignee = data.assignee ?? fields.assignee
     if (fields.status === 'code_review') {
       activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
-    } else if (newAssignee && (fields.status === 'open' || fields.status === 'in_review' || fields.status === 'approved' || fields.status === 'released')) {
+    } else if (newAssignee && (fields.status === 'open' || fields.status === 'in_review' || fields.status === 'approved' || fields.status === 'released' || fields.status === 'product_review')) {
       activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
     }
   }
