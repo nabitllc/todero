@@ -992,6 +992,10 @@ export async function PATCH(req: NextRequest) {
         if (notes) fields.last_rejection_reason = notes
       } else {
         fields.test_status = dual.overallTestStatus
+        // Auto-advance to approved when both tester + designer pass
+        if (dual.bothPassed && before.status === 'code_review') {
+          fields.status = 'approved'
+        }
       }
     }
   }
