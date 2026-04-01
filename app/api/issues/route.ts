@@ -36,11 +36,23 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
     // Include explicit PATCH-to-in_progress instruction so agent claims the issue immediately.
     // Agents with queue-driven lanes also get a self-chain instruction (TOD-602).
     const SELF_CHAIN_AGENTS = new Set(['builder', 'ops', 'scout', 'po'])
+    // Per-agent done-transition targets (TOD-603)
+    const DONE_STATUS: Record<string, string> = {
+      builder: 'code_review',
+      tester: 'code_review (approve) or open (reject)',
+      designer: 'code_review (approve) or open (reject)',
+      ops: 'product_review',
+      scout: 'completed',
+      po: 'product_review',
+      auditor: 'completed',
+    }
+    const doneStatus = DONE_STATUS[assignee] ?? 'code_review'
     const inProgressPatch = `BEFORE starting work, PATCH to in_progress:\nPATCH http://localhost:3000/api/issues\n{"id":"${issueId}","status":"in_progress","transitioned_by":"${assignee}"}`
+    const doneInstruction = `\n\nWhen done: PATCH to ${doneStatus} with implementation_notes + transitioned_by="${assignee}".`
     const selfChain = SELF_CHAIN_AGENTS.has(assignee)
-      ? `\n\nAfter completing this issue and patching to code_review (or completed for ops), immediately check for your next open issue and start it:\nGET http://localhost:3000/api/issues?assignee=${assignee}&status=open — if any exist, PATCH the top-priority one to in_progress and start work immediately. Do not wait for another trigger.`
+      ? `\n\nAfter completing this issue, immediately check for your next open issue:\nGET http://localhost:3000/api/issues?assignee=${assignee}&status=open — if any exist, PATCH the top-priority one to in_progress and start work immediately. Do not wait for another trigger.`
       : ''
-    msg = `Issue ${taskKey} is ready for you: ${title}.\n\n${inProgressPatch}${selfChain}`
+    msg = `Issue ${taskKey} is ready for you: ${title}.\n\n${inProgressPatch}${doneInstruction}${selfChain}`
   } else {
     msg = `Issue ${taskKey} is assigned to you (${status}): ${title}. Check it and take action.`
   }
