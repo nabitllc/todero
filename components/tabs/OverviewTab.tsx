@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { AGENT_DISPLAY, daysUntil, daysSince, miniPct, KEMUNI_DEADLINE, KEMUNI_START, VESPERA_DEADLINE, VESPERA_START } from '@/lib/mc-constants'
 import { Bar, SH } from '@/lib/mc-atoms'
+import ActiveAgentsCard from '@/components/ActiveAgentsCard'
 
 // INF-77: Needs-attention block (high/critical open issues)
 function NeedsAttentionBlock() {
@@ -456,6 +457,9 @@ export default function OverviewTab({
                   )
                 })}
               </div>
+
+              {/* TOD-649: Active Agents live status */}
+              <ActiveAgentsCard agentCurrentTask={liveStatus?.agentCurrentTask} />
 
               {/* ── Needs Your Attention (INF-77) ── */}
               <NeedsAttentionBlock />
