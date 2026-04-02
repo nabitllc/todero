@@ -422,6 +422,26 @@ async function validateWorkflowTransition(
 // ── executePostFunctions ──────────────────────────────────────────────────────
 // Applies post-transition side effects: assignee changes, Discord notifications,
 // rejection tracking, timestamp writes.
+async function getActiveSprintNameForProject(project: string | null | undefined): Promise<string | null> {
+  if (!project) return null
+
+  const { data, error } = await supabase
+    .from('sprints')
+    .select('name')
+    .eq('project', project)
+    .eq('status', 'active')
+    .order('start_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.warn('[set_active_sprint] failed to fetch active sprint:', error.message)
+    return null
+  }
+
+  return (data?.name as string | undefined) ?? null
+}
+
 async function executePostFunctions(
   issue: Record<string, unknown>,
   toStatus: string,
@@ -498,6 +518,17 @@ async function executePostFunctions(
     if (action === 'set_timestamp') {
       const tsField = params.field as string
       fields[tsField] = new Date().toISOString()
+    }
+
+    if (action === 'set_active_sprint') {
+      const currentSprint = (fields.sprint ?? updatedIssue.sprint ?? issue.sprint) as string | null | undefined
+      const project = (fields.project ?? updatedIssue.project ?? issue.project) as string | null | undefined
+      if (!currentSprint && project) {
+        const activeSprint = await getActiveSprintNameForProject(project)
+        if (activeSprint) {
+          fields.sprint = activeSprint
+        }
+      }
     }
 
     if (action === 'activate_code_review_agents') {
