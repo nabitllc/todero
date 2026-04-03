@@ -28,6 +28,7 @@ import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
 import QuickActionFab from '@/components/QuickActionFab'
+import SidebarNav from '@/components/SidebarNav'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -358,33 +359,14 @@ export default function Home() {
       <BusinessRail selected={selectedBusiness} onSelect={selectBusiness} onNew={() => setShowOnboarding(true)} refreshKey={businessRailRefresh} />
       {showOnboarding && <OnboardingWizard onComplete={(name) => { selectBusiness(name); setShowOnboarding(false); setBusinessRailRefresh(k => k + 1) }} onClose={() => setShowOnboarding(false)} />}
 
-      {/* SIDEBAR */}
-      <aside className="w-44 shrink-0 hidden lg:flex flex-col border-r border-white/10 sticky top-0 h-screen bg-neutral-950">
-        <div className="px-4 h-11 flex items-center border-b border-white/10 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white">N</div>
-            <div><p className="text-white text-xs font-semibold leading-tight">Todero</p></div>
-          </div>
-        </div>
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {NAV.map(item => {
-            if (item.id === 'divider') return <div key="divider" className="border-t border-white/10 my-2" />
-            const LIcon = LUCIDE_ICONS[item.id]
-            return (
-              <button key={item.id} onClick={() => { navigate(item.id); if (item.id === 'chat') setUnreadChat(false) }}
-                className={'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left transition-all duration-200 border-l-2 ' + (tab === item.id ? 'bg-white/10 text-white border-white' : 'text-white/50 hover:text-white/70 hover:bg-white/5 border-transparent')}>
-                {LIcon ? <LIcon size={14} className="shrink-0" /> : <span className="text-sm shrink-0">{item.icon}</span>}
-                <span className="text-xs font-medium">{item.label}</span>
-                {item.id === 'chat' && unreadChat && tab !== 'chat' && <span className="ml-auto w-2 h-2 rounded-full bg-red-500 shrink-0 animate-pulse" />}
-              </button>
-            )
-          })}
-        </nav>
-        <div className="px-4 py-3 border-t border-white/10 space-y-1">
-          <div className="flex items-center gap-1.5"><Dot status="active" sm /><span className="text-white/30 text-[10px]">All nominal</span></div>
-          <p className="text-white/20 text-[10px] font-mono">{clock}</p>
-        </div>
-      </aside>
+      {/* SIDEBAR — TOD-538: grouped nav extracted to SidebarNav component */}
+      <SidebarNav
+        tab={tab}
+        navigate={navigate}
+        unreadChat={unreadChat}
+        setUnreadChat={setUnreadChat}
+        clock={clock}
+      />
 
       {/* MOBILE BOTTOM NAV */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-neutral-950 border-t border-white/10 flex justify-around px-1" style={{paddingBottom:'env(safe-area-inset-bottom, 16px)'}}>
