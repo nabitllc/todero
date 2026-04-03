@@ -164,9 +164,15 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
 
                   {/* Current issue */}
                   {agent.issueKey ? (
-                    <div className="mt-0.5">
+                    <div className="mt-0.5 flex items-center gap-1 flex-wrap">
                       <span className="text-[10px] font-mono text-white/40">{agent.issueKey}</span>
-                      <span className="text-[10px] text-white/30 mx-1">·</span>
+                      {agent.issueStatus && (
+                        <>
+                          <span className="text-[10px] text-white/30">·</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] text-white/40 font-medium">{agent.issueStatus.replace(/_/g, ' ')}</span>
+                        </>
+                      )}
+                      <span className="text-[10px] text-white/30">·</span>
                       <span className="text-[10px] text-white/50 truncate" style={{ maxWidth: '200px', display: 'inline-block', verticalAlign: 'bottom' }}>
                         {agent.issueTitle}
                       </span>
