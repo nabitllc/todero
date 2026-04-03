@@ -162,20 +162,19 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
                     )}
                   </div>
 
-                  {/* Current issue */}
+                  {/* Current issue — key · title [status] — status only shown when issue exists (AC 4) */}
                   {agent.issueKey ? (
                     <div className="mt-0.5 flex items-center gap-1 flex-wrap">
                       <span className="text-[10px] font-mono text-white/40">{agent.issueKey}</span>
-                      {agent.issueStatus && (
-                        <>
-                          <span className="text-[10px] text-white/30">·</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.06] text-white/40 font-medium">{agent.issueStatus.replace(/_/g, ' ')}</span>
-                        </>
-                      )}
                       <span className="text-[10px] text-white/30">·</span>
-                      <span className="text-[10px] text-white/50 truncate" style={{ maxWidth: '200px', display: 'inline-block', verticalAlign: 'bottom' }}>
+                      <span className="text-[10px] text-white/50 truncate" style={{ maxWidth: '160px', display: 'inline-block', verticalAlign: 'bottom' }}>
                         {agent.issueTitle}
                       </span>
+                      {agent.issueStatus && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/30 font-mono ml-1 shrink-0">
+                          {agent.issueStatus.replace(/_/g, ' ')}
+                        </span>
+                      )}
                     </div>
                   ) : agent.status === 'active' ? (
                     <div className="mt-0.5 text-[10px] text-white/30">Working</div>
