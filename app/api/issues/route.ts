@@ -16,6 +16,13 @@ import {
   isCompletedIssueStatus,
   isTerminalIssueStatus,
 } from '@/lib/issue-lifecycle'
+import {
+  aggregateReviewerNotes,
+  applyExecutionStatusRouting,
+  computeDualReviewState,
+  normalizeReviewStatus,
+  resolveReopenAssignee,
+} from '@/lib/issue-routing'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -45,27 +52,6 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
 function activateCodeReviewAgents(taskKey: string, title: string) {
   activateAgentAsync('tester', taskKey, title, 'code_review')
   activateAgentAsync('designer', taskKey, title, 'code_review')
-}
-
-function normalizeReviewStatus(value: unknown): string {
-  return typeof value === 'string' ? value.toLowerCase() : 'pending'
-}
-
-function computeDualReviewState(issue: Record<string, unknown>) {
-  const testerStatus = normalizeReviewStatus(issue.tester_status)
-  const designerStatus = normalizeReviewStatus(issue.designer_status)
-  const testerPassed = testerStatus === 'passed'
-  const designerPassed = designerStatus === 'passed'
-  const anyFailed = testerStatus === 'failed' || designerStatus === 'failed'
-  const bothPassed = testerPassed && designerPassed
-  const overallTestStatus = bothPassed ? 'passed' : anyFailed ? 'failed' : 'pending'
-
-  return { testerStatus, designerStatus, testerPassed, designerPassed, anyFailed, bothPassed, overallTestStatus }
-}
-
-function resolveReopenAssignee(issue: Record<string, unknown> | null | undefined) {
-  const preferred = issue?.owner ?? issue?.worked_by
-  return typeof preferred === 'string' && preferred.trim() ? preferred : 'builder'
 }
 
 // ── Discord helpers ───────────────────────────────────────────────────────────
@@ -891,13 +877,8 @@ export async function PATCH(req: NextRequest) {
       if (effectiveAssignee && !fields.worked_by) fields.worked_by = effectiveAssignee
     }
 
-    if (fields.status === 'in_review') fields.submitted_at = now
+    if (fields.status === 'in_review' || fields.status === 'code_review') fields.submitted_at = now
     if (fields.status === 'code_review') {
-      fields.submitted_at = now
-      fields.assignee = 'tester'
-      fields.tester_status = 'pending'
-      fields.designer_status = 'pending'
-      if (fields.test_status === undefined) fields.test_status = 'pending'
       if (fields.tester_notes === undefined && before?.tester_notes == null) fields.tester_notes = null
       if (fields.designer_notes === undefined && before?.designer_notes == null) fields.designer_notes = null
       if (fields.tested_by === undefined && before?.tested_by == null) fields.tested_by = null
@@ -912,29 +893,7 @@ export async function PATCH(req: NextRequest) {
       if (completingAssignee && !fields.reviewed_by) fields.reviewed_by = completingAssignee
     }
 
-    if (fields.status === 'open' && !fields.assignee) {
-      fields.assignee = resolveReopenAssignee(before as Record<string, unknown> | undefined)
-    }
-
-    if (fields.status === 'approved') {
-      const deployer = typeof (fields.deployer ?? before?.deployer) === 'string' && String(fields.deployer ?? before?.deployer).trim()
-        ? String(fields.deployer ?? before?.deployer)
-        : 'deployer'
-      fields.deployer = deployer
-      fields.assignee = deployer
-    }
-
-    if (fields.status === 'released') {
-      const auditor = typeof (fields.auditor ?? before?.auditor) === 'string' && String(fields.auditor ?? before?.auditor).trim()
-        ? String(fields.auditor ?? before?.auditor)
-        : 'auditor'
-      fields.auditor = auditor
-      fields.assignee = auditor
-    }
-
-    if (fields.status === 'closed') {
-      fields.assignee = null
-    }
+    applyExecutionStatusRouting(before as Record<string, unknown> | undefined, fields as Record<string, unknown>)
 
     // Legacy rejection tracking for in_review → open (non-task types)
     const issueType = (fields.type ?? before?.type ?? 'task') as string
@@ -968,7 +927,8 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (before.status === 'code_review' || transitioningIntoCodeReview || fields.tester_status !== undefined || fields.designer_status !== undefined) {
-      const dual = computeDualReviewState({ ...before, ...fields } as Record<string, unknown>)
+      const mergedReviewState = { ...before, ...fields } as Record<string, unknown>
+      const dual = computeDualReviewState(mergedReviewState)
 
       if (before.status === 'code_review' && dual.anyFailed) {
         fields.status = 'open'
@@ -976,13 +936,22 @@ export async function PATCH(req: NextRequest) {
         fields.test_status = 'failed'
         fields.rejection_count = (before?.rejection_count ?? 0) + 1
         fields.last_rejected_at = new Date().toISOString()
-        const notes = [
-          typeof fields.tester_notes === 'string' && fields.tester_notes.trim() ? `Tester: ${fields.tester_notes.trim()}` : (typeof before.tester_notes === 'string' && before.tester_notes.trim() ? `Tester: ${before.tester_notes.trim()}` : null),
-          typeof fields.designer_notes === 'string' && fields.designer_notes.trim() ? `Designer: ${fields.designer_notes.trim()}` : (typeof before.designer_notes === 'string' && before.designer_notes.trim() ? `Designer: ${before.designer_notes.trim()}` : null),
-        ].filter(Boolean).join(' | ')
+        const notes = aggregateReviewerNotes(mergedReviewState)
         if (notes) fields.last_rejection_reason = notes
       } else {
         fields.test_status = dual.overallTestStatus
+
+        if (before.status === 'code_review' && dual.bothPassed && fields.status !== 'open') {
+          fields.status = 'approved'
+          if (fields.resolution_type === undefined && before?.resolution_type == null) {
+            fields.resolution_type = 'code_change'
+          }
+          if (fields.reviewer_notes === undefined) {
+            const notes = aggregateReviewerNotes(mergedReviewState)
+            if (notes) fields.reviewer_notes = notes
+          }
+          applyExecutionStatusRouting(before as Record<string, unknown>, fields as Record<string, unknown>)
+        }
       }
     }
   }

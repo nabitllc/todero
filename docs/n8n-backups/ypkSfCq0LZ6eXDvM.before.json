@@ -1,0 +1,187 @@
+{
+  "updatedAt": "2026-04-01T03:04:00.813Z",
+  "createdAt": "2026-03-30T15:24:08.926Z",
+  "id": "ypkSfCq0LZ6eXDvM",
+  "name": "\u25b6\ufe0f Auto-Activate Agent on open status \u2014 every 3 min",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Every 3 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Activate Assigned Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Auto-activate assigned agent when issue moves to open status\n// Backlog-first policy: skip if >10 issues in open queue\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst h = { apikey: SK, Authorization: 'Bearer ' + SK };\nconst MC_API = 'http://localhost:3000/api/issues';\nconst MAX_OPEN_QUEUE = 9999; // cap retired per TOD-572\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.triggered) staticData.triggered = {};\nconst now = Date.now();\nfor (const [id, ts] of Object.entries(staticData.triggered)) {\n  if (now - ts > 45 * 60 * 1000) delete staticData.triggered[id]; // re-trigger after 45min if still open\n}\n\nconst allOpen = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=eq.open&select=id',\n  headers: h\n});\nconst openCount = Array.isArray(allOpen) ? allOpen.length : 0;\n\nif (openCount > MAX_OPEN_QUEUE) {\n  return [{ json: { skipped: true, reason: 'open_queue_full', openCount } }];\n}\n\nconst issues = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=in.(open,product_review)&select=id,task_key,title,assignee,acceptance_criteria,started_at,status',\n  headers: h\n});\n\nconst AGENT_MAP = {\n  'tester': 'tester', 'builder': 'builder', 'scout': 'scout', 'ops': 'ops',\n  'kemuni-sme': 'kemuni-sme', 'vespera-sme': 'vespera-sme', 'main': 'main', 'KAOS': 'main',\n};\nconst TRIGGER_URL = 'http://127.0.0.1:8787/trigger-agent';\nconst results = [];\n\nfor (const issue of issues) {\n  if (staticData.triggered[issue.id]) continue; // will expire after 45min\n  const agentId = AGENT_MAP.hasOwnProperty(issue.assignee) ? AGENT_MAP[issue.assignee] : null;\n  if (!agentId) { results.push({ key: issue.task_key, action: 'skipped: ' + issue.assignee }); continue; }\n\n  const validAgents = ['tester','builder','scout','ops','kemuni-sme','vespera-sme','main','po','designer','auditor','deployer','ux'];\n  if (!validAgents.includes(agentId)) { results.push({ key: issue.task_key, action: 'skipped: ' + agentId }); continue; }\n\n  const msg = 'Issue ' + issue.task_key + ' is ready: ' + issue.title + '. Pick it up and start work.';\n  try { await helpers.httpRequest({ method: 'POST', url: TRIGGER_URL, headers: {'Content-Type':'application/json'}, body: JSON.stringify({agentId, message: msg}) }); } catch(e) {}\n\n  staticData.triggered[issue.id] = now;\n\n  try {\n    await helpers.httpRequest({\n      method: 'PATCH', url: MC_API,\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ id: issue.id, started_at: new Date().toISOString() })\n    });\n  } catch(e) {}\n\n  results.push({ key: issue.task_key, agent: agentId, action: 'activated' });\n}\nreturn [{ json: { processed: results.length, openCount, results, timestamp: new Date().toISOString() } }];\n"
+      }
+    }
+  ],
+  "connections": {
+    "Every 3 min": {
+      "main": [
+        [
+          {
+            "node": "Activate Assigned Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Every 3 min": {
+      "recurrenceRules": []
+    },
+    "global": {
+      "triggered": {
+        "8df27fdd-6ec1-496c-86a5-ae1f29117d4f": 1775338798033,
+        "5ae8d30b-2c79-4ef4-b8b8-d21af16d0072": 1775338798033,
+        "417afb08-f9be-4f8e-bfc6-9a26fc5c0122": 1775338798033,
+        "111584a0-e565-4597-bbec-d24c9f8e95d4": 1775338798033,
+        "5702c3eb-4858-4bdf-b618-58887bbff62c": 1775338798033,
+        "eff55b17-d5e2-41f2-958e-08068db640e9": 1775338798033,
+        "e07f41c6-ea3a-4c76-bc23-65ed24b82ce6": 1775338798033,
+        "9b50b348-bf66-4ab9-884d-850002eb0057": 1775338798033,
+        "fc315ddb-9eec-4f35-90ae-6f13eed4d4da": 1775338798033,
+        "7ca1f4bd-414a-4a4e-acf6-0c5b4aeb878c": 1775338798033,
+        "75e60ecb-7531-42ca-bc47-5de22e12795b": 1775338798033,
+        "082a9021-ff8d-40d1-9c59-c3c50cb7f356": 1775338798033,
+        "686c5adb-6a87-498a-88dd-6964593fd632": 1775338798033,
+        "f75a8553-421c-4e51-b372-95cdb4e92058": 1775338798033
+      }
+    }
+  },
+  "meta": null,
+  "pinData": null,
+  "versionId": "34cc13e4-f93a-4b4e-b686-b7c15a893370",
+  "activeVersionId": "34cc13e4-f93a-4b4e-b686-b7c15a893370",
+  "versionCounter": 649,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-30T15:24:08.929Z",
+      "createdAt": "2026-03-30T15:24:08.929Z",
+      "role": "workflow:owner",
+      "workflowId": "ypkSfCq0LZ6eXDvM",
+      "projectId": "bOWgkrOlqFKuGXK1",
+      "project": {
+        "updatedAt": "2026-03-22T21:28:35.092Z",
+        "createdAt": "2026-03-22T21:24:40.676Z",
+        "id": "bOWgkrOlqFKuGXK1",
+        "name": "Michael Saenz <kemuniagent@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "6ae0c0d5-2400-4ac1-95bb-d1c48f343b38"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-04-01T03:04:00.814Z",
+    "createdAt": "2026-04-01T03:04:00.814Z",
+    "versionId": "34cc13e4-f93a-4b4e-b686-b7c15a893370",
+    "workflowId": "ypkSfCq0LZ6eXDvM",
+    "nodes": [
+      {
+        "id": "n1",
+        "name": "Every 3 min",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1,
+        "position": [
+          240,
+          300
+        ],
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 3
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "n2",
+        "name": "Activate Assigned Agent",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          480,
+          300
+        ],
+        "parameters": {
+          "jsCode": "// Auto-activate assigned agent when issue moves to open status\n// Backlog-first policy: skip if >10 issues in open queue\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst h = { apikey: SK, Authorization: 'Bearer ' + SK };\nconst MC_API = 'http://localhost:3000/api/issues';\nconst MAX_OPEN_QUEUE = 9999; // cap retired per TOD-572\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.triggered) staticData.triggered = {};\nconst now = Date.now();\nfor (const [id, ts] of Object.entries(staticData.triggered)) {\n  if (now - ts > 45 * 60 * 1000) delete staticData.triggered[id]; // re-trigger after 45min if still open\n}\n\nconst allOpen = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=eq.open&select=id',\n  headers: h\n});\nconst openCount = Array.isArray(allOpen) ? allOpen.length : 0;\n\nif (openCount > MAX_OPEN_QUEUE) {\n  return [{ json: { skipped: true, reason: 'open_queue_full', openCount } }];\n}\n\nconst issues = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=in.(open,product_review)&select=id,task_key,title,assignee,acceptance_criteria,started_at,status',\n  headers: h\n});\n\nconst AGENT_MAP = {\n  'tester': 'tester', 'builder': 'builder', 'scout': 'scout', 'ops': 'ops',\n  'kemuni-sme': 'kemuni-sme', 'vespera-sme': 'vespera-sme', 'main': 'main', 'KAOS': 'main',\n};\nconst TRIGGER_URL = 'http://127.0.0.1:8787/trigger-agent';\nconst results = [];\n\nfor (const issue of issues) {\n  if (staticData.triggered[issue.id]) continue; // will expire after 45min\n  const agentId = AGENT_MAP.hasOwnProperty(issue.assignee) ? AGENT_MAP[issue.assignee] : null;\n  if (!agentId) { results.push({ key: issue.task_key, action: 'skipped: ' + issue.assignee }); continue; }\n\n  const validAgents = ['tester','builder','scout','ops','kemuni-sme','vespera-sme','main','po','designer','auditor','deployer','ux'];\n  if (!validAgents.includes(agentId)) { results.push({ key: issue.task_key, action: 'skipped: ' + agentId }); continue; }\n\n  const msg = 'Issue ' + issue.task_key + ' is ready: ' + issue.title + '. Pick it up and start work.';\n  try { await helpers.httpRequest({ method: 'POST', url: TRIGGER_URL, headers: {'Content-Type':'application/json'}, body: JSON.stringify({agentId, message: msg}) }); } catch(e) {}\n\n  staticData.triggered[issue.id] = now;\n\n  try {\n    await helpers.httpRequest({\n      method: 'PATCH', url: MC_API,\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ id: issue.id, started_at: new Date().toISOString() })\n    });\n  } catch(e) {}\n\n  results.push({ key: issue.task_key, agent: agentId, action: 'activated' });\n}\nreturn [{ json: { processed: results.length, openCount, results, timestamp: new Date().toISOString() } }];\n"
+        }
+      }
+    ],
+    "connections": {
+      "Every 3 min": {
+        "main": [
+          [
+            {
+              "node": "Activate Assigned Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Michael Saenz",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-04-01T03:04:00.845Z",
+        "id": 334,
+        "workflowId": "ypkSfCq0LZ6eXDvM",
+        "versionId": "34cc13e4-f93a-4b4e-b686-b7c15a893370",
+        "event": "activated",
+        "userId": "6ae0c0d5-2400-4ac1-95bb-d1c48f343b38"
+      },
+      {
+        "createdAt": "2026-04-01T03:04:00.833Z",
+        "id": 333,
+        "workflowId": "ypkSfCq0LZ6eXDvM",
+        "versionId": "34cc13e4-f93a-4b4e-b686-b7c15a893370",
+        "event": "deactivated",
+        "userId": "6ae0c0d5-2400-4ac1-95bb-d1c48f343b38"
+      }
+    ]
+  }
+}
