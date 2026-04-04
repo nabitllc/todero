@@ -10,6 +10,7 @@ import {
   normalizeProjectName,
   getProjectPrefix,
 } from '@/lib/constants'
+import { withIssueStatusCategory, withIssueStatusCategoryList } from '@/lib/status-category'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -550,7 +551,7 @@ export async function GET(req: NextRequest) {
       .maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
-    return NextResponse.json(data)
+    return NextResponse.json(withIssueStatusCategory(data))
   }
 
   const { data, error } = await supabase
@@ -558,7 +559,7 @@ export async function GET(req: NextRequest) {
     .select('*')
     .order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  return NextResponse.json(withIssueStatusCategoryList(data))
 }
 
 // ── POST ──────────────────────────────────────────────────────────────────────
@@ -742,7 +743,7 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  return NextResponse.json(withIssueStatusCategory(data))
 }
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
@@ -1149,7 +1150,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json(data ? withIssueStatusCategory(data) : data)
 }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────

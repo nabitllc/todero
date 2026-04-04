@@ -43,6 +43,7 @@ export interface Task {
   blocked_by?: string
   parent_id?: string
   task_key?: string
+  status_category?: 'Planned' | 'Ongoing' | 'SignOff' | 'Done' | null
   test_status?: string
   tester_status?: string
   tester_notes?: string
