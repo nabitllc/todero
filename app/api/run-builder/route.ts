@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 
 const execAsync = promisify(exec)
 
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: 'No DoR-ready builder tasks (need description, test_tier, acceptance_criteria)' })
   }
 
-  // ── INF-186: Dependency blocking — skip issues where blocked_by issue is not done ──
+  // ── INF-186: Dependency blocking — skip issues where blocked_by issue is not in a finished state ──
   const blockedByIds = tasks
     .filter(t => t.blocked_by)
     .map(t => t.blocked_by!)
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
   const readyTasks = tasks.filter(t => {
     if (!t.blocked_by) return true
     const blockerStatus = blockerStatuses[t.blocked_by]
-    return blockerStatus === 'done'
+    return satisfiesIssueDependency(blockerStatus)
   })
 
   if (readyTasks.length === 0) {

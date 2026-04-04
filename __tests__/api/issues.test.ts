@@ -59,7 +59,7 @@ describe('VALID_STATUSES', () => {
   it('contains lifecycle statuses', () => {
     expect(VALID_STATUSES).toContain('backlog')
     expect(VALID_STATUSES).toContain('in_progress')
-    expect(VALID_STATUSES).toContain('done')
+    expect(VALID_STATUSES).toContain('completed')
     expect(VALID_STATUSES).toContain('closed')
   })
 

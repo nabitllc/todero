@@ -1,7 +1,7 @@
 #!/bin/bash
 # INF-171: Tester agent — reviews in_review issues against acceptance criteria
 # Called by n8n or manually. Reviews P0/P1 first, then P2.
-# Sets test_status=passed → status=done (or Designer gate for MC/Vespera), or test_status=failed → status=open with notes.
+# Sets test_status=passed → status=completed (or Designer gate for MC/Vespera), or test_status=failed → status=open with notes.
 set -euo pipefail
 
 SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
@@ -123,16 +123,16 @@ $([ "$TIER" != "P0" ] && [ "$TIER" != "P1" ] && echo "4. ")Output your verdict a
       # Mark test_status=passed but keep in_review (awaiting Designer)
       curl -sf -X PATCH "$MC_API/issues" \
         -H "Content-Type: application/json" \
-        -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\n**Status:** Awaiting Designer review before done.\"}" >/dev/null
+        -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\n**Status:** Awaiting Designer review before completion.\"}" >/dev/null
 
       # Create Designer review child issue
-      DESIGNER_AC="Review $KEY against design-system.md. Check: color tokens, spacing scale, typography, component consistency, responsive behavior, accessibility basics. Approve (close original → done) or reject (create fix task for builder)."
+      DESIGNER_AC="Review $KEY against design-system.md. Check: color tokens, spacing scale, typography, component consistency, responsive behavior, accessibility basics. Approve (close original → completed) or reject (create fix task for builder)."
       curl -sf -X POST "$MC_API/issues" \
         -H "Content-Type: application/json" \
         -d "{\"title\":\"Designer Review: $KEY — $TITLE\",\"description\":\"Designer review gate for $KEY. Review the UI changes on branch $BRANCH against design-system.md standards. If approved, close parent issue. If rejected, create a fix task assigned to builder.\",\"project\":\"$PROJECT\",\"type\":\"task\",\"priority\":\"high\",\"assignee\":\"designer\",\"acceptance_criteria\":\"$DESIGNER_AC\",\"sprint\":\"$(date -u +%Y-%m-%d)\",\"parent_id\":\"$ID\",\"test_tier\":\"P2\"}" >/dev/null
       echo "[tester] $KEY: Designer review issue created, assigned to designer agent"
     else
-      # No Designer gate — mark done directly
+      # No Designer gate — mark completed directly
       curl -sf -X PATCH "$MC_API/issues" \
         -H "Content-Type: application/json" \
         -d "{\"id\":\"$ID\",\"test_status\":\"passed\",\"status\":\"done\",\"description\":\"$DESC\n\n---\n**Tester notes ($NOW):** $NOTES\"}" >/dev/null

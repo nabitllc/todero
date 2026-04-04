@@ -1,0 +1,31 @@
+export const ISSUE_TERMINAL_STATUSES = ['completed', 'closed', 'cancelled'] as const
+export const ISSUE_COMPLETED_STATUSES = ['completed', 'closed'] as const
+export const ISSUE_DEPENDENCY_SATISFIED_STATUSES = ['released', 'completed', 'closed'] as const
+export const ISSUE_SIGNOFF_STATUSES = ['released', 'completed'] as const
+export const ISSUE_ACTIVE_WORK_STATUSES = ['open', 'in_progress', 'in_review', 'code_review', 'product_review', 'approved', 'released'] as const
+
+const terminalStatusSet = new Set<string>(ISSUE_TERMINAL_STATUSES)
+const completedStatusSet = new Set<string>(ISSUE_COMPLETED_STATUSES)
+const dependencySatisfiedStatusSet = new Set<string>(ISSUE_DEPENDENCY_SATISFIED_STATUSES)
+const signoffStatusSet = new Set<string>(ISSUE_SIGNOFF_STATUSES)
+const activeWorkStatusSet = new Set<string>(ISSUE_ACTIVE_WORK_STATUSES)
+
+export function isTerminalIssueStatus(status: unknown): boolean {
+  return typeof status === 'string' && terminalStatusSet.has(status)
+}
+
+export function isCompletedIssueStatus(status: unknown): boolean {
+  return typeof status === 'string' && completedStatusSet.has(status)
+}
+
+export function satisfiesIssueDependency(status: unknown): boolean {
+  return typeof status === 'string' && dependencySatisfiedStatusSet.has(status)
+}
+
+export function isSignoffIssueStatus(status: unknown): boolean {
+  return typeof status === 'string' && signoffStatusSet.has(status)
+}
+
+export function isActiveWorkIssueStatus(status: unknown): boolean {
+  return typeof status === 'string' && activeWorkStatusSet.has(status)
+}

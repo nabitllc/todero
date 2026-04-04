@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getQueueConfig, getAllQueueAgentIds } from '@/lib/agent-queue'
+import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
     readyTasks = tasks.filter(t => {
       if (!t.blocked_by) return true
       const blockerStatus = blockerStatuses[t.blocked_by]
-      return blockerStatus === 'done'
+      return satisfiesIssueDependency(blockerStatus)
     })
   }
 

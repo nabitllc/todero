@@ -11,6 +11,11 @@ import {
   getProjectPrefix,
 } from '@/lib/constants'
 import { withIssueStatusCategory, withIssueStatusCategoryList } from '@/lib/status-category'
+import {
+  isActiveWorkIssueStatus,
+  isCompletedIssueStatus,
+  isTerminalIssueStatus,
+} from '@/lib/issue-lifecycle'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -696,7 +701,7 @@ export async function POST(req: NextRequest) {
       .from('issues')
       .select('id, task_key, status')
       .eq('title', title)
-      .not('status', 'in', '("done","cancelled")')
+      .not('status', 'in', '("completed","closed","cancelled")')
       .maybeSingle()
     if (existingByTitle) {
       return NextResponse.json(
@@ -710,7 +715,7 @@ export async function POST(req: NextRequest) {
         .select('id, task_key, status')
         .eq('parent_id', parent_id)
         .eq('type', 'review')
-        .not('status', 'in', '("done","cancelled")')
+        .not('status', 'in', '("completed","closed","cancelled")')
         .maybeSingle()
       if (existingByParent) {
         return NextResponse.json(
@@ -995,7 +1000,7 @@ export async function PATCH(req: NextRequest) {
   // ── Owner immutability ──
   if (fields.owner !== undefined) {
     const currentStatus = before?.status ?? ''
-    if (['open', 'in_progress', 'in_review', 'done', 'blocked', 'code_review', 'product_review', 'approved', 'released'].includes(currentStatus)) {
+    if (isActiveWorkIssueStatus(currentStatus) || currentStatus === 'blocked') {
       delete fields.owner
     }
   }
@@ -1104,10 +1109,10 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── UX gate — completed UX review child → complete parent ──
-  if (fields.status === 'completed' && before?.assignee === 'ux' && before?.parent_id) {
+  if (isCompletedIssueStatus(fields.status) && before?.assignee === 'ux' && before?.parent_id) {
     const { data: parentData } = await supabase
       .from('issues')
-      .update({ status: 'done', updated_at: new Date().toISOString() })
+      .update({ status: 'completed', updated_at: new Date().toISOString() })
       .eq('id', before.parent_id)
       .select()
       .single()
@@ -1129,7 +1134,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── Epic auto-completion ──
-  if (fields.status === 'done' && data?.parent_id) {
+  if (isCompletedIssueStatus(fields.status) && data?.parent_id) {
     const { data: parentIssue } = await supabase
       .from('issues')
       .select('id, type, status, task_key, title, project')
@@ -1140,7 +1145,7 @@ export async function PATCH(req: NextRequest) {
         .from('issues')
         .select('id, status')
         .eq('parent_id', data.parent_id)
-      const allDone = children && children.length > 0 && children.every(c => c.status === 'completed' || c.status === 'done')
+      const allDone = children && children.length > 0 && children.every(c => isCompletedIssueStatus(c.status) || isTerminalIssueStatus(c.status))
       if (allDone) {
         await supabase
           .from('issues')

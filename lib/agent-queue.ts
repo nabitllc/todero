@@ -48,7 +48,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     dorFields: ['acceptance_criteria'],
     wipLimit: 5,
     workingStatus: 'in_review', // tester doesn't change status on pickup
-    completionStatus: 'done',   // or back to open on failure
+    completionStatus: 'completed',   // or back to open on failure
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
