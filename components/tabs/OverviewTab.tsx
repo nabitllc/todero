@@ -54,7 +54,7 @@ function DoneYesterdayWins() {
     const now = new Date()
     const yStart = new Date(now); yStart.setDate(now.getDate()-1); yStart.setHours(0,0,0,0)
     const yEnd = new Date(now); yEnd.setHours(0,0,0,0)
-    fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`, {
+    fetch(`${SUPA}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`, {
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
     }).then(r => r.json()).then(data => {
       if (Array.isArray(data) && data.length > 0) setWins(data)
@@ -94,7 +94,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
     Promise.all([
       fetch(`${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?status=eq.blocked&assignee=not.is.null&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?type=eq.feature&status=neq.done&status=neq.closed&select=id,task_key,title,project&limit=100`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: h }).then(r => r.json()),
     ]).then(([p0, blocked, features, children]) => {
       const parentIds = new Set((Array.isArray(children) ? children : []).map((c: any) => c.parent_id))
@@ -158,9 +158,9 @@ function StandupCard() {
     const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
     Promise.all([
-      fetch(`${SUPA}/rest/v1/issues?status=eq.done&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?or=(blocked_by.not.is.null,status.eq.blocked)&status=neq.done&status=neq.closed&select=task_key,title,blocked_by,assignee&limit=5`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?or=(blocked_by.not.is.null,status.eq.blocked)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`, { headers: h }).then(r => r.json()),
     ]).then(([shipped, inFlight, blockers]) => {
       setData({
         shipped: Array.isArray(shipped) ? shipped : [],
@@ -171,7 +171,7 @@ function StandupCard() {
   }, [])
   const sections = [
     { label: 'Shipped Yesterday', icon: '\u2705', items: data.shipped, emptyMsg: 'Nothing shipped', colorClass: 'text-green-400' },
-    { label: 'In Flight Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', colorClass: 'text-blue-400' },
+    { label: 'Ongoing Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', colorClass: 'text-blue-400' },
     { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', colorClass: 'text-red-400' },
   ]
   return (
@@ -236,7 +236,7 @@ function SprintProgressCard() {
           .then(r => r.json())
           .then(data => {
             if (Array.isArray(data)) {
-              setSprintData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
+              setSprintData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
             }
           }).catch(() => {})
 
@@ -250,7 +250,7 @@ function SprintProgressCard() {
               .then(r => r.json())
               .then(data => {
                 if (Array.isArray(data)) {
-                  setPriorData({ total: data.length, done: data.filter((i:any) => i.status === 'done').length })
+                  setPriorData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
                 }
               }).catch(() => {})
           }).catch(() => {})
@@ -322,9 +322,9 @@ function ProjectBreakdownBars({ project }: { project: string }) {
       if (!Array.isArray(rows)) return
       const count = (type: string) => {
         const matching = rows.filter(r => r.type === type)
-        return { done: matching.filter(r => r.status === 'done').length, total: matching.length }
+        return { done: matching.filter(r => ['completed', 'released', 'closed'].includes(r.status)).length, total: matching.length }
       }
-      setData({ epics: count('epic'), features: count('feature'), issues: { done: rows.filter(r => !['epic','feature'].includes(r.type) && r.status === 'done').length, total: rows.filter(r => !['epic','feature'].includes(r.type)).length } })
+      setData({ epics: count('epic'), features: count('feature'), issues: { done: rows.filter(r => !['epic','feature'].includes(r.type) && ['completed', 'released', 'closed'].includes(r.status)).length, total: rows.filter(r => !['epic','feature'].includes(r.type)).length } })
     }).catch(() => {})
   }, [project])
   if (!data) return null

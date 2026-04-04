@@ -12,4 +12,8 @@ describe('getPipelineStage', () => {
   it('kicks failed code_review work back to Building', () => {
     expect(getPipelineStage({ status: 'code_review', tester_status: 'failed', designer_status: 'passed' })).toBe('Building')
   })
+
+  it('keeps approved work in PR Queue instead of treating it as merged', () => {
+    expect(getPipelineStage({ status: 'approved' })).toBe('PR Queue')
+  })
 })

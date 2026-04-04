@@ -39,8 +39,9 @@ const COLUMN_OPTIONS: { label: string; status: string; color: string }[] = [
   { label: 'Backlog', status: 'backlog', color: '#71717a' },
   { label: 'Open', status: 'open', color: '#3b82f6' },
   { label: 'In Progress', status: 'in_progress', color: '#f59e0b' },
-  { label: 'In Review', status: 'in_review', color: '#a855f7' },
-  { label: 'Done', status: 'done', color: '#10b981' },
+  { label: 'In Review', status: 'code_review', color: '#a855f7' },
+  { label: 'SignOff', status: 'completed', color: '#14b8a6' },
+  { label: 'Done', status: 'closed', color: '#10b981' },
 ]
 
 export default function PipelineTab({ projectFilter }: { projectFilter?: string | null }) {
@@ -104,15 +105,15 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 
   async function fetchIssues() {
     try {
-      // Fetch active issues + done in last 24h
+      // Fetch active issues + recently finished issues under the canonical lifecycle
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      const [activeRes, doneRes] = await Promise.all([
-        fetch(`${SUPA_URL}/rest/v1/issues?status=neq.done&select=*&limit=100`, { headers: HEADERS }),
-        fetch(`${SUPA_URL}/rest/v1/issues?status=eq.done&updated_at=gte.${since}&select=*&limit=50`, { headers: HEADERS }),
+      const [activeRes, finishedRes] = await Promise.all([
+        fetch(`${SUPA_URL}/rest/v1/issues?status=not.in.(closed,completed,released)&select=*&limit=100`, { headers: HEADERS }),
+        fetch(`${SUPA_URL}/rest/v1/issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`, { headers: HEADERS }),
       ])
       const active = await activeRes.json()
-      const done = await doneRes.json()
-      const all = [...(Array.isArray(active) ? active : []), ...(Array.isArray(done) ? done : [])]
+      const finished = await finishedRes.json()
+      const all = [...(Array.isArray(active) ? active : []), ...(Array.isArray(finished) ? finished : [])]
       setIssues(all)
       setError(null)
     } catch (e) {
@@ -371,7 +372,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 /* ── Feature Card ── */
 function FeatureCard({ feature, onLongPressStart, onLongPressEnd }: { feature: any; onLongPressStart?: () => void; onLongPressEnd?: () => void }) {
   const children: any[] = feature._children || []
-  const doneCount = children.filter((c: any) => c.status === 'done').length
+  const doneCount = children.filter((c: any) => ['completed', 'released', 'closed'].includes(c.status)).length
   const total = children.length
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0
   const blocked = isBlocked(feature)

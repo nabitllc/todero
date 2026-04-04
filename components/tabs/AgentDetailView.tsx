@@ -65,7 +65,7 @@ function statusColor(s: string) {
   if (s === 'in_progress') return 'text-amber-400'
   if (s === 'code_review') return 'text-purple-400'
   if (s === 'open')        return 'text-blue-400'
-  if (s === 'done' || s === 'completed' || s === 'released') return 'text-emerald-400'
+  if (s === 'closed' || s === 'completed' || s === 'released') return 'text-emerald-400'
   if (s === 'backlog')     return 'text-white/30'
   return 'text-white/50'
 }

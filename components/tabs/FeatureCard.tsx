@@ -13,6 +13,7 @@ const ASSIGNEE_EMOJI: Record<string, string> = {
 interface Issue {
   id: string; title: string; status: string; assignee?: string;
   task_key?: string; priority?: string;
+  status_category?: 'Planned' | 'Ongoing' | 'SignOff' | 'Done' | null;
 }
 
 interface Feature {
@@ -29,7 +30,7 @@ interface Props {
 }
 
 export default function FeatureCard({ feature, expanded, onToggle, onViewIssues }: Props) {
-  const done = feature.children.filter(c => c.status === 'done' || c.status === 'closed').length
+  const done = feature.children.filter(c => c.status_category === 'SignOff' || c.status_category === 'Done').length
   const total = feature.children.length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
   const projColor = PROJECT_COLORS[feature.project ?? ''] ?? '#6b7280'

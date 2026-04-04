@@ -14,7 +14,7 @@ function AttentionAndShipped({ agents }: { agents: any[] }) {
       .then(r => r.json()).then(d => {
         if (Array.isArray(d)) setData(prev => ({...prev, attention: d}))
       }).catch(() => {})
-    fetch(`${SUPA_URL}/rest/v1/issues?status=eq.done&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`, {headers: h as any})
+    fetch(`${SUPA_URL}/rest/v1/issues?status=in.(completed,released,closed)&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`, {headers: h as any})
       .then(r => r.json()).then(d => {
         const today = new Date(); today.setHours(0,0,0,0)
         if (Array.isArray(d)) setData(prev => ({...prev, shipped: d.filter((i: any) => new Date(i.updated_at) >= today)}))

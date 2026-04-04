@@ -19,11 +19,11 @@ const STATUS_CHIP: Record<string, string> = {
 }
 
 const STATUS_ORDER = [
-  'open','in_progress','code_review','product_review',
-  'approved','released','completed','closed','cancelled','backlog',
+  'backlog','defined','open','in_progress','code_review','product_review',
+  'approved','released','completed','closed','cancelled',
 ]
 
-const DONE_STATUSES = new Set(['completed','released','closed','cancelled'])
+const DONE_STATUSES = new Set(['completed','released','closed'])
 
 const TYPE_EMOJI: Record<string, string> = {
   feature:'✨', task:'🔧', bug:'🐛', ops:'⚙️', epic:'🎯', subtask:'↩️',

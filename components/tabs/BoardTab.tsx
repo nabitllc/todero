@@ -263,11 +263,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (!resolutionPending) return
     const { taskId, source, editFields } = resolutionPending
     if (source === 'edit' && editFields) {
-      updateTask(taskId, { ...editFields, status: 'done', resolution_type: resolutionType })
-      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...editFields, status: 'done', resolution_type: resolutionType } : t))
+      updateTask(taskId, { ...editFields, status: 'completed', resolution_type: resolutionType })
+      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...editFields, status: 'completed', resolution_type: resolutionType } : t))
     } else {
-      updateTask(taskId, { status: 'done', resolution_type: resolutionType })
-      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, status: 'done', resolution_type: resolutionType } : t))
+      updateTask(taskId, { status: 'completed', resolution_type: resolutionType })
+      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, status: 'completed', resolution_type: resolutionType } : t))
     }
     setResolutionPending(null)
     setEditTask(null)
@@ -452,7 +452,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
       {/* MC-127: Michael's "Needs You" queue */}
       {(() => {
-        const michaelTasks = tasks.filter(t => t.assignee === 'michael' && t.status !== 'done' && t.status !== 'closed')
+        const michaelTasks = tasks.filter(t => t.assignee === 'michael' && !['completed', 'released', 'closed'].includes(t.status))
         if (michaelTasks.length === 0) return null
         return (
           <div className="rounded-xl border-2 border-amber-500/30 p-3 mb-2 bg-amber-500/5">

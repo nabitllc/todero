@@ -12,7 +12,9 @@ describe('issue status category mapping', () => {
 
   it('derives the approved lifecycle mapping from issue status', () => {
     expect(deriveIssueStatusCategory('backlog')).toBe('Planned')
+    expect(deriveIssueStatusCategory('defined')).toBe('Planned')
     expect(deriveIssueStatusCategory('open')).toBe('Planned')
+    expect(deriveIssueStatusCategory('in_progress')).toBe('Ongoing')
     expect(deriveIssueStatusCategory('code_review')).toBe('Ongoing')
     expect(deriveIssueStatusCategory('product_review')).toBe('Ongoing')
     expect(deriveIssueStatusCategory('approved')).toBe('Ongoing')

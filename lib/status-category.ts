@@ -4,7 +4,9 @@ export type IssueStatusCategory = typeof ISSUE_STATUS_CATEGORY_LABELS[number]
 
 const ISSUE_STATUS_CATEGORY_MAP: Record<string, IssueStatusCategory> = {
   backlog: 'Planned',
+  defined: 'Planned',
   open: 'Planned',
+  in_progress: 'Ongoing',
   code_review: 'Ongoing',
   product_review: 'Ongoing',
   approved: 'Ongoing',
