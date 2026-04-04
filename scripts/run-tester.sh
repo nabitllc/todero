@@ -1,5 +1,5 @@
 #!/bin/bash
-# INF-171: Tester agent — reviews in_review issues against acceptance criteria
+# INF-171: Tester agent — reviews code_review issues against acceptance criteria
 # Called by n8n or manually. Reviews P0/P1 first, then P2.
 # Sets test_status=passed → status=completed (or Designer gate for MC/Vespera), or test_status=failed → status=open with notes.
 set -euo pipefail
@@ -9,19 +9,19 @@ SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJp
 MC_API="${MC_API_URL:-http://localhost:3000/api}"
 INTERNAL_SECRET="${INTERNAL_SECRET:-kaos-internal-2026}"
 
-# WIP check: max 5 in_review at once for tester processing
-IN_REVIEW_COUNT=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.in_review&select=id" \
+# WIP check: max 5 code_review at once for tester processing
+IN_REVIEW_COUNT=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.code_review&select=id" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" | jq 'length')
 
-echo "[tester] $IN_REVIEW_COUNT issues in_review"
+echo "[tester] $IN_REVIEW_COUNT issues in code_review"
 
-# Fetch in_review issues, ordered by priority (P0/P1 first)
-ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.in_review&select=id,title,description,acceptance_criteria,task_key,project,test_tier,feature_branch,type&order=priority.asc&limit=5" \
+# Fetch code_review issues, ordered by priority (P0/P1 first)
+ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.code_review&select=id,title,description,acceptance_criteria,task_key,project,test_tier,feature_branch,type&order=priority.asc&limit=5" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY")
 
 COUNT=$(echo "$ISSUES" | jq 'length')
 if [ "$COUNT" -eq 0 ]; then
-  echo "[tester] No issues in_review to test"
+  echo "[tester] No issues in code_review to test"
   exit 0
 fi
 

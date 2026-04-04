@@ -1,6 +1,6 @@
 #!/bin/bash
 # INF-174: PR auto-creation — runs at 7am and 7pm EDT via n8n cron
-# Queries issues WHERE test_status=passed AND pr_url IS NULL AND status=done
+# Queries issues WHERE test_status=passed AND pr_url IS NULL AND status=approved
 # Groups by feature_branch, pushes and creates PR, notifies Discord + Telegram
 set -euo pipefail
 
@@ -12,7 +12,7 @@ DISCORD_CHANNEL="${DISCORD_PR_CHANNEL:-1487826368170299592}"
 echo "[pr-window] Starting PR creation window..."
 
 # Fetch passed issues without PR
-ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?test_status=eq.passed&pr_url=is.null&status=eq.done&feature_branch=not.is.null&select=id,title,task_key,project,feature_branch,description" \
+ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?test_status=eq.passed&pr_url=is.null&status=eq.approved&feature_branch=not.is.null&select=id,title,task_key,project,feature_branch,description" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY")
 
 COUNT=$(echo "$ISSUES" | jq 'length')

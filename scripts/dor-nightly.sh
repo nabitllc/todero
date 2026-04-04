@@ -1,7 +1,7 @@
 #!/bin/bash
 # INF-192: DoR enforcement nightly — find DoR-incomplete issues, set to backlog, alert Discord
 # Runs nightly via n8n cron
-# DoR-incomplete = assignee=builder AND (description IS NULL OR test_tier IS NULL OR acceptance_criteria IS NULL) AND status NOT IN (done, backlog)
+# DoR-incomplete = assignee=builder AND (description IS NULL OR test_tier IS NULL OR acceptance_criteria IS NULL) AND status NOT IN (completed, closed, backlog)
 set -euo pipefail
 
 SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
@@ -11,14 +11,14 @@ DISCORD_CHANNEL="${DISCORD_ALERTS_CHANNEL:-1487584901678104698}"
 
 echo "[dor-nightly] Starting DoR enforcement check..."
 
-# Find builder-assigned non-done/non-backlog issues missing DoR fields
-MISSING_DESC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=neq.done&status=neq.backlog&description=is.null&select=id,task_key,title,project" \
+# Find builder-assigned non-terminal/non-backlog issues missing DoR fields
+MISSING_DESC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&description=is.null&select=id,task_key,title,project" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
 
-MISSING_TIER=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=neq.done&status=neq.backlog&test_tier=is.null&select=id,task_key,title,project" \
+MISSING_TIER=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&test_tier=is.null&select=id,task_key,title,project" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
 
-MISSING_AC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=neq.done&status=neq.backlog&acceptance_criteria=is.null&select=id,task_key,title,project" \
+MISSING_AC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&acceptance_criteria=is.null&select=id,task_key,title,project" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
 
 # Combine and deduplicate by id

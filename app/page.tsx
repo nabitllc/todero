@@ -238,7 +238,7 @@ export default function Home() {
       }).catch(() => {})
     }
     const fetchAgentIssues = () => {
-      fetch(`${SUPA}/rest/v1/issues?status=in.(open,in_progress,in_review)&sprint=not.is.null&select=assignee&limit=500`, {
+      fetch(`${SUPA}/rest/v1/issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&select=assignee&limit=500`, {
         headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
       }).then(r => r.json()).then((rows: any[]) => {
         if (!Array.isArray(rows)) return
@@ -273,7 +273,7 @@ export default function Home() {
       setIssueActivity(data.map((i: any) => {
         const agoMin = Math.round((Date.now() - new Date(i.updated_at).getTime()) / 60000)
         const ai = AGENT_DISPLAY[i.assignee] || null
-        return { type:'issue', emoji: i.status==='done'?'✅':i.status==='in_progress'?'🔧':i.status==='in_review'?'👁':'📋', agentId: i.assignee||'system', agentName: ai?.name||i.assignee||'System', channel: i.task_key, action:'issue', desc: `${i.title} → ${(i.status||'').replace(/_/g,' ')}${i.resolution_type?` (${i.resolution_type.replace(/_/g,' ')})`:''}`, ago: agoMin, date: agoMin<60?'Today':agoMin<1440?'Yesterday':'Earlier' }
+        return { type:'issue', emoji: ['completed','closed','released'].includes(i.status)?'✅':i.status==='in_progress'?'🔧':['code_review','product_review','approved'].includes(i.status)?'👁':'📋', agentId: i.assignee||'system', agentName: ai?.name||i.assignee||'System', channel: i.task_key, action:'issue', desc: `${i.title} → ${(i.status||'').replace(/_/g,' ')}${i.resolution_type?` (${i.resolution_type.replace(/_/g,' ')})`:''}`, ago: agoMin, date: agoMin<60?'Today':agoMin<1440?'Yesterday':'Earlier' }
       }))
     }).catch(() => {})
   }, [tab])

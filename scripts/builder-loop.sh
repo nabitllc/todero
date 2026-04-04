@@ -43,7 +43,7 @@ while true; do
   log "Active sprint: $ACTIVE_SPRINT"
 
   # Check for paused projects — skip any project with a PAUSED flag issue
-  PAUSED_PROJECTS=$(curl -s "${SUPA}/rest/v1/issues?title=like.*PROJECT+PAUSED*&status=neq.done&select=project" \
+  PAUSED_PROJECTS=$(curl -s "${SUPA}/rest/v1/issues?title=like.*PROJECT+PAUSED*&status=not.in.(completed,closed)&select=project" \
     -H "apikey: ${SK}" -H "Authorization: Bearer ${SK}" | python3 -c "import json,sys; rows=json.load(sys.stdin); print(','.join(r['project'] for r in rows))" 2>/dev/null)
   log "Paused projects: ${PAUSED_PROJECTS:-none}"
 
@@ -91,11 +91,11 @@ Step 2: For each issue in order:
 - Run npm run build (fix all TypeScript errors before committing)
 - git add -A && git commit -m 'feat(TASK_KEY): description [skip ci]'
 - Prepare a regression_test string — the exact command or manual steps to verify no regression (e.g. \"npm run build && npm test\" or \"manual: verify X on mobile\"). This is REQUIRED.
-- Move to in_review via MC API by PATCHing the ORIGINAL issue (NOT done, NEVER create new tester issues):
+- Move to code_review via MC API by PATCHing the ORIGINAL issue (NOT done, NEVER create new tester issues):
   PATCH http://localhost:3000/api/issues with:
   {
     \"id\": \"<uuid of the ORIGINAL issue>\",
-    \"status\": \"in_review\",
+    \"status\": \"code_review\",
     \"implementation_notes\": \"<what you built, what you tested, any edge cases>\",
     \"commit_sha\": \"<git rev-parse HEAD output>\",
     \"regression_test\": \"<command or manual steps to verify no regression>\"
@@ -103,8 +103,8 @@ Step 2: For each issue in order:
   The API will auto-assign the correct reviewer based on severity (S0=designer, S1=tester, S2=po, S3=main).
   If regression_test is empty, the API will reject the request — you MUST provide it.
 - ⚠️ NEVER create new tester/reviewer child issues. NEVER POST a new issue for review.
-  Just PATCH the original issue to status=in_review. The API handles reviewer routing.
-- DO NOT mark status=done — the assigned reviewer does that after review
+  Just PATCH the original issue to status=code_review. The API handles reviewer routing.
+- DO NOT mark status=completed/closed — reviewers and deploy flow handle downstream transitions
 
 ⚠️ PARTIAL WORK RULE: If you run out of time or cannot complete a task, you MUST either:
 (a) Commit what you have with [WIP] prefix: git add -A && git commit -m '[WIP] partial: description'
@@ -157,8 +157,8 @@ print(resp.read().decode())
       log "Build failed — bug $BUG_KEY created"
       rm -f "$ERRFILE"
 
-      # Skip in_review PATCH (can't submit broken code for review)
-      log "Skipping in_review — broken build"
+      # Skip code_review PATCH (can't submit broken code for review)
+      log "Skipping code_review — broken build"
 
       # Post-task memory: record build failure corrections (TOD-489)
       if [ -f "$MC_DIR/scripts/post-task-memory.sh" ]; then

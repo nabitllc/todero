@@ -10,8 +10,8 @@ DISCORD_CHANNEL="${DISCORD_ALERTS_CHANNEL:-1487584901678104698}"
 
 echo "[smoke-test] Starting pre-tester smoke tests..."
 
-# Fetch in_review issues that haven't been smoke-tested yet (test_status=none)
-ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.in_review&test_status=eq.none&select=id,title,task_key,project,feature_branch" \
+# Fetch code_review issues that haven't been smoke-tested yet (test_status=none)
+ISSUES=$(curl -sf "$SUPA_URL/rest/v1/issues?status=eq.code_review&test_status=eq.none&select=id,title,task_key,project,feature_branch" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY")
 
 COUNT=$(echo "$ISSUES" | jq 'length')
@@ -69,7 +69,7 @@ echo "$ISSUES" | jq -c '.[]' | while read -r ISSUE; do
     # Mark as smoke-test passed (test_status stays none — Tester will set it)
     # We just mark it ready for tester by setting test_status=smoke_passed
     # Actually, we leave test_status=none and let Tester process it
-    # The Tester script already filters for in_review issues
+    # The Tester script already filters for code_review issues
     PASS_COUNT=$((PASS_COUNT + 1))
   else
     echo "[smoke-test] $KEY: Build FAILED"
