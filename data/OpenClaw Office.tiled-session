@@ -1,0 +1,62 @@
+{
+    "activeFile": "Office Map.tmx",
+    "expandedProjectPaths": [
+        "."
+    ],
+    "file.lastUsedOpenFilter": "All Files (*)",
+    "fileStates": {
+        "": {
+            "scaleInDock": 1
+        },
+        "Modern_Office_16x16.tsx": {
+            "scaleInDock": 1.5,
+            "scaleInEditor": 1
+        },
+        "Modern_Office_32x32.tsx": {
+            "scaleInDock": 1.5,
+            "scaleInEditor": 1
+        },
+        "Modern_Office_Shadowless_16x16.tsx": {
+            "scaleInDock": 1.5,
+            "scaleInEditor": 1
+        },
+        "Office Map.tmx": {
+            "scale": 1.39,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 558.9928057553958,
+                "y": 318.7050359712231
+            }
+        },
+        "Room_Builder_Office_16x16.tsx": {
+            "scaleInDock": 1.5,
+            "scaleInEditor": 1
+        }
+    },
+    "last.imagePath": "/Users/kemuniagent/Downloads/Modern_Office_Revamped_v1.2/3_Modern_Office_Shadowless",
+    "map.height": 15,
+    "map.lastUsedFormat": "tmx",
+    "map.tileHeight": 16,
+    "map.tileWidth": 16,
+    "map.width": 20,
+    "openFiles": [
+        "Office Map.tmx",
+        "Modern_Office_16x16.tsx",
+        "Modern_Office_32x32.tsx",
+        "Room_Builder_Office_16x16.tsx",
+        "Modern_Office_Shadowless_16x16.tsx"
+    ],
+    "project": "OpenClaw Office.tiled-project",
+    "recentFiles": [
+        "Modern_Office_Shadowless_16x16.tsx",
+        "Room_Builder_Office_16x16.tsx",
+        "Modern_Office_32x32.tsx",
+        "Modern_Office_16x16.tsx",
+        "Office Map.tmx"
+    ],
+    "tileset.lastUsedFormat": "tsx",
+    "tileset.tileSize": {
+        "height": 16,
+        "width": 16
+    }
+}
