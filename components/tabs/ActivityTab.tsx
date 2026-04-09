@@ -10,7 +10,7 @@ function AttentionAndShipped({ agents }: { agents: any[] }) {
     const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
     const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
     const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    fetch(`${SUPA_URL}/rest/v1/issues?status=in.(in_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`, {headers: h as any})
+    fetch(`${SUPA_URL}/rest/v1/issues?status=in.(code_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`, {headers: h as any})
       .then(r => r.json()).then(d => {
         if (Array.isArray(d)) setData(prev => ({...prev, attention: d}))
       }).catch(() => {})

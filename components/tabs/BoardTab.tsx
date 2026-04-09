@@ -96,7 +96,7 @@ const BOARD_COLUMNS = [
   { id:'backlog',    label:'Backlog',          color:'#71717a', statuses:['backlog'] },
   { id:'open',       label:'Open',             color:'#3b82f6', statuses:['open'] },
   { id:'in_progress',label:'In Progress',      color:'#818cf8', statuses:['in_progress'] },
-  { id:'in_review',  label:'In Review',        color:'#f97316', statuses:['in_review','code_review','product_review'] },
+  { id:'code_review', label:'In Review',        color:'#f97316', statuses:['code_review','product_review'] },
   { id:'approved',   label:'Ready for Deploy', color:'#22c55e', statuses:['approved'] },
   { id:'completed',  label:'Completed',        color:'#14b8a6', statuses:['completed','released'] },
 ]
@@ -112,7 +112,6 @@ const STATUS_CHIP_COLORS: Record<string,string> = {
   completed:       'bg-green-600/20 text-green-400 border-green-600/30',
   closed:          'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
   cancelled:       'bg-red-500/20 text-red-400 border-red-500/30',
-  blocked:         'bg-red-500/20 text-red-400 border-red-500/30',
 }
 
 const ALL_STATUSES = [
@@ -284,7 +283,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
   const allFiltered = tasks.filter(t => {
     if (statusFilter !== 'closed' && (t.status === 'closed' || t.status === 'cancelled')) return false
-    if (statusFilter === 'active' && !['open', 'in_progress', 'in_review', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
+    if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
     if (statusFilter === 'closed' && t.status !== 'closed') return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false
     if (projectFilter && (t as any).project !== projectFilter) return false

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   // Determine next task status based on agent
   const taskStatus = status === 'done'
-    ? (agentId === 'tester' ? 'completed' : agentId === 'builder' ? 'code_review' : 'in_review')
+    ? (agentId === 'tester' ? 'completed' : 'code_review')
     : status === 'failed' ? 'open'
     : 'in_progress'
 

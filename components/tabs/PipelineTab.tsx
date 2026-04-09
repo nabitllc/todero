@@ -267,7 +267,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                       {buildingWIP}/3 WIP
                     </span>
                   )}
-                  {stage === 'Testing' && issues.some(i => i.assignee === 'tester' && (i.status === 'in_review' || i.status === 'in_progress')) && (
+                  {stage === 'Testing' && issues.some(i => i.assignee === 'tester' && (i.status === 'code_review' || i.status === 'in_progress')) && (
                     <span className="text-sm" title="Tester active">🧪</span>
                   )}
                   {stage === 'PR Queue' && (

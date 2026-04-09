@@ -93,7 +93,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
     Promise.all([
       fetch(`${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?status=eq.blocked&assignee=not.is.null&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: h }).then(r => r.json()),
     ]).then(([p0, blocked, features, children]) => {
@@ -160,7 +160,7 @@ function StandupCard() {
     Promise.all([
       fetch(`${SUPA}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?or=(blocked_by.not.is.null,status.eq.blocked)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`, { headers: h }).then(r => r.json()),
     ]).then(([shipped, inFlight, blockers]) => {
       setData({
         shipped: Array.isArray(shipped) ? shipped : [],

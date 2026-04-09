@@ -64,7 +64,7 @@ describe('VALID_STATUSES', () => {
   })
 
   it('contains review statuses', () => {
-    expect(VALID_STATUSES).toContain('in_review')
+    expect(VALID_STATUSES).not.toContain('in_review')
     expect(VALID_STATUSES).toContain('code_review')
     expect(VALID_STATUSES).toContain('product_review')
   })

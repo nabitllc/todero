@@ -34,7 +34,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     dorFields: ['description', 'acceptance_criteria', 'test_tier'],
     wipLimit: 3,
     workingStatus: 'in_progress',
-    completionStatus: 'in_review',
+    completionStatus: 'code_review',
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 50,
@@ -43,11 +43,11 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   tester: {
     agentId: 'tester',
-    pickupStatus: 'in_review',
+    pickupStatus: 'code_review',
     extraFilters: '',
     dorFields: ['acceptance_criteria'],
     wipLimit: 5,
-    workingStatus: 'in_review', // tester doesn't change status on pickup
+    workingStatus: 'code_review', // tester doesn't change status on pickup
     completionStatus: 'completed',   // or back to open on failure
     checkBlocking: false,
     sortOrder: 'priority.asc',
@@ -62,7 +62,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     dorFields: ['description', 'acceptance_criteria'],
     wipLimit: 2,
     workingStatus: 'in_progress',
-    completionStatus: 'in_review',
+    completionStatus: 'code_review',
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 10,
@@ -76,7 +76,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     dorFields: ['description', 'acceptance_criteria'],
     wipLimit: 2,
     workingStatus: 'in_progress',
-    completionStatus: 'in_review',
+    completionStatus: 'code_review',
     checkBlocking: true,
     sortOrder: 'priority.asc',
     fetchLimit: 10,
@@ -90,7 +90,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     dorFields: ['description', 'acceptance_criteria'],
     wipLimit: 2,
     workingStatus: 'in_progress',
-    completionStatus: 'in_review',
+    completionStatus: 'code_review',
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 10,
@@ -104,7 +104,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     dorFields: ['description', 'acceptance_criteria'],
     wipLimit: 2,
     workingStatus: 'in_progress',
-    completionStatus: 'in_review',
+    completionStatus: 'code_review',
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 10,

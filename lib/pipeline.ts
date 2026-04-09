@@ -1,6 +1,6 @@
 // lib/pipeline.ts
 const MERGED_STATUSES = new Set(["completed", "released", "closed"])
-const ACTIVE_REVIEW_STATUSES = new Set(["in_review", "code_review", "product_review"])
+const ACTIVE_REVIEW_STATUSES = new Set(["code_review", "product_review"])
 
 export type PipelineStage = "Backlog" | "Definition" | "Building" | "Testing" | "UX Review" | "PR Queue" | "Merged"
 
@@ -36,9 +36,9 @@ export function getPipelineStage(issue: any, children?: any[]): PipelineStage {
       return "Testing"
     }
 
-    // INF-258/INF-259: Design gate — test passed but still in_review means awaiting Designer review
+    // INF-258/INF-259: Design gate — test passed but still in code_review means awaiting Designer review
     if (issue.test_status === "passed") {
-      // Check if there's a pending Designer/UX review child (issue stays in_review until approved)
+      // Check if there's a pending Designer/UX review child (issue stays in code_review until approved)
       if (children && children.some((c: any) => (c.assignee === "designer" || c.assignee === "ux") && !MERGED_STATUSES.has(c.status))) {
         return "UX Review"
       }

@@ -46,7 +46,7 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
   let msg: string
-  if (status === 'in_review' || status === 'code_review') {
+  if (status === 'code_review') {
     msg = `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
   } else if (status === 'open' && issueId) {
     const SELF_CHAIN_AGENTS = new Set(['builder', 'ops', 'scout', 'po'])
@@ -854,7 +854,7 @@ export async function PATCH(req: NextRequest) {
       if (effectiveAssignee && !fields.worked_by) fields.worked_by = effectiveAssignee
     }
 
-    if (fields.status === 'in_review' || fields.status === 'code_review') fields.submitted_at = now
+    if (fields.status === 'code_review') fields.submitted_at = now
     if (fields.status === 'code_review') {
       if (fields.tester_notes === undefined && before?.tester_notes == null) fields.tester_notes = null
       if (fields.designer_notes === undefined && before?.designer_notes == null) fields.designer_notes = null
@@ -873,7 +873,7 @@ export async function PATCH(req: NextRequest) {
     applyExecutionStatusRouting(before as Record<string, unknown> | undefined, fields as Record<string, unknown>)
 
     const issueType = (fields.type ?? before?.type ?? 'task') as string
-    if (issueType !== 'task' && fields.status === 'open' && before?.status === 'in_review') {
+    if (issueType !== 'task' && fields.status === 'open' && before?.status === 'code_review') {
       fields.rejection_count = (before?.rejection_count ?? 0) + 1
       fields.last_rejected_at = now
       if (fields.reviewer_notes) fields.last_rejection_reason = fields.reviewer_notes
@@ -935,14 +935,14 @@ export async function PATCH(req: NextRequest) {
   if (isNewFailure) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
     if (fields.fail_count >= 3) {
-      fields.status = 'blocked'
+      fields.is_blocked = true
       fields.assignee = 'main'
     }
   }
 
   if (fields.owner !== undefined) {
     const currentStatus = before?.status ?? ''
-    if (isActiveWorkIssueStatus(currentStatus) || currentStatus === 'blocked') {
+    if (isActiveWorkIssueStatus(currentStatus)) {
       delete fields.owner
     }
   }

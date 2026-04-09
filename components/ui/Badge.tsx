@@ -3,7 +3,7 @@ import React from 'react'
 
 type PriorityVariant = 'critical' | 'high' | 'medium' | 'low'
 type TypeVariant = 'feature' | 'task' | 'bug' | 'ops'
-type StatusVariant = 'open' | 'in_progress' | 'in_review' | 'done' | 'backlog'
+type StatusVariant = 'open' | 'in_progress' | 'code_review' | 'done' | 'backlog'
 
 const priorityClasses: Record<PriorityVariant, string> = {
   critical: 'bg-red-500/20 text-red-400',
@@ -22,7 +22,7 @@ const typeClasses: Record<TypeVariant, string> = {
 const statusClasses: Record<StatusVariant, string> = {
   open:        'bg-white/10 text-white/60',
   in_progress: 'bg-blue-500/20 text-blue-400',
-  in_review:   'bg-yellow-500/20 text-yellow-400',
+  code_review: 'bg-yellow-500/20 text-yellow-400',
   done:        'bg-green-500/20 text-green-400',
   backlog:     'bg-white/5 text-white/40',
 }
