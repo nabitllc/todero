@@ -62,6 +62,15 @@ export async function POST(req: NextRequest) {
 
     const nextNumber = (lastSprint?.sprint_number ?? 0) + 1
 
+    // 2b. Get business name for the sprint project field
+    const { data: business } = await supabase
+      .from('businesses')
+      .select('name')
+      .eq('id', business_id)
+      .single()
+
+    const projectName = business?.name ?? 'Unknown'
+
     // 3. Create new sprint (24h: today 7am to tomorrow 7am)
     const today = new Date()
     const startDate = today.toISOString().split('T')[0]
@@ -72,6 +81,7 @@ export async function POST(req: NextRequest) {
       .from('sprints')
       .insert({
         name: `sprint-${nextNumber}`,
+        project: projectName,
         business_id,
         goal: goal || `Sprint ${nextNumber} goals`,
         start_date: startDate,
