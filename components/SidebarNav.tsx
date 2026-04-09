@@ -70,6 +70,7 @@ interface SidebarNavProps {
   unreadChat?: boolean
   setUnreadChat?: (v: boolean) => void
   clock?: string
+  onSearchOpen?: () => void
 }
 
 // ── Component ────────────────────────────────────────────────────────────────

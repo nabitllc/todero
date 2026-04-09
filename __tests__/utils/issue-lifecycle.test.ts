@@ -28,6 +28,6 @@ describe('issue lifecycle helpers', () => {
     expect(isActiveWorkIssueStatus('completed')).toBe(false)
     expect(isCompletedIssueStatus('completed')).toBe(true)
     expect(isCompletedIssueStatus('closed')).toBe(true)
-    expect(isTerminalIssueStatus('cancelled')).toBe(true)
+    expect(isTerminalIssueStatus('cancelled')).toBe(false)
   })
 })

@@ -1,4 +1,4 @@
-export const ISSUE_TERMINAL_STATUSES = ['completed', 'closed', 'cancelled'] as const
+export const ISSUE_TERMINAL_STATUSES = ['completed', 'closed'] as const
 export const ISSUE_COMPLETED_STATUSES = ['completed', 'closed'] as const
 export const ISSUE_DEPENDENCY_SATISFIED_STATUSES = ['released', 'completed', 'closed'] as const
 export const ISSUE_SIGNOFF_STATUSES = ['released', 'completed'] as const

@@ -1,0 +1,150 @@
+'use client'
+// TOD-630: Top bar — Todero logo left, search center, actions right
+
+import React, { useState, useEffect } from 'react'
+import {
+  Search, MessageSquare, ListTodo, User, Activity, Play, Pause,
+} from 'lucide-react'
+import NotificationBell from './NotificationBell'
+
+interface TopBarProps {
+  tab: string
+  selectedBusiness: string | null
+  onSearchOpen: () => void
+  onNavigate: (tab: string) => void
+  agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: string }>
+  unreadChat?: boolean
+  myTaskCount?: number
+  hubPaused?: boolean
+  onTogglePause?: () => void
+}
+
+export default function TopBar({
+  tab,
+  selectedBusiness,
+  onSearchOpen,
+  onNavigate,
+  agentRunsData,
+  unreadChat = false,
+  myTaskCount = 0,
+  hubPaused = false,
+  onTogglePause,
+}: TopBarProps) {
+  const [sprintDays, setSprintDays] = useState<number | null>(null)
+
+  const activeAgentCount = Object.values(agentRunsData).filter(
+    a => a.status === 'running'
+  ).length
+
+  useEffect(() => {
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const daysLeft = dayOfWeek === 0 ? 1 : dayOfWeek <= 5 ? 5 - dayOfWeek : 0
+    setSprintDays(daysLeft)
+  }, [])
+
+  return (
+    <header className="border-b border-white/[0.07] px-3 md:px-5 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20 bg-[#080808]">
+      <div className="flex items-center gap-2 min-w-0 shrink-0">
+        <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center text-[11px] font-bold text-white">T</div>
+        <span className="text-white text-sm font-semibold tracking-wide">Todero</span>
+      </div>
+
+      <button
+        onClick={onSearchOpen}
+        className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] transition-colors max-w-[280px] w-full mx-4"
+      >
+        <Search size={13} className="text-white/30 shrink-0" />
+        <span className="text-white/25 text-xs flex-1 text-left">Search issues...</span>
+        <kbd className="text-[10px] text-white/20 border border-white/[0.07] rounded px-1 py-0.5 font-mono">⌘K</kbd>
+      </button>
+
+      <div className="flex items-center gap-1">
+        {onTogglePause && (
+          <button
+            onClick={onTogglePause}
+            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors ${
+              hubPaused
+                ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400'
+                : 'hover:bg-white/[0.05] text-white/40 hover:text-white/60'
+            }`}
+            title={hubPaused ? 'Hub paused — click to resume agents' : 'Pause all agents'}
+          >
+            {hubPaused ? (
+              <>
+                <Play size={14} className="text-red-400" />
+                <span className="hidden sm:inline text-[10px] font-medium">Paused</span>
+              </>
+            ) : (
+              <Pause size={14} />
+            )}
+          </button>
+        )}
+
+        {activeAgentCount > 0 && (
+          <button
+            onClick={() => onNavigate('team')}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] transition-colors"
+            title={`${activeAgentCount} agent${activeAgentCount > 1 ? 's' : ''} running`}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="text-[10px] text-emerald-400 font-medium">{activeAgentCount}</span>
+          </button>
+        )}
+
+        {sprintDays !== null && sprintDays > 0 && (
+          <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] text-white/30 text-[10px]">
+            <Activity size={10} />
+            <span>{sprintDays}d left</span>
+          </div>
+        )}
+
+        <button
+          onClick={onSearchOpen}
+          className="sm:hidden p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
+          title="Search (⌘K)"
+        >
+          <Search size={15} />
+        </button>
+
+        <button
+          onClick={() => onNavigate('board')}
+          className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
+          title="My Tasks"
+        >
+          <ListTodo size={15} />
+          {myTaskCount > 0 && (
+            <span className="text-[10px] font-medium bg-white/10 text-white/60 rounded-full px-1.5 py-0.5 leading-none min-w-[18px] text-center">
+              {myTaskCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => onNavigate('chat')}
+          className="relative p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
+          title="Agent Chat"
+        >
+          <MessageSquare size={15} />
+          {unreadChat && (
+            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+          )}
+        </button>
+
+        {/* TOD-631: Notifications */}
+        <NotificationBell />
+
+        <button
+          onClick={() => onNavigate('settings')}
+          className="ml-1 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/[0.15] transition-colors"
+          title="Profile & Settings"
+        >
+          <User size={13} className="text-white/50" />
+        </button>
+      </div>
+    </header>
+  )
+}

@@ -150,7 +150,6 @@ const STATUS_CHIP_COLORS: Record<string,string> = {
   released:        'bg-teal-500/20 text-teal-400 border-teal-500/30',
   completed:       'bg-green-600/20 text-green-400 border-green-600/30',
   closed:          'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
-  cancelled:       'bg-red-500/20 text-red-400 border-red-500/30',
 }
 
 const ALL_STATUSES = [
@@ -163,7 +162,6 @@ const ALL_STATUSES = [
   { value:'completed',       label:'Completed' },
   { value:'released',        label:'Released' },
   { value:'closed',          label:'Closed' },
-  { value:'cancelled',       label:'Cancelled' },
 ]
 
 const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
@@ -323,7 +321,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const allFiltered = tasks.filter(t => {
     // Filter out epics and features — they are organizational containers, not work items
     if (EXCLUDED_BOARD_TYPES.includes(t.type ?? '')) return false
-    if (statusFilter !== 'closed' && (t.status === 'closed' || t.status === 'cancelled')) return false
+    if (statusFilter !== 'closed' && t.status === 'closed') return false
     if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
     if (statusFilter === 'closed' && t.status !== 'closed') return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false

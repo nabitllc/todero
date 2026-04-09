@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
         .from('issues')
         .select('id, sprint, status, project')
         .in('project', projectNames)
-        .not('status', 'in', '("backlog","closed","completed","cancelled")')
+        .not('status', 'in', '("backlog","closed","completed")')
 
       const toAssign = (issues ?? []).filter((iss) => {
         // No sprint assigned, or sprint is from a previous date

@@ -26,7 +26,7 @@ function postDiscord(channelId: string, content: string) {
 }
 
 // Terminal statuses — issues in these states are "done" and not carried over
-const TERMINAL_STATUSES = ['closed', 'completed', 'released', 'cancelled']
+const TERMINAL_STATUSES = ['closed', 'completed', 'released']
 
 // ── POST /api/sprint-close ────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
