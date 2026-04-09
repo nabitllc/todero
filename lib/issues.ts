@@ -41,8 +41,10 @@ export interface Task {
   environment?: string
   pr_url?: string
   blocked_by?: string
+  is_blocked?: boolean
   parent_id?: string
   task_key?: string
+  severity?: string
   status_category?: 'Planned' | 'Ongoing' | 'SignOff' | 'Done' | null
   test_status?: string
   tester_status?: string

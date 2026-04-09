@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Button, Input, Textarea, Select, FormGroup, EmptyState, Badge } from '@/components/ui'
-import { Kanban, Search, X } from 'lucide-react'
+import { Kanban, Search, X, ClipboardList, Bug, Wrench, SearchIcon, Lock } from 'lucide-react'
 import { Chip } from '@/lib/mc-atoms'
 import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
 
@@ -93,13 +93,52 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
 }
 
 const BOARD_COLUMNS = [
-  { id:'backlog',    label:'Backlog',          color:'#71717a', statuses:['backlog'] },
+  { id:'backlog',    label:'Backlog',          color:'#71717a', statuses:['backlog','defined'] },
   { id:'open',       label:'Open',             color:'#3b82f6', statuses:['open'] },
   { id:'in_progress',label:'In Progress',      color:'#818cf8', statuses:['in_progress'] },
-  { id:'code_review', label:'In Review',        color:'#f97316', statuses:['code_review','product_review'] },
+  { id:'in_review',  label:'In Review',        color:'#f97316', statuses:['code_review','product_review'] },
   { id:'approved',   label:'Ready for Deploy', color:'#22c55e', statuses:['approved'] },
-  { id:'completed',  label:'Completed',        color:'#14b8a6', statuses:['completed','released'] },
+  { id:'signoff',    label:'Sign Off',         color:'#14b8a6', statuses:['released','completed'] },
 ]
+
+const EXCLUDED_BOARD_TYPES = ['epic', 'feature']
+
+const TYPE_ICONS: Record<string, React.ReactNode> = {
+  task: <ClipboardList size={10} />,
+  bug: <Bug size={10} />,
+  ops: <Wrench size={10} />,
+  research: <SearchIcon size={10} />,
+}
+
+const PRIORITY_DOT_COLORS: Record<string, string> = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#eab308',
+  low: '#71717a',
+}
+
+const SEVERITY_CHIP_STYLES: Record<string, string> = {
+  S0: 'bg-red-500/20 text-red-400 border-red-500/30',
+  S1: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  S2: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  S3: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+}
+
+const ASSIGNEE_DOT_COLORS: Record<string, string> = {
+  main: '#818cf8',
+  scout: '#3b82f6',
+  ops: '#f59e0b',
+  'kemuni-sme': '#3b82f6',
+  'vespera-sme': '#a855f7',
+  builder: '#f97316',
+  tester: '#22c55e',
+  michael: '#6b7280',
+  designer: '#ec4899',
+  auditor: '#14b8a6',
+  growth: '#10b981',
+  po: '#6366f1',
+  ux: '#ec4899',
+}
 
 const STATUS_CHIP_COLORS: Record<string,string> = {
   backlog:         'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
@@ -282,6 +321,8 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
   const allFiltered = tasks.filter(t => {
+    // Filter out epics and features — they are organizational containers, not work items
+    if (EXCLUDED_BOARD_TYPES.includes(t.type ?? '')) return false
     if (statusFilter !== 'closed' && (t.status === 'closed' || t.status === 'cancelled')) return false
     if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
     if (statusFilter === 'closed' && t.status !== 'closed') return false
@@ -467,7 +508,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   <span className="text-amber-400 text-[10px] font-semibold shrink-0">Needs You</span>
                   <p className="text-white text-xs font-medium truncate flex-1">{t.title}</p>
                   {t.project && <Chip label={t.project} />}
-                  {(t as any).task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{(t as any).task_key}</span>}
+                  {t.task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{t.task_key}</span>}
                 </div>
               ))}
             </div>
@@ -544,7 +585,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                           {task.assignee && ASSIGNEE_MAP[task.assignee] && (
                             <span className="text-[10px] text-white/50 shrink-0">{ASSIGNEE_MAP[task.assignee].emoji}</span>
                           )}
-                          {(task as any).task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{(task as any).task_key}</span>}
+                          {task.task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{task.task_key}</span>}
                         </div>
                       )
                     })}
@@ -655,25 +696,37 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                       </div>
                                       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
                                         {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
-                                        {colTasks.map(task => (
+                                        {colTasks.map(task => {
+                                          const aKey = task.assignee?.toLowerCase() ?? ''
+                                          const aName = ASSIGNEE_MAP[aKey]?.name ?? task.assignee ?? ''
+                                          const aLetter = aName.charAt(0).toUpperCase()
+                                          const aDotColor = ASSIGNEE_DOT_COLORS[aKey] ?? '#6b7280'
+                                          return (
                                           <div key={task.id}
                                             draggable
                                             onDragStart={() => setDragId(task.id)}
                                             onDragEnd={() => setDragId(null)}
                                             onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                                            className={`rounded-xl border p-2.5 cursor-pointer transition-colors border-l-2 ${
-                                              task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-white/20'
-                                            } ${dragId===task.id ? 'opacity-50' : ''}`}
-                                            style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a',
-                                              borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}>
-                                            <p className="text-white text-xs font-medium leading-snug mb-1">{task.title}</p>
-                                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                                              {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18'}}>{task.type}</span>}
-                                              {task.assignee && ASSIGNEE_MAP[task.assignee] && <span className="text-[9px] text-white/50">{ASSIGNEE_MAP[task.assignee].emoji}</span>}
-                                              {(task as any).task_key && <span className="text-[9px] font-mono text-white/20 ml-auto">{(task as any).task_key}</span>}
+                                            className={`rounded-lg border cursor-pointer transition-colors relative ${dragId===task.id ? 'opacity-50' : ''}`}
+                                            style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a'}}>
+                                            <div className="px-2 pt-1.5 pb-1.5">
+                                              {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
+                                              <p className="text-white text-[11px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
+                                              <div className="flex items-center gap-1 flex-wrap">
+                                                {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0">{TYPE_ICONS[task.type]}</span>}
+                                                {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a'}} />}
+                                                {(task.is_blocked || task.blocked_by) && <Lock size={9} className="text-red-400 shrink-0" />}
+                                              </div>
                                             </div>
+                                            {aLetter && (
+                                              <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                                                style={{background: aDotColor}} title={aName}>
+                                                {aLetter}
+                                              </div>
+                                            )}
                                           </div>
-                                        ))}
+                                          )
+                                        })}
                                       </div>
                                     </div>
                                   )
@@ -719,7 +772,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
                   <span className="text-xs font-semibold text-white/40">{col.label} ({colTasks.length})</span>
-                  {col.id === 'completed' && filtered.length > 0 && (
+                  {col.id === 'signoff' && filtered.length > 0 && (
                     <span className="text-[10px] text-white/30 font-mono">{Math.round((colTasks.length / filtered.length) * 100)}%</span>
                   )}
                 </div>
@@ -729,67 +782,59 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[60px]">
                 {loading && <div className="flex items-center justify-center py-4 gap-2 text-white/40 text-xs"><span className="animate-spin h-3 w-3 border-2 border-white/20 border-t-white/60 rounded-full" />Loading...</div>}
                 {!loading && colTasks.length === 0 && <EmptyState icon={Kanban} title="No tasks" className="py-6" />}
-                {colTasks.map(task => (
+                {colTasks.map(task => {
+                  const assigneeKey = task.assignee?.toLowerCase() ?? ''
+                  const assigneeName = ASSIGNEE_MAP[assigneeKey]?.name ?? task.assignee ?? ''
+                  const assigneeLetter = assigneeName.charAt(0).toUpperCase()
+                  const assigneeDotColor = ASSIGNEE_DOT_COLORS[assigneeKey] ?? '#6b7280'
+                  return (
                   <div key={task.id}
                     draggable
                     onDragStart={() => setDragId(task.id)}
                     onDragEnd={() => setDragId(null)}
                     onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                    className={`group rounded-xl border p-3 cursor-pointer transition-colors border-l-2 ${
-                      task.priority==='critical'?'border-l-red-500':task.priority==='high'?'border-l-orange-400':task.priority==='medium'?'border-l-blue-400':'border-l-white/20'
-                    } ${dragId===task.id ? 'opacity-50' : ''}`}
-                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a', borderLeftColor: task.priority==='critical'?'#ef4444':task.priority==='high'?'#fb923c':task.priority==='medium'?'#60a5fa':'#52525b'}}
-                    onMouseEnter={e=>{e.currentTarget.style.borderRightColor='#3f3f46';e.currentTarget.style.borderTopColor='#3f3f46';e.currentTarget.style.borderBottomColor='#3f3f46'}}
-                    onMouseLeave={e=>{const bc=dragId===task.id?'#555':'#27272a';e.currentTarget.style.borderRightColor=bc;e.currentTarget.style.borderTopColor=bc;e.currentTarget.style.borderBottomColor=bc}}>
-                    <div className="flex items-start justify-between gap-1">
-                      <p className="text-white text-sm font-medium leading-snug mb-1">{task.title}</p>
-                      {col.id === 'completed' && closedConfirm === task.id && (
-                        <span className="text-[10px] text-green-400 whitespace-nowrap animate-pulse">Archived ✓</span>
-                      )}
-                      {col.id === 'completed' && closedConfirm !== task.id && (
-                        <button onClick={e => { e.stopPropagation(); closeTask(task.id) }}
-                          className="text-[10px] text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-white/10">
-                          × Close
-                        </button>
-                      )}
+                    className={`group rounded-lg border cursor-pointer transition-colors relative ${dragId===task.id ? 'opacity-50' : ''}`}
+                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor='#3f3f46'}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=dragId===task.id?'#555':'#27272a'}}>
+                    <div className="px-2.5 pt-2 pb-2">
+                      {/* Top row: task_key */}
+                      <div className="flex items-center justify-between mb-1">
+                        {task.task_key && <span className="text-[10px] font-mono font-bold text-white/40">{task.task_key}</span>}
+                        {col.id === 'signoff' && closedConfirm === task.id && (
+                          <span className="text-[10px] text-green-400 whitespace-nowrap animate-pulse">Archived</span>
+                        )}
+                        {col.id === 'signoff' && closedConfirm !== task.id && (
+                          <button onClick={e => { e.stopPropagation(); closeTask(task.id) }}
+                            className="text-[10px] text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-white/10">
+                            x
+                          </button>
+                        )}
+                      </div>
+                      {/* Middle: title — 2 lines max */}
+                      <p className="text-white text-xs font-medium leading-snug line-clamp-2 mb-2">{task.title}</p>
+                      {/* Bottom row: chips and icons */}
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {task.project && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/10 shrink-0">{task.project}</span>}
+                        {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0" title={task.type}>{TYPE_ICONS[task.type]}</span>}
+                        {task.status && <span className={`inline-block text-[8px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${STATUS_CHIP_COLORS[task.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>{task.status.replace(/_/g,' ')}</span>}
+                        {task.priority && <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a'}} title={task.priority} />}
+                        {task.severity && SEVERITY_CHIP_STYLES[task.severity] && (
+                          <span className={`inline-block text-[8px] font-bold px-1 py-0 rounded border shrink-0 ${SEVERITY_CHIP_STYLES[task.severity]}`}>{task.severity}</span>
+                        )}
+                        {(task.is_blocked || task.blocked_by) && <Lock size={10} className="text-red-400 shrink-0" />}
+                      </div>
                     </div>
-                    {/* INF-100: blocked_by flag */}
-                    {task.blocked_by && (
-                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold mb-1 bg-red-500/10 text-red-400 border border-red-500/20">
-                        🚫 Blocked
+                    {/* Assignee dot — bottom-right */}
+                    {assigneeLetter && (
+                      <div className="absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                        style={{background: assigneeDotColor}} title={assigneeName}>
+                        {assigneeLetter}
                       </div>
                     )}
-                    <div className="flex items-center justify-between mb-1">
-                      {task.project && <p className="text-xs text-white/50">{task.project}</p>}
-                      {(task as any).task_key && <span className="text-[9px] font-mono text-white/30 bg-white/10/60 px-1.5 py-0.5 rounded">{(task as any).task_key}</span>}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {task.project && <Chip label={task.project} color={PROJECT_COLORS[task.project]||undefined} />}
-                      {task.type && <span className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full" style={{color:TYPE_COLORS[task.type]||'#71717a',background:(TYPE_COLORS[task.type]||'#71717a')+'18',border:`1px solid ${(TYPE_COLORS[task.type]||'#71717a')}30`}}>{task.type}</span>}
-                      {task.status && <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${STATUS_CHIP_COLORS[task.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>{task.status.replace(/_/g,' ')}</span>}
-                      {task.resolution_type && (
-                        <Chip label={RESOLUTION_OPTIONS.find(r=>r.value===task.resolution_type)?.label ?? task.resolution_type}
-                          color={RESOLUTION_BADGE_COLORS[task.resolution_type] ?? '#71717a'} />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 mt-2">
-                      {task.priority && (
-                        <span className="w-1.5 h-1.5 rounded-full inline-block"
-                          style={{background:PRIORITY_COLORS[task.priority]||'#3f3f46'}} />
-                      )}
-                      {task.assignee && ASSIGNEE_MAP[task.assignee] && (
-                        <span className="text-[10px] text-white/50">
-                          {ASSIGNEE_MAP[task.assignee].emoji} {ASSIGNEE_MAP[task.assignee].name}
-                        </span>
-                      )}
-                      {task.due_date && (
-                        <span className={`text-[10px] ml-auto ${isOverdue(task.due_date)?'text-red-500':'text-white/30'}`}>
-                          {new Date(task.due_date).toLocaleDateString('en-US',{month:'short',day:'numeric'})}
-                        </span>
-                      )}
-                    </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* Quick-add inline */}
@@ -1064,7 +1109,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 )}
 
                 {/* Title */}
-                {(t as any).task_key && <span className="text-[10px] font-mono text-white/30 bg-white/10 px-2 py-0.5 rounded-full">{(t as any).task_key}</span>}
+                {t.task_key && <span className="text-[10px] font-mono text-white/30 bg-white/10 px-2 py-0.5 rounded-full">{t.task_key}</span>}
                 <h2 className="text-white text-lg font-semibold leading-snug">{t.title}</h2>
 
                 {/* Status + Priority badges */}
