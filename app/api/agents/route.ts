@@ -77,23 +77,27 @@ export async function GET() {
       }
     }
 
-    // 3. Check for running claude CLI processes (real-time detection)
+    // 3. Check for running claude CLI agent processes (real-time detection)
+    // Only match spawned agent sessions, NOT the main Claude Desktop session
     const runningAgents = new Set<string>()
     try {
-      const { stdout } = await execAsync('ps aux | grep "[c]laude" | grep -v "grep"', { timeout: 3000 })
+      const { stdout } = await execAsync(
+        'ps aux | grep "[c]laude" | grep -v "Claude.app" | grep -v "disclaimer" | grep -v "ShipIt"',
+        { timeout: 3000 }
+      )
       const lines = stdout.trim().split('\n').filter(Boolean)
       for (const line of lines) {
-        for (const agentId of Object.keys(AGENT_META)) {
-          if (line.toLowerCase().includes(agentId) || line.includes(`agent ${agentId}`)) {
-            runningAgents.add(agentId)
-          }
-        }
+        // Only match lines that contain explicit agent identifiers (from spawn commands)
+        const lower = line.toLowerCase()
+        if (lower.includes('you are builder') || lower.includes('agent builder')) runningAgents.add('builder')
+        else if (lower.includes('you are tester') || lower.includes('agent tester')) runningAgents.add('tester')
+        else if (lower.includes('you are ops') || lower.includes('agent ops')) runningAgents.add('ops')
+        else if (lower.includes('you are scout') || lower.includes('agent scout')) runningAgents.add('scout')
+        else if (lower.includes('you are deployer') || lower.includes('agent deployer')) runningAgents.add('deployer')
+        else if (lower.includes('you are designer') || lower.includes('agent designer')) runningAgents.add('designer')
+        else if (lower.includes('you are po') || lower.includes('agent po')) runningAgents.add('po')
       }
-      // If claude processes exist but none matched a specific agent, attribute to builder
-      if (lines.length > 0 && runningAgents.size === 0) {
-        runningAgents.add('builder')
-      }
-    } catch { /* no claude processes running */ }
+    } catch { /* no agent processes running */ }
 
     // 4. Build agent list from AGENT_META + active issue data + process status
     const agents = Object.entries(AGENT_META).map(([id, meta]) => {
