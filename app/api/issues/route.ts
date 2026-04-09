@@ -400,11 +400,11 @@ async function validateWorkflowTransition(
 }
 
 // ── executePostFunctions ──────────────────────────────────────────────────────
-async function getActiveSprintNameForProject(project: string | null | undefined): Promise<string | null> {
+async function getActiveSprintForProject(project: string | null | undefined): Promise<{ name: string; start_date: string } | null> {
   if (!project) return null
   const { data, error } = await supabase
     .from('sprints')
-    .select('name')
+    .select('name, start_date')
     .eq('project', project)
     .eq('status', 'active')
     .order('start_date', { ascending: false })
@@ -414,7 +414,7 @@ async function getActiveSprintNameForProject(project: string | null | undefined)
     console.warn('[set_active_sprint] failed to fetch active sprint:', error.message)
     return null
   }
-  return (data?.name as string | undefined) ?? null
+  return data as { name: string; start_date: string } | null
 }
 
 async function executePostFunctions(
@@ -493,9 +493,9 @@ async function executePostFunctions(
       const currentSprint = (fields.sprint ?? updatedIssue.sprint ?? issue.sprint) as string | null | undefined
       const project = (fields.project ?? updatedIssue.project ?? issue.project) as string | null | undefined
       if (!currentSprint && project) {
-        const activeSprint = await getActiveSprintNameForProject(project)
+        const activeSprint = await getActiveSprintForProject(project)
         if (activeSprint) {
-          fields.sprint = activeSprint
+          fields.sprint = activeSprint.start_date
         }
       }
     }
@@ -522,10 +522,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(withIssueStatusCategory(data))
   }
 
-  const { data, error } = await supabase
-    .from('issues')
-    .select('*')
-    .order('created_at', { ascending: false })
+  const url = new URL(req.url)
+  const search = url.searchParams.get('search')
+  const limit = parseInt(url.searchParams.get('limit') || '0', 10)
+
+  let query = supabase.from('issues').select('*')
+
+  if (search) {
+    query = query.ilike('title', `%${search}%`)
+    query = query.order('updated_at', { ascending: false })
+  } else {
+    query = query.order('created_at', { ascending: false })
+  }
+
+  if (limit > 0) {
+    query = query.limit(limit)
+  }
+
+  const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(withIssueStatusCategoryList(data))
 }

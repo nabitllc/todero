@@ -1,10 +1,8 @@
 #!/bin/bash
-# MC-207: Prevent broken TypeScript from being committed
-# Runs npm run build and rejects the commit if it fails.
-
 echo "[pre-commit] Running TypeScript build check..."
 cd /Users/kemuniagent/todero
-/opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -20
+rm -rf .next
+PATH="/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:$PATH" npx next build 2>&1 | tail -20
 
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
   echo ""

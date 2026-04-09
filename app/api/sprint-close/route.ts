@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
     postDiscord(COMPLETED_TASKS_CHANNEL, retroMsg)
 
     // 7. Automatically start next sprint
-    let newSprint = null
+    let newSprint: Record<string, unknown> | null = null
     try {
       const startRes = await fetch(
         `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/sprint-start`,
@@ -151,10 +151,31 @@ export async function POST(req: NextRequest) {
       console.error('[sprint-close] auto-start failed:', e)
     }
 
+    // 8. Reassign carried-over issues to new sprint
+    let carriedOverReassigned = 0
+    if (newSprint && sprintIssues.length > 0) {
+      const carriedOverIds = sprintIssues
+        .filter((iss) => !TERMINAL_STATUSES.includes((iss.status as string) ?? ''))
+        .map((iss) => iss.id as string)
+
+      if (carriedOverIds.length > 0 && newSprint?.start_date) {
+        const newSprintDate = newSprint.start_date as string
+        const { error: carryErr } = await supabase
+          .from('issues')
+          .update({ sprint: newSprintDate, updated_at: new Date().toISOString() })
+          .in('id', carriedOverIds)
+
+        if (!carryErr) {
+          carriedOverReassigned = carriedOverIds.length
+        }
+      }
+    }
+
     return NextResponse.json({
       closed_sprint: closedSprint,
       retro,
       new_sprint: newSprint,
+      carried_over_reassigned: carriedOverReassigned,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'

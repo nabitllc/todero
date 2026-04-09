@@ -6,10 +6,10 @@
 //   <MobileNav lg:hidden>     ← mobile bottom nav, hidden on desktop
 // </div>
 'use client'
-import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings, ChevronRight } from 'lucide-react'
+import React, { useEffect, useState, useCallback } from 'react'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings } from 'lucide-react'
 import { AGENT_DISPLAY, CRONS, LIVE_FEED, getNextRuns, ALL_AGENTS, PROJECT_COLORS, TYPE_COLORS, DEFAULT_SPRINT_PROJECTS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
-import { Dot, Chip } from '@/lib/mc-atoms'
+import { Dot } from '@/lib/mc-atoms'
 import BusinessRail from '@/components/BusinessRail'
 import OnboardingWizard from '@/components/OnboardingWizard'
 import OverviewTab from '@/components/tabs/OverviewTab'
@@ -29,6 +29,8 @@ import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
 import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
+import SearchOverlay from '@/components/SearchOverlay'
+import TopBar from '@/components/TopBar'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -92,57 +94,6 @@ function buildPath(business: string | null, tab: string): string {
     return tab === 'overview' ? `/b/${slug}` : `/b/${slug}/${tab}`
   }
   return tab === 'overview' ? '/' : `/${tab}`
-}
-
-function SearchOverlay({ open, onClose, onNavigate }: { open: boolean; onClose: () => void; onNavigate: (tab: string) => void }) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-  useEffect(() => { if (open) { setQuery(''); setResults([]); setTimeout(() => inputRef.current?.focus(), 50) } }, [open])
-  const doSearch = useCallback((q: string) => {
-    if (!q.trim()) { setResults([]); return }
-    setLoading(true)
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    fetch(`${SUPA}/rest/v1/issues?title=ilike.*${encodeURIComponent(q)}*&limit=20&order=updated_at.desc`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then(data => { if (Array.isArray(data)) setResults(data); setLoading(false) }).catch(() => setLoading(false))
-  }, [])
-  const handleChange = (val: string) => { setQuery(val); if (debounceRef.current) clearTimeout(debounceRef.current); debounceRef.current = setTimeout(() => doSearch(val), 300) }
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] bg-black/80" onClick={onClose}>
-      <div className="w-full max-w-xl mx-4" onClick={e => e.stopPropagation()}>
-        <div className="rounded-2xl border border-white/10 overflow-hidden bg-neutral-900">
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
-            <Search size={16} className="text-white/50 shrink-0" />
-            <input ref={inputRef} value={query} onChange={e => handleChange(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') onClose() }}
-              placeholder="Search issues..." className="flex-1 bg-transparent text-white text-sm outline-none placeholder-white/30" />
-            <kbd className="text-[10px] text-white/30 border border-white/10 rounded px-1.5 py-0.5">ESC</kbd>
-          </div>
-          {loading && <div className="px-4 py-3 text-white/30 text-xs">Searching...</div>}
-          {!loading && results.length > 0 && (
-            <div className="max-h-[50vh] overflow-y-auto">
-              {results.map((r: any) => (
-                <button key={r.id} className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-left border-b border-white/10 last:border-0"
-                  onClick={() => { onClose(); onNavigate('board') }}>
-                  {r.task_key && <span className="text-[9px] font-mono text-white/50 bg-white/10 px-1.5 py-0.5 rounded shrink-0">{r.task_key}</span>}
-                  <span className="text-sm text-white truncate flex-1">{r.title}</span>
-                  {r.project && <Chip label={r.project} color={PROJECT_COLORS[r.project] || undefined} />}
-                  {r.type && (() => { const tc = TYPE_COLORS[r.type] || TYPE_COLORS.task; return <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full shrink-0" style={{ color: tc, background: tc + '18' }}>{r.type}</span> })()}
-                </button>
-              ))}
-            </div>
-          )}
-          {!loading && query.trim() && results.length === 0 && (
-            <div className="px-4 py-6 text-center text-white/30 text-xs">No results found</div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export default function Home() {
@@ -366,6 +317,7 @@ export default function Home() {
         unreadChat={unreadChat}
         setUnreadChat={setUnreadChat}
         clock={clock}
+        onSearchOpen={() => setSearchOpen(true)}
       />
 
       {/* MOBILE BOTTOM NAV */}
@@ -398,34 +350,15 @@ export default function Home() {
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col h-screen overflow-auto">
-        {/* Breadcrumb header */}
-        <header className="border-b border-white/10 px-3 md:px-6 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20 bg-neutral-950">
-          <nav className="flex items-center gap-1 min-w-0 overflow-hidden">
-            <button onClick={() => { selectBusiness(null); navigate('overview') }}
-              className={`text-sm shrink-0 transition-colors ${selectedBusiness || tab !== 'overview' ? 'text-white/40 hover:text-white/70' : 'text-white font-medium'}`}>
-              All
-            </button>
-            {selectedBusiness && (
-              <>
-                <ChevronRight size={12} className="text-white/20 shrink-0" />
-                <button onClick={() => { navigate('overview') }}
-                  className={`text-sm shrink-0 transition-colors ${tab !== 'overview' ? 'text-white/40 hover:text-white/70' : 'text-white font-medium'}`}>
-                  {BIZ_EMOJI[selectedBusiness] || ''} {selectedBusiness}
-                </button>
-              </>
-            )}
-            {tab !== 'overview' && (
-              <>
-                <ChevronRight size={12} className="text-white/20 shrink-0" />
-                <span className="text-white text-sm font-medium capitalize truncate">{tab}</span>
-              </>
-            )}
-          </nav>
-          <div className="flex items-center gap-3 shrink-0">
-            <button onClick={() => setSearchOpen(true)} className="text-white/30 hover:text-white/70 transition-colors" title="Search (⌘K)"><Search size={15} /></button>
-            <span className="text-white/30 text-xs hidden sm:inline">{new Date().toLocaleDateString('en-US', {weekday:'short',month:'short',day:'numeric'})}</span>
-          </div>
-        </header>
+        {/* TOD-630: Top bar — logo left, search center, actions right */}
+        <TopBar
+          tab={tab}
+          selectedBusiness={selectedBusiness}
+          onSearchOpen={() => setSearchOpen(true)}
+          onNavigate={navigate}
+          agentRunsData={agentRunsData}
+          unreadChat={unreadChat}
+        />
 
         {/* Business context header */}
         {selectedBusiness && (
