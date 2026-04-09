@@ -16,6 +16,7 @@ interface AgentRow {
   emoji: string
   status: 'active' | 'idle' | 'scheduled' | string
   ago: number | null      // minutes since last activity
+  nextRun: string | null  // for scheduled agents
   currentTask: string | null
   issueKey: string | null
   issueTitle: string | null
@@ -85,6 +86,7 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
             emoji: display.emoji ?? '🤖',
             status: a.status,
             ago: a.ago,
+            nextRun: a.nextRun ?? null,
             currentTask: agentCurrentTask?.[a.id] ?? null,
             issueKey: issue?.key ?? null,
             issueTitle: issue?.title ?? null,
@@ -178,6 +180,8 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
                     </div>
                   ) : agent.status === 'active' ? (
                     <div className="mt-0.5 text-[10px] text-white/30">Working</div>
+                  ) : agent.status === 'scheduled' && agent.nextRun ? (
+                    <div className="mt-0.5 text-[10px] text-amber-500/60">Next run {agent.nextRun}</div>
                   ) : null}
 
                   {/* Last active */}

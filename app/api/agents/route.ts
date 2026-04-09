@@ -79,11 +79,20 @@ export async function GET() {
       const lastTs = agentLastActive[id] ?? 0
       const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
 
-      // Agent is "active" if they have an in_progress issue or were active in last 30 min
+      // Agent is "active" if they have an in_progress issue
       const hasActiveIssue = !!issue && issue.status === 'in_progress'
-      const recentlyActive = agoMin !== null && agoMin < 30
       const isActive = hasActiveIssue
       const isScheduled = id === 'ops' && !isActive
+
+      // Compute next scheduled run for scheduled agents (ops = heartbeat every 30min)
+      let nextRun: string | null = null
+      if (isScheduled && lastTs > 0) {
+        const nextTs = lastTs + 30 * 60 * 1000
+        const minsUntil = Math.max(0, Math.round((nextTs - now) / 60000))
+        nextRun = minsUntil <= 0 ? 'any moment' : minsUntil < 60 ? `in ${minsUntil}m` : `in ${Math.floor(minsUntil / 60)}h ${minsUntil % 60}m`
+      } else if (isScheduled) {
+        nextRun = 'in ≤30m'
+      }
 
       return {
         id,
@@ -91,6 +100,7 @@ export async function GET() {
         emoji: meta.emoji,
         role: meta.role,
         status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
+        nextRun,
         model: 'anthropic/claude-sonnet-4-6',
         modelShort: 'Sonnet 4.6',
         color: meta.color,
