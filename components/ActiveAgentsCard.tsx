@@ -2,7 +2,7 @@
 // TOD-649: Active Agents Overview card
 // Shows live agent activity: who is working, on what issue, and freshness state.
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
 
 const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
@@ -15,6 +15,7 @@ interface AgentRow {
   name: string
   emoji: string
   status: 'active' | 'idle' | 'scheduled' | string
+  isRunning: boolean       // true if agent process detected via ps
   ago: number | null      // minutes since last activity
   nextRunTs: number | null  // epoch ms for next scheduled run
   currentTask: string | null
@@ -40,12 +41,19 @@ function fmtAgo(ago: number | null): string {
 }
 
 const Countdown = React.memo(function Countdown({ targetTs }: { targetTs: number }) {
+  // Use a stable target ref that only updates if the target changes by > 1 minute.
+  // This prevents countdown resets when the parent re-renders every 30s.
+  const stableTarget = useRef(targetTs)
+  if (Math.abs(targetTs - stableTarget.current) > 60000) {
+    stableTarget.current = targetTs
+  }
+
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(iv)
   }, [])
-  const diff = Math.max(0, Math.floor((targetTs - now) / 1000))
+  const diff = Math.max(0, Math.floor((stableTarget.current - now) / 1000))
   const h = Math.floor(diff / 3600)
   const m = Math.floor((diff % 3600) / 60)
   const s = diff % 60
@@ -53,7 +61,7 @@ const Countdown = React.memo(function Countdown({ targetTs }: { targetTs: number
   if (h > 0) parts.push(`${h}h`)
   if (m > 0) parts.push(`${m}m`)
   if (h === 0) parts.push(`${s}s`) // only show seconds when under 1h
-  return <>{diff === 0 ? 'any moment' : parts.join(' ')}</>
+  return <>{diff === 0 ? 'waking up...' : parts.join(' ')}</>
 })
 
 export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTask?: Record<string, string> }) {
@@ -102,6 +110,7 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
             name: display.name ?? a.id,
             emoji: display.emoji ?? '🤖',
             status: a.status,
+            isRunning: !!a.isRunning,
             ago: a.ago,
             nextRunTs: a.nextRunTs ?? null,
             currentTask: agentCurrentTask?.[a.id] ?? null,
@@ -164,9 +173,9 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
             return (
               <div key={agent.id}
                 className="flex items-center gap-2 rounded-md px-2.5 py-1.5 bg-white/[0.03] border border-white/[0.06]">
-                {/* Status dot */}
+                {/* Status dot — pulses when agent process is actually running */}
                 <span
-                  className="block w-2 h-2 rounded-full shrink-0"
+                  className={`block w-2 h-2 rounded-full shrink-0${agent.isRunning ? ' animate-pulse' : ''}`}
                   style={{ background: dot.color, boxShadow: agent.status === 'active' ? `0 0 6px ${dot.color}66` : undefined }}
                 />
                 {/* Agent name */}

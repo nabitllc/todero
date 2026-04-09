@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ??
@@ -73,15 +77,34 @@ export async function GET() {
       }
     }
 
-    // 3. Build agent list from AGENT_META + active issue data
+    // 3. Check for running claude CLI processes (real-time detection)
+    const runningAgents = new Set<string>()
+    try {
+      const { stdout } = await execAsync('ps aux | grep "[c]laude" | grep -v "grep"', { timeout: 3000 })
+      const lines = stdout.trim().split('\n').filter(Boolean)
+      for (const line of lines) {
+        for (const agentId of Object.keys(AGENT_META)) {
+          if (line.toLowerCase().includes(agentId) || line.includes(`agent ${agentId}`)) {
+            runningAgents.add(agentId)
+          }
+        }
+      }
+      // If claude processes exist but none matched a specific agent, attribute to builder
+      if (lines.length > 0 && runningAgents.size === 0) {
+        runningAgents.add('builder')
+      }
+    } catch { /* no claude processes running */ }
+
+    // 4. Build agent list from AGENT_META + active issue data + process status
     const agents = Object.entries(AGENT_META).map(([id, meta]) => {
       const issue = agentIssue[id]
       const lastTs = agentLastActive[id] ?? 0
       const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
 
-      // Agent is "active" if they have any assigned work in the pipeline
+      // Agent is "active" if they have a running process OR assigned work in the pipeline
+      const isRunning = runningAgents.has(id)
       const hasActiveIssue = !!issue
-      const isActive = hasActiveIssue
+      const isActive = isRunning || hasActiveIssue
       const isScheduled = id === 'ops' && !isActive
 
       // Compute next scheduled run timestamp for scheduled agents (ops = heartbeat every 30min)
@@ -99,6 +122,7 @@ export async function GET() {
         emoji: meta.emoji,
         role: meta.role,
         status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
+        isRunning,
         nextRunTs,
         model: 'anthropic/claude-sonnet-4-6',
         modelShort: 'Sonnet 4.6',
