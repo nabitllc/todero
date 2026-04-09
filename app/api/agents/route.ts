@@ -54,13 +54,18 @@ export async function GET() {
       }
     }
 
-    // Build lookup: agent → current issue
+    // Build lookup: agent → current issue (prefer in_progress over review statuses)
     const agentIssue: Record<string, { key: string; title: string; status: string }> = {}
-    for (const iss of activeIssues ?? []) {
+    // Sort: in_progress first, then code_review, then product_review
+    const statusPriority = (s: string) => s === 'in_progress' ? 0 : s === 'code_review' ? 1 : 2
+    const sortedIssues = [...(activeIssues ?? [])].sort((a, b) => statusPriority(a.status) - statusPriority(b.status))
+    for (const iss of sortedIssues) {
       const owner = iss.worked_by || iss.assignee
       if (owner && !agentIssue[owner]) {
         agentIssue[owner] = { key: iss.task_key ?? '?', title: iss.title ?? '', status: iss.status ?? '' }
-        // Also track activity from issue updates
+      }
+      // Track activity from issue updates for all issues
+      if (owner) {
         const issTs = new Date(iss.updated_at).getTime()
         if (!agentLastActive[owner] || issTs > agentLastActive[owner]) {
           agentLastActive[owner] = issTs
