@@ -35,17 +35,44 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'vespera-sme': 'vespera-sme',
   'main': 'main',
   'KAOS': 'main',
-  'builder': 'main',
+  'builder': 'builder',
   'michael': null,
 }
 
-function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string) {
+const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
+const WORKSPACE = '/Users/kemuniagent/.openclaw/workspace'
+
+function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
-  const msg = (status === 'in_review' || status === 'code_review')
-    ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
-    : `Issue ${taskKey} is ready: ${title}. Pick it up and start work.`
-  const cmd = `openclaw agent --agent ${agentId} --message ${JSON.stringify(msg)} 2>/dev/null`
+  let msg: string
+  if (status === 'in_review' || status === 'code_review') {
+    msg = `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
+  } else if (status === 'open' && issueId) {
+    const SELF_CHAIN_AGENTS = new Set(['builder', 'ops', 'scout', 'po'])
+    const DONE_STATUS: Record<string, string> = {
+      builder: 'code_review',
+      tester: 'code_review (approve) or open (reject)',
+      designer: 'code_review (approve) or open (reject)',
+      ops: 'product_review',
+      scout: 'completed',
+      po: 'product_review',
+      auditor: 'completed',
+    }
+    const doneStatus = DONE_STATUS[assignee] ?? 'code_review'
+    const inProgressPatch = `BEFORE starting work, PATCH to in_progress:\nPATCH http://localhost:3000/api/issues\n{"id":"${issueId}","status":"in_progress","transitioned_by":"${assignee}"}`
+    const doneInstruction = `\n\nWhen done: PATCH to ${doneStatus} with implementation_notes + transitioned_by="${assignee}".`
+    const selfChain = SELF_CHAIN_AGENTS.has(assignee)
+      ? `\n\nAfter completing this issue, immediately check for your next open issue:\nGET http://localhost:3000/api/issues?assignee=${assignee}&status=open — if any exist, PATCH the top-priority one to in_progress and start work immediately. Do not wait for another trigger.`
+      : ''
+    msg = `Issue ${taskKey} is ready for you: ${title}.\n\n${inProgressPatch}${doneInstruction}${selfChain}`
+  } else {
+    msg = `Issue ${taskKey} is assigned to you (${status}): ${title}. Check it and take action.`
+  }
+  // Claude Code replaces openclaw agent
+  const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
+  const prompt = `<workspace-context>${context}</workspace-context>\n\nYou are ${agentId}. ${msg}`
+  const cmd = `${CLAUDE_BIN} --permission-mode bypassPermissions --print ${JSON.stringify(prompt)} 2>/dev/null`
   execAsync(cmd, { timeout: 30000 }, () => {})
 }
 
@@ -69,7 +96,7 @@ function postDiscord(channelId: string, content: string) {
     headers: {
       'Authorization': `Bot ${token}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'
+      'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)'
     },
     body: JSON.stringify({ content })
   }).catch(err => console.error('[discord]', err))
@@ -199,9 +226,6 @@ async function validateHierarchy(
       return { error: `type=epic should not have a parent_id (epics are top-level)` }
     }
   }
-  // ops, research: intentionally bypass hierarchy validation.
-  // These types are standalone work items that may optionally link to a parent
-  // of any type for context, without enforcing the epic→feature→task chain.
   return null
 }
 
@@ -242,9 +266,6 @@ interface TransitionError {
 }
 
 // ── validateWorkflowTransition ────────────────────────────────────────────────
-// Validates a status transition against the workflow_transitions table.
-// Supports all issue types: task, bug, feature, epic, ops, research.
-// Returns null on success, or a TransitionError on failure.
 async function validateWorkflowTransition(
   issue: Record<string, unknown>,
   newStatus: string,
@@ -254,13 +275,11 @@ async function validateWorkflowTransition(
   const issueType = (issue.type as string) ?? 'task'
   const fromStatus = issue.status as string
 
-  // Supported types with full workflow engine
   const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
   if (!WORKFLOW_TYPES.includes(issueType)) {
     return { transition: null, error: null } as unknown as { transition: WorkflowTransition; error: null }
   }
 
-  // Look up allowed transition
   const { data: transition, error: dbErr } = await supabase
     .from('workflow_transitions')
     .select('condition_role, validators, post_functions')
@@ -271,7 +290,6 @@ async function validateWorkflowTransition(
 
   if (dbErr) {
     console.error('[workflow] DB error looking up transition:', dbErr)
-    // Don't block on DB error — fall through
     return { transition: null, error: null } as unknown as { transition: WorkflowTransition; error: null }
   }
 
@@ -285,84 +303,56 @@ async function validateWorkflowTransition(
     }
   }
 
-  // ── Condition role check ──
   const merged = { ...issue, ...body }
   const conditionRole = transition.condition_role
 
   if (conditionRole === 'po_or_main') {
     if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
-      return {
-        transition: null,
-        error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_sme') {
     const allowed = ['po', 'main', 'kemuni-sme', 'vespera-sme']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return {
-        transition: null,
-        error: { error: 'Only po, main, or an SME (kemuni-sme, vespera-sme) can execute this transition', field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: 'Only po, main, or an SME can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_ops') {
     const allowed = ['po', 'main', 'ops']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return {
-        transition: null,
-        error: { error: 'Only po, main, or ops can execute this transition', field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: 'Only po, main, or ops can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'assignee') {
     const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
     if (!transitionedBy || transitionedBy !== issueAssignee) {
-      return {
-        transition: null,
-        error: { error: `Only the assignee (${issueAssignee ?? 'unset'}) can execute this transition`, field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: `Only the assignee (${issueAssignee ?? 'unset'}) can execute this transition`, field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'assignee_or_ops') {
     const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
     if (!transitionedBy || (transitionedBy !== issueAssignee && transitionedBy !== 'ops')) {
-      return {
-        transition: null,
-        error: { error: `Only the assignee (${issueAssignee ?? 'unset'}) or ops can execute this transition`, field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: `Only the assignee (${issueAssignee ?? 'unset'}) or ops can execute this transition`, field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'scout_only') {
     const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
     if (!transitionedBy || (transitionedBy !== 'scout' && issueAssignee !== 'scout')) {
-      return {
-        transition: null,
-        error: { error: 'Only scout can execute this transition', field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: 'Only scout can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'reviewer') {
     const issueReviewer = (body.reviewer as string) ?? (issue.reviewer as string)
     if (!transitionedBy || transitionedBy !== issueReviewer) {
-      return {
-        transition: null,
-        error: { error: `Only the reviewer (${issueReviewer ?? 'unset'}) can execute this transition`, field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: `Only the reviewer (${issueReviewer ?? 'unset'}) can execute this transition`, field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'tester_or_designer') {
     if (!transitionedBy || !['tester', 'designer', 'ux'].includes(transitionedBy)) {
-      return {
-        transition: null,
-        error: { error: 'Only tester or designer can execute this transition', field: 'transitioned_by' }
-      }
+      return { transition: null, error: { error: 'Only tester or designer can execute this transition', field: 'transitioned_by' } }
     }
   }
 
-  // ── Validator checks ──
   const validators: string[] = transition.validators ?? []
   const missing: string[] = []
 
   for (const v of validators) {
     if (v === 'ref_required') {
-      // ops and research types are exempt — they deliver outcomes, not code artifacts
       const isExemptType = issueType === 'ops' || issueType === 'research'
       if (!isExemptType) {
-        // At least one of: commit_sha, feature_branch, pr_url
         const hasRef = merged.feature_branch || merged.commit_sha || merged.pr_url
         if (!hasRef) {
           missing.push('commit_sha or feature_branch or pr_url (at least one required)')
@@ -378,7 +368,6 @@ async function validateWorkflowTransition(
         missing.push('tester_status=passed and designer_status=passed')
       }
     } else if (v === 'children_exist') {
-      // Special: check if any child issues exist for this epic
       const issueId = issue.id as string
       if (issueId) {
         const { count } = await supabase
@@ -390,7 +379,6 @@ async function validateWorkflowTransition(
         }
       }
     } else {
-      // Standard field presence check
       const val = merged[v]
       if (val === undefined || val === null || val === '') {
         missing.push(v)
@@ -412,11 +400,8 @@ async function validateWorkflowTransition(
 }
 
 // ── executePostFunctions ──────────────────────────────────────────────────────
-// Applies post-transition side effects: assignee changes, Discord notifications,
-// rejection tracking, timestamp writes.
 async function getActiveSprintNameForProject(project: string | null | undefined): Promise<string | null> {
   if (!project) return null
-
   const { data, error } = await supabase
     .from('sprints')
     .select('name')
@@ -425,12 +410,10 @@ async function getActiveSprintNameForProject(project: string | null | undefined)
     .order('start_date', { ascending: false })
     .limit(1)
     .maybeSingle()
-
   if (error) {
     console.warn('[set_active_sprint] failed to fetch active sprint:', error.message)
     return null
   }
-
   return (data?.name as string | undefined) ?? null
 }
 
@@ -445,13 +428,10 @@ async function executePostFunctions(
     const { action, params } = fn
 
     if (action === 'set_assignee') {
-      // Support both legacy `from_field` and new `source` param styles
       const sourceKey = (params.source ?? params.from_field) as string | null | undefined
       if (sourceKey === null || ('source' in params && params.source === null) || ('to' in params && params.to === null)) {
-        // Unassign
         fields.assignee = null
       } else if (sourceKey) {
-        // sourceKey is a field name — read from updated issue or original
         const newAssignee = (updatedIssue[sourceKey] ?? issue[sourceKey]) as string | null
         if (newAssignee !== undefined) {
           fields.assignee = newAssignee
@@ -460,11 +440,9 @@ async function executePostFunctions(
     }
 
     if (action === 'notify_kaos') {
-      // Send a message to the main KAOS agent via openclaw
       const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
       const key = (notifyIssue.task_key ?? '?') as string
       const title = (notifyIssue.title ?? '') as string
-      // Fire-and-forget via openclaw message
       fetch('http://localhost:3001/api/message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -477,7 +455,6 @@ async function executePostFunctions(
 
     if (action === 'notify_discord') {
       const channelId = (params.channel as string) ?? COMPLETED_TASKS_CHANNEL
-      // Build a notification for the completed/approved transition
       const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
       const key = (notifyIssue.task_key ?? '?') as string
       const ts = new Date().toLocaleString('en-US', {
@@ -562,7 +539,6 @@ export async function POST(req: NextRequest) {
 
   const normalizedProject = normalizeProjectName(project)
 
-  // ── Required fields ──
   const missing: string[] = []
   if (!title?.trim())                missing.push('title')
   if (!normalizedProject.trim())     missing.push('project')
@@ -575,7 +551,6 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Enum validation ──
   if (type && !VALID_TYPES.includes(type)) {
     return NextResponse.json(
       { error: `Invalid value for 'type': "${type}". Allowed values: ${VALID_TYPES.join(', ')}` },
@@ -607,18 +582,15 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── DoF: features require description ──
   if (type === 'feature' && !description?.trim()) {
     return NextResponse.json({ error: 'Feature requires: description' }, { status: 422 })
   }
 
-  // ── Hierarchy validation ──
   const hierarchyErr = await validateHierarchy(type ?? 'task', parent_id)
   if (hierarchyErr) {
     return NextResponse.json({ error: hierarchyErr.error }, { status: 400 })
   }
 
-  // ── Auto-set owner ──
   let effectiveOwner = owner
   if (!effectiveOwner) {
     const issueType = type ?? 'task'
@@ -633,7 +605,6 @@ export async function POST(req: NextRequest) {
     else effectiveOwner = 'builder'
   }
 
-  // ── Sprint required for non-backlog issues ──
   const effectiveStatus = status ?? 'open'
   if (effectiveStatus !== 'backlog' && !sprint?.trim()) {
     return NextResponse.json(
@@ -642,7 +613,6 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // ── Auto-routing ──
   let effectiveAssignee = assignee
   let routingNote = ''
   if (!effectiveAssignee) {
@@ -673,14 +643,12 @@ export async function POST(req: NextRequest) {
     ? (description ? `${description}\n\n${routingNote}` : routingNote)
     : description
 
-  // Log auto-routing to implementation_notes
   const autoRoutingNote = routingNote ? `Auto-assigned: ${routingNote.replace(/^\[|\]$/g, '')}` : ''
   const existingImplNotes = (body.implementation_notes as string | undefined) ?? ''
   const effectiveImplNotes = autoRoutingNote
     ? (existingImplNotes ? `${existingImplNotes}\n${autoRoutingNote}` : autoRoutingNote)
     : existingImplNotes || undefined
 
-  // ── Dedup guard: reject duplicate tester/reviewer issues ──
   const isTesterIssue = (title ?? '').startsWith('🧪 Tester:') || (title ?? '').includes('Tester: Review')
   if (isTesterIssue || type === 'review') {
     const { data: existingByTitle } = await supabase
@@ -743,7 +711,6 @@ export async function PATCH(req: NextRequest) {
   const { id: rawId, task_key, transitioned_by: _transitionedBy, ...fields } = body
   const transitionedBy = _transitionedBy as string | undefined
 
-  // ── Resolve UUID ──
   let id = rawId
   if (!id && task_key) {
     const { data: lookup, error: lookupErr } = await supabase
@@ -758,14 +725,12 @@ export async function PATCH(req: NextRequest) {
   }
   if (!id) return NextResponse.json({ error: 'id or task_key required' }, { status: 400 })
 
-  // ── Fetch existing record ──
   const { data: before } = await supabase
     .from('issues')
     .select('*')
     .eq('id', id)
     .single()
 
-  // ── Closed issues are read-only ──
   if (before?.status === 'closed') {
     return NextResponse.json(
       { error: 'Issue is closed and read-only.' },
@@ -773,8 +738,33 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
-  // ── One-at-a-time lane enforcement ──
-  // If transitioning to in_progress, ensure no other issue with the same worked_by is already in_progress.
+  if (fields.status === 'backlog' && before?.status !== 'backlog') {
+    const KAOS_ROLES = ['main', 'po', 'ops']
+    if (!transitionedBy || !KAOS_ROLES.includes(transitionedBy)) {
+      return NextResponse.json(
+        { error: 'Only main/po/ops can reset an issue to backlog.', field: 'transitioned_by' },
+        { status: 403 }
+      )
+    }
+    fields.implementation_notes = fields.implementation_notes
+      ?? `Backlog reset by ${transitionedBy} at ${new Date().toISOString()}.`
+    const { data: resetData, error: resetErr } = await supabase
+      .from('issues')
+      .update({
+        ...fields,
+        status: 'backlog',
+        worked_by: null,
+        started_at: null,
+        submitted_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single()
+    if (resetErr) return NextResponse.json({ error: resetErr.message }, { status: 500 })
+    return NextResponse.json(resetData)
+  }
+
   if (fields.status === 'in_progress') {
     const effectiveWorkedBy = fields.worked_by ?? fields.assignee ?? before?.assignee
     if (effectiveWorkedBy) {
@@ -799,7 +789,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Enum validation on PATCH ──
   if (fields.priority && !VALID_PRIORITIES.includes(fields.priority as string)) {
     return NextResponse.json(
       { error: `Invalid value for 'priority': "${fields.priority}". Allowed values: ${VALID_PRIORITIES.join(', ')}` },
@@ -825,7 +814,6 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
-  // ── Hierarchy validation on PATCH (when parent_id or type changes) ──
   if (fields.parent_id !== undefined || fields.type !== undefined) {
     const effectiveType = (fields.type ?? before?.type) as string | undefined
     const effectiveParentId = (fields.parent_id !== undefined ? fields.parent_id : before?.parent_id) as string | null | undefined
@@ -837,37 +825,26 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Status transition validation ──
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
-    const fromStatus = before.status as string
-    const toStatus = fields.status as string
-
-    // ── Full workflow engine (task, bug, feature, epic, ops, research) ──
     const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
     if (WORKFLOW_TYPES.includes(issueType)) {
       const result = await validateWorkflowTransition(
         before as Record<string, unknown>,
-        toStatus,
+        fields.status as string,
         transitionedBy,
         fields as Record<string, unknown>
       )
-
       if (result.error) {
         return NextResponse.json(result.error, { status: 400 })
       }
-
-      // If transition was found + valid, run post functions later (after DB write)
-      // (handled below after update)
     } else {
-      // ── Legacy validation for unknown/future types ──
       if (fields.status === 'done') {
         return NextResponse.json({ error: "done is retired, use completed or closed" }, { status: 400 })
       }
     }
   }
 
-  // ── Auto-set timestamps + worked_by ──
   if (fields.status) {
     const now = new Date().toISOString()
 
@@ -895,7 +872,6 @@ export async function PATCH(req: NextRequest) {
 
     applyExecutionStatusRouting(before as Record<string, unknown> | undefined, fields as Record<string, unknown>)
 
-    // Legacy rejection tracking for in_review → open (non-task types)
     const issueType = (fields.type ?? before?.type ?? 'task') as string
     if (issueType !== 'task' && fields.status === 'open' && before?.status === 'in_review') {
       fields.rejection_count = (before?.rejection_count ?? 0) + 1
@@ -904,7 +880,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Dual review state ──
   const transitioningIntoCodeReview = fields.status === 'code_review' && before?.status !== 'code_review'
 
   if (before) {
@@ -956,7 +931,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Fail count ──
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
   if (isNewFailure) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
@@ -966,7 +940,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Owner immutability ──
   if (fields.owner !== undefined) {
     const currentStatus = before?.status ?? ''
     if (isActiveWorkIssueStatus(currentStatus) || currentStatus === 'blocked') {
@@ -974,7 +947,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── DB update ──
   let { data, error } = await supabase
     .from('issues')
     .update({ ...fields, updated_at: new Date().toISOString() })
@@ -982,7 +954,6 @@ export async function PATCH(req: NextRequest) {
     .select()
     .single()
 
-  // Graceful fallback for missing columns (42703 = Postgres missing column; PGRST204 = PostgREST schema cache miss)
   if (error?.code === '42703' || error?.code === 'PGRST204' || (typeof error?.message === 'string' && error.message.includes('schema cache'))) {
     const safeFields = { ...fields }
     for (const col of ['commit_sha', 'implementation_notes', 'reviewer_notes', 'fail_count',
@@ -1004,14 +975,12 @@ export async function PATCH(req: NextRequest) {
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Post functions (workflow engine for all supported types) ──
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
     const toStatus = fields.status as string
     const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
 
     if (WORKFLOW_TYPES.includes(issueType) && data) {
-      // Fetch the transition's post functions
       const { data: transition } = await supabase
         .from('workflow_transitions')
         .select('post_functions')
@@ -1030,7 +999,6 @@ export async function PATCH(req: NextRequest) {
           postFields
         )
 
-        // Apply post-function field changes if any
         if (Object.keys(postFields).length > 0) {
           const { data: postData } = await supabase
             .from('issues')
@@ -1044,40 +1012,32 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── Legacy Discord notifications (non-workflow types only) ──
   const resolvedType = fields.resolution_type ?? data?.resolution_type
   const issueType = (fields.type ?? before?.type ?? 'task') as string
   const WORKFLOW_TYPES_NOTIFY = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
-  // Only fire legacy notify for types not yet on the workflow engine
   if (!WORKFLOW_TYPES_NOTIFY.includes(issueType) && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
-  // ── Activate assignee on every status transition ──
   const NON_ACTIVATING_STATUSES = new Set(['backlog', 'defined', 'closed', 'creation'])
   if (fields.status && data && !NON_ACTIVATING_STATUSES.has(fields.status)) {
     const newAssignee = data.assignee ?? fields.assignee
     if (fields.status === 'code_review') {
-      // code_review: activate both tester + designer
       activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
     } else if (newAssignee) {
-      // All other active statuses: activate whoever the assignee is now
-      activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status)
+      activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status, data.id as string | undefined)
     }
   }
 
-  // ── PR review notification when pr_url is first set ──
   if (fields.pr_url && !before?.pr_url && data) {
     notifyPRReview(data)
   }
 
-  // ── Test failure notifications ──
   if (isNewFailure && data) {
     notifyTestFailure(data)
     if ((data.fail_count ?? 0) >= 3) notifyEscalation(data)
   }
 
-  // ── UX gate — completed UX review child → complete parent ──
   if (isCompletedIssueStatus(fields.status) && before?.assignee === 'ux' && before?.parent_id) {
     const { data: parentData } = await supabase
       .from('issues')
@@ -1088,7 +1048,6 @@ export async function PATCH(req: NextRequest) {
     if (parentData) notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
   }
 
-  // ── UX gate — failed UX review → create fix task ──
   if (isNewFailure && before?.assignee === 'ux' && before?.parent_id && data) {
     const uxNotes = (data.description ?? '').slice(0, 300)
     await supabase.from('issues').insert({
@@ -1102,7 +1061,6 @@ export async function PATCH(req: NextRequest) {
     })
   }
 
-  // ── Epic auto-completion ──
   if (isCompletedIssueStatus(fields.status) && data?.parent_id) {
     const { data: parentIssue } = await supabase
       .from('issues')
