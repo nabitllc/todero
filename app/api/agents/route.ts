@@ -84,14 +84,13 @@ export async function GET() {
       const isActive = hasActiveIssue
       const isScheduled = id === 'ops' && !isActive
 
-      // Compute next scheduled run for scheduled agents (ops = heartbeat every 30min)
-      let nextRun: string | null = null
+      // Compute next scheduled run timestamp for scheduled agents (ops = heartbeat every 30min)
+      let nextRunTs: number | null = null
       if (isScheduled && lastTs > 0) {
-        const nextTs = lastTs + 30 * 60 * 1000
-        const minsUntil = Math.max(0, Math.round((nextTs - now) / 60000))
-        nextRun = minsUntil <= 0 ? 'any moment' : minsUntil < 60 ? `in ${minsUntil}m` : `in ${Math.floor(minsUntil / 60)}h ${minsUntil % 60}m`
+        nextRunTs = lastTs + 30 * 60 * 1000
+        if (nextRunTs < now) nextRunTs = now + 30 * 60 * 1000 // if overdue, assume next window
       } else if (isScheduled) {
-        nextRun = 'in ≤30m'
+        nextRunTs = now + 30 * 60 * 1000
       }
 
       return {
@@ -100,7 +99,7 @@ export async function GET() {
         emoji: meta.emoji,
         role: meta.role,
         status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
-        nextRun,
+        nextRunTs,
         model: 'anthropic/claude-sonnet-4-6',
         modelShort: 'Sonnet 4.6',
         color: meta.color,

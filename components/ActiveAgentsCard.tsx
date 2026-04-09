@@ -16,7 +16,7 @@ interface AgentRow {
   emoji: string
   status: 'active' | 'idle' | 'scheduled' | string
   ago: number | null      // minutes since last activity
-  nextRun: string | null  // for scheduled agents
+  nextRunTs: number | null  // epoch ms for next scheduled run
   currentTask: string | null
   issueKey: string | null
   issueTitle: string | null
@@ -37,6 +37,23 @@ function fmtAgo(ago: number | null): string {
   const h = Math.floor(ago / 60)
   const m = ago % 60
   return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`
+}
+
+function Countdown({ targetTs }: { targetTs: number }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+  const diff = Math.max(0, Math.floor((targetTs - now) / 1000))
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  const s = diff % 60
+  const parts: string[] = []
+  if (h > 0) parts.push(`${h}h`)
+  if (m > 0) parts.push(`${m}m`)
+  if (h === 0) parts.push(`${s}s`) // only show seconds when under 1h
+  return <>{diff === 0 ? 'any moment' : parts.join(' ')}</>
 }
 
 export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTask?: Record<string, string> }) {
@@ -86,7 +103,7 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
             emoji: display.emoji ?? '🤖',
             status: a.status,
             ago: a.ago,
-            nextRun: a.nextRun ?? null,
+            nextRunTs: a.nextRunTs ?? null,
             currentTask: agentCurrentTask?.[a.id] ?? null,
             issueKey: issue?.key ?? null,
             issueTitle: issue?.title ?? null,
@@ -140,53 +157,41 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
       {agents.length === 0 ? (
         <div className="text-white/20 text-xs py-2">No active agents right now.</div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {agents.map(agent => {
             const dot = statusDot(agent.status, agent.ago)
             const isStale = agent.status === 'idle' && (agent.ago === null || agent.ago > STALE_MINUTES)
             return (
               <div key={agent.id}
-                className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 bg-white/[0.03] border border-white/[0.06]">
+                className="flex items-center gap-2 rounded-md px-2.5 py-1.5 bg-white/[0.03] border border-white/[0.06]">
                 {/* Status dot */}
-                <div className="flex-shrink-0 mt-0.5">
-                  <span
-                    className="block w-2 h-2 rounded-full"
-                    style={{ background: dot.color, boxShadow: agent.status === 'active' ? `0 0 6px ${dot.color}66` : undefined }}
-                  />
-                </div>
-
-                {/* Agent info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-medium text-white/80">{agent.emoji} {agent.name}</span>
-                    {isStale && (
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-500/80 font-medium">⚠ stale</span>
-                    )}
-                  </div>
-
-                  {/* Current issue — key · title [status] — status only shown when issue exists (AC 4) */}
+                <span
+                  className="block w-2 h-2 rounded-full shrink-0"
+                  style={{ background: dot.color, boxShadow: agent.status === 'active' ? `0 0 6px ${dot.color}66` : undefined }}
+                />
+                {/* Agent name */}
+                <span className="text-[11px] font-medium text-white/80 shrink-0">{agent.emoji} {agent.name}</span>
+                {isStale && (
+                  <span className="text-[8px] px-1 py-0.5 rounded bg-amber-900/30 text-amber-500/80 font-medium shrink-0">stale</span>
+                )}
+                {/* Current work or scheduled info */}
+                <div className="flex-1 min-w-0 flex items-center gap-1">
                   {agent.issueKey ? (
-                    <div className="mt-0.5 flex items-center gap-1 flex-wrap">
-                      <span className="text-[10px] font-mono text-white/40">{agent.issueKey}</span>
-                      <span className="text-[10px] text-white/30">·</span>
-                      <span className="text-[10px] text-white/50 truncate" style={{ maxWidth: '160px', display: 'inline-block', verticalAlign: 'bottom' }}>
-                        {agent.issueTitle}
-                      </span>
+                    <>
+                      <span className="text-[9px] font-mono text-white/40 shrink-0">{agent.issueKey}</span>
+                      <span className="text-[9px] text-white/40 truncate">{agent.issueTitle}</span>
                       {agent.issueStatus && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/30 font-mono ml-1 shrink-0">
+                        <span className="text-[8px] px-1 py-0.5 rounded bg-white/10 text-white/25 font-mono shrink-0">
                           {agent.issueStatus.replace(/_/g, ' ')}
                         </span>
                       )}
-                    </div>
-                  ) : agent.status === 'active' ? (
-                    <div className="mt-0.5 text-[10px] text-white/30">Working</div>
-                  ) : agent.status === 'scheduled' && agent.nextRun ? (
-                    <div className="mt-0.5 text-[10px] text-amber-500/60">Next run {agent.nextRun}</div>
+                    </>
+                  ) : agent.status === 'scheduled' && agent.nextRunTs ? (
+                    <span className="text-[9px] text-amber-500/60"><Countdown targetTs={agent.nextRunTs} /></span>
                   ) : null}
-
-                  {/* Last active */}
-                  <div className="mt-0.5 text-[9px] text-white/20">{fmtAgo(agent.ago)}</div>
                 </div>
+                {/* Last active - right aligned */}
+                <span className="text-[8px] text-white/15 shrink-0">{fmtAgo(agent.ago)}</span>
               </div>
             )
           })}
