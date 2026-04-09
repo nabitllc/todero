@@ -391,7 +391,7 @@ export default function Home() {
           {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} />}
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
-          {tab === 'product-board' && <ProductBoardTab />}
+          {tab === 'product-board' && <ProductBoardTab projectFilter={selectedBusiness} />}
           {tab === 'settings' && <SettingsTab />}
         </main>
       </div>

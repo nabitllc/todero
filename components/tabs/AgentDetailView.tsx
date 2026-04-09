@@ -117,11 +117,10 @@ function DashboardTab({ agent }: { agent: Agent }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/issues')
+    fetch(`/api/issues?assignee=${encodeURIComponent(agent.id)}`)
       .then(r => r.json())
-      .then((all: Issue[]) => {
-        const mine = all.filter((i: any) => i.assignee === agent.id || i.assignee === agent.name.toLowerCase())
-        setIssues(mine)
+      .then((data: Issue[]) => {
+        setIssues(Array.isArray(data) ? data : [])
       })
       .catch(() => {})
       .finally(() => setLoading(false))

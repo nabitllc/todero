@@ -42,16 +42,18 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   const [bulkSaving, setBulkSaving] = useState(false)
 
   useEffect(() => {
-    fetch('/api/issues').then(r=>r.json()).then(d => {
+    const params = new URLSearchParams()
+    if (projectFilter) params.set('project', projectFilter)
+    const qs = params.toString()
+    fetch(`/api/issues${qs ? `?${qs}` : ''}`).then(r=>r.json()).then(d => {
       setIssues(Array.isArray(d) ? d : d.data ?? d)
       setFetchError(null)
     }).catch(() => setFetchError('Failed to load issues')).finally(()=>setLoading(false))
-  }, [])
+  }, [projectFilter])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     let list = issues
-    if (projectFilter) list = list.filter(i => i.project === projectFilter)
     if (q) list = list.filter(i => i.title.toLowerCase().includes(q) || (i.task_key??'').toLowerCase().includes(q))
     list = [...list].sort((a,b) => {
       const av = (a[sortKey]??'') as string
@@ -64,7 +66,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
     })
     return list
-  }, [issues, search, sortKey, sortDir, projectFilter])
+  }, [issues, search, sortKey, sortDir])
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')

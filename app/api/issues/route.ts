@@ -507,9 +507,20 @@ async function executePostFunctions(
   }
 }
 
+// ── Hub-scoped helpers ────────────────────────────────────────────────────────
+async function resolveProjectNamesForBusiness(businessId: string): Promise<string[] | null> {
+  const { data: projects, error } = await supabase
+    .from('projects')
+    .select('name')
+    .eq('business_id', businessId)
+  if (error || !projects) return null
+  return projects.map(p => p.name)
+}
+
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
-  const taskKey = new URL(req.url).searchParams.get('task_key')
+  const url = new URL(req.url)
+  const taskKey = url.searchParams.get('task_key')
 
   if (taskKey) {
     const { data, error } = await supabase
@@ -522,11 +533,41 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(withIssueStatusCategory(data))
   }
 
-  const url = new URL(req.url)
   const search = url.searchParams.get('search')
   const limit = parseInt(url.searchParams.get('limit') || '0', 10)
+  const projectParam = url.searchParams.get('project')
+  const businessIdParam = url.searchParams.get('business_id')
+  const assigneeParam = url.searchParams.get('assignee')
+  const statusParam = url.searchParams.get('status')
+
+  // Resolve business_id → project names for hub-scoped filtering
+  let hubProjectNames: string[] | null = null
+  if (businessIdParam) {
+    hubProjectNames = await resolveProjectNamesForBusiness(businessIdParam)
+  }
 
   let query = supabase.from('issues').select('*')
+
+  // Hub-scoped filtering: business_id resolves to project names
+  if (hubProjectNames && hubProjectNames.length > 0) {
+    query = query.in('project', hubProjectNames)
+  } else if (businessIdParam && (!hubProjectNames || hubProjectNames.length === 0)) {
+    // business_id provided but no projects found — return empty
+    return NextResponse.json([])
+  }
+
+  // Direct project filter (can combine with business_id for narrowing)
+  if (projectParam) {
+    query = query.eq('project', projectParam)
+  }
+
+  if (assigneeParam) {
+    query = query.eq('assignee', assigneeParam)
+  }
+
+  if (statusParam) {
+    query = query.eq('status', statusParam)
+  }
 
   if (search) {
     query = query.ilike('title', `%${search}%`)
@@ -700,6 +741,17 @@ export async function POST(req: NextRequest) {
 
   const generatedIdentity = await prepareIssueIdentity(normalizedProject)
 
+  // Resolve business_id from project → business mapping
+  let effectiveBusinessId = body.business_id ?? null
+  if (!effectiveBusinessId && normalizedProject) {
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('business_id')
+      .eq('name', normalizedProject)
+      .maybeSingle()
+    if (proj?.business_id) effectiveBusinessId = proj.business_id
+  }
+
   const { data, error } = await supabase
     .from('issues')
     .insert({
@@ -711,6 +763,7 @@ export async function POST(req: NextRequest) {
       resolution_type, feature_branch, pr_url,
       ...generatedIdentity,
       owner: effectiveOwner,
+      ...(effectiveBusinessId ? { business_id: effectiveBusinessId } : {}),
       ...(effectiveImplNotes ? { implementation_notes: effectiveImplNotes } : {}),
     })
     .select()
@@ -1094,6 +1147,21 @@ export async function PATCH(req: NextRequest) {
           .eq('id', data.parent_id)
       }
     }
+  }
+
+  // ── TOD-631: In-app notifications on status transitions ──
+  if (fields.status && before?.status && fields.status !== before.status && data) {
+    const taskKey = data.task_key ?? before.task_key ?? ''
+    const title = data.title ?? before.title ?? ''
+    const actor = (fields.transitioned_by ?? data.transitioned_by ?? 'system') as string
+    supabase.from('notifications').insert({
+      type: 'status_change',
+      title: `${taskKey} → ${fields.status}`,
+      body: title,
+      issue_key: taskKey,
+      issue_id: data.id,
+      actor,
+    }).then(() => {}) // fire-and-forget
   }
 
   return NextResponse.json(data ? withIssueStatusCategory(data) : data)

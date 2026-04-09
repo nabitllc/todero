@@ -154,17 +154,20 @@ export function StartSprintButton({ className = '' }: { className?: string }) {
 
 // ── Main Tab ───────────────────────────────────────────────────────────────────
 
-export default function ProductBoardTab() {
+export default function ProductBoardTab({ projectFilter }: { projectFilter?: string | null }) {
   const [issues, setIssues] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchIssues = useCallback(async () => {
     try {
-      const res = await fetch('/api/issues')
+      const params = new URLSearchParams()
+      if (projectFilter) params.set('project', projectFilter)
+      const qs = params.toString()
+      const res = await fetch(`/api/issues${qs ? `?${qs}` : ''}`)
       if (res.ok) setIssues(await res.json())
     } catch { /* ignore */ }
     finally { setLoading(false) }
-  }, [])
+  }, [projectFilter])
 
   useEffect(() => { fetchIssues() }, [fetchIssues])
 

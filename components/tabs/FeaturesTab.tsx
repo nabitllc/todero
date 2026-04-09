@@ -58,15 +58,18 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
   const [limit, setLimit] = useState(100)
 
   useEffect(() => {
-    fetch('/api/issues').then(r => r.json()).then(d => {
+    const params = new URLSearchParams()
+    if (projectFilter) params.set('project', projectFilter)
+    const qs = params.toString()
+    fetch(`/api/issues${qs ? `?${qs}` : ''}`).then(r => r.json()).then(d => {
       if (Array.isArray(d)) setIssues(d)
       setFetchError(null)
     }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false))
-  }, [])
+  }, [projectFilter])
 
   const features = issues.filter(i => i.type === 'feature')
   const allFiltered = features.filter(f => {
-    if (projectFilter && f.project !== projectFilter) return false
+    // projectFilter is now applied server-side via /api/issues?project=
     if (projFilters.length > 0 && !projFilters.includes(f.project ?? '')) return false
     if (statusFilters.length > 0 && !statusFilters.includes(f.status)) return false
     return true
@@ -104,7 +107,7 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <p className="text-red-400 text-sm">{fetchError}</p>
-        <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r => r.json()).then(d => { if (Array.isArray(d)) setIssues(d) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}>
+        <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); const p = new URLSearchParams(); if (projectFilter) p.set('project', projectFilter); const q = p.toString(); fetch(`/api/issues${q ? `?${q}` : ''}`).then(r => r.json()).then(d => { if (Array.isArray(d)) setIssues(d) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}>
           Retry
         </Button>
       </div>

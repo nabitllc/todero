@@ -246,7 +246,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const fetchTasks = useCallback(async () => {
     setLoadError(null)
     try {
-      const res = await fetch('/api/issues')
+      const params = new URLSearchParams()
+      if (projectFilter) params.set('project', projectFilter)
+      const qs = params.toString()
+      const res = await fetch(`/api/issues${qs ? `?${qs}` : ''}`)
       if (res.ok) {
         const d = await res.json()
         setTasks(d)
@@ -260,7 +263,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [projectFilter])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
@@ -325,7 +328,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
     if (statusFilter === 'closed' && t.status !== 'closed') return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false
-    if (projectFilter && (t as any).project !== projectFilter) return false
+    // projectFilter is now applied server-side via /api/issues?project=
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
     if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
     if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee?.toLowerCase() ?? '')) return false
