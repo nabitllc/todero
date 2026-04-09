@@ -34,7 +34,7 @@ export async function GET() {
     const { data: activeIssues } = await supabase
       .from('issues')
       .select('task_key, title, status, assignee, worked_by, updated_at')
-      .in('status', ['in_progress', 'code_review', 'product_review'])
+      .in('status', ['open', 'in_progress', 'code_review', 'product_review', 'approved'])
       .order('updated_at', { ascending: false })
       .limit(50)
 
@@ -57,7 +57,7 @@ export async function GET() {
     // Build lookup: agent → current issue (prefer in_progress over review statuses)
     const agentIssue: Record<string, { key: string; title: string; status: string }> = {}
     // Sort: in_progress first, then code_review, then product_review
-    const statusPriority = (s: string) => s === 'in_progress' ? 0 : s === 'code_review' ? 1 : 2
+    const statusPriority = (s: string) => s === 'in_progress' ? 0 : s === 'code_review' ? 1 : s === 'product_review' ? 2 : s === 'open' ? 3 : 4
     const sortedIssues = [...(activeIssues ?? [])].sort((a, b) => statusPriority(a.status) - statusPriority(b.status))
     for (const iss of sortedIssues) {
       const owner = iss.worked_by || iss.assignee
@@ -79,8 +79,8 @@ export async function GET() {
       const lastTs = agentLastActive[id] ?? 0
       const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
 
-      // Agent is "active" if they have an in_progress issue
-      const hasActiveIssue = !!issue && issue.status === 'in_progress'
+      // Agent is "active" if they have any assigned work in the pipeline
+      const hasActiveIssue = !!issue
       const isActive = hasActiveIssue
       const isScheduled = id === 'ops' && !isActive
 

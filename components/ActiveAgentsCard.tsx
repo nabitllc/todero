@@ -39,7 +39,7 @@ function fmtAgo(ago: number | null): string {
   return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`
 }
 
-function Countdown({ targetTs }: { targetTs: number }) {
+const Countdown = React.memo(function Countdown({ targetTs }: { targetTs: number }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000)
@@ -54,7 +54,7 @@ function Countdown({ targetTs }: { targetTs: number }) {
   if (m > 0) parts.push(`${m}m`)
   if (h === 0) parts.push(`${s}s`) // only show seconds when under 1h
   return <>{diff === 0 ? 'any moment' : parts.join(' ')}</>
-}
+})
 
 export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTask?: Record<string, string> }) {
   const [agents, setAgents] = useState<AgentRow[]>([])
