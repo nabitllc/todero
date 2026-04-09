@@ -101,10 +101,10 @@ export async function GET() {
       const lastTs = agentLastActive[id] ?? 0
       const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
 
-      // Agent is "active" if they have a running process OR assigned work in the pipeline
+      // Agent is "active" if they have a running process OR an in_progress issue
       const isRunning = runningAgents.has(id)
-      const hasActiveIssue = !!issue
-      const isActive = isRunning || hasActiveIssue
+      const hasInProgressIssue = !!issue && issue.status === 'in_progress'
+      const isActive = isRunning || hasInProgressIssue
       const isScheduled = id === 'ops' && !isActive
 
       // Compute next scheduled run timestamp for scheduled agents (ops = heartbeat every 30min)

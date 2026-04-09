@@ -95,12 +95,10 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
         }
       }
 
-      // Build rows — show active/scheduled + recently-active idle agents (ago < 60)
+      // Build rows — show only active (running/in_progress) or scheduled agents
       const rows: AgentRow[] = agentsData
         .filter((a: any) => {
-          const isActiveish = a.status === 'active' || a.status === 'scheduled'
-          const recentIdle = a.status === 'idle' && a.ago !== null && a.ago < 30
-          return isActiveish || recentIdle
+          return a.status === 'active' || a.status === 'scheduled'
         })
         .map((a: any) => {
           const display = AGENT_DISPLAY[a.id] ?? { name: a.name ?? a.id, emoji: '🤖' }
