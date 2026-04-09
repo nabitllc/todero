@@ -111,13 +111,15 @@ export async function GET() {
       const isActive = isRunning || hasInProgressIssue
       const isScheduled = id === 'ops' && !isActive
 
-      // Compute next scheduled run timestamp for scheduled agents (ops = heartbeat every 30min)
+      // Compute next scheduled run based on fixed 30-min intervals anchored to the hour
+      // Ops heartbeat fires at :00 and :30 of every hour (fixed schedule, not relative)
       let nextRunTs: number | null = null
-      if (isScheduled && lastTs > 0) {
-        nextRunTs = lastTs + 30 * 60 * 1000
-        if (nextRunTs < now) nextRunTs = now + 30 * 60 * 1000 // if overdue, assume next window
-      } else if (isScheduled) {
-        nextRunTs = now + 30 * 60 * 1000
+      if (isScheduled) {
+        const d = new Date(now)
+        const min = d.getMinutes()
+        const nextMin = min < 30 ? 30 : 60
+        const msUntilNext = (nextMin - min) * 60 * 1000 - d.getSeconds() * 1000 - d.getMilliseconds()
+        nextRunTs = now + msUntilNext
       }
 
       return {
