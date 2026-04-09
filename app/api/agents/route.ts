@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ??
@@ -73,24 +77,49 @@ export async function GET() {
       }
     }
 
-    // 3. Build agent list from AGENT_META + active issue data
+    // 3. Check for running claude CLI agent processes (real-time detection)
+    // Only match spawned agent sessions, NOT the main Claude Desktop session
+    const runningAgents = new Set<string>()
+    try {
+      const { stdout } = await execAsync(
+        'ps aux | grep "[c]laude" | grep -v "Claude.app" | grep -v "disclaimer" | grep -v "ShipIt"',
+        { timeout: 3000 }
+      )
+      const lines = stdout.trim().split('\n').filter(Boolean)
+      for (const line of lines) {
+        // Only match lines that contain explicit agent identifiers (from spawn commands)
+        const lower = line.toLowerCase()
+        if (lower.includes('you are builder') || lower.includes('agent builder')) runningAgents.add('builder')
+        else if (lower.includes('you are tester') || lower.includes('agent tester')) runningAgents.add('tester')
+        else if (lower.includes('you are ops') || lower.includes('agent ops')) runningAgents.add('ops')
+        else if (lower.includes('you are scout') || lower.includes('agent scout')) runningAgents.add('scout')
+        else if (lower.includes('you are deployer') || lower.includes('agent deployer')) runningAgents.add('deployer')
+        else if (lower.includes('you are designer') || lower.includes('agent designer')) runningAgents.add('designer')
+        else if (lower.includes('you are po') || lower.includes('agent po')) runningAgents.add('po')
+      }
+    } catch { /* no agent processes running */ }
+
+    // 4. Build agent list from AGENT_META + active issue data + process status
     const agents = Object.entries(AGENT_META).map(([id, meta]) => {
       const issue = agentIssue[id]
       const lastTs = agentLastActive[id] ?? 0
       const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
 
-      // Agent is "active" if they have any assigned work in the pipeline
-      const hasActiveIssue = !!issue
-      const isActive = hasActiveIssue
+      // Agent is "active" if they have a running process OR an in_progress issue
+      const isRunning = runningAgents.has(id)
+      const hasInProgressIssue = !!issue && issue.status === 'in_progress'
+      const isActive = isRunning || hasInProgressIssue
       const isScheduled = id === 'ops' && !isActive
 
-      // Compute next scheduled run timestamp for scheduled agents (ops = heartbeat every 30min)
+      // Compute next scheduled run based on fixed 30-min intervals anchored to the hour
+      // Ops heartbeat fires at :00 and :30 of every hour (fixed schedule, not relative)
       let nextRunTs: number | null = null
-      if (isScheduled && lastTs > 0) {
-        nextRunTs = lastTs + 30 * 60 * 1000
-        if (nextRunTs < now) nextRunTs = now + 30 * 60 * 1000 // if overdue, assume next window
-      } else if (isScheduled) {
-        nextRunTs = now + 30 * 60 * 1000
+      if (isScheduled) {
+        const d = new Date(now)
+        const min = d.getMinutes()
+        const nextMin = min < 30 ? 30 : 60
+        const msUntilNext = (nextMin - min) * 60 * 1000 - d.getSeconds() * 1000 - d.getMilliseconds()
+        nextRunTs = now + msUntilNext
       }
 
       return {
@@ -99,6 +128,7 @@ export async function GET() {
         emoji: meta.emoji,
         role: meta.role,
         status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
+        isRunning,
         nextRunTs,
         model: 'anthropic/claude-sonnet-4-6',
         modelShort: 'Sonnet 4.6',
