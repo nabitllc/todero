@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { exec } from 'child_process'
-import { promisify } from 'util'
 
-const execAsync = promisify(exec)
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 
 // Maps OpenClaw agent IDs to display metadata
 const AGENT_META: Record<string, { name: string; emoji: string; role: string; color: string; capabilities: string[]; floor: boolean; [key: string]: any }> = {
@@ -29,57 +27,81 @@ const AGENT_META: Record<string, { name: string; emoji: string; role: string; co
 
 export async function GET() {
   try {
-    const { stdout } = await execAsync('/opt/homebrew/bin/openclaw status --json', { timeout: 8000 })
-    const status = JSON.parse(stdout)
-    const rawAgents: any[] = status?.agents?.agents ?? []
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
     const now = Date.now()
-    const fiveMin = 5 * 60 * 1000
 
-    // Determine active agents from lastUpdatedAt (sessions is not an array in status --json)
-    const activeIds = new Set(
-      rawAgents
-        .filter((a: any) => now - (a.lastUpdatedAt ?? 0) < fiveMin)
-        .map((a: any) => a.id)
-    )
+    // 1. Fetch issues that are actively being worked on (in_progress, code_review)
+    const { data: activeIssues } = await supabase
+      .from('issues')
+      .select('task_key, title, status, assignee, worked_by, updated_at')
+      .in('status', ['in_progress', 'code_review', 'product_review'])
+      .order('updated_at', { ascending: false })
+      .limit(50)
 
-    const agents = rawAgents.map((a: any) => {
-      const meta = AGENT_META[a.id] ?? { name: a.id, emoji: '🤖', role: a.id, color: '#6b7280', capabilities: [], floor: false }
-      const identity = a.identity ?? {}
-      const isActive = activeIds.has(a.id) || (now - (a.lastUpdatedAt ?? 0) < fiveMin)
+    // 2. Fetch recent agent_runs for last-activity tracking
+    const { data: recentRuns } = await supabase
+      .from('agent_runs')
+      .select('agent_id, started_at, completed_at, status')
+      .order('started_at', { ascending: false })
+      .limit(50)
 
-      const rawModel = a.model ?? 'anthropic/claude-sonnet-4-6'
-      const modelShort = rawModel.includes('haiku') ? 'Haiku 4.5'
-        : rawModel.includes('sonnet') ? 'Sonnet 4.6'
-        : rawModel.includes('gemma') ? 'Gemma 3 4B'
-        : rawModel.split('/').pop() ?? rawModel
+    // Build lookup: agent → most recent activity timestamp
+    const agentLastActive: Record<string, number> = {}
+    for (const run of recentRuns ?? []) {
+      const ts = new Date(run.completed_at ?? run.started_at).getTime()
+      if (!agentLastActive[run.agent_id] || ts > agentLastActive[run.agent_id]) {
+        agentLastActive[run.agent_id] = ts
+      }
+    }
 
-      const lastUpdatedAt = a.lastUpdatedAt ?? 0
-      const agoMin = lastUpdatedAt ? Math.round((now - lastUpdatedAt) / 60000) : null
-      const currentTask = (a.currentTask ?? a.task ?? '').slice(0, 80) || null
+    // Build lookup: agent → current issue
+    const agentIssue: Record<string, { key: string; title: string; status: string }> = {}
+    for (const iss of activeIssues ?? []) {
+      const owner = iss.worked_by || iss.assignee
+      if (owner && !agentIssue[owner]) {
+        agentIssue[owner] = { key: iss.task_key ?? '?', title: iss.title ?? '', status: iss.status ?? '' }
+        // Also track activity from issue updates
+        const issTs = new Date(iss.updated_at).getTime()
+        if (!agentLastActive[owner] || issTs > agentLastActive[owner]) {
+          agentLastActive[owner] = issTs
+        }
+      }
+    }
+
+    // 3. Build agent list from AGENT_META + active issue data
+    const agents = Object.entries(AGENT_META).map(([id, meta]) => {
+      const issue = agentIssue[id]
+      const lastTs = agentLastActive[id] ?? 0
+      const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
+
+      // Agent is "active" if they have an in_progress issue or were active in last 30 min
+      const hasActiveIssue = !!issue && issue.status === 'in_progress'
+      const recentlyActive = agoMin !== null && agoMin < 30
+      const isActive = hasActiveIssue
+      const isScheduled = id === 'ops' && !isActive
 
       return {
-        id: a.id,
-        name: meta.name ?? a.name ?? a.id,
+        id,
+        name: meta.name,
         emoji: meta.emoji,
-        role: meta.role ?? a.id,
-        status: isActive ? 'active' : (a.id === 'ops' ? 'scheduled' : 'idle'),
-        model: rawModel,
-        modelShort,
+        role: meta.role,
+        status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
+        model: 'anthropic/claude-sonnet-4-6',
+        modelShort: 'Sonnet 4.6',
         color: meta.color,
-        desc: meta.role ?? '',
+        desc: meta.role,
         capabilities: meta.capabilities,
         floor: meta.floor,
-        workspace: a.workspaceDir,
-        sessions: a.sessionsCount ?? 0,
+        workspace: null,
+        sessions: 0,
         ago: agoMin,
-        lastUpdatedAt,
-        currentTask,
+        lastUpdatedAt: lastTs,
+        currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : null,
       }
     })
 
     return NextResponse.json(agents, { headers: { 'Cache-Control': 'no-store' } })
   } catch (e) {
-    // Fallback: return empty so UI uses hardcoded defaults
     return NextResponse.json([], { headers: { 'Cache-Control': 'no-store' } })
   }
 }
