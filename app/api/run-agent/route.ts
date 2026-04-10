@@ -270,6 +270,21 @@ VERIFY the response shows status="${config.completionStatus}". If you get an err
 
 This is a HARD RULE. Do not treat it as optional. Do not assume someone else will do it for you.`
 
+  const pushGate = `
+
+🛑 GIT PUSH / PR RULES — NON-NEGOTIABLE 🛑
+You are a pipeline agent. Your scope ends at \`git commit\` (locally) + the MC API PATCH.
+- ❌ DO NOT run \`git push\`
+- ❌ DO NOT run \`gh pr create\`
+- ❌ DO NOT run \`gh pr merge\`, \`gh pr close\`, \`gh pr review\`, or \`gh pr edit\`
+- ❌ DO NOT push to any remote under any circumstance
+- ✅ KAOS pushes one batched PR per window at 7:00 AM ET and 7:00 PM ET (via pr-window.py)
+- ✅ Your local commits on feat/tod-X will be picked up by the next window automatically
+
+If your task feels urgent enough to warrant an immediate PR, you are WRONG. Bypassing the window is never the answer. Instead: PATCH back to open with implementation_notes explaining the urgency, and let Michael or KAOS decide.
+
+This rule exists because per-issue PRs create review fatigue and merge conflicts. One batched PR per window is the correct cadence.`
+
   const selfChain = `\n\nAFTER the PATCH succeeds, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} to auto-claim your next task.`
   const loopBreaker = `\n\nIF same error 3 times: STOP, PATCH back to open with notes explaining the blocker. Do NOT retry infinitely.`
 
@@ -286,6 +301,7 @@ This is a HARD RULE. Do not treat it as optional. Do not assume someone else wil
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
     branchInstruction,
     transitionGate,
+    pushGate,
     loopBreaker,
     selfChain,
   ].join('\n')
