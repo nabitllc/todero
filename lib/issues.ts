@@ -55,6 +55,18 @@ export interface Task {
   designer_notes?: string
   designed_by?: string
   designer_reviewed_at?: string
+  owner?: string
+  reviewer?: string
+  worked_by?: string
+  implementation_notes?: string
+  reviewer_notes?: string
+  regression_test?: string
+  feature_branch?: string
+  commit_sha?: string
+  rejection_count?: number
+  last_rejection_reason?: string
+  started_at?: string
+  completed_at?: string
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {

@@ -204,8 +204,9 @@ export async function POST(req: NextRequest) {
   const escaped = prompt.replace(/'/g, "'\\''")
   const logFile = `/tmp/agent-${agentId}-${Date.now()}.log`
   const modelFlag = config.model ? `--model ${config.model}` : ''
-  // macOS doesn't have setsid. Use disown + nohup + background to detach.
-  const cmd = `cd ${TODERO_DIR} && nohup ${CLAUDE_BIN} --permission-mode bypassPermissions ${modelFlag} --print '${escaped}' > ${logFile} 2>&1 < /dev/null & disown`
+  // Safeguard: always switch to main before spawning agent (prevents feature branch drift)
+  // Agents that need a feature branch will checkout from main in their own task flow
+  const cmd = `cd ${TODERO_DIR} && git checkout main 2>/dev/null; nohup ${CLAUDE_BIN} --permission-mode bypassPermissions ${modelFlag} --print '${escaped}' > ${logFile} 2>&1 < /dev/null & disown`
   exec(cmd, {
     timeout: 5000,
     detached: true,

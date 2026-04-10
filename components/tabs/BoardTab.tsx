@@ -838,26 +838,6 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 })}
               </div>
 
-              {/* Quick-add inline */}
-              {quickAddCol === col.id ? (
-                <form className="mx-2 mb-2 flex gap-1" onSubmit={async e=>{
-                  e.preventDefault()
-                  if(!quickAddTitle.trim()) return
-                  await createTask({title:quickAddTitle.trim(),status:col.statuses[0],priority:'medium',project:'Infrastructure',assignee:'main',type:'feature',acceptance_criteria:'To be defined'})
-                  setQuickAddTitle(''); setQuickAddCol(null)
-                }}>
-                  <Input autoFocus value={quickAddTitle} onChange={e=>setQuickAddTitle(e.target.value)}
-                    onKeyDown={e=>{ if(e.key==='Escape'){setQuickAddCol(null);setQuickAddTitle('')} }}
-                    placeholder="Task title..." className="flex-1 text-xs py-1.5" />
-                  <Button type="submit" variant="secondary" size="sm">Add</Button>
-                  <Button type="button" variant="icon" onClick={()=>{setQuickAddCol(null);setQuickAddTitle('')}}>✕</Button>
-                </form>
-              ) : (
-                <button onClick={()=>{setQuickAddCol(col.id);setQuickAddTitle('')}}
-                  className="mx-2 mb-2 text-[10px] text-white/20 hover:text-white/40 transition-colors py-1 text-left w-[calc(100%-16px)]">
-                  + Add task
-                </button>
-              )}
             </div>
           )
         })}
@@ -1124,18 +1104,55 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   {t.type && <Chip label={t.type} />}
                 </div>
 
-                {/* Assignee + Project */}
+                {/* Severity + Sprint (inline badges) */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {t.severity && (
+                    <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border bg-white/5 text-white/60 border-white/10">
+                      Severity: {t.severity}
+                    </span>
+                  )}
+                  {t.sprint && (
+                    <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border bg-white/5 text-white/60 border-white/10">
+                      Sprint: {t.sprint}
+                    </span>
+                  )}
+                  {t.is_blocked && (
+                    <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border bg-red-500/10 text-red-400 border-red-500/30">
+                      🔒 Blocked
+                    </span>
+                  )}
+                </div>
+
+                {/* People grid: Assignee / Owner / Reviewer / Worked By */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Assignee</p>
                     <p className="text-sm text-white/70">
-                      {t.assignee && ASSIGNEE_MAP[t.assignee] ? `${ASSIGNEE_MAP[t.assignee].emoji} ${ASSIGNEE_MAP[t.assignee].name}` : 'Unassigned'}
+                      {t.assignee && ASSIGNEE_MAP[t.assignee] ? `${ASSIGNEE_MAP[t.assignee].emoji} ${ASSIGNEE_MAP[t.assignee].name}` : (t.assignee || 'Unassigned')}
                     </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Owner</p>
+                    <p className="text-sm text-white/70">{t.owner || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Reviewer</p>
+                    <p className="text-sm text-white/70">{t.reviewer || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Worked By</p>
+                    <p className="text-sm text-white/70">{t.worked_by || '—'}</p>
                   </div>
                   <div>
                     <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Project</p>
                     <p className="text-sm text-white/70">{t.project || '—'}</p>
                   </div>
+                  {t.parent_id && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Parent</p>
+                      <p className="text-sm text-white/70 font-mono text-xs">{String(t.parent_id).slice(0,8)}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Description */}
@@ -1232,6 +1249,90 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   </div>
                 )}
 
+                {/* Dual Review Status */}
+                {(t.tester_status || t.designer_status) && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Review Status</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                        <p className="text-[9px] text-white/30 uppercase">Tester</p>
+                        <p className={`text-xs font-medium ${t.tester_status === 'passed' || t.tester_status === 'approved' ? 'text-green-400' : t.tester_status === 'failed' ? 'text-red-400' : 'text-white/40'}`}>
+                          {t.tester_status || 'pending'}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+                        <p className="text-[9px] text-white/30 uppercase">Designer</p>
+                        <p className={`text-xs font-medium ${t.designer_status === 'passed' || t.designer_status === 'approved' || t.designer_status === 'ux_approved' ? 'text-green-400' : t.designer_status === 'failed' ? 'text-red-400' : 'text-white/40'}`}>
+                          {t.designer_status || 'pending'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Implementation Notes */}
+                {t.implementation_notes && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Implementation Notes</p>
+                    <p className="text-sm text-white/40 whitespace-pre-wrap">{t.implementation_notes}</p>
+                  </div>
+                )}
+
+                {/* Reviewer Notes */}
+                {t.reviewer_notes && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Reviewer Notes</p>
+                    <p className="text-sm text-white/40 whitespace-pre-wrap">{t.reviewer_notes}</p>
+                  </div>
+                )}
+
+                {/* Regression Test */}
+                {t.regression_test && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Regression Test</p>
+                    <p className="text-xs text-white/40 font-mono bg-white/[0.02] rounded px-2 py-1.5 whitespace-pre-wrap">{t.regression_test}</p>
+                  </div>
+                )}
+
+                {/* Git info */}
+                {(t.feature_branch || t.commit_sha) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {t.feature_branch && (
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Branch</p>
+                        <p className="text-xs text-white/50 font-mono break-all">{t.feature_branch}</p>
+                      </div>
+                    )}
+                    {t.commit_sha && (
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Commit</p>
+                        <p className="text-xs text-white/50 font-mono">{String(t.commit_sha).slice(0,8)}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Rejection Count */}
+                {t.rejection_count && t.rejection_count > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Rejections</p>
+                    <p className="text-sm text-red-400">{t.rejection_count} {t.rejection_count === 1 ? 'rejection' : 'rejections'}</p>
+                    {t.last_rejection_reason && (
+                      <p className="text-xs text-white/40 mt-1 italic">"{t.last_rejection_reason}"</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Test Status */}
+                {t.test_status && t.test_status !== 'none' && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Test Status</p>
+                    <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border ${t.test_status === 'passed' ? 'bg-green-500/10 text-green-400 border-green-500/30' : t.test_status === 'failed' ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-white/5 text-white/40 border-white/10'}`}>
+                      {t.test_status}
+                    </span>
+                  </div>
+                )}
+
                 {/* PR URL */}
                 {t.pr_url && (
                   <div>
@@ -1251,12 +1352,18 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 )}
 
                 {/* Timestamps */}
-                <div className="pt-4 border-t border-white/10 flex flex-wrap gap-x-6 gap-y-1">
+                <div className="pt-4 border-t border-white/10 space-y-1">
                   {t.created_at && (
-                    <p className="text-[10px] text-white/30">Created: {new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="text-[10px] text-white/30">Created: {new Date(t.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   )}
                   {t.updated_at && (
-                    <p className="text-[10px] text-white/30">Updated: {new Date(t.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                    <p className="text-[10px] text-white/30">Updated: {new Date(t.updated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  )}
+                  {t.started_at && (
+                    <p className="text-[10px] text-white/30">Started: {new Date(t.started_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  )}
+                  {t.completed_at && (
+                    <p className="text-[10px] text-white/30">Completed: {new Date(t.completed_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                   )}
                 </div>
               </div>
