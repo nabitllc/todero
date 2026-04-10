@@ -56,9 +56,13 @@ export async function POST(req: NextRequest) {
   const reviewStatusField = agentId === 'tester' ? 'tester_status' : 'designer_status'
 
   // ── Step 1: WIP limit check ──
+  // For agents where pickupStatus === workingStatus (e.g. deployer), wipExtraFilter
+  // narrows WIP count to claimed issues only (started_at IS NOT NULL), preventing
+  // the full queue length from being mis-counted as active WIP.
+  const wipExtraFilter = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
   const wipUrl = isReviewer
     ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&select=id`
-    : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&select=id`
+    : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}${wipExtraFilter}&select=id`
   const wipRes = await fetch(wipUrl, { headers: HEADERS })
   const wipIssues = await wipRes.json() as Array<{ id: string }>
   if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
@@ -144,18 +148,22 @@ export async function POST(req: NextRequest) {
 
   const task = readyTasks[0]
 
-  // ── Step 5: Move to workingStatus (unless already in that status, e.g. tester) ──
-  if (config.pickupStatus !== config.workingStatus) {
-    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH',
-      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({
-        status: config.workingStatus,
-        started_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-    })
+  // ── Step 5: Claim the issue ──
+  // Always set started_at to mark the issue as claimed by this agent, even when
+  // pickupStatus === workingStatus (e.g. deployer). This lets the wipExtraFilter
+  // distinguish "claimed" from "queued but unclaimed" issues in the WIP count.
+  const claimFields: Record<string, string> = {
+    started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
+  if (config.pickupStatus !== config.workingStatus) {
+    claimFields.status = config.workingStatus
+  }
+  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+    method: 'PATCH',
+    headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(claimFields),
+  })
 
   // ── Step 6: Log agent_run ──
   await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {

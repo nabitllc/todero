@@ -26,6 +26,12 @@ export interface AgentQueueConfig {
   fetchLimit: number
   /** Prompt template prefix for the agent */
   promptPrefix: string
+  /**
+   * Extra Supabase filter appended to the WIP count query only.
+   * Used when pickupStatus === workingStatus (e.g. deployer) to
+   * distinguish "claimed" issues (started_at set) from the full queue.
+   */
+  wipExtraFilter?: string
 }
 
 export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
@@ -139,14 +145,19 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'haiku',
     pickupStatus: 'approved',
     extraFilters: '',
-    dorFields: ['implementation_notes'],
-    wipLimit: 5,
+    // implementation_notes + commit_sha required: both must exist before deployer picks up
+    dorFields: ['implementation_notes', 'commit_sha'],
+    // TOD-784: deployer stays in 'approved' while working (no separate deploying status).
+    // wipExtraFilter restricts WIP count to claimed issues only (started_at set),
+    // preventing the full queue length from being mis-counted as active WIP.
+    wipLimit: 3,
     workingStatus: 'approved',
     completionStatus: 'released',
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 20,
-    promptPrefix: 'You are Deployer. Verify all approved issues have required fields (implementation_notes, commit_sha, regression_test). Prepare for PR window.',
+    wipExtraFilter: 'started_at=not.is.null',
+    promptPrefix: 'You are Deployer. For the assigned issue: verify implementation_notes, commit_sha, and regression_test are all present. PATCH it to released. Then self-chain: POST /api/run-agent?agent=deployer to claim the next approved issue.',
   },
 }
 
