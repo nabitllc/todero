@@ -49,11 +49,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Reviewers (tester/designer) don't filter by assignee — they review all code_review issues
+  // and filter by their own pending status. This is the dual-review model.
+  const isReviewer = agentId === 'tester' || agentId === 'designer'
+  const reviewStatusField = agentId === 'tester' ? 'tester_status' : 'designer_status'
+
   // ── Step 1: WIP limit check ──
-  const wipRes = await fetch(
-    `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&select=id`,
-    { headers: HEADERS }
-  )
+  const wipUrl = isReviewer
+    ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&select=id`
+    : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&select=id`
+  const wipRes = await fetch(wipUrl, { headers: HEADERS })
   const wipIssues = await wipRes.json() as Array<{ id: string }>
   if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
     return NextResponse.json({
@@ -66,7 +71,12 @@ export async function POST(req: NextRequest) {
   // ── Step 2: Fetch eligible issues ──
   const dorFilter = config.dorFields.map(f => `${f}=not.is.null`).join('&')
   const extraFilter = config.extraFilters ? `&${config.extraFilters}` : ''
-  const url = `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  // Reviewers: all code_review issues where THEIR status is pending (not tied to assignee field)
+  // Workers: issues assigned to them
+  const assigneeFilter = isReviewer
+    ? `${reviewStatusField}=eq.pending`
+    : `assignee=eq.${agentId}`
+  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: HEADERS })
   const tasks = await res.json() as Array<{
