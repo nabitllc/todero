@@ -290,6 +290,24 @@ This rule exists because per-issue PRs create review fatigue and merge conflicts
   const selfChain = `\n\nAFTER the PATCH succeeds, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} to auto-claim your next task.`
   const loopBreaker = `\n\nIF same error 3 times: STOP, PATCH back to open with notes explaining the blocker. Do NOT retry infinitely.`
 
+  // TOD-796 follow-up: point agents at the rest of the skill library.
+  // The universal bundle (proactivity/execution, self-improving/corrections, etc.) is
+  // already inlined in ${context} above. This note tells the agent where to look for
+  // deeper protocols (memory templates, scaling, migration, operations playbooks) if
+  // it decides the task needs them. Keeps the inline prompt small while still giving
+  // agents a way to self-rescue when a task exceeds their baseline knowledge.
+  const skillReference = `
+
+📚 Additional skills available on disk (Read on demand):
+  ~/kaos-config/skills/proactivity/{setup,memory-template,migration,recovery,state,heartbeat-rules}.md
+  ~/kaos-config/skills/self-improving/{SKILL,setup,scaling,operations,memory-template,learning,boundaries}.md
+  ~/kaos-config/skills/agent-setup/references/{soul-template,agents-template,heartbeat-template}.md
+  ~/kaos-config/skills/issue-routing/SKILL.md
+  ~/kaos-config/skills/bug-report/SKILL.md
+  ~/kaos-config/skills/agent-creation/SKILL.md
+
+Your universal behavioral rules (proactivity loop, corrections discipline, memory hygiene, reflections) are already inlined above. Only Read additional files when the task specifically needs deeper protocol — don't load everything speculatively.`
+
   const branchInstruction = branch
     ? `\nBranch: ${branch} (git checkout -b ${branch} 2>/dev/null || git checkout ${branch})`
     : ''
@@ -302,6 +320,7 @@ This rule exists because per-issue PRs create review fatigue and merge conflicts
     `Description: ${task.description ?? 'See title'}`,
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
     branchInstruction,
+    skillReference,
     transitionGate,
     pushGate,
     loopBreaker,

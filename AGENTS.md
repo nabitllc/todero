@@ -1,4 +1,60 @@
-# KAOS Agent System
+# Todero — Agent System (Runtime-Neutral)
+
+> **This file is read by Claude Code, Codex, Cursor, and any other LLM CLI that
+> looks at `AGENTS.md` at the repo root. It is intentionally runtime-neutral.**
+>
+> For the full agent protocols, behavioral rules, and skill library, read
+> [`~/kaos-config/AGENTS.md`](/Users/kemuniagent/kaos-config/AGENTS.md) and
+> [`~/kaos-config/SOUL.md`](/Users/kaos-config/SOUL.md).
+>
+> For Todero-specific build and test rules, read [`./CLAUDE.md`](./CLAUDE.md)
+> (named that way for historical reasons — it's read by all LLM CLIs, not just Claude).
+
+## Portability
+
+Todero's agent pipeline is driven by `/api/run-agent`, which dispatches through
+`lib/runtimes/` — a pluggable runtime registry. You can switch the underlying
+LLM CLI by setting `TODERO_RUNTIME`:
+
+```bash
+TODERO_RUNTIME=claude-code  npm start   # default — Claude Code CLI (Anthropic)
+TODERO_RUNTIME=codex        npm start   # OpenAI Codex CLI
+TODERO_RUNTIME=cursor       npm start   # Cursor CLI
+```
+
+Per-spawn override: `POST /api/run-agent?agent=builder&runtime=codex`.
+List available runtimes: `GET /api/run-agent/runtimes`.
+
+Every spawn runs in an isolated git worktree under `~/agent-worktrees/`
+(see `lib/runtimes/worktree.ts`), so parallel agents never collide on branch
+state and the interactive editor session in `~/todero` is never affected.
+
+## Production
+
+- Live URL: **https://kaos.nabit.work** (Cloudflare tunnel → `localhost:3000`)
+- Database: Supabase (`twthgapiouiqhavrcnry.supabase.co`)
+- LaunchAgent: `com.nabit.todero` (macOS launchd)
+
+## Interactive Agent Rules (MUST follow regardless of runtime)
+
+When acting as a pipeline agent (Builder, Tester, Designer, PO, etc.):
+
+1. **Work in your assigned git worktree**, not `~/todero`. The spawn command
+   places you there.
+2. **Never `git push`, never `gh pr create`**, never edit PR state. KAOS batches
+   all PRs at 7am/7pm ET via `pr-window.py`. Your scope ends at `git commit`
+   plus the MC API PATCH.
+3. **Always PATCH the issue to its completion status** via
+   `http://localhost:3000/api/issues` before ending your session. If you skip
+   this, your work is lost because the next agent cannot claim the issue.
+4. **Commit format**: `feat(TASK-KEY): description [skip ci]` or
+   `fix(TASK-KEY): description [skip ci]`.
+5. **Run `npm run build`** to verify TypeScript errors = 0 before committing.
+6. **Consult skills on demand**: your spawn prompt includes core behavioral
+   rules from `~/kaos-config/skills/proactivity/` and
+   `~/kaos-config/skills/self-improving/`. For deeper protocols (memory
+   templates, heartbeat rules, operations playbooks), `Read` the additional
+   files in `~/kaos-config/skills/<pack>/` as needed.
 
 ## Agents
 

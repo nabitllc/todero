@@ -3,3 +3,31 @@ node_modules/
 .env*.local
 .vercel
 *.log
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
+
+# Next.js generated types
+next-env.d.ts
+
+# Claude / Codex / Cursor local session state
+.claude/
+.codex/
+.cursor/
+
+# Test + coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

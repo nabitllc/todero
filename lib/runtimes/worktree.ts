@@ -105,7 +105,9 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
 
     execSync(worktreeCmd, { cwd: REPO_ROOT, stdio: 'pipe', timeout: 30_000 })
 
-    // Symlink node_modules from main repo so `npm run build` works without reinstall
+    // Symlink node_modules from main repo so `npm run build` works without reinstall.
+    // node_modules is append-only from the worktree's perspective (agent never `npm install`s
+    // in its worktree), so sharing is safe.
     const srcNodeModules = join(REPO_ROOT, 'node_modules')
     const dstNodeModules = join(worktreePath, 'node_modules')
     if (existsSync(srcNodeModules) && !existsSync(dstNodeModules)) {
@@ -116,17 +118,10 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
       }
     }
 
-    // Also symlink .next (if it exists) so the agent can skip rebuild during verification
-    // — optional optimization; safe to skip if it fails
-    const srcNext = join(REPO_ROOT, '.next')
-    const dstNext = join(worktreePath, '.next')
-    if (existsSync(srcNext) && !existsSync(dstNext)) {
-      try {
-        symlinkSync(srcNext, dstNext, 'dir')
-      } catch {
-        // ignore — non-critical
-      }
-    }
+    // DO NOT symlink .next — each worktree must build its own .next.
+    // Sharing .next between multiple tree states causes "Cannot find module './6552.js'"
+    // webpack chunk collisions. The agent's first `npm run build` will create one locally.
+    // (Earlier version of this file symlinked .next as an optimization; removed 2026-04-10.)
 
     return {
       ok: true,

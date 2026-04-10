@@ -13,14 +13,16 @@
 //   - Build + verify it shows up in `curl /api/run-agent/runtimes` (future endpoint)
 
 import claudeCodeRuntime from './claude-code'
+import codexRuntime from './codex'
+import cursorRuntime from './cursor'
 import type { AgentRuntime, RuntimeRegistration } from './types'
 
 const REGISTRY: RuntimeRegistration[] = [
   { runtime: claudeCodeRuntime, priority: 100 },
+  { runtime: codexRuntime,      priority: 90  },
+  { runtime: cursorRuntime,     priority: 80  },
   // Future:
-  // { runtime: codexRuntime,     priority: 90  },  // lib/runtimes/codex.ts
-  // { runtime: cursorRuntime,    priority: 80  },  // lib/runtimes/cursor.ts
-  // { runtime: openaiApiRuntime, priority: 70  },  // lib/runtimes/openai-api.ts
+  // { runtime: openaiApiRuntime, priority: 70  },  // lib/runtimes/openai-api.ts (direct API + tool loop)
 ]
 
 /**
