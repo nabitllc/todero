@@ -4,6 +4,8 @@
 
 export interface AgentQueueConfig {
   agentId: string
+  /** Claude model alias: 'opus', 'sonnet', or 'haiku' */
+  model: 'opus' | 'sonnet' | 'haiku'
   /** Supabase filter for which issues this agent picks up */
   pickupStatus: string
   /** Additional Supabase query filters (appended to URL) */
@@ -29,6 +31,7 @@ export interface AgentQueueConfig {
 export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
   builder: {
     agentId: 'builder',
+    model: 'sonnet',
     pickupStatus: 'open',
     extraFilters: '',
     dorFields: ['description', 'acceptance_criteria'],
@@ -43,6 +46,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   ops: {
     agentId: 'ops',
+    model: 'sonnet',
     pickupStatus: 'open',
     extraFilters: '',
     dorFields: ['description', 'acceptance_criteria'],
@@ -57,6 +61,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   tester: {
     agentId: 'tester',
+    model: 'haiku',
     pickupStatus: 'code_review',
     extraFilters: '',
     dorFields: ['acceptance_criteria'],
@@ -71,6 +76,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   designer: {
     agentId: 'designer',
+    model: 'haiku',
     pickupStatus: 'code_review',
     extraFilters: '',
     dorFields: ['acceptance_criteria'],
@@ -85,6 +91,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   po: {
     agentId: 'po',
+    model: 'sonnet',
     pickupStatus: 'backlog',
     extraFilters: 'type=in.(feature,task,bug)',
     dorFields: ['title'],
@@ -99,6 +106,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   scout: {
     agentId: 'scout',
+    model: 'sonnet',
     pickupStatus: 'open',
     extraFilters: '',
     dorFields: ['description', 'acceptance_criteria'],
@@ -113,6 +121,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   auditor: {
     agentId: 'auditor',
+    model: 'haiku',
     pickupStatus: 'released',
     extraFilters: '',
     dorFields: ['implementation_notes'],
@@ -127,6 +136,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 
   deployer: {
     agentId: 'deployer',
+    model: 'haiku',
     pickupStatus: 'approved',
     extraFilters: '',
     dorFields: ['implementation_notes'],
