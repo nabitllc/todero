@@ -41,4 +41,16 @@ export const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low']
 export const VALID_SEVERITIES = ['S0', 'S1', 'S2', 'S3']
 export const VALID_STATUSES = ['backlog', 'defined', 'open', 'in_progress', 'code_review', 'product_review', 'approved', 'released', 'completed', 'closed', 'draft', 'active']
 export const RETIRED_STATUSES = ['in_review', 'done', 'blocked']
-export const VALID_RESOLUTION_TYPES = ['code_change', 'config_change', 'no_action', 'duplicate', 'by_design', 'wont_fix', 'not_reproducible', 'deferred', 'completed']
+export const VALID_RESOLUTION_TYPES = [
+  'code_change',        // Code was written/modified (task, bug, ops)
+  'config_change',      // Configuration/settings changed, no code (ops)
+  'database_change',    // Schema migration, data fix (ops)
+  'research_completed', // Research done, findings documented (research)
+  'documentation',      // Docs written/updated, no code (any)
+  'duplicate',          // Issue is a duplicate of another
+  'expected_behavior',  // Reported behavior is by design (bug)
+  'wont_fix',           // Acknowledged but won't be fixed
+  'not_reproducible',   // Bug cannot be reproduced
+  'deferred',           // Postponed to future work
+  'completed',          // Generic completion (feature, epic)
+]
