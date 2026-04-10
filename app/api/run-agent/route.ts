@@ -204,8 +204,8 @@ export async function POST(req: NextRequest) {
   const escaped = prompt.replace(/'/g, "'\\''")
   const logFile = `/tmp/agent-${agentId}-${Date.now()}.log`
   const modelFlag = config.model ? `--model ${config.model}` : ''
-  // Use setsid to fully detach from parent process — survives parent exit
-  const cmd = `cd ${TODERO_DIR} && setsid nohup ${CLAUDE_BIN} --permission-mode bypassPermissions ${modelFlag} --print '${escaped}' > ${logFile} 2>&1 < /dev/null &`
+  // macOS doesn't have setsid. Use disown + nohup + background to detach.
+  const cmd = `cd ${TODERO_DIR} && nohup ${CLAUDE_BIN} --permission-mode bypassPermissions ${modelFlag} --print '${escaped}' > ${logFile} 2>&1 < /dev/null & disown`
   exec(cmd, {
     timeout: 5000,
     detached: true,

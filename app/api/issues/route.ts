@@ -60,7 +60,7 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
   const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
   const prompt = `<workspace-context>${context}</workspace-context>\n\nYou are ${agentId}. ${msg}`
   const escaped = prompt.replace(/'/g, "'\\''")
-  const cmd = `cd ${TODERO_DIR} && setsid nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > /tmp/agent-${agentId}-$(date +%s).log 2>&1 < /dev/null &`
+  const cmd = `cd ${TODERO_DIR} && nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > /tmp/agent-${agentId}-$(date +%s).log 2>&1 < /dev/null & disown`
   execAsync(cmd, { timeout: 5000 }, () => {})
 }
 
