@@ -121,6 +121,10 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check responsive layout, accessibility, design system compliance. If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
   },
 
+  // TOD-XXX (2026-04-10): PO promptPrefix updated to fix sprint-date hygiene.
+  // Before: PO was creating child tasks with sprint='2026-04-01' (a closed sprint),
+  // making them invisible on the Board. Backend guard in /api/issues also
+  // auto-corrects wrong dates, but telling PO directly prevents the mistake.
   po: {
     agentId: 'po',
     model: 'sonnet',
@@ -133,7 +137,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
-    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner. For FEATURES: create child tasks (each 1-2 days of work) before moving to defined. For EPICS: verify child features exist and have AC. When all DoR fields are set, PATCH to defined. Then check defined issues — if they have sprint, assignee, reviewer, owner, PATCH to open. Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
+    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner. For FEATURES: create child tasks (each 1-2 days of work) before moving to defined. For EPICS: verify child features exist and have AC. When all DoR fields are set, PATCH to defined. Then check defined issues — if they have sprint, assignee, reviewer, owner, PATCH to open. **SPRINT DATE HYGIENE (2026-04-10): whenever you create a new child task, ALWAYS set sprint to today\'s date in YYYY-MM-DD format (America/New_York timezone). Never use a past date. The backend auto-corrects wrong dates but you should set it right the first time.** Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
   },
 
   scout: {

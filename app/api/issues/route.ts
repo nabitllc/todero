@@ -670,11 +670,28 @@ export async function POST(req: NextRequest) {
   }
 
   const effectiveStatus = status ?? 'open'
-  if (effectiveStatus !== 'backlog' && !sprint?.trim()) {
-    return NextResponse.json(
-      { error: 'sprint is required for non-backlog issues. Assign a sprint date (YYYY-MM-DD) or set status to backlog.' },
-      { status: 422 }
-    )
+
+  // TOD-XXX (2026-04-10): sprint hygiene guard. If sprint is missing OR is a
+  // past date (older than today's ET date), auto-correct to today. Closed
+  // sprints on new issues are a common agent mistake (TOD-811 was created with
+  // sprint=2026-04-01, the April 1st sprint, because PO didn't know the current
+  // date). The Board default filter hides closed sprints, making such issues
+  // invisible.
+  const todayEt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date()) // YYYY-MM-DD
+  let effectiveSprint = sprint?.trim() || null
+  let sprintAutoCorrected = false
+  // Auto-correct: bad sprint date format, or past date → today's ET date
+  if (effectiveSprint && /^\d{4}-\d{2}-\d{2}$/.test(effectiveSprint) && effectiveSprint < todayEt) {
+    effectiveSprint = todayEt
+    sprintAutoCorrected = true
+  }
+  // Fill: missing sprint on non-backlog → today
+  if (!effectiveSprint && effectiveStatus !== 'backlog') {
+    effectiveSprint = todayEt
+    sprintAutoCorrected = true
   }
 
   let effectiveAssignee = assignee
@@ -689,18 +706,26 @@ export async function POST(req: NextRequest) {
     } else if (effectiveType === 'research') {
       effectiveAssignee = 'scout'; routingNote = '[auto-routed to scout: type=research]'
     } else if (effectiveType === 'feature') {
-      if (projectStr.includes('Vespera') || projectStr.includes('VES')) {
-        effectiveAssignee = 'vespera-sme'; routingNote = `[auto-routed to vespera-sme: type=feature + project=${projectStr}]`
-      } else if (projectStr.includes('Kemuni') || projectStr.includes('KEM')) {
-        effectiveAssignee = 'kemuni-sme'; routingNote = `[auto-routed to kemuni-sme: type=feature + project=${projectStr}]`
-      } else {
-        effectiveAssignee = 'main'; routingNote = `[auto-routed to main: type=feature + project=${projectStr}]`
-      }
+      // TOD-XXX (2026-04-10): features always land on PO first for grooming
+      // (acceptance criteria, child task breakdown). PO transitions them to
+      // 'defined' then to 'open' once they're ready for Builder.
+      effectiveAssignee = 'po'; routingNote = `[auto-routed to po: type=feature + project=${projectStr}]`
     } else if (effectiveType === 'epic') {
       effectiveAssignee = 'main'; routingNote = '[auto-routed to main: type=epic]'
     } else {
       effectiveAssignee = 'builder'; routingNote = '[auto-routed to builder: default fallback]'
     }
+  }
+
+  // TOD-XXX (2026-04-10): workflow-transition guard. Features in backlog/defined
+  // must be on PO (for grooming), not Builder. Auto-correct if wrong.
+  if (
+    (type ?? 'task') === 'feature' &&
+    ['backlog', 'defined'].includes(effectiveStatus) &&
+    effectiveAssignee === 'builder'
+  ) {
+    effectiveAssignee = 'po'
+    routingNote = `${routingNote ? routingNote + ' ' : ''}[guard: feature in ${effectiveStatus} forced to po]`
   }
 
   const effectiveDescription = routingNote
@@ -767,7 +792,7 @@ export async function POST(req: NextRequest) {
       title, description: effectiveDescription, status: finalStatus,
       assignee: effectiveAssignee, project: normalizedProject,
       priority: priority ?? 'medium', type: type ?? 'task', due_date,
-      acceptance_criteria, sprint, parent_id,
+      acceptance_criteria, sprint: effectiveSprint, parent_id,
       ...(severity ? { severity } : {}),
       resolution_type, feature_branch, pr_url,
       ...generatedIdentity,

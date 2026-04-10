@@ -1,8 +1,7 @@
-// TOD-799: Token ledger middleware — records each spawn to the token_ledger
-// Supabase table. Best-effort: if the table doesn't exist yet (migration not
-// applied), logs a single warning and silently no-ops subsequent calls.
-// Runtime-agnostic: Claude Code, Codex, Cursor, OpenAI API adapters all write
-// to the same table via this helper.
+// TOD-799: Token ledger middleware + TOD-XXX (2026-04-10) completion hook.
+// Records each spawn to the token_ledger Supabase table. Best-effort: silently
+// no-ops if the table is missing (warns once then suppresses). Runtime-agnostic:
+// Claude Code, Codex, Cursor, OpenAI API adapters all write to the same table.
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY =
@@ -22,10 +21,6 @@ export interface TokenLedgerEntry {
   metadata?: Record<string, unknown> | null
 }
 
-/**
- * Record a spawn event. Fire-and-forget — never blocks the caller.
- * If the table doesn't exist yet, silently no-ops after the first warning.
- */
 export function recordSpawn(entry: TokenLedgerEntry): void {
   void (async () => {
     try {
@@ -69,6 +64,72 @@ export function recordSpawn(entry: TokenLedgerEntry): void {
       console.warn(
         `[token-ledger] ${err instanceof Error ? err.message : String(err)}`
       )
+    }
+  })()
+}
+
+// ── TOD-XXX (Gap 3): completion hook ──────────────────────────────────────
+//
+// Called by the post-spawn log parser once the agent's claude process has exited.
+// Updates the token_ledger row with completion stats. Works with the log-sentinel
+// format written by lib/runtimes/claude-code.ts (which writes [spawn-start] and
+// [spawn-exit] lines). Codex and Cursor adapters will need their own parsers
+// when they're active.
+
+export interface CompletionEntry {
+  logFile: string
+  status: 'completed' | 'failed' | 'killed'
+  exitCode?: number | null
+  exitSignal?: string | null
+  durationSec?: number | null
+  inputTokens?: number
+  outputTokens?: number
+  costUsd?: number
+  error?: string
+}
+
+export function recordCompletion(entry: CompletionEntry): void {
+  void (async () => {
+    try {
+      // Find the token_ledger row for this log file
+      const findUrl = `${SUPA_URL}/rest/v1/token_ledger?log_file=eq.${encodeURIComponent(entry.logFile)}&select=id&order=spawned_at.desc&limit=1`
+      const findRes = await fetch(findUrl, {
+        headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` },
+      })
+      if (!findRes.ok) return
+      const rows = await findRes.json() as Array<{ id: string }>
+      const row = rows?.[0]
+      if (!row) return
+
+      const updatePayload: Record<string, unknown> = {
+        completed_at: new Date().toISOString(),
+        status: entry.status,
+      }
+      if (entry.inputTokens != null) updatePayload.input_tokens = entry.inputTokens
+      if (entry.outputTokens != null) updatePayload.output_tokens = entry.outputTokens
+      if (entry.costUsd != null) updatePayload.cost_usd = entry.costUsd
+      // Merge exit info into metadata
+      if (entry.exitCode != null || entry.exitSignal != null || entry.error) {
+        updatePayload.metadata = {
+          exit_code: entry.exitCode ?? null,
+          exit_signal: entry.exitSignal ?? null,
+          duration_sec: entry.durationSec ?? null,
+          error: entry.error ?? null,
+        }
+      }
+
+      await fetch(`${SUPA_URL}/rest/v1/token_ledger?id=eq.${row.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': `Bearer ${SUPA_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(updatePayload),
+      })
+    } catch (err) {
+      console.warn(`[token-ledger:recordCompletion] ${err instanceof Error ? err.message : String(err)}`)
     }
   })()
 }

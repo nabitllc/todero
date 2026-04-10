@@ -1,18 +1,24 @@
-// TOD-793: Claude Code CLI adapter — first implementation of AgentRuntime.
-// TOD-806 (2026-04-10): Now spawns into an isolated git worktree so parallel
-// agents don't collide on branch state. The interactive session in ~/todero
-// is never affected by agent branch operations.
+// TOD-793: Claude Code CLI adapter.
+// TOD-806 (2026-04-10): worktree isolation.
+// TOD-XXX (2026-04-10 round 7): fix silent death pattern.
+//   - Switched from `exec(cmd)` with a quoted prompt → `spawn(bin, [...args])`
+//     so shell escaping can't break the spawn. Prompts with parens, quotes,
+//     backticks, @symbols, etc. no longer need to be escaped at all.
+//   - Capture exit code and write it to the log when the child dies.
+//   - Pipe stdout/stderr through to the log file immediately (no buffering),
+//     so we can see "alive but working" vs "dead at spawn".
+//   - Emit a "SPAWN OK" sentinel line at the very top so we can distinguish
+//     "never ran" from "ran but produced nothing".
 
-import { exec } from 'child_process'
-import { existsSync } from 'fs'
+import { spawn } from 'child_process'
+import { existsSync, openSync, closeSync, writeSync, appendFileSync } from 'fs'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? '/Users/kemuniagent/.local/bin/claude'
 
-// Worktree teardown is scheduled after this many minutes. Enough time for a
-// typical task (build + commit + PATCH) plus a buffer. If the agent is still
-// running after this, the worktree is orphaned for the janitor to clean up.
+// Worktree teardown timer — 60 min should cover any reasonable task.
+// If the agent is still running at that point the worktree will be force-removed.
 const WORKTREE_TEARDOWN_MINUTES = 60
 
 export const claudeCodeRuntime: AgentRuntime = {
@@ -30,22 +36,13 @@ export const claudeCodeRuntime: AgentRuntime = {
   },
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult> {
-    // ── TOD-806: Prepare an isolated git worktree ─────────────────────────
-    // This is the fix for branch drift. Previously every spawn ran
-    // `git checkout -b feat/tod-X` inside the shared ~/todero dir, which
-    // switched the interactive Claude Code session out from under us.
-    //
-    // Now each spawn gets its own worktree at ~/agent-worktrees/<agent>-<task>-<ts>
-    // with node_modules symlinked from the main repo. The agent runs there.
-    // The interactive ~/todero is never touched.
+    // TOD-806: Prepare an isolated git worktree.
     const wtResult = prepareWorktree({
       agentId: opts.agentId,
       taskKey: extractTaskKeyFromBranch(opts.branch),
       branch: opts.branch,
     })
 
-    // If worktree setup failed, fall back to the old behavior rather than blocking
-    // the spawn entirely. Log the failure prominently so it gets noticed.
     let effectiveWorkingDir = opts.workingDir
     let teardownPath: string | null = null
     if (wtResult.ok && wtResult.worktreePath) {
@@ -53,37 +50,76 @@ export const claudeCodeRuntime: AgentRuntime = {
       teardownPath = wtResult.worktreePath
     } else {
       console.warn(
-        `[claude-code] worktree setup failed for ${opts.agentId} — falling back to shared dir. ` +
-        `This will cause branch drift on the interactive session. Error: ${wtResult.error}`
+        `[claude-code] worktree setup failed for ${opts.agentId} — falling back to shared dir. ${wtResult.error}`
       )
     }
 
-    // Shell-escape the prompt for single-quote wrapping
-    const escapedPrompt = opts.prompt.replace(/'/g, "'\\''")
+    // Map model alias to Claude CLI flag
+    const args: string[] = []
+    if (opts.bypassPermissions !== false) {
+      args.push('--permission-mode', 'bypassPermissions')
+    }
+    if (opts.model) {
+      args.push('--model', opts.model)
+    }
+    args.push('--print', opts.prompt)
+    // Note: we intentionally do NOT use --output-format=stream-json here because
+    // it changes the output contract for downstream parsers (token-ledger wrapper,
+    // etc.). The regular --print output is human-readable and we pipe it to a log
+    // so the buffering-hides-death problem is solved at the pipe level, not the
+    // format level.
 
-    // Map model alias to Claude CLI --model flag
-    const modelFlag = opts.model ? `--model ${opts.model}` : ''
-
-    // Permission mode: bypassPermissions is Claude Code's "do anything" mode
-    const permissionFlag = opts.bypassPermissions !== false
-      ? '--permission-mode bypassPermissions'
-      : ''
-
-    // The worktree is already on the correct branch (prepareWorktree did `git worktree add -b`).
-    // No need to `git checkout` again.
-    // nohup + disown = detached background process on macOS (no setsid)
-    // 2>&1 < /dev/null = no stdin, merge stderr into log
-    const cmd = `cd ${effectiveWorkingDir} && `
-      + `nohup ${CLAUDE_BIN} ${permissionFlag} ${modelFlag} --print '${escapedPrompt}' `
-      + `> ${opts.logFile} 2>&1 < /dev/null & disown`
+    // Write a "SPAWN OK" marker to the log BEFORE we spawn, so the log file exists
+    // and we can distinguish "never wrote the marker" from "wrote the marker then died".
+    try {
+      const fd = openSync(opts.logFile, 'w')
+      writeSync(fd, `[spawn-start] ${new Date().toISOString()} agentId=${opts.agentId} model=${opts.model ?? 'default'} workingDir=${effectiveWorkingDir}\n`)
+      writeSync(fd, `[spawn-start] prompt bytes: ${opts.prompt.length}\n`)
+      writeSync(fd, `[spawn-start] ---\n`)
+      closeSync(fd)
+    } catch (err) {
+      console.warn(`[claude-code] failed to write spawn marker to ${opts.logFile}: ${err instanceof Error ? err.message : String(err)}`)
+    }
 
     try {
-      exec(cmd, { timeout: 5000 })
+      // spawn() takes args as an array — ZERO shell escaping concerns.
+      // stdio: ['ignore', <logFd>, <logFd>] redirects stdout+stderr to the log file.
+      const outFd = openSync(opts.logFile, 'a')
+      const child = spawn(CLAUDE_BIN, args, {
+        cwd: effectiveWorkingDir,
+        detached: true,
+        stdio: ['ignore', outFd, outFd],
+        env: process.env,
+      })
 
-      // Schedule worktree teardown after the timeout.
-      // If the agent finishes faster, the teardown will just be a no-op.
-      // If the agent is still running, the forced removal will kill its
-      // changes — which is the correct behavior for a runaway spawn.
+      // Capture exit code when the child dies. This is the KEY fix for silent
+      // deaths: we always get a terminal log line telling us WHY the process
+      // ended, even if claude itself wrote nothing.
+      const childPid = child.pid
+      child.on('exit', (code, signal) => {
+        try {
+          appendFileSync(
+            opts.logFile,
+            `\n[spawn-exit] ${new Date().toISOString()} pid=${childPid} code=${code ?? 'null'} signal=${signal ?? 'null'}\n`
+          )
+        } catch {
+          // swallow — logging a logging error is pointless
+        }
+        try { closeSync(outFd) } catch {}
+      })
+      child.on('error', (err) => {
+        try {
+          appendFileSync(
+            opts.logFile,
+            `\n[spawn-error] ${new Date().toISOString()} ${err.message}\n`
+          )
+        } catch {}
+      })
+
+      // Detach so the HTTP handler can return immediately
+      child.unref()
+
+      // Schedule worktree teardown after the timeout window
       if (teardownPath) {
         const teardownMs = WORKTREE_TEARDOWN_MINUTES * 60 * 1000
         setTimeout(() => {
@@ -91,16 +127,23 @@ export const claudeCodeRuntime: AgentRuntime = {
           if (!tr.ok) {
             console.warn(`[claude-code] worktree teardown failed for ${teardownPath}: ${tr.error}`)
           }
-        }, teardownMs).unref()  // unref so the process doesn't wait on this timer
+        }, teardownMs).unref()
       }
 
       return {
         ok: true,
-        command: cmd.slice(0, 200) + '…',
+        pid: childPid,
+        command: `${CLAUDE_BIN} ${args.slice(0, -1).join(' ')} --print <${opts.prompt.length}B>`,
         runtime: 'claude-code',
       }
     } catch (err: unknown) {
-      // If spawn failed, tear down the worktree immediately so we don't leak disk
+      // Spawn itself failed — tear down the worktree and log the error
+      try {
+        appendFileSync(
+          opts.logFile,
+          `\n[spawn-failure] ${new Date().toISOString()} ${err instanceof Error ? err.message : String(err)}\n`
+        )
+      } catch {}
       if (teardownPath) {
         teardownWorktree(teardownPath)
       }
@@ -113,10 +156,6 @@ export const claudeCodeRuntime: AgentRuntime = {
   },
 }
 
-/**
- * Extract a task key (e.g. "TOD-806") from a branch name like "feat/tod-806"
- * so the worktree dir name reflects the task instead of falling back to "notask".
- */
 function extractTaskKeyFromBranch(branch: string | null | undefined): string | null {
   if (!branch) return null
   const match = branch.match(/(?:feat\/)?(tod|mc|inf|ves|kem|task)-(\d+)/i)

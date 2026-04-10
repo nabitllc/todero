@@ -603,84 +603,194 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         )
       })()}
 
-      {/* MC-87: Feature-grouped view */}
+      {/* Feature-grouped swimlane — each feature is a collapsible 3-column kanban */}
       {groupByFeature && (() => {
-        // Group tasks by parent_id (feature)
+        // Group tasks by parent_id (feature). Sort features by priority then by
+        // completion % (least done first) so unfinished work surfaces up top.
         const features = tasks.filter(t => t.type === 'feature' || t.type === 'epic')
-        const featureGroups: { feature: Task | null; label: string; children: Task[] }[] = []
+        const featureGroups: { feature: Task | null; label: string; children: Task[]; pct: number }[] = []
         const parentIds = Array.from(new Set(filtered.map(t => (t as any).parent_id).filter(Boolean)))
-        // Add features that have children in filtered set
         for (const pid of parentIds) {
           const feat = features.find(f => f.id === pid)
+          const children = filtered.filter(t => (t as any).parent_id === pid)
+          const done = children.filter(t => ['completed', 'released', 'closed'].includes(t.status)).length
+          const pct = children.length > 0 ? Math.round((done / children.length) * 100) : 0
           featureGroups.push({
             feature: feat || null,
             label: feat?.title || 'Unknown Feature',
-            children: filtered.filter(t => (t as any).parent_id === pid)
+            children,
+            pct,
           })
         }
-        // Unassigned: tasks without parent_id
         const unassigned = filtered.filter(t => !(t as any).parent_id)
-        if (unassigned.length > 0) featureGroups.push({ feature: null, label: 'Unassigned', children: unassigned })
-        // Sort: features with priority, then unassigned last
+        if (unassigned.length > 0) {
+          featureGroups.push({ feature: null, label: 'Unassigned (no parent feature)', children: unassigned, pct: 0 })
+        }
+        // Sort: by priority (critical first), then by completion % ascending (least done first)
         featureGroups.sort((a, b) => {
           if (!a.feature && b.feature) return 1
           if (a.feature && !b.feature) return -1
-          const pa = a.feature?.priority || 'low'
-          const pb = b.feature?.priority || 'low'
-          const po = ['critical','high','medium','low']
-          return po.indexOf(pa) - po.indexOf(pb)
+          const po = ['critical', 'high', 'medium', 'low']
+          const pa = po.indexOf(a.feature?.priority || 'medium')
+          const pb = po.indexOf(b.feature?.priority || 'medium')
+          if (pa !== pb) return pa - pb
+          return a.pct - b.pct
         })
-        const [expandedFeatures, setExpandedFeaturesLocal] = [
-          new Set(featureGroups.map(g => g.label)),
-          (_: any) => {}
-        ]
         return (
-          <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+          <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
             {featureGroups.map(group => {
-              const statusCounts = BOARD_COLUMNS.reduce((acc, col) => {
-                acc[col.id] = group.children.filter(t => col.statuses.includes(t.status)).length; return acc
-              }, {} as Record<string, number>)
+              const groupKey = `feature::${group.feature?.id ?? group.label}`
+              const isCollapsed = collapsedBiz[groupKey] ?? false
+              const toggleCollapse = () => {
+                const next = { ...collapsedBiz, [groupKey]: !isCollapsed }
+                setCollapsedBiz(next)
+                if (typeof window !== 'undefined') localStorage.setItem('board-biz-collapsed', JSON.stringify(next))
+              }
               return (
-                <div key={group.label} className="rounded-xl border border-white/10 overflow-hidden" style={{background:'#080808'}}>
-                  <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-white/5 transition-colors"
-                    style={{borderLeft: group.feature ? `3px solid ${PRIORITY_COLORS[group.feature.priority||'medium']||'#3f3f46'}` : '3px solid #27272a'}}>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold text-white/70">{group.label}</span>
-                      {group.feature?.project && <span className="ml-2 text-[10px] text-white/50">{group.feature.project}</span>}
-                    </div>
-                    <div className="flex gap-1.5 shrink-0">
-                      {BOARD_COLUMNS.map(col => statusCounts[col.id] > 0 ? (
-                        <span key={col.id} className="text-[9px] px-1.5 py-0.5 rounded-full font-mono"
-                          style={{color: col.color, background: col.color + '18', border: `1px solid ${col.color}30`}}>
-                          {statusCounts[col.id]}
-                        </span>
-                      ) : null)}
-                    </div>
-                    <span className="text-[10px] text-white/30">{group.children.length}</span>
+                <div key={groupKey} className="rounded-xl border border-white/10 overflow-hidden" style={{ background: '#080808' }}>
+                  {/* Feature header */}
+                  <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none"
+                    style={{ borderLeft: group.feature ? `3px solid ${PRIORITY_COLORS[group.feature.priority || 'medium'] || '#3f3f46'}` : '3px solid #27272a' }}>
+                    {group.feature?.task_key && (
+                      <span className="text-[10px] font-mono font-bold text-white/40 shrink-0">{group.feature.task_key}</span>
+                    )}
+                    <span className="text-sm font-semibold text-white/70 flex-1 min-w-0 truncate">{group.label}</span>
+                    {group.feature?.project && <span className="text-[10px] text-white/40">{group.feature.project}</span>}
+                    <span className="text-[10px] text-white/60 font-mono">{group.pct}% done</span>
+                    <span className="text-xs text-white/50">({group.children.length} issue{group.children.length !== 1 ? 's' : ''})</span>
+                    <span className="text-white/30 text-xs">{isCollapsed ? '▶' : '▼'}</span>
                   </div>
-                  <div className="border-t border-white/10">
-                    {group.children.map(task => {
-                      const col = BOARD_COLUMNS.find(c => c.statuses.includes(task.status))
-                      return (
-                        <div key={task.id} className="flex items-center gap-3 px-4 py-2 hover:bg-white/10/20 transition-colors cursor-pointer border-b border-white/10 last:border-b-0"
-                          onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}>
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{background: col?.color || '#3f3f46'}} />
-                          <p className="text-sm text-white/70 flex-1 truncate">{task.title}</p>
-                          <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${STATUS_CHIP_COLORS[task.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>
-                            {task.status.replace(/_/g,' ')}
-                          </span>
-                          {task.assignee && ASSIGNEE_MAP[task.assignee] && (
-                            <span className="text-[10px] text-white/50 shrink-0">{ASSIGNEE_MAP[task.assignee].emoji}</span>
-                          )}
-                          {task.task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{task.task_key}</span>}
-                        </div>
-                      )
-                    })}
-                  </div>
+                  {/* 3-column kanban inside the feature */}
+                  {!isCollapsed && (
+                    <div className="border-t border-white/10 flex gap-3 overflow-x-auto p-3">
+                      {BOARD_COLUMNS.map(col => {
+                        const colTasks = group.children.filter(t => col.statuses.includes(t.status))
+                        return (
+                          <div key={col.id}
+                            className="flex-1 min-w-[240px] flex flex-col rounded-xl bg-[#0f0f0f]/50"
+                            style={{ borderTop: `2px solid ${col.color}`, minHeight: '60px' }}
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={() => handleDrop(col.id)}>
+                            <div className="flex items-center gap-2 px-3 py-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
+                              <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
+                              <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
+                            </div>
+                            <div className="flex-1 px-2 pb-2 space-y-2 min-h-[30px]">
+                              {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
+                              {colTasks.map(task => (
+                                <div key={task.id}
+                                  draggable
+                                  onDragStart={() => setDragId(task.id)}
+                                  onDragEnd={() => setDragId(null)}
+                                  onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
+                                  className={`rounded-lg border cursor-pointer transition-colors ${dragId === task.id ? 'opacity-50' : ''}`}
+                                  style={{ background: '#0f0f0f', borderColor: dragId === task.id ? '#555' : '#27272a' }}>
+                                  <div className="px-2 py-1.5">
+                                    {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
+                                    <p className="text-white text-[11px] font-medium leading-snug line-clamp-2">{task.title}</p>
+                                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                      {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a' }} />}
+                                      {(task.is_blocked || task.blocked_by) && <Lock size={9} className="text-red-400 shrink-0" />}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )
             })}
             {featureGroups.length === 0 && <EmptyState icon={Kanban} title="No tasks match filters" />}
+          </div>
+        )
+      })()}
+
+      {/* Sprint-grouped swimlane — each sprint date is a collapsible 3-column kanban */}
+      {groupBySprint && (() => {
+        const sprintGroups: Record<string, typeof filtered> = {}
+        for (const t of filtered) {
+          const k = t.sprint || '(no sprint)'
+          if (!sprintGroups[k]) sprintGroups[k] = []
+          sprintGroups[k].push(t)
+        }
+        // Sort: active sprint(s) first, then future, then past
+        const sorted = Object.keys(sprintGroups).sort((a, b) => {
+          const aActive = activeSprintDates.includes(a)
+          const bActive = activeSprintDates.includes(b)
+          if (aActive && !bActive) return -1
+          if (!aActive && bActive) return 1
+          return a < b ? -1 : a > b ? 1 : 0
+        })
+        return (
+          <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
+            {sorted.map(sprintKey => {
+              const tasks = sprintGroups[sprintKey]
+              const groupKey = `sprint::${sprintKey}`
+              const isCollapsed = collapsedBiz[groupKey] ?? false
+              const toggleCollapse = () => {
+                const next = { ...collapsedBiz, [groupKey]: !isCollapsed }
+                setCollapsedBiz(next)
+                if (typeof window !== 'undefined') localStorage.setItem('board-biz-collapsed', JSON.stringify(next))
+              }
+              const isActive = activeSprintDates.includes(sprintKey)
+              const done = tasks.filter(t => ['completed', 'released', 'closed'].includes(t.status)).length
+              const pct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0
+              return (
+                <div key={groupKey} className="rounded-xl border border-white/10 overflow-hidden" style={{ background: '#080808' }}>
+                  <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none"
+                    style={{ borderLeft: isActive ? '3px solid #22c55e' : '3px solid #3f3f46' }}>
+                    <span className="text-sm font-semibold text-white/70">{sprintKey}</span>
+                    {isActive && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">active</span>}
+                    <span className="text-[10px] text-white/60 font-mono ml-auto">{pct}% done</span>
+                    <span className="text-xs text-white/50">({tasks.length} issue{tasks.length !== 1 ? 's' : ''})</span>
+                    <span className="text-white/30 text-xs">{isCollapsed ? '▶' : '▼'}</span>
+                  </div>
+                  {!isCollapsed && (
+                    <div className="border-t border-white/10 flex gap-3 overflow-x-auto p-3">
+                      {BOARD_COLUMNS.map(col => {
+                        const colTasks = tasks.filter(t => col.statuses.includes(t.status))
+                        return (
+                          <div key={col.id}
+                            className="flex-1 min-w-[240px] flex flex-col rounded-xl bg-[#0f0f0f]/50"
+                            style={{ borderTop: `2px solid ${col.color}`, minHeight: '60px' }}
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={() => handleDrop(col.id)}>
+                            <div className="flex items-center gap-2 px-3 py-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
+                              <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
+                              <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
+                            </div>
+                            <div className="flex-1 px-2 pb-2 space-y-2 min-h-[30px]">
+                              {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
+                              {colTasks.map(task => (
+                                <div key={task.id}
+                                  onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
+                                  className="rounded-lg border cursor-pointer transition-colors"
+                                  style={{ background: '#0f0f0f', borderColor: '#27272a' }}>
+                                  <div className="px-2 py-1.5">
+                                    {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
+                                    <p className="text-white text-[11px] font-medium leading-snug line-clamp-2">{task.title}</p>
+                                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                      {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a' }} />}
+                                      {(task.is_blocked || task.blocked_by) && <Lock size={9} className="text-red-400 shrink-0" />}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )
       })()}
