@@ -14,7 +14,7 @@ You are working on Todero, an AI-run company OS built with Next.js 14 + Supabase
 - Language: TypeScript strict mode
 - Database: Supabase (Postgres) — service role key in env
 - Styling: Tailwind CSS with design tokens
-- Deploy: LaunchAgent `com.nabit.todero` → `localhost:3000` → Cloudflare tunnel → https://kaos.nabit.work
+- Deploy: LaunchAgent `work.nabit.todero` → `localhost:3000` → Cloudflare tunnel → https://kaos.nabit.work
 
 ## Non-Negotiable Rules
 1. All issue state changes go through `POST/PATCH /api/issues` — never direct Supabase

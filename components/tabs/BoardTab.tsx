@@ -747,7 +747,19 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                               <div className="flex items-center gap-1 flex-wrap">
                                                 {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0">{TYPE_ICONS[task.type]}</span>}
                                                 {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a'}} />}
-                                                {(task.is_blocked || task.blocked_by) && <Lock size={9} className="text-red-400 shrink-0" />}
+                                                {(task.is_blocked || task.blocked_by || (task.rejection_count ?? 0) >= 3) && (
+                                                  <Lock
+                                                    size={9}
+                                                    className="text-red-400 shrink-0"
+                                                    aria-label={
+                                                      task.blocked_by
+                                                        ? `blocked by ${task.blocked_by}`
+                                                        : (task.rejection_count ?? 0) >= 3
+                                                          ? `3-strike loop breaker (${task.rejection_count} rejections)`
+                                                          : 'blocked'
+                                                    }
+                                                  />
+                                                )}
                                               </div>
                                             </div>
                                             {aLetter && (
@@ -855,7 +867,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         {task.severity && SEVERITY_CHIP_STYLES[task.severity] && (
                           <span className={`inline-block text-[8px] font-bold px-1 py-0 rounded border shrink-0 ${SEVERITY_CHIP_STYLES[task.severity]}`}>{task.severity}</span>
                         )}
-                        {(task.is_blocked || task.blocked_by) && <Lock size={10} className="text-red-400 shrink-0" />}
+                        {(task.is_blocked || task.blocked_by || (task.rejection_count ?? 0) >= 3) && <Lock size={10} className="text-red-400 shrink-0" />}
                       </div>
                     </div>
                     {/* Assignee dot — bottom-right */}

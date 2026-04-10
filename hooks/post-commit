@@ -5,7 +5,7 @@
 # A manual restart or LaunchAgent auto-recovery (via start.sh) will pick up the new build later.
 #
 # If you want to force a server restart after commit, run:
-#   launchctl kickstart -k "gui/$(id -u)/com.nabit.todero"
+#   launchctl kickstart -k "gui/$(id -u)/work.nabit.todero"
 
 echo "[post-commit] Rebuilding Next.js (in background, no restart)..."
 cd /Users/kemuniagent/todero
@@ -18,4 +18,4 @@ nohup /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build > /tmp/mc-
 disown
 
 echo "[post-commit] Build queued. Server NOT restarted (protects open browser sessions)."
-echo "[post-commit] To pick up new build, run: launchctl kickstart -k gui/\$(id -u)/com.nabit.todero"
+echo "[post-commit] To pick up new build, run: launchctl kickstart -k gui/\$(id -u)/work.nabit.todero"

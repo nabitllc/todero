@@ -122,7 +122,7 @@ npm run dev
 npm run build && npm start
 ```
 
-LaunchAgent label: `com.nabit.todero` (auto-starts at boot, serves `kaos.nabit.work`)
+LaunchAgent label: `work.nabit.todero` (auto-starts at boot, serves `kaos.nabit.work`)
 
 ## Git Branches
 

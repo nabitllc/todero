@@ -33,7 +33,7 @@ state and the interactive editor session in `~/todero` is never affected.
 
 - Live URL: **https://kaos.nabit.work** (Cloudflare tunnel → `localhost:3000`)
 - Database: Supabase (`twthgapiouiqhavrcnry.supabase.co`)
-- LaunchAgent: `com.nabit.todero` (macOS launchd)
+- LaunchAgent: `work.nabit.todero` (macOS launchd)
 
 ## Interactive Agent Rules (MUST follow regardless of runtime)
 

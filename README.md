@@ -15,7 +15,7 @@ npm start                  # serves on :3000
 ```
 
 Open [http://localhost:3000](http://localhost:3000). Production is auto-started
-by the `com.nabit.todero` LaunchAgent on macOS.
+by the `work.nabit.todero` LaunchAgent on macOS.
 
 ## Architecture
 

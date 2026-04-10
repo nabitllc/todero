@@ -2,10 +2,26 @@
 // Defines selection criteria, WIP limits, blocked-item handling, and
 // status transitions for each agent's one-at-a-time queue lane.
 
+/**
+ * Runtime-agnostic model alias. Each runtime adapter maps this to its own
+ * provider-specific model (e.g. claude-sonnet-4-6, gpt-5, gpt-4o).
+ */
+export type ModelAlias = 'opus' | 'sonnet' | 'haiku'
+
+/**
+ * A model binding specifies which runtime + which alias to try.
+ * Example: { runtime: 'claude-code', alias: 'sonnet' } → Claude Sonnet
+ *          { runtime: 'codex',       alias: 'opus'   } → GPT-5 via Codex CLI
+ */
+export interface ModelBinding {
+  runtime: 'claude-code' | 'codex' | 'cursor' | 'openai-api'
+  alias: ModelAlias
+}
+
 export interface AgentQueueConfig {
   agentId: string
-  /** Claude model alias: 'opus', 'sonnet', or 'haiku' */
-  model: 'opus' | 'sonnet' | 'haiku'
+  /** Primary model alias (legacy — used when runtime is current default) */
+  model: ModelAlias
   /** Supabase filter for which issues this agent picks up */
   pickupStatus: string
   /** Additional Supabase query filters (appended to URL) */
@@ -28,6 +44,15 @@ export interface AgentQueueConfig {
   fetchLimit: number
   /** Prompt template prefix for the agent */
   promptPrefix: string
+  /**
+   * TOD-XXX: Main + fallback chain. The dispatcher tries each binding in order
+   * until one is `available` (runtime installed + API reachable). First binding
+   * wins on a fresh spawn; when one fails mid-task, the chain IS NOT re-evaluated
+   * for that in-flight spawn — failover happens only on the next claim.
+   *
+   * If undefined, dispatcher falls back to { runtime: <default>, alias: model }.
+   */
+  modelChain?: ModelBinding[]
 }
 
 export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
@@ -44,6 +69,11 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 50,
     promptPrefix: 'You are Builder. Implement the following task. Run npm run build to verify. Commit with [skip ci]. Add [skip ci] to ALL commits.',
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },  // primary: Claude Sonnet 4.6
+      { runtime: 'codex',       alias: 'sonnet' },  // fallback 1: Codex o4-mini
+      { runtime: 'cursor',      alias: 'sonnet' },  // fallback 2: Cursor w/ Sonnet
+    ],
   },
 
   ops: {
