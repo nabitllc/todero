@@ -9,7 +9,8 @@ const supabase = createClient(
 )
 
 // ── Discord ───────────────────────────────────────────────────────────────────
-const SPRINT_CHANNEL = '1487822039002906774'
+const SPRINT_CLOSE_CHANNEL = '1491991699986055208'  // #sprint-close (metrics)
+const RETRO_CHANNEL = '1491991717644075238'         // #retro
 
 function postDiscord(channelId: string, content: string) {
   const token = process.env.DISCORD_BOT_TOKEN ?? ''
@@ -116,18 +117,36 @@ export async function POST(req: NextRequest) {
       .map(([s, c]) => `  ${s}: ${c}`)
       .join('\n')
 
-    const retroMsg = [
-      `📊 **Sprint ${activeSprint.sprint_number} Retro** — \`${activeSprint.name}\` closed`,
+    // Sprint Close metrics → #sprint-close
+    const closeMsg = [
+      `🏁 **Sprint ${activeSprint.sprint_number} Closed** — \`${activeSprint.name}\``,
       `━━━━━━━━━━━━━━━━━━━━━━`,
       `✅ Completed: ${completedCount}`,
       `🔄 Carried over: ${carriedOverCount}`,
-      `📋 Total: ${sprintIssues.length}`,
+      `📋 Total issues: ${sprintIssues.length}`,
+      `📅 ${activeSprint.start_date} → ${activeSprint.end_date}`,
       ``,
       `**By Status:**`,
       statusLines || '  (no issues)',
-      `━━━━━━━━━━━━━━━━━━━━━━`,
     ].join('\n')
-    postDiscord(SPRINT_CHANNEL, retroMsg)
+    postDiscord(SPRINT_CLOSE_CHANNEL, closeMsg)
+
+    // Retro → #retro
+    const completionRate = sprintIssues.length > 0 ? Math.round((completedCount / sprintIssues.length) * 100) : 0
+    const retroMsg = [
+      `📊 **Sprint ${activeSprint.sprint_number} Retro**`,
+      `━━━━━━━━━━━━━━━━━━━━━━`,
+      `**What went well:**`,
+      `• ${completedCount} issues completed (${completionRate}% completion rate)`,
+      ``,
+      `**What to improve:**`,
+      carriedOverCount > 0 ? `• ${carriedOverCount} issues carried over — review sizing and dependencies` : `• No carryover — good sprint sizing`,
+      ``,
+      `**Action items for next sprint:**`,
+      `• Review carried-over issues for re-prioritization`,
+      `• Identify blockers that slowed progress`,
+    ].join('\n')
+    postDiscord(RETRO_CHANNEL, retroMsg)
 
     // 7. Automatically start next sprint
     let newSprint: Record<string, unknown> | null = null

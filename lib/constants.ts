@@ -51,7 +51,7 @@ export const VALID_RESOLUTION_TYPES = [
   'expected_behavior',  // Reported behavior is by design (bug)
   'wont_fix',           // Acknowledged but won't be fixed
   'not_reproducible',   // Bug cannot be reproduced
-  'deferred',
-  '''no_change_required''',  // Investigation confirmed no action needed           // Postponed to future work
+  'deferred',           // Postponed to future work
+  'no_change_required', // Investigation confirmed no action needed
   'completed',          // Generic completion (feature, epic)
 ]
