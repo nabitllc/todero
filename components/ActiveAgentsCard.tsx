@@ -8,7 +8,8 @@ import { AGENT_DISPLAY } from '@/lib/mc-constants'
 const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 
-const STALE_MINUTES = 60 // >60 min without activity = stale
+const STALE_MINUTES = 60   // >60m without activity = stale (amber warning)
+const STUCK_MINUTES = 120  // >120m without activity = stuck (red, will be auto-recovered)
 
 interface AgentRow {
   id: string
@@ -25,10 +26,23 @@ interface AgentRow {
 }
 
 function statusDot(status: string, ago: number | null): { color: string; label: string } {
-  if (status === 'active') return { color: '#22c55e', label: 'active' }
+  if (status === 'active') {
+    if (ago !== null && ago > STUCK_MINUTES) return { color: '#ef4444', label: 'stuck' }
+    if (ago !== null && ago > STALE_MINUTES) return { color: '#f59e0b', label: 'stale' }
+    return { color: '#22c55e', label: 'active' }
+  }
   if (status === 'scheduled') return { color: '#f59e0b', label: 'scheduled' }
-  if (ago === null || ago > STALE_MINUTES) return { color: '#6b7280', label: 'stale' }
+  if (ago === null || ago > STUCK_MINUTES) return { color: '#ef4444', label: 'stuck' }
+  if (ago > STALE_MINUTES) return { color: '#f59e0b', label: 'stale' }
   return { color: '#6b7280', label: 'idle' }
+}
+
+function fmtAgeShort(ago: number | null): string {
+  if (ago === null) return '?'
+  if (ago < 60) return `${ago}m`
+  const h = Math.floor(ago / 60)
+  const m = ago % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
 function fmtAgo(ago: number | null): string {
@@ -167,7 +181,9 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
         <div className="space-y-1">
           {agents.map(agent => {
             const dot = statusDot(agent.status, agent.ago)
-            const isStale = agent.status === 'idle' && (agent.ago === null || agent.ago > STALE_MINUTES)
+            const ageMin = agent.ago
+            const isStuck = ageMin !== null && ageMin > STUCK_MINUTES
+            const isStale = !isStuck && ageMin !== null && ageMin > STALE_MINUTES
             return (
               <div key={agent.id}
                 className="flex items-center gap-2 rounded-md px-2.5 py-1.5 bg-white/[0.03] border border-white/[0.06]">
@@ -178,8 +194,21 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
                 />
                 {/* Agent name */}
                 <span className="text-[11px] font-medium text-white/80 shrink-0">{agent.emoji} {agent.name}</span>
+                {isStuck && (
+                  <span
+                    className="text-[8px] px-1 py-0.5 rounded bg-red-900/40 text-red-400 font-medium shrink-0"
+                    title="No activity for over 2h — will be auto-recovered"
+                  >
+                    🛑 stuck {fmtAgeShort(ageMin)}
+                  </span>
+                )}
                 {isStale && (
-                  <span className="text-[8px] px-1 py-0.5 rounded bg-amber-900/30 text-amber-500/80 font-medium shrink-0">stale</span>
+                  <span
+                    className="text-[8px] px-1 py-0.5 rounded bg-amber-900/30 text-amber-400 font-medium shrink-0"
+                    title="No activity for over 1h"
+                  >
+                    ⚠️ stale {fmtAgeShort(ageMin)}
+                  </span>
                 )}
                 {/* Current work or scheduled info */}
                 <div className="flex-1 min-w-0 flex items-center gap-1">
