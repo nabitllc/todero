@@ -92,21 +92,21 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
   cannot_reproduce: '#eab308',
 }
 
-// 3-column board (TOD-XXX simplification 2026-04-10):
-// Queue   = ready to be picked up (defined + open)
-// Ongoing = active work (in_progress + both review states)
-// Achieved= shipped or ready to ship (approved + completed + released)
-// Backlog and closed are NOT columns — they surface as count chips in the header.
+// 6-column Kanban board (TOD-809): one column per workflow stage.
+// Column order is controlled by the array — reorder to reconfigure.
+// Closed is NOT a column — it surfaces as a count chip in the header.
 const BOARD_COLUMNS = [
-  { id:'queue',    label:'Queue',    color:'#3b82f6', statuses:['defined','open'] },
-  { id:'ongoing',  label:'Ongoing',  color:'#818cf8', statuses:['in_progress','code_review','product_review'] },
-  { id:'achieved', label:'Achieved', color:'#22c55e', statuses:['approved','completed','released'] },
+  { id: 'backlog',     label: 'Backlog',     color: '#71717a', statuses: ['backlog', 'defined'] },
+  { id: 'open',        label: 'Open',        color: '#3b82f6', statuses: ['open'] },
+  { id: 'in_progress', label: 'In Progress', color: '#818cf8', statuses: ['in_progress'] },
+  { id: 'in_review',   label: 'In Review',   color: '#f97316', statuses: ['code_review', 'product_review'] },
+  { id: 'approved',    label: 'Approved',    color: '#22c55e', statuses: ['approved'] },
+  { id: 'done',        label: 'Done',        color: '#10b981', statuses: ['completed', 'released'] },
 ]
 
 // Statuses that get a small count chip but no column
 const OFF_BOARD_STATUSES = [
-  { id:'backlog', label:'Backlog', color:'#71717a', statuses:['backlog'] },
-  { id:'closed',  label:'Closed',  color:'#475569', statuses:['closed'] },
+  { id:'closed', label:'Closed', color:'#475569', statuses:['closed'] },
 ]
 
 const EXCLUDED_BOARD_TYPES = ['epic', 'feature']
@@ -501,15 +501,14 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            {/* Off-board status chips: backlog, future sprints, closed — counts only.
-                Click to filter the board to that scope. */}
+            {/* Off-board status chips: future sprints, closed — counts only.
+                Click to filter the board to that scope.
+                Backlog is now a board column (TOD-809) — no chip needed. */}
             {(() => {
               const scopedTasks = tasks.filter(t => !EXCLUDED_BOARD_TYPES.includes(t.type ?? ''))
-              const backlogCount = scopedTasks.filter(t => t.status === 'backlog').length
               const futureCount = scopedTasks.filter(t => isFutureSprint(t.sprint) && t.status !== 'closed').length
               const closedCount = scopedTasks.filter(t => t.status === 'closed').length
               const chips: Array<{id: typeof statusFilter; label: string; color: string; count: number; title: string}> = [
-                { id: 'backlog',       label: 'Backlog',        color: '#71717a', count: backlogCount, title: 'Backlog issues (not yet scheduled)' },
                 { id: 'future-sprint', label: 'Future Sprints', color: '#a855f7', count: futureCount,  title: 'Issues scheduled for a future sprint' },
                 { id: 'closed',        label: 'Closed',         color: '#475569', count: closedCount,  title: 'Closed issues' },
               ]
