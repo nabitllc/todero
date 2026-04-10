@@ -17,6 +17,7 @@ import { isHubPaused } from '@/lib/hub-pause'
 import { exec } from 'child_process'
 import { readFileSync as fsReadFileSync } from 'fs'
 import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
+import { recordSpawn } from '@/lib/runtimes/token-ledger'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -327,6 +328,18 @@ This rule exists because per-issue PRs create review fatigue and merge conflicts
     branch,
     taskId: task.id,
     bypassPermissions: true,
+  })
+
+  // TOD-799: Record spawn to token_ledger (no-op if migration not applied)
+  recordSpawn({
+    agentId,
+    taskId: task.id,
+    taskKey: task.task_key,
+    runtime: runtime.name,
+    model: config.model,
+    promptBytes: prompt.length,
+    logFile,
+    metadata: { branch: branch ?? null, priority: task.priority },
   })
 
   return NextResponse.json({
