@@ -15,6 +15,7 @@ import { getQueueConfig, getAllQueueAgentIds } from '@/lib/agent-queue'
 import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { exec } from 'child_process'
+import { readFileSync as fsReadFileSync } from 'fs'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -189,7 +190,20 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Step 9: Spawn Claude Code agent in background ──
-  const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
+  // FIX: Previously this was a broken shell substitution (`$(cat ...)` inside a template
+  // literal wrapped in single quotes — never evaluated). Agents had been running with NO
+  // SOUL/AGENTS/memory context for weeks. Read the files in Node now and inject the text.
+  const readIfExists = (p: string): string => {
+    try { return fsReadFileSync(p, 'utf8') } catch { return '' }
+  }
+  const today = new Date().toISOString().slice(0, 10)
+  const contextParts = [
+    readIfExists(`${WORKSPACE}/SOUL.md`),
+    readIfExists(`${WORKSPACE}/AGENTS.md`),
+    readIfExists(`${WORKSPACE}/self-improving/memory.md`),
+    readIfExists(`${WORKSPACE}/memory/${today}.md`),
+  ].filter(Boolean)
+  const context = contextParts.join('\n\n---\n\n')
 
   const transitionGate = `
 
