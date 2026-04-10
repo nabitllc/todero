@@ -46,35 +46,21 @@ const TODERO_DIR = '/Users/kemuniagent/todero'
 function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
-  let msg: string
-  if (status === 'code_review') {
-    msg = `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
-  } else if (status === 'open' && issueId) {
-    const SELF_CHAIN_AGENTS = new Set(['builder', 'ops', 'scout', 'po'])
-    const DONE_STATUS: Record<string, string> = {
-      builder: 'code_review',
-      tester: 'code_review (approve) or open (reject)',
-      designer: 'code_review (approve) or open (reject)',
-      ops: 'product_review',
-      scout: 'completed',
-      po: 'product_review',
-      auditor: 'completed',
-    }
-    const doneStatus = DONE_STATUS[assignee] ?? 'code_review'
-    const inProgressPatch = `BEFORE starting work, PATCH to in_progress:\nPATCH http://localhost:3000/api/issues\n{"id":"${issueId}","status":"in_progress","transitioned_by":"${assignee}"}`
-    const doneInstruction = `\n\nWhen done: PATCH to ${doneStatus} with implementation_notes + transitioned_by="${assignee}".`
-    const selfChain = SELF_CHAIN_AGENTS.has(assignee)
-      ? `\n\nAfter completing this issue, immediately check for your next open issue:\nGET http://localhost:3000/api/issues?assignee=${assignee}&status=open — if any exist, PATCH the top-priority one to in_progress and start work immediately. Do not wait for another trigger.`
-      : ''
-    msg = `Issue ${taskKey} is ready for you: ${title}.\n\n${inProgressPatch}${doneInstruction}${selfChain}`
-  } else {
-    msg = `Issue ${taskKey} is assigned to you (${status}): ${title}. Check it and take action.`
-  }
-  // Spawn Claude Code agent in background with full context
+
+  // Only activate for REVIEW statuses (code_review, product_review).
+  // For open/in_progress work, run-agent is the single entry point.
+  // This prevents duplicate spawning from multiple post-functions firing.
+  if (status !== 'code_review' && status !== 'product_review') return
+
+  const msg = status === 'code_review'
+    ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
+    : `Issue ${taskKey} is in product review: ${title}. Verify it meets acceptance criteria.`
+
+  // Spawn Claude Code agent fully detached via setsid
   const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
   const prompt = `<workspace-context>${context}</workspace-context>\n\nYou are ${agentId}. ${msg}`
   const escaped = prompt.replace(/'/g, "'\\''")
-  const cmd = `cd ${TODERO_DIR} && nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > /tmp/agent-${agentId}-$(date +%s).log 2>&1 &`
+  const cmd = `cd ${TODERO_DIR} && setsid nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > /tmp/agent-${agentId}-$(date +%s).log 2>&1 < /dev/null &`
   execAsync(cmd, { timeout: 5000 }, () => {})
 }
 
