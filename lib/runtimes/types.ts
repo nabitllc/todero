@@ -52,6 +52,36 @@ export interface AgentSpawnResult {
 }
 
 /**
+ * Options for dispatching to an EXISTING session (TOD-794).
+ * Only runtimes with supportsSessions === true accept dispatch().
+ */
+export interface AgentDispatchOptions {
+  /** Session identifier — usually the agent ID (one session per agent) */
+  sessionId: string
+  /** Absolute path to the session state directory (~/kaos-config/sessions/<agent>/) */
+  sessionDir: string
+  /** The task prompt to send into the existing session (no SOUL/AGENTS — already loaded) */
+  taskPrompt: string
+  /** Optional log file for this specific dispatch */
+  logFile: string
+  /** Associated task_id for cross-reference */
+  taskId?: string
+}
+
+/**
+ * Result of a dispatch. Dispatch may block (unlike spawn which is fire-and-forget)
+ * because the session is already alive and we wait for the reply.
+ */
+export interface AgentDispatchResult {
+  ok: boolean
+  reply?: string
+  inputTokens?: number
+  outputTokens?: number
+  error?: string
+  runtime: string
+}
+
+/**
  * The core runtime contract every adapter must implement.
  *
  * Adding a new runtime (e.g. Codex, Cursor, OpenAI API tool-use loop):
@@ -59,6 +89,9 @@ export interface AgentSpawnResult {
  *   2. Register it in lib/runtimes/index.ts
  *   3. Set TODERO_RUNTIME=<name> env var, or set per-agent runtime in agent-queue
  *   4. Write a smoke test in scripts/smoke-runtime-<name>.sh
+ *
+ * If the runtime supports persistent sessions (TOD-794), also implement
+ * dispatch() and set supportsSessions = true.
  */
 export interface AgentRuntime {
   /** Unique identifier for this runtime (e.g. 'claude-code', 'codex', 'cursor', 'openai-api') */
@@ -96,6 +129,13 @@ export interface AgentRuntime {
    * detached so the HTTP handler can return immediately.
    */
   spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult>
+
+  /**
+   * TOD-794 (optional): dispatch a task into an existing long-lived session.
+   * Only called when supportsSessions === true. Runtimes without session
+   * support should omit this.
+   */
+  dispatch?(opts: AgentDispatchOptions): Promise<AgentDispatchResult>
 }
 
 /**
