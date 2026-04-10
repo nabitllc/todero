@@ -198,20 +198,61 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Step 9: Spawn Claude Code agent in background ──
-  // FIX: Previously this was a broken shell substitution (`$(cat ...)` inside a template
-  // literal wrapped in single quotes — never evaluated). Agents had been running with NO
-  // SOUL/AGENTS/memory context for weeks. Read the files in Node now and inject the text.
+  // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
+  // TOD-796 (2026-04-10): Now also injects kaos-config skills so pipeline agents inherit
+  // proactivity, corrections discipline, memory hygiene, and self-reflection rules.
   const readIfExists = (p: string): string => {
     try { return fsReadFileSync(p, 'utf8') } catch { return '' }
   }
   const today = new Date().toISOString().slice(0, 10)
-  const contextParts = [
+
+  // Workspace identity — always loaded
+  const workspaceParts = [
     readIfExists(`${WORKSPACE}/SOUL.md`),
     readIfExists(`${WORKSPACE}/AGENTS.md`),
     readIfExists(`${WORKSPACE}/self-improving/memory.md`),
     readIfExists(`${WORKSPACE}/memory/${today}.md`),
   ].filter(Boolean)
-  const context = contextParts.join('\n\n---\n\n')
+  const workspace = workspaceParts.join('\n\n---\n\n')
+
+  // Universal skill bundle — behavioral rules every agent inherits
+  const universalSkills = [
+    readIfExists(`${WORKSPACE}/skills/proactivity/execution.md`),
+    readIfExists(`${WORKSPACE}/skills/proactivity/signals.md`),
+    readIfExists(`${WORKSPACE}/skills/proactivity/boundaries.md`),
+    readIfExists(`${WORKSPACE}/skills/self-improving/corrections.md`),
+    readIfExists(`${WORKSPACE}/skills/self-improving/memory.md`),
+    readIfExists(`${WORKSPACE}/skills/self-improving/reflections.md`),
+  ].filter(Boolean).join('\n\n---\n\n')
+
+  // Agent-specific skill routing
+  const agentSkillFiles: Record<string, string[]> = {
+    po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`],
+    main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
+    scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
+    builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
+    ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
+    tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
+    designer: [],
+    auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
+    deployer: [],
+  }
+  const agentSkills = (agentSkillFiles[agentId] ?? [])
+    .map(readIfExists)
+    .filter(Boolean)
+    .join('\n\n---\n\n')
+
+  // Assemble context — workspace first (most-authoritative), then skills, then task
+  const contextSections: string[] = []
+  if (workspace) contextSections.push(`# WORKSPACE IDENTITY\n\n${workspace}`)
+  if (universalSkills) contextSections.push(`# UNIVERSAL SKILLS (behavioral rules — follow these on every task)\n\n${universalSkills}`)
+  if (agentSkills) contextSections.push(`# ${agentId.toUpperCase()}-SPECIFIC SKILLS\n\n${agentSkills}`)
+  const context = contextSections.join('\n\n===============================\n\n')
+
+  // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)
+  if (context.length > 25_000) {
+    console.warn(`[run-agent] context for ${agentId} is ${context.length} bytes — trim skill selection if this keeps climbing`)
+  }
 
   const transitionGate = `
 
