@@ -13,12 +13,12 @@ const PRIORITY_BADGE: Record<string, { bg: string; text: string; label: string }
 }
 
 const TYPE_BADGE: Record<string, { bg: string; text: string }> = {
-  task:    { bg: 'bg-zinc-500/20',   text: 'text-zinc-400'   },
-  bug:     { bg: 'bg-red-500/20',    text: 'text-red-400'    },
-  feature: { bg: 'bg-blue-500/20',   text: 'text-blue-400'   },
-  ops:     { bg: 'bg-amber-500/20',  text: 'text-amber-400'  },
-  epic:    { bg: 'bg-purple-500/20', text: 'text-purple-400' },
-  subtask: { bg: 'bg-slate-500/20',  text: 'text-slate-400'  },
+  task:    { bg: 'bg-zinc-600/30',    text: 'text-zinc-300'   },
+  bug:     { bg: 'bg-red-500/20',     text: 'text-red-400'    },
+  feature: { bg: 'bg-blue-500/20',    text: 'text-blue-400'   },
+  ops:     { bg: 'bg-amber-500/20',   text: 'text-amber-400'  },
+  epic:    { bg: 'bg-purple-500/20',  text: 'text-purple-400' },
+  subtask: { bg: 'bg-slate-600/30',   text: 'text-slate-300'  },
 }
 
 const ASSIGNEE_COLORS: Record<string, string> = {
