@@ -15,6 +15,7 @@ import { getQueueConfig, getAllQueueAgentIds } from '@/lib/agent-queue'
 import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { exec } from 'child_process'
+import { readFileSync as fsReadFileSync } from 'fs'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -55,9 +56,13 @@ export async function POST(req: NextRequest) {
   const reviewStatusField = agentId === 'tester' ? 'tester_status' : 'designer_status'
 
   // ── Step 1: WIP limit check ──
+  // For agents where pickupStatus === workingStatus (e.g. deployer), wipExtraFilter
+  // narrows WIP count to claimed issues only (started_at IS NOT NULL), preventing
+  // the full queue length from being mis-counted as active WIP.
+  const wipExtraFilter = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
   const wipUrl = isReviewer
     ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&select=id`
-    : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&select=id`
+    : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}${wipExtraFilter}&select=id`
   const wipRes = await fetch(wipUrl, { headers: HEADERS })
   const wipIssues = await wipRes.json() as Array<{ id: string }>
   if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
@@ -143,18 +148,22 @@ export async function POST(req: NextRequest) {
 
   const task = readyTasks[0]
 
-  // ── Step 5: Move to workingStatus (unless already in that status, e.g. tester) ──
-  if (config.pickupStatus !== config.workingStatus) {
-    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH',
-      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({
-        status: config.workingStatus,
-        started_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
-    })
+  // ── Step 5: Claim the issue ──
+  // Always set started_at to mark the issue as claimed by this agent, even when
+  // pickupStatus === workingStatus (e.g. deployer). This lets the wipExtraFilter
+  // distinguish "claimed" from "queued but unclaimed" issues in the WIP count.
+  const claimFields: Record<string, string> = {
+    started_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   }
+  if (config.pickupStatus !== config.workingStatus) {
+    claimFields.status = config.workingStatus
+  }
+  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+    method: 'PATCH',
+    headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(claimFields),
+  })
 
   // ── Step 6: Log agent_run ──
   await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
@@ -189,7 +198,61 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Step 9: Spawn Claude Code agent in background ──
-  const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
+  // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
+  // TOD-796 (2026-04-10): Now also injects kaos-config skills so pipeline agents inherit
+  // proactivity, corrections discipline, memory hygiene, and self-reflection rules.
+  const readIfExists = (p: string): string => {
+    try { return fsReadFileSync(p, 'utf8') } catch { return '' }
+  }
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Workspace identity — always loaded
+  const workspaceParts = [
+    readIfExists(`${WORKSPACE}/SOUL.md`),
+    readIfExists(`${WORKSPACE}/AGENTS.md`),
+    readIfExists(`${WORKSPACE}/self-improving/memory.md`),
+    readIfExists(`${WORKSPACE}/memory/${today}.md`),
+  ].filter(Boolean)
+  const workspace = workspaceParts.join('\n\n---\n\n')
+
+  // Universal skill bundle — behavioral rules every agent inherits
+  const universalSkills = [
+    readIfExists(`${WORKSPACE}/skills/proactivity/execution.md`),
+    readIfExists(`${WORKSPACE}/skills/proactivity/signals.md`),
+    readIfExists(`${WORKSPACE}/skills/proactivity/boundaries.md`),
+    readIfExists(`${WORKSPACE}/skills/self-improving/corrections.md`),
+    readIfExists(`${WORKSPACE}/skills/self-improving/memory.md`),
+    readIfExists(`${WORKSPACE}/skills/self-improving/reflections.md`),
+  ].filter(Boolean).join('\n\n---\n\n')
+
+  // Agent-specific skill routing
+  const agentSkillFiles: Record<string, string[]> = {
+    po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`],
+    main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
+    scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
+    builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
+    ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
+    tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
+    designer: [],
+    auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
+    deployer: [],
+  }
+  const agentSkills = (agentSkillFiles[agentId] ?? [])
+    .map(readIfExists)
+    .filter(Boolean)
+    .join('\n\n---\n\n')
+
+  // Assemble context — workspace first (most-authoritative), then skills, then task
+  const contextSections: string[] = []
+  if (workspace) contextSections.push(`# WORKSPACE IDENTITY\n\n${workspace}`)
+  if (universalSkills) contextSections.push(`# UNIVERSAL SKILLS (behavioral rules — follow these on every task)\n\n${universalSkills}`)
+  if (agentSkills) contextSections.push(`# ${agentId.toUpperCase()}-SPECIFIC SKILLS\n\n${agentSkills}`)
+  const context = contextSections.join('\n\n===============================\n\n')
+
+  // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)
+  if (context.length > 25_000) {
+    console.warn(`[run-agent] context for ${agentId} is ${context.length} bytes — trim skill selection if this keeps climbing`)
+  }
 
   const transitionGate = `
 
