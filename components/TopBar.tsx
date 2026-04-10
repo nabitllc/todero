@@ -1,9 +1,9 @@
 'use client'
 // TOD-630: Top bar — Todero logo left, search center, actions right
 
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import {
-  Search, MessageSquare, ListTodo, User, Activity, Play, Pause,
+  Search, MessageSquare, ListTodo, User, Play, Pause,
 } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 
@@ -30,35 +30,39 @@ export default function TopBar({
   hubPaused = false,
   onTogglePause,
 }: TopBarProps) {
-  const [sprintDays, setSprintDays] = useState<number | null>(null)
-
   const activeAgentCount = Object.values(agentRunsData).filter(
     a => a.status === 'running'
   ).length
 
-  useEffect(() => {
-    const now = new Date()
-    const dayOfWeek = now.getDay()
-    const daysLeft = dayOfWeek === 0 ? 1 : dayOfWeek <= 5 ? 5 - dayOfWeek : 0
-    setSprintDays(daysLeft)
-  }, [])
-
   return (
-    <header className="border-b border-white/[0.07] px-3 md:px-5 h-11 flex items-center justify-between shrink-0 sticky top-0 z-20 bg-[#080808]">
+    <header className="border-b border-white/[0.07] px-3 md:px-5 h-11 grid grid-cols-[auto_1fr_auto] items-center shrink-0 sticky top-0 z-20 bg-[#080808]">
+      {/* LEFT — Todero logo (text placeholder for SVG) */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center text-[11px] font-bold text-white">T</div>
         <span className="text-white text-sm font-semibold tracking-wide">Todero</span>
       </div>
 
-      <button
-        onClick={onSearchOpen}
-        className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] transition-colors max-w-[280px] w-full mx-4"
-      >
-        <Search size={13} className="text-white/30 shrink-0" />
-        <span className="text-white/25 text-xs flex-1 text-left">Search issues...</span>
-        <kbd className="text-[10px] text-white/20 border border-white/[0.07] rounded px-1 py-0.5 font-mono">⌘K</kbd>
-      </button>
+      {/* CENTER — Global search bar (triggers Cmd+K) */}
+      <div className="flex justify-center px-4">
+        <button
+          onClick={onSearchOpen}
+          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] transition-colors max-w-[320px] w-full"
+        >
+          <Search size={13} className="text-white/30 shrink-0" />
+          <span className="text-white/25 text-xs flex-1 text-left">Search issues...</span>
+          <kbd className="text-[10px] text-white/20 border border-white/[0.07] rounded px-1 py-0.5 font-mono">⌘K</kbd>
+        </button>
+        {/* Mobile search icon */}
+        <button
+          onClick={onSearchOpen}
+          className="sm:hidden p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
+          title="Search (⌘K)"
+        >
+          <Search size={15} />
+        </button>
+      </div>
 
+      {/* RIGHT — My Tasks + Agent Chat + Notifications + Profile */}
       <div className="flex items-center gap-1">
         {onTogglePause && (
           <button
@@ -95,21 +99,6 @@ export default function TopBar({
           </button>
         )}
 
-        {sprintDays !== null && sprintDays > 0 && (
-          <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] text-white/30 text-[10px]">
-            <Activity size={10} />
-            <span>{sprintDays}d left</span>
-          </div>
-        )}
-
-        <button
-          onClick={onSearchOpen}
-          className="sm:hidden p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
-          title="Search (⌘K)"
-        >
-          <Search size={15} />
-        </button>
-
         <button
           onClick={() => onNavigate('board')}
           className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
@@ -134,7 +123,6 @@ export default function TopBar({
           )}
         </button>
 
-        {/* TOD-631: Notifications */}
         <NotificationBell />
 
         <button
