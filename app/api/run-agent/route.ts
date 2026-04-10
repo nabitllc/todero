@@ -16,6 +16,7 @@ import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { exec } from 'child_process'
 import { readFileSync as fsReadFileSync } from 'fs'
+import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
@@ -306,21 +307,32 @@ This rule exists because per-issue PRs create review fatigue and merge conflicts
     selfChain,
   ].join('\n')
 
-  const escaped = prompt.replace(/'/g, "'\\''")
   const logFile = `/tmp/agent-${agentId}-${Date.now()}.log`
-  const modelFlag = config.model ? `--model ${config.model}` : ''
-  // Safeguard: always switch to main before spawning agent (prevents feature branch drift)
-  // Agents that need a feature branch will checkout from main in their own task flow
-  const cmd = `cd ${TODERO_DIR} && git checkout main 2>/dev/null; nohup ${CLAUDE_BIN} --permission-mode bypassPermissions ${modelFlag} --print '${escaped}' > ${logFile} 2>&1 < /dev/null & disown`
-  exec(cmd, {
-    timeout: 5000,
-    detached: true,
-    stdio: 'ignore',
-  } as never, () => {})
+
+  // TOD-793: Dispatch via the runtime adapter registry.
+  // Runtime selection: per-request ?runtime= override → TODERO_RUNTIME env → default priority order.
+  // Current default is claude-code; codex/cursor/openai-api adapters can register later without
+  // touching this file.
+  const requestedRuntime = req.nextUrl.searchParams.get('runtime')
+  const runtime = requestedRuntime
+    ? (await getRuntimeByName(requestedRuntime) ?? await getDefaultRuntime())
+    : await getDefaultRuntime()
+
+  const spawnResult = await runtime.spawn({
+    agentId,
+    workingDir: TODERO_DIR,
+    prompt,
+    model: config.model,
+    logFile,
+    branch,
+    taskId: task.id,
+    bypassPermissions: true,
+  })
 
   return NextResponse.json({
-    ok: true,
+    ok: spawnResult.ok,
     agent: agentId,
+    runtime: spawnResult.runtime,
     task: {
       id: task.id,
       title: task.title,
@@ -329,7 +341,8 @@ This rule exists because per-issue PRs create review fatigue and merge conflicts
       priority: task.priority,
       branch,
     },
-    spawned: true,
+    spawned: spawnResult.ok,
+    spawnError: spawnResult.error,
     logFile,
     wip: (wipIssues?.length ?? 0) + 1,
     wipLimit: config.wipLimit,
