@@ -267,6 +267,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
+  // Auto-refresh Board every 30s so overnight changes appear without manual reload
+  useEffect(() => {
+    const iv = setInterval(() => { fetchTasks() }, 30_000)
+    return () => clearInterval(iv)
+  }, [fetchTasks])
+
   const createTask = async (t: Partial<Task>) => {
     const res = await fetch('/api/issues', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
     if (res.ok) { const d = await res.json(); setTasks(prev => [d, ...prev]); setNewTask(null) }
