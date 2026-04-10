@@ -355,6 +355,52 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (detailTask) { window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }
   }, [detailTask])
 
+  // Shared Board card renderer — used by the main Together view AND by all
+  // swimlane views (Business, Feature, Sprint). Matches the screenshot reference:
+  // task_key, title, project/hub chip, type icon, status chip, priority dot,
+  // severity chip, blocked lock icon, and the assignee letter badge in the
+  // bottom-right corner. Kept as a closure so it has access to drag + detail handlers.
+  const renderBoardCard = (task: Task) => {
+    const assigneeKey = task.assignee?.toLowerCase() ?? ''
+    const assigneeName = ASSIGNEE_MAP[assigneeKey]?.name ?? task.assignee ?? ''
+    const assigneeLetter = assigneeName.charAt(0).toUpperCase()
+    const assigneeDotColor = ASSIGNEE_DOT_COLORS[assigneeKey] ?? '#6b7280'
+    return (
+      <div key={task.id}
+        draggable
+        onDragStart={() => setDragId(task.id)}
+        onDragEnd={() => setDragId(null)}
+        onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
+        className={`group rounded-lg border cursor-pointer transition-colors relative ${dragId === task.id ? 'opacity-50' : ''}`}
+        style={{ background: '#0f0f0f', borderColor: dragId === task.id ? '#555' : '#27272a' }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = '#3f3f46' }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = dragId === task.id ? '#555' : '#27272a' }}>
+        <div className="px-2.5 pt-2 pb-2 pr-7">
+          <div className="flex items-center justify-between mb-1">
+            {task.task_key && <span className="text-[10px] font-mono font-bold text-white/40">{task.task_key}</span>}
+          </div>
+          <p className="text-white text-xs font-medium leading-snug line-clamp-2 mb-2">{task.title}</p>
+          <div className="flex items-center gap-1 flex-wrap">
+            {task.project && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/10 shrink-0">{task.project}</span>}
+            {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0" title={task.type}>{TYPE_ICONS[task.type]}</span>}
+            {task.status && <span className={`inline-block text-[8px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${STATUS_CHIP_COLORS[task.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>{task.status.replace(/_/g, ' ')}</span>}
+            {task.priority && <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a' }} title={task.priority} />}
+            {task.severity && SEVERITY_CHIP_STYLES[task.severity] && (
+              <span className={`inline-block text-[8px] font-bold px-1 py-0 rounded border shrink-0 ${SEVERITY_CHIP_STYLES[task.severity]}`}>{task.severity}</span>
+            )}
+            {(task.is_blocked || task.blocked_by) && <Lock size={10} className="text-red-400 shrink-0" aria-label={task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'} />}
+          </div>
+        </div>
+        {assigneeLetter && (
+          <div className="absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+            style={{ background: assigneeDotColor }} title={assigneeName}>
+            {assigneeLetter}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Sprint classification:
   // - "active" sprints = sprint date(s) covering today (ET local)
   // - "future" sprints = sprint dates strictly after today
@@ -441,16 +487,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   return (
     <div className="h-full flex flex-col gap-4">
-      {/* Swimlane indicator banner (only when a non-default swimlane is active) */}
-      {swimlane !== 'together' && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-[#0a0a0a]">
-          <span className="text-xs text-white/40">Swimlane:</span>
-          <span className="text-xs font-semibold text-white/80 capitalize">{swimlane}</span>
-        </div>
-      )}
-      {/* Toolbar — multiselect filters (no-wrap, horizontal scroll if too wide) */}
+      {/* Toolbar — single row with all filters + swimlane + search + chips.
+          flex-wrap so narrow viewports wrap gracefully but keep the row semantic. */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-2 flex-wrap">
           <MultiSelect label="Type" options={types as string[]} selected={filterTypes} onToggle={v => toggleFilter(filterTypes, setFilterTypes, v)} />
           <MultiSelect label="Priority" options={['critical','high','medium','low']} selected={filterPriorities} onToggle={v => toggleFilter(filterPriorities, setFilterPriorities, v)} />
           <MultiSelect label="Assignee" options={assignees as string[]} selected={filterAssignees} onToggle={v => toggleFilter(filterAssignees, setFilterAssignees, v)} displayFn={v => ASSIGNEE_MAP[v]?.name ?? v} />
@@ -697,39 +737,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                             </div>
                             <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
                               {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
-                              {colTasks.map(task => {
-                                const aKey = task.assignee?.toLowerCase() ?? ''
-                                const aName = ASSIGNEE_MAP[aKey]?.name ?? task.assignee ?? ''
-                                const aLetter = aName.charAt(0).toUpperCase()
-                                const aDotColor = ASSIGNEE_DOT_COLORS[aKey] ?? '#6b7280'
-                                return (
-                                  <div key={task.id}
-                                    draggable
-                                    onDragStart={() => setDragId(task.id)}
-                                    onDragEnd={() => setDragId(null)}
-                                    onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                                    className={`rounded-lg border cursor-pointer transition-colors relative ${dragId === task.id ? 'opacity-50' : ''}`}
-                                    style={{ background: '#0f0f0f', borderColor: dragId === task.id ? '#555' : '#27272a' }}>
-                                    <div className="px-2 pt-1.5 pb-1.5">
-                                      {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
-                                      <p className="text-white text-[11px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0">{TYPE_ICONS[task.type]}</span>}
-                                        {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a' }} />}
-                                        {(task.is_blocked || task.blocked_by) && (
-                                          <Lock size={9} className="text-red-400 shrink-0" aria-label={task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'} />
-                                        )}
-                                      </div>
-                                    </div>
-                                    {aLetter && (
-                                      <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                                        style={{ background: aDotColor }} title={aName}>
-                                        {aLetter}
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
+                              {colTasks.map(task => renderBoardCard(task))}
                             </div>
                           </div>
                         )
@@ -809,23 +817,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                               <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
                               <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
                             </div>
-                            <div className="flex-1 px-2 pb-2 space-y-2 min-h-[30px]">
+                            <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
                               {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
-                              {colTasks.map(task => (
-                                <div key={task.id}
-                                  onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                                  className="rounded-lg border cursor-pointer transition-colors"
-                                  style={{ background: '#0f0f0f', borderColor: '#27272a' }}>
-                                  <div className="px-2 py-1.5">
-                                    {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
-                                    <p className="text-white text-[11px] font-medium leading-snug line-clamp-2">{task.title}</p>
-                                    <div className="flex items-center gap-1 mt-1 flex-wrap">
-                                      {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a' }} />}
-                                      {(task.is_blocked || task.blocked_by) && <Lock size={9} className="text-red-400 shrink-0" />}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
+                              {colTasks.map(task => renderBoardCard(task))}
                             </div>
                           </div>
                         )
@@ -937,43 +931,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                       </div>
                                       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
                                         {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
-                                        {colTasks.map(task => {
-                                          const aKey = task.assignee?.toLowerCase() ?? ''
-                                          const aName = ASSIGNEE_MAP[aKey]?.name ?? task.assignee ?? ''
-                                          const aLetter = aName.charAt(0).toUpperCase()
-                                          const aDotColor = ASSIGNEE_DOT_COLORS[aKey] ?? '#6b7280'
-                                          return (
-                                          <div key={task.id}
-                                            draggable
-                                            onDragStart={() => setDragId(task.id)}
-                                            onDragEnd={() => setDragId(null)}
-                                            onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                                            className={`rounded-lg border cursor-pointer transition-colors relative ${dragId===task.id ? 'opacity-50' : ''}`}
-                                            style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a'}}>
-                                            <div className="px-2 pt-1.5 pb-1.5">
-                                              {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
-                                              <p className="text-white text-[11px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
-                                              <div className="flex items-center gap-1 flex-wrap">
-                                                {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0">{TYPE_ICONS[task.type]}</span>}
-                                                {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a'}} />}
-                                                {(task.is_blocked || task.blocked_by) && (
-                                                  <Lock
-                                                    size={9}
-                                                    className="text-red-400 shrink-0"
-                                                    aria-label={task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'}
-                                                  />
-                                                )}
-                                              </div>
-                                            </div>
-                                            {aLetter && (
-                                              <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                                                style={{background: aDotColor}} title={aName}>
-                                                {aLetter}
-                                              </div>
-                                            )}
-                                          </div>
-                                          )
-                                        })}
+                                        {colTasks.map(task => renderBoardCard(task))}
                                       </div>
                                     </div>
                                   )
@@ -994,7 +952,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Mobile column tabs */}
-      {!groupByFeature && !groupByBusiness && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
+      {swimlane === 'together' && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
         {BOARD_COLUMNS.map(col=>(
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
             className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-white/10 text-white':'text-white/50 hover:text-white/70')}
@@ -1005,7 +963,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       </div>}
 
       {/* Columns — 3-col layout fills viewport (TOD-XXX Board simplification) */}
-      {!groupByFeature && !groupByBusiness && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
+      {swimlane === 'together' && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => col.statuses.includes(t.status))
           return (
