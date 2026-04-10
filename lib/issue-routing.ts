@@ -5,8 +5,8 @@ export function normalizeReviewStatus(value: unknown): string {
 export function computeDualReviewState(issue: Record<string, unknown>) {
   const testerStatus = normalizeReviewStatus(issue.tester_status)
   const designerStatus = normalizeReviewStatus(issue.designer_status)
-  const testerPassed = testerStatus === 'passed'
-  const designerPassed = designerStatus === 'passed'
+  const testerPassed = testerStatus === 'passed' || testerStatus === 'approved' || testerStatus === 'ux_approved'
+  const designerPassed = designerStatus === 'passed' || designerStatus === 'approved' || designerStatus === 'ux_approved'
   const anyFailed = testerStatus === 'failed' || designerStatus === 'failed'
   const bothPassed = testerPassed && designerPassed
   const overallTestStatus = bothPassed ? 'passed' : anyFailed ? 'failed' : 'pending'
