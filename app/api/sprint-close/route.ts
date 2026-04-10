@@ -9,7 +9,7 @@ const supabase = createClient(
 )
 
 // ── Discord ───────────────────────────────────────────────────────────────────
-const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
+const SPRINT_CHANNEL = '1487822039002906774'
 
 function postDiscord(channelId: string, content: string) {
   const token = process.env.DISCORD_BOT_TOKEN ?? ''
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
       statusLines || '  (no issues)',
       `━━━━━━━━━━━━━━━━━━━━━━`,
     ].join('\n')
-    postDiscord(COMPLETED_TASKS_CHANNEL, retroMsg)
+    postDiscord(SPRINT_CHANNEL, retroMsg)
 
     // 7. Automatically start next sprint
     let newSprint: Record<string, unknown> | null = null

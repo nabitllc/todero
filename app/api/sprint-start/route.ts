@@ -9,7 +9,7 @@ const supabase = createClient(
 )
 
 // ── Discord ───────────────────────────────────────────────────────────────────
-const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
+const SPRINT_CHANNEL = '1487822039002906774'
 
 function postDiscord(channelId: string, content: string) {
   const token = process.env.DISCORD_BOT_TOKEN ?? ''
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
       `📦 Projects: ${projectList}`,
       `📋 ${assignedCount} issue${assignedCount !== 1 ? 's' : ''} assigned to sprint`,
     ].join('\n')
-    postDiscord(COMPLETED_TASKS_CHANNEL, kickoffMsg)
+    postDiscord(SPRINT_CHANNEL, kickoffMsg)
 
     return NextResponse.json({
       sprint: newSprint,
