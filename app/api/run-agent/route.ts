@@ -330,13 +330,28 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
   const logFile = `/tmp/agent-${agentId}-${Date.now()}.log`
 
   // TOD-793: Dispatch via the runtime adapter registry.
-  // Runtime selection: per-request ?runtime= override → TODERO_RUNTIME env → default priority order.
-  // Current default is claude-code; codex/cursor/openai-api adapters can register later without
-  // touching this file.
+  // Runtime selection priority:
+  //   1. per-request ?runtime= override
+  //   2. per-agent modelChain walk (TOD-XXX gap 2 fix)
+  //   3. TODERO_RUNTIME env
+  //   4. highest-priority registered runtime
   const requestedRuntime = req.nextUrl.searchParams.get('runtime')
-  const runtime = requestedRuntime
-    ? (await getRuntimeByName(requestedRuntime) ?? await getDefaultRuntime())
-    : await getDefaultRuntime()
+  let runtime: Awaited<ReturnType<typeof getDefaultRuntime>>
+  if (requestedRuntime) {
+    runtime = await getRuntimeByName(requestedRuntime) ?? await getDefaultRuntime()
+  } else if (config.modelChain && config.modelChain.length > 0) {
+    // Walk the agent's fallback chain until we find an available runtime
+    runtime = await getDefaultRuntime()  // pessimistic default
+    for (const binding of config.modelChain) {
+      const r = await getRuntimeByName(binding.runtime)
+      if (r) {
+        runtime = r
+        break
+      }
+    }
+  } else {
+    runtime = await getDefaultRuntime()
+  }
 
   const spawnResult = await runtime.spawn({
     agentId,

@@ -95,6 +95,26 @@ async function sendTelegram(chatId: string, text: string): Promise<{ ok: boolean
   }
 }
 
+// ── Rate limit (Gap 5) ──────────────────────────────────────────────────────
+// Simple in-memory token bucket per channel. Prevents burst floods from crashing
+// Discord/Telegram or hitting provider-side 429s. Buckets reset on process restart
+// (acceptable — server runs for days, bursts don't).
+const RATE_LIMIT_WINDOW_MS = 60_000      // 60 seconds
+const RATE_LIMIT_MAX_PER_CHANNEL = 20    // 20 messages per channel per minute
+interface BucketState { count: number; resetAt: number }
+const rateLimitBuckets: Record<string, BucketState> = {}
+
+function isRateLimited(channel: string): boolean {
+  const now = Date.now()
+  const bucket = rateLimitBuckets[channel]
+  if (!bucket || bucket.resetAt < now) {
+    rateLimitBuckets[channel] = { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS }
+    return false
+  }
+  bucket.count++
+  return bucket.count > RATE_LIMIT_MAX_PER_CHANNEL
+}
+
 // ── POST /api/notify ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   let body: {
@@ -130,6 +150,12 @@ export async function POST(req: NextRequest) {
   const results: Array<{ channel: string; ok: boolean; status?: number; error?: string }> = []
 
   for (const channelName of channels) {
+    // Rate limit check
+    if (isRateLimited(channelName)) {
+      results.push({ channel: channelName, ok: false, error: `rate limited (${RATE_LIMIT_MAX_PER_CHANNEL}/min exceeded)` })
+      continue
+    }
+
     // Ad-hoc override handling
     if (channelName.startsWith('adhoc:discord:')) {
       const id = channelName.slice('adhoc:discord:'.length)

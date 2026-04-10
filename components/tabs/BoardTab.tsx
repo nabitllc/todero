@@ -49,7 +49,7 @@ function MultiSelect({ label, options, selected, onToggle, displayFn }: {
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(!open)}
         className="bg-transparent border border-white/10 rounded-lg px-2 py-1 text-xs text-white/40 outline-none focus:border-white/20 flex items-center gap-1">
-        {selected.length > 0 ? `${label} (${selected.length})` : `All ${label}s`}
+        {selected.length > 0 ? `${label} (${selected.length})` : label}
         <span className="text-white/30 text-[9px]">▾</span>
       </button>
       {open && (
@@ -463,23 +463,20 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               onToggle={v => toggleFilter(filterHubs, setFilterHubs, v)}
             />
           )}
-          {/* Swimlane selector */}
-          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{ background: '#080808' }}>
-            {(['together', 'business', 'feature', 'sprint'] as const).map(sl => {
-              // Business swimlane only makes sense in the All-hub view.
-              if (sl === 'business' && projectFilter) return null
-              const active = swimlane === sl
-              return (
-                <button
-                  key={sl}
-                  onClick={() => setSwimlane(sl)}
-                  className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${active ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/70'}`}
-                  title={`Swimlane: ${sl}`}>
-                  {sl.charAt(0).toUpperCase() + sl.slice(1)}
-                </button>
-              )
-            })}
-          </div>
+          {/* Swimlane dropdown — Jira-style grouping */}
+          <Select
+            value={swimlane}
+            onChange={e => setSwimlane(e.target.value as Swimlane)}
+            className="w-auto text-xs py-1"
+            title="Swimlane: how the board groups issues"
+          >
+            <option value="together" className="bg-[#0f0f0f] text-white">Swimlane: Together</option>
+            {!projectFilter && (
+              <option value="business" className="bg-[#0f0f0f] text-white">Swimlane: Business</option>
+            )}
+            <option value="feature" className="bg-[#0f0f0f] text-white">Swimlane: Feature</option>
+            <option value="sprint" className="bg-[#0f0f0f] text-white">Swimlane: Sprint</option>
+          </Select>
           {hasAnyFilter && <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-400 hover:text-red-300">Clear all</Button>}
           {/* Search bar — collapses to icon on mobile */}
           <div className="relative flex items-center">
