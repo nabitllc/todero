@@ -7,6 +7,11 @@ const VIEWER_PASSWORD = process.env.MC_VIEWER_PASSWORD ?? 'view2026'
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 export function middleware(req: NextRequest) {
+  // /api/health is public — monitoring probes don't carry cookies
+  if (req.nextUrl.pathname === '/api/health') {
+    return NextResponse.next()
+  }
+
   // For API routes: check role on write methods
   if (req.nextUrl.pathname.startsWith('/api/')) {
     if (WRITE_METHODS.has(req.method)) {

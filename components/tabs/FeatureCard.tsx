@@ -20,6 +20,7 @@ interface Feature {
   id: string; title: string; description?: string; project?: string;
   priority?: string; status: string; children: Issue[];
   acceptance_criteria?: string;
+  task_key?: string;
 }
 
 interface Props {
@@ -41,6 +42,9 @@ export default function FeatureCard({ feature, expanded, onToggle, onViewIssues 
     <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
       <button onClick={onToggle} className="w-full text-left px-4 py-3 hover:bg-white/5 transition-all">
         <div className="flex items-center gap-2 flex-wrap">
+          {feature.task_key && (
+            <span className="text-[10px] font-mono font-bold text-white/40 shrink-0">{feature.task_key}</span>
+          )}
           <span className="text-white text-sm font-medium truncate flex-1 min-w-0">{feature.title}</span>
           <span className="text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0"
             style={{ background: projColor + '20', color: projColor, border: `1px solid ${projColor}30` }}>

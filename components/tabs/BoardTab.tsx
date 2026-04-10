@@ -210,7 +210,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [filterTypes, setFilterTypes]       = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.types ?? [] } catch { return [] } })
   const [filterPriorities, setFilterPriorities] = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.priorities ?? [] } catch { return [] } })
   const [filterAssignees, setFilterAssignees]   = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.assignees ?? [] } catch { return [] } })
-  const [filterSprint, setFilterSprint]     = useState('')
+  // Sprint is now multiselect. Default is an empty array = "Active Sprint(s)" which
+  // is computed below from tasks that share today's sprint date(s).
+  const [filterSprints, setFilterSprints]   = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.sprints ?? [] } catch { return [] } })
+  const [filterHubs, setFilterHubs]         = useState<string[]>(() => { try { const s = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('board-filters') ?? '{}') : {}; return s.hubs ?? [] } catch { return [] } })
   const [quickAddCol, setQuickAddCol]       = useState<string|null>(null)
   const [quickAddTitle, setQuickAddTitle]   = useState('')
   const [confirmDelete, setConfirmDelete]   = useState<string|null>(null)
@@ -219,22 +222,39 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [detailTask, setDetailTask] = useState<Task|null>(null)
   const [bugDetailsOpen, setBugDetailsOpen] = useState(false)
   const [closedConfirm, setClosedConfirm] = useState<string|null>(null)
-  const [statusFilter, setStatusFilter] = useState<'active'|'all'|'closed'|'backlog'>('active')
+  // Status filter: 'all' by default. Header count chips can switch to 'backlog',
+  // 'future-sprint', or 'closed' scopes (toggle off → 'all').
+  // 'active' is retained for backward compat but no longer surfaced in UI.
+  const [statusFilter, setStatusFilter] = useState<'all'|'active'|'closed'|'backlog'|'future-sprint'>('all')
   const [boardSearch, setBoardSearch] = useState('')
   const [boardLimit, setBoardLimit] = useState(100)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const [boardGroupBy, setBoardGroupBy] = useState<BoardGroupBy>(() => { try { return (localStorage.getItem('board-group-by') as BoardGroupBy) || 'status' } catch { return 'status' } })
-  const groupByFeature = boardGroupBy === 'feature'
-  const groupByBusiness = boardGroupBy === 'business'
+  // Swimlane selector: together | business | feature | sprint
+  // Replaces the old Status/Feature/Business group-by pills.
+  type Swimlane = 'together' | 'business' | 'feature' | 'sprint'
+  const [swimlane, setSwimlane] = useState<Swimlane>(() => {
+    try { return (localStorage.getItem('board-swimlane') as Swimlane) || 'together' }
+    catch { return 'together' }
+  })
+  const groupByFeature = swimlane === 'feature'
+  const groupByBusiness = swimlane === 'business'
+  const groupBySprint = swimlane === 'sprint'
   const [collapsedBiz, setCollapsedBiz] = useState<Record<string,boolean>>(() => { try { return JSON.parse(localStorage.getItem('board-biz-collapsed') ?? '{}') } catch { return {} } })
 
   // Persist multiselect filters to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem('board-filters', JSON.stringify({ types: filterTypes, priorities: filterPriorities, assignees: filterAssignees }))
+      localStorage.setItem('board-filters', JSON.stringify({
+        types: filterTypes, priorities: filterPriorities, assignees: filterAssignees,
+        sprints: filterSprints, hubs: filterHubs,
+      }))
     }
-  }, [filterTypes, filterPriorities, filterAssignees])
+  }, [filterTypes, filterPriorities, filterAssignees, filterSprints, filterHubs])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('board-swimlane', swimlane)
+  }, [swimlane])
 
   const toggleFilter = (arr: string[], setArr: (v: string[]) => void, val: string) => {
     setBoardLimit(100)
@@ -246,10 +266,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   }
   const clearAllFilters = () => {
     setBoardLimit(100)
-    setFilterTypes([]); setFilterPriorities([]); setFilterAssignees([]); setFilterSprint('')
+    setFilterTypes([]); setFilterPriorities([]); setFilterAssignees([])
+    setFilterSprints([]); setFilterHubs([])
     if (onClearFeatureFilter) onClearFeatureFilter()
   }
-  const hasAnyFilter = filterTypes.length > 0 || filterPriorities.length > 0 || filterAssignees.length > 0 || filterSprint !== '' || !!featureFilter
+  const hasAnyFilter = filterTypes.length > 0 || filterPriorities.length > 0 || filterAssignees.length > 0 || filterSprints.length > 0 || filterHubs.length > 0 || !!featureFilter
 
   const fetchTasks = useCallback(async () => {
     setLoadError(null)
@@ -334,19 +355,49 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (detailTask) { window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }
   }, [detailTask])
 
-  const sprints = Array.from(new Set(tasks.map(t=>t.sprint).filter(Boolean))).sort().reverse()
+  // Sprint classification:
+  // - "active" sprints = sprint date(s) covering today (ET local)
+  // - "future" sprints = sprint dates strictly after today
+  // - "closed" sprints = past dates, hidden from the multiselect
+  // Convention: issues.sprint is stored as a YYYY-MM-DD date string (not a UUID).
+  const todayISO = new Date().toISOString().slice(0, 10)
+  const allSprintDatesRaw = Array.from(new Set(tasks.map(t => t.sprint).filter(Boolean))) as string[]
+  const activeSprintDates = allSprintDatesRaw.filter(s => s === todayISO)
+  // If no sprint matches exactly today, fall back to the latest non-future date as "active"
+  if (activeSprintDates.length === 0) {
+    const pastDates = allSprintDatesRaw.filter(s => s <= todayISO).sort()
+    if (pastDates.length > 0) activeSprintDates.push(pastDates[pastDates.length - 1])
+  }
+  const futureSprintDates = allSprintDatesRaw.filter(s => s > todayISO).sort()
+  const isFutureSprint = (s?: string | null) => !!s && s > todayISO
+  // Dropdown options: active + future only, hide closed/past. Sort newest-first.
+  const sprints = [...activeSprintDates, ...futureSprintDates]
+  // Legacy alias: older code paths still reference `filterSprint` as a single string.
+  // Treat the multiselect's first entry (or empty) as the legacy value for compatibility.
+  const filterSprint = filterSprints[0] ?? ''
   const allFiltered = tasks.filter(t => {
     // Filter out epics and features — they are organizational containers, not work items
     if (EXCLUDED_BOARD_TYPES.includes(t.type ?? '')) return false
-    if (statusFilter !== 'closed' && t.status === 'closed') return false
-    if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
+    // Default: show everything except closed. Status chips (backlog/closed) can
+    // switch the scope when clicked, which is now represented by statusFilter.
+    if (statusFilter === 'all' && t.status === 'closed') return false
     if (statusFilter === 'closed' && t.status !== 'closed') return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false
+    if (statusFilter === 'future-sprint' && !isFutureSprint(t.sprint)) return false
+    if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
     // projectFilter is now applied server-side via /api/issues?project=
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
     if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
     if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee?.toLowerCase() ?? '')) return false
-    if (filterSprint && t.sprint !== filterSprint) return false
+    // Sprint multiselect: empty = Active Sprint(s) (today's sprint date)
+    if (filterSprints.length === 0) {
+      // Default scope = active sprints only
+      if (t.sprint && !activeSprintDates.includes(t.sprint)) return false
+    } else if (!filterSprints.includes(t.sprint ?? '')) {
+      return false
+    }
+    // Hub filter (project name) — only effective in All-hub view
+    if (filterHubs.length > 0 && !filterHubs.includes(t.project ?? '')) return false
     if (featureFilter && (t as any).parent_id !== featureFilter) return false
     if (boardSearch.trim()) {
       const q = boardSearch.trim().toLowerCase()
@@ -396,10 +447,39 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           <MultiSelect label="Type" options={types as string[]} selected={filterTypes} onToggle={v => toggleFilter(filterTypes, setFilterTypes, v)} />
           <MultiSelect label="Priority" options={['critical','high','medium','low']} selected={filterPriorities} onToggle={v => toggleFilter(filterPriorities, setFilterPriorities, v)} />
           <MultiSelect label="Assignee" options={assignees as string[]} selected={filterAssignees} onToggle={v => toggleFilter(filterAssignees, setFilterAssignees, v)} displayFn={v => ASSIGNEE_MAP[v]?.name ?? v} />
-          <Select value={filterSprint} onChange={e=>{setFilterSprint(e.target.value); setBoardLimit(100)}} className="w-auto text-xs py-1">
-            <option value="" className="bg-[#0f0f0f] text-white">All Sprints</option>
-            {sprints.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>)}
-          </Select>
+          <MultiSelect
+            label="Sprint"
+            options={sprints as string[]}
+            selected={filterSprints}
+            onToggle={v => toggleFilter(filterSprints, setFilterSprints, v)}
+            displayFn={v => (activeSprintDates.includes(v) ? `${v} (active)` : v)}
+          />
+          {/* Hub filter — only meaningful in the All-hub view */}
+          {!projectFilter && (
+            <MultiSelect
+              label="Hub"
+              options={projects as string[]}
+              selected={filterHubs}
+              onToggle={v => toggleFilter(filterHubs, setFilterHubs, v)}
+            />
+          )}
+          {/* Swimlane selector */}
+          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{ background: '#080808' }}>
+            {(['together', 'business', 'feature', 'sprint'] as const).map(sl => {
+              // Business swimlane only makes sense in the All-hub view.
+              if (sl === 'business' && projectFilter) return null
+              const active = swimlane === sl
+              return (
+                <button
+                  key={sl}
+                  onClick={() => setSwimlane(sl)}
+                  className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${active ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/70'}`}
+                  title={`Swimlane: ${sl}`}>
+                  {sl.charAt(0).toUpperCase() + sl.slice(1)}
+                </button>
+              )
+            })}
+          </div>
           {hasAnyFilter && <Button variant="ghost" size="sm" onClick={clearAllFilters} className="text-red-400 hover:text-red-300">Clear all</Button>}
           {/* Search bar — collapses to icon on mobile */}
           <div className="relative flex items-center">
@@ -423,58 +503,36 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               )}
             </div>
           </div>
-          {/* Group by pills */}
-          <div className="flex gap-0.5 p-0.5 rounded-lg border border-white/10" style={{background:'#080808'}}>
-            <button onClick={() => { setBoardGroupBy('status'); localStorage.setItem('board-group-by','status') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='status'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
-              Status
-            </button>
-            <button onClick={() => { setBoardGroupBy('feature'); localStorage.setItem('board-group-by','feature') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='feature'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
-              Feature
-            </button>
-            <button onClick={() => { setBoardGroupBy('business'); localStorage.setItem('board-group-by','business') }}
-              className={`text-[10px] font-medium px-2.5 py-1 rounded-md transition-colors ${boardGroupBy==='business'?'bg-white/15 text-white':'text-white/50 hover:text-white/70'}`}>
-              Business
-            </button>
-          </div>
           <div className="ml-auto flex items-center gap-2">
-            {/* Off-board status chips (backlog, closed) — counts from full task list */}
-            {OFF_BOARD_STATUSES.map(s => {
-              // Use unfiltered tasks so chips always reflect total, independent of the active status pill
+            {/* Off-board status chips: backlog, future sprints, closed — counts only.
+                Click to filter the board to that scope. */}
+            {(() => {
               const scopedTasks = tasks.filter(t => !EXCLUDED_BOARD_TYPES.includes(t.type ?? ''))
-              const cnt = scopedTasks.filter(t => s.statuses.includes(t.status)).length
-              return (
+              const backlogCount = scopedTasks.filter(t => t.status === 'backlog').length
+              const futureCount = scopedTasks.filter(t => isFutureSprint(t.sprint) && t.status !== 'closed').length
+              const closedCount = scopedTasks.filter(t => t.status === 'closed').length
+              const chips: Array<{id: typeof statusFilter; label: string; color: string; count: number; title: string}> = [
+                { id: 'backlog',       label: 'Backlog',        color: '#71717a', count: backlogCount, title: 'Backlog issues (not yet scheduled)' },
+                { id: 'future-sprint', label: 'Future Sprints', color: '#a855f7', count: futureCount,  title: 'Issues scheduled for a future sprint' },
+                { id: 'closed',        label: 'Closed',         color: '#475569', count: closedCount,  title: 'Closed issues' },
+              ]
+              return chips.map(c => (
                 <button
-                  key={s.id}
+                  key={c.id}
                   type="button"
-                  onClick={() => setStatusFilter(s.id as 'backlog' | 'closed')}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-[10px] text-white/60 transition-colors"
-                  title={`Click to filter to ${s.label} only`}>
-                  <span className="w-1.5 h-1.5 rounded-full" style={{background:s.color}} />
-                  {s.label}
-                  <span className="font-mono text-white/90">{cnt}</span>
+                  onClick={() => setStatusFilter(statusFilter === c.id ? 'all' : c.id)}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] transition-colors ${statusFilter === c.id ? 'bg-white/15 text-white' : 'bg-white/5 hover:bg-white/10 text-white/60'}`}
+                  title={c.title}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.color }} />
+                  {c.label}
+                  <span className="font-mono text-white/90">{c.count}</span>
                 </button>
-              )
-            })}
-            <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium',sprint:new Date().toISOString().split('T')[0],project:projectFilter??undefined,assignee:'builder',type:'task'})}>
+              ))
+            })()}
+            <Button variant="secondary" size="sm" onClick={() => setNewTask({ status: 'backlog', priority: 'medium', sprint: new Date().toISOString().split('T')[0], project: projectFilter ?? undefined, assignee: 'builder', type: 'task' })}>
               + New Task
             </Button>
           </div>
-        </div>
-        {/* Status filter pills */}
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-          {(['active','closed','backlog','all'] as const).map(f => (
-            <button key={f} onClick={() => setStatusFilter(f)}
-              className={`text-xs px-3 py-1 rounded-full shrink-0 transition-colors ${
-                statusFilter === f
-                  ? 'bg-white text-black font-medium'
-                  : 'bg-white/10 text-white/50 hover:text-white/70'
-              }`}>
-              {f === 'active' ? 'Active' : f === 'closed' ? 'Closed' : f.charAt(0).toUpperCase() + f.slice(1)}
-              {statusFilter === f ? ' ✓' : ''}
-            </button>
-          ))}
         </div>
         {/* Active filter chips */}
         {hasAnyFilter && (
@@ -747,17 +805,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                               <div className="flex items-center gap-1 flex-wrap">
                                                 {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0">{TYPE_ICONS[task.type]}</span>}
                                                 {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a'}} />}
-                                                {(task.is_blocked || task.blocked_by || (task.rejection_count ?? 0) >= 3) && (
+                                                {(task.is_blocked || task.blocked_by) && (
                                                   <Lock
                                                     size={9}
                                                     className="text-red-400 shrink-0"
-                                                    aria-label={
-                                                      task.blocked_by
-                                                        ? `blocked by ${task.blocked_by}`
-                                                        : (task.rejection_count ?? 0) >= 3
-                                                          ? `3-strike loop breaker (${task.rejection_count} rejections)`
-                                                          : 'blocked'
-                                                    }
+                                                    aria-label={task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'}
                                                   />
                                                 )}
                                               </div>
@@ -867,7 +919,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         {task.severity && SEVERITY_CHIP_STYLES[task.severity] && (
                           <span className={`inline-block text-[8px] font-bold px-1 py-0 rounded border shrink-0 ${SEVERITY_CHIP_STYLES[task.severity]}`}>{task.severity}</span>
                         )}
-                        {(task.is_blocked || task.blocked_by || (task.rejection_count ?? 0) >= 3) && <Lock size={10} className="text-red-400 shrink-0" />}
+                        {(task.is_blocked || task.blocked_by) && <Lock size={10} className="text-red-400 shrink-0" />}
                       </div>
                     </div>
                     {/* Assignee dot — bottom-right */}

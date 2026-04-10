@@ -259,16 +259,26 @@ function SprintProgressCard() {
 
   useEffect(() => {
     const update = () => {
-      const now = new Date()
-      // Target: next 7am EDT (UTC-4)
-      const target = new Date(now)
-      target.setUTCHours(11, 0, 0, 0) // 7am EDT = 11:00 UTC
-      if (target <= now) target.setDate(target.getDate() + 1)
-      const diff = target.getTime() - now.getTime()
-      const h = Math.floor(diff / 3600000)
-      const m = Math.floor((diff % 3600000) / 60000)
-      const s = Math.floor((diff % 60000) / 1000)
-      setCountdown(`${h}h ${m}m ${s}s`)
+      // TOD-XXX: delegate to lib/time.ts — DST-correct. Previously hardcoded
+      // +11 hours assuming EDT forever, broke after DST fall-back.
+      // Dynamic import to avoid SSR issues
+      import('@/lib/time').then(({ nextEtTime }) => {
+        const now = new Date()
+        const target = nextEtTime(7, 0, now)
+        const diff = target.getTime() - now.getTime()
+        const h = Math.floor(diff / 3600000)
+        const m = Math.floor((diff % 3600000) / 60000)
+        const s = Math.floor((diff % 60000) / 1000)
+        setCountdown(`${h}h ${m}m ${s}s`)
+      }).catch(() => {
+        // Fallback: raw math
+        const now = new Date()
+        const target = new Date(now)
+        target.setUTCHours(11, 0, 0, 0)
+        if (target <= now) target.setDate(target.getDate() + 1)
+        const diff = target.getTime() - now.getTime()
+        setCountdown(`${Math.floor(diff/3600000)}h`)
+      })
     }
     update()
     const t = setInterval(update, 1000)

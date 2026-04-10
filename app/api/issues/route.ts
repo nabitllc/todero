@@ -1019,6 +1019,15 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // TOD-XXX (2026-04-10): 3-strike loop breaker — auto-block on 3+ rejections.
+  // rejection_count is incremented above when dual-review fails; set is_blocked so
+  // the Board UI shows the lock icon and the Inbox can prompt for human review.
+  // rejection_count is NEVER reset — it persists as an audit trail for retro analysis.
+  const newRejectionCount = (fields.rejection_count as number | undefined) ?? before?.rejection_count ?? 0
+  if (newRejectionCount >= 3 && !before?.is_blocked) {
+    fields.is_blocked = true
+  }
+
   if (fields.owner !== undefined) {
     const currentStatus = before?.status ?? ''
     if (isActiveWorkIssueStatus(currentStatus)) {
