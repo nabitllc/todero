@@ -10,6 +10,8 @@ export interface AgentQueueConfig {
   pickupStatus: string
   /** Additional Supabase query filters (appended to URL) */
   extraFilters: string
+  /** Optional extra filter appended to WIP-count query when pickupStatus === workingStatus (deployer). */
+  wipExtraFilter?: string
   /** Fields required for Definition of Ready — skip issues missing these */
   dorFields: string[]
   /** Max concurrent in_progress (WIP limit) */
