@@ -1,19 +1,21 @@
 #!/bin/bash
-# Auto-rebuild Next.js and restart server after commits
-# The LaunchAgent (com.nabit.todero) will auto-recover via start.sh if build is missing
+# Post-commit: REBUILD ONLY, do NOT restart server
+# Reason: restarting invalidates browser chunks (ChunkLoadError in open tabs).
+# The running server keeps serving its current build fine.
+# A manual restart or LaunchAgent auto-recovery (via start.sh) will pick up the new build later.
+#
+# If you want to force a server restart after commit, run:
+#   launchctl kickstart -k "gui/$(id -u)/com.nabit.todero"
 
-echo "[post-commit] Rebuilding Next.js (clean)..."
+echo "[post-commit] Rebuilding Next.js (in background, no restart)..."
 cd /Users/kemuniagent/todero
 
 # Clean .next to avoid stale pages-manifest.json errors
 rm -rf .next
 
-/opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -10
+# Run build in background so commit returns fast
+nohup /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build > /tmp/mc-build.log 2>&1 &
+disown
 
-if [ -f .next/BUILD_ID ]; then
-  echo "[post-commit] Build succeeded. Restarting Todero server..."
-  launchctl kickstart -k "gui/$(id -u)/com.nabit.todero" 2>/dev/null || true
-  echo "[post-commit] Server restart triggered."
-else
-  echo "[post-commit] ⚠ Build failed — BUILD_ID missing. LaunchAgent will auto-rebuild on next start."
-fi
+echo "[post-commit] Build queued. Server NOT restarted (protects open browser sessions)."
+echo "[post-commit] To pick up new build, run: launchctl kickstart -k gui/\$(id -u)/com.nabit.todero"
