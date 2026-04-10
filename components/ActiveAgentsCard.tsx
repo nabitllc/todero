@@ -19,6 +19,7 @@ interface AgentRow {
   isRunning: boolean       // true if agent process detected via ps
   ago: number | null      // minutes since last activity
   nextRunTs: number | null  // epoch ms for next scheduled run
+  workStartedAt: number | null  // epoch ms when agent started on current issue
   currentTask: string | null
   issueKey: string | null
   issueTitle: string | null
@@ -53,6 +54,30 @@ function fmtAgo(ago: number | null): string {
   const m = ago % 60
   return m > 0 ? `${h}h ${m}m ago` : `${h}h ago`
 }
+
+// WorkTimer: counts UP from when agent started working on current issue
+// Resets when issue/status changes (because workStartedAt changes)
+const WorkTimer = React.memo(function WorkTimer({ startedAt }: { startedAt: number }) {
+  const stableStart = useRef(startedAt)
+  // Only update if it changed significantly (new issue/status)
+  if (Math.abs(startedAt - stableStart.current) > 5000) {
+    stableStart.current = startedAt
+  }
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(iv)
+  }, [])
+  const diff = Math.max(0, Math.floor((now - stableStart.current) / 1000))
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  const s = diff % 60
+  const parts: string[] = []
+  if (h > 0) parts.push(`${h}h`)
+  if (m > 0 || h > 0) parts.push(`${m}m`)
+  parts.push(`${s}s`)
+  return <>{parts.join(' ')}</>
+})
 
 const Countdown = React.memo(function Countdown({ targetTs }: { targetTs: number }) {
   // Use a stable target ref that only updates if the target changes by > 1 minute.
@@ -125,6 +150,7 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
             isRunning: !!a.isRunning,
             ago: a.ago,
             nextRunTs: a.nextRunTs ?? null,
+            workStartedAt: a.workStartedAt ?? null,
             currentTask: agentCurrentTask?.[a.id] ?? null,
             issueKey: issue?.key ?? null,
             issueTitle: issue?.title ?? null,
@@ -226,6 +252,12 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
                     <span className="text-[9px] text-amber-500/60"><Countdown targetTs={agent.nextRunTs} /></span>
                   ) : null}
                 </div>
+                {/* Work timer - shows time since agent started on current issue */}
+                {agent.workStartedAt && agent.issueKey && (
+                  <span className="text-[9px] font-mono text-emerald-500/70 shrink-0" title="Time spent on this issue">
+                    <WorkTimer startedAt={agent.workStartedAt} />
+                  </span>
+                )}
                 {/* Last active - right aligned */}
                 <span className="text-[8px] text-white/15 shrink-0">{fmtAgo(agent.ago)}</span>
               </div>

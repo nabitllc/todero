@@ -37,7 +37,7 @@ export async function GET() {
     // 1. Fetch issues that are actively being worked on (in_progress, code_review)
     const { data: activeIssues } = await supabase
       .from('issues')
-      .select('task_key, title, status, assignee, worked_by, updated_at')
+      .select('task_key, title, status, assignee, worked_by, updated_at, started_at')
       .in('status', ['open', 'in_progress', 'code_review', 'product_review', 'approved'])
       .order('updated_at', { ascending: false })
       .limit(50)
@@ -59,14 +59,24 @@ export async function GET() {
     }
 
     // Build lookup: agent → current issue (prefer in_progress over review statuses)
-    const agentIssue: Record<string, { key: string; title: string; status: string }> = {}
+    const agentIssue: Record<string, { key: string; title: string; status: string; startedAt: number | null }> = {}
     // Sort: in_progress first, then code_review, then product_review
     const statusPriority = (s: string) => s === 'in_progress' ? 0 : s === 'code_review' ? 1 : s === 'product_review' ? 2 : s === 'open' ? 3 : 4
     const sortedIssues = [...(activeIssues ?? [])].sort((a, b) => statusPriority(a.status) - statusPriority(b.status))
     for (const iss of sortedIssues) {
       const owner = iss.worked_by || iss.assignee
       if (owner && !agentIssue[owner]) {
-        agentIssue[owner] = { key: iss.task_key ?? '?', title: iss.title ?? '', status: iss.status ?? '' }
+        // started_at: when agent started working on THIS issue (reset on assignee/status change)
+        // Fall back to updated_at if started_at is null
+        const startedAt = iss.started_at ? new Date(iss.started_at).getTime()
+                        : iss.updated_at ? new Date(iss.updated_at).getTime()
+                        : null
+        agentIssue[owner] = {
+          key: iss.task_key ?? '?',
+          title: iss.title ?? '',
+          status: iss.status ?? '',
+          startedAt,
+        }
       }
       // Track activity from issue updates for all issues
       if (owner) {
@@ -141,6 +151,7 @@ export async function GET() {
         ago: agoMin,
         lastUpdatedAt: lastTs,
         currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : null,
+        workStartedAt: issue?.startedAt ?? null, // timestamp when agent started on this specific issue
       }
     })
 
