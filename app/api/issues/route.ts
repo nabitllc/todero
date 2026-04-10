@@ -398,6 +398,21 @@ async function validateWorkflowTransition(
     }
   }
 
+  // 6.7: Features can't move to open unless parent epic is in draft or active
+  if (issueType === 'feature' && newStatus === 'open' && issue.parent_id) {
+    const { data: parentEpic } = await supabase
+      .from('issues')
+      .select('status, type')
+      .eq('id', issue.parent_id as string)
+      .single()
+    if (parentEpic?.type === 'epic' && !['draft', 'active'].includes(parentEpic.status)) {
+      return {
+        transition: null,
+        error: { error: `Cannot open feature: parent epic must be in draft or active status (currently: ${parentEpic.status})`, field: 'parent_id' }
+      }
+    }
+  }
+
   return { transition: transition as WorkflowTransition, error: null }
 }
 
@@ -994,7 +1009,10 @@ export async function PATCH(req: NextRequest) {
         if (before.status === 'code_review' && dual.bothPassed && fields.status !== 'open') {
           fields.status = 'approved'
           if (fields.resolution_type === undefined && before?.resolution_type == null) {
-            fields.resolution_type = 'code_change'
+            const issueType = (fields.type ?? before?.type ?? 'task') as string
+            if (issueType === 'research') fields.resolution_type = 'research_completed'
+            else if (issueType === 'ops') fields.resolution_type = 'config_change'
+            else fields.resolution_type = 'code_change'
           }
           if (fields.reviewer_notes === undefined) {
             const notes = aggregateReviewerNotes(mergedReviewState)
