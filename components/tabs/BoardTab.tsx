@@ -441,9 +441,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   return (
     <div className="h-full flex flex-col gap-4">
-      {/* Toolbar — multiselect filters */}
+      {/* Swimlane indicator banner (only when a non-default swimlane is active) */}
+      {swimlane !== 'together' && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-[#0a0a0a]">
+          <span className="text-xs text-white/40">Swimlane:</span>
+          <span className="text-xs font-semibold text-white/80 capitalize">{swimlane}</span>
+        </div>
+      )}
+      {/* Toolbar — multiselect filters (no-wrap, horizontal scroll if too wide) */}
       <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
           <MultiSelect label="Type" options={types as string[]} selected={filterTypes} onToggle={v => toggleFilter(filterTypes, setFilterTypes, v)} />
           <MultiSelect label="Priority" options={['critical','high','medium','low']} selected={filterPriorities} onToggle={v => toggleFilter(filterPriorities, setFilterPriorities, v)} />
           <MultiSelect label="Assignee" options={assignees as string[]} selected={filterAssignees} onToggle={v => toggleFilter(filterAssignees, setFilterAssignees, v)} displayFn={v => ASSIGNEE_MAP[v]?.name ?? v} />
@@ -605,26 +612,38 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
       {/* Feature-grouped swimlane — each feature is a collapsible 3-column kanban */}
       {groupByFeature && (() => {
-        // Group tasks by parent_id (feature). Sort features by priority then by
-        // completion % (least done first) so unfinished work surfaces up top.
+        // TOD-XXX (Q4): pull features from the FULL tasks array (not filtered)
+        // so parent lookups don't fail when a parent feature isn't in the current
+        // status-filtered view. Previously caused "Unknown Feature" groups.
         const features = tasks.filter(t => t.type === 'feature' || t.type === 'epic')
-        const featureGroups: { feature: Task | null; label: string; children: Task[]; pct: number }[] = []
+        const featureById: Record<string, Task> = {}
+        for (const f of features) featureById[f.id] = f
+
+        const featureGroups: { feature: Task | null; label: string; children: Task[]; pct: number; key: string }[] = []
         const parentIds = Array.from(new Set(filtered.map(t => (t as any).parent_id).filter(Boolean)))
         for (const pid of parentIds) {
-          const feat = features.find(f => f.id === pid)
+          const feat = featureById[pid]
           const children = filtered.filter(t => (t as any).parent_id === pid)
+          // Hide feature groups that have NO children in any visible column.
+          // These are usually features whose children are all backlog/closed and
+          // thus invisible in the current scope — showing an empty feature card
+          // is noise.
+          const visibleInColumns = children.some(t => BOARD_COLUMNS.some(col => col.statuses.includes(t.status)))
+          if (!visibleInColumns) continue
           const done = children.filter(t => ['completed', 'released', 'closed'].includes(t.status)).length
           const pct = children.length > 0 ? Math.round((done / children.length) * 100) : 0
           featureGroups.push({
             feature: feat || null,
-            label: feat?.title || 'Unknown Feature',
+            // Fallback label is a short UUID prefix, not "Unknown Feature".
+            label: feat?.title || `Feature ${String(pid).slice(0, 8)}`,
             children,
             pct,
+            key: `feature::${pid}`,
           })
         }
-        const unassigned = filtered.filter(t => !(t as any).parent_id)
+        const unassigned = filtered.filter(t => !(t as any).parent_id && BOARD_COLUMNS.some(col => col.statuses.includes(t.status)))
         if (unassigned.length > 0) {
-          featureGroups.push({ feature: null, label: 'Unassigned (no parent feature)', children: unassigned, pct: 0 })
+          featureGroups.push({ feature: null, label: 'No parent feature', children: unassigned, pct: 0, key: 'feature::none' })
         }
         // Sort: by priority (critical first), then by completion % ascending (least done first)
         featureGroups.sort((a, b) => {
@@ -639,7 +658,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         return (
           <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
             {featureGroups.map(group => {
-              const groupKey = `feature::${group.feature?.id ?? group.label}`
+              const groupKey = group.key
               const isCollapsed = collapsedBiz[groupKey] ?? false
               const toggleCollapse = () => {
                 const next = { ...collapsedBiz, [groupKey]: !isCollapsed }
@@ -676,26 +695,41 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                               <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
                               <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
                             </div>
-                            <div className="flex-1 px-2 pb-2 space-y-2 min-h-[30px]">
+                            <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
                               {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
-                              {colTasks.map(task => (
-                                <div key={task.id}
-                                  draggable
-                                  onDragStart={() => setDragId(task.id)}
-                                  onDragEnd={() => setDragId(null)}
-                                  onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                                  className={`rounded-lg border cursor-pointer transition-colors ${dragId === task.id ? 'opacity-50' : ''}`}
-                                  style={{ background: '#0f0f0f', borderColor: dragId === task.id ? '#555' : '#27272a' }}>
-                                  <div className="px-2 py-1.5">
-                                    {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
-                                    <p className="text-white text-[11px] font-medium leading-snug line-clamp-2">{task.title}</p>
-                                    <div className="flex items-center gap-1 mt-1 flex-wrap">
-                                      {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a' }} />}
-                                      {(task.is_blocked || task.blocked_by) && <Lock size={9} className="text-red-400 shrink-0" />}
+                              {colTasks.map(task => {
+                                const aKey = task.assignee?.toLowerCase() ?? ''
+                                const aName = ASSIGNEE_MAP[aKey]?.name ?? task.assignee ?? ''
+                                const aLetter = aName.charAt(0).toUpperCase()
+                                const aDotColor = ASSIGNEE_DOT_COLORS[aKey] ?? '#6b7280'
+                                return (
+                                  <div key={task.id}
+                                    draggable
+                                    onDragStart={() => setDragId(task.id)}
+                                    onDragEnd={() => setDragId(null)}
+                                    onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
+                                    className={`rounded-lg border cursor-pointer transition-colors relative ${dragId === task.id ? 'opacity-50' : ''}`}
+                                    style={{ background: '#0f0f0f', borderColor: dragId === task.id ? '#555' : '#27272a' }}>
+                                    <div className="px-2 pt-1.5 pb-1.5">
+                                      {task.task_key && <span className="text-[9px] font-mono font-bold text-white/40">{task.task_key}</span>}
+                                      <p className="text-white text-[11px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0">{TYPE_ICONS[task.type]}</span>}
+                                        {task.priority && <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a' }} />}
+                                        {(task.is_blocked || task.blocked_by) && (
+                                          <Lock size={9} className="text-red-400 shrink-0" aria-label={task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'} />
+                                        )}
+                                      </div>
                                     </div>
+                                    {aLetter && (
+                                      <div className="absolute bottom-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                                        style={{ background: aDotColor }} title={aName}>
+                                        {aLetter}
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
                           </div>
                         )
@@ -710,16 +744,24 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         )
       })()}
 
-      {/* Sprint-grouped swimlane — each sprint date is a collapsible 3-column kanban */}
+      {/* Sprint-grouped swimlane — active + future + "No Sprint" lane at end */}
       {groupBySprint && (() => {
+        const NO_SPRINT_KEY = '__no_sprint__'
         const sprintGroups: Record<string, typeof filtered> = {}
         for (const t of filtered) {
-          const k = t.sprint || '(no sprint)'
+          const s = t.sprint
+          // Skip past sprints — only show active, future, or no-sprint.
+          // Past sprints exist only to surface past work when someone clicks
+          // the Closed chip; by default we hide them here.
+          if (s && s < todayISO && !activeSprintDates.includes(s)) continue
+          const k = s || NO_SPRINT_KEY
           if (!sprintGroups[k]) sprintGroups[k] = []
           sprintGroups[k].push(t)
         }
-        // Sort: active sprint(s) first, then future, then past
+        // Sort: active sprint(s) first, then future ascending, then No Sprint at the end
         const sorted = Object.keys(sprintGroups).sort((a, b) => {
+          if (a === NO_SPRINT_KEY) return 1
+          if (b === NO_SPRINT_KEY) return -1
           const aActive = activeSprintDates.includes(a)
           const bActive = activeSprintDates.includes(b)
           if (aActive && !bActive) return -1
@@ -737,15 +779,17 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 setCollapsedBiz(next)
                 if (typeof window !== 'undefined') localStorage.setItem('board-biz-collapsed', JSON.stringify(next))
               }
-              const isActive = activeSprintDates.includes(sprintKey)
+              const isActive = sprintKey !== NO_SPRINT_KEY && activeSprintDates.includes(sprintKey)
+              const isNoSprint = sprintKey === NO_SPRINT_KEY
               const done = tasks.filter(t => ['completed', 'released', 'closed'].includes(t.status)).length
               const pct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0
               return (
                 <div key={groupKey} className="rounded-xl border border-white/10 overflow-hidden" style={{ background: '#080808' }}>
                   <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none"
-                    style={{ borderLeft: isActive ? '3px solid #22c55e' : '3px solid #3f3f46' }}>
-                    <span className="text-sm font-semibold text-white/70">{sprintKey}</span>
+                    style={{ borderLeft: isActive ? '3px solid #22c55e' : isNoSprint ? '3px solid #71717a' : '3px solid #3f3f46' }}>
+                    <span className="text-sm font-semibold text-white/70">{isNoSprint ? 'No Sprint' : sprintKey}</span>
                     {isActive && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">active</span>}
+                    {!isActive && !isNoSprint && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">future</span>}
                     <span className="text-[10px] text-white/60 font-mono ml-auto">{pct}% done</span>
                     <span className="text-xs text-white/50">({tasks.length} issue{tasks.length !== 1 ? 's' : ''})</span>
                     <span className="text-white/30 text-xs">{isCollapsed ? '▶' : '▼'}</span>
