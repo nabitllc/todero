@@ -1,16 +1,19 @@
 #!/bin/bash
-# MC-203/MC-204: Auto-restart MC server after commits
-# The LaunchAgent (com.nabit.mission-control) keeps the server alive.
-# Kicking it restarts with the latest build.
+# Auto-rebuild Next.js and restart server after commits
+# The LaunchAgent (com.nabit.todero) will auto-recover via start.sh if build is missing
 
-echo "[post-commit] Rebuilding Next.js..."
+echo "[post-commit] Rebuilding Next.js (clean)..."
 cd /Users/kemuniagent/todero
-/opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>/tmp/mc-build.log
 
-if [ $? -eq 0 ]; then
-  echo "[post-commit] Build succeeded. Restarting MC server..."
+# Clean .next to avoid stale pages-manifest.json errors
+rm -rf .next
+
+/opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -10
+
+if [ -f .next/BUILD_ID ]; then
+  echo "[post-commit] Build succeeded. Restarting Todero server..."
   launchctl kickstart -k "gui/$(id -u)/com.nabit.todero" 2>/dev/null || true
-  echo "[post-commit] MC server restarted."
+  echo "[post-commit] Server restart triggered."
 else
-  echo "[post-commit] ⚠ Build failed — server NOT restarted. Check /tmp/mc-build.log"
+  echo "[post-commit] ⚠ Build failed — BUILD_ID missing. LaunchAgent will auto-rebuild on next start."
 fi
