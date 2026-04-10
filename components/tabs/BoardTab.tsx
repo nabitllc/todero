@@ -92,13 +92,21 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
   cannot_reproduce: '#eab308',
 }
 
+// 3-column board (TOD-XXX simplification 2026-04-10):
+// Queue   = ready to be picked up (defined + open)
+// Ongoing = active work (in_progress + both review states)
+// Achieved= shipped or ready to ship (approved + completed + released)
+// Backlog and closed are NOT columns — they surface as count chips in the header.
 const BOARD_COLUMNS = [
-  { id:'backlog',    label:'Backlog',          color:'#71717a', statuses:['backlog','defined'] },
-  { id:'open',       label:'Open',             color:'#3b82f6', statuses:['open'] },
-  { id:'in_progress',label:'In Progress',      color:'#818cf8', statuses:['in_progress'] },
-  { id:'in_review',  label:'In Review',        color:'#f97316', statuses:['code_review','product_review'] },
-  { id:'approved',   label:'Ready for Deploy', color:'#22c55e', statuses:['approved'] },
-  { id:'signoff',    label:'Sign Off',         color:'#14b8a6', statuses:['released','completed'] },
+  { id:'queue',    label:'Queue',    color:'#3b82f6', statuses:['defined','open'] },
+  { id:'ongoing',  label:'Ongoing',  color:'#818cf8', statuses:['in_progress','code_review','product_review'] },
+  { id:'achieved', label:'Achieved', color:'#22c55e', statuses:['approved','completed','released'] },
+]
+
+// Statuses that get a small count chip but no column
+const OFF_BOARD_STATUSES = [
+  { id:'backlog', label:'Backlog', color:'#71717a', statuses:['backlog'] },
+  { id:'closed',  label:'Closed',  color:'#475569', statuses:['closed'] },
 ]
 
 const EXCLUDED_BOARD_TYPES = ['epic', 'feature']
@@ -431,7 +439,24 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             </button>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <StartSprintBtn />
+            {/* Off-board status chips (backlog, closed) — counts from full task list */}
+            {OFF_BOARD_STATUSES.map(s => {
+              // Use unfiltered tasks so chips always reflect total, independent of the active status pill
+              const scopedTasks = tasks.filter(t => !EXCLUDED_BOARD_TYPES.includes(t.type ?? ''))
+              const cnt = scopedTasks.filter(t => s.statuses.includes(t.status)).length
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setStatusFilter(s.id as 'backlog' | 'closed')}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 text-[10px] text-white/60 transition-colors"
+                  title={`Click to filter to ${s.label} only`}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{background:s.color}} />
+                  {s.label}
+                  <span className="font-mono text-white/90">{cnt}</span>
+                </button>
+              )
+            })}
             <Button variant="secondary" size="sm" onClick={()=>setNewTask({status:'backlog',priority:'medium',sprint:new Date().toISOString().split('T')[0],project:projectFilter??undefined,assignee:'builder',type:'task'})}>
               + New Task
             </Button>
@@ -764,13 +789,13 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         ))}
       </div>}
 
-      {/* Columns */}
+      {/* Columns — 3-col layout fills viewport (TOD-XXX Board simplification) */}
       {!groupByFeature && !groupByBusiness && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => col.statuses.includes(t.status))
           return (
             <div key={col.id}
-              className={`flex-shrink-0 w-full md:w-64 flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+              className={`flex-1 min-w-0 md:min-w-[280px] flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
               style={{borderTop:`2px solid ${col.color}`}}
               onDragOver={e => e.preventDefault()}
               onDrop={() => handleDrop(col.id)}>
@@ -778,9 +803,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               <div className="flex items-center justify-between px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
-                  <span className="text-xs font-semibold text-white/40">{col.label} ({colTasks.length})</span>
-                  {col.id === 'signoff' && filtered.length > 0 && (
-                    <span className="text-[10px] text-white/30 font-mono">{Math.round((colTasks.length / filtered.length) * 100)}%</span>
+                  <span className="text-xs font-semibold text-white/60">{col.label}</span>
+                  <span className="text-xs font-mono text-white/40">{colTasks.length}</span>
+                  {col.id === 'achieved' && filtered.length > 0 && (
+                    <span className="text-[10px] text-white/30 font-mono">({Math.round((colTasks.length / filtered.length) * 100)}%)</span>
                   )}
                 </div>
               </div>
