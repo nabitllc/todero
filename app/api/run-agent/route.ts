@@ -190,9 +190,25 @@ export async function POST(req: NextRequest) {
 
   // ── Step 9: Spawn Claude Code agent in background ──
   const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
-  const selfChain = `\n\nAfter completing this issue, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} -H "Content-Type: application/json" to auto-claim your next task.`
-  const loopBreaker = `\n\nIMPORTANT: If you encounter the same error 3 times, STOP. PATCH the issue back to open with implementation_notes describing the blocker. Do NOT retry infinitely.`
-  const doneInstruction = `\n\nWhen done: PATCH http://localhost:3000/api/issues with {"id":"${task.id}","status":"${config.completionStatus}","transitioned_by":"${agentId}","implementation_notes":"<what you did>","commit_sha":"$(git rev-parse HEAD)","regression_test":"<how to verify>"}`
+
+  const transitionGate = `
+
+🚨 NON-NEGOTIABLE FINAL STEP 🚨
+Your work is NOT COMPLETE until you PATCH the issue status. If you skip this step, your work is LOST because another agent cannot pick up this issue while it is still in its current status.
+
+After finishing the work, RUN THIS EXACT COMMAND before ending your session:
+
+curl -s -X PATCH http://localhost:3000/api/issues -H "Content-Type: application/json" -d '{"id":"${task.id}","status":"${config.completionStatus}","transitioned_by":"${agentId}","implementation_notes":"<1-2 sentences of what you did>","commit_sha":"'"$(git rev-parse HEAD 2>/dev/null || echo none)"'","regression_test":"<how to verify>"}'
+
+VERIFY the response shows status="${config.completionStatus}". If you get an error:
+1. Read the error message carefully (missing fields, wrong role, etc.)
+2. Fix the issue and retry the PATCH
+3. Do NOT end your session until the PATCH succeeds
+
+This is a HARD RULE. Do not treat it as optional. Do not assume someone else will do it for you.`
+
+  const selfChain = `\n\nAFTER the PATCH succeeds, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} to auto-claim your next task.`
+  const loopBreaker = `\n\nIF same error 3 times: STOP, PATCH back to open with notes explaining the blocker. Do NOT retry infinitely.`
 
   const branchInstruction = branch
     ? `\nBranch: ${branch} (git checkout -b ${branch} 2>/dev/null || git checkout ${branch})`
@@ -206,7 +222,7 @@ export async function POST(req: NextRequest) {
     `Description: ${task.description ?? 'See title'}`,
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
     branchInstruction,
-    doneInstruction,
+    transitionGate,
     loopBreaker,
     selfChain,
   ].join('\n')
