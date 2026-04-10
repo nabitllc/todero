@@ -13,11 +13,12 @@ const PRIORITY_BADGE: Record<string, { bg: string; text: string; label: string }
 }
 
 const TYPE_BADGE: Record<string, { bg: string; text: string }> = {
-  task:    { bg: 'bg-blue-500/20',   text: 'text-blue-400'   },
+  task:    { bg: 'bg-zinc-500/20',   text: 'text-zinc-400'   },
   bug:     { bg: 'bg-red-500/20',    text: 'text-red-400'    },
-  feature: { bg: 'bg-purple-500/20', text: 'text-purple-400' },
+  feature: { bg: 'bg-blue-500/20',   text: 'text-blue-400'   },
   ops:     { bg: 'bg-amber-500/20',  text: 'text-amber-400'  },
-  epic:    { bg: 'bg-violet-500/20', text: 'text-violet-400' },
+  epic:    { bg: 'bg-purple-500/20', text: 'text-purple-400' },
+  subtask: { bg: 'bg-slate-500/20',  text: 'text-slate-400'  },
 }
 
 const ASSIGNEE_COLORS: Record<string, string> = {
@@ -87,12 +88,9 @@ export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd }: 
       onDragEnd={() => onDragEnd?.(task)}
       onClick={() => onClick?.(task)}
       className={[
-        'group relative rounded-lg border cursor-pointer transition-colors',
-        dragging ? 'opacity-50' : '',
+        'group relative rounded-lg border cursor-pointer transition-colors bg-[#0f0f0f]',
+        dragging ? 'opacity-50 border-zinc-600' : 'border-zinc-800 hover:border-zinc-700',
       ].join(' ')}
-      style={{ background: '#0f0f0f', borderColor: dragging ? '#555' : '#27272a' }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = '#3f3f46' }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = dragging ? '#555' : '#27272a' }}
     >
       <div className="px-2.5 pt-2 pb-2 pr-8">
         {/* task key */}
