@@ -203,8 +203,14 @@ export async function POST(req: NextRequest) {
 
   const escaped = prompt.replace(/'/g, "'\\''")
   const logFile = `/tmp/agent-${agentId}-${Date.now()}.log`
-  const cmd = `cd ${TODERO_DIR} && nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > ${logFile} 2>&1 &`
-  exec(cmd, { timeout: 5000 }, () => {})
+  // Use setsid to fully detach from parent process — survives parent exit
+  // disown prevents zombie process issues
+  const cmd = `cd ${TODERO_DIR} && setsid nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > ${logFile} 2>&1 < /dev/null &`
+  exec(cmd, {
+    timeout: 5000,
+    detached: true,
+    stdio: 'ignore',
+  } as never, () => {})
 
   return NextResponse.json({
     ok: true,
