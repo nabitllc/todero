@@ -94,7 +94,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
-    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner. When all DoR fields are set, move to defined status. Then check if defined issues are ready for open (have sprint, assignee, etc) and move them.',
+    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner. For FEATURES: create child tasks (each 1-2 days of work) before moving to defined. For EPICS: verify child features exist and have AC. When all DoR fields are set, PATCH to defined. Then check defined issues — if they have sprint, assignee, reviewer, owner, PATCH to open. Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
   },
 
   scout: {

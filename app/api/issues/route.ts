@@ -506,6 +506,12 @@ async function executePostFunctions(
       const nextIssue = { ...issue, ...updatedIssue, ...fields }
       activateCodeReviewAgents((nextIssue.task_key ?? '?') as string, (nextIssue.title ?? '') as string)
     }
+
+    if (action === 'activate_reviewer') {
+      const nextIssue = { ...issue, ...updatedIssue, ...fields }
+      const reviewer = (nextIssue.reviewer ?? nextIssue.assignee ?? 'po') as string
+      activateAgentAsync(reviewer, (nextIssue.task_key ?? '?') as string, (nextIssue.title ?? '') as string, toStatus, (nextIssue.id ?? '') as string)
+    }
   }
 }
 
