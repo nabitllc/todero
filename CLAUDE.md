@@ -1,24 +1,29 @@
-# CLAUDE.md — Mission Control (kaos-mission-control)
+# CLAUDE.md — Todero (Mission Control)
 
-This is the Mission Control Next.js app — the operational hub for the Todero platform.
+This is the Todero Next.js app — the operational hub for the Todero platform.
 It runs the MC API, issue board, and agent visualization dashboard.
 
 ## What This App Is
 
-Mission Control is a Next.js 14 app (App Router) that provides:
+Todero is a Next.js 14 app (App Router) that provides:
 - **MC API** (`/api/issues`) — the single source of truth for all issue operations
 - **Issue board** — sprint management, backlog, epics, features, tasks
 - **Agent dashboard** — real-time visualization of agent activity (pixel-art office)
 - **Supabase integration** — all data persisted in Supabase
 
-**Always running at:** `http://localhost:3000`
+**Production URL:** `https://kaos.nabit.work` (Cloudflare tunnel → localhost:3000)
+**Local dev port:** `3000`
 
 ## Companion Repo
 
 Agent config, memory, scripts, and skills live in `kaos-config`:
-- Path: `/Users/kemuniagent/.openclaw/workspace`
+- Path: `/Users/kemuniagent/kaos-config`
 - GitHub: `github.com/nabitllc/kaos-config`
 - Read `kaos-config/CLAUDE.md` for full agent/operational context
+
+**Note (TOD-798):** `~/.openclaw/workspace` is the *old* path and no longer exists.
+Do not reference it. The migration happened 2026-04-09. If you see any file
+pointing at `.openclaw/workspace`, it's a stale bug — fix it to `kaos-config`.
 
 ## Session Startup
 
@@ -117,7 +122,7 @@ npm run dev
 npm run build && npm start
 ```
 
-LaunchAgent label: `com.nabit.mission-control` (auto-starts at boot)
+LaunchAgent label: `com.nabit.todero` (auto-starts at boot, serves `kaos.nabit.work`)
 
 ## Git Branches
 

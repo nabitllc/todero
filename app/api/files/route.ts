@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
-const WORKSPACE = '/Users/kemuniagent/.openclaw/workspace'
+// TOD-798: kaos-config is the canonical workspace since 2026-04-09.
+// Do not revert to .openclaw/workspace — that path was moved and will not exist.
+const WORKSPACE = '/Users/kemuniagent/kaos-config'
 
 export async function GET(req: NextRequest) {
   const sub = new URL(req.url).searchParams.get('path') || ''
