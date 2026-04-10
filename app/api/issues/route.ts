@@ -985,6 +985,71 @@ export async function PATCH(req: NextRequest) {
 
   const transitioningIntoCodeReview = fields.status === 'code_review' && before?.status !== 'code_review'
 
+  // TOD-XXX (2026-04-10 validators requested by Michael):
+  // V1 — commit_sha required before in_progress → code_review
+  // V2 — regression_test required in the same transition
+  if (transitioningIntoCodeReview) {
+    const mergedNow = { ...before, ...fields } as Record<string, unknown>
+    const commitSha = (mergedNow.commit_sha as string | null | undefined) || null
+    const regressionTest = (mergedNow.regression_test as string | null | undefined) || null
+    if (!commitSha || commitSha === 'none') {
+      return NextResponse.json(
+        { error: 'commit_sha is required for code_review transition. Run `git rev-parse HEAD` and include the value.', field: 'commit_sha' },
+        { status: 422 }
+      )
+    }
+    if (!regressionTest) {
+      return NextResponse.json(
+        { error: 'regression_test is required for code_review transition. Describe in 1-2 lines how to verify the fix.', field: 'regression_test' },
+        { status: 422 }
+      )
+    }
+  }
+
+  // V3 — Feature must have ≥1 child task before leaving defined
+  // (i.e. feature in `defined` cannot transition to `open` without children)
+  const transitioningFeatureOutOfDefined =
+    fields.status === 'open' &&
+    before?.status === 'defined' &&
+    (before?.type === 'feature' || fields.type === 'feature')
+  if (transitioningFeatureOutOfDefined) {
+    const featureId = before?.id
+    if (featureId) {
+      const { count: childCount } = await supabase
+        .from('issues')
+        .select('id', { count: 'exact', head: true })
+        .eq('parent_id', featureId)
+      if ((childCount ?? 0) < 1) {
+        return NextResponse.json(
+          { error: 'Feature must have at least 1 child task before transitioning from defined to open. Create child tasks first.', field: 'children' },
+          { status: 422 }
+        )
+      }
+    }
+  }
+
+  // V4 — closing_notes required for released/completed → closed, and only auditor
+  const transitioningToClosed =
+    fields.status === 'closed' &&
+    (before?.status === 'released' || before?.status === 'completed')
+  if (transitioningToClosed) {
+    const mergedNow = { ...before, ...fields } as Record<string, unknown>
+    const closingNotes = (mergedNow.closing_notes as string | null | undefined) || (mergedNow.reviewer_notes as string | null | undefined) || null
+    if (!closingNotes || String(closingNotes).trim().length < 10) {
+      return NextResponse.json(
+        { error: 'closing_notes (or reviewer_notes) is required to close an issue. Describe the audit outcome in ≥10 chars.', field: 'closing_notes' },
+        { status: 422 }
+      )
+    }
+    if (transitionedBy !== 'auditor' && transitionedBy !== 'main' && transitionedBy !== 'michael') {
+      return NextResponse.json(
+        { error: 'Only auditor can close a released/completed issue. transitioned_by must be auditor.', field: 'transitioned_by' },
+        { status: 422 }
+      )
+    }
+  }
+
+
   if (before) {
     if (before.status === 'code_review' && ['tester', 'designer', 'ux'].includes(transitionedBy ?? '')) {
       if (transitionedBy === 'tester') {

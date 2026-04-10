@@ -1,24 +1,23 @@
 // TOD-793: Claude Code CLI adapter.
-// TOD-806 (2026-04-10): worktree isolation.
-// TOD-XXX (2026-04-10 round 7): fix silent death pattern.
-//   - Switched from `exec(cmd)` with a quoted prompt → `spawn(bin, [...args])`
-//     so shell escaping can't break the spawn. Prompts with parens, quotes,
-//     backticks, @symbols, etc. no longer need to be escaped at all.
-//   - Capture exit code and write it to the log when the child dies.
-//   - Pipe stdout/stderr through to the log file immediately (no buffering),
-//     so we can see "alive but working" vs "dead at spawn".
-//   - Emit a "SPAWN OK" sentinel line at the very top so we can distinguish
-//     "never ran" from "ran but produced nothing".
+// TOD-806 (2026-04-10): git worktree isolation.
+// TOD-XXX (2026-04-10 round 9): TRUE detach from parent Next.js process.
+//
+// Why this file has been rewritten 3 times in 24 hours:
+// - v1: exec() with shell-quoted prompt → shell escape broke on @/()/backticks
+// - v2: spawn() with args array → no more escaping, but children got SIGKILLed
+//   whenever Next.js restarted (parent teardown killed Node's tracked children)
+// - v3 (THIS): write prompt to a temp file, spawn a bash wrapper with
+//   `nohup bash -c '…' &` so the child is in a new session AND ignores SIGHUP.
+//   Node drops the child reference entirely. Next.js restart cannot kill it.
 
 import { spawn } from 'child_process'
-import { existsSync, openSync, closeSync, writeSync, appendFileSync } from 'fs'
+import { existsSync, writeFileSync, mkdtempSync, appendFileSync, unlinkSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? '/Users/kemuniagent/.local/bin/claude'
-
-// Worktree teardown timer — 60 min should cover any reasonable task.
-// If the agent is still running at that point the worktree will be force-removed.
 const WORKTREE_TEARDOWN_MINUTES = 60
 
 export const claudeCodeRuntime: AgentRuntime = {
@@ -36,7 +35,7 @@ export const claudeCodeRuntime: AgentRuntime = {
   },
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult> {
-    // TOD-806: Prepare an isolated git worktree.
+    // ── Prepare isolated worktree ───────────────────────────────────
     const wtResult = prepareWorktree({
       agentId: opts.agentId,
       taskKey: extractTaskKeyFromBranch(opts.branch),
@@ -54,69 +53,74 @@ export const claudeCodeRuntime: AgentRuntime = {
       )
     }
 
-    // Map model alias to Claude CLI flag
-    const args: string[] = []
-    if (opts.bypassPermissions !== false) {
-      args.push('--permission-mode', 'bypassPermissions')
-    }
-    if (opts.model) {
-      args.push('--model', opts.model)
-    }
-    args.push('--print', opts.prompt)
-    // Note: we intentionally do NOT use --output-format=stream-json here because
-    // it changes the output contract for downstream parsers (token-ledger wrapper,
-    // etc.). The regular --print output is human-readable and we pipe it to a log
-    // so the buffering-hides-death problem is solved at the pipe level, not the
-    // format level.
-
-    // Write a "SPAWN OK" marker to the log BEFORE we spawn, so the log file exists
-    // and we can distinguish "never wrote the marker" from "wrote the marker then died".
+    // ── Write prompt to a temp file (avoids shell escaping entirely) ─
+    // Using the OS temp dir so the file lives outside the project tree.
+    // Cleanup happens after the worktree teardown timer fires.
+    let promptFile: string | null = null
     try {
-      const fd = openSync(opts.logFile, 'w')
-      writeSync(fd, `[spawn-start] ${new Date().toISOString()} agentId=${opts.agentId} model=${opts.model ?? 'default'} workingDir=${effectiveWorkingDir}\n`)
-      writeSync(fd, `[spawn-start] prompt bytes: ${opts.prompt.length}\n`)
-      writeSync(fd, `[spawn-start] ---\n`)
-      closeSync(fd)
+      const tmp = mkdtempSync(join(tmpdir(), `todero-spawn-${opts.agentId}-`))
+      promptFile = join(tmp, 'prompt.txt')
+      writeFileSync(promptFile, opts.prompt, { encoding: 'utf8' })
+    } catch (err) {
+      return {
+        ok: false,
+        error: `failed to write prompt file: ${err instanceof Error ? err.message : String(err)}`,
+        runtime: 'claude-code',
+      }
+    }
+
+    // ── Write spawn header BEFORE launching so even a dead spawn is visible ─
+    try {
+      writeFileSync(
+        opts.logFile,
+        `[spawn-start] ${new Date().toISOString()} agentId=${opts.agentId} model=${opts.model ?? 'default'} workingDir=${effectiveWorkingDir}\n` +
+        `[spawn-start] prompt bytes: ${opts.prompt.length} (file: ${promptFile})\n` +
+        `[spawn-start] ---\n`
+      )
     } catch (err) {
       console.warn(`[claude-code] failed to write spawn marker to ${opts.logFile}: ${err instanceof Error ? err.message : String(err)}`)
     }
 
+    const modelFlag = opts.model ? `--model ${opts.model}` : ''
+    const permissionFlag = opts.bypassPermissions !== false ? '--permission-mode bypassPermissions' : ''
+
+    // ── TRUE DETACH via nohup + bash wrapper ─────────────────────────
+    //
+    // This shell chain is the key to surviving Next.js restarts:
+    //   1. `cd <worktree>`      → agent runs in its isolated git worktree
+    //   2. `nohup ... &`        → child ignores SIGHUP when the parent dies
+    //   3. `</dev/null`         → no stdin connection to parent
+    //   4. `>$logFile 2>&1`     → stdout+stderr go directly to the log file
+    //                             (the file descriptor is owned by the CHILD,
+    //                             not passed from the parent, so when Node
+    //                             closes its fds the child's fd is unaffected)
+    //   5. `disown`             → shell forgets the child, no reaper
+    //
+    // The prompt is read from $promptFile via \`"$(cat $promptFile)"\` which
+    // is INSIDE the bash script — bash handles the quoting correctly for any
+    // characters in the prompt (including @, (, ), backticks, single quotes).
+    //
+    // We spawn bash with args=['-c', script]. No shell-escape issues because
+    // Node's spawn() passes args directly to execve — NOT through a shell
+    // a second time.
+    const script = `
+set -e
+cd ${JSON.stringify(effectiveWorkingDir)}
+nohup ${CLAUDE_BIN} ${permissionFlag} ${modelFlag} --print "$(cat ${JSON.stringify(promptFile)})" >> ${JSON.stringify(opts.logFile)} 2>&1 </dev/null &
+CHILD=$!
+disown $CHILD || true
+echo "[spawn-ok] child_pid=$CHILD" >> ${JSON.stringify(opts.logFile)}
+`
+
     try {
-      // spawn() takes args as an array — ZERO shell escaping concerns.
-      // stdio: ['ignore', <logFd>, <logFd>] redirects stdout+stderr to the log file.
-      const outFd = openSync(opts.logFile, 'a')
-      const child = spawn(CLAUDE_BIN, args, {
-        cwd: effectiveWorkingDir,
+      const child = spawn('/bin/bash', ['-c', script], {
         detached: true,
-        stdio: ['ignore', outFd, outFd],
+        stdio: 'ignore',       // completely severed from the parent's FDs
         env: process.env,
       })
-
-      // Capture exit code when the child dies. This is the KEY fix for silent
-      // deaths: we always get a terminal log line telling us WHY the process
-      // ended, even if claude itself wrote nothing.
-      const childPid = child.pid
-      child.on('exit', (code, signal) => {
-        try {
-          appendFileSync(
-            opts.logFile,
-            `\n[spawn-exit] ${new Date().toISOString()} pid=${childPid} code=${code ?? 'null'} signal=${signal ?? 'null'}\n`
-          )
-        } catch {
-          // swallow — logging a logging error is pointless
-        }
-        try { closeSync(outFd) } catch {}
-      })
-      child.on('error', (err) => {
-        try {
-          appendFileSync(
-            opts.logFile,
-            `\n[spawn-error] ${new Date().toISOString()} ${err.message}\n`
-          )
-        } catch {}
-      })
-
-      // Detach so the HTTP handler can return immediately
+      // Critical: unref so Node's event loop doesn't wait, AND we don't
+      // attach an exit handler (no child.on('exit')). Node has zero
+      // reference to the spawned claude process after this point.
       child.unref()
 
       // Schedule worktree teardown after the timeout window
@@ -127,23 +131,31 @@ export const claudeCodeRuntime: AgentRuntime = {
           if (!tr.ok) {
             console.warn(`[claude-code] worktree teardown failed for ${teardownPath}: ${tr.error}`)
           }
+          // Clean up the prompt temp dir too
+          if (promptFile) {
+            try {
+              const dir = promptFile.substring(0, promptFile.lastIndexOf('/'))
+              rmSync(dir, { recursive: true, force: true })
+            } catch {}
+          }
         }, teardownMs).unref()
       }
 
       return {
         ok: true,
-        pid: childPid,
-        command: `${CLAUDE_BIN} ${args.slice(0, -1).join(' ')} --print <${opts.prompt.length}B>`,
+        command: `nohup claude ${permissionFlag} ${modelFlag} --print <${opts.prompt.length}B from ${promptFile}>`,
         runtime: 'claude-code',
       }
     } catch (err: unknown) {
-      // Spawn itself failed — tear down the worktree and log the error
       try {
         appendFileSync(
           opts.logFile,
           `\n[spawn-failure] ${new Date().toISOString()} ${err instanceof Error ? err.message : String(err)}\n`
         )
       } catch {}
+      if (promptFile) {
+        try { unlinkSync(promptFile) } catch {}
+      }
       if (teardownPath) {
         teardownWorktree(teardownPath)
       }
