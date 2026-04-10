@@ -43,25 +43,27 @@ const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
 const WORKSPACE = '/Users/kemuniagent/kaos-config'
 const TODERO_DIR = '/Users/kemuniagent/todero'
 
-function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, issueId?: string) {
+function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, _issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
   if (!agentId) return
 
   // Only activate for REVIEW statuses (code_review, product_review).
-  // For open/in_progress work, run-agent is the single entry point.
-  // This prevents duplicate spawning from multiple post-functions firing.
   if (status !== 'code_review' && status !== 'product_review') return
 
-  const msg = status === 'code_review'
-    ? `Issue ${taskKey} needs review: ${title}. Pick it up and review against AC + DoD.`
-    : `Issue ${taskKey} is in product review: ${title}. Verify it meets acceptance criteria.`
-
-  // Spawn Claude Code agent fully detached via setsid
-  const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
-  const prompt = `<workspace-context>${context}</workspace-context>\n\nYou are ${agentId}. ${msg}`
-  const escaped = prompt.replace(/'/g, "'\\''")
-  const cmd = `cd ${TODERO_DIR} && nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > /tmp/agent-${agentId}-$(date +%s).log 2>&1 < /dev/null & disown`
-  execAsync(cmd, { timeout: 5000 }, () => {})
+  // TOD-XXX (2026-04-10): previously spawned via exec() with the broken
+  // `$(cat ...)` shell substitution — same root cause as the silent death
+  // bug. Now delegates to /api/run-agent (which uses spawn() + worktree
+  // isolation + log sentinels) via internal fetch. Fire-and-forget so the
+  // PATCH response isn't blocked on the spawn.
+  void (async () => {
+    try {
+      await fetch(`http://localhost:3000/api/run-agent?agent=${agentId}`, { method: 'POST' })
+    } catch (err) {
+      console.warn(`[activateAgentAsync] dispatch to ${agentId} failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  })()
+  // Unused params kept for backward-compat with existing callers
+  void taskKey; void title
 }
 
 function activateCodeReviewAgents(taskKey: string, title: string) {
