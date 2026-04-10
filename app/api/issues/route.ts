@@ -40,7 +40,8 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
 }
 
 const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
-const WORKSPACE = '/Users/kemuniagent/.openclaw/workspace'
+const WORKSPACE = '/Users/kemuniagent/kaos-config'
+const TODERO_DIR = '/Users/kemuniagent/todero'
 
 function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
@@ -69,11 +70,12 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
   } else {
     msg = `Issue ${taskKey} is assigned to you (${status}): ${title}. Check it and take action.`
   }
-  // Claude Code replaces openclaw agent
+  // Spawn Claude Code agent in background with full context
   const context = `$(cat ${WORKSPACE}/SOUL.md ${WORKSPACE}/AGENTS.md ${WORKSPACE}/self-improving/memory.md 2>/dev/null)`
   const prompt = `<workspace-context>${context}</workspace-context>\n\nYou are ${agentId}. ${msg}`
-  const cmd = `${CLAUDE_BIN} --permission-mode bypassPermissions --print ${JSON.stringify(prompt)} 2>/dev/null`
-  execAsync(cmd, { timeout: 30000 }, () => {})
+  const escaped = prompt.replace(/'/g, "'\\''")
+  const cmd = `cd ${TODERO_DIR} && nohup ${CLAUDE_BIN} --permission-mode bypassPermissions --print '${escaped}' > /tmp/agent-${agentId}-$(date +%s).log 2>&1 &`
+  execAsync(cmd, { timeout: 5000 }, () => {})
 }
 
 function activateCodeReviewAgents(taskKey: string, title: string) {
