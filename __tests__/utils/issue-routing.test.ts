@@ -43,13 +43,52 @@ describe('issue routing helpers', () => {
     expect(completedFields).toMatchObject({ assignee: 'auditor', auditor: 'auditor' })
   })
 
-  it('clears assignee on closed and reopens to owner/worked_by', () => {
+  it('clears assignee on closed', () => {
     const closedFields: Record<string, unknown> = { status: 'closed' }
     applyExecutionStatusRouting({ owner: 'builder' }, closedFields)
     expect(closedFields.assignee).toBeNull()
+  })
 
-    expect(resolveReopenAssignee({ owner: 'main', worked_by: 'builder' })).toBe('main')
-    expect(resolveReopenAssignee({ worked_by: 'builder' })).toBe('builder')
+  describe('resolveReopenAssignee — type-aware open-state routing', () => {
+    it('routes task to builder', () => {
+      expect(resolveReopenAssignee({ type: 'task', owner: 'main' })).toBe('builder')
+    })
+
+    it('routes bug to builder', () => {
+      expect(resolveReopenAssignee({ type: 'bug', owner: 'main' })).toBe('builder')
+    })
+
+    it('routes feature to builder (not owner/main)', () => {
+      expect(resolveReopenAssignee({ type: 'feature', owner: 'main' })).toBe('builder')
+    })
+
+    it('routes ops to ops', () => {
+      expect(resolveReopenAssignee({ type: 'ops', owner: 'ops' })).toBe('ops')
+    })
+
+    it('routes research to scout', () => {
+      expect(resolveReopenAssignee({ type: 'research', owner: 'scout' })).toBe('scout')
+    })
+
+    it('prefers worked_by over type-based routing', () => {
+      expect(resolveReopenAssignee({ type: 'feature', owner: 'main', worked_by: 'builder' })).toBe('builder')
+      expect(resolveReopenAssignee({ type: 'ops', worked_by: 'builder' })).toBe('builder')
+    })
+
+    it('never returns main or KAOS as open-state assignee', () => {
+      const result1 = resolveReopenAssignee({ type: 'feature', owner: 'main' })
+      const result2 = resolveReopenAssignee({ type: 'epic', owner: 'main' })
+      expect(result1).not.toBe('main')
+      expect(result2).not.toBe('main')
+      expect(result1).not.toBe('KAOS')
+      expect(result2).not.toBe('KAOS')
+    })
+
+    it('falls back to builder for unknown types', () => {
+      expect(resolveReopenAssignee({ type: 'unknown' })).toBe('builder')
+      expect(resolveReopenAssignee(null)).toBe('builder')
+      expect(resolveReopenAssignee(undefined)).toBe('builder')
+    })
   })
 
   it('computes dual review state and aggregates notes', () => {

@@ -15,8 +15,15 @@ export function computeDualReviewState(issue: Record<string, unknown>) {
 }
 
 export function resolveReopenAssignee(issue: Record<string, unknown> | null | undefined) {
-  const preferred = issue?.owner ?? issue?.worked_by
-  return typeof preferred === 'string' && preferred.trim() ? preferred : 'builder'
+  // Returning worker gets priority over type-based routing
+  const workedBy = issue?.worked_by
+  if (typeof workedBy === 'string' && workedBy.trim()) return workedBy
+
+  // Route by type — owner is for refinement, never used for open-state assignment
+  const type = typeof issue?.type === 'string' ? issue.type.toLowerCase() : ''
+  if (type === 'ops') return 'ops'
+  if (type === 'research') return 'scout'
+  return 'builder'
 }
 
 export function aggregateReviewerNotes(issue: Record<string, unknown>) {
