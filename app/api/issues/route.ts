@@ -23,6 +23,7 @@ import {
   normalizeReviewStatus,
   resolveReopenAssignee,
 } from '@/lib/issue-routing'
+import { recordAgentFailure, resetAgentFailures } from '@/lib/loop-breaker'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -1216,6 +1217,20 @@ export async function PATCH(req: NextRequest) {
   if (isNewFailure && data) {
     notifyTestFailure(data)
     if ((data.fail_count ?? 0) >= 3) notifyEscalation(data)
+    // TOD-766: loop breaker — track consecutive failures at the agent level
+    const failingAgent = (before?.assignee ?? data.assignee) as string | undefined
+    if (failingAgent) {
+      recordAgentFailure(failingAgent, id as string, (before?.title ?? data.title) as string | undefined).catch(() => {})
+    }
+  }
+
+  // TOD-766: reset consecutive failure count when a test passes
+  const isNewPass = fields.test_status === 'passed' && before?.test_status !== 'passed'
+  if (isNewPass && data) {
+    const passingAgent = (before?.assignee ?? data.assignee) as string | undefined
+    if (passingAgent) {
+      resetAgentFailures(passingAgent).catch(() => {})
+    }
   }
 
   if (isCompletedIssueStatus(fields.status) && before?.assignee === 'ux' && before?.parent_id) {
