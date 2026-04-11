@@ -103,6 +103,12 @@ export const claudeCodeRuntime: AgentRuntime = {
     // We spawn bash with args=['-c', script]. No shell-escape issues because
     // Node's spawn() passes args directly to execve — NOT through a shell
     // a second time.
+    // The script does two things:
+    //   1. Launch claude detached (nohup + & + disown) — survives Next.js restart
+    //   2. Launch a SEPARATE detached bash watcher that polls the claude pid
+    //      and writes [spawn-exit] when it dies. The watcher is also nohup'd
+    //      so it outlives Next.js too. This restores the death visibility we
+    //      lost by removing child.on('exit') without reattaching Node.
     const script = `
 set -e
 cd ${JSON.stringify(effectiveWorkingDir)}
@@ -110,6 +116,11 @@ nohup ${CLAUDE_BIN} ${permissionFlag} ${modelFlag} --print "$(cat ${JSON.stringi
 CHILD=$!
 disown $CHILD || true
 echo "[spawn-ok] child_pid=$CHILD" >> ${JSON.stringify(opts.logFile)}
+# Detached watcher: polls the child every 5s and logs [spawn-exit] when gone.
+# Uses nohup so it outlives the Next.js parent. Max watch time: 90 min
+# (agent should be done long before that; if not, teardown timer will GC).
+nohup bash -c 'CHILD='"$CHILD"'; LOG='"${JSON.stringify(opts.logFile).replace(/'/g, "'\\''")}"'; for i in $(seq 1 1080); do if ! kill -0 $CHILD 2>/dev/null; then echo "[spawn-exit] $(date -u +%FT%TZ) pid=$CHILD watcher_detected=true" >> "$LOG"; exit 0; fi; sleep 5; done' >/dev/null 2>&1 </dev/null &
+disown || true
 `
 
     try {

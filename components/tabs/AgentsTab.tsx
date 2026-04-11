@@ -5,6 +5,27 @@ import { Button, EmptyState as EmptyStateUI } from '@/components/ui'
 import { Users } from 'lucide-react'
 import AgentDetailView from '@/components/tabs/AgentDetailView'
 
+function formatAgo(ms: number): string {
+  const sec = Math.floor(ms / 1000)
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h}h ${min % 60}m ago`
+  const d = Math.floor(h / 24)
+  return `${d}d ${h % 24}h ago`
+}
+
+function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>): string {
+  const ar = runsData[agentId]
+  if (!ar?.startedAt) return 'never'
+  const started = new Date(ar.startedAt).getTime()
+  if (Number.isNaN(started)) return 'unknown'
+  const diff = Date.now() - started
+  if (ar.status === 'running' && diff < 30 * 60_000) return 'active now'
+  return formatAgo(diff)
+}
+
 export default function AgentsTab({
   displayAgents,
   agentLiveStatus,
@@ -48,7 +69,7 @@ export default function AgentsTab({
                       <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
                       {ls0.dot === 'green' && <p className="text-emerald-400/80 text-[10px] font-mono mt-0.5 truncate max-w-[200px]">↳ {ls0.label}</p>}
                       {ls0.dot === 'amber' && <p className="text-amber-400/70 text-[10px] font-mono mt-0.5">{ls0.label}</p>}
-                      {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">Idle</p>}
+                      {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">Idle · last active {lastActiveLabel(displayAgents[0].id, agentRunsData)}</p>}
                     </div>
                   </div>
                   <p className="text-white/50 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
@@ -92,6 +113,9 @@ export default function AgentsTab({
                         <p className="text-white/50 text-xs truncate">{a.role}</p>
                         <p className={`text-[10px] font-mono truncate ${ls.dot==='green'?'text-emerald-400/80':ls.dot==='amber'?'text-amber-400/70':'text-white/20'}`}>
                           {ls.dot === 'green' ? `↳ ${ls.label}` : ls.label}
+                        </p>
+                        <p className="text-[9px] font-mono text-white/30 truncate" title="Time since last run">
+                          last active {lastActiveLabel(a.id, agentRunsData)}
                         </p>
                       </div>
                     </div>
