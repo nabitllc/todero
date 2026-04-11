@@ -81,15 +81,28 @@ const PROJECT_EMOJI: Record<string, string> = {
 
 function postDiscord(channelId: string, content: string) {
   const token = process.env.DISCORD_BOT_TOKEN ?? DISCORD_BOT_TOKEN
+  // Fire-and-forget but log non-2xx responses — `fetch` does NOT throw on
+  // HTTP errors, only on network errors, so the old `.catch()` alone missed
+  // 401/403/429 responses silently (bit us 2026-04-11 on #0-created).
+  // process.stderr.write bypasses stdout buffering so we see failures live.
   fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: 'POST',
     headers: {
       'Authorization': `Bot ${token}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)'
+      'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
     },
-    body: JSON.stringify({ content })
-  }).catch(err => console.error('[discord]', err))
+    body: JSON.stringify({ content }),
+  })
+    .then(async r => {
+      if (!r.ok) {
+        const body = await r.text().catch(() => '')
+        process.stderr.write(`[discord] channel=${channelId} status=${r.status} body=${body.slice(0, 300)}\n`)
+      } else {
+        process.stderr.write(`[discord] channel=${channelId} ok\n`)
+      }
+    })
+    .catch(err => process.stderr.write(`[discord] channel=${channelId} network-error: ${String(err)}\n`))
 }
 
 const STATUS_EMOJI: Record<string, string> = {
