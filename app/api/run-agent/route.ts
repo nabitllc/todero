@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getQueueConfig, getAllQueueAgentIds } from '@/lib/agent-queue'
 import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
+import { isAgentPaused } from '@/lib/loop-breaker'
 import { exec } from 'child_process'
 import { readFileSync as fsReadFileSync } from 'fs'
 import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
@@ -41,6 +42,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: 'Missing ?agent= parameter or agent_id in body', available: getAllQueueAgentIds() },
       { status: 400 }
+    )
+  }
+
+  // TOD-766: Loop breaker guard — skip agents paused after 3 consecutive failures
+  if (await isAgentPaused(agentId)) {
+    return NextResponse.json(
+      { error: `Agent '${agentId}' is paused by loop breaker. Check inbox for review request.`, paused: true, loop_breaker: true },
+      { status: 503 }
     )
   }
 
