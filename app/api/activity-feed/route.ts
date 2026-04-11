@@ -32,6 +32,15 @@ function statusIcon(status: string): string {
   return map[status] ?? '📌'
 }
 
+function deriveEventType(status: string): string {
+  if (status === 'open') return 'issue_opened'
+  if (status === 'in_progress') return 'issue_started'
+  if (status === 'code_review') return 'issue_in_review'
+  if (status === 'approved' || status === 'completed') return 'issue_completed'
+  if (status === 'cancelled') return 'issue_cancelled'
+  return 'issue_change'
+}
+
 function describeTransition(title: string, status: string, resolution_type?: string): string {
   const label = resolution_type && resolution_type !== 'none' ? ` (${resolution_type})` : ''
   const verb: Record<string, string> = {
@@ -46,19 +55,25 @@ function describeTransition(title: string, status: string, resolution_type?: str
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '30'), 100)
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 100)
+  const offset = Math.max(parseInt(searchParams.get('offset') ?? '0'), 0)
   const project = searchParams.get('project')
-
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const actor = searchParams.get('actor')
+  const issueId = searchParams.get('issue_id')
+  const eventTypeParam = searchParams.get('event_type')
+  const eventTypeFilter = eventTypeParam
+    ? eventTypeParam.split(',').map(s => s.trim()).filter(Boolean)
+    : null
 
   let query = supabase
     .from('issues')
     .select('id,task_key,title,status,assignee,updated_at,resolution_type,project,type')
-    .gte('updated_at', since)
     .order('updated_at', { ascending: false })
-    .limit(limit)
+    .range(offset, offset + limit - 1)
 
   if (project) query = query.eq('project', project)
+  if (actor) query = query.eq('assignee', actor)
+  if (issueId) query = query.eq('id', issueId)
 
   const { data, error } = await query
 
@@ -67,24 +82,31 @@ export async function GET(req: Request) {
   }
 
   const now = Date.now()
-  const events = (data ?? []).map((issue: any) => {
+  let events = (data ?? []).map((issue: any) => {
     const updatedMs = new Date(issue.updated_at).getTime()
     const agoMin = Math.round((now - updatedMs) / 60000)
     const aType = actorType(issue.assignee)
+    const eventType = deriveEventType(issue.status)
     return {
       id: issue.id,
       icon: statusIcon(issue.status),
+      actor: issue.assignee ?? null,
       actor_name: ACTOR_NAMES[issue.assignee] ?? issue.assignee ?? 'System',
       actor_type: aType,
       description: describeTransition(issue.title, issue.status, issue.resolution_type),
+      issue_title: issue.title,
       task_key: issue.task_key,
       issue_id: issue.id,
       timestamp: issue.updated_at,
       ago_min: agoMin,
-      event_type: 'issue_change',
+      event_type: eventType,
       project: issue.project,
     }
   })
+
+  if (eventTypeFilter) {
+    events = events.filter(e => eventTypeFilter.includes(e.event_type))
+  }
 
   return NextResponse.json(events)
 }
