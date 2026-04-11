@@ -94,13 +94,13 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
 
 // 3-column board (TOD-XXX simplification 2026-04-10):
 // Queue   = ready to be picked up (defined + open)
-// Ongoing = active work (in_progress + both review states)
+// Active  = work in flight (in_progress + both review states)
 // Achieved= shipped or ready to ship (approved + completed + released)
 // Backlog and closed are NOT columns — they surface as count chips in the header.
 const BOARD_COLUMNS = [
-  { id:'queue',    label:'Queue',    color:'#3b82f6', statuses:['defined','open'] },
-  { id:'ongoing',  label:'Ongoing',  color:'#818cf8', statuses:['in_progress','code_review','product_review'] },
-  { id:'achieved', label:'Achieved', color:'#22c55e', statuses:['approved','completed','released'] },
+  { id:'queue',    label:'Queue',    color:'#3b82f6', active:false, statuses:['defined','open'] },
+  { id:'ongoing',  label:'Active',   color:'#818cf8', active:true,  statuses:['in_progress','code_review','product_review'] },
+  { id:'achieved', label:'Achieved', color:'#22c55e', active:false, statuses:['approved','completed','released'] },
 ]
 
 // Statuses that get a small count chip but no column
@@ -726,13 +726,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         const colTasks = group.children.filter(t => col.statuses.includes(t.status))
                         return (
                           <div key={col.id}
-                            className="flex-1 min-w-[240px] flex flex-col rounded-xl bg-[#0f0f0f]/50"
-                            style={{ borderTop: `2px solid ${col.color}`, minHeight: '60px' }}
+                            className="flex-1 min-w-[240px] flex flex-col rounded-xl"
+                            style={{ borderTop: `${col.active ? '3px' : '2px'} solid ${col.color}`, minHeight: '60px', background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)' }}
                             onDragOver={e => e.preventDefault()}
                             onDrop={() => handleDrop(col.id)}>
-                            <div className="flex items-center gap-2 px-3 py-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
-                              <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
+                            <div className={`flex items-center gap-2 px-3 py-1.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
+                              {col.active
+                                ? <span className="relative flex w-1.5 h-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{background:col.color}} /></span>
+                                : <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
+                              }
+                              <span className="text-[10px] font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.6)'}}>{col.label}</span>
                               <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
                             </div>
                             <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
@@ -808,13 +811,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         const colTasks = tasks.filter(t => col.statuses.includes(t.status))
                         return (
                           <div key={col.id}
-                            className="flex-1 min-w-[240px] flex flex-col rounded-xl bg-[#0f0f0f]/50"
-                            style={{ borderTop: `2px solid ${col.color}`, minHeight: '60px' }}
+                            className="flex-1 min-w-[240px] flex flex-col rounded-xl"
+                            style={{ borderTop: `${col.active ? '3px' : '2px'} solid ${col.color}`, minHeight: '60px', background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)' }}
                             onDragOver={e => e.preventDefault()}
                             onDrop={() => handleDrop(col.id)}>
-                            <div className="flex items-center gap-2 px-3 py-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
-                              <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
+                            <div className={`flex items-center gap-2 px-3 py-1.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
+                              {col.active
+                                ? <span className="relative flex w-1.5 h-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{background:col.color}} /></span>
+                                : <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
+                              }
+                              <span className="text-[10px] font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.6)'}}>{col.label}</span>
                               <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
                             </div>
                             <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
@@ -921,13 +927,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                   const colTasks = projTasks.filter(t => col.statuses.includes(t.status))
                                   return (
                                     <div key={col.id}
-                                      className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
-                                      style={{borderTop:`2px solid ${col.color}`, minHeight: '60px'}}
+                                      className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+                                      style={{borderTop:`${col.active ? '3px' : '2px'} solid ${col.color}`, minHeight: '60px', background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)'}}
                                       onDragOver={e => e.preventDefault()}
                                       onDrop={() => handleDrop(col.id)}>
-                                      <div className="flex items-center gap-2 px-3 py-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
-                                        <span className="text-[10px] font-semibold text-white/50">{col.label} ({colTasks.length})</span>
+                                      <div className={`flex items-center gap-2 px-3 py-1.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
+                                        {col.active
+                                          ? <span className="relative flex w-1.5 h-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{background:col.color}} /></span>
+                                          : <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
+                                        }
+                                        <span className="text-[10px] font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.5)'}}>{col.label} ({colTasks.length})</span>
                                       </div>
                                       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
                                         {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
@@ -968,15 +977,21 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           const colTasks = filtered.filter(t => col.statuses.includes(t.status))
           return (
             <div key={col.id}
-              className={`flex-1 min-w-0 md:min-w-[280px] flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
-              style={{borderTop:`2px solid ${col.color}`}}
+              className={`flex-1 min-w-0 md:min-w-[280px] flex flex-col rounded-xl ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+              style={{
+                borderTop: `${col.active ? '3px' : '2px'} solid ${col.color}`,
+                background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)',
+              }}
               onDragOver={e => e.preventDefault()}
               onDrop={() => handleDrop(col.id)}>
               {/* Column header */}
-              <div className="flex items-center justify-between px-3 py-2.5">
+              <div className={`flex items-center justify-between px-3 py-2.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
-                  <span className="text-xs font-semibold text-white/60">{col.label}</span>
+                  {col.active
+                    ? <span className="relative flex w-2 h-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-2 h-2" style={{background:col.color}} /></span>
+                    : <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
+                  }
+                  <span className="text-xs font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.6)'}}>{col.label}</span>
                   <span className="text-xs font-mono text-white/40">{colTasks.length}</span>
                   {col.id === 'achieved' && filtered.length > 0 && (
                     <span className="text-[10px] text-white/30 font-mono">({Math.round((colTasks.length / filtered.length) * 100)}%)</span>
