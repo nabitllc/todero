@@ -713,7 +713,22 @@ export async function POST(req: NextRequest) {
       // 'defined' then to 'open' once they're ready for Builder.
       effectiveAssignee = 'po'; routingNote = `[auto-routed to po: type=feature + project=${projectStr}]`
     } else if (effectiveType === 'epic') {
-      effectiveAssignee = 'main'; routingNote = '[auto-routed to main: type=epic]'
+      // TOD-XXX (2026-04-11): route epics to their hub SME (Tier-1 decomposer).
+      // This is how SMEs actually receive work — the run-agent pickup query
+      // uses assignee=eq.<agentId>, so epics must be assigned to the SME that
+      // owns the project. Fallback to main for unknown projects.
+      const projLower = (projectStr || '').toLowerCase()
+      if (projLower === 'todero') {
+        effectiveAssignee = 'todero-sme'; routingNote = '[auto-routed to todero-sme: epic+project=Todero]'
+      } else if (projLower === 'kemuni') {
+        effectiveAssignee = 'kemuni-sme'; routingNote = '[auto-routed to kemuni-sme: epic+project=Kemuni]'
+      } else if (projLower === 'vespera') {
+        effectiveAssignee = 'vespera-sme'; routingNote = '[auto-routed to vespera-sme: epic+project=Vespera]'
+      } else if (projLower === 'infrastructure' || projLower === 'infra') {
+        effectiveAssignee = 'infra-sme'; routingNote = '[auto-routed to infra-sme: epic+project=Infrastructure]'
+      } else {
+        effectiveAssignee = 'main'; routingNote = `[auto-routed to main: epic+project=${projectStr} (unknown SME)]`
+      }
     } else {
       effectiveAssignee = 'builder'; routingNote = '[auto-routed to builder: default fallback]'
     }

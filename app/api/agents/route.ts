@@ -16,6 +16,8 @@ const AGENT_META: Record<string, { name: string; emoji: string; role: string; co
   'ops':         { name: 'Ops',         emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true },
   'kemuni-sme':  { name: 'Kemuni SME',  emoji: '🚀', role: 'Kemuni Product Expert', color: '#3b82f6', capabilities: ['Product Strategy', 'Kemuni', 'PropTech'], floor: true },
   'vespera-sme': { name: 'Vespera SME', emoji: '🖤', role: 'Vespera Product Expert', color: '#ec4899', capabilities: ['Product Strategy', 'Vespera', 'Community'], floor: true },
+  'todero-sme':  { name: 'Todero SME',  emoji: '🧭', role: 'Todero Platform Expert', color: '#14b8a6', capabilities: ['Platform Strategy', 'Pipeline Design', 'Agent Orchestration', 'Epic Decomposition'], floor: true },
+  'infra-sme':   { name: 'Infra SME',   emoji: '🛠️', role: 'Infrastructure Expert',  color: '#22c55e', capabilities: ['Platform Hardening', 'LaunchAgents', 'Observability', 'Runtime Adapters'], floor: true },
   'builder':     { name: 'Builder',     emoji: '🔨', role: 'Coding Agent',           color: '#f59e0b', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true },
   'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true },
   'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true },

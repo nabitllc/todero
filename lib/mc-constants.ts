@@ -16,6 +16,8 @@ export const AGENT_DISPLAY: Record<string,{name:string;emoji:string;role:string;
   ops:           {name:'Ops',         emoji:'⚙️', role:'Operations Agent',  color:'#6b7280', desc:'Infrastructure monitoring, deployment ops, system health.', capabilities:['Monitoring','Deploys','Health Checks']},
   'kemuni-sme':  {name:'Kemuni SME',  emoji:'🚀', role:'Kemuni Specialist', color:'#3b82f6', desc:'Domain expert for Kemuni platform. PropTech strategy & features.', capabilities:['PropTech','Strategy','Features']},
   'vespera-sme': {name:'Vespera SME', emoji:'🖤', role:'Vespera Specialist',color:'#a855f7', desc:'Domain expert for Vespera. Goth community, events, culture.', capabilities:['Events','Community','Culture']},
+  'todero-sme':  {name:'Todero SME',  emoji:'🧭', role:'Todero Specialist', color:'#14b8a6', desc:'Domain expert for Todero itself — pipeline design, agent orchestration, epic decomposition.', capabilities:['Platform','Pipeline','Decomposition']},
+  'infra-sme':   {name:'Infra SME',   emoji:'🛠️', role:'Infra Specialist', color:'#22c55e', desc:'Domain expert for infra: LaunchAgents, runtime adapters, observability.', capabilities:['Infrastructure','Observability','Hardening']},
   builder:       {name:'Builder',     emoji:'🔨', role:'Coding Agent',      color:'#3b82f6', desc:'On-demand coding. Next.js, Supabase, Vespera and Kemuni builds.', capabilities:['Next.js','Supabase','TypeScript','APIs']},
   tester:        {name:'Tester',      emoji:'🧪', role:'QA Agent',          color:'#ef4444', desc:'Automated testing, bug detection, regression checks.', capabilities:['Testing','QA','Bug Detection']},
 }
@@ -92,4 +94,4 @@ export const ACTIVITIES: Record<string,string[]> = {
 export const TOAST_COLORS = { started: '#60a5fa', done: '#34d399', error: '#f87171', default: '#00ff88' }
 
 // Agent emoji map for toasts
-export const AGENT_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤', deployer:'🚀' }
+export const AGENT_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤', 'todero-sme':'🧭', 'infra-sme':'🛠️', deployer:'🚀' }

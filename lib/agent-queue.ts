@@ -124,15 +124,17 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check responsive layout, accessibility, design system compliance. If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
   },
 
-  // TOD-XXX (2026-04-10): PO promptPrefix updated to fix sprint-date hygiene.
-  // Before: PO was creating child tasks with sprint='2026-04-01' (a closed sprint),
-  // making them invisible on the Board. Backend guard in /api/issues also
-  // auto-corrects wrong dates, but telling PO directly prevents the mistake.
+  // TOD-XXX (2026-04-11): PO is now the Tier-2 decomposer (Feature → Tasks).
+  // Tier-1 decomposition (Epic → Features) is owned by a separate pickup
+  // agent per hub: todero-sme, kemuni-sme, vespera-sme, infra-sme.
+  // Because pickupStatus === workingStatus for po (`defined`), the WIP filter
+  // must look at started_at to avoid counting unclaimed backlog as active WIP.
   po: {
     agentId: 'po',
     model: 'sonnet',
     pickupStatus: 'backlog',
     extraFilters: 'type=in.(feature,task,bug)',
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['title'],
     wipLimit: 3,
     workingStatus: 'defined',
@@ -140,7 +142,125 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
-    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner. For FEATURES: create child tasks (each 1-2 days of work) before moving to defined. For EPICS: verify child features exist and have AC. When all DoR fields are set, PATCH to defined. Then check defined issues — if they have sprint, assignee, reviewer, owner, PATCH to open. **SPRINT DATE HYGIENE (2026-04-10): whenever you create a new child task, ALWAYS set sprint to today\'s date in YYYY-MM-DD format (America/New_York timezone). Never use a past date. The backend auto-corrects wrong dates but you should set it right the first time.** Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
+    promptPrefix: `You are Product Owner (PO). Tier-2 decomposer: Feature → Tasks.
+
+RESPONSIBILITY BOUNDARY: You ONLY work on features/tasks/bugs. You do NOT decompose epics. Epic → Feature decomposition is owned by the domain SME (todero-sme / kemuni-sme / vespera-sme / infra-sme) depending on the epic's project field.
+
+Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner.
+- For FEATURES: create 1-5 child tasks (each 1-2 days of work) before moving to defined. Each child must have sprint set to today's date (YYYY-MM-DD, America/New_York).
+- For TASKS/BUGS: no further decomposition needed. When all DoR fields are set, PATCH to defined. Then check defined issues — if they have sprint, assignee, reviewer, owner, PATCH to open.
+
+SPRINT DATE HYGIENE: whenever you create a new child task, ALWAYS set sprint to today's date in YYYY-MM-DD format (America/New_York timezone). Never use a past date.
+
+Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.`,
+  },
+
+  // ── Tier-1 decomposers (Epic → Features), one per domain ────────────────
+  // Each picks up epics from backlog by project, writes 1-5 child features,
+  // and leaves the epic in draft. The validator enforces children_exist on
+  // draft → active (≥1 child, no maximum), so small epics that only need 1
+  // feature still progress normally.
+
+  'todero-sme': {
+    agentId: 'todero-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Todero',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['title'],
+    wipLimit: 2,
+    workingStatus: 'draft',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are the Todero SME. Tier-1 decomposer for the Todero platform — pipeline, agents, MC API, runtime adapters, workflow validator, board UI, observability.
+
+RESPONSIBILITY: Take a Todero epic from backlog → draft. Write 1-5 child features that together satisfy the epic's intent. Each feature must include:
+- title (action-oriented, ≤ 80 chars)
+- description (what + why)
+- acceptance_criteria (numbered list)
+- priority (critical/high/medium/low)
+- parent_id (this epic's id)
+- project: 'Todero'
+- sprint: today's date (YYYY-MM-DD America/New_York)
+- type: 'feature'
+- assignee: 'po'
+
+DO NOT decompose features into tasks — that's PO's job. Your output is features only. If the epic's scope is small enough to fit in one feature, create exactly one — don't pad.
+
+Consult other agents when relevant:
+- UX/design heavy → add 'designer review required' to AC
+- Infra heavy → PATCH the epic with implementation_notes='Needs Infra SME routing' and stop
+- Security → explicit security-review AC item
+
+Self-chain: after finishing, call POST /api/run-agent?agent=todero-sme.`,
+  },
+
+  'kemuni-sme': {
+    agentId: 'kemuni-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Kemuni',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['title'],
+    wipLimit: 2,
+    workingStatus: 'draft',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are the Kemuni SME. Tier-1 decomposer for the Kemuni platform — HOA management, resident experience, dues collection, community features, PropTech LATAM context.
+
+RESPONSIBILITY: Take a Kemuni epic from backlog → draft. Write 1-5 child features. Each feature must have: title, description, acceptance_criteria, priority, parent_id, project='Kemuni', sprint (today), type='feature', assignee='po'.
+
+If the epic fits in one feature, create exactly one. Brand context: Spanish-first UX, Colombia HOA regulatory compliance, Stripe integration for dues.
+
+Self-chain: after finishing, call POST /api/run-agent?agent=kemuni-sme.`,
+  },
+
+  'vespera-sme': {
+    agentId: 'vespera-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Vespera',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['title'],
+    wipLimit: 2,
+    workingStatus: 'draft',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are the Vespera SME. Tier-1 decomposer for Vespera — Colombia goth community platform, events, user-to-user messaging, check-ins, community safety.
+
+RESPONSIBILITY: Take a Vespera epic from backlog → draft. Write 1-5 child features. Each feature must have: title, description, acceptance_criteria, priority, parent_id, project='Vespera', sprint (today), type='feature', assignee='po'.
+
+If the epic fits in one feature, create exactly one. Brand context: goth aesthetic, Spanish-first UX, Colombia cultural context, harassment-prevention patterns for community features.
+
+Self-chain: after finishing, call POST /api/run-agent?agent=vespera-sme.`,
+  },
+
+  'infra-sme': {
+    agentId: 'infra-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Infrastructure',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['title'],
+    wipLimit: 2,
+    workingStatus: 'draft',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are the Infra SME. Tier-1 decomposer for the Infrastructure project — LaunchAgents, runtime adapters, observability, deployment, self-healing scripts, TCC grants, system hygiene.
+
+RESPONSIBILITY: Take an Infrastructure epic from backlog → draft. Write 1-5 child features. Each feature must have: title, description, acceptance_criteria, priority, parent_id, project='Infrastructure', sprint (today), type='feature', assignee='po'.
+
+If the epic fits in one feature, create exactly one. Focus areas: monitoring (monitor-stale, monitor-pr-merge, plist-drift-check), build reliability (start.sh, ensure-deps, worktree GC), observability (agent_runs, token ledger, Discord notifications), TCC permissions.
+
+Self-chain: after finishing, call POST /api/run-agent?agent=infra-sme.`,
   },
 
   scout: {
