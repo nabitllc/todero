@@ -176,6 +176,35 @@ const supabase = createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 )
 
+// ── Activity event capture ────────────────────────────────────────────────────
+const KNOWN_AGENT_IDS = new Set([
+  'builder', 'tester', 'designer', 'ux', 'scout', 'ops',
+  'kemuni-sme', 'vespera-sme', 'main', 'KAOS', 'auditor',
+  'deployer', 'po', 'monitor-stale', 'heartbeat',
+])
+
+function resolveActorType(actor: string | null | undefined): 'agent' | 'human' {
+  if (!actor) return 'human'
+  return KNOWN_AGENT_IDS.has(actor) ? 'agent' : 'human'
+}
+
+function recordActivityEvent(
+  issueId: string,
+  issueKey: string | null | undefined,
+  eventType: string,
+  actor: string | null | undefined,
+  metadata: Record<string, unknown>
+) {
+  void supabase.from('activity_events').insert({
+    issue_id: issueId,
+    issue_key: issueKey ?? null,
+    event_type: eventType,
+    actor: actor ?? null,
+    actor_type: resolveActorType(actor),
+    metadata,
+  }).then(() => {}) // fire-and-forget
+}
+
 // ── Hierarchy validation ──────────────────────────────────────────────────────
 async function validateHierarchy(
   type: string,
@@ -805,6 +834,19 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ── TOD-818: record issue_created event ──
+  if (data) {
+    const actor = (body.transitioned_by ?? body.assignee ?? null) as string | null
+    recordActivityEvent(data.id, data.task_key, 'issue_created', actor, {
+      status: data.status,
+      assignee: data.assignee,
+      project: data.project,
+      type: data.type,
+      priority: data.priority,
+    })
+  }
+
   return NextResponse.json(withIssueStatusCategory(data))
 }
 
@@ -865,6 +907,16 @@ export async function PATCH(req: NextRequest) {
       .select()
       .single()
     if (resetErr) return NextResponse.json({ error: resetErr.message }, { status: 500 })
+    // TOD-818: record status_changed for backlog reset
+    if (resetData && before) {
+      recordActivityEvent(
+        resetData.id as string,
+        (resetData.task_key ?? before.task_key ?? null) as string | null,
+        'status_changed',
+        transitionedBy ?? null,
+        { old_status: before.status, new_status: 'backlog' }
+      )
+    }
     return NextResponse.json(resetData)
   }
 
@@ -1275,6 +1327,49 @@ export async function PATCH(req: NextRequest) {
       issue_id: data.id,
       actor,
     }).then(() => {}) // fire-and-forget
+  }
+
+  // ── TOD-818: Activity event capture ──────────────────────────────────────────
+  if (data && before) {
+    const issueId = data.id as string
+    const issueKey = (data.task_key ?? before.task_key ?? null) as string | null
+    const actor = transitionedBy ?? null
+
+    // status_changed
+    if (fields.status && before.status && fields.status !== before.status) {
+      recordActivityEvent(issueId, issueKey, 'status_changed', actor, {
+        old_status: before.status,
+        new_status: fields.status,
+      })
+    }
+
+    // assignee_changed
+    if (fields.assignee && before.assignee && fields.assignee !== before.assignee) {
+      recordActivityEvent(issueId, issueKey, 'assignee_changed', actor, {
+        old_assignee: before.assignee,
+        new_assignee: fields.assignee,
+      })
+    }
+
+    // comment_added — treat non-empty implementation_notes changes as comments
+    if (
+      fields.implementation_notes &&
+      fields.implementation_notes !== before.implementation_notes
+    ) {
+      recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
+        field: 'implementation_notes',
+      })
+    }
+
+    // reviewer_notes change
+    if (
+      fields.reviewer_notes &&
+      fields.reviewer_notes !== before.reviewer_notes
+    ) {
+      recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
+        field: 'reviewer_notes',
+      })
+    }
   }
 
   return NextResponse.json(data ? withIssueStatusCategory(data) : data)
