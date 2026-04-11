@@ -1,5 +1,8 @@
 'use client'
 // TOD-631: Notification bell — agent completions, issue transitions, deploy events
+// - Data fetched through /api/notifications (no client-side Supabase key)
+// - a11y: role="dialog", aria-label, aria-expanded, Escape-to-close, 44px touch target
+// - responsive: drawer width capped by viewport so it doesn't overflow on small phones
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Bell, Bot, ArrowRightLeft, Rocket, X, CheckCheck } from 'lucide-react'
@@ -16,9 +19,6 @@ interface Notification {
   dbId?: string // notifications table id for mark-read
 }
 
-const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-
 function timeAgo(date: Date): string {
   const mins = Math.round((Date.now() - date.getTime()) / 60000)
   if (mins < 1) return 'just now'
@@ -29,77 +29,41 @@ function timeAgo(date: Date): string {
   return `${days}d ago`
 }
 
+function mapRowToNotification(r: any): Notification {
+  const title: string = r.title ?? 'Status change'
+  const isRelease = title.includes('→ released')
+  const isApproved = title.includes('→ approved')
+  const isReview = title.includes('→ code_review') || title.includes('→ product_review')
+  return {
+    id: `ntf-${r.id}`,
+    type: isRelease ? 'deploy' : 'status_change',
+    title,
+    detail: r.body || '',
+    timestamp: new Date(r.created_at),
+    color: isRelease ? '#a78bfa' : isApproved ? '#34d399' : isReview ? '#60a5fa' : '#71717a',
+    read: !!r.read,
+    dbId: r.id,
+  }
+}
+
 export default function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   const fetchNotifications = useCallback(async () => {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const headers = { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    const items: Notification[] = []
-
-    // 1. Notifications table (status_change events from issue PATCH)
     try {
-      const res = await fetch(
-        `${SUPA}/rest/v1/notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`,
-        { headers }
-      )
+      const res = await fetch('/api/notifications?limit=40', { cache: 'no-store' })
+      if (!res.ok) return
       const rows = await res.json()
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const isRelease = r.title?.includes('→ released')
-          const isApproved = r.title?.includes('→ approved')
-          const isReview = r.title?.includes('→ code_review') || r.title?.includes('→ product_review')
-          items.push({
-            id: `ntf-${r.id}`,
-            type: isRelease ? 'deploy' : 'status_change',
-            title: r.title || 'Status change',
-            detail: r.body || '',
-            timestamp: new Date(r.created_at),
-            color: isRelease ? '#a78bfa' : isApproved ? '#34d399' : isReview ? '#60a5fa' : '#71717a',
-            read: r.read,
-            dbId: r.id,
-          })
-        }
-      }
-    } catch { /* ignore */ }
-
-    // 2. Agent completions + errors from agent_runs
-    try {
-      const res = await fetch(
-        `${SUPA}/rest/v1/agent_runs?select=id,agent_id,task_title,status,started_at,ended_at&status=in.(completed,done,error)&ended_at=gte.${since}&order=ended_at.desc&limit=20`,
-        { headers }
-      )
-      const rows = await res.json()
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const agent = AGENT_DISPLAY[r.agent_id]
-          const isError = r.status === 'error'
-          items.push({
-            id: `ar-${r.id}`,
-            type: 'agent_completion',
-            title: `${agent?.emoji || '🤖'} ${agent?.name || r.agent_id} ${isError ? 'failed' : 'completed'}`,
-            detail: (r.task_title || 'Task').slice(0, 60),
-            timestamp: new Date(r.ended_at || r.started_at),
-            color: isError ? '#f87171' : '#34d399',
-            read: false,
-          })
-        }
-      }
-    } catch { /* ignore */ }
-
-    // Sort by timestamp desc, deduplicate by title+timestamp proximity
-    items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-    // Deduplicate: if a notifications-table entry and an agent_runs entry have similar title, keep the notifications one
-    const seen = new Set<string>()
-    const deduped = items.filter(n => {
-      const key = n.title.slice(0, 30)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    setNotifications(deduped.slice(0, 40))
+      if (!Array.isArray(rows)) return
+      const items = rows.map(mapRowToNotification)
+      items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      setNotifications(items.slice(0, 40))
+    } catch {
+      /* network error — leave existing notifications in place */
+    }
   }, [])
 
   // Fetch on mount and every 30s
@@ -121,6 +85,19 @@ export default function NotificationBell() {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  // Close on Escape + return focus to bell button (a11y)
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        buttonRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open])
+
   const handleOpen = () => setOpen(v => !v)
 
   const markAllRead = async () => {
@@ -135,65 +112,84 @@ export default function NotificationBell() {
   }
 
   const unreadCount = notifications.filter(n => !n.read).length
+  const bellLabel = unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'
 
   const typeIcon = (type: Notification['type']) => {
-    if (type === 'agent_completion') return <Bot size={12} className="shrink-0" />
-    if (type === 'deploy') return <Rocket size={12} className="shrink-0" />
-    return <ArrowRightLeft size={12} className="shrink-0" />
+    if (type === 'agent_completion') return <Bot size={12} className="shrink-0" aria-hidden="true" />
+    if (type === 'deploy') return <Rocket size={12} className="shrink-0" aria-hidden="true" />
+    return <ArrowRightLeft size={12} className="shrink-0" aria-hidden="true" />
   }
 
   return (
     <div className="relative" ref={panelRef}>
       <button
+        ref={buttonRef}
         onClick={handleOpen}
-        className="relative p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
-        title="Notifications"
+        type="button"
+        aria-label={bellLabel}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls="notification-panel"
+        // 44×44 hit target (WCAG 2.5.5) while the icon stays visually small
+        className="relative flex items-center justify-center w-11 h-11 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
       >
-        <Bell size={15} />
+        <Bell size={15} aria-hidden="true" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white px-1 leading-none">
+          <span
+            aria-hidden="true"
+            className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white px-1 leading-none"
+          >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-[340px] max-h-[420px] bg-[#111] border border-white/[0.08] rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden">
+        <div
+          id="notification-panel"
+          role="dialog"
+          aria-label="Notifications"
+          aria-modal="false"
+          className="absolute right-0 top-full mt-1 w-[340px] max-w-[calc(100vw-12px)] max-h-[420px] bg-[#111] border border-white/[0.08] rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden"
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.06]">
-            <span className="text-xs font-semibold text-white/80">Notifications</span>
+            <span className="text-xs font-semibold text-white/80" id="notification-panel-title">Notifications</span>
             <div className="flex items-center gap-1">
               {unreadCount > 0 && (
                 <button
                   onClick={markAllRead}
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
-                  title="Mark all read"
+                  type="button"
+                  aria-label="Mark all notifications as read"
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                 >
-                  <CheckCheck size={11} />
+                  <CheckCheck size={11} aria-hidden="true" />
                   <span>Read all</span>
                 </button>
               )}
               <button
-                onClick={() => setOpen(false)}
-                className="p-0.5 rounded hover:bg-white/[0.06] text-white/30 hover:text-white/60 transition-colors"
+                onClick={() => { setOpen(false); buttonRef.current?.focus() }}
+                type="button"
+                aria-label="Close notifications"
+                className="p-0.5 rounded hover:bg-white/[0.06] text-white/30 hover:text-white/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               >
-                <X size={13} />
+                <X size={13} aria-hidden="true" />
               </button>
             </div>
           </div>
 
           {/* List */}
-          <div className="flex-1 overflow-y-auto">
+          <ul className="flex-1 overflow-y-auto" aria-labelledby="notification-panel-title">
             {notifications.length === 0 ? (
-              <div className="px-4 py-8 text-center text-white/25 text-xs">No notifications yet</div>
+              <li className="px-4 py-8 text-center text-white/25 text-xs list-none">No notifications yet</li>
             ) : (
               notifications.map(n => (
-                <div
+                <li
                   key={n.id}
-                  className={`px-3 py-2.5 border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors ${!n.read ? 'bg-white/[0.02]' : ''}`}
+                  className={`px-3 py-2.5 border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors list-none ${!n.read ? 'bg-white/[0.02]' : ''}`}
                 >
                   <div className="flex items-start gap-2">
-                    {!n.read && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />}
+                    {!n.read && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" aria-label="Unread" />}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span style={{ color: n.color }}>{typeIcon(n.type)}</span>
@@ -201,12 +197,12 @@ export default function NotificationBell() {
                       </div>
                       <p className="text-[10px] text-white/35 mt-0.5 truncate">{n.detail}</p>
                     </div>
-                    <span className="text-[9px] text-white/20 shrink-0 mt-0.5">{timeAgo(n.timestamp)}</span>
+                    <time className="text-[9px] text-white/20 shrink-0 mt-0.5" dateTime={n.timestamp.toISOString()}>{timeAgo(n.timestamp)}</time>
                   </div>
-                </div>
+                </li>
               ))
             )}
-          </div>
+          </ul>
         </div>
       )}
     </div>

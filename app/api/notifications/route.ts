@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-)
+// Credentials must come from env. No literal JWT fallback — fail fast in dev
+// instead of silently shipping a service-role key (TOD-631/TOD-764/TOD-767).
+const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!SUPA_URL || !SUPA_KEY) {
+  throw new Error('notifications route: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars')
+}
+const supabase = createClient(SUPA_URL, SUPA_KEY)
 
 // GET /api/notifications — list recent notifications (newest first)
 export async function GET(req: NextRequest) {

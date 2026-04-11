@@ -6,9 +6,12 @@ import { promisify } from 'util'
 
 const execAsync = promisify(exec)
 
-const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-const N8N_KEY = 'n8n_api_34e5ba0e4da8b759e75b310a8c014c4de0275375eba302bdf87d2e7e6dd2adac'
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  throw new Error('hub-pause: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars')
+}
+const N8N_KEY = process.env.N8N_API_KEY ?? ''
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 const AGENT_ID = 'system'

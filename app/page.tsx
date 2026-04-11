@@ -129,6 +129,35 @@ export default function Home() {
     setGlobalToasts(t => { const next = [...t, {id,text,color}]; return next.length > 4 ? next.slice(-4) : next })
     setTimeout(() => setGlobalToasts(t => t.filter(x => x.id !== id)), 4000)
   }, [])
+  // TOD-759: Hub-pause kill-switch state
+  const [hubPaused, setHubPaused] = useState(false)
+  const [hubPausing, setHubPausing] = useState(false)
+  useEffect(() => {
+    fetch('/api/hub-pause').then(r => r.json()).then(d => {
+      if (typeof d?.paused === 'boolean') setHubPaused(d.paused)
+    }).catch(() => {})
+  }, [])
+  const togglePause = React.useCallback(async () => {
+    if (hubPausing) return
+    setHubPausing(true)
+    const next = !hubPaused
+    try {
+      const res = await fetch('/api/hub-pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused: next, paused_by: 'user' }),
+      })
+      if (!res.ok) throw new Error(`hub-pause returned ${res.status}`)
+      const data = await res.json().catch(() => ({}))
+      setHubPaused(Boolean(data?.paused ?? next))
+      addGlobalToast(next ? 'Hub paused — all agents stopped' : 'Hub resumed — agents active', next ? TOAST_COLORS.error : TOAST_COLORS.done)
+    } catch (e: any) {
+      addGlobalToast(`Hub pause failed: ${e?.message ?? 'unknown error'}`, TOAST_COLORS.error)
+    } finally {
+      setHubPausing(false)
+    }
+  }, [hubPaused, hubPausing, addGlobalToast])
+
   const [syncing, setSyncing] = useState(false)
   const globalSync = async () => {
     setSyncing(true)
@@ -358,6 +387,8 @@ export default function Home() {
           onNavigate={navigate}
           agentRunsData={agentRunsData}
           unreadChat={unreadChat}
+          hubPaused={hubPaused}
+          onTogglePause={togglePause}
         />
 
         {/* Business context header */}

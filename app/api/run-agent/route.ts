@@ -83,7 +83,10 @@ export async function POST(req: NextRequest) {
   const assigneeFilter = isReviewer
     ? `${reviewStatusField}=eq.pending`
     : `assignee=eq.${agentId}`
-  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  // TOD-XXX: select rejection-related fields so the spawn prompt can warn the
+  // agent about the previous rejection reason. Without this the agent keeps
+  // regenerating the same code and getting rejected on the same grounds.
+  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,last_rejection_reason,last_rejected_at,tester_notes,designer_notes,commit_sha,type&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: HEADERS })
   const tasks = await res.json() as Array<{
@@ -312,6 +315,35 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     ? `\nBranch: ${branch} (git checkout -b ${branch} 2>/dev/null || git checkout ${branch})`
     : ''
 
+  // ── Previous-attempt context (TOD-XXX rejection-aware prompt) ──
+  // If this issue has been rejected before, tell the agent exactly what the
+  // previous reviewer flagged + the commit hash of the last attempt. This
+  // stops the infinite loop where Builder re-generates the same defective
+  // code every pickup because the prompt never mentioned the prior rejection.
+  const rejCount = (task as Record<string, unknown>).rejection_count as number | undefined ?? 0
+  const lastReason = (task as Record<string, unknown>).last_rejection_reason as string | null
+  const lastRejAt = (task as Record<string, unknown>).last_rejected_at as string | null
+  const testerNotes = (task as Record<string, unknown>).tester_notes as string | null
+  const designerNotes = (task as Record<string, unknown>).designer_notes as string | null
+  const prevSha = (task as Record<string, unknown>).commit_sha as string | null
+  const previousAttemptNotice = rejCount > 0 ? `
+<previous-attempt-rejected>
+This issue has been rejected ${rejCount} time(s) before. You MUST address
+these specific problems before resubmitting. Do NOT recreate the same work
+you did last time — read the notes below and make targeted fixes.
+
+Last rejected at: ${lastRejAt ?? 'unknown'}
+Previous commit: ${prevSha ?? '(none)'}
+${testerNotes ? `\nTester notes:\n${testerNotes}\n` : ''}${designerNotes ? `\nDesigner notes:\n${designerNotes}\n` : ''}${lastReason ? `\nAggregated rejection reason:\n${lastReason}\n` : ''}
+Before writing any code:
+  1. If a previous commit exists, run \`git log --all --oneline | grep ${(task.task_key ?? '').slice(0, 12)}\` and \`git show <prev_sha>\` to see exactly what you did last time.
+  2. Identify the specific defect the reviewer called out (security, missing AC, wrong default, a11y, etc.) and fix ONLY that.
+  3. Keep any parts that were not called out — don't rewrite the whole file.
+
+If the rejection is a routing/workflow issue (wrong reviewer, wrong agent), DO NOT attempt to recode. Instead, leave the code untouched and PATCH the issue with an implementation_notes explaining the routing problem so a human can re-route it.
+</previous-attempt-rejected>
+` : ''
+
   const prompt = [
     `<workspace-context>${context}</workspace-context>`,
     `\nYou are ${agentId}. ${config.promptPrefix}`,
@@ -319,6 +351,7 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     `Project: ${task.project} | Priority: ${task.priority}`,
     `Description: ${task.description ?? 'See title'}`,
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
+    previousAttemptNotice,
     branchInstruction,
     skillReference,
     transitionGate,
