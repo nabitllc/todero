@@ -116,7 +116,7 @@ async function pauseAgent(agentId: string, issueId: string, issueTitle?: string)
         last_issue_id: issueId,
         last_issue_title: issueTitle ?? null,
         paused_at: now,
-        action_required: `Review agent '${agentId}' failures and un-pause via PATCH /api/agent-pause`,
+        action_required: `Review agent '${agentId}' failures and un-pause via: PATCH /api/agent-pause body={"agent":"${agentId}","paused":false}`,
       },
       status: 'pending',
     }),
