@@ -45,6 +45,7 @@ const CHANNELS: Record<string, ChannelConfig> = {
   'discord-sprint-start':  { transport: 'discord', target: '1489262137221976115', label: '#sprint-start' },
   'discord-signoff':       { transport: 'discord', target: '1489262196969263165', label: '#3-signoff' },
   'discord-rejected':      { transport: 'discord', target: '1489262259762667580', label: '#2-rejected' },
+  'discord-created':       { transport: 'discord', target: '1492576650137964694', label: '#0-created' },
 
   // Telegram
   'telegram-dm':    { transport: 'telegram', target: TELEGRAM_DM_CHAT,    label: 'Michael DM' },

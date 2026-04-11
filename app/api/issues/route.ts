@@ -805,6 +805,22 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Post to #0-created whenever a new issue is born. Fire-and-forget; never
+  // block the create response on Discord. Covers ALL creation paths (agents,
+  // UI, n8n, curl) because every creation funnels through this endpoint.
+  try {
+    const typeEmoji = TYPE_EMOJI[(data.type as string) ?? 'task'] ?? '📋'
+    const projEmoji = PROJECT_EMOJI[data.project as string] ?? ''
+    const prio = (data.priority as string ?? 'medium').toUpperCase()
+    const key = (data.task_key as string) ?? '?'
+    const creator = (data.owner as string) ?? (data.assignee as string) ?? 'unknown'
+    const created_msg = `${typeEmoji} **${key}** [${prio}] ${projEmoji} ${data.project ?? ''} — ${data.title ?? ''}\n↳ assignee: ${data.assignee ?? '—'} · created_by: ${creator}`
+    postDiscord('1492576650137964694', created_msg)
+  } catch (e) {
+    console.warn('[discord-created] notify failed:', e)
+  }
+
   return NextResponse.json(withIssueStatusCategory(data))
 }
 
