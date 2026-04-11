@@ -1,5 +1,3 @@
-const path = require('path')
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Short cache on static chunks so browsers pick up new builds within a minute.
@@ -13,13 +11,6 @@ const nextConfig = {
         ],
       },
     ]
-  },
-  webpack(config) {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': path.resolve(__dirname),
-    }
-    return config
   },
 }
 
