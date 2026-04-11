@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { AGENT_DISPLAY, daysUntil, daysSince, miniPct, KEMUNI_DEADLINE, KEMUNI_START, VESPERA_DEADLINE, VESPERA_START } from '@/lib/mc-constants'
 import { Bar, SH } from '@/lib/mc-atoms'
+import { deriveIssueStatusCategory } from '@/lib/status-category'
 import ActiveAgentsCard from '@/components/ActiveAgentsCard'
 import ActivityFeed from '@/components/ActivityFeed'
 
@@ -208,9 +209,17 @@ function StandupCard() {
   )
 }
 
-// MC-102: Sprint Progress Card
+// MC-102 / TOD-774: Sprint Progress Card with status category bar
+const SPRINT_CATS = [
+  { label: 'Planned', color: '#6b7280' },
+  { label: 'Ongoing', color: '#3b82f6' },
+  { label: 'SignOff', color: '#10b981' },
+  { label: 'Done',    color: '#a855f7' },
+] as const
+
 function SprintProgressCard() {
   const [sprintData, setSprintData] = useState<{total:number;done:number}|null>(null)
+  const [cats, setCats] = useState<Record<string,number>>({Planned:0,Ongoing:0,SignOff:0,Done:0})
   const [priorData, setPriorData] = useState<{total:number;done:number}|null>(null)
   const [sprintLabel, setSprintLabel] = useState('')
   const [sprintDate, setSprintDate] = useState('')
@@ -238,6 +247,12 @@ function SprintProgressCard() {
           .then(data => {
             if (Array.isArray(data)) {
               setSprintData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
+              const counts: Record<string,number> = {Planned:0,Ongoing:0,SignOff:0,Done:0}
+              for (const issue of data) {
+                const cat = deriveIssueStatusCategory(issue.status)
+                if (cat) counts[cat] = (counts[cat] ?? 0) + 1
+              }
+              setCats(counts)
             }
           }).catch(() => {})
 
@@ -316,6 +331,26 @@ function SprintProgressCard() {
       </div>
       <div className="w-full rounded-full h-2 bg-[#1a1a1a]">
         <div className={`h-2 rounded-full transition-all duration-500 ${pct === 100 ? 'bg-green-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{width: pct+'%'}} />
+      </div>
+      {/* TOD-774: Status category breakdown bar */}
+      <div className="mt-3">
+        <div className="flex w-full rounded-full h-2 overflow-hidden bg-[#1a1a1a]">
+          {SPRINT_CATS.map(c => {
+            const w = sprintData.total > 0 ? ((cats[c.label] ?? 0) / sprintData.total) * 100 : 0
+            return w > 0 ? (
+              <div key={c.label} style={{width: w + '%', background: c.color}} className="h-2 transition-all duration-500" />
+            ) : null
+          })}
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
+          {SPRINT_CATS.map(c => (
+            <div key={c.label} className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background: c.color}} />
+              <span className="text-[9px] text-white/40">{c.label}</span>
+              <span className="text-[9px] text-white/60 tabular-nums">{cats[c.label] ?? 0}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
