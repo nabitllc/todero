@@ -66,8 +66,8 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from('issues')
-    .select('id,task_key,title,status,assignee,updated_at,resolution_type,project,type')
-    .order('updated_at', { ascending: false })
+    .select('id,task_key,title,status,assignee,updated_at,created_at,resolution_type,project,type')
+    .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
   if (project) query = query.eq('project', project)
@@ -82,8 +82,8 @@ export async function GET(req: Request) {
 
   const now = Date.now()
   let events = (data ?? []).map((issue: any) => {
-    const updatedMs = new Date(issue.updated_at).getTime()
-    const agoMin = Math.round((now - updatedMs) / 60000)
+    const createdMs = new Date(issue.created_at).getTime()
+    const agoMin = Math.round((now - createdMs) / 60000)
     const aType = actorType(issue.assignee)
     const eventType = deriveEventType(issue.status)
     return {
@@ -96,7 +96,7 @@ export async function GET(req: Request) {
       issue_title: issue.title,
       task_key: issue.task_key,
       issue_id: issue.id,
-      timestamp: issue.updated_at,
+      timestamp: issue.created_at,
       ago_min: agoMin,
       event_type: eventType,
       project: issue.project,
