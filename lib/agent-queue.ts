@@ -62,7 +62,10 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     pickupStatus: 'open',
     extraFilters: '',
     dorFields: ['description', 'acceptance_criteria'],
-    wipLimit: 1,
+    // TOD-XXX (2026-04-10, Michael approved): bumped from 1 to 2 for parallel
+    // builds. Safe now that each spawn runs in its own isolated git worktree
+    // (TOD-806) so two concurrent Builders can't collide on branch state.
+    wipLimit: 2,
     workingStatus: 'in_progress',
     completionStatus: 'code_review',
     checkBlocking: true,

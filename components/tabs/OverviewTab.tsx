@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { AGENT_DISPLAY, daysUntil, daysSince, miniPct, KEMUNI_DEADLINE, KEMUNI_START, VESPERA_DEADLINE, VESPERA_START } from '@/lib/mc-constants'
 import { Bar, SH } from '@/lib/mc-atoms'
 import ActiveAgentsCard from '@/components/ActiveAgentsCard'
+import ActivityFeed from '@/components/ActivityFeed'
 
 // INF-77: Needs-attention block (high/critical open issues)
 function NeedsAttentionBlock() {
@@ -696,39 +697,8 @@ export default function OverviewTab({
 
               {/* Live Activity Feed (mini) */}
               <div>
-                <SH icon="📡" sub={liveStatus?.recentActivity?.length ? '● live' : undefined}>Recent Activity</SH>
-                <div className="rounded-2xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
-                  {(liveStatus?.recentActivity ?? []).slice(0,5).map((entry:any, i:number, arr:any[])=>{
-                    const agoStr = entry.ago < 1 ? 'just now' : entry.ago < 60 ? `${entry.ago}m ago` : `${Math.floor(entry.ago/60)}h ago`
-                    const actionColor = entry.action==='cron'?'#f59e0b':entry.action==='delegate'?'#a855f7':'#3b82f6'
-                    return (
-                      <div key={i} className={'flex items-start gap-3 px-4 py-3 '+(i<arr.length-1?'border-b border-white/10':'')}>
-                        <span className="text-base shrink-0 mt-0.5">{entry.emoji || (AGENT_DISPLAY[entry.agentId]?.emoji ?? '🤖')}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-white text-xs font-medium">{entry.agentName || AGENT_DISPLAY[entry.agentId]?.name || entry.agentId}</span>
-                            {entry.channel && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
-                              style={{background:actionColor+'20',color:actionColor}}>
-                              {entry.channel}
-                            </span>}
-                            {entry.model && <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0 bg-white/10 text-white/50">{entry.model}</span>}
-                            <span className="ml-auto text-white/30 text-[10px] shrink-0">{agoStr}</span>
-                          </div>
-                          <p className="text-white/50 text-[10px] mt-0.5 truncate">{entry.desc}</p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {(!liveStatus?.recentActivity || liveStatus.recentActivity.length === 0) && (
-                    <p className="text-white/20 text-xs px-4 py-4">No activity yet — loading...</p>
-                  )}
-                </div>
-                {(liveStatus?.recentActivity?.length ?? 0) > 5 && (
-                  <button onClick={()=> onNavigate('activity')}
-                    className="mt-2 w-full text-center text-xs text-white/50 hover:text-white/70 py-2 rounded-lg border border-white/10 hover:border-white/20 transition-all bg-[#080808]">
-                    View All Activity →
-                  </button>
-                )}
+                <SH icon="📡">Recent Activity</SH>
+                <ActivityFeed limit={5} projectFilter={projectFilter} onNavigate={onNavigate} />
               </div>
 
             </div>
