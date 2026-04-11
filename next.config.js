@@ -1,5 +1,11 @@
+const path = require('path')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  webpack(config) {
+    config.resolve.alias['@'] = path.resolve(__dirname)
+    return config
+  },
   // Short cache on static chunks so browsers pick up new builds within a minute.
   // Prevents ChunkLoadError from sticking for hours after a rebuild.
   async headers() {

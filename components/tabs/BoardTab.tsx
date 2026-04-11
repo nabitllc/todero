@@ -5,6 +5,7 @@ import { Button, Input, Textarea, Select, FormGroup, EmptyState, Badge } from '@
 import { Kanban, Search, X, ClipboardList, Bug, Wrench, SearchIcon, Lock } from 'lucide-react'
 import { Chip } from '@/lib/mc-atoms'
 import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
+import { KanbanCard } from '@/components/KanbanCard'
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -94,13 +95,13 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
 
 // 3-column board (TOD-XXX simplification 2026-04-10):
 // Queue   = ready to be picked up (defined + open)
-// Ongoing = active work (in_progress + both review states)
+// Active  = work in flight (in_progress + both review states)
 // Achieved= shipped or ready to ship (approved + completed + released)
 // Backlog and closed are NOT columns — they surface as count chips in the header.
 const BOARD_COLUMNS = [
-  { id:'queue',    label:'Queue',    color:'#3b82f6', statuses:['defined','open'] },
-  { id:'ongoing',  label:'Ongoing',  color:'#818cf8', statuses:['in_progress','code_review','product_review'] },
-  { id:'achieved', label:'Achieved', color:'#22c55e', statuses:['approved','completed','released'] },
+  { id:'queue',    label:'Queue',    color:'#3b82f6', active:false, statuses:['defined','open'] },
+  { id:'ongoing',  label:'Active',   color:'#818cf8', active:true,  statuses:['in_progress','code_review','product_review'] },
+  { id:'achieved', label:'Achieved', color:'#22c55e', active:false, statuses:['approved','completed','released'] },
 ]
 
 // Statuses that get a small count chip but no column
@@ -726,13 +727,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         const colTasks = group.children.filter(t => col.statuses.includes(t.status))
                         return (
                           <div key={col.id}
-                            className="flex-1 min-w-[240px] flex flex-col rounded-xl bg-[#0f0f0f]/50"
-                            style={{ borderTop: `2px solid ${col.color}`, minHeight: '60px' }}
+                            className="flex-1 min-w-[240px] flex flex-col rounded-xl"
+                            style={{ borderTop: `${col.active ? '3px' : '2px'} solid ${col.color}`, minHeight: '60px', background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)' }}
                             onDragOver={e => e.preventDefault()}
                             onDrop={() => handleDrop(col.id)}>
-                            <div className="flex items-center gap-2 px-3 py-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
-                              <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
+                            <div className={`flex items-center gap-2 px-3 py-1.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
+                              {col.active
+                                ? <span className="relative flex w-1.5 h-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{background:col.color}} /></span>
+                                : <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
+                              }
+                              <span className="text-[10px] font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.6)'}}>{col.label}</span>
                               <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
                             </div>
                             <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
@@ -808,13 +812,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                         const colTasks = tasks.filter(t => col.statuses.includes(t.status))
                         return (
                           <div key={col.id}
-                            className="flex-1 min-w-[240px] flex flex-col rounded-xl bg-[#0f0f0f]/50"
-                            style={{ borderTop: `2px solid ${col.color}`, minHeight: '60px' }}
+                            className="flex-1 min-w-[240px] flex flex-col rounded-xl"
+                            style={{ borderTop: `${col.active ? '3px' : '2px'} solid ${col.color}`, minHeight: '60px', background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)' }}
                             onDragOver={e => e.preventDefault()}
                             onDrop={() => handleDrop(col.id)}>
-                            <div className="flex items-center gap-2 px-3 py-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
-                              <span className="text-[10px] font-semibold text-white/60">{col.label}</span>
+                            <div className={`flex items-center gap-2 px-3 py-1.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
+                              {col.active
+                                ? <span className="relative flex w-1.5 h-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{background:col.color}} /></span>
+                                : <span className="w-1.5 h-1.5 rounded-full" style={{ background: col.color }} />
+                              }
+                              <span className="text-[10px] font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.6)'}}>{col.label}</span>
                               <span className="text-[10px] font-mono text-white/40">{colTasks.length}</span>
                             </div>
                             <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
@@ -921,13 +928,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                                   const colTasks = projTasks.filter(t => col.statuses.includes(t.status))
                                   return (
                                     <div key={col.id}
-                                      className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
-                                      style={{borderTop:`2px solid ${col.color}`, minHeight: '60px'}}
+                                      className={`flex-shrink-0 w-full md:w-52 flex flex-col rounded-xl ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+                                      style={{borderTop:`${col.active ? '3px' : '2px'} solid ${col.color}`, minHeight: '60px', background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)'}}
                                       onDragOver={e => e.preventDefault()}
                                       onDrop={() => handleDrop(col.id)}>
-                                      <div className="flex items-center gap-2 px-3 py-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
-                                        <span className="text-[10px] font-semibold text-white/50">{col.label} ({colTasks.length})</span>
+                                      <div className={`flex items-center gap-2 px-3 py-1.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
+                                        {col.active
+                                          ? <span className="relative flex w-1.5 h-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-1.5 h-1.5" style={{background:col.color}} /></span>
+                                          : <span className="w-1.5 h-1.5 rounded-full" style={{background:col.color}} />
+                                        }
+                                        <span className="text-[10px] font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.5)'}}>{col.label} ({colTasks.length})</span>
                                       </div>
                                       <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[30px]">
                                         {colTasks.length === 0 && <div className="text-[10px] text-white/20 text-center py-2">—</div>}
@@ -968,15 +978,21 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           const colTasks = filtered.filter(t => col.statuses.includes(t.status))
           return (
             <div key={col.id}
-              className={`flex-1 min-w-0 md:min-w-[280px] flex flex-col rounded-xl bg-[#0f0f0f]/50 ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
-              style={{borderTop:`2px solid ${col.color}`}}
+              className={`flex-1 min-w-0 md:min-w-[280px] flex flex-col rounded-xl ${col.id !== mobileCol ? 'hidden md:flex' : ''}`}
+              style={{
+                borderTop: `${col.active ? '3px' : '2px'} solid ${col.color}`,
+                background: col.active ? `color-mix(in srgb, ${col.color} 6%, #0f0f0f)` : 'rgba(15,15,15,0.5)',
+              }}
               onDragOver={e => e.preventDefault()}
               onDrop={() => handleDrop(col.id)}>
               {/* Column header */}
-              <div className="flex items-center justify-between px-3 py-2.5">
+              <div className={`flex items-center justify-between px-3 py-2.5${col.active ? ' border-b border-[#818cf8]/15' : ''}`}>
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
-                  <span className="text-xs font-semibold text-white/60">{col.label}</span>
+                  {col.active
+                    ? <span className="relative flex w-2 h-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{background:col.color}} /><span className="relative inline-flex rounded-full w-2 h-2" style={{background:col.color}} /></span>
+                    : <span className="w-2 h-2 rounded-full" style={{background:col.color}} />
+                  }
+                  <span className="text-xs font-semibold" style={{color: col.active ? col.color : 'rgba(255,255,255,0.6)'}}>{col.label}</span>
                   <span className="text-xs font-mono text-white/40">{colTasks.length}</span>
                   {col.id === 'achieved' && filtered.length > 0 && (
                     <span className="text-[10px] text-white/30 font-mono">({Math.round((colTasks.length / filtered.length) * 100)}%)</span>
@@ -988,59 +1004,26 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2 min-h-[60px]">
                 {loading && <div className="flex items-center justify-center py-4 gap-2 text-white/40 text-xs"><span className="animate-spin h-3 w-3 border-2 border-white/20 border-t-white/60 rounded-full" />Loading...</div>}
                 {!loading && colTasks.length === 0 && <EmptyState icon={Kanban} title="No tasks" className="py-6" />}
-                {colTasks.map(task => {
-                  const assigneeKey = task.assignee?.toLowerCase() ?? ''
-                  const assigneeName = ASSIGNEE_MAP[assigneeKey]?.name ?? task.assignee ?? ''
-                  const assigneeLetter = assigneeName.charAt(0).toUpperCase()
-                  const assigneeDotColor = ASSIGNEE_DOT_COLORS[assigneeKey] ?? '#6b7280'
-                  return (
-                  <div key={task.id}
-                    draggable
-                    onDragStart={() => setDragId(task.id)}
-                    onDragEnd={() => setDragId(null)}
-                    onClick={() => { setDetailTask(task); setBugDetailsOpen(false) }}
-                    className={`group rounded-lg border cursor-pointer transition-colors relative ${dragId===task.id ? 'opacity-50' : ''}`}
-                    style={{background:'#0f0f0f', borderColor: dragId===task.id ? '#555' : '#27272a'}}
-                    onMouseEnter={e=>{e.currentTarget.style.borderColor='#3f3f46'}}
-                    onMouseLeave={e=>{e.currentTarget.style.borderColor=dragId===task.id?'#555':'#27272a'}}>
-                    <div className="px-2.5 pt-2 pb-2">
-                      {/* Top row: task_key */}
-                      <div className="flex items-center justify-between mb-1">
-                        {task.task_key && <span className="text-[10px] font-mono font-bold text-white/40">{task.task_key}</span>}
-                        {col.id === 'signoff' && closedConfirm === task.id && (
-                          <span className="text-[10px] text-green-400 whitespace-nowrap animate-pulse">Archived</span>
-                        )}
-                        {col.id === 'signoff' && closedConfirm !== task.id && (
-                          <button onClick={e => { e.stopPropagation(); closeTask(task.id) }}
-                            className="text-[10px] text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-white/10">
-                            x
-                          </button>
-                        )}
-                      </div>
-                      {/* Middle: title — 2 lines max */}
-                      <p className="text-white text-xs font-medium leading-snug line-clamp-2 mb-2">{task.title}</p>
-                      {/* Bottom row: chips and icons */}
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {task.project && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/10 shrink-0">{task.project}</span>}
-                        {task.type && TYPE_ICONS[task.type] && <span className="text-white/40 shrink-0" title={task.type}>{TYPE_ICONS[task.type]}</span>}
-                        {task.status && <span className={`inline-block text-[8px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${STATUS_CHIP_COLORS[task.status] ?? 'bg-white/5 text-white/50 border-white/10'}`}>{task.status.replace(/_/g,' ')}</span>}
-                        {task.priority && <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{background: PRIORITY_DOT_COLORS[task.priority] ?? '#71717a'}} title={task.priority} />}
-                        {task.severity && SEVERITY_CHIP_STYLES[task.severity] && (
-                          <span className={`inline-block text-[8px] font-bold px-1 py-0 rounded border shrink-0 ${SEVERITY_CHIP_STYLES[task.severity]}`}>{task.severity}</span>
-                        )}
-                        {(task.is_blocked || task.blocked_by) && <Lock size={10} className="text-red-400 shrink-0" />}
-                      </div>
-                    </div>
-                    {/* Assignee dot — bottom-right */}
-                    {assigneeLetter && (
-                      <div className="absolute bottom-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
-                        style={{background: assigneeDotColor}} title={assigneeName}>
-                        {assigneeLetter}
-                      </div>
+                {colTasks.map(task => (
+                  <div key={task.id} className="relative group/card">
+                    {col.id === 'signoff' && closedConfirm === task.id && (
+                      <span className="absolute top-1 right-2 z-10 text-[10px] text-green-400 whitespace-nowrap animate-pulse pointer-events-none">Archived</span>
                     )}
+                    {col.id === 'signoff' && closedConfirm !== task.id && (
+                      <button onClick={e => { e.stopPropagation(); closeTask(task.id) }}
+                        className="absolute top-1 right-1 z-10 text-[10px] text-white/30 hover:text-red-400 opacity-0 group-hover/card:opacity-100 transition-all whitespace-nowrap px-1 py-0.5 rounded hover:bg-white/10">
+                        x
+                      </button>
+                    )}
+                    <KanbanCard
+                      task={task}
+                      dragging={dragId === task.id}
+                      onClick={t => { setDetailTask(t); setBugDetailsOpen(false) }}
+                      onDragStart={t => setDragId(t.id)}
+                      onDragEnd={() => setDragId(null)}
+                    />
                   </div>
-                  )
-                })}
+                ))}
               </div>
 
             </div>
