@@ -981,6 +981,25 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  /* ── Open-cap enforcement (backlog-first policy: max 10 open) ── */
+  if (fields.status === 'open' && before?.status !== 'open') {
+    const MAX_OPEN = 10
+    const { count: openCount } = await supabase
+      .from('issues')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open')
+    if ((openCount ?? 0) >= MAX_OPEN) {
+      return NextResponse.json(
+        {
+          error: `Backlog-first policy: ${openCount} issues are already open (limit ${MAX_OPEN}). Complete or reset existing open issues before opening new ones.`,
+          field: 'status',
+          open_count: openCount,
+        },
+        { status: 409 }
+      )
+    }
+  }
+
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
     const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
