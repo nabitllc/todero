@@ -86,7 +86,14 @@ export async function POST(req: NextRequest) {
   // TOD-XXX: select rejection-related fields so the spawn prompt can warn the
   // agent about the previous rejection reason. Without this the agent keeps
   // regenerating the same code and getting rejected on the same grounds.
-  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,last_rejection_reason,last_rejected_at,tester_notes,designer_notes,commit_sha,type&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  // Exclude issues that are explicitly marked blocked (3-strike loop breaker
+  // sets is_blocked=true). They should never be picked up automatically —
+  // they need human intervention via the Inbox (TOD-792). Otherwise a single
+  // over-rejected issue at the top of the priority queue poisons the whole
+  // lane (bit us 2026-04-12: TOD-764 at rej=3 was blocking tester from ever
+  // picking up the 56 OTHER code_review items behind it).
+  const blockedFilter = '&is_blocked=not.eq.true'
+  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}${blockedFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,last_rejection_reason,last_rejected_at,tester_notes,designer_notes,commit_sha,type,is_blocked&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: HEADERS })
   const tasks = await res.json() as Array<{
@@ -151,9 +158,35 @@ export async function POST(req: NextRequest) {
     return 0
   })
 
-  const task = readyTasks[0]
+  // ── Step 5: Loop-breaker filter (BEFORE claim) ──
+  // Walk readyTasks in priority order and skip any issue over the rejection
+  // cap. Unlike the old behavior (which claimed task[0] and then aborted if
+  // it was over-cap — leaving a stranded claim that poisoned the WIP slot),
+  // we now find the first claimable task and only that one gets the claim.
+  // The PATCH handler already sets is_blocked=true at rejection>=3 and the
+  // SQL query above already filters is_blocked=not.eq.true — this is a
+  // belt-and-suspenders in case rejection_count>=3 but is_blocked somehow
+  // didn't get set.
+  let task: typeof readyTasks[0] | null = null
+  let escalatedKeys: string[] = []
+  for (const candidate of readyTasks) {
+    const rc = (candidate as Record<string, unknown>).rejection_count as number ?? 0
+    if (rc >= MAX_REJECTION_CYCLES) {
+      escalatedKeys.push(candidate.task_key ?? '?')
+      continue
+    }
+    task = candidate
+    break
+  }
+  if (!task) {
+    return NextResponse.json({
+      agent: agentId,
+      message: `No claimable issues — ${escalatedKeys.length} were over rejection cap and skipped`,
+      escalated: escalatedKeys,
+    })
+  }
 
-  // ── Step 5: Claim the issue ──
+  // ── Step 6: Claim the issue ──
   // Always set started_at to mark the issue as claimed by this agent, even when
   // pickupStatus === workingStatus (e.g. deployer). This lets the wipExtraFilter
   // distinguish "claimed" from "queued but unclaimed" issues in the WIP count.
@@ -170,7 +203,7 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify(claimFields),
   })
 
-  // ── Step 6: Log agent_run ──
+  // ── Step 7: Log agent_run ──
   await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
     method: 'POST',
     headers: { ...HEADERS, 'Prefer': 'return=minimal' },
@@ -181,16 +214,6 @@ export async function POST(req: NextRequest) {
       status: 'running',
     }),
   })
-
-  // ── Step 7: Loop breaker check — skip if issue has been rejected too many times ──
-  const rejectionCount = (task as Record<string, unknown>).rejection_count as number ?? 0
-  if (rejectionCount >= MAX_REJECTION_CYCLES) {
-    return NextResponse.json({
-      agent: agentId,
-      message: `Issue ${task.task_key} has been rejected ${rejectionCount} times. Escalating to KAOS.`,
-      escalated: true,
-    })
-  }
 
   // ── Step 8: Auto-set feature branch for code-producing agents ──
   let branch = task.feature_branch

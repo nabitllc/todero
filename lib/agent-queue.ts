@@ -283,6 +283,9 @@ Self-chain: after finishing, call POST /api/run-agent?agent=infra-sme.`,
     model: 'haiku',
     pickupStatus: 'released',
     extraFilters: '',
+    // pickupStatus === workingStatus → unclaimed queue items would otherwise
+    // count as active WIP and lock the lane against its own backlog.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['implementation_notes'],
     wipLimit: 1,
     workingStatus: 'released',
@@ -298,6 +301,9 @@ Self-chain: after finishing, call POST /api/run-agent?agent=infra-sme.`,
     model: 'haiku',
     pickupStatus: 'approved',
     extraFilters: '',
+    // pickupStatus === workingStatus → same deadlock as auditor. Unclaimed
+    // approved items (waiting for pr-window.py) shouldn't count as active WIP.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['implementation_notes'],
     wipLimit: 5,
     workingStatus: 'approved',

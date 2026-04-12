@@ -71,6 +71,39 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
   activateAgentAsync('designer', taskKey, title, 'code_review')
 }
 
+// ── Self-chain: continuously flow work ────────────────────────────────────
+// TOD-XXX (2026-04-12): when ANY PATCH advances an issue to a new status,
+// fire /api/run-agent for the lane that picks up that status. This is the
+// difference between a pipeline that needs a 30-min kicker and one that
+// flows automatically: every completion immediately triggers the next
+// hand-off. Fire-and-forget, never blocks the PATCH response, WIP limits
+// prevent over-spawn.
+const STATUS_PICKUP_LANES: Record<string, string[]> = {
+  // On any issue landing in X, try to spawn these lanes:
+  backlog:      ['po', 'todero-sme', 'kemuni-sme', 'vespera-sme', 'infra-sme'],
+  defined:      ['po'],
+  open:         ['builder', 'ops', 'scout'],
+  code_review:  ['tester', 'designer'],
+  product_review: [],  // reviewer-assignee-based, handled elsewhere
+  approved:     ['deployer'],
+  released:     ['auditor'],
+}
+
+function selfChainOnStatus(toStatus: string | undefined | null) {
+  if (!toStatus) return
+  const lanes = STATUS_PICKUP_LANES[toStatus]
+  if (!lanes || lanes.length === 0) return
+  for (const lane of lanes) {
+    void (async () => {
+      try {
+        await fetch(`http://localhost:3000/api/run-agent?agent=${lane}`, { method: 'POST' })
+      } catch (err) {
+        console.warn(`[selfChain] ${lane} for ${toStatus} failed:`, err instanceof Error ? err.message : String(err))
+      }
+    })()
+  }
+}
+
 // ── Discord helpers ───────────────────────────────────────────────────────────
 const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
 const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
@@ -838,12 +871,13 @@ export async function POST(req: NextRequest) {
   // block the create response on Discord. Covers ALL creation paths (agents,
   // UI, n8n, curl) because every creation funnels through this endpoint.
   try {
+    const issueType = ((data.type as string) ?? 'task').toUpperCase()
     const typeEmoji = TYPE_EMOJI[(data.type as string) ?? 'task'] ?? '📋'
     const projEmoji = PROJECT_EMOJI[data.project as string] ?? ''
     const prio = (data.priority as string ?? 'medium').toUpperCase()
     const key = (data.task_key as string) ?? '?'
     const creator = (data.owner as string) ?? (data.assignee as string) ?? 'unknown'
-    const created_msg = `${typeEmoji} **${key}** [${prio}] ${projEmoji} ${data.project ?? ''} — ${data.title ?? ''}\n↳ assignee: ${data.assignee ?? '—'} · created_by: ${creator}`
+    const created_msg = `${typeEmoji} **${key}** [${issueType}] [${prio}] ${projEmoji} ${data.project ?? ''} — ${data.title ?? ''}\n↳ assignee: ${data.assignee ?? '—'} · created_by: ${creator}`
     postDiscord('1492576650137964694', created_msg)
   } catch (e) {
     console.warn('[discord-created] notify failed:', e)
@@ -1251,6 +1285,17 @@ export async function PATCH(req: NextRequest) {
     } else if (newAssignee) {
       activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status, data.id as string | undefined)
     }
+  }
+
+  // TOD-XXX (2026-04-12): self-chain — on ANY status change, fire run-agent
+  // for the lane(s) that pick up the NEW status. This converts the pipeline
+  // from poll-driven (30-min kicker) to event-driven (every transition
+  // immediately wakes the next lane). WIP enforcement dedupes. This fires
+  // for ALL transitions, not just the review ones handled above — so the
+  // SME decomposition → PO refinement → Builder implementation → Tester
+  // review chain flows automatically without any kicker.
+  if (fields.status && data && fields.status !== before?.status) {
+    selfChainOnStatus(fields.status as string)
   }
 
   if (fields.pr_url && !before?.pr_url && data) {
