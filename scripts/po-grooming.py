@@ -266,9 +266,11 @@ def main():
             title = title[:77] + "..."
         lines.append(f"{status_icon} `{r['key']}` — {title} [{r['type']} / {r['priority']}]")
         if r["auto_filled"]:
-            lines.append(f"   ✏️ `Auto-filled`: `{', '.join(r['auto_filled'])}`")
+            fields = ", ".join(f"`{f}`" for f in r["auto_filled"])
+            lines.append(f"   ✏️ Auto-filled: {fields}")
         if r["still_missing"]:
-            lines.append(f"   🚧 `Still needs`: `{', '.join(r['still_missing'])}`")
+            fields = ", ".join(f"`{f}`" for f in r["still_missing"])
+            lines.append(f"   🚧 Still needs: {fields}")
         lines.append("")
 
     dor_complete = sum(1 for r in results if not r["still_missing"])
