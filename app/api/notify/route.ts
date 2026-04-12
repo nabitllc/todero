@@ -34,18 +34,18 @@ interface ChannelConfig {
   label: string
 }
 
+// Channel IDs verified 2026-04-12 via GET /channels/{id} against live Discord API.
+// Dead channels (returning "Unknown Channel") have been removed.
 const CHANNELS: Record<string, ChannelConfig> = {
-  // Discord channels
-  'discord-alerts':        { transport: 'discord', target: '1485333335868834063', label: '#alerts' },
-  'discord-deploy':        { transport: 'discord', target: '1487826368170299592', label: '#3-ready-for-deploy' },
-  'discord-completed':     { transport: 'discord', target: '1487584901678104698', label: '#4-done' },
-  'discord-daily-standup': { transport: 'discord', target: '1489262030115012648', label: '#daily-standup' },
-  'discord-sprint-close':  { transport: 'discord', target: '1489262074687983656', label: '#sprint-close' },
-  'discord-retro':         { transport: 'discord', target: '1489262104677568542', label: '#retro' },
-  'discord-sprint-start':  { transport: 'discord', target: '1489262137221976115', label: '#sprint-start' },
-  'discord-signoff':       { transport: 'discord', target: '1489262196969263165', label: '#3-signoff' },
-  'discord-rejected':      { transport: 'discord', target: '1489262259762667580', label: '#2-rejected' },
-  'discord-created':       { transport: 'discord', target: '1492576650137964694', label: '#0-created' },
+  // Discord channels — names match actual Discord channel names
+  'discord-alerts':           { transport: 'discord', target: '1485333335868834063', label: '#alerts' },
+  'discord-rejected':         { transport: 'discord', target: '1490111660508319764', label: '#2-rejected' },
+  'discord-ready-for-deploy': { transport: 'discord', target: '1490111979673878700', label: '#3-ready-for-deploy' },
+  'discord-signoff':          { transport: 'discord', target: '1487584901678104698', label: '#3-signoff' },
+  'discord-done':             { transport: 'discord', target: '1489025078602760302', label: '#4-done' },
+  'discord-pr-reviews':       { transport: 'discord', target: '1487826368170299592', label: '#pr-reviews' },
+  'discord-created':          { transport: 'discord', target: '1492576650137964694', label: '#0-created' },
+  'discord-escalations':      { transport: 'discord', target: '1492706704993943552', label: '#escalations' },
 
   // Telegram
   'telegram-dm':    { transport: 'telegram', target: TELEGRAM_DM_CHAT,    label: 'Michael DM' },

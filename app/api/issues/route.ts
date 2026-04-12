@@ -105,12 +105,25 @@ function selfChainOnStatus(toStatus: string | undefined | null) {
 }
 
 // ── Discord helpers ───────────────────────────────────────────────────────────
-const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
+// ── Discord channel constants (verified 2026-04-12 via GET /channels/{id}) ──
+const DC = {
+  alerts:         '1485333335868834063',  // #alerts
+  rejected:       '1490111660508319764',  // #2-rejected
+  readyForDeploy: '1490111979673878700',  // #3-ready-for-deploy
+  signoff:        '1487584901678104698',  // #3-signoff
+  done:           '1489025078602760302',  // #4-done
+  prReviews:      '1487826368170299592',  // #pr-reviews
+  created:        '1492576650137964694',  // #0-created
+  escalations:    '1492706704993943552',  // #escalations
+} as const
 const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
 
 const PROJECT_EMOJI: Record<string, string> = {
-  Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️'
+  Vespera: '🖤', Kemuni: '🚀', Todero: '🧠', 'Mission Control': '🧠', Infrastructure: '⚙️'
 }
+
+const PRIO_LABEL: Record<string, string> = { critical: 'P0', high: 'P1', medium: 'P2', low: 'P3' }
+const SEV_LABEL: Record<string, string> = { S0: 'S0', S1: 'S1', S2: 'S2', S3: 'S3' }
 
 function postDiscord(channelId: string, content: string) {
   const token = process.env.DISCORD_BOT_TOKEN ?? DISCORD_BOT_TOKEN
@@ -159,22 +172,8 @@ const RESOLUTION_LABELS: Record<string, string> = {
   completed: 'Completed',
 }
 
-function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string; type?: string }) {
-  const key = issue.task_key ?? '?'
-  const status = issue.status ?? 'completed'
-  const statusEmoji = STATUS_EMOJI[status] ?? '✅'
-  const typeEmoji = TYPE_EMOJI[issue.type ?? 'task'] ?? '📋'
-  const rawResType = issue.resolution_type ?? status
-  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
-  const ts = new Date().toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-    hour12: true
-  }) + ' EST'
-  const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''} at ${ts}`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
-}
+// notifyDiscord() REMOVED — workflow_transitions table handles all status-change notifications.
+// Was duplicating messages for approved/completed/closed transitions.
 
 function notifyCompletedTask(issue: Record<string, unknown>, toStatus: string) {
   const key = issue.task_key ?? '?'
@@ -182,38 +181,54 @@ function notifyCompletedTask(issue: Record<string, unknown>, toStatus: string) {
   const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
   const rawResType = (issue.resolution_type as string) ?? toStatus
   const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
-  const ts = new Date().toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-    hour12: true
-  }) + ' EST'
-  const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''} at ${ts}`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+  if (toStatus === 'closed') {
+    // #6: Closed → #4-done
+    const notes = ((issue.closing_notes as string) ?? '').slice(0, 200)
+    const msg = `${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''}${notes ? '\n↳ closing_notes: ' + notes : ''}`
+    postDiscord(DC.done, msg)
+  } else if (toStatus === 'approved') {
+    // #4: Approved → #3-ready-for-deploy
+    const pr = (issue.pr_url as string) ?? (issue.feature_branch as string) ?? ''
+    const msg = `${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''}${pr ? '\n↳ PR: ' + pr : ''}`
+    postDiscord(DC.readyForDeploy, msg)
+  } else {
+    // #5: Completed/Released → #3-signoff
+    const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''}`
+    postDiscord(DC.signoff, msg)
+  }
 }
 
 function notifyPRReview(issue: { task_key?: string; title?: string; project?: string; feature_branch?: string; pr_url?: string }) {
   const key = issue.task_key ?? '?'
   const msg = `🔀 **PR Ready for Review**\n**[${key}]** ${issue.title ?? ''}\nProject: ${issue.project ?? ''} · Branch: ${issue.feature_branch ?? ''}\nPR: ${issue.pr_url ?? ''}\n<@409194957098713088> ready to merge`
-  postDiscord('1487826368170299592', msg)
+  postDiscord(DC.prReviews, msg)
 }
 
-function notifyEscalation(issue: { task_key?: string; title?: string; project?: string; acceptance_criteria?: string; description?: string }) {
-  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
-  const key = issue.task_key ?? '?'
-  const ac = (issue.acceptance_criteria ?? '').slice(0, 300)
-  const desc = (issue.description ?? '').slice(0, 300)
-  const msg = `🚨🚨 **ESCALATION: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n⚠️ **3 failed reviews — escalated to KAOS**\n📋 AC: ${ac}\n📝 Notes: ${desc}\n\n<@409194957098713088> manual investigation required.`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+function notifyEscalation(issue: Record<string, unknown>) {
+  const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
+  const key = (issue.task_key as string) ?? '?'
+  const prio = PRIO_LABEL[(issue.priority as string) ?? 'medium'] ?? 'P2'
+  const sev = issue.severity ? (SEV_LABEL[issue.severity as string] ?? (issue.severity as string)) : '—'
+  const reason = ((issue.last_rejection_reason as string) ?? (issue.description as string) ?? '').slice(0, 300)
+  const rejCount = (issue.rejection_count as number) ?? 0
+  const msg = `🚨 ${typeEmoji} **${key}** [${prio}] [${sev}] — ${issue.title ?? ''}\n⚠️ Escalated: ${rejCount} consecutive rejections\n📝 Last rejection: ${reason}\n💡 Fix: review tester_notes + designer_notes, address the specific defect, then re-submit.\n\n<@409194957098713088> manual investigation required.`
+  postDiscord(DC.escalations, msg)
 }
 
-function notifyTestFailure(issue: { task_key?: string; title?: string; project?: string; description?: string }) {
-  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
-  const key = issue.task_key ?? '?'
-  const desc = issue.description ?? ''
-  const failureSection = desc.includes('---') ? desc.split('---').pop()?.trim().slice(0, 300) : desc.slice(0, 300)
-  const msg = `🚨 **Test Failed: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n📝 Tester notes: ${failureSection || 'No details provided'}\n\nBuilder: pick up fix on next loop tick.`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+function notifyTestFailure(issue: Record<string, unknown>) {
+  const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
+  const key = (issue.task_key as string) ?? '?'
+  const title = (issue.title as string) ?? ''
+  const newStatus = (issue.status as string) ?? 'open'
+  const reason = (
+    (issue.last_rejection_reason as string) ??
+    (issue.tester_notes as string) ??
+    (issue.designer_notes as string) ??
+    (issue.reviewer_notes as string) ??
+    ''
+  ).slice(0, 300)
+  const msg = `❌ ${typeEmoji} **${key}** — ${title}\n↳ rejected: ${reason || 'No details provided'}\n↳ status: → ${newStatus}`
+  postDiscord(DC.rejected, msg)
 }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
@@ -505,7 +520,7 @@ async function executePostFunctions(
     }
 
     if (action === 'notify_discord') {
-      const channelId = (params.channel as string) ?? COMPLETED_TASKS_CHANNEL
+      const channelId = (params.channel as string) ?? DC.signoff
       const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
       const key = (notifyIssue.task_key ?? '?') as string
       const ts = new Date().toLocaleString('en-US', {
@@ -1273,9 +1288,7 @@ export async function PATCH(req: NextRequest) {
   const resolvedType = fields.resolution_type ?? data?.resolution_type
   const issueType = (fields.type ?? before?.type ?? 'task') as string
   const WORKFLOW_TYPES_NOTIFY = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
-  if (!WORKFLOW_TYPES_NOTIFY.includes(issueType) && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
-    notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
-  }
+  // REMOVED: notifyDiscord() duplicate — workflow_transitions table handles these transitions.
 
   const NON_ACTIVATING_STATUSES = new Set(['backlog', 'defined', 'closed', 'creation'])
   if (fields.status && data && !NON_ACTIVATING_STATUSES.has(fields.status)) {
@@ -1314,7 +1327,7 @@ export async function PATCH(req: NextRequest) {
       .eq('id', before.parent_id)
       .select()
       .single()
-    if (parentData) notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
+    if (parentData) notifyCompletedTask(parentData as Record<string, unknown>, 'completed')
   }
 
   if (isNewFailure && before?.assignee === 'ux' && before?.parent_id && data) {
