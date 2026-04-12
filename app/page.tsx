@@ -7,7 +7,7 @@
 // </div>
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
-import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings } from 'lucide-react'
+import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings, Inbox } from 'lucide-react'
 import { AGENT_DISPLAY, CRONS, LIVE_FEED, getNextRuns, ALL_AGENTS, PROJECT_COLORS, TYPE_COLORS, DEFAULT_SPRINT_PROJECTS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
 import { Dot } from '@/lib/mc-atoms'
 import BusinessRail from '@/components/BusinessRail'
@@ -27,6 +27,7 @@ import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
+import InboxTab from '@/components/tabs/InboxTab'
 import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
@@ -34,7 +35,7 @@ import TopBar from '@/components/TopBar'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
-  office: Building2, memory: Brain, board: Kanban, features: Map, issues: List, automations: Zap, chat: MessageSquare, infra: Server, settings: Settings,
+  office: Building2, memory: Brain, board: Kanban, features: Map, issues: List, automations: Zap, chat: MessageSquare, infra: Server, settings: Settings, inbox: Inbox,
 }
 
 const NAV = [
@@ -49,6 +50,7 @@ const NAV = [
   { id:'pipeline',     label:'Pipeline',     icon:'🏭' },
   { id:'issues',       label:'Issues',       icon:'📝' },
   { id:'product-board', label:'Product Board', icon:'🗓️' },
+  { id:'inbox',        label:'Inbox',         icon:'📥' },
   { id:'divider' as any, label:'',           icon:'' },
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
@@ -57,7 +59,7 @@ const NAV = [
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings']
+const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','product-board','inbox','automations','chat','infra','settings']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
@@ -173,6 +175,7 @@ export default function Home() {
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
+  const [inboxCount, setInboxCount] = useState(0)
   const [selectedBusiness, setSelectedBusiness] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const fromURL = parseURL()
@@ -300,6 +303,17 @@ export default function Home() {
   useEffect(() => { const t = setInterval(() => setClock(new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'America/New_York'}) + ' ET'), 1000); return () => clearInterval(t) }, [])
   useEffect(() => { fetch('/api/projects').then(r => r.json()).then(d => { if (Array.isArray(d) && d.length > 0) setProjects(d) }).catch(() => {}) }, [])
   useEffect(() => { fetch('/api/memory').then(r => r.json()).then(d => setMemFiles(d.files || [])) }, [])
+  // TOD-1044: Inbox pending count — poll every 30s
+  useEffect(() => {
+    const fetchInboxCount = () => {
+      fetch('/api/inbox?status=pending').then(r => r.json()).then(d => {
+        if (Array.isArray(d)) setInboxCount(d.length)
+      }).catch(() => {})
+    }
+    fetchInboxCount()
+    const iv = setInterval(fetchInboxCount, 30000)
+    return () => clearInterval(iv)
+  }, [])
   useEffect(() => { const t = setInterval(() => setFeedIdx(i => (i + 1) % LIVE_FEED.length), 4000); return () => clearInterval(t) }, [])
   useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 3000); return () => clearInterval(t) }, [])
 
@@ -347,6 +361,7 @@ export default function Home() {
         setUnreadChat={setUnreadChat}
         clock={clock}
         onSearchOpen={() => setSearchOpen(true)}
+        inboxCount={inboxCount}
       />
 
       {/* MOBILE BOTTOM NAV */}
@@ -423,6 +438,7 @@ export default function Home() {
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
           {tab === 'product-board' && <ProductBoardTab projectFilter={selectedBusiness} />}
+          {tab === 'inbox' && <InboxTab />}
           {tab === 'settings' && <SettingsTab />}
         </main>
       </div>

@@ -5,7 +5,7 @@ import React from 'react'
 import {
   LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain,
   Kanban, Map, List, FileStack, GitBranch,
-  Zap, MessageSquare, Server, Settings,
+  Zap, MessageSquare, Server, Settings, Inbox,
 } from 'lucide-react'
 import { Dot } from '@/lib/mc-atoms'
 
@@ -54,6 +54,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'Approvals',
+    items: [
+      { id: 'inbox', label: 'Inbox', icon: Inbox },
+    ],
+  },
+  {
     label: 'System',
     items: [
       { id: 'automations', label: 'Automations', icon: Zap },
@@ -71,6 +77,7 @@ interface SidebarNavProps {
   setUnreadChat?: (v: boolean) => void
   clock?: string
   onSearchOpen?: () => void
+  inboxCount?: number
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -80,6 +87,7 @@ export default function SidebarNav({
   unreadChat = false,
   setUnreadChat,
   clock,
+  inboxCount = 0,
 }: SidebarNavProps) {
   return (
     <aside className="w-52 shrink-0 hidden lg:flex flex-col border-r border-white/[0.07] sticky top-0 h-screen bg-[#080808]">
@@ -107,6 +115,7 @@ export default function SidebarNav({
                 const isActive = tab === item.id
                 const Icon = item.icon
                 const isChat = item.id === 'chat'
+                const isInbox = item.id === 'inbox'
                 return (
                   <button
                     key={item.id}
@@ -131,6 +140,12 @@ export default function SidebarNav({
                     {/* Unread chat dot */}
                     {isChat && unreadChat && !isActive && (
                       <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />
+                    )}
+                    {/* Inbox pending badge */}
+                    {isInbox && inboxCount > 0 && !isActive && (
+                      <span className="ml-auto min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                        {inboxCount > 99 ? '99+' : inboxCount}
+                      </span>
                     )}
                     {/* Active indicator */}
                     {isActive && (
