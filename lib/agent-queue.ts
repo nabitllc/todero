@@ -71,7 +71,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 50,
-    promptPrefix: 'You are Builder. Implement the following task. Run npm run build to verify. Commit with [skip ci]. Add [skip ci] to ALL commits.',
+    promptPrefix: 'You are Builder. Implement the following task. Run `npx tsc --noEmit` to type-check before committing (do NOT run `npm run build` — it collides with the production server build). Commit with [skip ci]. Add [skip ci] to ALL commits.',
     modelChain: [
       { runtime: 'claude-code', alias: 'sonnet' },  // primary: Claude Sonnet 4.6
       { runtime: 'codex',       alias: 'sonnet' },  // fallback 1: Codex o4-mini
@@ -100,13 +100,16 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     pickupStatus: 'code_review',
     extraFilters: '',
     dorFields: ['acceptance_criteria'],
-    wipLimit: 1,
+    // TOD-XXX (2026-04-12): bumped 1 → 3. Worktree isolation (TOD-806) makes
+    // concurrent reviews safe. 48+ code_review items were piling up at the
+    // old limit. Haiku + short review prompts mean 3 parallel is cheap.
+    wipLimit: 3,
     workingStatus: 'code_review',
     completionStatus: 'approved',
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Verify code changes, run npm run build. If passes: PATCH to approved with test_status=passed + reviewer_notes. If fails: PATCH back to open with reviewer_notes explaining what failed.',
+    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Verify code changes and run `npx tsc --noEmit` to type-check (do NOT run `npm run build` — it collides with the production server build). If types pass and code satisfies AC: PATCH to approved with test_status=passed + reviewer_notes. If fails: PATCH back to open with reviewer_notes explaining what failed.',
   },
 
   designer: {
@@ -115,13 +118,14 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     pickupStatus: 'code_review',
     extraFilters: '',
     dorFields: ['acceptance_criteria'],
-    wipLimit: 1,
+    // TOD-XXX (2026-04-12): bumped 1 → 3. Same reasoning as tester.
+    wipLimit: 3,
     workingStatus: 'code_review',
     completionStatus: 'approved',
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check responsive layout, accessibility, design system compliance. If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
+    promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check responsive layout, accessibility, design system compliance. Use `npx tsc --noEmit` if you need to verify types (do NOT run `npm run build` — it collides with the production server build). If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
   },
 
   // TOD-XXX (2026-04-11): PO is now the Tier-2 decomposer (Feature → Tasks).
