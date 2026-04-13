@@ -202,6 +202,72 @@ function notifyTestFailure(issue: { task_key?: string; title?: string; project?:
   postDiscord(COMPLETED_TASKS_CHANNEL, msg)
 }
 
+// ── TOD-1226: Watcher notifications on resolution ────────────────────────────
+// Fire-and-forget: send a Discord DM (or channel post) per watcher when an
+// issue transitions to completed or closed. Failure never blocks the PATCH.
+function notifyWatchers(issue: {
+  task_key?: string
+  title?: string
+  resolution_type?: string
+  implementation_notes?: string
+  watchers?: string[] | null
+}) {
+  const watchers = issue.watchers
+  if (!watchers || watchers.length === 0) return
+
+  const token = process.env.DISCORD_BOT_TOKEN ?? DISCORD_BOT_TOKEN
+  const key = issue.task_key ?? '?'
+  const resType = RESOLUTION_LABELS[issue.resolution_type ?? ''] ?? (issue.resolution_type ?? 'Resolved')
+  const notes = (issue.implementation_notes ?? '').slice(0, 200)
+  const link = `https://kaos.nabit.work`
+  const msg = `✅ **Resolved: [${key}]** ${issue.title ?? ''}\n**Resolution:** ${resType}\n${notes ? `**Notes:** ${notes}\n` : ''}🔗 ${link}`
+
+  for (const watcher of watchers) {
+    void (async () => {
+      try {
+        // Determine channel to post to.
+        // If watcher is a raw snowflake ID (user), open a DM channel first.
+        // If it already looks like a channel mention (<#id>) or channel ID, post directly.
+        let channelId: string | null = null
+        const channelMentionMatch = watcher.match(/^<#(\d+)>$/)
+        if (channelMentionMatch) {
+          channelId = channelMentionMatch[1]
+        } else if (/^\d{17,20}$/.test(watcher)) {
+          // Raw snowflake — treat as Discord user ID, open DM channel
+          const dmRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bot ${token}`,
+              'Content-Type': 'application/json',
+              'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
+            },
+            body: JSON.stringify({ recipient_id: watcher }),
+          })
+          if (dmRes.ok) {
+            const dmData = await dmRes.json() as { id?: string }
+            channelId = dmData.id ?? null
+          } else {
+            console.warn(`[notifyWatchers] DM channel open failed for ${watcher}: ${dmRes.status}`)
+          }
+        }
+        if (channelId) {
+          await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bot ${token}`,
+              'Content-Type': 'application/json',
+              'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
+            },
+            body: JSON.stringify({ content: msg }),
+          })
+        }
+      } catch (err) {
+        console.warn(`[notifyWatchers] failed for watcher ${watcher}:`, err instanceof Error ? err.message : String(err))
+      }
+    })()
+  }
+}
+
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const supabase = createClient(
   'https://twthgapiouiqhavrcnry.supabase.co',
@@ -1446,6 +1512,18 @@ export async function PATCH(req: NextRequest) {
         await epicUpdateQ
       }
     }
+  }
+
+  // ── TOD-1226: Watcher notifications on resolution ───────────────────────────
+  if (data && fields.status && fields.status !== before?.status &&
+      (fields.status === 'completed' || fields.status === 'closed')) {
+    notifyWatchers({
+      task_key: data.task_key as string | undefined,
+      title: data.title as string | undefined,
+      resolution_type: (fields.resolution_type ?? data.resolution_type) as string | undefined,
+      implementation_notes: (fields.implementation_notes ?? data.implementation_notes) as string | undefined,
+      watchers: data.watchers as string[] | null | undefined,
+    })
   }
 
   // ── TOD-631: In-app notifications on status transitions ──
