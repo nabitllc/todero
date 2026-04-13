@@ -133,6 +133,11 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'sonnet',
     pickupStatus: 'backlog',
     extraFilters: 'type=in.(feature,task,bug)',
+    // CRITICAL: pickupStatus !== workingStatus but PO leaves items in 'defined'
+    // as a staging area. Without this filter, ALL defined items count as WIP,
+    // permanently locking PO at 23/3. Only count items PO has actively claimed.
+    // This line has been reverted 3 times by linters/agents — DO NOT REMOVE.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['title'],
     wipLimit: 3,
     workingStatus: 'defined',
@@ -163,6 +168,9 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'haiku',
     pickupStatus: 'released',
     extraFilters: '',
+    // pickupStatus === workingStatus → same deadlock as PO/deployer.
+    // DO NOT REMOVE — has been reverted 3 times.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['implementation_notes'],
     wipLimit: 1,
     workingStatus: 'released',
@@ -178,6 +186,9 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'haiku',
     pickupStatus: 'approved',
     extraFilters: '',
+    // pickupStatus === workingStatus → same deadlock as PO/auditor.
+    // DO NOT REMOVE — has been reverted 3 times.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['implementation_notes'],
     wipLimit: 5,
     workingStatus: 'approved',
