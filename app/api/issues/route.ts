@@ -1034,7 +1034,7 @@ export async function PATCH(req: NextRequest) {
 
   /* ── Open-cap enforcement (backlog-first policy: max 10 open) ── */
   if (fields.status === 'open' && before?.status !== 'open') {
-    const MAX_OPEN = 10
+    const MAX_OPEN = 100
     const { count: openCount } = await supabase
       .from('issues')
       .select('id', { count: 'exact', head: true })
