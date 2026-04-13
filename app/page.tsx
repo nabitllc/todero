@@ -31,6 +31,7 @@ import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
 import TopBar from '@/components/TopBar'
+import HubSwitcher from '@/components/HubSwitcher'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -318,6 +319,10 @@ export default function Home() {
         setUnreadChat={setUnreadChat}
         clock={clock}
         onSearchOpen={() => setSearchOpen(true)}
+        selectedBusiness={selectedBusiness}
+        onSelectBusiness={selectBusiness}
+        onNewBusiness={() => setShowOnboarding(true)}
+        businessRailRefresh={businessRailRefresh}
       />
 
       {/* MOBILE BOTTOM NAV */}
@@ -336,6 +341,16 @@ export default function Home() {
       </nav>
       {showMobileMore && (
         <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-white/10 bg-neutral-950">
+          {/* TOD-1197: Hub switcher — mobile More menu */}
+          <div className="px-2 py-2 border-b border-white/[0.07]">
+            <p className="px-1 mb-1 text-[9px] font-semibold uppercase tracking-widest text-white/20 select-none">Hub</p>
+            <HubSwitcher
+              selected={selectedBusiness}
+              onSelect={(name) => { selectBusiness(name); setShowMobileMore(false) }}
+              onNew={() => { setShowOnboarding(true); setShowMobileMore(false) }}
+              refreshKey={businessRailRefresh}
+            />
+          </div>
           <div className="grid grid-cols-3 gap-px p-2">
             {NAV.filter(n => n.id !== 'divider' && !['overview','board','office','chat','calendar'].includes(n.id)).map(item => {
               const LIcon = LUCIDE_ICONS[item.id]
