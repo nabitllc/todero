@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-// ── Supabase ──────────────────────────────────────────────────────────────────
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-)
+import { getHubClient } from '@/lib/hub-client'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 const SPRINT_CLOSE_CHANNEL = '1491991699986055208'  // #sprint-close (metrics)
@@ -39,11 +32,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 })
     }
 
-    // 1. Find the active sprint for this business_id
-    const { data: activeSprint, error: findErr } = await supabase
+    // Hub-scoped client: all hub table queries auto-filtered to this business_id
+    const db = getHubClient(business_id)
+
+    // 1. Find the active sprint for this business_id (business_id filter auto-injected)
+    const { data: activeSprint, error: findErr } = await db
       .from('sprints')
       .select('*')
-      .eq('business_id', business_id)
       .eq('status', 'active')
       .limit(1)
       .single()
@@ -55,18 +50,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 2. Find projects for this business
-    const { data: projects } = await supabase
+    // 2. Find projects for this business (business_id filter auto-injected)
+    const { data: projects } = await db
       .from('projects')
       .select('name')
-      .eq('business_id', business_id)
 
     const projectNames = (projects ?? []).map((p) => p.name)
 
-    // 3. Fetch all issues in this sprint
+    // 3. Fetch all issues in this sprint (business_id filter auto-injected)
     let sprintIssues: Record<string, unknown>[] = []
     if (projectNames.length > 0) {
-      const { data: issues } = await supabase
+      const { data: issues } = await db
         .from('issues')
         .select('id, title, status, project, task_key, type, priority')
         .in('project', projectNames)
@@ -97,8 +91,8 @@ export async function POST(req: NextRequest) {
       by_status: byStatus,
     }
 
-    // 5. Close the sprint
-    const { data: closedSprint, error: closeErr } = await supabase
+    // 5. Close the sprint (business_id filter auto-injected, scoped by id too)
+    const { data: closedSprint, error: closeErr } = await db
       .from('sprints')
       .update({
         status: 'closed',
@@ -179,7 +173,7 @@ export async function POST(req: NextRequest) {
 
       if (carriedOverIds.length > 0 && newSprint?.start_date) {
         const newSprintDate = newSprint.start_date as string
-        const { error: carryErr } = await supabase
+        const { error: carryErr } = await db
           .from('issues')
           .update({ sprint: newSprintDate, updated_at: new Date().toISOString() })
           .in('id', carriedOverIds)

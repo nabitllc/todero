@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/hub-client'
 import { exec as execAsync } from 'child_process'
 import {
   VALID_TYPES,
@@ -172,10 +172,10 @@ function notifyTestFailure(issue: { task_key?: string; title?: string; project?:
 }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-)
+// AGGREGATE QUERY client: this route serves all issues across hubs.
+// Hub-scoped filtering is applied manually via resolveProjectNamesForBusiness (below).
+// See lib/hub-client.ts for per-hub scoping via getHubClient(business_id).
+const supabase = createAdminClient()
 
 // ── Activity event capture ────────────────────────────────────────────────────
 const KNOWN_AGENT_IDS = new Set([
