@@ -35,22 +35,33 @@ export const claudeCodeRuntime: AgentRuntime = {
   },
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult> {
-    // ── Prepare isolated worktree ───────────────────────────────────
-    const wtResult = prepareWorktree({
-      agentId: opts.agentId,
-      taskKey: extractTaskKeyFromBranch(opts.branch),
-      branch: opts.branch,
-    })
+    // ── Prepare isolated worktree (code-producing agents only) ──────
+    // Only builder and ops (ingo) write code + commit. Everyone else
+    // (tester, designer, po, auditor, deployer, SMEs) only PATCHes
+    // issue fields via the API — they don't need a branch or worktree.
+    // Creating worktrees for non-code agents produced 200+ zombie
+    // branches (feat/designer-notask-*, feat/po-notask-*, etc.) and
+    // wasted disk. DO NOT add agents to this list unless they `git commit`.
+    const CODE_AGENTS = new Set(['builder', 'ops'])
+    const useWorktree = CODE_AGENTS.has(opts.agentId) && opts.branch
 
     let effectiveWorkingDir = opts.workingDir
     let teardownPath: string | null = null
-    if (wtResult.ok && wtResult.worktreePath) {
-      effectiveWorkingDir = wtResult.worktreePath
-      teardownPath = wtResult.worktreePath
-    } else {
-      console.warn(
-        `[claude-code] worktree setup failed for ${opts.agentId} — falling back to shared dir. ${wtResult.error}`
-      )
+
+    if (useWorktree) {
+      const wtResult = prepareWorktree({
+        agentId: opts.agentId,
+        taskKey: extractTaskKeyFromBranch(opts.branch),
+        branch: opts.branch,
+      })
+      if (wtResult.ok && wtResult.worktreePath) {
+        effectiveWorkingDir = wtResult.worktreePath
+        teardownPath = wtResult.worktreePath
+      } else {
+        console.warn(
+          `[claude-code] worktree setup failed for ${opts.agentId} — falling back to shared dir. ${wtResult.error}`
+        )
+      }
     }
 
     // ── Write prompt to a temp file (avoids shell escaping entirely) ─
