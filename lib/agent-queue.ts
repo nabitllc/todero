@@ -91,7 +91,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 20,
-    promptPrefix: 'You are Ops. Handle this infrastructure/config task. Verify changes work. Commit with [skip ci].',
+    promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci].',
   },
 
   tester: {

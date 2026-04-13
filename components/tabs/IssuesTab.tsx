@@ -20,7 +20,7 @@ const ASSIGNEE_OPTIONS = ['main','builder','tester','scout','ops','kemuni-sme','
 const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
   main:{emoji:'🧠',name:'KAOS'}, builder:{emoji:'🔨',name:'Builder'},
   tester:{emoji:'🧪',name:'Tester'}, scout:{emoji:'🔍',name:'Scout'},
-  ops:{emoji:'⚙️',name:'Ops'}, 'kemuni-sme':{emoji:'🚀',name:'Kemuni SME'},
+  ops:{emoji:'⚙️',name:'Ingo'}, 'kemuni-sme':{emoji:'🚀',name:'Kemuni SME'},
   'vespera-sme':{emoji:'🖤',name:'Vespera SME'},
 }
 

@@ -65,7 +65,7 @@ When acting as a pipeline agent (Builder, Tester, Designer, PO, etc.):
 | Tester | QA Reviewer | Claude Haiku 4.5 | Active |
 | Designer | Design Review Agent | Claude Haiku 4.5 | Active |
 | Scout | Research Agent | Gemma 3 4B (Ollama) | Scheduled |
-| Ops | Infrastructure | — | Planned |
+| Ingo | Infrastructure | — | Planned |
 | Kemuni SME | Kemuni Product Specialist | Claude Sonnet 4.6 | Active |
 | Vespera SME | Vespera Product Specialist | Claude Sonnet 4.6 | Active |
 

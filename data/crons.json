@@ -39,7 +39,7 @@
     "min": 0,
     "days": "daily",
     "model": "n8n",
-    "project": "Ops",
+    "project": "Infrastructure",
     "status": "active",
     "desc": "OpenRouter balance to Telegram"
   },
@@ -50,7 +50,7 @@
     "min": 0,
     "days": "Mon",
     "model": "Sonnet",
-    "project": "Ops",
+    "project": "Infrastructure",
     "status": "active",
     "desc": "Weekly audit to Discord"
   },
