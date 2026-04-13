@@ -1,0 +1,58 @@
+{
+  "id": "ypkSfCq0LZ6eXDvM",
+  "name": "\u25b6\ufe0f Auto-Activate Assigned Agent on open queue \u2014 every 1 hour",
+  "active": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Every 1 hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 60
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Activate Assigned Agent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Hourly sweep for open issues.\n// Current assignee is the source of truth for activation.\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst h = { apikey: SK, Authorization: 'Bearer ' + SK };\nconst TRIGGER_URL = 'http://127.0.0.1:8787/trigger-agent';\nconst DEDUPE_TTL_MS = 55 * 60 * 1000;\n\nconst AGENT_MAP = {\n  'tester': 'tester', 'builder': 'builder', 'scout': 'scout', 'ops': 'ops',\n  'kemuni-sme': 'kemuni-sme', 'vespera-sme': 'vespera-sme', 'main': 'main', 'KAOS': 'main',\n  'po': 'po', 'designer': 'designer', 'auditor': 'auditor', 'deployer': 'deployer', 'ux': 'designer',\n};\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.triggered) staticData.triggered = {};\nconst now = Date.now();\nfor (const [key, ts] of Object.entries(staticData.triggered)) {\n  if (now - ts > DEDUPE_TTL_MS) delete staticData.triggered[key];\n}\n\nconst issues = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=eq.open&select=id,task_key,title,assignee,status',\n  headers: h\n});\n\nconst results = [];\nfor (const issue of issues) {\n  const agentId = issue.assignee ? AGENT_MAP[issue.assignee] : null;\n  const dedupeKey = `${issue.id}:${issue.assignee || 'unassigned'}:${issue.status}`;\n  if (staticData.triggered[dedupeKey]) continue;\n  if (!agentId) {\n    results.push({ key: issue.task_key, action: 'skipped', reason: `no agent for ${issue.assignee || 'unassigned'}` });\n    continue;\n  }\n\n  const message = `Issue ${issue.task_key} is open and assigned to you: ${issue.title}. Pick it up and start work.`;\n  try {\n    await helpers.httpRequest({\n      method: 'POST',\n      url: TRIGGER_URL,\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ agentId, message })\n    });\n    staticData.triggered[dedupeKey] = now;\n    results.push({ key: issue.task_key, agent: agentId, action: 'activated' });\n  } catch (e) {\n    results.push({ key: issue.task_key, agent: agentId, action: 'error', reason: e.message });\n  }\n}\n\nreturn [{ json: { processed: results.length, results, timestamp: new Date().toISOString() } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Every 1 hour": {
+      "main": [
+        [
+          {
+            "node": "Activate Assigned Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

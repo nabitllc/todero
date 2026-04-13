@@ -1,0 +1,85 @@
+{
+  "id": "X5D3gsXQ4Q5hzPOn",
+  "name": "Monitor: Ping Michael When Issues Cleared",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "get-issues",
+      "name": "Get All Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3000/api/issues",
+        "options": {}
+      }
+    },
+    {
+      "id": "check-and-notify",
+      "name": "Check Conditions & Notify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\n\nconst TELEGRAM_BOT_TOKEN = '8556679902:AAGFg5yBUkF_6EtWHgf3TwTlxva0vbhQvVE';\nconst TELEGRAM_CHAT_ID = '5084875115';\n\nconst inputItems = $input.all();\nlet issues = [];\nif (inputItems.length === 1 && Array.isArray(inputItems[0].json)) {\n  issues = inputItems[0].json;\n} else {\n  issues = inputItems.map(i => i.json);\n}\n\nconst todayStr = new Date().toLocaleDateString('en-CA', {timeZone: 'America/New_York'});\nif (staticData.last_check_date !== todayStr) {\n  staticData.notified_today_done = false;\n  staticData.last_check_date = todayStr;\n}\n\nfunction parseDt(s) {\n  return new Date(s.replace(/(\\.[0-9]{1,3})[0-9]*/g, '$1'));\n}\n\nconst todayStart = new Date('2026-03-30T00:00:00-04:00');\n\nconst todayNotDone = issues.filter(i => {\n  if (!i.created_at) return false;\n  const d = parseDt(i.created_at);\n  return d >= todayStart && !['closed', 'released', 'cancelled'].includes(i.status);\n});\n\nconst openNotMichael = issues.filter(i =>\n  i.status === 'open' && i.assignee && i.assignee !== 'michael'\n);\n\nconst results = [];\n\nif (todayNotDone.length === 0 && !staticData.notified_today_done) {\n  const resp = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {\n    method: 'POST',\n    headers: {'Content-Type': 'application/json'},\n    body: JSON.stringify({\n      chat_id: TELEGRAM_CHAT_ID,\n      text: '\\u2705 All issues created today are now closed/released.'\n    })\n  });\n  const body = await resp.json();\n  staticData.notified_today_done = true;\n  results.push({condition: 'today_done', sent: true, telegram_ok: resp.ok});\n} else {\n  results.push({condition: 'today_done', sent: false, remaining: todayNotDone.length, already_notified: !!staticData.notified_today_done});\n}\n\nif (openNotMichael.length === 0 && !staticData.notified_queue_clear) {\n  const resp = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {\n    method: 'POST',\n    headers: {'Content-Type': 'application/json'},\n    body: JSON.stringify({\n      chat_id: TELEGRAM_CHAT_ID,\n      text: '\\u2705 All open issues (not assigned to you) have been worked through.'\n    })\n  });\n  const body = await resp.json();\n  staticData.notified_queue_clear = true;\n  results.push({condition: 'queue_clear', sent: true, telegram_ok: resp.ok});\n} else {\n  results.push({condition: 'queue_clear', sent: false, remaining: openNotMichael.length, already_notified: !!staticData.notified_queue_clear});\n}\n\nreturn results.map(r => ({json: r}));\n"
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get All Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Issues": {
+      "main": [
+        [
+          {
+            "node": "Check Conditions & Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

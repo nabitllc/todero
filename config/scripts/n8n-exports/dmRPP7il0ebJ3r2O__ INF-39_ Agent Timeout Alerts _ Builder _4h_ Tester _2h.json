@@ -1,0 +1,58 @@
+{
+  "id": "dmRPP7il0ebJ3r2O",
+  "name": "\u23f0 INF-39: Agent Timeout Alerts \u2014 Builder >4h, Tester >2h",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Every 30 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Check Agent Timeouts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// INF-39: Alert on hung Builder (>4h) or Tester (>2h) tasks\nconst MC_API = 'http://localhost:3000/api/issues';\nconst TELEGRAM_USER = '5084875115';\nconst ALERTS_CHANNEL = '1485333335868834063'; // #alerts\n\nconst BUILDER_TIMEOUT_H = 4;\nconst TESTER_TIMEOUT_H = 2;\n\nconst staticData = this.getWorkflowStaticData('global');\nif (!staticData.alertedTasks) staticData.alertedTasks = {};\n\nconst now = Date.now();\n// Prune after 24h (re-alert if still stuck)\nfor (const [key, ts] of Object.entries(staticData.alertedTasks)) {\n  if (now - ts > 24 * 60 * 60 * 1000) delete staticData.alertedTasks[key];\n}\n\nconst {execSync} = require('child_process');\nconst alerts = [];\n\nlet allIssues;\ntry {\n  allIssues = await helpers.httpRequest({\n    method: 'GET',\n    url: MC_API,\n    headers: { 'Content-Type': 'application/json' }\n  });\n} catch(e) {\n  return [{ json: { error: String(e) } }];\n}\n\n// Builder tasks in_progress >4h\nconst builderTasks = allIssues.filter(i =>\n  i.assignee === 'builder' &&\n  i.status === 'in_progress' &&\n  i.started_at\n);\n\nfor (const task of builderTasks) {\n  const startedAt = new Date(task.started_at).getTime();\n  const ageH = (now - startedAt) / (60 * 60 * 1000);\n  \n  if (ageH < BUILDER_TIMEOUT_H) continue;\n  if (staticData.alertedTasks['b:' + task.id]) continue;\n\n  alerts.push({\n    type: 'builder',\n    task_key: task.task_key,\n    title: task.title,\n    age_hours: Math.round(ageH)\n  });\n  staticData.alertedTasks['b:' + task.id] = now;\n}\n\n// Tester tasks in in_review >2h\nconst testerTasks = allIssues.filter(i =>\n  i.assignee === 'tester' &&\n  i.status === 'in_review' &&\n  i.submitted_at\n);\n\nfor (const task of testerTasks) {\n  const submittedAt = new Date(task.submitted_at).getTime();\n  const ageH = (now - submittedAt) / (60 * 60 * 1000);\n  \n  if (ageH < TESTER_TIMEOUT_H) continue;\n  if (staticData.alertedTasks['t:' + task.id]) continue;\n\n  alerts.push({\n    type: 'tester',\n    task_key: task.task_key,\n    title: task.title,\n    age_hours: Math.round(ageH)\n  });\n  staticData.alertedTasks['t:' + task.id] = now;\n}\n\nif (alerts.length > 0) {\n  const builderAlerts = alerts.filter(a => a.type === 'builder');\n  const testerAlerts = alerts.filter(a => a.type === 'tester');\n  \n  let msg = '\\u26a0\\ufe0f Agent Timeout Alert\\n\\n';\n  if (builderAlerts.length > 0) {\n    msg += `\\ud83d\\udc77 Builder stuck (>${BUILDER_TIMEOUT_H}h):\\n`;\n    builderAlerts.forEach(a => msg += `\\u2022 ${a.task_key}: ${a.title.slice(0, 60)} (${a.age_hours}h)\\n`);\n  }\n  if (testerAlerts.length > 0) {\n    msg += `\\n\\ud83e\\uddea Tester stuck (>${TESTER_TIMEOUT_H}h):\\n`;\n    testerAlerts.forEach(a => msg += `\\u2022 ${a.task_key}: ${a.title.slice(0, 60)} (${a.age_hours}h)\\n`);\n  }\n\n  try {\n    execSync('openclaw message send --channel telegram --target ' + TELEGRAM_USER + ' --message ' + JSON.stringify(msg) + ' 2>/dev/null', {timeout: 15000, stdio: 'pipe'});\n  } catch(e) {}\n  \n  try {\n    execSync('openclaw message send --channel discord --target channel:' + ALERTS_CHANNEL + ' --message ' + JSON.stringify(msg) + ' 2>/dev/null', {timeout: 15000, stdio: 'pipe'});\n  } catch(e) {}\n}\n\nreturn [{ json: {\n  alerts_count: alerts.length,\n  alerts,\n  timestamp: new Date().toISOString()\n} }];"
+      }
+    }
+  ],
+  "connections": {
+    "Every 30 min": {
+      "main": [
+        [
+          {
+            "node": "Check Agent Timeouts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

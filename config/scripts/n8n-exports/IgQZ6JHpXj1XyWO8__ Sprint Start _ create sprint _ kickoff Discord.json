@@ -1,0 +1,49 @@
+{
+  "id": "IgQZ6JHpXj1XyWO8",
+  "name": "\ud83d\ude80 Sprint Start \u2014 create sprint + kickoff Discord",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n2",
+      "name": "Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst headers = { apikey: SK, Authorization: `Bearer ${SK}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };\nconst prev = await (await fetch(`${SUPA}/rest/v1/sprints?status=eq.closed&order=sprint_number.desc&limit=1&select=sprint_number,end_date`, { headers })).json();\nconst prevNum = prev[0]?.sprint_number || 0;\nconst newNum = prevNum + 1;\nconst startDate = prev[0]?.end_date || new Date().toISOString().slice(0,10);\nconst endDate = new Date(startDate + 'T12:00:00Z'); endDate.setUTCDate(endDate.getUTCDate() + 1);\nconst endDateStr = endDate.toISOString().slice(0,10);\nconst projects = ['Vespera', 'Mission Control', 'Infrastructure'];\nfor (const project of projects) {\n  await fetch(`${SUPA}/rest/v1/sprints`, { method: 'POST', headers, body: JSON.stringify({ name: `sprint-${newNum}`, project, sprint_number: newNum, start_date: startDate, end_date: endDateStr, status: 'active', goal: `Sprint ${newNum} \u2014 continue active work` }) });\n}\nconst issues = await (await fetch(`${SUPA}/rest/v1/issues?sprint=eq.${startDate}&status=in.(open,in_progress,code_review,product_review,approved)&select=id`, { headers })).json();\nconst kickoff = `\ud83d\ude80 Sprint ${newNum} Started\\n\ud83d\udcc5 ${startDate} \u2192 ${endDateStr} (24h)\\n\ud83d\udccb Issues in sprint: ${issues.length}\\n\ud83c\udfd7\ufe0f Projects: ${projects.join(', ')}\\n\u23f0 Sprint closes at 7am EDT tomorrow`;\nreturn [{ json: { ok: true, sprintNumber: newNum, startDate, endDate: endDateStr, issueCount: issues.length, kickoff } }];\n"
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

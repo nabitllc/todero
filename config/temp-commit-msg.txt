@@ -1,0 +1,1 @@
+MEMORY and session state updated for post-migration Claude Code era. Vespera/Kemuni paused. Todero focus only.

@@ -1,0 +1,56 @@
+{
+  "id": "W3vaygqY8IpjfBix",
+  "name": "\ud83c\udfa8 Designer Loop \u2014 review code_review queue every 30 min",
+  "active": false,
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "run",
+      "name": "Run",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Designer Loop \u2014 review code_review queue every 30 min\n// Picks 1 issue at a time where designer_status=pending\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst h = { apikey: SK, Authorization: 'Bearer ' + SK };\nconst TRIGGER_URL = 'http://127.0.0.1:8787/trigger-agent';\n\nconst issues = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=eq.code_review&designer_status=eq.pending&select=id,task_key,title,description,acceptance_criteria,implementation_notes,commit_sha,feature_branch,pr_url,type,project,severity&limit=1&order=created_at.asc',\n  headers: h\n});\nif (!Array.isArray(issues) || !issues.length) return [{ json: { action: 'idle', queue: 0 } }];\n\nconst issue = issues[0];\nconst prompt = [\n  'You are Designer. Review this issue for UI/UX quality. Check against your SOUL.md review checklist.',\n  '',\n  '## ' + issue.task_key + ' \u2014 ' + issue.title,\n  'Type: ' + issue.type + ' | Project: ' + issue.project + ' | Severity: ' + (issue.severity || 'not set \u2014 treat as S1'),\n  '',\n  'Review depth for ' + (issue.severity || 'S1') + ':',\n  '- S0: Full design audit (typography, spacing, color, mobile, accessibility)',\n  '- S1: Functional UI check (layout correct, no broken elements, mobile works)',\n  '- S2: Quick pass (nothing visually broken)',\n  '- S3: Sanity check only',\n  '',\n  '## Acceptance Criteria',\n  issue.acceptance_criteria || '(not set)',\n  '',\n  '## Implementation Notes',\n  issue.implementation_notes || '(not set)',\n  '',\n  '## References',\n  'commit_sha: ' + (issue.commit_sha || 'none') + ' | branch: ' + (issue.feature_branch || 'none') + ' | pr: ' + (issue.pr_url || 'none'),\n  '',\n  '## Action Required',\n  'PASS \u2192 PATCH http://localhost:3000/api/issues:',\n  '  {\"id\": \"' + issue.id + '\", \"designer_status\": \"passed\", \"designer_notes\": \"<summary>\", \"transitioned_by\": \"designer\"}',\n  '',\n  'FAIL \u2192 PATCH:',\n  '  {\"id\": \"' + issue.id + '\", \"designer_status\": \"failed\", \"designer_notes\": \"<what failed>\", \"transitioned_by\": \"designer\"}',\n  '',\n  'After completing, check for more: GET ' + SUPA + '/rest/v1/issues?status=eq.code_review&designer_status=eq.pending&limit=1&order=created_at.asc',\n].join('\\n');\n\ntry {\n  await helpers.httpRequest({\n    method: 'POST', url: TRIGGER_URL,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ agentId: 'designer', message: prompt })\n  });\n  return [{ json: { action: 'designer_triggered', task: issue.task_key, severity: issue.severity } }];\n} catch(e) {\n  return [{ json: { action: 'error', message: e.message } }];\n}"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

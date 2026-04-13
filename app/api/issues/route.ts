@@ -41,7 +41,7 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
 }
 
 const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
-const WORKSPACE = '/Users/kemuniagent/kaos-config'
+const WORKSPACE = '/Users/kemuniagent/todero/config'
 const TODERO_DIR = '/Users/kemuniagent/todero'
 
 function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, _issueId?: string) {

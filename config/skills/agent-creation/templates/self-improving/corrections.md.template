@@ -1,0 +1,11 @@
+# [AgentName] Corrections Log
+
+> Track corrections here. After 3 identical corrections → confirm as permanent rule in memory.md.
+
+## Format
+```
+[DATE] [TYPE: global|domain|project] [CONTEXT] — [CORRECTION] — status: tentative|confirmed
+```
+
+## Log
+(empty — no corrections yet)

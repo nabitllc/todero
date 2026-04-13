@@ -32,7 +32,7 @@ const SUPA_KEY = getSupaKey()
 const HEADERS = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': 'application/json' }
 
 const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
-const WORKSPACE = '/Users/kemuniagent/kaos-config'
+const WORKSPACE = '/Users/kemuniagent/todero/config'
 const TODERO_DIR = '/Users/kemuniagent/todero'
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
 const MAX_REJECTION_CYCLES = 3
@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
 
   // ── Step 9: Spawn Claude Code agent in background ──
   // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
-  // TOD-796 (2026-04-10): Now also injects kaos-config skills so pipeline agents inherit
+  // TOD-796 (2026-04-10): Now also injects todero/config skills so pipeline agents inherit
   // proactivity, corrections discipline, memory hygiene, and self-reflection rules.
   const readIfExists = (p: string): string => {
     try { return fsReadFileSync(p, 'utf8') } catch { return '' }
@@ -315,12 +315,12 @@ This rule exists because per-issue PRs create review fatigue and merge conflicts
   const skillReference = `
 
 📚 Additional skills available on disk (Read on demand):
-  ~/kaos-config/skills/proactivity/{setup,memory-template,migration,recovery,state,heartbeat-rules}.md
-  ~/kaos-config/skills/self-improving/{SKILL,setup,scaling,operations,memory-template,learning,boundaries}.md
-  ~/kaos-config/skills/agent-setup/references/{soul-template,agents-template,heartbeat-template}.md
-  ~/kaos-config/skills/issue-routing/SKILL.md
-  ~/kaos-config/skills/bug-report/SKILL.md
-  ~/kaos-config/skills/agent-creation/SKILL.md
+  ~/todero/config/skills/proactivity/{setup,memory-template,migration,recovery,state,heartbeat-rules}.md
+  ~/todero/config/skills/self-improving/{SKILL,setup,scaling,operations,memory-template,learning,boundaries}.md
+  ~/todero/config/skills/agent-setup/references/{soul-template,agents-template,heartbeat-template}.md
+  ~/todero/config/skills/issue-routing/SKILL.md
+  ~/todero/config/skills/bug-report/SKILL.md
+  ~/todero/config/skills/agent-creation/SKILL.md
 
 Your universal behavioral rules (proactivity loop, corrections discipline, memory hygiene, reflections) are already inlined above. Only Read additional files when the task specifically needs deeper protocol — don't load everything speculatively.`
 

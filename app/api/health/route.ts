@@ -43,7 +43,7 @@ export async function GET() {
   try { result.runtimes = await listRuntimes() } catch { result.runtimes = [] }
 
   try {
-    const heartbeatPath = join(homedir(), 'kaos-config', 'self-improving', 'heartbeat-state.md')
+    const heartbeatPath = join(homedir(), 'todero', 'config', 'self-improving', 'heartbeat-state.md')
     if (existsSync(heartbeatPath)) {
       const content = readFileSync(heartbeatPath, 'utf8')
       const parsed: Record<string, string> = {}
