@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, pathlib, subprocess, sys, time, urllib.request
+import json, os, pathlib, subprocess, sys, time, urllib.request
 from datetime import datetime
 
 BOTS = {
