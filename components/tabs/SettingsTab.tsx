@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { THEMES, THEME_IDS } from '@/lib/theme'
 import type { ThemeId } from '@/lib/theme'
+import CostBreakdownTable from '@/components/CostBreakdownTable'
 
 interface UsageData {
   supabase: { dbBytes: number | null; dbLimitBytes: number; plan: string; lastChecked: string }
@@ -276,6 +277,13 @@ export default function SettingsTab() {
           lastChecked={data.discord.lastChecked}>
           <div className="text-xs text-white/60">{data.discord.connected ? 'Bot is online and responding' : 'Bot is offline or token missing'}</div>
         </ServiceCard>
+      </div>
+
+      {/* Cost Breakdown */}
+      <div className="mt-10">
+        <h2 className="text-sm font-semibold text-white mb-1">Cost Breakdown</h2>
+        <p className="text-xs text-white/30 mb-4">Token usage and estimated cost per project and agent</p>
+        <CostBreakdownTable />
       </div>
     </div>
   )
