@@ -722,7 +722,10 @@ export async function POST(req: NextRequest) {
     else effectiveOwner = 'builder'
   }
 
-  const effectiveStatus = status ?? 'open'
+  // Default to 'defined' not 'open'. Open means "fully groomed, ready for Builder"
+  // and has a cap (MAX_OPEN=100). Agents creating child tasks should land in
+  // defined first — PO reviews and moves to open when DoR is met.
+  const effectiveStatus = status ?? 'defined'
 
   // TOD-XXX (2026-04-10): sprint hygiene guard. If sprint is missing OR is a
   // past date (older than today's ET date), auto-correct to today. Closed
@@ -877,8 +880,10 @@ export async function POST(req: NextRequest) {
       const prioMap: Record<string,string> = {critical:'P0',high:'P1',medium:'P2',low:'P3'}
       const prio = prioMap[(data.priority as string)] ?? (data.priority as string ?? 'medium').toUpperCase()
       const sev = data.severity ? (data.severity as string) : '—'
-      const creator = (data.owner as string) ?? (data.assignee as string) ?? 'unknown'
-      const msg = `${typeEmoji} **${key}** [${prio}] [${sev}] — ${data.title ?? ''}\n↳ created_by: ${creator}`
+      // Use transitioned_by from the POST body (the actual caller), not owner/assignee
+      // (which is the auto-routed recipient). PO creating a task shows "po", not "builder".
+      const creator = (body.transitioned_by as string) ?? (body.owner as string) ?? (data.assignee as string) ?? 'unknown'
+      const msg = `${typeEmoji} **${key}** [${prio}] [${sev}] — ${data.title ?? ''}\n↳ created_by: ${creator} · assignee: ${data.assignee ?? '—'}`
       postDiscord('1492576650137964694', msg)
     } catch (e) {
       console.warn('[discord-created] notify failed:', e)

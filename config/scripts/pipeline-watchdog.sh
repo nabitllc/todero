@@ -69,7 +69,7 @@ except: pass
 ISSUES=$(curl -s "$API" 2>/dev/null)
 if [ -z "$ISSUES" ] || echo "$ISSUES" | grep -q '"error"'; then
   echo "[FATAL] API unreachable"
-  notify_telegram "🚨 Watchdog: cannot reach $API. Server may be down."
+  NOTABLE="${NOTABLE}SERVER_DOWN "
   exit 1
 fi
 
@@ -199,10 +199,9 @@ bf = sum(1 for i in issues if i.get('status')=='backlog' and i.get('type')=='fea
 print(ow, df, bf)
 ")
 
-# §1 Empty open queue → Telegram
+# §1 Empty open queue → Discord #alerts (was Telegram — changed 2026-04-13)
 if [ "$OPEN_WORK" -eq 0 ]; then
   echo "[strategic] ⚠ Open queue EMPTY"
-  notify_telegram "⚠️ Pipeline: Open queue empty. No tasks/bugs/ops/research for Builder/Ingo."
   NOTABLE="${NOTABLE}open=EMPTY "
 fi
 
@@ -214,7 +213,7 @@ if [ "$DEF_FEAT" -lt 5 ]; then
     kick po
   else
     kick todero-sme; kick kemuni-sme; kick vespera-sme; kick infra-sme
-    notify_telegram "📋 Pipeline: <5 features defined AND 0 in backlog. SMEs activated."
+    NOTABLE="${NOTABLE}feat_pipeline_dry "
   fi
 fi
 
@@ -238,8 +237,9 @@ python3 -c "import json; json.dump({'stuck_streak':$STREAK,'last':'$(date -u +%F
 
 if [ "$STREAK" -ge 2 ]; then
   echo "[strategic] 🚨 ESCALATION: Builder+PO stuck $STREAK consecutive runs"
-  notify_telegram "🚨 Pipeline stuck ${STREAK}h: Builder+PO both idle with work. Check /api/run-agent."
-  NOTABLE="${NOTABLE}ESCALATION "
+  # Send to Discord #alerts, NOT Telegram DM. Telegram DM is reserved for
+  # direct conversation with KAOS, not automated pipeline alerts.
+  NOTABLE="${NOTABLE}ESCALATION(${STREAK}h) "
 fi
 
 # §4 Worktree GC
