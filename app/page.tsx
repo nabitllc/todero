@@ -27,6 +27,7 @@ import AutomationsTab from '@/components/tabs/AutomationsTab'
 import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
+import SupportTab from '@/components/tabs/SupportTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
 import MarketplaceTab from '@/components/tabs/MarketplaceTab'
 import QuickActionFab from '@/components/QuickActionFab'
@@ -58,10 +59,11 @@ const NAV = [
   { id:'chat',         label:'Chat',         icon:'💬' },
   { id:'infra',        label:'Infra',        icon:'⚙️' },
   { id:'settings',     label:'Settings',     icon:'⚙️' },
+  { id:'support',      label:'Support',      icon:'🆘' },
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','marketplace','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings']
+const VALID_TABS = ['overview','activity','team','marketplace','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings','support']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
@@ -419,6 +421,7 @@ export default function Home() {
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
           {tab === 'product-board' && <ProductBoardTab projectFilter={selectedBusiness} />}
           {tab === 'settings' && <SettingsTab />}
+          {tab === 'support' && <SupportTab />}
         </main>
       </div>
 
