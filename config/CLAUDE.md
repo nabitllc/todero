@@ -12,7 +12,7 @@ Read `AGENTS.md` for your operational protocols, issue lifecycle, and delegation
 
 ## What This Repo Is
 
-This repo (`kaos-config` / `~/todero/config`) contains:
+This directory (`~/todero/config`, formerly the kaos-config repo) contains:
 - Agent definitions, roles, and protocols (`AGENTS.md`, `SOUL.md`)
 - Accumulated project memory (`MEMORY.md`, `memory/`)
 - Self-improving patterns and corrections (`self-improving/`)
@@ -21,8 +21,8 @@ This repo (`kaos-config` / `~/todero/config`) contains:
 - Skills library (`skills/`)
 - Templates (`templates/`)
 
-The companion repo is `todero` — the Next.js app that runs the Todero API,
-UI, and issue board at `http://localhost:3000`. Located at `~/todero`.
+The parent repo is `todero` — the Next.js app that runs the Todero API,
+UI, and issue board at `http://localhost:3000`.
 
 ## Session Startup (every session)
 
@@ -75,7 +75,6 @@ When docs/comments refer to "production", use the URL, not the launchd label. Th
 | `work.nabit.telegram-kaos` | Telegram bot listener (polls KaosClaudeBot + KaosGPTBot) |
 | `work.nabit.agent-heartbeat` | Every 15 min — activates idle agents |
 | `work.nabit.monitor-stale` | Every 2h — auto-recovers stuck in_progress issues |
-| `work.nabit.monitor-stale-smoke` | Every 1h — watchdog on auto-recovery API |
 | `work.nabit.sprint-cycle` | Daily 6:55am ET — close/start sprint |
 | `work.nabit.pr-window` | 7am + 7pm ET — batch release PR |
 | `work.nabit.standup-report` | Daily 8am ET — standup Discord post |

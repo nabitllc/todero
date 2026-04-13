@@ -54,11 +54,15 @@ kick() {
 }
 
 notify_telegram() {
-  local TEXT="$1"
-  export TEXT
-  local PAYLOAD
-  PAYLOAD=$(python3 -c "import json, os; print(json.dumps({'channels':['telegram-dm'],'text':os.environ['TEXT']}))")
-  curl -s -X POST "$NOTIFY_API" -H "Content-Type: application/json" -d "$PAYLOAD" -o /dev/null 2>/dev/null
+  python3 -c "
+import json, sys, urllib.request
+msg = sys.argv[1]
+data = json.dumps({'channels':['telegram-dm'],'text':msg}).encode()
+req = urllib.request.Request('http://localhost:3000/api/notify', data=data,
+    headers={'Content-Type':'application/json'}, method='POST')
+try: urllib.request.urlopen(req, timeout=10)
+except: pass
+" "$1" 2>/dev/null
 }
 
 # ── Fetch state ─────────────────────────────────────────────────────────
@@ -256,10 +260,15 @@ git worktree prune 2>/dev/null
 # PART 3: Summary (Discord only if something happened)
 # ═══════════════════════════════════════════════════════════════════════
 if [ -n "$NOTABLE" ] || [ -n "$ACTIONS" ]; then
-  export MSG="🕐 Watchdog $(date '+%H:%M %Z') | ${NOTABLE}${ACTIONS:+spawned: $ACTIONS}"
-  curl -s -X POST "$NOTIFY_API" -H "Content-Type: application/json" \
-    -d "$(python3 -c "import json,os; print(json.dumps({'channels':['discord-alerts'],'text':os.environ['MSG']}))")" \
-    -o /dev/null 2>/dev/null
+  python3 -c "
+import json, sys, urllib.request
+msg = sys.argv[1]
+data = json.dumps({'channels':['discord-alerts'],'text':msg}).encode()
+req = urllib.request.Request('http://localhost:3000/api/notify', data=data,
+    headers={'Content-Type':'application/json'}, method='POST')
+try: urllib.request.urlopen(req, timeout=10)
+except: pass
+" "Watchdog $(date '+%H:%M %Z') | ${NOTABLE}${ACTIONS:+spawned: $ACTIONS}" 2>/dev/null
   echo "[discord] $NOTABLE$ACTIONS"
 fi
 
