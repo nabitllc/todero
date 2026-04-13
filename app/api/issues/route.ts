@@ -72,6 +72,36 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
   activateAgentAsync('designer', taskKey, title, 'code_review')
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SELF-CHAIN — DO NOT REMOVE — PROTECTED BY .githooks/pre-commit
+// Without this, the pipeline stalls for up to 30 min between every hand-off.
+// With it, every PATCH immediately wakes the next lane.
+// Has been reverted 3+ times by Builder agents on stale branches.
+// ═══════════════════════════════════════════════════════════════════════════
+const STATUS_PICKUP_LANES: Record<string, string[]> = {
+  backlog:        ['po', 'todero-sme', 'kemuni-sme', 'vespera-sme', 'infra-sme'],
+  defined:        ['po'],
+  open:           ['builder', 'ops', 'scout'],
+  code_review:    ['tester', 'designer'],
+  product_review: [],
+  approved:       ['deployer'],
+  released:       ['auditor'],
+}
+function selfChainOnStatus(toStatus: string | undefined | null) {
+  if (!toStatus) return
+  const lanes = STATUS_PICKUP_LANES[toStatus]
+  if (!lanes || lanes.length === 0) return
+  for (const lane of lanes) {
+    void (async () => {
+      try {
+        await fetch(`http://localhost:3000/api/run-agent?agent=${lane}`, { method: 'POST' })
+      } catch (err) {
+        console.warn(`[selfChain] ${lane} for ${toStatus}:`, err instanceof Error ? err.message : String(err))
+      }
+    })()
+  }
+}
+
 // ── Discord helpers ───────────────────────────────────────────────────────────
 const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
 const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
@@ -1323,6 +1353,11 @@ export async function PATCH(req: NextRequest) {
     } else if (newAssignee) {
       activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status, data.id as string | undefined)
     }
+  }
+
+  // SELF-CHAIN CALL — DO NOT REMOVE (protected by .githooks/pre-commit)
+  if (fields.status && data && fields.status !== before?.status) {
+    selfChainOnStatus(fields.status as string)
   }
 
   if (fields.pr_url && !before?.pr_url && data) {
