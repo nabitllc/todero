@@ -1,0 +1,63 @@
+#!/bin/bash
+# pre-commit hook: prevent Builder/agent feature branches from modifying
+# infrastructure files that control the pipeline itself.
+#
+# These files have been reverted 5+ times by agents working on stale
+# feature branches. The revert wipes critical configs (wipExtraFilter,
+# selfChainOnStatus, channel routing, worktree isolation) and breaks
+# the pipeline for hours until someone notices.
+#
+# Only commits on `main` by `michael` or `main` (KAOS) are allowed to
+# touch these files. Feature-branch commits are rejected with a
+# descriptive error.
+
+LOCKED_FILES=(
+  "lib/agent-queue.ts"
+  "lib/runtimes/claude-code.ts"
+  "lib/runtimes/worktree.ts"
+  "lib/constants.ts"
+  "app/api/issues/route.ts"
+  "app/api/run-agent/route.ts"
+  "app/api/notify/route.ts"
+)
+
+# Get current branch
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+# Allow commits on main (KAOS, michael, or this Claude session)
+if [ "$BRANCH" = "main" ]; then
+  exit 0
+fi
+
+# Check if any staged files are in the locked list
+STAGED=$(git diff --cached --name-only)
+BLOCKED=""
+
+for file in "${LOCKED_FILES[@]}"; do
+  if echo "$STAGED" | grep -qx "$file"; then
+    BLOCKED="${BLOCKED}
+  ❌ $file"
+  fi
+done
+
+if [ -n "$BLOCKED" ]; then
+  echo ""
+  echo "═══════════════════════════════════════════════════════════════"
+  echo "  🔒 BLOCKED: Infrastructure files cannot be modified on"
+  echo "     feature branches. These files control the pipeline and"
+  echo "     have been accidentally reverted 5+ times."
+  echo ""
+  echo "  Blocked files:${BLOCKED}
+"
+  echo ""
+  echo "  Branch: $BRANCH"
+  echo ""
+  echo "  If you need to change these files, commit directly on main."
+  echo "  If you're a Builder agent: skip these files. Your task"
+  echo "  should not require modifying pipeline infrastructure."
+  echo "═══════════════════════════════════════════════════════════════"
+  echo ""
+  exit 1
+fi
+
+exit 0
