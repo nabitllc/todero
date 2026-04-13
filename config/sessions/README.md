@@ -47,9 +47,9 @@ context with no memory of prior tasks or corrections.
 
 Statelessness is the #1 root cause of "agents forget to PATCH status", "agents
 lose context on chaining", and "agents don't learn from corrections". Without
-session continuity, the self-improving skills at `~/kaos-config/skills/` cannot
+session continuity, the self-improving skills at `~/todero/config/skills/` cannot
 write back to `corrections.md` or `session-state.md`.
 
-See `~/kaos-config/skills/proactivity/execution.md` and
-`~/kaos-config/skills/self-improving/memory.md` for the contract each session
+See `~/todero/config/skills/proactivity/execution.md` and
+`~/todero/config/skills/self-improving/memory.md` for the contract each session
 needs to honor.

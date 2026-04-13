@@ -883,6 +883,22 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // Post to #0-created on every new issue. DO NOT REMOVE.
+  if (data) {
+    try {
+      const typeEmoji = TYPE_EMOJI[(data.type as string) ?? 'task'] ?? '📋'
+      const key = (data.task_key as string) ?? '?'
+      const prioMap: Record<string,string> = {critical:'P0',high:'P1',medium:'P2',low:'P3'}
+      const prio = prioMap[(data.priority as string)] ?? (data.priority as string ?? 'medium').toUpperCase()
+      const sev = data.severity ? (data.severity as string) : '—'
+      const creator = (data.owner as string) ?? (data.assignee as string) ?? 'unknown'
+      const msg = `${typeEmoji} **${key}** [${prio}] [${sev}] — ${data.title ?? ''}\n↳ created_by: ${creator}`
+      postDiscord('1492576650137964694', msg)
+    } catch (e) {
+      console.warn('[discord-created] notify failed:', e)
+    }
+  }
+
   return NextResponse.json(withIssueStatusCategory(data))
 }
 

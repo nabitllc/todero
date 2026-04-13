@@ -25,7 +25,7 @@ Treated as a first-class project with its own epics, backlog, and SME. Everythin
   - Logs: `/tmp/agent-*.log`, `/tmp/todero.log`, `~/todero/config/logs/*.log`
 - **Discord + Telegram transports** (`/api/notify`, `postDiscord` helpers, `telegram-kaos.py`)
 - **TCC grants** (App Management + Full Disk Access for `node` + `claude`)
-- **Git workflow integrity** (pre-push hook PR window, post-commit auto-rebuild, kaos-config auto-push)
+- **Git workflow integrity** (pre-push hook PR window, post-commit auto-rebuild, config/ auto-push)
 
 ### Out of scope
 - Product features (that's Todero/Kemuni/Vespera SMEs)
