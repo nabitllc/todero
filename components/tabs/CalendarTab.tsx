@@ -60,7 +60,7 @@ export default function CalendarTab({
               end: p.deadline || p.end_date,
             })).filter(s=>s.start && s.end)
             const isInSprint = (dateStr:string, s:any) => dateStr >= s.start && dateStr <= s.end
-            const projColor = (p:string) => p==='Vespera'?'#a855f7':p==='Kemuni'?'#3b82f6':p==='Infrastructure'?'#f59e0b':'#6b7280'
+            const projColor = pColor
             // Cron label helper
             const cronLabel = (c:any) => (c.name || c.desc || c.id.replace(/-/g,' '))
 
@@ -72,6 +72,8 @@ export default function CalendarTab({
                 <div className="flex gap-1 bg-[#0f0f0f] rounded-lg p-0.5 border border-white/10">
                   {(['week','month'] as const).map(v=>(
                     <button key={v} onClick={()=>setCalendarView(v)}
+                      aria-label={`Switch to ${v} view`}
+                      aria-pressed={calView===v}
                       className={'px-3 py-1 text-[11px] font-semibold rounded-md transition-all '+(calView===v?'bg-white text-black':'text-white/50 hover:text-white/70')}>
                       {v === 'week' ? 'Week' : 'Month'}
                     </button>
@@ -97,14 +99,15 @@ export default function CalendarTab({
                 <SH icon="⚡">Always Running</SH>
                 <div className="flex flex-wrap gap-2">
                   {CRONS.filter(c=>c.days==='daily'&&c.status==='active').map(c=>(
-                    <div key={c.id} className="flex items-center gap-2 px-2.5 md:px-3 py-1.5 rounded-full border cursor-pointer hover:brightness-125 transition-all"
+                    <button key={c.id} className="flex items-center gap-2 px-2.5 md:px-3 py-1.5 rounded-full border cursor-pointer hover:brightness-125 transition-all"
                       style={{background:pColor(c.project)+'15',borderColor:pColor(c.project)+'40'}}
+                      aria-label={`View details for ${cronLabel(c)} automation`}
                       onClick={()=>setCronModal(c)}>
                       <Dot status="active" sm />
                       <span className="text-xs font-medium" style={{color:pColor(c.project)}}>{cronLabel(c)}</span>
                       <span className="text-white/30 text-[10px]">· {c.time}</span>
                       <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/40 font-mono">{c.model}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -157,11 +160,12 @@ export default function CalendarTab({
                         {dayIssues.length>3 && <div className="text-[8px] text-white/30">+{dayIssues.length-3} more</div>}
                         {/* Cron events (compact in month view) */}
                         {calView==='week' && dayCrons.slice(0,3).map((c:any)=>(
-                          <div key={c.id} className="text-[9px] leading-tight mb-0.5 px-1 py-0.5 rounded truncate cursor-pointer hover:brightness-125"
+                          <button key={c.id} className="text-[9px] leading-tight mb-0.5 px-1 py-0.5 rounded truncate cursor-pointer hover:brightness-125 w-full text-left"
                             style={{background:'rgba(255,255,255,0.03)',color:'rgba(255,255,255,0.4)'}}
+                            aria-label={`View ${cronLabel(c)} at ${c.time}`}
                             onClick={()=>setCronModal(c)}>
                             {c.time} {cronLabel(c)}
-                          </div>
+                          </button>
                         ))}
                         {calView==='month' && dayCrons.length>0 && (
                           <div className="text-[8px] text-white/30">{dayCrons.length} cron{dayCrons.length>1?'s':''}</div>
@@ -175,7 +179,7 @@ export default function CalendarTab({
                 <SH icon="⏭">Next Up</SH>
                 <div className="space-y-2">
                   {nextRuns.map(({cron,mins},i)=>(
-                    <div key={cron.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 rounded-xl border border-white/10 cursor-pointer hover:border-white/20 transition-colors" style={{background:'#0f0f0f'}} onClick={()=>setCronModal(cron)}>
+                    <button key={cron.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 rounded-xl border border-white/10 cursor-pointer hover:border-white/20 transition-colors w-full text-left" style={{background:'#0f0f0f'}} aria-label={`View details for ${cron.id}`} onClick={()=>setCronModal(cron)}>
                       <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
                         <span className="text-white/30 text-xs shrink-0">#{i+1}</span>
                         <Dot status={cron.status} />
@@ -188,7 +192,7 @@ export default function CalendarTab({
                         </span>
                         <Chip label={cron.project} color={pColor(cron.project)} />
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -209,8 +213,9 @@ export default function CalendarTab({
                           const modelColor = c.model==='n8n'?'#6b7280':c.model==='Haiku'?'#3b82f6':c.model==='Sonnet'?'#a855f7':c.model==='Gemma'?'#10b981':'#6b7280'
                           const isError = c.status === 'error' || (c.consecutiveErrors ?? 0) > 0
                           return (
-                            <div key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-white/5 transition-colors '+(i<arr.length-1?'border-b border-white/10':'')}
+                            <button key={c.id} className={'flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-4 px-4 md:px-5 py-3 cursor-pointer hover:bg-white/5 transition-colors w-full text-left '+(i<arr.length-1?'border-b border-white/10':'')}
                               style={isError ? {background:'rgba(239,68,68,0.05)'} : {}}
+                              aria-label={`View details for ${c.name || c.desc || c.id}`}
                               onClick={()=>setCronModal(c)}>
                               <div className="flex items-center gap-2 sm:gap-4">
                                 <span className="font-mono text-xs text-white/40 shrink-0">{c.time}</span>
@@ -227,7 +232,7 @@ export default function CalendarTab({
                                 <span className="text-white/70 text-xs truncate">{c.name || c.desc}</span>
                                 {c.lastRunAtMs && <span className="text-white/30 text-[9px] shrink-0 ml-auto">{Math.round((Date.now()-c.lastRunAtMs)/60000)}m ago</span>}
                               </div>
-                            </div>
+                            </button>
                           )
                         })}
                       </div>
@@ -242,7 +247,7 @@ export default function CalendarTab({
                   <div className="w-full max-w-sm md:rounded-2xl rounded-t-2xl border border-white/10 p-5 md:p-6 space-y-3 max-h-[85vh] overflow-y-auto" style={{background:'#080808'}} onClick={e=>e.stopPropagation()}>
                     <div className="flex items-center justify-between">
                       <h3 className="text-white font-semibold text-sm">{cronModal.id}</h3>
-                      <button onClick={()=>setCronModal(null)} className="text-white/30 hover:text-white text-lg">✕</button>
+                      <button onClick={()=>setCronModal(null)} className="text-white/30 hover:text-white text-lg" aria-label="Close details modal">✕</button>
                     </div>
                     <div className="space-y-2.5">
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Description</p><p className="text-white/70 text-sm">{cronModal.desc}</p></div>

@@ -22,7 +22,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
   }, [])
 
   const AGENT_NAMES: Record<string,{name:string;emoji:string}> = {
-    main:{name:'KAOS',emoji:'🧠'}, scout:{name:'Scout',emoji:'🔍'}, ops:{name:'Ops',emoji:'⚙️'},
+    main:{name:'KAOS',emoji:'🧠'}, scout:{name:'Scout',emoji:'🔍'}, ops:{name:'Ingo',emoji:'⚙️'},
     'kemuni-sme':{name:'Kemuni SME',emoji:'🚀'}, 'vespera-sme':{name:'Vespera SME',emoji:'🖤'},
     builder:{name:'Builder',emoji:'🔨'}, tester:{name:'Tester',emoji:'🧪'}, deployer:{name:'Deployer',emoji:'🚀'},
   }

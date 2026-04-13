@@ -15,6 +15,7 @@ import OnboardingWizard from '@/components/OnboardingWizard'
 import OverviewTab from '@/components/tabs/OverviewTab'
 import ActivityTab from '@/components/tabs/ActivityTab'
 import AgentsTab from '@/components/tabs/AgentsTab'
+import CrewTab from '@/components/tabs/CrewTab'
 import CalendarTab from '@/components/tabs/CalendarTab'
 import OfficeTab from '@/components/tabs/OfficeTab'
 import MemoryTab from '@/components/tabs/MemoryTab'
@@ -31,6 +32,7 @@ import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
 import TopBar from '@/components/TopBar'
+import HubSwitcher from '@/components/HubSwitcher'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -109,6 +111,7 @@ export default function Home() {
     }
     return 'overview'
   })
+  const [userRole, setUserRole] = useState<string | null>(null)
   const [clock, setClock] = useState('')
   const [memFiles, setMemFiles] = useState<any[]>([])
   const [openMem, setOpenMem] = useState<string | null>(null)
@@ -163,6 +166,12 @@ export default function Home() {
   const [calendarIssues, setCalendarIssues] = useState<any[]>([])
   const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:string}>>({})
   const [agentIssueCounts, setAgentIssueCounts] = useState<Record<string, number>>({})
+
+  // Read mc-role cookie (not httpOnly — accessible to JS) for RBAC-aware UI
+  useEffect(() => {
+    const match = document.cookie.match(/(?:^|;\s*)mc-role=([^;]+)/)
+    if (match) setUserRole(decodeURIComponent(match[1]))
+  }, [])
 
   // Agent runs + issue counts polling
   useEffect(() => {
@@ -318,6 +327,10 @@ export default function Home() {
         setUnreadChat={setUnreadChat}
         clock={clock}
         onSearchOpen={() => setSearchOpen(true)}
+        selectedBusiness={selectedBusiness}
+        onSelectBusiness={selectBusiness}
+        onNewBusiness={() => setShowOnboarding(true)}
+        businessRailRefresh={businessRailRefresh}
       />
 
       {/* MOBILE BOTTOM NAV */}
@@ -336,6 +349,16 @@ export default function Home() {
       </nav>
       {showMobileMore && (
         <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-white/10 bg-neutral-950">
+          {/* TOD-1197: Hub switcher — mobile More menu */}
+          <div className="px-2 py-2 border-b border-white/[0.07]">
+            <p className="px-1 mb-1 text-[9px] font-semibold uppercase tracking-widest text-white/20 select-none">Hub</p>
+            <HubSwitcher
+              selected={selectedBusiness}
+              onSelect={(name) => { selectBusiness(name); setShowMobileMore(false) }}
+              onNew={() => { setShowOnboarding(true); setShowMobileMore(false) }}
+              refreshKey={businessRailRefresh}
+            />
+          </div>
           <div className="grid grid-cols-3 gap-px p-2">
             {NAV.filter(n => n.id !== 'divider' && !['overview','board','office','chat','calendar'].includes(n.id)).map(item => {
               const LIcon = LUCIDE_ICONS[item.id]
@@ -380,7 +403,7 @@ export default function Home() {
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
-          {tab === 'team' && <AgentsTab displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
+          {tab === 'team' && <CrewTab userRole={userRole} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
           {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} openMem={openMem} setOpenMem={setOpenMem} />}

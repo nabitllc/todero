@@ -167,7 +167,7 @@ export async function GET() {
   // ── Recent Activity + Agent current tasks from all agent sessions ──
   try {
     const AGENT_NAMES: Record<string,string> = {
-      main:'KAOS', scout:'Scout', ops:'Ops', 'kemuni-sme':'Kemuni SME', 'vespera-sme':'Vespera SME'
+      main:'KAOS', scout:'Scout', ops:'Ingo', 'kemuni-sme':'Kemuni SME', 'vespera-sme':'Vespera SME'
     }
     const AGENT_EMOJIS: Record<string,string> = {
       main:'🧠', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤'

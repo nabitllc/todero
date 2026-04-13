@@ -19,9 +19,16 @@ import { exec } from 'child_process'
 import { readFileSync as fsReadFileSync } from 'fs'
 import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
 import { recordSpawn } from '@/lib/runtimes/token-ledger'
+import { logAgentCost } from '@/lib/agent-cost-log'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+// TOD-939: Fail loud if SUPABASE_SERVICE_ROLE_KEY is missing — no hardcoded key fallback (TOD-767 rule)
+function getSupaKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY env var is required (TOD-767)')
+  return key
+}
+const SUPA_KEY = getSupaKey()
 const HEADERS = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': 'application/json' }
 
 const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
@@ -384,6 +391,16 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     logFile,
     metadata: { branch: branch ?? null, priority: task.priority },
   })
+
+  // TOD-939: Best-effort cost logging — fire-and-forget, never blocks response
+  logAgentCost({
+    project: task.project,
+    agent: agentId,
+    cost_usd: 0,
+    token_count: 0,
+    task_key: task.task_key,
+    date: new Date().toISOString().slice(0, 10),
+  }).catch(() => { /* best-effort */ })
 
   return NextResponse.json({
     ok: spawnResult.ok,

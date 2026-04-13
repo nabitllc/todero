@@ -19,7 +19,7 @@ function actorType(assignee: string): 'agent' | 'human' | 'system' {
 }
 
 const ACTOR_NAMES: Record<string, string> = {
-  builder: 'Builder', tester: 'Tester', designer: 'Designer', ops: 'Ops',
+  builder: 'Builder', tester: 'Tester', designer: 'Designer', ops: 'Ingo',
   scout: 'Scout', 'kemuni-sme': 'Kemuni SME', 'vespera-sme': 'Vespera SME',
   main: 'KAOS', KAOS: 'KAOS', michael: 'Michael', auditor: 'Auditor',
   deployer: 'Deployer', po: 'PO',

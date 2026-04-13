@@ -1,7 +1,10 @@
 // ── Project prefix map (shared between API routes, migrations, and tests) ───
+// TOD-XXX (2026-04-13): Infrastructure changed INF → TOD. All projects now use
+// TOD-* prefix except legacy MC/VES/KEM which keep theirs for backward compat.
+// No new INF-* issues will ever be created. Existing INF-* stay as-is in DB.
 export const PROJECT_PREFIX: Record<string, string> = {
   'Mission Control': 'MC',
-  Infrastructure: 'INF',
+  Infrastructure: 'TOD',
   Vespera: 'VES',
   Kemuni: 'KEM',
   Todero: 'TOD',

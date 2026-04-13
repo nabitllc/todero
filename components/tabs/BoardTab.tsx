@@ -176,7 +176,7 @@ const ALL_STATUSES = [
 const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
   main:          {emoji:'🧠', name:'KAOS'},
   scout:         {emoji:'🔍', name:'Scout'},
-  ops:           {emoji:'⚙️', name:'Ops'},
+  ops:           {emoji:'⚙️', name:'Ingo'},
   'kemuni-sme':  {emoji:'🚀', name:'Kemuni SME'},
   'vespera-sme': {emoji:'🖤', name:'Vespera SME'},
   builder:       {emoji:'🔨', name:'Builder'},

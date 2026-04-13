@@ -1,4 +1,4 @@
-# HEARTBEAT.md - Ops
+# HEARTBEAT.md - Ingo
 
 ## Purpose
 Infrastructure health check. Run every 6 hours. Stay cheap, stay quiet.
@@ -48,7 +48,7 @@ When any check above fails, create a bug issue via MC API.
 
 1. **Deduplication first**: Before creating a bug, check if one already exists:
    ```
-   GET http://localhost:3000/api/issues?type=eq.bug&status=eq.open&title=like.*Ops:*{anomaly_keyword}*
+   GET http://localhost:3000/api/issues?type=eq.bug&status=eq.open&title=like.*Ingo:*{anomaly_keyword}*
    ```
    If a matching open bug exists, skip creation and log: `Duplicate bug exists — skipping`
 
@@ -58,7 +58,7 @@ When any check above fails, create a bug issue via MC API.
    Content-Type: application/json
 
    {
-     "title": "Ops: {anomaly description} detected at {timestamp}",
+     "title": "Ingo: {anomaly description} detected at {timestamp}",
      "type": "bug",
      "priority": "{severity from check}",
      "assignee": "ops",
@@ -73,12 +73,12 @@ When any check above fails, create a bug issue via MC API.
 
 | Anomaly | Priority | Title Pattern | Suggested Fix | Acceptance Criteria |
 |---|---|---|---|---|
-| MC server not responding | critical | `Ops: MC server down at {ts}` | Restart: `cd /Users/kemuniagent/mission-control && npm run dev` | `curl localhost:3000` returns 200 |
-| Builder loop not running | medium | `Ops: Builder loop stopped at {ts}` | Restart: `bash /Users/kemuniagent/scripts/builder-loop.sh &` | `pgrep -f builder-loop` finds process |
-| Disk usage >90% | high | `Ops: Disk usage {pct}% at {ts}` | Clear logs: `/tmp/*.log`, `~/.n8n/n8nEventLog*.log` | `df -h /` shows <85% |
-| n8n not running | high | `Ops: n8n service down at {ts}` | Restart: `launchctl load ~/Library/LaunchAgents/com.n8n.plist` | n8n responds on port 5678 |
-| Agent run errors | medium | `Ops: {count} agent errors in last hour at {ts}` | Review agent_runs table, check logs | No error-status agent_runs in 1h |
-| OpenClaw gateway down | critical | `Ops: OpenClaw gateway unreachable at {ts}` | Restart: `openclaw gateway start` | `openclaw gateway status` shows running |
+| MC server not responding | critical | `Ingo: MC server down at {ts}` | Restart: `cd /Users/kemuniagent/mission-control && npm run dev` | `curl localhost:3000` returns 200 |
+| Builder loop not running | medium | `Ingo: Builder loop stopped at {ts}` | Restart: `bash /Users/kemuniagent/scripts/builder-loop.sh &` | `pgrep -f builder-loop` finds process |
+| Disk usage >90% | high | `Ingo: Disk usage {pct}% at {ts}` | Clear logs: `/tmp/*.log`, `~/.n8n/n8nEventLog*.log` | `df -h /` shows <85% |
+| n8n not running | high | `Ingo: n8n service down at {ts}` | Restart: `launchctl load ~/Library/LaunchAgents/com.n8n.plist` | n8n responds on port 5678 |
+| Agent run errors | medium | `Ingo: {count} agent errors in last hour at {ts}` | Review agent_runs table, check logs | No error-status agent_runs in 1h |
+| OpenClaw gateway down | critical | `Ingo: OpenClaw gateway unreachable at {ts}` | Restart: `openclaw gateway start` | `openclaw gateway status` shows running |
 
 ## Billing check (daily, separate cron — not every heartbeat)
 - Pull Anthropic + OpenRouter usage for past 24h

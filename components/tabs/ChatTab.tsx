@@ -154,10 +154,10 @@ const AGENT_BADGE_MAP: Record<string, string> = {
 const PROJECT_TAG_COLORS: Record<string, string> = {
   'Kemuni': '#3b82f6',
   'Vespera': '#a855f7',
-  'Ops': '#6b7280',
+  'Infrastructure': '#6b7280',
   'General': '#10b981',
 }
-const PROJECT_CYCLE = [null, 'Kemuni', 'Vespera', 'Ops', 'General'] as const
+const PROJECT_CYCLE = [null, 'Kemuni', 'Vespera', 'Infrastructure', 'General'] as const
 
 const PROMPT_TEMPLATES = [
   { label: '🗺️ Plan a feature', text: 'Help me plan a new feature for Kemuni. The feature is: ' },

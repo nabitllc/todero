@@ -102,9 +102,9 @@ export async function GET() {
       }
       const project = job.name?.toLowerCase().includes('vespera') ? 'Vespera'
         : job.name?.toLowerCase().includes('kemuni') ? 'Kemuni'
-        : job.name?.toLowerCase().includes('billing') ? 'Ops'
+        : job.name?.toLowerCase().includes('billing') ? 'Infrastructure'
         : job.agentId?.includes('vespera') ? 'Vespera'
-        : job.agentId?.includes('kemuni') ? 'Kemuni' : 'Ops'
+        : job.agentId?.includes('kemuni') ? 'Kemuni' : 'Infrastructure'
       const lastStatus = job.state?.lastRunStatus ?? null
       results.push({
         id: job.id,
@@ -143,7 +143,7 @@ export async function GET() {
         min: null,
         days: 'interval',
         model: hb.agentId === 'ops' ? 'Haiku' : hb.agentId === 'main' ? 'Haiku' : 'Sonnet',
-        project: hb.agentId.includes('vespera') ? 'Vespera' : hb.agentId.includes('kemuni') ? 'Kemuni' : 'Ops',
+        project: hb.agentId.includes('vespera') ? 'Vespera' : hb.agentId.includes('kemuni') ? 'Kemuni' : 'Infrastructure',
         status: hb.enabled ? 'active' : 'planned',
         desc: `${hb.agentId} — every ${hb.every}`,
         source: 'openclaw',

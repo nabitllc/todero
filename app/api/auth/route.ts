@@ -1,16 +1,25 @@
+// TOD-906: Auth route — maps passwords to workspace roles
+// Roles: owner (MC_PASSWORD), member (MC_MEMBER_PASSWORD), viewer (MC_VIEWER_PASSWORD)
+// Legacy: admin cookie value is treated as owner throughout the app
+
 import { NextRequest, NextResponse } from 'next/server'
 
-const ADMIN_PASSWORD = process.env.MC_PASSWORD ?? 'kaos2026'
+const OWNER_PASSWORD = process.env.MC_PASSWORD ?? 'kaos2026'
 const VIEWER_PASSWORD = process.env.MC_VIEWER_PASSWORD ?? 'view2026'
+const MEMBER_PASSWORD = process.env.MC_MEMBER_PASSWORD ?? ''
 
 export async function POST(req: NextRequest) {
   const { password } = await req.json()
 
-  let role: 'admin' | 'viewer' | null = null
+  let role: 'owner' | 'member' | 'viewer' | null = null
   let cookieValue = ''
-  if (password === ADMIN_PASSWORD) {
-    role = 'admin'
-    cookieValue = ADMIN_PASSWORD
+
+  if (password === OWNER_PASSWORD) {
+    role = 'owner'
+    cookieValue = OWNER_PASSWORD
+  } else if (MEMBER_PASSWORD && password === MEMBER_PASSWORD) {
+    role = 'member'
+    cookieValue = MEMBER_PASSWORD
   } else if (password === VIEWER_PASSWORD) {
     role = 'viewer'
     cookieValue = VIEWER_PASSWORD
