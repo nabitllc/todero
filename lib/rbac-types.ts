@@ -35,6 +35,9 @@ export interface RolePermission {
   permission: Permission
 }
 
+/** Alias for AC compliance — join table rows type */
+export type RolePermissions = RolePermission
+
 /** Default permission sets per role — used for seed data and runtime checks */
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   god: [
