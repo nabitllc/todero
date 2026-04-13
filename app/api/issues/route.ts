@@ -722,10 +722,7 @@ export async function POST(req: NextRequest) {
     else effectiveOwner = 'builder'
   }
 
-  // Default to 'defined' not 'open'. Open means "fully groomed, ready for Builder"
-  // and has a cap (MAX_OPEN=100). Agents creating child tasks should land in
-  // defined first — PO reviews and moves to open when DoR is met.
-  const effectiveStatus = status ?? 'defined'
+  const effectiveStatus = status ?? 'open'
 
   // TOD-XXX (2026-04-10): sprint hygiene guard. If sprint is missing OR is a
   // past date (older than today's ET date), auto-correct to today. Closed
@@ -880,10 +877,8 @@ export async function POST(req: NextRequest) {
       const prioMap: Record<string,string> = {critical:'P0',high:'P1',medium:'P2',low:'P3'}
       const prio = prioMap[(data.priority as string)] ?? (data.priority as string ?? 'medium').toUpperCase()
       const sev = data.severity ? (data.severity as string) : '—'
-      // Use transitioned_by from the POST body (the actual caller), not owner/assignee
-      // (which is the auto-routed recipient). PO creating a task shows "po", not "builder".
-      const creator = (body.transitioned_by as string) ?? (body.owner as string) ?? (data.assignee as string) ?? 'unknown'
-      const msg = `${typeEmoji} **${key}** [${prio}] [${sev}] — ${data.title ?? ''}\n↳ created_by: ${creator} · assignee: ${data.assignee ?? '—'}`
+      const creator = (data.owner as string) ?? (data.assignee as string) ?? 'unknown'
+      const msg = `${typeEmoji} **${key}** [${prio}] [${sev}] — ${data.title ?? ''}\n↳ created_by: ${creator}`
       postDiscord('1492576650137964694', msg)
     } catch (e) {
       console.warn('[discord-created] notify failed:', e)
@@ -936,7 +931,7 @@ export async function PATCH(req: NextRequest) {
     }
     fields.implementation_notes = fields.implementation_notes
       ?? `Backlog reset by ${transitionedBy} at ${new Date().toISOString()}.`
-    const { data: resetData, error: resetErr } = await supabase
+    let resetQ = createAdminClient()
       .from('issues')
       .update({
         ...fields,
@@ -947,8 +942,8 @@ export async function PATCH(req: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .select()
-      .single()
+    if (hubScope) resetQ = resetQ.eq('business_id', hubScope.businessId)
+    const { data: resetData, error: resetErr } = await resetQ.select().single()
     if (resetErr) return NextResponse.json({ error: resetErr.message }, { status: 500 })
     // TOD-818: record status_changed for backlog reset
     if (resetData && before) {
@@ -1138,20 +1133,23 @@ export async function PATCH(req: NextRequest) {
       const epicTitle = `Epic: ${featureTitle}`
       const featureProject = (fields.project ?? before?.project ?? 'Mission Control') as string
       const epicIdentity = await prepareIssueIdentity(featureProject)
-      const { data: newEpic, error: epicErr } = await supabase
+      // Preserve business_id when auto-creating parent epic
+      const epicDataToInsert = {
+        title: epicTitle,
+        description: `Auto-created epic for feature: ${featureTitle}`,
+        type: 'epic' as const,
+        status: 'draft',
+        priority: (fields.priority ?? before?.priority ?? 'medium') as string,
+        project: featureProject,
+        assignee: 'main',
+        owner: 'main',
+        acceptance_criteria: `Parent epic for feature "${featureTitle}". Tracks overall delivery.`,
+        ...epicIdentity,
+        ...(before?.business_id ? { business_id: before.business_id } : {}),
+      }
+      const { data: newEpic, error: epicErr } = await createAdminClient()
         .from('issues')
-        .insert({
-          title: epicTitle,
-          description: `Auto-created epic for feature: ${featureTitle}`,
-          type: 'epic',
-          status: 'draft',
-          priority: (fields.priority ?? before?.priority ?? 'medium') as string,
-          project: featureProject,
-          assignee: 'main',
-          owner: 'main',
-          acceptance_criteria: `Parent epic for feature "${featureTitle}". Tracks overall delivery.`,
-          ...epicIdentity,
-        })
+        .insert(epicDataToInsert)
         .select('id, task_key')
         .single()
       if (epicErr || !newEpic) {
@@ -1172,10 +1170,12 @@ export async function PATCH(req: NextRequest) {
   if (transitioningFeatureOutOfDefined) {
     const featureId = before?.id
     if (featureId) {
-      const { count: childCount } = await supabase
+      let childCountQ = createAdminClient()
         .from('issues')
         .select('id', { count: 'exact', head: true })
         .eq('parent_id', featureId)
+      if (hubScope) childCountQ = childCountQ.eq('business_id', hubScope.businessId)
+      const { count: childCount } = await childCountQ
       if ((childCount ?? 0) < 1) {
         return NextResponse.json(
           { error: 'Feature must have at least 1 child task before transitioning from defined to open. Create child tasks first.', field: 'children' },
@@ -1284,12 +1284,12 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  let { data, error } = await supabase
+  let updateQ = createAdminClient()
     .from('issues')
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .select()
-    .single()
+  if (hubScope) updateQ = updateQ.eq('business_id', hubScope.businessId)
+  let { data, error } = await updateQ.select().single()
 
   if (error?.code === '42703' || error?.code === 'PGRST204' || (typeof error?.message === 'string' && error.message.includes('schema cache'))) {
     const safeFields = { ...fields }
@@ -1301,12 +1301,12 @@ export async function PATCH(req: NextRequest) {
                         'designer_status', 'designer_notes', 'designed_by', 'designer_reviewed_at']) {
       delete safeFields[col]
     }
-    const retry = await supabase
+    let retryQ = createAdminClient()
       .from('issues')
       .update({ ...safeFields, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select()
-      .single()
+    if (hubScope) retryQ = retryQ.eq('business_id', hubScope.businessId)
+    const retry = await retryQ.select().single()
     data = retry.data
     error = retry.error
   }
@@ -1337,12 +1337,12 @@ export async function PATCH(req: NextRequest) {
         )
 
         if (Object.keys(postFields).length > 0) {
-          const { data: postData } = await supabase
+          let postQ = createAdminClient()
             .from('issues')
             .update({ ...postFields, updated_at: new Date().toISOString() })
             .eq('id', id)
-            .select()
-            .single()
+          if (hubScope) postQ = postQ.eq('business_id', hubScope.businessId)
+          const { data: postData } = await postQ.select().single()
           if (postData) data = postData
         }
       }
@@ -1395,45 +1395,55 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (isCompletedIssueStatus(fields.status) && before?.assignee === 'ux' && before?.parent_id) {
-    const { data: parentData } = await supabase
+    let parentUpdateQ = createAdminClient()
       .from('issues')
       .update({ status: 'completed', updated_at: new Date().toISOString() })
       .eq('id', before.parent_id)
-      .select()
-      .single()
+    if (hubScope) parentUpdateQ = parentUpdateQ.eq('business_id', hubScope.businessId)
+    const { data: parentData } = await parentUpdateQ.select().single()
     if (parentData) notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
   }
 
   if (isNewFailure && before?.assignee === 'ux' && before?.parent_id && data) {
     const uxNotes = (data.description ?? '').slice(0, 300)
-    await supabase.from('issues').insert({
+    const uxFixTaskData = {
       title: `UX Fix: ${before.title ?? data.title}`,
       description: `UX review failed. Fix the following:\n\n${uxNotes}`,
       project: 'Mission Control',
-      type: 'task', priority: 'high', assignee: 'builder',
+      type: 'task' as const,
+      priority: 'high',
+      assignee: 'builder',
       acceptance_criteria: 'Address all UX review feedback.',
       sprint: new Date().toISOString().split('T')[0],
-      parent_id: before.parent_id, severity: 'S2'
-    })
+      parent_id: before.parent_id,
+      severity: 'S2',
+      ...(before?.business_id ? { business_id: before.business_id } : {}),
+    }
+    await createAdminClient().from('issues').insert(uxFixTaskData)
   }
 
   if (isCompletedIssueStatus(fields.status) && data?.parent_id) {
-    const { data: parentIssue } = await supabase
+    let parentFetchQ = createAdminClient()
       .from('issues')
       .select('id, type, status, task_key, title, project')
       .eq('id', data.parent_id)
-      .single()
+    if (hubScope) parentFetchQ = parentFetchQ.eq('business_id', hubScope.businessId)
+    const { data: parentIssue } = await parentFetchQ.single()
     if (parentIssue?.type === 'epic' && parentIssue.status !== 'completed') {
-      const { data: children } = await supabase
+      let childrenQ = createAdminClient()
         .from('issues')
         .select('id, status')
         .eq('parent_id', data.parent_id)
+      if (hubScope) childrenQ = childrenQ.eq('business_id', hubScope.businessId)
+      const { data: children } = await childrenQ
       const allDone = children && children.length > 0 && children.every(c => isCompletedIssueStatus(c.status) || isTerminalIssueStatus(c.status))
       if (allDone) {
-        await supabase
+        let epicUpdateQ = createAdminClient()
           .from('issues')
           .update({ status: 'completed', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
+        if (hubScope) epicUpdateQ = epicUpdateQ.eq('business_id', hubScope.businessId)
+        await epicUpdateQ
       }
     }
   }
