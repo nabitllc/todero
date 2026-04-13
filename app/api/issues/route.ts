@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exec as execAsync } from 'child_process'
+import { createAdminClient, getHubClient } from '@/lib/hub-client'
 import {
   VALID_TYPES,
   VALID_PRIORITIES,
@@ -583,23 +584,14 @@ async function executePostFunctions(
   }
 }
 
-// ── Hub-scoped helpers ────────────────────────────────────────────────────────
-async function resolveProjectNamesForBusiness(businessId: string): Promise<string[] | null> {
-  const { data: projects, error } = await supabase
-    .from('projects')
-    .select('name')
-    .eq('business_id', businessId)
-  if (error || !projects) return null
-  return projects.map(p => p.name)
-}
-
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const taskKey = url.searchParams.get('task_key')
 
   if (taskKey) {
-    const { data, error } = await supabase
+    // AGGREGATE QUERY — no hub scope for task_key lookups (keys are globally unique)
+    const { data, error } = await createAdminClient()
       .from('issues')
       .select('*')
       .eq('task_key', taskKey)
@@ -616,20 +608,14 @@ export async function GET(req: NextRequest) {
   const assigneeParam = url.searchParams.get('assignee')
   const statusParam = url.searchParams.get('status')
 
-  // Resolve business_id → project names for hub-scoped filtering
-  let hubProjectNames: string[] | null = null
-  if (businessIdParam) {
-    hubProjectNames = await resolveProjectNamesForBusiness(businessIdParam)
-  }
+  // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
+  const db = businessIdParam ? getHubClient(businessIdParam) : null
+  // AGGREGATE QUERY — no business_id filter; returns issues across all hubs
+  const baseClient = db ? db.client : createAdminClient()
+  let query = baseClient.from('issues').select('*')
 
-  let query = supabase.from('issues').select('*')
-
-  // Hub-scoped filtering: business_id resolves to project names
-  if (hubProjectNames && hubProjectNames.length > 0) {
-    query = query.in('project', hubProjectNames)
-  } else if (businessIdParam && (!hubProjectNames || hubProjectNames.length === 0)) {
-    // business_id provided but no projects found — return empty
-    return NextResponse.json([])
+  if (db) {
+    query = query.eq('business_id', db.businessId)
   }
 
   // Direct project filter (can combine with business_id for narrowing)
@@ -905,16 +891,18 @@ export async function POST(req: NextRequest) {
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
   const body = await req.json()
-  const { id: rawId, task_key, transitioned_by: _transitionedBy, ...fields } = body
+  // business_id is extracted for hub-scoped query validation, not written back to the issue
+  const { id: rawId, task_key, transitioned_by: _transitionedBy, business_id: scopeBusinessId, ...fields } = body
   const transitionedBy = _transitionedBy as string | undefined
+
+  // Hub-scoped query context: when business_id is provided, scope all lookups to that hub
+  const hubScope = scopeBusinessId ? getHubClient(scopeBusinessId as string) : null
 
   let id = rawId
   if (!id && task_key) {
-    const { data: lookup, error: lookupErr } = await supabase
-      .from('issues')
-      .select('id')
-      .eq('task_key', task_key)
-      .single()
+    let lookupQ = createAdminClient().from('issues').select('id').eq('task_key', task_key)
+    if (hubScope) lookupQ = lookupQ.eq('business_id', hubScope.businessId)
+    const { data: lookup, error: lookupErr } = await lookupQ.single()
     if (lookupErr || !lookup) {
       return NextResponse.json({ error: `No issue found for task_key=${task_key}` }, { status: 404 })
     }
@@ -922,11 +910,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (!id) return NextResponse.json({ error: 'id or task_key required' }, { status: 400 })
 
-  const { data: before } = await supabase
-    .from('issues')
-    .select('*')
-    .eq('id', id)
-    .single()
+  let beforeQ = createAdminClient().from('issues').select('*').eq('id', id)
+  if (hubScope) beforeQ = beforeQ.eq('business_id', hubScope.businessId)
+  const { data: before } = await beforeQ.single()
 
   if (before?.status === 'closed') {
     return NextResponse.json(
@@ -975,13 +961,15 @@ export async function PATCH(req: NextRequest) {
   if (fields.status === 'in_progress') {
     const effectiveWorkedBy = fields.worked_by ?? fields.assignee ?? before?.assignee
     if (effectiveWorkedBy) {
-      const { data: activeIssues } = await supabase
+      let activeQ = createAdminClient()
         .from('issues')
         .select('id, task_key, title, started_at')
         .eq('worked_by', effectiveWorkedBy)
         .eq('status', 'in_progress')
         .neq('id', id)
         .limit(1)
+      if (hubScope) activeQ = activeQ.eq('business_id', hubScope.businessId)
+      const { data: activeIssues } = await activeQ
       if (activeIssues && activeIssues.length > 0) {
         const active = activeIssues[0]
         return NextResponse.json(
@@ -1034,11 +1022,13 @@ export async function PATCH(req: NextRequest) {
 
   /* ── Open-cap enforcement (backlog-first policy: max 10 open) ── */
   if (fields.status === 'open' && before?.status !== 'open') {
-    const MAX_OPEN = 100
-    const { count: openCount } = await supabase
+    const MAX_OPEN = 10
+    let openCapQ = createAdminClient()
       .from('issues')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'open')
+    if (hubScope) openCapQ = openCapQ.eq('business_id', hubScope.businessId)
+    const { count: openCount } = await openCapQ
     if ((openCount ?? 0) >= MAX_OPEN) {
       return NextResponse.json(
         {
