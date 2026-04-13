@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import type { Role } from '@/lib/rbac-types'
 
 const ADMIN_PASSWORD = process.env.MC_PASSWORD ?? 'kaos2026'
 const VIEWER_PASSWORD = process.env.MC_VIEWER_PASSWORD ?? 'view2026'
