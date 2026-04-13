@@ -227,19 +227,19 @@ async function validateHierarchy(
       return { error: `type=${type} requires parent to be a feature, but parent ${parent.task_key} is type=${parent.type}` }
     }
   } else if (type === 'feature') {
-    if (!parentId) {
-      return { error: `type=feature requires parent_id pointing to an epic issue` }
-    }
-    const { data: parent, error: dbErr } = await supabase
-      .from('issues')
-      .select('id, type, task_key')
-      .eq('id', parentId)
-      .maybeSingle()
-    if (dbErr || !parent) {
-      return { error: `parent_id ${parentId} does not exist` }
-    }
-    if (parent.type !== 'epic') {
-      return { error: `type=feature requires parent to be an epic, but parent ${parent.task_key} is type=${parent.type}` }
+    // TOD-1203: parent_id is optional at creation; if provided, must point to an epic
+    if (parentId) {
+      const { data: parent, error: dbErr } = await supabase
+        .from('issues')
+        .select('id, type, task_key')
+        .eq('id', parentId)
+        .maybeSingle()
+      if (dbErr || !parent) {
+        return { error: `parent_id ${parentId} does not exist` }
+      }
+      if (parent.type !== 'epic') {
+        return { error: `type=feature requires parent to be an epic, but parent ${parent.task_key} is type=${parent.type}` }
+      }
     }
   } else if (type === 'epic') {
     if (parentId) {
@@ -416,17 +416,22 @@ async function validateWorkflowTransition(
     }
   }
 
-  // 6.7: Features can't move to open unless parent epic is in draft or active
+  // 6.7 (TOD-1204): Auto-activate parent epic when feature moves to open
   if (issueType === 'feature' && newStatus === 'open' && issue.parent_id) {
     const { data: parentEpic } = await supabase
       .from('issues')
-      .select('status, type')
+      .select('id, status, type, task_key')
       .eq('id', issue.parent_id as string)
       .single()
-    if (parentEpic?.type === 'epic' && !['draft', 'active'].includes(parentEpic.status)) {
-      return {
-        transition: null,
-        error: { error: `Cannot open feature: parent epic must be in draft or active status (currently: ${parentEpic.status})`, field: 'parent_id' }
+    if (parentEpic?.type === 'epic' && ['backlog', 'draft'].includes(parentEpic.status)) {
+      const { error: activateErr } = await supabase
+        .from('issues')
+        .update({ status: 'active' })
+        .eq('id', parentEpic.id)
+      if (activateErr) {
+        console.error(`[TOD-1204] failed to auto-activate parent epic ${parentEpic.task_key}:`, activateErr.message)
+      } else {
+        console.log(`[TOD-1204] auto-activated parent epic ${parentEpic.task_key} (was ${parentEpic.status}) because feature is moving to open`)
       }
     }
   }
@@ -1056,11 +1061,13 @@ export async function PATCH(req: NextRequest) {
   }
 
   const transitioningIntoCodeReview = fields.status === 'code_review' && before?.status !== 'code_review'
+  const issueTypeForGates = (fields.type ?? before?.type ?? 'task') as string
 
   // TOD-XXX (2026-04-10 validators requested by Michael):
   // V1 — commit_sha required before in_progress → code_review
   // V2 — regression_test required in the same transition
-  if (transitioningIntoCodeReview) {
+  // TOD-1205: only enforce for task and bug; feature/epic/ops skip these gates
+  if (transitioningIntoCodeReview && ['task', 'bug'].includes(issueTypeForGates)) {
     const mergedNow = { ...before, ...fields } as Record<string, unknown>
     const commitSha = (mergedNow.commit_sha as string | null | undefined) || null
     const regressionTest = (mergedNow.regression_test as string | null | undefined) || null
@@ -1075,6 +1082,43 @@ export async function PATCH(req: NextRequest) {
         { error: 'regression_test is required for code_review transition. Describe in 1-2 lines how to verify the fix.', field: 'regression_test' },
         { status: 422 }
       )
+    }
+  }
+
+  // TOD-1203: When a feature transitions to 'defined' and has no parent epic, auto-create one
+  const transitioningFeatureToDefined =
+    fields.status === 'defined' &&
+    before?.status !== 'defined' &&
+    (before?.type === 'feature' || fields.type === 'feature')
+  if (transitioningFeatureToDefined) {
+    const currentParentId = (fields.parent_id ?? before?.parent_id) as string | null | undefined
+    if (!currentParentId) {
+      const featureTitle = (fields.title ?? before?.title ?? 'Untitled Feature') as string
+      const epicTitle = `Epic: ${featureTitle}`
+      const featureProject = (fields.project ?? before?.project ?? 'Mission Control') as string
+      const epicIdentity = await prepareIssueIdentity(featureProject)
+      const { data: newEpic, error: epicErr } = await supabase
+        .from('issues')
+        .insert({
+          title: epicTitle,
+          description: `Auto-created epic for feature: ${featureTitle}`,
+          type: 'epic',
+          status: 'draft',
+          priority: (fields.priority ?? before?.priority ?? 'medium') as string,
+          project: featureProject,
+          assignee: 'main',
+          owner: 'main',
+          acceptance_criteria: `Parent epic for feature "${featureTitle}". Tracks overall delivery.`,
+          ...epicIdentity,
+        })
+        .select('id, task_key')
+        .single()
+      if (epicErr || !newEpic) {
+        console.error(`[TOD-1203] failed to auto-create epic for feature:`, epicErr?.message)
+      } else {
+        fields.parent_id = newEpic.id
+        console.log(`[TOD-1203] auto-created epic ${newEpic.task_key} as parent for feature transitioning to defined`)
+      }
     }
   }
 
