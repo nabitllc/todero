@@ -86,8 +86,8 @@ const STATUS_PICKUP_LANES: Record<string, string[]> = {
   open:           ['builder', 'ops', 'scout'],
   underway:       [],
   code_review:    ['tester', 'designer'],
-  product_review: ['po'],
-  feature_review: ['po'],
+  product_review: [],  // activate_reviewer post-function kicks PO directly
+  feature_review: [],  // activate_reviewer post-function kicks PO directly
   approved:       ['deployer'],
   released:       ['auditor'],
 }
