@@ -24,7 +24,7 @@ export default function FeatureRequestModal({ onClose }: FeatureRequestModalProp
   const [created, setCreated] = useState<CreatedIssue | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const canSubmit = title.trim().length > 0 && acceptanceCriteria.trim().length > 0
+  const canSubmit = title.trim().length > 0 && description.trim().length > 0 && acceptanceCriteria.trim().length > 0
 
   async function handleSubmit() {
     if (!canSubmit || submitting) return
@@ -37,7 +37,7 @@ export default function FeatureRequestModal({ onClose }: FeatureRequestModalProp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
-          description: description.trim() || undefined,
+          description: description.trim(),
           acceptance_criteria: acceptanceCriteria.trim(),
           type: 'feature',
           project: 'Todero',
@@ -136,7 +136,7 @@ export default function FeatureRequestModal({ onClose }: FeatureRequestModalProp
             />
           </FormGroup>
 
-          <FormGroup label="Description" helper="What problem does this solve? Who benefits?">
+          <FormGroup label="Description" required helper="What problem does this solve? Who benefits?">
             <Textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
