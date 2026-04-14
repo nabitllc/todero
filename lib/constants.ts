@@ -42,7 +42,7 @@ export function getProjectPrefix(project: string | null | undefined): string {
 export const VALID_TYPES = ['epic', 'feature', 'task', 'bug', 'ops', 'research']
 export const VALID_PRIORITIES = ['critical', 'high', 'medium', 'low']
 export const VALID_SEVERITIES = ['S0', 'S1', 'S2', 'S3']
-export const VALID_STATUSES = ['backlog', 'defined', 'open', 'in_progress', 'code_review', 'product_review', 'approved', 'released', 'completed', 'closed', 'draft', 'active']
+export const VALID_STATUSES = ['backlog', 'defined', 'refined', 'open', 'in_progress', 'code_review', 'product_review', 'approved', 'released', 'completed', 'closed', 'draft', 'active']
 export const RETIRED_STATUSES = ['in_review', 'done', 'blocked']
 export const VALID_RESOLUTION_TYPES = [
   'code_change',        // Code was written/modified (task, bug, ops)
