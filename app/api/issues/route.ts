@@ -80,7 +80,7 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
 // Has been reverted 3+ times by Builder agents on stale branches.
 // ═══════════════════════════════════════════════════════════════════════════
 const STATUS_PICKUP_LANES: Record<string, string[]> = {
-  backlog:        ['po', 'todero-sme', 'kemuni-sme', 'vespera-sme', 'infra-sme'],
+  backlog:        ['po', 'todero-sme'],  // kemuni-sme, vespera-sme paused — Todero-only focus
   defined:        ['po'],
   refined:        ['po'],
   open:           ['builder', 'ops', 'scout'],
@@ -354,24 +354,39 @@ async function validateHierarchy(
 
 async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key: string; task_number: number }>> {
   const prefix = getProjectPrefix(project)
-  const { data: seqNum, error: rpcErr } = await supabase.rpc('next_task_number')
 
-  if (!rpcErr && typeof seqNum === 'number') {
-    return { task_key: `${prefix}-${seqNum}`, task_number: seqNum }
+  // Per-prefix sequence: find MAX task_number for issues with this prefix only.
+  // This gives each hub its own numbering (TOD-1,2,3 / KEM-1,2,3 / VES-1,2,3).
+  // Retry loop handles race conditions when multiple POSTs arrive simultaneously.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('issues')
+      .select('task_number')
+      .like('task_key', `${prefix}-%`)
+      .not('task_number', 'is', null)
+      .order('task_number', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1 + attempt
+    const candidateKey = `${prefix}-${nextNumber}`
+
+    // Check if this key already exists (race guard)
+    const { data: existing } = await supabase
+      .from('issues')
+      .select('id')
+      .eq('task_key', candidateKey)
+      .maybeSingle()
+
+    if (!existing) {
+      return { task_key: candidateKey, task_number: nextNumber }
+    }
+    console.warn(`[issues] task_key ${candidateKey} already exists, retrying (attempt ${attempt + 1})`)
   }
 
-  console.warn('[issues] next_task_number RPC unavailable; falling back to API-assigned identity', rpcErr)
-
-  const { data: maxRow } = await supabase
-    .from('issues')
-    .select('task_number')
-    .not('task_number', 'is', null)
-    .order('task_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1
-  return { task_key: `${prefix}-${nextNumber}`, task_number: nextNumber }
+  // Final fallback: timestamp suffix
+  const ts = Date.now() % 1000000
+  return { task_key: `${prefix}-${ts}`, task_number: ts }
 }
 
 // ── Workflow types ────────────────────────────────────────────────────────────
