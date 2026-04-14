@@ -14,8 +14,8 @@ interface Issue {
 
 function ConfirmContent() {
   const params = useSearchParams()
-  const issueId = params.get('id')
-  const reporter = params.get('reporter') ?? 'anonymous'
+  const issueId = params?.get('id') ?? null
+  const reporter = params?.get('reporter') ?? 'anonymous'
 
   const [issue, setIssue] = useState<Issue | null>(null)
   const [loading, setLoading] = useState(!!issueId)

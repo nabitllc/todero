@@ -14,9 +14,9 @@ interface Issue {
 }
 
 function DuplicateContent() {
-  const { id } = useParams<{ id: string }>()
+  const { id } = useParams<{ id: string }>() ?? { id: '' }
   const params = useSearchParams()
-  const reporter = params.get('reporter') ?? 'anonymous'
+  const reporter = params?.get('reporter') ?? 'anonymous'
 
   const [issue, setIssue] = useState<Issue | null>(null)
   const [loading, setLoading] = useState(true)
