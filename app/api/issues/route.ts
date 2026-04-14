@@ -613,7 +613,13 @@ export async function GET(req: NextRequest) {
     hubProjectNames = await resolveProjectNamesForBusiness(businessIdParam)
   }
 
-  let query = supabase.from('issues').select('*')
+  // Column projection: use ?fields=col1,col2 to limit returned columns.
+  // Default list queries use a lean projection to reduce Supabase egress.
+  // Use ?fields=* to get all columns (detail views, agents that need full data).
+  const LEAN_FIELDS = 'id,task_key,title,status,priority,severity,assignee,project,type,sprint,parent_id,due_date,owner,updated_at,created_at,started_at,feature_branch,rejection_count,blocked_by,worked_by'
+  const fieldsParam = url.searchParams.get('fields')
+  const selectFields = fieldsParam === '*' ? '*' : (fieldsParam || LEAN_FIELDS)
+  let query = supabase.from('issues').select(selectFields)
 
   // Hub-scoped filtering: business_id resolves to project names
   if (hubProjectNames && hubProjectNames.length > 0) {
@@ -649,7 +655,8 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(withIssueStatusCategoryList(data))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- lean projection returns dynamic columns
+  return NextResponse.json(withIssueStatusCategoryList(data as any[]))
 }
 
 // ── POST ──────────────────────────────────────────────────────────────────────

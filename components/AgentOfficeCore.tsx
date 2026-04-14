@@ -11,7 +11,7 @@ interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: s
 
 async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
+    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=50`,
     { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
   );
   if (!res.ok) return {};
@@ -1027,7 +1027,7 @@ export default function AgentOffice(){
       }catch(e){}
     };
     fetchTasks();
-    const t=setInterval(fetchTasks,30000);
+    const t=setInterval(fetchTasks,60000);
     return()=>clearInterval(t);
   },[]);
 
@@ -1072,7 +1072,7 @@ export default function AgentOffice(){
       }catch(e){}
     };
     pollRuns();
-    const t=setInterval(pollRuns,10000);
+    const t=setInterval(pollRuns,30000);
     return()=>{cancelled=true;clearInterval(t);};
   },[addFeed]);
 
@@ -1267,13 +1267,13 @@ export default function AgentOffice(){
         es?.close();es=null;
         if(!pollInterval){
           poll();
-          pollInterval=setInterval(poll,5000);
+          pollInterval=setInterval(poll,15000);
         }
       };
     }catch(e3){
       // SSE not available — poll
       poll();
-      pollInterval=setInterval(poll,5000);
+      pollInterval=setInterval(poll,15000);
     }
 
     return()=>{
@@ -1305,7 +1305,7 @@ export default function AgentOffice(){
       }catch(e){}
     };
     fetchRealCounts();
-    const t=setInterval(fetchRealCounts,30000);
+    const t=setInterval(fetchRealCounts,60000);
     return()=>clearInterval(t);
   },[]);
 

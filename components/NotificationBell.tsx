@@ -105,7 +105,7 @@ export default function NotificationBell() {
   // Fetch on mount and every 30s
   useEffect(() => {
     fetchNotifications()
-    const iv = setInterval(fetchNotifications, 30000)
+    const iv = setInterval(fetchNotifications, 60000)
     return () => clearInterval(iv)
   }, [fetchNotifications])
 
