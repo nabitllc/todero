@@ -100,9 +100,9 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
 // Achieved= shipped or ready to ship (approved + completed + released)
 // Backlog and closed are NOT columns — they surface as count chips in the header.
 const BOARD_COLUMNS = [
-  { id:'queue',    label:'Queue',    color:'#3b82f6', active:false, statuses:['defined','open'] },
-  { id:'ongoing',  label:'Active',   color:'#818cf8', active:true,  statuses:['in_progress','code_review','product_review'] },
-  { id:'achieved', label:'Achieved', color:'#22c55e', active:false, statuses:['approved','completed','released'] },
+  { id:'queue',    label:'Queue',    color:'#3b82f6', active:false, statuses:['defined','refined','open'] },
+  { id:'ongoing',  label:'Active',   color:'#818cf8', active:true,  statuses:['in_progress','underway','code_review','product_review','feature_review'] },
+  { id:'achieved', label:'Achieved', color:'#22c55e', active:false, statuses:['approved','wrapped','released'] },
 ]
 
 // Statuses that get a small count chip but no column
@@ -164,13 +164,17 @@ const STATUS_CHIP_COLORS: Record<string,string> = {
 
 const ALL_STATUSES = [
   { value:'backlog',         label:'Backlog' },
+  { value:'defined',         label:'Defined' },
+  { value:'refined',         label:'Refined' },
   { value:'open',            label:'Open' },
   { value:'in_progress',     label:'In Progress' },
+  { value:'underway',        label:'Underway' },
   { value:'code_review',     label:'Code Review' },
   { value:'product_review',  label:'Product Review' },
+  { value:'feature_review',  label:'Feature Review' },
   { value:'approved',        label:'Approved' },
-  { value:'completed',       label:'Completed' },
   { value:'released',        label:'Released' },
+  { value:'wrapped',         label:'Wrapped' },
   { value:'closed',          label:'Closed' },
 ]
 
@@ -432,7 +436,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (statusFilter === 'closed' && t.status !== 'closed') return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false
     if (statusFilter === 'future-sprint' && !isFutureSprint(t.sprint)) return false
-    if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
+    if (statusFilter === 'active' && !['open', 'in_progress', 'underway', 'code_review', 'product_review', 'feature_review', 'approved', 'released'].includes(t.status)) return false
     // projectFilter is now applied server-side via /api/issues?project=
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
     if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
@@ -628,7 +632,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
       {/* MC-127: Michael's "Needs You" queue */}
       {(() => {
-        const michaelTasks = tasks.filter(t => t.assignee === 'michael' && !['completed', 'released', 'closed'].includes(t.status))
+        const michaelTasks = tasks.filter(t => t.assignee === 'michael' && !['completed', 'wrapped', 'released', 'closed'].includes(t.status))
         if (michaelTasks.length === 0) return null
         return (
           <div className="rounded-xl border-2 border-amber-500/30 p-3 mb-2 bg-amber-500/5">
@@ -672,7 +676,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           // is noise.
           const visibleInColumns = children.some(t => BOARD_COLUMNS.some(col => col.statuses.includes(t.status)))
           if (!visibleInColumns) continue
-          const done = children.filter(t => ['completed', 'released', 'closed'].includes(t.status)).length
+          const done = children.filter(t => ['completed', 'wrapped', 'released', 'closed'].includes(t.status)).length
           const pct = children.length > 0 ? Math.round((done / children.length) * 100) : 0
           featureGroups.push({
             feature: feat || null,
@@ -794,7 +798,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               }
               const isActive = sprintKey !== NO_SPRINT_KEY && activeSprintDates.includes(sprintKey)
               const isNoSprint = sprintKey === NO_SPRINT_KEY
-              const done = tasks.filter(t => ['completed', 'released', 'closed'].includes(t.status)).length
+              const done = tasks.filter(t => ['completed', 'wrapped', 'released', 'closed'].includes(t.status)).length
               const pct = tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0
               return (
                 <div key={groupKey} className="rounded-xl border border-white/10 overflow-hidden" style={{ background: '#080808' }}>

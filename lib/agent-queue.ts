@@ -135,8 +135,10 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     extraFilters: 'type=in.(feature,task,bug)',
     dorFields: ['title'],
     wipLimit: 3,
-    workingStatus: 'defined',
+    workingStatus: 'refined',
     completionStatus: 'open',
+    // NOTE: PO also handles features (workingStatus=defined). The run-agent route
+    // should use 'defined' when the issue type is 'feature'. See type-aware logic.
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,

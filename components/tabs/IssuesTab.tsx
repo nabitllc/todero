@@ -13,7 +13,7 @@ interface Issue {
   resolution_type?: string;
 }
 
-const STATUS_OPTIONS = ['backlog','defined','open','in_progress','code_review','product_review','approved','completed','released','closed']
+const STATUS_OPTIONS = ['backlog','defined','refined','open','in_progress','underway','code_review','product_review','feature_review','approved','released','wrapped','closed']
 const PRIORITY_OPTIONS = ['critical','high','medium','low']
 const ASSIGNEE_OPTIONS = ['main','builder','tester','scout','ops','kemuni-sme','vespera-sme']
 

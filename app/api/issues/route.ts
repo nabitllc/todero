@@ -545,6 +545,12 @@ async function executePostFunctions(
       }
     }
 
+    if (action === 'set_field') {
+      const fieldName = params.field as string
+      const fieldValue = params.value as string
+      fields[fieldName] = fieldValue
+    }
+
     if (action === 'set_timestamp') {
       const tsField = params.field as string
       fields[tsField] = new Date().toISOString()
@@ -1055,7 +1061,7 @@ export async function PATCH(req: NextRequest) {
       if (fields.designer_reviewed_at === undefined && before?.designer_reviewed_at == null) fields.designer_reviewed_at = null
     }
 
-    if (fields.status === 'completed') {
+    if (fields.status === 'completed' || fields.status === 'wrapped') {
       fields.completed_at = now
       const completingAssignee = fields.assignee ?? before?.assignee
       if (completingAssignee && !fields.reviewed_by) fields.reviewed_by = completingAssignee
@@ -1158,7 +1164,7 @@ export async function PATCH(req: NextRequest) {
   // V4 — closing_notes required for released/completed → closed, and only auditor
   const transitioningToClosed =
     fields.status === 'closed' &&
-    (before?.status === 'released' || before?.status === 'completed')
+    (before?.status === 'released' || before?.status === 'completed' || before?.status === 'wrapped')
   if (transitioningToClosed) {
     const mergedNow = { ...before, ...fields } as Record<string, unknown>
     const closingNotes = (mergedNow.closing_notes as string | null | undefined) || (mergedNow.reviewer_notes as string | null | undefined) || null
@@ -1322,11 +1328,11 @@ export async function PATCH(req: NextRequest) {
   const resolvedType = fields.resolution_type ?? data?.resolution_type
   const issueType = (fields.type ?? before?.type ?? 'task') as string
   const WORKFLOW_TYPES_NOTIFY = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
-  if (!WORKFLOW_TYPES_NOTIFY.includes(issueType) && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
+  if (!WORKFLOW_TYPES_NOTIFY.includes(issueType) && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'wrapped' || fields.status === 'closed') && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
-  const NON_ACTIVATING_STATUSES = new Set(['backlog', 'defined', 'closed', 'creation'])
+  const NON_ACTIVATING_STATUSES = new Set(['backlog', 'defined', 'refined', 'closed', 'creation'])
   if (fields.status && data && !NON_ACTIVATING_STATUSES.has(fields.status)) {
     const newAssignee = data.assignee ?? fields.assignee
     if (fields.status === 'code_review') {
@@ -1388,7 +1394,7 @@ export async function PATCH(req: NextRequest) {
       .select('id, type, status, task_key, title, project')
       .eq('id', data.parent_id)
       .single()
-    if (parentIssue?.type === 'epic' && parentIssue.status !== 'completed') {
+    if (parentIssue?.type === 'epic' && parentIssue.status !== 'wrapped') {
       const { data: children } = await supabase
         .from('issues')
         .select('id, status')
@@ -1397,7 +1403,7 @@ export async function PATCH(req: NextRequest) {
       if (allDone) {
         await supabase
           .from('issues')
-          .update({ status: 'completed', updated_at: new Date().toISOString() })
+          .update({ status: 'wrapped', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
       }
     }

@@ -37,10 +37,10 @@ type FilterMode = 'both' | 'features' | 'issues'
 // Status options for mobile action sheet
 const COLUMN_OPTIONS: { label: string; status: string; color: string }[] = [
   { label: 'Backlog', status: 'backlog', color: '#71717a' },
+  { label: 'Refined', status: 'refined', color: '#6366f1' },
   { label: 'Open', status: 'open', color: '#3b82f6' },
   { label: 'In Progress', status: 'in_progress', color: '#f59e0b' },
   { label: 'In Review', status: 'code_review', color: '#a855f7' },
-  { label: 'SignOff', status: 'completed', color: '#14b8a6' },
   { label: 'Done', status: 'closed', color: '#10b981' },
 ]
 
@@ -372,7 +372,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 /* ── Feature Card ── */
 function FeatureCard({ feature, onLongPressStart, onLongPressEnd }: { feature: any; onLongPressStart?: () => void; onLongPressEnd?: () => void }) {
   const children: any[] = feature._children || []
-  const doneCount = children.filter((c: any) => ['completed', 'released', 'closed'].includes(c.status)).length
+  const doneCount = children.filter((c: any) => ['completed', 'wrapped', 'released', 'closed'].includes(c.status)).length
   const total = children.length
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0
   const blocked = isBlocked(feature)

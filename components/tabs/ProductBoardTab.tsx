@@ -9,21 +9,23 @@ const STATUS_CHIP: Record<string, string> = {
   backlog:        'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
   open:           'bg-blue-500/20 text-blue-400 border-blue-500/30',
   in_progress:    'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+  underway:       'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
   code_review:    'bg-orange-500/20 text-orange-400 border-orange-500/30',
   product_review: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  feature_review: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   approved:       'bg-green-500/20 text-green-400 border-green-500/30',
   released:       'bg-teal-500/20 text-teal-400 border-teal-500/30',
-  completed:      'bg-green-600/20 text-green-400 border-green-600/30',
+  wrapped:        'bg-green-600/20 text-green-400 border-green-600/30',
   closed:         'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
   cancelled:      'bg-red-500/20 text-red-400 border-red-500/30',
 }
 
 const STATUS_ORDER = [
-  'backlog','defined','open','in_progress','code_review','product_review',
-  'approved','released','completed','closed','cancelled',
+  'backlog','defined','refined','open','in_progress','underway','code_review',
+  'product_review','feature_review','approved','released','wrapped','closed','cancelled',
 ]
 
-const DONE_STATUSES = new Set(['completed','released','closed'])
+const DONE_STATUSES = new Set(['wrapped','released','closed'])
 
 const TYPE_EMOJI: Record<string, string> = {
   feature:'✨', task:'🔧', bug:'🐛', ops:'⚙️', epic:'🎯', subtask:'↩️',

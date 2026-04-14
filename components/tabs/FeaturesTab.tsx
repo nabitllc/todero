@@ -11,7 +11,7 @@ interface Issue {
 }
 
 const PROJECTS = ['Vespera', 'Kemuni', 'Todero', 'Infrastructure']
-const STATUSES = ['backlog', 'open', 'in_progress', 'code_review', 'product_review', 'approved', 'completed', 'released', 'closed']
+const STATUSES = ['backlog', 'defined', 'underway', 'code_review', 'feature_review', 'approved', 'released', 'closed']
 
 function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: {
   label: string; options: string[]; selected: string[]; onToggle: (v: string) => void; displayFn?: (v: string) => string

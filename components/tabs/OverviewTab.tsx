@@ -246,7 +246,7 @@ function SprintProgressCard() {
           .then(r => r.json())
           .then(data => {
             if (Array.isArray(data)) {
-              setSprintData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
+              setSprintData({ total: data.length, done: data.filter((i:any) => ['completed', 'wrapped', 'released', 'closed'].includes(i.status)).length })
               const counts: Record<string,number> = {Planned:0,Ongoing:0,SignOff:0,Done:0}
               for (const issue of data) {
                 const cat = deriveIssueStatusCategory(issue.status)
@@ -266,7 +266,7 @@ function SprintProgressCard() {
               .then(r => r.json())
               .then(data => {
                 if (Array.isArray(data)) {
-                  setPriorData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
+                  setPriorData({ total: data.length, done: data.filter((i:any) => ['completed', 'wrapped', 'released', 'closed'].includes(i.status)).length })
                 }
               }).catch(() => {})
           }).catch(() => {})
@@ -368,9 +368,9 @@ function ProjectBreakdownBars({ project }: { project: string }) {
       if (!Array.isArray(rows)) return
       const count = (type: string) => {
         const matching = rows.filter(r => r.type === type)
-        return { done: matching.filter(r => ['completed', 'released', 'closed'].includes(r.status)).length, total: matching.length }
+        return { done: matching.filter(r => ['completed', 'wrapped', 'released', 'closed'].includes(r.status)).length, total: matching.length }
       }
-      setData({ epics: count('epic'), features: count('feature'), issues: { done: rows.filter(r => !['epic','feature'].includes(r.type) && ['completed', 'released', 'closed'].includes(r.status)).length, total: rows.filter(r => !['epic','feature'].includes(r.type)).length } })
+      setData({ epics: count('epic'), features: count('feature'), issues: { done: rows.filter(r => !['epic','feature'].includes(r.type) && ['completed', 'wrapped', 'released', 'closed'].includes(r.status)).length, total: rows.filter(r => !['epic','feature'].includes(r.type)).length } })
     }).catch(() => {})
   }, [project])
   if (!data) return null
