@@ -970,7 +970,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json(withIssueStatusCategory(data))
+  // Warn if bug is created without environment field
+  const responseData = withIssueStatusCategory(data)
+  if ((type ?? 'task') === 'bug' && !body.environment) {
+    return NextResponse.json({
+      ...responseData,
+      _warning: 'Bug created without "environment" field. Set it before moving to refined (required for backlog→refined).',
+    })
+  }
+
+  return NextResponse.json(responseData)
 }
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
@@ -1206,7 +1215,8 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // TOD-1203: When a feature transitions to 'defined' and has no parent epic, auto-create one
+  // TOD-1203: When a feature transitions to 'defined' and has no parent epic,
+  // first search for a relevant existing epic in the same project, then create one if none found.
   const transitioningFeatureToDefined =
     fields.status === 'defined' &&
     before?.status !== 'defined' &&
@@ -1215,33 +1225,50 @@ export async function PATCH(req: NextRequest) {
     const currentParentId = (fields.parent_id ?? before?.parent_id) as string | null | undefined
     if (!currentParentId) {
       const featureTitle = (fields.title ?? before?.title ?? 'Untitled Feature') as string
-      const epicTitle = `Epic: ${featureTitle}`
       const featureProject = (fields.project ?? before?.project ?? 'Mission Control') as string
-      const epicIdentity = await prepareIssueIdentity(featureProject)
-      // Preserve business_id when auto-creating parent epic
-      const epicDataToInsert = {
-        title: epicTitle,
-        description: `Auto-created epic for feature: ${featureTitle}`,
-        type: 'epic' as const,
-        status: 'draft',
-        priority: (fields.priority ?? before?.priority ?? 'medium') as string,
-        project: featureProject,
-        assignee: 'main',
-        owner: 'main',
-        acceptance_criteria: `Parent epic for feature "${featureTitle}". Tracks overall delivery.`,
-        ...epicIdentity,
-        ...(before?.business_id ? { business_id: before.business_id } : {}),
-      }
-      const { data: newEpic, error: epicErr } = await createAdminClient()
+
+      // Search for an existing epic in the same project that's in draft/active/backlog
+      const { data: existingEpics } = await supabase
         .from('issues')
-        .insert(epicDataToInsert)
-        .select('id, task_key')
-        .single()
-      if (epicErr || !newEpic) {
-        console.error(`[TOD-1203] failed to auto-create epic for feature:`, epicErr?.message)
+        .select('id, task_key, title')
+        .eq('type', 'epic')
+        .eq('project', featureProject)
+        .in('status', ['draft', 'active', 'backlog'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existingEpics) {
+        fields.parent_id = existingEpics.id
+        console.log(`[TOD-1203] linked feature to existing epic ${existingEpics.task_key} ("${existingEpics.title}")`)
       } else {
-        fields.parent_id = newEpic.id
-        console.log(`[TOD-1203] auto-created epic ${newEpic.task_key} as parent for feature transitioning to defined`)
+        // No existing epic — create one
+        const epicTitle = `Epic: ${featureTitle}`
+        const epicIdentity = await prepareIssueIdentity(featureProject)
+        const epicDataToInsert = {
+          title: epicTitle,
+          description: `Auto-created epic for feature: ${featureTitle}`,
+          type: 'epic' as const,
+          status: 'draft',
+          priority: (fields.priority ?? before?.priority ?? 'medium') as string,
+          project: featureProject,
+          assignee: 'main',
+          owner: 'main',
+          acceptance_criteria: `Parent epic for feature "${featureTitle}". Tracks overall delivery.`,
+          ...epicIdentity,
+          ...(before?.business_id ? { business_id: before.business_id } : {}),
+        }
+        const { data: newEpic, error: epicErr } = await createAdminClient()
+          .from('issues')
+          .insert(epicDataToInsert)
+          .select('id, task_key')
+          .single()
+        if (epicErr || !newEpic) {
+          console.error(`[TOD-1203] failed to auto-create epic for feature:`, epicErr?.message)
+        } else {
+          fields.parent_id = newEpic.id
+          console.log(`[TOD-1203] auto-created epic ${newEpic.task_key} as parent for feature transitioning to defined`)
+        }
       }
     }
   }
