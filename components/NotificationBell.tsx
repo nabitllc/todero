@@ -42,7 +42,7 @@ export default function NotificationBell() {
     // 1. Notifications table (status_change events from issue PATCH)
     try {
       const res = await fetch(
-        `${SUPA}/rest/v1/notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`,
+        `${SUPA}/rest/v1/notifications?select=id,title,body,created_at&created_at=gte.${since}&order=created_at.desc&limit=30`,
         { headers }
       )
       const rows = await res.json()

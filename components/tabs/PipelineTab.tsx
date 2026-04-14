@@ -108,8 +108,8 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       // Fetch active issues + recently finished issues under the canonical lifecycle
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const [activeRes, finishedRes] = await Promise.all([
-        fetch(`${SUPA_URL}/rest/v1/issues?status=not.in.(closed,completed,released)&select=*&limit=100`, { headers: HEADERS }),
-        fetch(`${SUPA_URL}/rest/v1/issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`, { headers: HEADERS }),
+        fetch(`${SUPA_URL}/rest/v1/issues?status=not.in.(closed,completed,released)&select=id,task_key,title,status,assignee,priority,severity,type,parent_id,project,worked_by,feature_branch,updated_at&limit=100`, { headers: HEADERS }),
+        fetch(`${SUPA_URL}/rest/v1/issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=id,task_key,title,status,assignee,priority,severity,type,parent_id,project,worked_by,feature_branch,updated_at&limit=50`, { headers: HEADERS }),
       ])
       const active = await activeRes.json()
       const finished = await finishedRes.json()

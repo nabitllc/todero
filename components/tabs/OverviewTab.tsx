@@ -97,7 +97,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
       fetch(`${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: h }).then(r => r.json()),
       fetch(`${SUPA}/rest/v1/issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: h }).then(r => r.json()),
+      fetch(`${SUPA}/rest/v1/issues?parent_id=not.is.null&status=not.in.(completed,released,closed)&select=parent_id&limit=200`, { headers: h }).then(r => r.json()),
     ]).then(([p0, blocked, features, children]) => {
       const parentIds = new Set((Array.isArray(children) ? children : []).map((c: any) => c.parent_id))
       const noChildren = (Array.isArray(features) ? features : []).filter((f: any) => !parentIds.has(f.id))
@@ -362,7 +362,7 @@ function ProjectBreakdownBars({ project }: { project: string }) {
   useEffect(() => {
     const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
     const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    fetch(`${SUPA}/rest/v1/issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`, {
+    fetch(`${SUPA}/rest/v1/issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=200`, {
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
     }).then(r => r.json()).then((rows: any[]) => {
       if (!Array.isArray(rows)) return
