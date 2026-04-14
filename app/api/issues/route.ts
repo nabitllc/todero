@@ -261,16 +261,37 @@ async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key
 
   console.warn('[issues] next_task_number RPC unavailable; falling back to API-assigned identity', rpcErr)
 
-  const { data: maxRow } = await supabase
-    .from('issues')
-    .select('task_number')
-    .not('task_number', 'is', null)
-    .order('task_number', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  // Retry loop to handle race conditions when multiple POSTs arrive simultaneously.
+  // Each attempt checks MAX(task_number) then verifies the candidate key doesn't already exist.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: maxRow } = await supabase
+      .from('issues')
+      .select('task_number')
+      .not('task_number', 'is', null)
+      .order('task_number', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-  const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1
-  return { task_key: `${prefix}-${nextNumber}`, task_number: nextNumber }
+    const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1 + attempt
+    const candidateKey = `${prefix}-${nextNumber}`
+
+    // Check if this key already exists (race guard)
+    const { data: existing } = await supabase
+      .from('issues')
+      .select('id')
+      .eq('task_key', candidateKey)
+      .maybeSingle()
+
+    if (!existing) {
+      return { task_key: candidateKey, task_number: nextNumber }
+    }
+    console.warn(`[issues] task_key ${candidateKey} already exists, retrying (attempt ${attempt + 1})`)
+  }
+
+  // Final fallback: use timestamp-based suffix to guarantee uniqueness
+  const ts = Date.now()
+  const fallbackNumber = ts % 1000000
+  return { task_key: `${prefix}-${fallbackNumber}`, task_number: fallbackNumber }
 }
 
 // ── Workflow types ────────────────────────────────────────────────────────────
