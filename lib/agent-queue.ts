@@ -132,7 +132,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     agentId: 'po',
     model: 'sonnet',
     pickupStatus: 'backlog',
-    extraFilters: 'type=in.(feature,task,bug)',
+    extraFilters: 'type=in.(feature,task,bug,ops,research)',
     // CRITICAL: pickupStatus !== workingStatus but PO leaves items in 'defined'
     // as a staging area. Without this filter, ALL defined items count as WIP,
     // permanently locking PO at 23/3. Only count items PO has actively claimed.
