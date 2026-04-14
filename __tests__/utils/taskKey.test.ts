@@ -9,8 +9,8 @@ describe('PROJECT_PREFIX map', () => {
     expect(PROJECT_PREFIX['Vespera']).toBe('VES')
   })
 
-  it('maps "Infrastructure" to "INF"', () => {
-    expect(PROJECT_PREFIX['Infrastructure']).toBe('INF')
+  it('maps "Infrastructure" to "TOD"', () => {
+    expect(PROJECT_PREFIX['Infrastructure']).toBe('TOD')
   })
 
   it('maps "Kemuni" to "KEM"', () => {
@@ -48,8 +48,8 @@ describe('prefix generation logic', () => {
     expect(getProjectPrefix('Vespera')).toBe('VES')
   })
 
-  it('returns INF for Infrastructure', () => {
-    expect(getProjectPrefix('Infrastructure')).toBe('INF')
+  it('returns TOD for Infrastructure', () => {
+    expect(getProjectPrefix('Infrastructure')).toBe('TOD')
   })
 
   it('returns KEM for Kemuni', () => {
