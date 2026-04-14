@@ -86,8 +86,8 @@ const STATUS_PICKUP_LANES: Record<string, string[]> = {
   open:           ['builder', 'ops', 'scout'],
   underway:       [],
   code_review:    ['tester', 'designer'],
-  product_review: [],
-  feature_review: [],
+  product_review: ['po'],
+  feature_review: ['po'],
   approved:       ['deployer'],
   released:       ['auditor'],
 }
@@ -1174,7 +1174,7 @@ export async function PATCH(req: NextRequest) {
       if (fields.designer_reviewed_at === undefined && before?.designer_reviewed_at == null) fields.designer_reviewed_at = null
     }
 
-    if (fields.status === 'completed') {
+    if (fields.status === 'completed' || fields.status === 'wrapped') {
       fields.completed_at = now
       const completingAssignee = fields.assignee ?? before?.assignee
       if (completingAssignee && !fields.reviewed_by) fields.reviewed_by = completingAssignee
@@ -1300,7 +1300,7 @@ export async function PATCH(req: NextRequest) {
   // V4 — closing_notes required for released/completed → closed, and only auditor
   const transitioningToClosed =
     fields.status === 'closed' &&
-    (before?.status === 'released' || before?.status === 'completed')
+    (before?.status === 'released' || before?.status === 'completed' || before?.status === 'wrapped')
   if (transitioningToClosed) {
     const mergedNow = { ...before, ...fields } as Record<string, unknown>
     const closingNotes = (mergedNow.closing_notes as string | null | undefined) || (mergedNow.reviewer_notes as string | null | undefined) || null
@@ -1464,7 +1464,7 @@ export async function PATCH(req: NextRequest) {
   const resolvedType = fields.resolution_type ?? data?.resolution_type
   const issueType = (fields.type ?? before?.type ?? 'task') as string
   const WORKFLOW_TYPES_NOTIFY = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
-  if (!WORKFLOW_TYPES_NOTIFY.includes(issueType) && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'closed') && data) {
+  if (!WORKFLOW_TYPES_NOTIFY.includes(issueType) && (fields.status === 'approved' || fields.status === 'completed' || fields.status === 'wrapped' || fields.status === 'closed') && data) {
     notifyDiscord({ ...data, resolution_type: resolvedType, status: fields.status })
   }
 
@@ -1549,9 +1549,12 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (isCompletedIssueStatus(fields.status) && before?.assignee === 'ux' && before?.parent_id) {
+    // Determine correct completion status for parent type
+    const { data: uxParent } = await supabase.from('issues').select('type').eq('id', before.parent_id).maybeSingle()
+    const parentCompletionStatus = uxParent?.type === 'epic' ? 'wrapped' : 'closed'
     let parentUpdateQ = createAdminClient()
       .from('issues')
-      .update({ status: 'completed', updated_at: new Date().toISOString() })
+      .update({ status: parentCompletionStatus, updated_at: new Date().toISOString() })
       .eq('id', before.parent_id)
     if (hubScope) parentUpdateQ = parentUpdateQ.eq('business_id', hubScope.businessId)
     const { data: parentData } = await parentUpdateQ.select().single()
@@ -1583,7 +1586,7 @@ export async function PATCH(req: NextRequest) {
       .eq('id', data.parent_id)
     if (hubScope) parentFetchQ = parentFetchQ.eq('business_id', hubScope.businessId)
     const { data: parentIssue } = await parentFetchQ.single()
-    if (parentIssue?.type === 'epic' && parentIssue.status !== 'completed') {
+    if (parentIssue?.type === 'epic' && parentIssue.status !== 'wrapped') {
       let childrenQ = createAdminClient()
         .from('issues')
         .select('id, status')
@@ -1594,7 +1597,7 @@ export async function PATCH(req: NextRequest) {
       if (allDone) {
         let epicUpdateQ = createAdminClient()
           .from('issues')
-          .update({ status: 'completed', updated_at: new Date().toISOString() })
+          .update({ status: 'wrapped', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
         if (hubScope) epicUpdateQ = epicUpdateQ.eq('business_id', hubScope.businessId)
         await epicUpdateQ
@@ -1604,7 +1607,7 @@ export async function PATCH(req: NextRequest) {
 
   // ── TOD-1226 / TOD-1236: Watcher notifications on resolution ────────────────
   if (data && fields.status && fields.status !== before?.status &&
-      (fields.status === 'completed' || fields.status === 'closed')) {
+      (fields.status === 'completed' || fields.status === 'wrapped' || fields.status === 'closed')) {
     notifyWatchers({
       task_key: data.task_key as string | undefined,
       title: data.title as string | undefined,
