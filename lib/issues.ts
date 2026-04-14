@@ -67,6 +67,7 @@ export interface Task {
   last_rejection_reason?: string
   started_at?: string
   completed_at?: string
+  watchers?: string[]
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {

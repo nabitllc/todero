@@ -6,6 +6,7 @@ import { Kanban, Search, X, ClipboardList, Bug, Wrench, SearchIcon, Lock } from 
 import { Chip } from '@/lib/mc-atoms'
 import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
 import { KanbanCard } from '@/components/KanbanCard'
+import { WatchButton } from '@/components/WatchButton'
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -1265,6 +1266,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-white/10" style={{background:'#080808'}}>
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" onClick={() => { setEditTask(t); setDetailTask(null); setBugDetailsOpen(false) }}>Edit</Button>
+                  <WatchButton
+                    issueId={t.id}
+                    watcherId="michael"
+                    initialWatching={Array.isArray(t.watchers) && t.watchers.includes('michael')}
+                  />
                 </div>
                 <Button variant="icon" onClick={() => { setDetailTask(null); setBugDetailsOpen(false) }}>&times;</Button>
               </div>
