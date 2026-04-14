@@ -28,6 +28,7 @@ import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
+import MarketplaceTab from '@/components/tabs/MarketplaceTab'
 import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
@@ -43,6 +44,7 @@ const NAV = [
   { id:'overview',     label:'Overview',     icon:'📊' },
   { id:'activity',     label:'Activity',     icon:'📡' },
   { id:'team',         label:'Team',         icon:'👥' },
+  { id:'marketplace',  label:'Marketplace',  icon:'🛍️' },
   { id:'calendar',     label:'Calendar',     icon:'📅' },
   { id:'office',       label:'Office',       icon:'🏢' },
   { id:'memory',       label:'Memory',       icon:'🧠' },
@@ -59,7 +61,7 @@ const NAV = [
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings']
+const VALID_TABS = ['overview','activity','team','marketplace','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
@@ -404,6 +406,7 @@ export default function Home() {
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
           {tab === 'team' && <CrewTab userRole={userRole} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
+          {tab === 'marketplace' && <MarketplaceTab displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
           {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} openMem={openMem} setOpenMem={setOpenMem} />}
