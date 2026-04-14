@@ -202,7 +202,7 @@ function notifyTestFailure(issue: { task_key?: string; title?: string; project?:
   postDiscord(COMPLETED_TASKS_CHANNEL, msg)
 }
 
-// ── TOD-1226: Watcher notifications on resolution ────────────────────────────
+// ── TOD-1226 / TOD-1236: Watcher notifications on resolution ─────────────────
 // Fire-and-forget: send a Discord DM (or channel post) per watcher when an
 // issue transitions to completed or closed. Failure never blocks the PATCH.
 function notifyWatchers(issue: {
@@ -210,6 +210,7 @@ function notifyWatchers(issue: {
   title?: string
   resolution_type?: string
   implementation_notes?: string
+  closing_notes?: string
   watchers?: string[] | null
 }) {
   const watchers = issue.watchers
@@ -218,9 +219,9 @@ function notifyWatchers(issue: {
   const token = process.env.DISCORD_BOT_TOKEN ?? DISCORD_BOT_TOKEN
   const key = issue.task_key ?? '?'
   const resType = RESOLUTION_LABELS[issue.resolution_type ?? ''] ?? (issue.resolution_type ?? 'Resolved')
-  const notes = (issue.implementation_notes ?? '').slice(0, 200)
+  const notes = (issue.closing_notes ?? issue.implementation_notes ?? 'No closing notes provided.').slice(0, 400)
   const link = `https://kaos.nabit.work`
-  const msg = `✅ **Resolved: [${key}]** ${issue.title ?? ''}\n**Resolution:** ${resType}\n${notes ? `**Notes:** ${notes}\n` : ''}🔗 ${link}`
+  const msg = `✅ **Resolved: [${key}]** ${issue.title ?? ''}\n**Resolution:** ${resType}\n**Notes:** ${notes}\n🔗 ${link}\n\n_To unsubscribe from this issue: <https://kaos.nabit.work/unwatch?issue=${encodeURIComponent(key)}>_`
 
   for (const watcher of watchers) {
     void (async () => {
@@ -1514,7 +1515,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // ── TOD-1226: Watcher notifications on resolution ───────────────────────────
+  // ── TOD-1226 / TOD-1236: Watcher notifications on resolution ────────────────
   if (data && fields.status && fields.status !== before?.status &&
       (fields.status === 'completed' || fields.status === 'closed')) {
     notifyWatchers({
@@ -1522,6 +1523,7 @@ export async function PATCH(req: NextRequest) {
       title: data.title as string | undefined,
       resolution_type: (fields.resolution_type ?? data.resolution_type) as string | undefined,
       implementation_notes: (fields.implementation_notes ?? data.implementation_notes) as string | undefined,
+      closing_notes: (fields.closing_notes ?? data.closing_notes) as string | undefined,
       watchers: data.watchers as string[] | null | undefined,
     })
   }
