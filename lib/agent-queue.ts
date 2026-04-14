@@ -60,7 +60,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     agentId: 'builder',
     model: 'sonnet',
     pickupStatus: 'open',
-    extraFilters: '',
+    extraFilters: 'type=in.(task,bug)',
     dorFields: ['description', 'acceptance_criteria'],
     // TOD-XXX (2026-04-10, Michael approved): bumped from 1 to 2 for parallel
     // builds. Safe now that each spawn runs in its own isolated git worktree
