@@ -82,9 +82,12 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
 const STATUS_PICKUP_LANES: Record<string, string[]> = {
   backlog:        ['po', 'todero-sme', 'kemuni-sme', 'vespera-sme', 'infra-sme'],
   defined:        ['po'],
+  refined:        ['po'],
   open:           ['builder', 'ops', 'scout'],
+  underway:       [],
   code_review:    ['tester', 'designer'],
   product_review: [],
+  feature_review: [],
   approved:       ['deployer'],
   released:       ['auditor'],
 }
@@ -628,9 +631,9 @@ async function executePostFunctions(
     }
 
     if (action === 'set_active_sprint') {
-      const currentSprint = (fields.sprint ?? updatedIssue.sprint ?? issue.sprint) as string | null | undefined
+      // Always set sprint to active sprint when transitioning (refined→open, defined→underway)
       const project = (fields.project ?? updatedIssue.project ?? issue.project) as string | null | undefined
-      if (!currentSprint && project) {
+      if (project) {
         const activeSprint = await getActiveSprintForProject(project)
         if (activeSprint) {
           fields.sprint = activeSprint.start_date
