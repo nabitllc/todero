@@ -145,7 +145,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
-    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner. For FEATURES: create child tasks (each 1-2 days of work) before moving to defined. For EPICS: verify child features exist and have AC. When all DoR fields are set, PATCH to defined. Then check defined issues — if they have sprint, assignee, reviewer, owner, PATCH to open. **SPRINT DATE HYGIENE (2026-04-10): whenever you create a new child task, ALWAYS set sprint to today\'s date in YYYY-MM-DD format (America/New_York timezone). Never use a past date. The backend auto-corrects wrong dates but you should set it right the first time.** Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
+    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner. For TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined"). For FEATURES: create child tasks (each 1-2 days of work) before moving to "defined". For EPICS: verify child features exist and have AC. Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition. Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
   },
 
   scout: {

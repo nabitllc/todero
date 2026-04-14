@@ -1196,8 +1196,8 @@ export async function PATCH(req: NextRequest) {
   // TOD-XXX (2026-04-10 validators requested by Michael):
   // V1 — commit_sha required before in_progress → code_review
   // V2 — regression_test required in the same transition
-  // TOD-1205: only enforce for task and bug; feature/epic/ops skip these gates
-  if (transitioningIntoCodeReview && ['task', 'bug'].includes(issueTypeForGates)) {
+  // TOD-1205: enforce for task, bug, and ops; feature/epic skip these gates
+  if (transitioningIntoCodeReview && ['task', 'bug', 'ops'].includes(issueTypeForGates)) {
     const mergedNow = { ...before, ...fields } as Record<string, unknown>
     const commitSha = (mergedNow.commit_sha as string | null | undefined) || null
     const regressionTest = (mergedNow.regression_test as string | null | undefined) || null
@@ -1481,6 +1481,48 @@ export async function PATCH(req: NextRequest) {
   // SELF-CHAIN CALL — DO NOT REMOVE (protected by .githooks/pre-commit)
   if (fields.status && data && fields.status !== before?.status) {
     selfChainOnStatus(fields.status as string)
+  }
+
+  // Auto-promote feature from defined→underway when ANY child moves to open or beyond.
+  const ACTIVE_CHILD_STATUSES = ['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released']
+  if (fields.status && data?.parent_id && ACTIVE_CHILD_STATUSES.includes(fields.status as string)) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', data.parent_id)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'defined') {
+      await supabase
+        .from('issues')
+        .update({ status: 'underway', updated_at: new Date().toISOString() })
+        .eq('id', data.parent_id)
+      console.log(`[auto-promote] Feature ${parentFeature.id} promoted defined→underway (child moved to ${fields.status})`)
+    }
+  }
+
+  // Auto-revert feature from underway→defined when ALL child issues are in backlog/refined.
+  // This means no child is actively being worked on, so the feature is no longer "underway".
+  if (fields.status && data?.parent_id && ['backlog', 'refined'].includes(fields.status as string)) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', data.parent_id)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
+      const { data: siblings } = await supabase
+        .from('issues')
+        .select('id, status')
+        .eq('parent_id', data.parent_id)
+      const allIdle = siblings && siblings.length > 0 &&
+        siblings.every(c => ['backlog', 'refined', 'defined'].includes(c.status as string))
+      if (allIdle) {
+        await supabase
+          .from('issues')
+          .update({ status: 'defined', updated_at: new Date().toISOString() })
+          .eq('id', data.parent_id)
+        console.log(`[auto-revert] Feature ${parentFeature.id} reverted underway→defined (all children idle)`)
+      }
+    }
   }
 
   if (fields.pr_url && !before?.pr_url && data) {
