@@ -28,6 +28,7 @@ import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
 import QuickActionFab from '@/components/QuickActionFab'
+import FeatureRequestModal from '@/components/FeatureRequestModal'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
 import TopBar from '@/components/TopBar'
@@ -152,6 +153,7 @@ export default function Home() {
     return null
   })
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showFeatureRequest, setShowFeatureRequest] = useState(false)
   const [businessRailRefresh, setBusinessRailRefresh] = useState(0)
   const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(() => {
     if (typeof window !== 'undefined') { const p = new URLSearchParams(window.location.search); return p.get('feature') ?? undefined }
@@ -309,6 +311,7 @@ export default function Home() {
     <div className="min-h-screen flex bg-neutral-950">
       <BusinessRail selected={selectedBusiness} onSelect={selectBusiness} onNew={() => setShowOnboarding(true)} refreshKey={businessRailRefresh} />
       {showOnboarding && <OnboardingWizard onComplete={(name) => { selectBusiness(name); setShowOnboarding(false); setBusinessRailRefresh(k => k + 1) }} onClose={() => setShowOnboarding(false)} />}
+      {showFeatureRequest && <FeatureRequestModal onClose={() => setShowFeatureRequest(false)} />}
 
       {/* SIDEBAR — TOD-538: grouped nav extracted to SidebarNav component */}
       <SidebarNav
@@ -398,7 +401,7 @@ export default function Home() {
 
       <QuickActionFab
         onNavigate={navigate}
-        onCreateIssue={() => navigate('board')}
+        onCreateIssue={() => setShowFeatureRequest(true)}
         onStartChat={() => navigate('chat')}
       />
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={navigate} />
