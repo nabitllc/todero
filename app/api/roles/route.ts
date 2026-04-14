@@ -9,10 +9,12 @@ import { createClient } from '@supabase/supabase-js'
 import { hasPermission } from '@/lib/rbac-types'
 import type { Role } from '@/lib/rbac-types'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 const VALID_WORKSPACE_ROLES = ['owner', 'member', 'viewer'] as const
 type WorkspaceRole = typeof VALID_WORKSPACE_ROLES[number]
@@ -33,7 +35,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden: roles:read permission required' }, { status: 403 })
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('workspace_members')
     .select('id, identity, role, assigned_by, created_at, updated_at')
     .order('created_at', { ascending: true })
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `role must be one of: ${VALID_WORKSPACE_ROLES.join(', ')}` }, { status: 400 })
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('workspace_members')
     .insert({
       identity: identity.trim(),
@@ -107,7 +109,7 @@ export async function PATCH(req: NextRequest) {
 
   const filter = id ? { id } : { identity: (identity as string).trim() }
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('workspace_members')
     .update({
       role: newRole as WorkspaceRole,
@@ -145,7 +147,7 @@ export async function DELETE(req: NextRequest) {
 
   const filter = id ? { id } : { identity: identity! }
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('workspace_members')
     .delete()
     .match(filter)
