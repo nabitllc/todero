@@ -60,3 +60,10 @@ Each entry:
   Type: format | technical | communication | project-specific
   Context: Where/when
   Confirmed: pending (N/3) | yes (reason)
+
+## 2026-04-15
+- [14:45] Do not create PRs for every code change during active development/migration sessions
+  Type: workflow
+  Context: Machine migration session — was creating PRs for docs changes and small fixes
+  Rule: PRs are only needed when a Vercel deployment is required (i.e. the change needs to go live on Vercel and only Michael's merge can trigger that). For everything else — docs, config, scripts, non-Vercel changes — push directly to main with [skip ci]. Michael will say explicitly when a PR is needed.
+  Confirmed: yes (explicit instruction 2026-04-15)
