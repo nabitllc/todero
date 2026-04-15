@@ -702,7 +702,23 @@ export async function GET(req: NextRequest) {
   // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
   const db = businessIdParam ? getHubClient(businessIdParam) : createAdminClient()
   // getHubClient auto-injects business_id on hub-scoped tables
-  let query = db.from('issues').select('*')
+  //
+  // Select specific columns by default (excludes large text blobs: description,
+  // implementation_notes, reviewer_notes, regression_test, tester_notes,
+  // designer_notes) to keep response payloads small (~5KB vs ~200KB).
+  // Pass ?full=true to get all columns (used by agents that need full detail).
+  const fullFields = url.searchParams.get('full') === 'true'
+  const SELECT_COLS = [
+    'id','task_key','task_number','title','status','type','priority','severity',
+    'assignee','owner','sprint','project','due_date','label','estimate',
+    'created_at','updated_at','started_at','submitted_at','completed_at',
+    'is_blocked','blocked_by','parent_id','feature_branch','pr_url','commit_sha',
+    'tester_status','tested_by','tester_reviewed_at',
+    'designer_status','designed_by','designer_reviewed_at',
+    'worked_by','transitioned_by','acceptance_criteria',
+    'business_id','resolution_type',
+  ].join(',')
+  let query = db.from('issues').select(fullFields ? '*' : SELECT_COLS)
 
   if (false) {
     // business_id filtering now handled by getHubClient wrapper automatically
@@ -734,7 +750,8 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(withIssueStatusCategoryList(data))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return NextResponse.json(withIssueStatusCategoryList(data as any[]))
 }
 
 // ── POST ──────────────────────────────────────────────────────────────────────

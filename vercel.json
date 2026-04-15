@@ -1,0 +1,25 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/watchdog",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/sprint-cycle",
+      "schedule": "55 11 * * *"
+    },
+    {
+      "path": "/api/cron/pr-window",
+      "schedule": "0 12,0 * * *"
+    }
+  ]
+}

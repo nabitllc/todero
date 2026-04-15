@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Pipeline watchdog — runs every 30 minutes, checks all agent lanes,
+  clears stuck claims, kicks idle agents.
+  StartInterval is in seconds: 1800 = 30 min.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>work.nabit.agent-kicker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__TODERO_DIR__/config/scripts/pipeline-watchdog.sh</string>
+    </array>
+    <key>StartInterval</key><integer>1800</integer>
+    <key>RunAtLoad</key><true/>
+    <key>StandardOutPath</key><string>/tmp/agent-kicker.log</string>
+    <key>StandardErrorPath</key><string>/tmp/agent-kicker.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__HOMEBREW_PREFIX__/opt/node@22/bin:__HOMEBREW_PREFIX__/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+    </dict>
+</dict>
+</plist>

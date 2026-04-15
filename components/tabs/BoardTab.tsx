@@ -297,9 +297,10 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
-  // Auto-refresh Board every 30s so overnight changes appear without manual reload
+  // Auto-refresh Board every 60s so overnight changes appear without manual reload
+  // (raised from 30s to reduce Supabase egress — see TOD-XXX event-driven update plan)
   useEffect(() => {
-    const iv = setInterval(() => { fetchTasks() }, 30_000)
+    const iv = setInterval(() => { fetchTasks() }, 60_000)
     return () => clearInterval(iv)
   }, [fetchTasks])
 
