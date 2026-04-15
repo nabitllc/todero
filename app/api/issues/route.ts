@@ -86,8 +86,8 @@ const STATUS_PICKUP_LANES: Record<string, string[]> = {
   open:           ['builder', 'ops', 'scout'],
   underway:       [],
   code_review:    ['tester', 'designer'],
-  product_review: [],  // activate_reviewer post-function kicks PO directly
-  feature_review: [],  // activate_reviewer post-function kicks PO directly
+  product_review: ['po'],  // PO is the reviewer; selfChain kicks PO when issue enters product_review
+  feature_review: ['po'],  // PO confirms feature completion; selfChain kicks PO on feature_review entry
   approved:       ['deployer'],
   released:       ['auditor'],
 }
@@ -430,6 +430,10 @@ async function validateWorkflowTransition(
   }
 
   if (!transition) {
+    // michael can override any workflow transition for maintenance/admin purposes
+    if (transitionedBy === 'michael') {
+      return { transition: { condition_role: null, validators: [], post_functions: [] } as unknown as WorkflowTransition, error: null }
+    }
     return {
       transition: null,
       error: {
@@ -737,6 +741,11 @@ export async function GET(req: NextRequest) {
     query = query.eq('status', statusParam)
   }
 
+  const parentIdParam = url.searchParams.get('parent_id')
+  if (parentIdParam) {
+    query = query.eq('parent_id', parentIdParam)
+  }
+
   if (search) {
     query = query.ilike('title', `%${search}%`)
     query = query.order('updated_at', { ascending: false })
@@ -989,6 +998,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Q4: If a child issue is created under a feature in feature_review → revert to underway.
+  // Means the feature has open work remaining; PO or agent created a gap-filling child.
+  if (data && parent_id) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', parent_id as string)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'feature_review') {
+      await supabase
+        .from('issues')
+        .update({ status: 'underway', updated_at: new Date().toISOString() })
+        .eq('id', parent_id as string)
+      console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
+    }
+  }
+
   // Warn if bug is created without environment field
   const responseData = withIssueStatusCategory(data)
   if ((type ?? 'task') === 'bug' && !body.environment) {
@@ -1140,6 +1166,32 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json(
         { error: 'acceptance_criteria is required before moving to open. Add it via PATCH and retry.' },
         { status: 400 }
+      )
+    }
+  }
+
+  // resolution_type required before submitting work for review.
+  // The assignee sets this when they PATCH to code_review or product_review —
+  // it tells reviewers what kind of change was made before they even look at the diff.
+  if ((fields.status === 'code_review' || fields.status === 'product_review') && before?.status !== fields.status) {
+    const effectiveResType = fields.resolution_type ?? before?.resolution_type
+    if (!effectiveResType) {
+      return NextResponse.json(
+        { error: `resolution_type is required before moving to ${fields.status}. Set it to what was done (e.g. code_change, config_change, research_completed). Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
+      )
+    }
+  }
+
+  // resolution_type required to close any issue from any status.
+  // The normal pipeline path auto-sets it at approved (code_review dual-pass),
+  // so this only catches gaps: direct closures, feature_review→closed, wrapped→closed.
+  if (fields.status === 'closed' && before?.status !== 'closed') {
+    const effectiveResType = fields.resolution_type ?? before?.resolution_type
+    if (!effectiveResType) {
+      return NextResponse.json(
+        { error: `resolution_type is required to close an issue. Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
       )
     }
   }
@@ -1387,6 +1439,19 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // Auto-clear is_blocked + blocked_by when an issue transitions to any new status.
+  // If it's moving through the pipeline, it's no longer blocked by anything.
+  if (fields.status && fields.status !== before?.status) {
+    if (before?.is_blocked) {
+      fields.is_blocked = false
+      console.log(`[unblock] ${before?.task_key} is_blocked cleared on transition ${before?.status}→${fields.status}`)
+    }
+    if (before?.blocked_by) {
+      fields.blocked_by = null
+      console.log(`[unblock] ${before?.task_key} blocked_by cleared on transition ${before?.status}→${fields.status}`)
+    }
+  }
+
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
   if (isNewFailure) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
@@ -1403,6 +1468,30 @@ export async function PATCH(req: NextRequest) {
   const newRejectionCount = (fields.rejection_count as number | undefined) ?? before?.rejection_count ?? 0
   if (newRejectionCount >= 3 && !before?.is_blocked) {
     fields.is_blocked = true
+  }
+
+  // When is_blocked becomes true, post to Discord #alerts for KAOS (main) to investigate.
+  // KAOS is not a spawnable queue agent — it's the orchestrator (Telegram bot / Michael).
+  // The alert includes enough context to act: issue key, title, reason, current status, blocked_by.
+  const becomingBlocked = fields.is_blocked === true && !before?.is_blocked
+  if (becomingBlocked) {
+    const blockedIssue = { ...before, ...fields }
+    const key = (blockedIssue.task_key ?? '?') as string
+    const title = (blockedIssue.title ?? '') as string
+    const currentStatus = (blockedIssue.status ?? before?.status ?? '?') as string
+    const blockedBy = (blockedIssue.blocked_by ?? before?.blocked_by ?? null) as string | null
+    const reason = newRejectionCount >= 3
+      ? `3+ review rejections (rejection_count=${newRejectionCount})`
+      : blockedBy
+        ? `blocked_by dependency: ${blockedBy}`
+        : 'manually blocked'
+    postDiscord('1485333335868834063',
+      `🔴 **Blocked Issue — Needs KAOS Investigation**\n` +
+      `**[${key}]** ${title}\n` +
+      `Status: ${currentStatus} · Reason: ${reason}\n` +
+      `To unblock: PATCH \`{"task_key":"${key}","is_blocked":false}\` once resolved.\n` +
+      `<@409194957098713088> please investigate.`)
+    console.log(`[blocked] ${key} blocked (${reason}) — posted to #alerts`)
   }
 
   if (fields.owner !== undefined) {
@@ -1513,6 +1602,34 @@ export async function PATCH(req: NextRequest) {
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', data.parent_id)
       console.log(`[auto-promote] Feature ${parentFeature.id} promoted defined→underway (child moved to ${fields.status})`)
+    }
+  }
+
+  // Auto-promote feature from underway→feature_review when ALL children are closed.
+  // Only 'closed' counts — 'released' still needs auditor, 'cancelled' is not a valid status.
+  // This triggers PO to confirm the feature is done (PO then closes or reverts to underway).
+  if (fields.status === 'closed' && data?.parent_id) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', data.parent_id)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
+      const { data: siblings } = await supabase
+        .from('issues')
+        .select('id, status')
+        .eq('parent_id', data.parent_id)
+      const allClosed = siblings && siblings.length > 0 &&
+        siblings.every(c => c.status === 'closed')
+      if (allClosed) {
+        await supabase
+          .from('issues')
+          .update({ status: 'feature_review', updated_at: new Date().toISOString() })
+          .eq('id', data.parent_id)
+        console.log(`[auto-promote] Feature ${parentFeature.id} promoted underway→feature_review (all children closed)`)
+        // selfChain kicks PO to confirm feature completion
+        selfChainOnStatus('feature_review')
+      }
     }
   }
 
