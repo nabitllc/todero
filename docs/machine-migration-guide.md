@@ -21,7 +21,7 @@ VERCEL (todero.vercel.app — the board UI, accessible from any browser)
         ↕ you open in browser / push code via git
 YOUR WINDOWS LAPTOP
   • Browser → todero.vercel.app   (to see the board)
-  • Claude Code Desktop → C:\todero   (to write code)
+  • Claude Code Desktop → C:\Development\Todero   (to write code)
   • Git push → GitHub → Vercel auto-deploys
 ```
 
@@ -61,20 +61,20 @@ Verify: `git --version`
 ### Step 3 — Clone the repo
 Open PowerShell:
 ```powershell
-git clone https://github.com/nabitllc/todero.git C:\todero
-cd C:\todero
+git clone https://github.com/nabitllc/todero.git C:\Development\Todero
+cd C:\Development\Todero
 ```
 
 ### Step 4 — Create .env.local
 1. Open Notepad
 2. Paste the env var contents from your email
-3. **File → Save As** → navigate to `C:\todero`
+3. **File → Save As** → navigate to `C:\Development\Todero`
 4. File name: `.env.local`
 5. Save as type: **All Files (\*.\*)** ← critical, prevents saving as `.env.local.txt`
 
 ### Step 5 — Install dependencies
 ```powershell
-cd C:\todero
+cd C:\Development\Todero
 npm install
 ```
 
@@ -86,7 +86,7 @@ Should complete with no errors.
 
 ### Step 7 — Open in Claude Code Desktop
 - Open Claude Code Desktop
-- Open folder: `C:\todero`
+- Open folder: `C:\Development\Todero`
 - You're ready to write code
 
 ---
@@ -96,7 +96,7 @@ Should complete with no errors.
 **To see the board:** open `todero.vercel.app` in your browser. No laptop setup needed — works from anywhere.
 
 **To write code:**
-1. Open `C:\todero` in Claude Code Desktop
+1. Open `C:\Development\Todero` in Claude Code Desktop
 2. Make changes with Claude's help
 3. Push to GitHub — Vercel deploys automatically
 
