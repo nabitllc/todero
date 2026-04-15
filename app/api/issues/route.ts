@@ -1538,6 +1538,34 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // Auto-promote feature from underway→feature_review when ALL children are closed/released.
+  // This triggers PO to confirm the feature is done (PO then closes or reverts to underway).
+  const CLOSED_CHILD_STATUSES = ['closed', 'released', 'cancelled']
+  if (fields.status && data?.parent_id && CLOSED_CHILD_STATUSES.includes(fields.status as string)) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', data.parent_id)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
+      const { data: siblings } = await supabase
+        .from('issues')
+        .select('id, status')
+        .eq('parent_id', data.parent_id)
+      const allClosed = siblings && siblings.length > 0 &&
+        siblings.every(c => CLOSED_CHILD_STATUSES.includes(c.status as string))
+      if (allClosed) {
+        await supabase
+          .from('issues')
+          .update({ status: 'feature_review', updated_at: new Date().toISOString() })
+          .eq('id', data.parent_id)
+        console.log(`[auto-promote] Feature ${parentFeature.id} promoted underway→feature_review (all children closed)`)
+        // selfChain kicks PO to confirm feature completion
+        selfChainOnStatus('feature_review')
+      }
+    }
+  }
+
   // Auto-revert feature from underway→defined when ALL child issues are in backlog/refined.
   // This means no child is actively being worked on, so the feature is no longer "underway".
   if (fields.status && data?.parent_id && ['backlog', 'refined'].includes(fields.status as string)) {
