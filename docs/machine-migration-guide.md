@@ -1,7 +1,9 @@
 # Todero — Machine Migration Guide
 
 How to move Todero from one machine to another (or add a new dev machine).
-Written 2026-04-15 after the Mac Mini → laptop + Vercel migration planning.
+Written 2026-04-15 after the Mac Mini → Windows laptop + Vercel migration planning.
+
+> **Your setup:** Mac Mini (agent runner, always-on) + Windows laptop (development) + Vercel (public web app)
 
 ---
 
@@ -30,9 +32,9 @@ Written 2026-04-15 after the Mac Mini → laptop + Vercel migration planning.
 
 ---
 
-## Phase 0 — Fix Supabase egress first (if not already done)
+## Phase 0 — Fix Supabase egress ✅ DONE (2026-04-15)
 
-> **Skip if you're on commit `24555c4` or later** — this is already fixed.
+> **Already fixed** — merged in PR #17 (commit `9754430`).
 
 The free Supabase tier hits its 5GB/month bandwidth limit due to aggressive UI polling.
 The fix (committed 2026-04-15): `GET /api/issues` now selects specific columns instead of `SELECT *`, and polling intervals were raised.
@@ -42,21 +44,17 @@ If the project is paused due to egress: hit "Restore project", then deploy the f
 
 ---
 
-## Phase 1 — Deploy to Vercel (30 min)
+## Phase 1 — Deploy to Vercel ✅ DONE (2026-04-15)
 
 This gives you a public URL accessible from any machine — no cloudflared tunnel needed.
 
-1. Go to [vercel.com](https://vercel.com) → **New Project** → Import `nabitllc/todero` from GitHub
-2. In **Environment Variables**, add every key from `.env.local` (copy-paste each one)
-   - Also add: `NEXT_PUBLIC_APP_URL=https://your-project.vercel.app`
-   - Also add: `CRON_SECRET=<any random string>` (protects cron routes from external calls)
-3. Click **Deploy** — Vercel detects Next.js automatically, no config needed
-4. Visit the Vercel URL — confirm the board loads and data appears
-5. **Prevent agent commits from triggering builds:**
-   - Vercel dashboard → Settings → Git → **Ignored Build Step**
-   - Command: `[[ "$VERCEL_GIT_COMMIT_MESSAGE" == *"[skip ci]"* ]] && exit 0 || exit 1`
-   - This prevents Builder's 30-40 daily commits from consuming your 6,000 build minutes/month
-
+1. ✅ Go to [vercel.com](https://vercel.com) → **New Project** → Import `nabitllc/todero` from GitHub
+2. ✅ In **Environment Variables**, add every key from `.env.local`
+   - Add: `NEXT_PUBLIC_APP_URL=https://your-project.vercel.app`
+   - Add: `CRON_SECRET=<random string>` (protects cron routes from external calls)
+3. ✅ Click **Deploy** — Vercel detects Next.js automatically, no config needed
+4. ✅ Visit the Vercel URL — confirm the board loads and data appears
+5. ✅ `[skip ci]` build skipping is handled automatically via `vercel.json` `ignoreCommand` — no manual UI step needed.
 6. **Verify Vercel Crons are active:**
    - Vercel dashboard → your project → **Crons** tab
    - You should see three cron jobs (from `vercel.json`):
@@ -65,62 +63,57 @@ This gives you a public URL accessible from any machine — no cloudflared tunne
      - `/api/cron/pr-window` — 7am + 7pm ET daily
    - These are additive — the Mac Mini LaunchAgents keep running too
 
+> **Note on deployments:** Only Michael (michael@nabit.app / michikyu on GitHub) can trigger
+> Vercel deployments. Code changes go through PRs — Michael merges → Vercel deploys automatically.
+
 ---
 
-## Phase 2 — Set up new laptop for development (20 min)
+## Phase 2 — Set up Windows laptop for development (20 min)
 
-**Works on Mac or Windows (Windows requires WSL for agent spawning — see note below).**
+### Step 1 — Install Node.js
+Download from [nodejs.org](https://nodejs.org) → LTS version → run the `.msi` installer.
+During install: check **"Add to PATH"**. Restart any open terminals after.
 
-### Mac laptop
+Verify: open PowerShell and run `node --version` → should print `v22.x.x`
 
-```bash
-# 1. Install Node.js via Homebrew
-brew install node@22
-echo 'export PATH="/opt/homebrew/opt/node@22/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+### Step 2 — Clone the repo
+Open PowerShell:
+```powershell
+git clone https://github.com/nabitllc/todero.git C:\todero
+cd C:\todero
+```
 
-# 2. Clone the repo
-git clone https://github.com/nabitllc/todero.git ~/todero
-cd ~/todero
+If you don't have Git: download from [git-scm.com](https://git-scm.com).
 
-# 3. Copy .env.local (email it to yourself, then)
-cp ~/Downloads/.env.local .
+### Step 3 — Create .env.local
+Open Notepad, paste the env var contents from your email, then:
+- **File → Save As** → navigate to `C:\todero`
+- File name: `.env.local`
+- Save as type: **All Files (\*.\*)** ← critical, prevents saving as `.env.local.txt`
 
-# 4. Install dependencies and build
+### Step 4 — Install and build
+```powershell
 npm install
 npm run build
+```
 
-# 5. Run locally (for development)
+### Step 5 — Run for development
+```powershell
 npm run dev
 # → http://localhost:3000
 ```
 
-Claude Code CLI comes with Claude Desktop — already installed. Sign in with your Anthropic account.
+For day-to-day work you don't need to run it locally at all — just use the Vercel URL.
+`npm run dev` is only needed when actively writing and testing code changes.
 
-### Windows laptop
+### Claude Code CLI
+Claude Desktop is already installed on your Windows laptop — Claude Code CLI comes with it.
+Sign in with your Anthropic account and it's ready to use.
 
-```powershell
-# 1. Install Node.js — download from https://nodejs.org (LTS version)
-#    Run the .msi installer. Select "Add to PATH" during install.
-
-# 2. Clone the repo (Git Bash or PowerShell)
-git clone https://github.com/nabitllc/todero.git C:\todero
-cd C:\todero
-
-# 3. Copy .env.local into C:\todero\
-
-# 4. Install and build
-npm install
-npm run build
-
-# 5. Run for development
-npm run dev
-```
-
-> **Windows note on agent spawning:** The agent runtime (`lib/runtimes/claude-code.ts`) uses
-> `bash`, `nohup`, and Unix process management. On Windows, Claude Code CLI must run inside
-> **WSL** (Windows Subsystem for Linux) for agent spawning to work. For UI/development only,
-> WSL is not required — just use the Vercel URL or `npm run dev`.
+> **Note on agent spawning from Windows:** The agent runtime (`lib/runtimes/claude-code.ts`)
+> uses `bash` and `nohup` which are Unix-only. Agent spawning (Builder, PO, etc.) runs on the
+> Mac Mini, not the laptop. The laptop is for development only — agents keep running on Mac Mini
+> regardless of whether the laptop is on or off.
 
 ---
 
