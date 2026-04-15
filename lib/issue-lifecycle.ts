@@ -1,6 +1,9 @@
 export const ISSUE_TERMINAL_STATUSES = ['wrapped', 'closed'] as const
 export const ISSUE_COMPLETED_STATUSES = ['wrapped', 'closed'] as const
-export const ISSUE_DEPENDENCY_SATISFIED_STATUSES = ['released', 'wrapped', 'closed'] as const
+// A blocked_by dependency is satisfied when the blocker reaches approved, released, wrapped, or closed.
+// 'approved' is included: code is reviewed and ready — dependent work can proceed before deployment.
+// 'cancelled' is NOT a valid status in this system.
+export const ISSUE_DEPENDENCY_SATISFIED_STATUSES = ['approved', 'released', 'wrapped', 'closed'] as const
 export const ISSUE_SIGNOFF_STATUSES = ['released', 'wrapped'] as const
 export const ISSUE_ACTIVE_WORK_STATUSES = ['open', 'in_progress', 'underway', 'code_review', 'product_review', 'feature_review', 'approved', 'released'] as const
 

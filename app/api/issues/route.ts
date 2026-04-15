@@ -1409,6 +1409,13 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // Auto-clear is_blocked when an issue transitions to any new status.
+  // If it's moving through the pipeline, it's no longer blocked.
+  if (fields.status && fields.status !== before?.status && before?.is_blocked) {
+    fields.is_blocked = false
+    console.log(`[unblock] ${before?.task_key} unblocked on status transition ${before?.status}→${fields.status}`)
+  }
+
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
   if (isNewFailure) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
@@ -1425,6 +1432,30 @@ export async function PATCH(req: NextRequest) {
   const newRejectionCount = (fields.rejection_count as number | undefined) ?? before?.rejection_count ?? 0
   if (newRejectionCount >= 3 && !before?.is_blocked) {
     fields.is_blocked = true
+  }
+
+  // When is_blocked becomes true, post to Discord #alerts for KAOS (main) to investigate.
+  // KAOS is not a spawnable queue agent — it's the orchestrator (Telegram bot / Michael).
+  // The alert includes enough context to act: issue key, title, reason, current status, blocked_by.
+  const becomingBlocked = fields.is_blocked === true && !before?.is_blocked
+  if (becomingBlocked) {
+    const blockedIssue = { ...before, ...fields }
+    const key = (blockedIssue.task_key ?? '?') as string
+    const title = (blockedIssue.title ?? '') as string
+    const currentStatus = (blockedIssue.status ?? before?.status ?? '?') as string
+    const blockedBy = (blockedIssue.blocked_by ?? before?.blocked_by ?? null) as string | null
+    const reason = newRejectionCount >= 3
+      ? `3+ review rejections (rejection_count=${newRejectionCount})`
+      : blockedBy
+        ? `blocked_by dependency: ${blockedBy}`
+        : 'manually blocked'
+    postDiscord('1485333335868834063',
+      `🔴 **Blocked Issue — Needs KAOS Investigation**\n` +
+      `**[${key}]** ${title}\n` +
+      `Status: ${currentStatus} · Reason: ${reason}\n` +
+      `To unblock: PATCH \`{"task_key":"${key}","is_blocked":false}\` once resolved.\n` +
+      `<@409194957098713088> please investigate.`)
+    console.log(`[blocked] ${key} blocked (${reason}) — posted to #alerts`)
   }
 
   if (fields.owner !== undefined) {
@@ -1538,10 +1569,10 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // Auto-promote feature from underway→feature_review when ALL children are closed/released.
+  // Auto-promote feature from underway→feature_review when ALL children are closed.
+  // Only 'closed' counts — 'released' still needs auditor, 'cancelled' is not a valid status.
   // This triggers PO to confirm the feature is done (PO then closes or reverts to underway).
-  const CLOSED_CHILD_STATUSES = ['closed', 'released', 'cancelled']
-  if (fields.status && data?.parent_id && CLOSED_CHILD_STATUSES.includes(fields.status as string)) {
+  if (fields.status === 'closed' && data?.parent_id) {
     const { data: parentFeature } = await supabase
       .from('issues')
       .select('id, type, status')
@@ -1553,7 +1584,7 @@ export async function PATCH(req: NextRequest) {
         .select('id, status')
         .eq('parent_id', data.parent_id)
       const allClosed = siblings && siblings.length > 0 &&
-        siblings.every(c => CLOSED_CHILD_STATUSES.includes(c.status as string))
+        siblings.every(c => c.status === 'closed')
       if (allClosed) {
         await supabase
           .from('issues')
