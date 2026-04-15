@@ -710,7 +710,7 @@ export async function GET(req: NextRequest) {
   const fullFields = url.searchParams.get('full') === 'true'
   const SELECT_COLS = [
     'id','task_key','task_number','title','status','type','priority','severity',
-    'assignee','owner','sprint','project','due_date','label','estimate',
+    'assignee','owner','sprint','project','due_date',
     'created_at','updated_at','started_at','submitted_at','completed_at',
     'is_blocked','blocked_by','parent_id','feature_branch','pr_url','commit_sha',
     'tester_status','tested_by','tester_reviewed_at',
