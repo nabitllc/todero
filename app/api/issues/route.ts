@@ -1114,26 +1114,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  /* ── Open-cap enforcement (backlog-first policy: max 10 open) ── */
-  if (fields.status === 'open' && before?.status !== 'open') {
-    const MAX_OPEN = 10
-    let openCapQ = createAdminClient()
-      .from('issues')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'open')
-    if (hubScope) openCapQ = openCapQ.eq('business_id', hubScope.businessId)
-    const { count: openCount } = await openCapQ
-    if ((openCount ?? 0) >= MAX_OPEN) {
-      return NextResponse.json(
-        {
-          error: `Backlog-first policy: ${openCount} issues are already open (limit ${MAX_OPEN}). Complete or reset existing open issues before opening new ones.`,
-          field: 'status',
-          open_count: openCount,
-        },
-        { status: 409 }
-      )
-    }
-  }
+  /* ── Open-cap enforcement removed — was blocking pipeline throughput ── */
 
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
