@@ -86,8 +86,8 @@ const STATUS_PICKUP_LANES: Record<string, string[]> = {
   open:           ['builder', 'ops', 'scout'],
   underway:       [],
   code_review:    ['tester', 'designer'],
-  product_review: [],  // activate_reviewer post-function kicks PO directly
-  feature_review: [],  // activate_reviewer post-function kicks PO directly
+  product_review: ['po'],  // PO is the reviewer; selfChain kicks PO when issue enters product_review
+  feature_review: ['po'],  // PO confirms feature completion; selfChain kicks PO on feature_review entry
   approved:       ['deployer'],
   released:       ['auditor'],
 }
@@ -737,6 +737,11 @@ export async function GET(req: NextRequest) {
     query = query.eq('status', statusParam)
   }
 
+  const parentIdParam = url.searchParams.get('parent_id')
+  if (parentIdParam) {
+    query = query.eq('parent_id', parentIdParam)
+  }
+
   if (search) {
     query = query.ilike('title', `%${search}%`)
     query = query.order('updated_at', { ascending: false })
@@ -986,6 +991,23 @@ export async function POST(req: NextRequest) {
       postDiscord('1492576650137964694', msg)
     } catch (e) {
       console.warn('[discord-created] notify failed:', e)
+    }
+  }
+
+  // Q4: If a child issue is created under a feature in feature_review → revert to underway.
+  // Means the feature has open work remaining; PO or agent created a gap-filling child.
+  if (data && parent_id) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', parent_id as string)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'feature_review') {
+      await supabase
+        .from('issues')
+        .update({ status: 'underway', updated_at: new Date().toISOString() })
+        .eq('id', parent_id as string)
+      console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
     }
   }
 

@@ -102,20 +102,25 @@ export async function POST(req: NextRequest) {
   const assigneeFilter = isReviewer
     ? `${reviewStatusField}=eq.pending`
     : `assignee=eq.${agentId}`
-  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  // Support multi-status pickup (e.g. PO handles backlog + feature_review)
+  const allPickupStatuses = config.pickupStatuses ?? [config.pickupStatus]
+  const statusFilter = allPickupStatuses.length === 1
+    ? `status=eq.${allPickupStatuses[0]}`
+    : `status=in.(${allPickupStatuses.join(',')})`
+  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&${statusFilter}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type,status&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
   const tasks = await res.json() as Array<{
     id: string; title: string; description: string; priority: string;
     due_date: string | null; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
-    blocked_by: string | null
+    blocked_by: string | null; status: string
   }>
 
   if (!Array.isArray(tasks) || tasks.length === 0) {
     return NextResponse.json({
       agent: agentId,
-      message: `No eligible issues for ${agentId} (status=${config.pickupStatus}, DoR fields: ${config.dorFields.join(', ')})`,
+      message: `No eligible issues for ${agentId} (status=${allPickupStatuses.join('|')}, DoR fields: ${config.dorFields.join(', ')})`,
     })
   }
 

@@ -34,6 +34,7 @@ export async function GET(req: Request) {
   const { data: issues, error } = await db
     .from('issues')
     .select('id,task_key,status,assignee,started_at,updated_at,type,is_blocked,acceptance_criteria,tester_status,designer_status')
+    .limit(5000) // DB has 2000+ issues; PostgREST default cap is 1000 — must be explicit
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -44,12 +45,14 @@ export async function GET(req: Request) {
 
   // Simple lane check: find lanes that are idle with eligible work
   const lanes = [
-    { agent: 'builder',  pickup: 'open',        working: 'in_progress' },
-    { agent: 'tester',   pickup: 'code_review',  working: 'code_review' },
-    { agent: 'designer', pickup: 'code_review',  working: 'code_review' },
-    { agent: 'po',       pickup: 'backlog',      working: 'refined'     },
-    { agent: 'deployer', pickup: 'approved',     working: 'approved'    },
-    { agent: 'auditor',  pickup: 'released',     working: 'released'    },
+    { agent: 'builder',  pickups: ['open'],                          working: 'in_progress' },
+    { agent: 'ops',      pickups: ['open'],                          working: 'in_progress' },
+    { agent: 'scout',    pickups: ['open'],                          working: 'in_progress' },
+    { agent: 'tester',   pickups: ['code_review'],                   working: 'code_review' },
+    { agent: 'designer', pickups: ['code_review'],                   working: 'code_review' },
+    { agent: 'po',       pickups: ['backlog', 'feature_review'],     working: 'refined'     },
+    { agent: 'deployer', pickups: ['approved'],                      working: 'approved'    },
+    { agent: 'auditor',  pickups: ['released'],                      working: 'released'    },
   ]
 
   const kicked: string[] = []
@@ -70,6 +73,7 @@ export async function GET(req: Request) {
       if (ageMs > STALE_MS) {
         await db.from('issues').update({
           started_at: null,
+          worked_by: null,
           transitioned_by: 'cron-watchdog',
         }).eq('id', issue.id)
         cleared.push(issue.task_key)
@@ -83,9 +87,9 @@ export async function GET(req: Request) {
 
     if (activeCount > 0) continue // agent is working, leave it
 
-    // Check for eligible work
+    // Check for eligible work (supports multi-status pickup lanes)
     const eligible = issues?.some(i => {
-      if (i.status !== lane.pickup) return false
+      if (!lane.pickups.includes(i.status)) return false
       if (i.is_blocked) return false
       if (lane.agent !== 'tester' && lane.agent !== 'designer' && i.assignee !== lane.agent) return false
       if (lane.agent === 'tester' && i.tester_status !== 'pending') return false

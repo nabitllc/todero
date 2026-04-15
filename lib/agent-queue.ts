@@ -22,8 +22,10 @@ export interface AgentQueueConfig {
   agentId: string
   /** Primary model alias (legacy — used when runtime is current default) */
   model: ModelAlias
-  /** Supabase filter for which issues this agent picks up */
+  /** Primary status this agent picks up. Use pickupStatuses (array) for multi-status lanes. */
   pickupStatus: string
+  /** Optional additional statuses to pick up (e.g. PO handles both backlog + feature_review). */
+  pickupStatuses?: string[]
   /** Additional Supabase query filters (appended to URL) */
   extraFilters: string
   /** Optional extra filter appended to WIP-count query when pickupStatus === workingStatus (deployer). */
@@ -71,7 +73,18 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 50,
-    promptPrefix: 'You are Builder. Implement the following task. Run npm run build to verify. Commit with [skip ci]. Add [skip ci] to ALL commits.',
+    promptPrefix: `You are Builder. Implement the following task.
+
+Rules:
+- Run npm run build before committing. Zero TypeScript errors required.
+- Add [skip ci] to ALL commits (format: "feat(TOD-XXX): description [skip ci]").
+- NEVER use gh pr create or create GitHub PRs. Deployer handles that.
+- Push your feature branch: git push origin <branch>.
+- When done, PATCH the issue to code_review via the MC API:
+  PATCH /api/issues { task_key, status: "code_review", implementation_notes: "...", commit_sha: "...", regression_test: "..." }
+- implementation_notes: what you built and how.
+- commit_sha: the full SHA of your final commit (git rev-parse HEAD).
+- regression_test: describe what to manually test to verify it works.`,
     modelChain: [
       { runtime: 'claude-code', alias: 'sonnet' },  // primary: Claude Sonnet 4.6
       { runtime: 'codex',       alias: 'sonnet' },  // fallback 1: Codex o4-mini
@@ -132,6 +145,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     agentId: 'po',
     model: 'sonnet',
     pickupStatus: 'backlog',
+    pickupStatuses: ['backlog', 'feature_review'],  // also handles feature_review confirmation
     extraFilters: 'type=in.(feature,task,bug,ops,research)',
     // CRITICAL: pickupStatus !== workingStatus but PO leaves items in 'defined'
     // as a staging area. Without this filter, ALL defined items count as WIP,
@@ -145,7 +159,33 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
-    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner. For TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined"). For FEATURES: create child tasks (each 1-2 days of work) before moving to "defined". For EPICS: verify child features exist and have AC. Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition. Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
+    promptPrefix: `You are Product Owner. You handle two types of work:
+
+## 1. REFINEMENT (backlog/defined issues)
+Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner.
+- TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined").
+- FEATURES: create child tasks (each 1-2 days of work) before moving to "defined".
+- EPICS: verify child features exist and have AC.
+Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition.
+
+## 2. FEATURE REVIEW (feature_review issues)
+When a feature is in feature_review, your job is to confirm it is actually done.
+
+Steps:
+1. Read the feature's description and acceptance_criteria carefully.
+2. Check all child issues: GET /api/issues?parent_id={feature_id}
+3. Assess: are ALL acceptance criteria met by the closed child issues?
+
+If YES (feature is done — all children closed, all AC met):
+- PATCH the feature: { status: "closed", resolution_type: "completed", implementation_notes: "Feature complete. All AC met: [brief summary]" }
+
+If NO (children still open, OR gaps in AC coverage):
+- If children are already open: PATCH the feature back to underway: { status: "underway", reviewer_notes: "Feature reverted — child [TOD-XXX] still open: [title]" }
+- If new gaps found (no existing child covers them): create a new child task first. The feature will auto-revert to "underway" when the child is created (no manual PATCH needed for that case).
+- Always explain in reviewer_notes what criteria are not yet met.
+
+## Self-chain
+After finishing, call POST /api/run-agent?agent=po to claim next.`,
   },
 
   scout: {
