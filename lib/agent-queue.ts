@@ -84,7 +84,8 @@ Rules:
   PATCH /api/issues { task_key, status: "code_review", implementation_notes: "...", commit_sha: "...", regression_test: "..." }
 - implementation_notes: what you built and how.
 - commit_sha: the full SHA of your final commit (git rev-parse HEAD).
-- regression_test: describe what to manually test to verify it works.`,
+- regression_test: describe what to manually test to verify it works.
+- Self-chain: after the PATCH succeeds, call POST /api/run-agent?agent=builder to claim your next task immediately.`,
     modelChain: [
       { runtime: 'claude-code', alias: 'sonnet' },  // primary: Claude Sonnet 4.6
       { runtime: 'codex',       alias: 'sonnet' },  // fallback 1: Codex o4-mini
@@ -104,7 +105,7 @@ Rules:
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 20,
-    promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci].',
+    promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci]. When done, PATCH to code_review with implementation_notes + commit_sha + regression_test. Self-chain: call POST /api/run-agent?agent=ops to claim next.',
   },
 
   tester: {
@@ -200,7 +201,7 @@ After finishing, call POST /api/run-agent?agent=po to claim next.`,
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 10,
-    promptPrefix: 'You are Scout. Research the following task. Summarize findings, cite sources, provide actionable recommendations.',
+    promptPrefix: 'You are Scout. Research the following task. Summarize findings, cite sources, provide actionable recommendations. When done, PATCH to product_review with implementation_notes. Self-chain: call POST /api/run-agent?agent=scout to claim next.',
   },
 
   auditor: {
