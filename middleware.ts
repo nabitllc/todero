@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { Role } from '@/lib/rbac-types'
+import { resolveRole } from '@/lib/with-permission'
 
 const ADMIN_PASSWORD = process.env.MC_PASSWORD ?? 'kaos2026'
 const VIEWER_PASSWORD = process.env.MC_VIEWER_PASSWORD ?? 'view2026'
@@ -13,13 +13,15 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // For API routes: check role on write methods
+  // For API routes: block viewer role on write methods (human or agent)
   if (req.nextUrl.pathname.startsWith('/api/')) {
     if (WRITE_METHODS.has(req.method)) {
-      const role = req.cookies.get('mc-role')?.value
-      // Allow if admin, block if viewer, pass-through if no cookie (server-side calls)
+      const role = resolveRole(req)
       if (role === 'viewer') {
-        return NextResponse.json({ error: 'Read-only access: viewer role cannot modify data' }, { status: 403 })
+        return NextResponse.json(
+          { error: 'Read-only access: viewer role cannot modify data' },
+          { status: 403 }
+        )
       }
     }
     return NextResponse.next()
