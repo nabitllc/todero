@@ -640,6 +640,12 @@ async function executePostFunctions(
       }
     }
 
+    if (action === 'set_field') {
+      const fieldName = params.field as string
+      const fieldValue = params.value as string
+      fields[fieldName] = fieldValue
+    }
+
     if (action === 'set_timestamp') {
       const tsField = params.field as string
       fields[tsField] = new Date().toISOString()
@@ -744,12 +750,13 @@ export async function POST(req: NextRequest) {
   const missing: string[] = []
   if (!title?.trim())                missing.push('title')
   if (!normalizedProject.trim())     missing.push('project')
+  if (!description?.trim())          missing.push('description')
   if (!acceptance_criteria?.trim())  missing.push('acceptance_criteria')
 
   if (missing.length > 0) {
     return NextResponse.json(
-      { error: `Cannot create issue — missing required fields: ${missing.join(', ')}. Every issue must have acceptance criteria before work begins.` },
-      { status: 422 }
+      { error: `Cannot create issue — missing required fields: ${missing.join(', ')}. Every issue must have a description and acceptance criteria before work begins.` },
+      { status: 400 }
     )
   }
 
@@ -782,10 +789,6 @@ export async function POST(req: NextRequest) {
       { error: `Invalid value for 'resolution_type': "${resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
       { status: 400 }
     )
-  }
-
-  if (type === 'feature' && !description?.trim()) {
-    return NextResponse.json({ error: 'Feature requires: description' }, { status: 422 })
   }
 
   const hierarchyErr = await validateHierarchy(type ?? 'task', parent_id)
@@ -1111,6 +1114,17 @@ export async function PATCH(req: NextRequest) {
       if (hierErr) {
         return NextResponse.json({ error: hierErr.error }, { status: 400 })
       }
+    }
+  }
+
+  // TOD-604: acceptance_criteria required before moving to open
+  if (fields.status === 'open' && before?.status !== 'open') {
+    const effectiveAC = (fields.acceptance_criteria ?? before?.acceptance_criteria ?? '').trim()
+    if (!effectiveAC) {
+      return NextResponse.json(
+        { error: 'acceptance_criteria is required before moving to open. Add it via PATCH and retry.' },
+        { status: 400 }
+      )
     }
   }
 
