@@ -1,0 +1,197 @@
+{
+  "id": "g4W4AIDJVEkGQVm2",
+  "name": "\ud83d\udd27 Infrastructure Market Research \u2192 #infra-market-research",
+  "active": true,
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Daily 6am EDT",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "gh",
+      "name": "GitHub: DevOps & AI Infra Trending",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        200,
+        -100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/search/repositories",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "agent infrastructure devops automation language:typescript language:python created:>2026-01-01"
+            },
+            {
+              "name": "sort",
+              "value": "stars"
+            },
+            {
+              "name": "per_page",
+              "value": "5"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "KAOS-n8n-agent"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "hn",
+      "name": "HackerNews: DevOps Tools",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        200,
+        100
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://hn.algolia.com/api/v1/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "developer tools infrastructure security AI agents 2026"
+            },
+            {
+              "name": "tags",
+              "value": "story"
+            },
+            {
+              "name": "numericFilters",
+              "value": "created_at_i>1740787200"
+            },
+            {
+              "name": "hitsPerPage",
+              "value": "5"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build Digest",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ghItem = items.find(i => i.json.total_count !== undefined);\nconst hnItem = items.find(i => i.json.hits !== undefined);\nconst today = new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' });\n\nlet msg = `\ud83d\udd27 **Infrastructure & DevOps Research \u2014 ${today}**\\n`;\n\nmsg += `\\n**\ud83d\udc19 Trending DevOps / AI Infra Repos**\\n`;\nconst repos = ghItem?.json?.items?.slice(0, 5) ?? [];\nfor (const r of repos) {\n  const desc = (r.description || 'No description').slice(0, 70);\n  msg += `\u2022 **${r.full_name}** \u2b50${(r.stargazers_count||0).toLocaleString()} \u2014 ${desc}\\n`;\n}\nif (!repos.length) msg += '\u2022 No results\\n';\n\nmsg += `\\n**\ud83d\udfe0 HackerNews \u2014 Tools & Security**\\n`;\nconst hits = hnItem?.json?.hits?.slice(0, 5) ?? [];\nfor (const h of hits) {\n  const title = (h.title || '').slice(0, 70);\n  const url = h.url || `https://news.ycombinator.com/item?id=${h.objectID}`;\n  msg += `\u2022 [${title}](${url})\\n`;\n}\nif (!hits.length) msg += '\u2022 No results\\n';\n\nmsg += `\\n**\ud83d\udca1 Consider for our stack**\\n`;\nmsg += `\u2022 Security: rotate secrets, audit token scopes, check CVEs in dependencies\\n`;\nmsg += `\u2022 Automation: new n8n nodes, OpenClaw updates, agent framework patterns\\n`;\nmsg += `\u2022 Observability: structured logging, cost tracking, session replay\\n`;\nmsg += `\u2022 Best practices: review OWASP top 10 for our API surface\\n`;\n\nreturn [{ json: { text: msg } }];"
+      }
+    },
+    {
+      "id": "post",
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://discord.com/api/v10/channels/1487822630684721342/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bot MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"content\": {{ $json.text }}}"
+      }
+    }
+  ],
+  "connections": {
+    "Daily 6am EDT": {
+      "main": [
+        [
+          {
+            "node": "GitHub: DevOps & AI Infra Trending",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HackerNews: DevOps Tools",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GitHub: DevOps & AI Infra Trending": {
+      "main": [
+        [
+          {
+            "node": "Build Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HackerNews: DevOps Tools": {
+      "main": [
+        [
+          {
+            "node": "Build Digest",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Build Digest": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

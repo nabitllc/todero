@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
-const BASE = '/Users/kemuniagent/.openclaw'
+const BASE = '/Users/kemuniagent/todero/config'
 
 function readFile(filePath: string): string {
   try {

@@ -7,7 +7,10 @@ IMMUTABLE
 AS $$
   SELECT CASE issue_status
     WHEN 'backlog' THEN 'Planned'
+    WHEN 'defined' THEN 'Planned'
+    WHEN 'refined' THEN 'Planned'
     WHEN 'open' THEN 'Planned'
+    WHEN 'in_progress' THEN 'Ongoing'
     WHEN 'code_review' THEN 'Ongoing'
     WHEN 'product_review' THEN 'Ongoing'
     WHEN 'approved' THEN 'Ongoing'

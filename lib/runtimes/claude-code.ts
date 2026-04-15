@@ -35,22 +35,33 @@ export const claudeCodeRuntime: AgentRuntime = {
   },
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult> {
-    // ── Prepare isolated worktree ───────────────────────────────────
-    const wtResult = prepareWorktree({
-      agentId: opts.agentId,
-      taskKey: extractTaskKeyFromBranch(opts.branch),
-      branch: opts.branch,
-    })
+    // ── Prepare isolated worktree (code-producing agents only) ──────
+    // Only builder and ops (ingo) write code + commit. Everyone else
+    // (tester, designer, po, auditor, deployer, SMEs) only PATCHes
+    // issue fields via the API — they don't need a branch or worktree.
+    // Creating worktrees for non-code agents produced 200+ zombie
+    // branches (feat/designer-notask-*, feat/po-notask-*, etc.) and
+    // wasted disk. DO NOT add agents to this list unless they `git commit`.
+    const CODE_AGENTS = new Set(['builder', 'ops'])
+    const useWorktree = CODE_AGENTS.has(opts.agentId) && opts.branch
 
     let effectiveWorkingDir = opts.workingDir
     let teardownPath: string | null = null
-    if (wtResult.ok && wtResult.worktreePath) {
-      effectiveWorkingDir = wtResult.worktreePath
-      teardownPath = wtResult.worktreePath
-    } else {
-      console.warn(
-        `[claude-code] worktree setup failed for ${opts.agentId} — falling back to shared dir. ${wtResult.error}`
-      )
+
+    if (useWorktree) {
+      const wtResult = prepareWorktree({
+        agentId: opts.agentId,
+        taskKey: extractTaskKeyFromBranch(opts.branch),
+        branch: opts.branch,
+      })
+      if (wtResult.ok && wtResult.worktreePath) {
+        effectiveWorkingDir = wtResult.worktreePath
+        teardownPath = wtResult.worktreePath
+      } else {
+        console.warn(
+          `[claude-code] worktree setup failed for ${opts.agentId} — falling back to shared dir. ${wtResult.error}`
+        )
+      }
     }
 
     // ── Write prompt to a temp file (avoids shell escaping entirely) ─
@@ -119,7 +130,7 @@ echo "[spawn-ok] child_pid=$CHILD" >> ${JSON.stringify(opts.logFile)}
 # Detached watcher: polls the child every 5s and logs [spawn-exit] when gone.
 # Uses nohup so it outlives the Next.js parent. Max watch time: 90 min
 # (agent should be done long before that; if not, teardown timer will GC).
-nohup bash -c 'CHILD='"$CHILD"'; LOG='"${JSON.stringify(opts.logFile).replace(/'/g, "'\\''")}"'; for i in $(seq 1 1080); do if ! kill -0 $CHILD 2>/dev/null; then echo "[spawn-exit] $(date -u +%FT%TZ) pid=$CHILD watcher_detected=true" >> "$LOG"; exit 0; fi; sleep 5; done' >/dev/null 2>&1 </dev/null &
+nohup bash -c 'CHILD='"$CHILD"'; LOG='"${JSON.stringify(opts.logFile).replace(/'/g, "'\\''")}"'; TASK_ID='"${JSON.stringify(opts.taskId ?? '').replace(/'/g, "'\\''")}"'; for i in $(seq 1 1080); do if ! kill -0 $CHILD 2>/dev/null; then echo "[spawn-exit] $(date -u +%FT%TZ) pid=$CHILD watcher_detected=true" >> "$LOG"; if [ -n "$TASK_ID" ]; then curl -s -X PATCH http://localhost:3000/api/issues -H "Content-Type: application/json" -d "{\"id\":\"$TASK_ID\",\"started_at\":null,\"worked_by\":null,\"transitioned_by\":\"main\"}" -o /dev/null 2>/dev/null; echo "[spawn-exit] cleared started_at+worked_by for $TASK_ID" >> "$LOG"; fi; exit 0; fi; sleep 5; done' >/dev/null 2>&1 </dev/null &
 disown || true
 `
 

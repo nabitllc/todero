@@ -1,0 +1,540 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-03-30T20:10:00Z",
+  "generated_by": "scout",
+  "description": "Machine-readable capability registry for all Nabit LLC agents. Used by KAOS for intelligent task routing.",
+  "agents": [
+    {
+      "id": "main",
+      "name": "KAOS",
+      "emoji": "🧠",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace",
+      "role": "orchestrator",
+      "status": "active",
+      "description": "Primary orchestrator. Manages all other agents, handles strategic decisions, routes tasks, monitors system health.",
+      "capabilities": [
+        "task_routing",
+        "agent_orchestration",
+        "strategic_planning",
+        "memory_management",
+        "telegram_interface",
+        "discord_interface",
+        "supabase_read_write",
+        "github_ops",
+        "issue_management",
+        "research_delegation",
+        "deploy_coordination"
+      ],
+      "domains": ["infrastructure", "vespera", "kemuni", "all"],
+      "triggers": ["any_message", "heartbeat", "system_events"],
+      "cannot_do": ["direct_code_commits", "autonomous_deploy"],
+      "routing_hints": {
+        "send_coding_tasks_to": "builder",
+        "send_research_tasks_to": "scout",
+        "send_qa_tasks_to": "tester",
+        "send_infra_alerts_to": "ops",
+        "send_deploy_requests_to": "deployer"
+      }
+    },
+    {
+      "id": "scout",
+      "name": "Scout",
+      "emoji": "🔍",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-scout",
+      "role": "researcher",
+      "status": "active",
+      "description": "Research agent. Finds, verifies, and returns structured findings. Spawned on demand by KAOS.",
+      "capabilities": [
+        "web_search",
+        "competitor_analysis",
+        "market_research",
+        "event_discovery",
+        "pricing_benchmarks",
+        "technology_research",
+        "feature_gap_analysis",
+        "structured_reporting",
+        "discord_posting"
+      ],
+      "domains": ["vespera", "kemuni", "infrastructure", "general"],
+      "triggers": ["spawned_by_kaos", "weekly_colombia_events_pipeline"],
+      "cannot_do": ["write_code", "commit_to_github", "send_emails", "deploy"],
+      "routing_hints": {
+        "best_for": ["market_research", "competitor_intel", "event_data", "technology_comparison"],
+        "output_format": "bullet_points_with_sources",
+        "delivers_to": ["discord_research_channels", "kaos_on_request"]
+      }
+    },
+    {
+      "id": "builder",
+      "name": "Builder",
+      "emoji": "🔨",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-builder",
+      "role": "software_engineer",
+      "status": "active",
+      "description": "Coding agent. Ships features, fixes bugs, opens PRs. Runs overnight via nightly queue.",
+      "capabilities": [
+        "nextjs_development",
+        "react_components",
+        "supabase_integration",
+        "typescript",
+        "tailwind_css",
+        "api_routes",
+        "database_migrations",
+        "github_prs",
+        "bug_fixes",
+        "refactoring",
+        "i18n_next_intl"
+      ],
+      "domains": ["vespera", "kemuni", "infrastructure"],
+      "tech_stack": {
+        "vespera": ["Next.js 14 App Router", "Supabase", "Vercel", "Tailwind CSS", "TypeScript"],
+        "kemuni": ["TBD"],
+        "mission_control": ["Next.js 14", "Supabase", "Tailwind CSS", "TypeScript"]
+      },
+      "triggers": ["nightly_queue_2am", "kaos_direct_spawn"],
+      "cannot_do": ["deploy_to_production", "merge_prs", "product_decisions"],
+      "routing_hints": {
+        "best_for": ["feature_implementation", "bug_fixes", "component_creation", "api_routes"],
+        "pr_target": "main",
+        "requires_review_from": ["tester", "ux"]
+      }
+    },
+    {
+      "id": "tester",
+      "name": "Tester",
+      "emoji": "🧪",
+      "model": "anthropic/claude-haiku-4-5",
+      "workspace": "workspace-tester",
+      "role": "qa_engineer",
+      "status": "active",
+      "description": "QA agent. Reviews Builder PRs, runs DoD checklist, approves or requests changes.",
+      "capabilities": [
+        "pr_code_review",
+        "build_verification",
+        "mobile_ui_testing",
+        "error_state_validation",
+        "typescript_review",
+        "dark_theme_verification",
+        "security_spot_check",
+        "accessibility_check",
+        "github_review_comments"
+      ],
+      "domains": ["vespera", "kemuni", "infrastructure"],
+      "test_tiers": {
+        "P0": "Full DoD review — user-facing features and bug fixes",
+        "P1": "Focused review — API routes, schema migrations, data mutations",
+        "P2": "Skip — config, infra, docs, n8n workflows",
+        "P3": "Skip — style tweaks, copy changes, comments"
+      },
+      "triggers": ["pr_opened_by_builder", "task_moved_to_in_review"],
+      "cannot_do": ["write_new_features", "deploy", "merge_prs"],
+      "routing_hints": {
+        "best_for": ["pr_review", "regression_testing", "acceptance_criteria_verification"],
+        "sla": "review_within_2h_of_pr_open"
+      }
+    },
+    {
+      "id": "ops",
+      "name": "Ingo",
+      "emoji": "⚙️",
+      "model": "anthropic/claude-haiku-4-5",
+      "workspace": "workspace-ops",
+      "role": "infrastructure_monitor",
+      "status": "active",
+      "description": "Silent infrastructure watchdog. Checks system health every hour. Alerts only when something is wrong.",
+      "capabilities": [
+        "openclaw_health_check",
+        "n8n_health_check",
+        "vercel_deploy_status",
+        "openrouter_balance_check",
+        "telegram_alerts",
+        "hung_agent_detection",
+        "service_uptime_monitoring"
+      ],
+      "domains": ["infrastructure"],
+      "check_schedule": "every_1h",
+      "checks": [
+        "openclaw_gateway_status",
+        "n8n_healthz",
+        "vercel_last_deploy",
+        "openrouter_balance"
+      ],
+      "triggers": ["hourly_heartbeat"],
+      "cannot_do": ["write_code", "fix_issues", "make_product_decisions"],
+      "routing_hints": {
+        "alerts_go_to": "telegram",
+        "silence_threshold": "HEARTBEAT_OK_when_all_green",
+        "one_alert_per_issue": true
+      }
+    },
+    {
+      "id": "deployer",
+      "name": "Deployer",
+      "emoji": "🚀",
+      "model": "anthropic/claude-haiku-4-5",
+      "workspace": "workspace-deployer",
+      "role": "deploy_coordinator",
+      "status": "active",
+      "description": "Coordinates Vespera deploys between KAOS, Builder, and Michael. Does NOT trigger deploys autonomously.",
+      "capabilities": [
+        "pr_readiness_check",
+        "github_pr_creation",
+        "telegram_deploy_request",
+        "smoke_testing",
+        "deploy_log_tracking"
+      ],
+      "domains": ["vespera", "kemuni"],
+      "deploy_policy": "manual_michael_approval_required",
+      "triggers": ["kaos_deploy_request", "builder_pr_ready"],
+      "cannot_do": ["trigger_vercel_deploy", "use_vercel_cli", "merge_prs", "deploy_without_michael_approval"],
+      "routing_hints": {
+        "deploy_target": "https://vespera-nabit.vercel.app",
+        "approval_required_from": "michael",
+        "smoke_check_url": "https://vespera-nabit.vercel.app"
+      }
+    },
+    {
+      "id": "vespera-sme",
+      "name": "Vespera SME",
+      "emoji": "🖤",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-vespera",
+      "role": "product_owner",
+      "status": "active",
+      "description": "Product owner for Vespera. Owns strategy, prioritization, roadmap. Community-first, retention-focused.",
+      "capabilities": [
+        "product_strategy",
+        "backlog_prioritization",
+        "user_research",
+        "retention_analysis",
+        "feature_spec_writing",
+        "acceptance_criteria",
+        "colombia_goth_market_expertise",
+        "daily_telegram_brief"
+      ],
+      "domains": ["vespera"],
+      "north_star_metric": "WAU_MAU_ratio",
+      "triggers": ["daily_6am", "kaos_request"],
+      "cannot_do": ["write_code", "deploy", "access_kemuni_data"],
+      "routing_hints": {
+        "best_for": ["vespera_prioritization", "feature_decisions", "community_strategy"],
+        "delivers_to": ["telegram", "supabase_agent_memory", "discord"]
+      }
+    },
+    {
+      "id": "kemuni-sme",
+      "name": "Kemuni SME",
+      "emoji": "🏢",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-kemuni",
+      "role": "product_owner",
+      "status": "active",
+      "description": "Product owner for Kemuni. HOA/property management platform. B2B, LATAM-focused.",
+      "capabilities": [
+        "product_strategy",
+        "backlog_prioritization",
+        "hoa_domain_expertise",
+        "proptech_market_knowledge",
+        "competitor_analysis",
+        "feature_spec_writing",
+        "acceptance_criteria"
+      ],
+      "domains": ["kemuni"],
+      "target_market": ["HOA_managers", "community_managers", "US_Colombia_LATAM"],
+      "triggers": ["kaos_request"],
+      "cannot_do": ["write_code", "deploy", "access_vespera_data"],
+      "routing_hints": {
+        "best_for": ["kemuni_product_decisions", "hoa_market_questions", "proptech_strategy"],
+        "project_status": "paused_pending_activation"
+      }
+    },
+    {
+      "id": "auditor",
+      "name": "Auditor",
+      "emoji": "🔍",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-auditor",
+      "role": "system_auditor",
+      "status": "active",
+      "description": "Finds drift, duplication, and inconsistency across all systems. Documents precisely, creates tasks — never fixes directly.",
+      "capabilities": [
+        "issue_deduplication",
+        "config_drift_detection",
+        "workflow_audit",
+        "memory_consistency_check",
+        "task_creation",
+        "structured_reporting"
+      ],
+      "domains": ["infrastructure", "all"],
+      "schedule": "every_4h",
+      "triggers": ["periodic_4h", "kaos_request"],
+      "cannot_do": ["fix_code", "edit_files_directly", "deploy", "create_prs"],
+      "routing_hints": {
+        "output": "creates_tasks_for_builder_or_kaos",
+        "priority_by": "blast_radius"
+      }
+    },
+    {
+      "id": "ux",
+      "name": "UX Designer",
+      "emoji": "🎨",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-ux",
+      "role": "ux_reviewer",
+      "status": "active",
+      "description": "UX and interaction quality gate. Reviews all UI changes before close. Ensures consistency, mobile-first design.",
+      "capabilities": [
+        "ui_review",
+        "design_system_enforcement",
+        "mobile_ux_validation",
+        "empty_state_review",
+        "accessibility_check",
+        "component_spec_writing",
+        "interaction_pattern_review"
+      ],
+      "domains": ["vespera", "kemuni", "infrastructure"],
+      "design_system": {
+        "background": "#080808",
+        "palette": "zinc",
+        "mobile_breakpoint": "390px",
+        "min_touch_target": "44px"
+      },
+      "triggers": ["pr_ui_changes", "tester_approval"],
+      "cannot_do": ["write_code", "deploy"],
+      "routing_hints": {
+        "best_for": ["ui_consistency_review", "mobile_ux", "design_spec_creation"],
+        "reviews_after": "tester"
+      }
+    },
+    {
+      "id": "po",
+      "name": "PO Agent",
+      "emoji": "📋",
+      "model": "anthropic/claude-haiku-4-5",
+      "workspace": "workspace-po",
+      "role": "product_owner_ops",
+      "status": "active",
+      "description": "Translates vision into correctly structured issues. Maintains backlog health. Enforces issue hierarchy.",
+      "capabilities": [
+        "issue_creation",
+        "backlog_structuring",
+        "acceptance_criteria_writing",
+        "sprint_planning",
+        "issue_routing",
+        "hierarchy_enforcement",
+        "backlog_health_reporting"
+      ],
+      "domains": ["all"],
+      "backlog_health_targets": {
+        "min_features_per_business": 10,
+        "min_dor_ready": 3
+      },
+      "triggers": ["kaos_request", "weekly_backlog_review"],
+      "cannot_do": ["write_code", "deploy", "make_product_decisions"],
+      "routing_hints": {
+        "best_for": ["issue_creation", "backlog_grooming", "sprint_structure"],
+        "reports_to": "discord_po_channel"
+      }
+    },
+    {
+      "id": "growth",
+      "name": "Growth Agent",
+      "emoji": "📈",
+      "model": "anthropic/claude-haiku-4-5",
+      "workspace": "workspace-growth",
+      "role": "growth_analyst",
+      "status": "active",
+      "description": "Tracks activation, retention, and revenue signals. Surfaces what's working and creates actionable issues.",
+      "capabilities": [
+        "rsvp_analysis",
+        "signup_tracking",
+        "activation_rate_analysis",
+        "discord_feedback_monitoring",
+        "issue_creation_from_data",
+        "weekly_growth_reporting"
+      ],
+      "domains": ["vespera", "kemuni"],
+      "key_metrics": {
+        "vespera": ["WAU_MAU_ratio", "signup_to_first_rsvp", "event_rsvp_rate"],
+        "kemuni": ["beta_signups", "demo_conversion"]
+      },
+      "triggers": ["weekly"],
+      "cannot_do": ["write_code", "deploy", "modify_user_data"],
+      "routing_hints": {
+        "best_for": ["growth_analysis", "retention_signals", "data_to_issues"],
+        "data_sources": ["supabase_vespera", "discord_feedback_channels"]
+      }
+    },
+    {
+      "id": "security",
+      "name": "Security Auditor",
+      "emoji": "🔐",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-security",
+      "role": "security_reviewer",
+      "status": "active",
+      "description": "Adversarial security reviewer. Runs OWASP Top 10 checks on auth/API/schema PRs.",
+      "capabilities": [
+        "owasp_top10_review",
+        "rls_policy_audit",
+        "auth_flow_review",
+        "injection_detection",
+        "dependency_vulnerability_check",
+        "secret_exposure_detection",
+        "cors_review",
+        "security_header_check"
+      ],
+      "domains": ["vespera", "kemuni", "infrastructure"],
+      "severity_policy": {
+        "critical": "block_deploy",
+        "high": "warn",
+        "medium": "note",
+        "low": "skip"
+      },
+      "triggers": ["pr_touching_auth_api_schema"],
+      "cannot_do": ["fix_vulnerabilities_directly", "deploy"],
+      "routing_hints": {
+        "best_for": ["auth_review", "api_security", "rls_audit"],
+        "blocks_deploy_on": "critical_findings"
+      }
+    },
+    {
+      "id": "community",
+      "name": "Community Manager",
+      "emoji": "🖤",
+      "model": "anthropic/claude-haiku-4-5",
+      "workspace": "workspace-community",
+      "role": "social_community",
+      "status": "active",
+      "description": "Voice of the Vespera brand in the Colombia goth scene. Manages social content and community.",
+      "capabilities": [
+        "social_content_creation",
+        "event_spotlight_posts",
+        "community_engagement",
+        "spanish_colombian_copy",
+        "content_calendar_management",
+        "brand_voice_enforcement"
+      ],
+      "domains": ["vespera"],
+      "platforms": ["X/Twitter", "Instagram"],
+      "languages": ["es-CO", "en"],
+      "triggers": ["weekly_content_calendar", "kaos_request"],
+      "cannot_do": ["write_code", "deploy", "access_user_data"],
+      "routing_hints": {
+        "best_for": ["social_copy", "community_announcements", "brand_voice_questions"],
+        "tone": "dark_atmospheric_authentic"
+      }
+    },
+    {
+      "id": "content",
+      "name": "Content Creator",
+      "emoji": "✍️",
+      "model": "anthropic/claude-haiku-4-5",
+      "workspace": "workspace-content",
+      "role": "content_creator",
+      "status": "active",
+      "description": "Produces written content for Vespera and Kemuni: blogs, SEO pages, emails, documentation.",
+      "capabilities": [
+        "blog_writing",
+        "seo_landing_pages",
+        "email_sequences",
+        "help_documentation",
+        "pitch_deck_writing",
+        "event_descriptions",
+        "bilingual_content"
+      ],
+      "domains": ["vespera", "kemuni"],
+      "languages": ["en", "es-CO"],
+      "triggers": ["kaos_request", "content_calendar"],
+      "cannot_do": ["write_code", "deploy", "social_posting"],
+      "routing_hints": {
+        "best_for": ["long_form_content", "seo_copy", "documentation", "email_marketing"],
+        "vespera_tone": "dark_gothic_authentic",
+        "kemuni_tone": "professional_trustworthy_b2b"
+      }
+    },
+    {
+      "id": "designer",
+      "name": "Designer",
+      "emoji": "🎨",
+      "model": "anthropic/claude-sonnet-4-6",
+      "workspace": "workspace-designer",
+      "role": "visual_designer",
+      "status": "active",
+      "description": "Visual and interaction quality gate. Reviews UI changes, writes component specs, flags design inconsistencies.",
+      "capabilities": [
+        "visual_design_review",
+        "component_spec_writing",
+        "design_system_maintenance",
+        "ui_consistency_audit",
+        "ux_debt_identification",
+        "figma_spec_creation",
+        "color_typography_review"
+      ],
+      "domains": ["vespera", "kemuni", "infrastructure"],
+      "design_tokens": {
+        "dark_bg": "#080808",
+        "palette": "zinc",
+        "font": "system-ui / IBM Plex Mono for monospace",
+        "card_padding": "p-4",
+        "page_padding": "p-6"
+      },
+      "triggers": ["pr_ui_changes", "kaos_request"],
+      "cannot_do": ["write_code", "deploy"],
+      "routing_hints": {
+        "best_for": ["component_specs", "design_review", "visual_consistency"],
+        "review_order": "designer_before_ux_final"
+      }
+    }
+  ],
+  "routing_rules": [
+    {
+      "task_type": "feature",
+      "assignee_if_unset": "builder",
+      "domains": ["vespera", "kemuni", "infrastructure"]
+    },
+    {
+      "task_type": "bug",
+      "assignee_if_unset": "builder",
+      "domains": ["vespera", "kemuni"]
+    },
+    {
+      "task_type": "research",
+      "assignee_if_unset": "scout",
+      "domains": ["all"]
+    },
+    {
+      "task_type": "ops",
+      "assignee_if_unset": "ops",
+      "domains": ["infrastructure"]
+    },
+    {
+      "task_type": "security_review",
+      "assignee_if_unset": "security",
+      "domains": ["all"]
+    },
+    {
+      "task_type": "content",
+      "assignee_if_unset": "content",
+      "domains": ["vespera", "kemuni"]
+    },
+    {
+      "task_type": "social",
+      "assignee_if_unset": "community",
+      "domains": ["vespera"]
+    }
+  ],
+  "model_tiers": {
+    "sonnet": {
+      "agents": ["main", "scout", "builder", "kemuni-sme", "vespera-sme", "auditor", "ux", "security", "designer"],
+      "use_for": "complex reasoning, coding, strategy, research"
+    },
+    "haiku": {
+      "agents": ["ops", "tester", "deployer", "po", "growth", "community", "content"],
+      "use_for": "monitoring, review, structured tasks, high-frequency lightweight ops"
+    }
+  }
+}

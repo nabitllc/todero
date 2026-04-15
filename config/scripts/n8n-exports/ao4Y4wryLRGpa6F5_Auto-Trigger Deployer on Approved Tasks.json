@@ -1,0 +1,147 @@
+{
+  "id": "ao4Y4wryLRGpa6F5",
+  "name": "Auto-Trigger Deployer on Approved Tasks",
+  "active": true,
+  "nodes": [
+    {
+      "name": "Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 11,23 * * *"
+            }
+          ]
+        }
+      },
+      "id": "8cfa1203-2f71-46ef-8843-7d470ef0bf23"
+    },
+    {
+      "name": "Get Approved Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "url": "https://twthgapiouiqhavrcnry.supabase.co/rest/v1/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "eq.approved"
+            },
+            {
+              "name": "select",
+              "value": "id,title,project,pr_url"
+            },
+            {
+              "name": "limit",
+              "value": "20"
+            }
+          ]
+        }
+      },
+      "id": "e5295f91-c0d8-4f38-9eb5-241cca0595d7"
+    },
+    {
+      "name": "Any Approved?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst tasks = $('Get Approved Tasks').all().map(i=>i.json);\nif(!tasks.length) return [];\n\nconst list = tasks.map(t=>`  \u2022 ${t.title.slice(0,55)} ${t.pr_url ? '[PR]('+t.pr_url+')' : ''}`).join('\\n');\nconst projects = [...new Set(tasks.map(t=>t.project))].join(', ');\n\nconst msg = `\ud83d\ude80 *Ready to Deploy*\\n\\n*${projects}* \u2014 ${tasks.length} task(s) approved:\\n\\n${list}\\n\\n_Reply *APPROVE* to deploy or *HOLD* to delay._\\n\\nDeployer will prepare change summary before firing webhook.`;\nreturn [{json:{text: msg, task_ids: tasks.map(t=>t.id)}}];\n"
+      },
+      "id": "764b51c0-93a5-4b36-b7c2-44706b4e9705"
+    },
+    {
+      "name": "Request Approval",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "chatId": "-1003598670302",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "disableWebPagePreview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "hr4GqvusMW8IUI9D",
+          "name": "KemuniClaw1Bot"
+        }
+      },
+      "id": "b29364af-0056-4df8-8bda-fa948f37d9c8"
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Tasks": {
+      "main": [
+        [
+          {
+            "node": "Any Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Approved?": {
+      "main": [
+        [
+          {
+            "node": "Request Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

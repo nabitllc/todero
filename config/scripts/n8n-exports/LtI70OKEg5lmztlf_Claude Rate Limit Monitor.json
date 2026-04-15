@@ -1,0 +1,271 @@
+{
+  "id": "LtI70OKEg5lmztlf",
+  "name": "Claude Rate Limit Monitor",
+  "active": true,
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Every 15 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "probe",
+      "name": "Probe Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "url": "http://localhost:3000/api/status/claude-limit",
+        "options": {
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          },
+          "timeout": 8000
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-secret",
+              "value": "kaos-internal-2026"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "check",
+      "name": "Rate Limited?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.wasLimited }}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "check_prev",
+      "name": "Was Already Limited?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        -100
+      ],
+      "parameters": {
+        "url": "http://localhost:3000/api/status/claude-limit",
+        "options": {
+          "timeout": 5000
+        },
+        "continueOnFail": true
+      }
+    },
+    {
+      "id": "alert_check",
+      "name": "New Limit Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        800,
+        -100
+      ],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.wasLimited }}",
+              "value2": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "alert",
+      "name": "Alert Michael",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1000,
+        -100
+      ],
+      "parameters": {
+        "chatId": "-1003598670302",
+        "text": "\u26a0\ufe0f *Claude Rate Limited*\n\nYou've hit the Claude rate limit.\nUsage will resume automatically when the limit resets.\n\n_Monitoring every 15 min._",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "hr4GqvusMW8IUI9D",
+          "name": "KemuniClaw1Bot"
+        }
+      }
+    },
+    {
+      "id": "set_limited",
+      "name": "Mark Limited",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        -200
+      ],
+      "parameters": {
+        "url": "http://localhost:3000/api/status/claude-limit",
+        "method": "POST",
+        "options": {},
+        "body": "{\"limited\":true}",
+        "sendBody": true,
+        "contentType": "json",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-secret",
+              "value": "kaos-internal-2026"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "clear_limited",
+      "name": "Mark Cleared",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        100
+      ],
+      "parameters": {
+        "url": "http://localhost:3000/api/status/claude-limit",
+        "method": "POST",
+        "options": {},
+        "body": "{\"limited\":false}",
+        "continueOnFail": true,
+        "sendBody": true,
+        "contentType": "json",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-secret",
+              "value": "kaos-internal-2026"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 Min": {
+      "main": [
+        [
+          {
+            "node": "Probe Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Probe Claude": {
+      "main": [
+        [
+          {
+            "node": "Rate Limited?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limited?": {
+      "main": [
+        [
+          {
+            "node": "Was Already Limited?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Cleared",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Limit Event?": {
+      "main": [
+        [
+          {
+            "node": "Mark Limited",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Mark Limited": {
+      "main": [
+        [
+          {
+            "node": "Alert Michael",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Was Already Limited?": {
+      "main": [
+        [
+          {
+            "node": "New Limit Event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "errorWorkflow": "imidBGxYeGhvlyCK"
+  }
+}

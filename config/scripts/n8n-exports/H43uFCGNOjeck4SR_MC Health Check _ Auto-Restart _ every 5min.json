@@ -1,0 +1,142 @@
+{
+  "id": "H43uFCGNOjeck4SR",
+  "name": "MC Health Check + Auto-Restart \u2014 every 5min",
+  "active": false,
+  "nodes": [
+    {
+      "name": "Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "1a9925b0-53b9-434c-8ac6-b1eec058d14d"
+    },
+    {
+      "name": "Check MC",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "url": "http://localhost:3000/api/status",
+        "timeout": 5000,
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "a34c15c8-057d-4df5-8b68-212a948c0e1a"
+    },
+    {
+      "name": "Is Down?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst items = $('Check MC').all();\nconst code = items[0]?.context?.httpCode ?? 0;\nconst body = items[0]?.json ?? {};\nconst isDown = code >= 500 || code === 0 || Object.keys(body).length === 0;\nif (!isDown) return [];\nreturn [{json:{alert:true}}];\n"
+      },
+      "id": "1a987c7f-94ff-4072-8174-e87a18c1c301"
+    },
+    {
+      "name": "Auto-Restart MC",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        900,
+        200
+      ],
+      "parameters": {
+        "command": "/bin/bash /Users/kemuniagent/mission-control/start.sh &"
+      },
+      "id": "448491c8-4ed2-4b93-b49b-691044339d35"
+    },
+    {
+      "name": "Alert Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        400
+      ],
+      "parameters": {
+        "chatId": "-1003598670302",
+        "text": "\u26a0\ufe0f *Mission Control was down \u2014 auto-restarting.*\\n\\nIf it doesn't recover in 30s, run:\\n`launchctl unload ~/Library/LaunchAgents/com.nabit.mission-control.plist && launchctl load ~/Library/LaunchAgents/com.nabit.mission-control.plist`",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "hr4GqvusMW8IUI9D",
+          "name": "KemuniClaw1Bot"
+        }
+      },
+      "id": "0aab3e17-b096-4433-8d15-5f9fa65360ad"
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check MC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check MC": {
+      "main": [
+        [
+          {
+            "node": "Is Down?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Down?": {
+      "main": [
+        [
+          {
+            "node": "Auto-Restart MC",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alert Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

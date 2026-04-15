@@ -1,0 +1,201 @@
+{
+  "id": "g6K0NP0myGS1fERt",
+  "name": "Nightly Builder Queue",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "2am ET Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        },
+        "triggerAtHour": 2,
+        "triggerAtMinute": 0,
+        "timezone": "America/New_York"
+      }
+    },
+    {
+      "id": "check_tasks",
+      "name": "Check Open Builder Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "url": "https://twthgapiouiqhavrcnry.supabase.co/rest/v1/issues?assignee=eq.builder&status=eq.open&order=priority.asc&limit=3",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "has_tasks",
+      "name": "Has Tasks?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "trigger_builder",
+      "name": "Trigger Builder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        -80
+      ],
+      "parameters": {
+        "url": "http://localhost:3000/api/run-builder",
+        "method": "POST",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-secret",
+              "value": "kaos-internal-2026"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notify_start",
+      "name": "Notify KAOS",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        -80
+      ],
+      "parameters": {
+        "chatId": "-1003598670302",
+        "text": "\ud83d\udd28 *Nightly Builder started*\n\nWorking on: {{ $('Trigger Builder').item.json.task }}\nRun ID: {{ $('Trigger Builder').item.json.runId }}\n\nCheck Mission Control for progress.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "hr4GqvusMW8IUI9D",
+          "name": "KemuniClaw1Bot"
+        }
+      }
+    },
+    {
+      "id": "no_tasks",
+      "name": "No Tasks \u2014 Silent",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        600,
+        80
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "2am ET Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Open Builder Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Open Builder Tasks": {
+      "main": [
+        [
+          {
+            "node": "Has Tasks?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Tasks?": {
+      "main": [
+        [
+          {
+            "node": "Trigger Builder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Tasks \u2014 Silent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Builder": {
+      "main": [
+        [
+          {
+            "node": "Notify KAOS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "errorWorkflow": "imidBGxYeGhvlyCK"
+  }
+}

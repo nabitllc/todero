@@ -103,6 +103,7 @@ export function getHubClient(businessId: string) {
 
   return {
     from,
+    businessId,
     rpc: base.rpc.bind(base),
     get auth() { return base.auth },
     get storage() { return base.storage },

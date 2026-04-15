@@ -1,0 +1,58 @@
+{
+  "id": "0EwpBAD0npXKhUrW",
+  "name": "\ud83e\uddea Tester Loop \u2014 review in_review queue every 30 min",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/30 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\n// Tester Loop \u2014 review code_review queue every 30 min\n// Sends FULL issue data so Tester can act without needing to query\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst h = { apikey: SK, Authorization: 'Bearer ' + SK };\nconst TRIGGER_URL = 'http://127.0.0.1:8787/trigger-agent';\nconst MC_API = 'http://localhost:3000/api/issues';\n\n// Only pick up 1 issue at a time (one-at-a-time lane)\nconst issues = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?assignee=eq.tester&status=eq.code_review&tester_status=eq.pending&select=id,task_key,title,description,acceptance_criteria,implementation_notes,commit_sha,feature_branch,pr_url,type,project,severity&limit=1&order=created_at.asc',\n  headers: h\n});\nif (!Array.isArray(issues) || !issues.length) return [{ json: { action: 'idle', queue: 0 } }];\n\nconst issue = issues[0];\nconst prompt = [\n  'You are Tester. One issue is assigned to you in code_review. Review it now.',\n  '',\n  '## Issue: ' + issue.task_key + ' \u2014 ' + issue.title,\n  'Type: ' + issue.type + ' | Project: ' + issue.project + ' | Severity: ' + (issue.severity || 'not set'),\n  'tier: P1 (default),\n  '',\n  '## Acceptance Criteria',\n  issue.acceptance_criteria || '(not set \u2014 review description instead)',\n  '',\n  '## Implementation Notes (what was built)',\n  issue.implementation_notes || '(not set)',\n  '',\n  '## References',\n  'commit_sha: ' + (issue.commit_sha || 'none'),\n  'feature_branch: ' + (issue.feature_branch || 'none'),\n  'pr_url: ' + (issue.pr_url || 'none'),\n  '',\n  '## Your Task',\n  'Review the implementation against the acceptance criteria.',\n  'If P2/P3 tier: auto-pass.',\n  'If P1/P0 or unset: verify each AC item.',\n  '',\n  'PASS: PATCH http://localhost:3000/api/issues with:',\n  '  { \"id\": \"' + issue.id + '\", \"tester_status\": \"passed\", \"tester_notes\": \"<summary>\", \"transitioned_by\": \"tester\" }',\n  '',\n  'FAIL: PATCH with:',  \n  '  { \"id\": \"' + issue.id + '\", \"tester_status\": \"failed\", \"tester_notes\": \"<what failed and why>\", \"transitioned_by\": \"tester\" }',\n  '',\n  'Supabase service role key for any direct queries: ' + SK,\n  'Supabase URL: ' + SUPA,\n].join('\\n');\n\ntry {\n  await helpers.httpRequest({\n    method: 'POST', url: TRIGGER_URL,\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ agentId: 'tester', message: prompt })\n  });\n  return [{ json: { action: 'tester_triggered', task: issue.task_key, tier: issue.test_tier } }];\n} catch(e) {\n  return [{ json: { action: 'error', message: e.message } }];\n}\n"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

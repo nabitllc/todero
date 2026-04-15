@@ -1,0 +1,230 @@
+{
+  "id": "slQ0YtOPzYQ2oNmY",
+  "name": "OpenClaw Gateway Watchdog",
+  "active": false,
+  "nodes": [
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Check Gateway Status",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "command": "export PATH=\"/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:$PATH\"; openclaw gateway status 2>&1"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Is Gateway Down?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.stdout }}",
+              "rightValue": "running",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Run Doctor + Restart",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        900,
+        180
+      ],
+      "parameters": {
+        "command": "export PATH=\"/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:$PATH\"; openclaw doctor --fix 2>&1; openclaw gateway restart 2>&1; sleep 8; openclaw gateway status 2>&1"
+      }
+    },
+    {
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Did Recovery Succeed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond2",
+              "leftValue": "={{ $json.stdout }}",
+              "rightValue": "running",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Alert \u2014 Recovered",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        80
+      ],
+      "parameters": {
+        "chatId": "-1003598670302",
+        "text": "\ud83d\udfe1 *OpenClaw Gateway Alert*\n\nGateway was down but auto-recovered \u2705\n\nRan `openclaw doctor --fix` + `gateway restart` \u2014 it's back up.\n\n_Time: {{ new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}) }}_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "hr4GqvusMW8IUI9D",
+          "name": "KemuniClaw1Bot"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Alert \u2014 Failed, Needs Attention",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        300
+      ],
+      "parameters": {
+        "chatId": "-1003598670302",
+        "text": "\ud83d\udea8 *OpenClaw Gateway DOWN*\n\nAuto-recovery failed \u2014 manual intervention needed.\n\nRan `openclaw doctor --fix` + `gateway restart` but gateway is still not responding.\n\nSSH into the Mac mini and check:\n`openclaw gateway status`\n`openclaw logs --follow`\n\n_Time: {{ new Date().toLocaleString('en-US', {timeZone: 'America/New_York'}) }}_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "hr4GqvusMW8IUI9D",
+          "name": "KemuniClaw1Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Check Gateway Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Gateway Status": {
+      "main": [
+        [
+          {
+            "node": "Is Gateway Down?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Gateway Down?": {
+      "main": [
+        [
+          {
+            "node": "Run Doctor + Restart",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Run Doctor + Restart": {
+      "main": [
+        [
+          {
+            "node": "Did Recovery Succeed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Did Recovery Succeed?": {
+      "main": [
+        [
+          {
+            "node": "Alert \u2014 Recovered",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert \u2014 Failed, Needs Attention",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

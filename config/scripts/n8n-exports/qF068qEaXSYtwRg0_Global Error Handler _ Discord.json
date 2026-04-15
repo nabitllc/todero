@@ -1,0 +1,80 @@
+{
+  "id": "qF068qEaXSYtwRg0",
+  "name": "Global Error Handler \u2014 Discord",
+  "active": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n2",
+      "name": "Notify Discord",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const e=$input.first().json;const wf=e.workflow?.name||'?';const node=e.execution?.lastNodeExecuted||'?';const err=(e.execution?.error?.message||'unknown').slice(0,200);const msg=`\u26a0\ufe0f **n8n Error**\\n**Workflow:** ${wf}\\n**Node:** ${node}\\n**Error:** ${err}`;const {execSync}=require('child_process');execSync(`openclaw message send --channel discord --target \"channel:1485333335868834063\" --message \"${msg.replace(/\"/g,'\\\\\"')}\"`);return[{json:{ok:true}}];"
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Create Bug Issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        480,
+        520
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: 'n8n: ' + ($input.first().json.workflow?.name || 'Unknown workflow') + ' failed \u2014 ' + (($input.first().json.execution?.error?.message || 'unknown error').slice(0, 80)), type: 'bug', priority: 'high', assignee: 'ops', project: 'Infrastructure', sprint: new Date().toISOString().split('T')[0], description: 'Workflow: ' + ($input.first().json.workflow?.name || '?') + '\\nExecution ID: ' + ($input.first().json.execution?.id || '?') + '\\nError: ' + ($input.first().json.execution?.error?.message || 'unknown') + '\\nTimestamp: ' + new Date().toISOString(), acceptance_criteria: 'Fix the n8n workflow error and verify it runs successfully' }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Notify Discord",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Bug Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

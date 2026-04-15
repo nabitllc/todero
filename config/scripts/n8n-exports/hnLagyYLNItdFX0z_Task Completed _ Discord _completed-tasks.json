@@ -1,0 +1,140 @@
+{
+  "id": "hnLagyYLNItdFX0z",
+  "name": "Task Completed \u2192 Discord #completed-tasks",
+  "active": true,
+  "nodes": [
+    {
+      "name": "Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/2 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "263f4a89-278e-47f6-8dd2-6f38130d705a"
+    },
+    {
+      "name": "Get Recent Approved/Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ],
+      "parameters": {
+        "url": "https://twthgapiouiqhavrcnry.supabase.co/rest/v1/issues",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "in.(approved,completed)"
+            },
+            {
+              "name": "select",
+              "value": "id,title,project,assignee,status,resolution_type,updated_at,task_key,type"
+            },
+            {
+              "name": "order",
+              "value": "updated_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "5"
+            }
+          ]
+        }
+      },
+      "id": "658630ac-e246-4f73-a713-e7191c957a2c"
+    },
+    {
+      "name": "Filter & Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\n// Use 30-minute window to catch batch-marked issues\nconst cutoff = new Date(Date.now() - 30 * 60 * 1000);\nconst fresh = $input.all().filter(i =>\n  (i.json.status === 'approved' || i.json.status === 'completed' || i.json.status === 'released' || i.json.status === 'closed') &&\n  new Date(i.json.updated_at) > cutoff\n);\nif (!fresh.length) return [];\n\n// Deduplicate using workflow static data\nconst seen = $getWorkflowStaticData('global');\nif (!seen.posted_ids) seen.posted_ids = [];\n\nconst unposted = fresh.filter(i => !seen.posted_ids.includes(i.json.id));\nif (!unposted.length) return [];\n\nseen.posted_ids = [...seen.posted_ids, ...unposted.map(i => i.json.id)];\nif (seen.posted_ids.length > 500) seen.posted_ids = seen.posted_ids.slice(-500);\n\nconst RESOLUTION_LABELS = {\n  code_change: 'Code Change',\n  config_change: 'Config Change',\n  no_action: 'No Action',\n  duplicate: 'Duplicate',\n  by_design: 'By Design',\n  wont_fix: \"Won't Fix\",\n  cancelled: 'Cancelled',\n  canceled: 'Cancelled',\n  not_reproducible: 'Not Reproducible',\n  deferred: 'Deferred',\n  completed: 'Completed',\n};\nconst STATUS_EMOJI = { approved: '\ud83d\udea2', completed: '\u2705', closed: '\u2705', released: '\ud83d\ude80' };\nconst TYPE_EMOJI = { task: '\ud83d\udccb', bug: '\ud83d\udc1b', feature: '\u2728', epic: '\ud83c\udfd4\ufe0f', ops: '\u2699\ufe0f', research: '\ud83d\udd0d' };\n\nreturn unposted.map(i => {\n  const t = i.json;\n  const key = t.task_key || t.id?.slice(0,8) || '?';\n  const statusEmoji = STATUS_EMOJI[t.status] || '\u2705';\n  const typeEmoji = TYPE_EMOJI[t.type || 'task'] || '\ud83d\udccb';\n  const rawResType = t.resolution_type || t.status;\n  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType;\n  const ts = new Date(t.updated_at).toLocaleString('en-US', {\n    timeZone: 'America/New_York',\n    month: 'short', day: 'numeric',\n    hour: '2-digit', minute: '2-digit',\n    hour12: true\n  }) + ' EST';\n  const text = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** \\u2014 ${t.title} at ${ts}`;\n  return { json: { text } };\n});\n"
+      },
+      "id": "c4e70a4f-c3f3-418f-a730-138c7229ab55"
+    },
+    {
+      "name": "Post to Discord",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\nif (!items.length) return [];\nconst lines = items.map(i => i.json.text).filter(Boolean);\nif (!lines.length) return [];\nconst message = lines.join('\\n');\n\nconst resp = await helpers.httpRequest({\n  method: 'POST',\n  url: 'https://discord.com/api/v10/channels/1487584901678104698/messages',\n  headers: {\n    'Authorization': 'Bot MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo',\n    'Content-Type': 'application/json',\n    'User-Agent': 'DiscordBot (https://openclaw.ai, 1.0)'\n  },\n  body: JSON.stringify({ content: message })\n});\nreturn [{ json: { ok: true, count: lines.length, response: resp } }];\n"
+      },
+      "id": "2715f84c-4816-4703-86ce-079513c1d9f1"
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Approved/Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & Format": {
+      "main": [
+        [
+          {
+            "node": "Post to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Approved/Completed": {
+      "main": [
+        [
+          {
+            "node": "Filter & Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
