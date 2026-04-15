@@ -1176,14 +1176,21 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // resolution_type required before submitting work for review.
-  // The assignee sets this when they PATCH to code_review or product_review —
+  // resolution_type + implementation_notes required before submitting work for review.
+  // The assignee sets these when they PATCH to code_review or product_review —
   // it tells reviewers what kind of change was made before they even look at the diff.
   if ((fields.status === 'code_review' || fields.status === 'product_review') && before?.status !== fields.status) {
     const effectiveResType = fields.resolution_type ?? before?.resolution_type
     if (!effectiveResType) {
       return NextResponse.json(
         { error: `resolution_type is required before moving to ${fields.status}. Set it to what was done (e.g. code_change, config_change, research_completed). Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
+      )
+    }
+    const effectiveImplNotes = ((fields.implementation_notes ?? before?.implementation_notes) as string | null | undefined)
+    if (!effectiveImplNotes || String(effectiveImplNotes).trim().length < 10) {
+      return NextResponse.json(
+        { error: `implementation_notes is required before moving to ${fields.status}. Describe what was built/researched/changed (≥10 chars).` },
         { status: 422 }
       )
     }
@@ -1227,11 +1234,14 @@ export async function PATCH(req: NextRequest) {
   if (fields.status) {
     const now = new Date().toISOString()
 
-    // started_at + worked_by: only set on open→in_progress, auto-clear on →backlog/→refined/→open
-    if (fields.status === 'in_progress' && before?.status === 'open') {
-      if (!fields.started_at) fields.started_at = now
+    // started_at + worked_by: set on ANY transition to in_progress (not just from open).
+    // Previously only fired on open→in_progress, allowing null started_at if coming from
+    // another status — those ghost claims counted against WIP but were never cleared
+    // by the watchdog (which requires started_at IS NOT NULL for its stale check).
+    if (fields.status === 'in_progress') {
+      if (!before?.started_at && !fields.started_at) fields.started_at = now
       const effectiveAssignee = fields.assignee ?? before?.assignee
-      if (effectiveAssignee && !fields.worked_by) fields.worked_by = effectiveAssignee
+      if (effectiveAssignee && !fields.worked_by && !before?.worked_by) fields.worked_by = effectiveAssignee
     }
     if (['backlog', 'refined', 'open'].includes(fields.status as string)) {
       if (before?.started_at) fields.started_at = null
