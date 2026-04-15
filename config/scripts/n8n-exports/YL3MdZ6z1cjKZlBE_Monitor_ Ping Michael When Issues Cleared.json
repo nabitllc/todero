@@ -1,0 +1,85 @@
+{
+  "id": "YL3MdZ6z1cjKZlBE",
+  "name": "Monitor: Ping Michael When Issues Cleared",
+  "active": false,
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "get-issues",
+      "name": "Get All Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:3000/api/issues?limit=2000",
+        "options": {}
+      }
+    },
+    {
+      "id": "check-and-notify",
+      "name": "Check Conditions & Notify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst TELEGRAM_BOT_TOKEN = '8556679902:AAGFg5yBUkF_6EtWHgf3TwTlxva0vbhQvVE';\nconst TELEGRAM_CHAT_ID = '5084875115';\nconst issues = $input.all().map(i => i.json).filter(Boolean);\nconst todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });\nif (staticData.last_check_date !== todayStr) {\n  staticData.notified_today_done = false;\n  staticData.notified_queue_clear = false;\n  staticData.last_check_date = todayStr;\n}\nconst since = new Date(Date.now() - 24 * 60 * 60 * 1000);\nconst doneStatuses = ['closed','released','completed','cancelled'];\nconst todayNotDone = issues.filter(i => i.created_at && new Date(i.created_at) >= since && !doneStatuses.includes(i.status));\nconst openNotMichael = issues.filter(i => i.status === 'open' && i.assignee && i.assignee !== 'michael');\nasync function sendTelegram(text) {\n  await helpers.httpRequest({\n    method: 'POST',\n    url: `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,\n    headers: { 'Content-Type': 'application/json' },\n    body: { chat_id: TELEGRAM_CHAT_ID, text }\n  });\n}\nconst results = [];\nif (todayNotDone.length === 0 && !staticData.notified_today_done) {\n  await sendTelegram('\u2705 All issues created in the last 24h are now closed/released/completed.');\n  staticData.notified_today_done = true;\n  results.push({ condition: 'today_done', sent: true });\n} else {\n  results.push({ condition: 'today_done', sent: false, remaining: todayNotDone.length, already_notified: !!staticData.notified_today_done });\n}\nif (openNotMichael.length === 0 && !staticData.notified_queue_clear) {\n  await sendTelegram('\u2705 All open issues not assigned to you have been worked through.');\n  staticData.notified_queue_clear = true;\n  results.push({ condition: 'queue_clear', sent: true });\n} else {\n  results.push({ condition: 'queue_clear', sent: false, remaining: openNotMichael.length, already_notified: !!staticData.notified_queue_clear });\n}\nreturn results.map(r => ({ json: r }));"
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get All Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Issues": {
+      "main": [
+        [
+          {
+            "node": "Check Conditions & Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

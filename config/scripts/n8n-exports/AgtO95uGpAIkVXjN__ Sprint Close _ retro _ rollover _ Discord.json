@@ -1,0 +1,106 @@
+{
+  "id": "AgtO95uGpAIkVXjN",
+  "name": "\ud83c\udfc1 Sprint Close \u2014 retro + rollover + Discord",
+  "active": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "7am Sprint Close",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst data = await helpers.httpRequest({ method: 'POST', url: 'http://127.0.0.1:8788/sprint-close-run' });\nreturn [{ json: data }];\n"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Generate Retro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$input.first().json, report_transport: 'handled_by_sprint_close_executor' } }];"
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Trigger Sprint Start",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$input.first().json, sprint_start: 'handled_inline_by_executor', discord_delivery: 'handled_by_executor' } }];"
+      }
+    }
+  ],
+  "connections": {
+    "7am Sprint Close": {
+      "main": [
+        [
+          {
+            "node": "Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run": {
+      "main": [
+        [
+          {
+            "node": "Generate Retro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Retro": {
+      "main": [
+        [
+          {
+            "node": "Trigger Sprint Start",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

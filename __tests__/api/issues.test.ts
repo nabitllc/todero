@@ -58,8 +58,9 @@ describe('VALID_STATUSES', () => {
 
   it('contains lifecycle statuses', () => {
     expect(VALID_STATUSES).toContain('backlog')
+    expect(VALID_STATUSES).toContain('refined')
     expect(VALID_STATUSES).toContain('in_progress')
-    expect(VALID_STATUSES).toContain('completed')
+    expect(VALID_STATUSES).toContain('wrapped')
     expect(VALID_STATUSES).toContain('closed')
   })
 
@@ -67,6 +68,7 @@ describe('VALID_STATUSES', () => {
     expect(VALID_STATUSES).not.toContain('in_review')
     expect(VALID_STATUSES).toContain('code_review')
     expect(VALID_STATUSES).toContain('product_review')
+    expect(VALID_STATUSES).toContain('feature_review')
   })
 })
 

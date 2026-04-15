@@ -16,14 +16,14 @@ Todero is a Next.js 14 app (App Router) that provides:
 
 ## Companion Repo
 
-Agent config, memory, scripts, and skills live in `kaos-config`:
-- Path: `/Users/kemuniagent/kaos-config`
-- GitHub: `github.com/nabitllc/kaos-config`
-- Read `kaos-config/CLAUDE.md` for full agent/operational context
+Agent config, memory, scripts, and skills live in `todero/config`:
+- Path: `/Users/kemuniagent/todero/config`
+- GitHub: `github.com/nabitllc/todero/config`
+- Read `todero/config/CLAUDE.md` for full agent/operational context
 
 **Note (TOD-798):** `~/.openclaw/workspace` is the *old* path and no longer exists.
 Do not reference it. The migration happened 2026-04-09. If you see any file
-pointing at `.openclaw/workspace`, it's a stale bug — fix it to `kaos-config`.
+pointing at `.openclaw/workspace`, it's a stale bug — fix it to `todero/config`.
 
 ## Session Startup
 

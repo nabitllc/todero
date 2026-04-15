@@ -1,8 +1,8 @@
-export const ISSUE_TERMINAL_STATUSES = ['completed', 'closed'] as const
-export const ISSUE_COMPLETED_STATUSES = ['completed', 'closed'] as const
-export const ISSUE_DEPENDENCY_SATISFIED_STATUSES = ['released', 'completed', 'closed'] as const
-export const ISSUE_SIGNOFF_STATUSES = ['released', 'completed'] as const
-export const ISSUE_ACTIVE_WORK_STATUSES = ['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'] as const
+export const ISSUE_TERMINAL_STATUSES = ['wrapped', 'closed'] as const
+export const ISSUE_COMPLETED_STATUSES = ['wrapped', 'closed'] as const
+export const ISSUE_DEPENDENCY_SATISFIED_STATUSES = ['released', 'wrapped', 'closed'] as const
+export const ISSUE_SIGNOFF_STATUSES = ['released', 'wrapped'] as const
+export const ISSUE_ACTIVE_WORK_STATUSES = ['open', 'in_progress', 'underway', 'code_review', 'product_review', 'feature_review', 'approved', 'released'] as const
 
 const terminalStatusSet = new Set<string>(ISSUE_TERMINAL_STATUSES)
 const completedStatusSet = new Set<string>(ISSUE_COMPLETED_STATUSES)

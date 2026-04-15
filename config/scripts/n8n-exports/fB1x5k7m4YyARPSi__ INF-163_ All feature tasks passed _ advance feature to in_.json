@@ -1,0 +1,58 @@
+{
+  "id": "fB1x5k7m4YyARPSi",
+  "name": "\u2705 INF-163: All feature tasks passed \u2192 advance feature to in_review (5 min)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const res = await helpers.httpRequest({ method:'GET', url:'http://localhost:3000/api/issues?limit=2000' });\nconst items = Array.isArray(res) ? res : (res.issues || []);\nconst features = items.filter(i => i.type==='feature' && i.status==='open');\nconst changed = [];\nfor (const f of features) {\n  const children = items.filter(i => i.parent_id === f.id && ['task','bug'].includes(i.type));\n  if (!children.length) continue;\n  const active = children.filter(c => !['closed','released','completed','cancelled'].includes(c.status));\n  const allPassed = children.every(c => c.test_status === 'passed' || ['released','completed','closed'].includes(c.status));\n  if (active.length === 0 && allPassed) {\n    changed.push(f.task_key);\n  }\n}\nreturn [{ json: { action: changed.length ? 'ready_for_review' : 'idle', count: changed.length, features: changed.slice(0,25) } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

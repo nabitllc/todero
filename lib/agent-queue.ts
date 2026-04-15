@@ -60,7 +60,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     agentId: 'builder',
     model: 'sonnet',
     pickupStatus: 'open',
-    extraFilters: '',
+    extraFilters: 'type=in.(task,bug)&project=eq.Todero',  // Todero-only focus, tasks/bugs only
     dorFields: ['description', 'acceptance_criteria'],
     // TOD-XXX (2026-04-10, Michael approved): bumped from 1 to 2 for parallel
     // builds. Safe now that each spawn runs in its own isolated git worktree
@@ -132,15 +132,20 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     agentId: 'po',
     model: 'sonnet',
     pickupStatus: 'backlog',
-    extraFilters: 'type=in.(feature,task,bug)',
+    extraFilters: 'type=in.(feature,task,bug,ops,research)',
+    // CRITICAL: pickupStatus !== workingStatus but PO leaves items in 'defined'
+    // as a staging area. Without this filter, ALL defined items count as WIP,
+    // permanently locking PO at 23/3. Only count items PO has actively claimed.
+    // This line has been reverted 3 times by linters/agents — DO NOT REMOVE.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['title'],
     wipLimit: 3,
-    workingStatus: 'defined',
+    workingStatus: 'refined',
     completionStatus: 'open',
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
-    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, reviewer, owner. For FEATURES: create child tasks (each 1-2 days of work) before moving to defined. For EPICS: verify child features exist and have AC. When all DoR fields are set, PATCH to defined. Then check defined issues — if they have sprint, assignee, reviewer, owner, PATCH to open. **SPRINT DATE HYGIENE (2026-04-10): whenever you create a new child task, ALWAYS set sprint to today\'s date in YYYY-MM-DD format (America/New_York timezone). Never use a past date. The backend auto-corrects wrong dates but you should set it right the first time.** Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
+    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner. For TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined"). For FEATURES: create child tasks (each 1-2 days of work) before moving to "defined". For EPICS: verify child features exist and have AC. Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition. Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
   },
 
   scout: {
@@ -163,6 +168,9 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'haiku',
     pickupStatus: 'released',
     extraFilters: '',
+    // pickupStatus === workingStatus → same deadlock as PO/deployer.
+    // DO NOT REMOVE — has been reverted 3 times.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['implementation_notes'],
     wipLimit: 1,
     workingStatus: 'released',
@@ -178,6 +186,9 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'haiku',
     pickupStatus: 'approved',
     extraFilters: '',
+    // pickupStatus === workingStatus → same deadlock as PO/auditor.
+    // DO NOT REMOVE — has been reverted 3 times.
+    wipExtraFilter: 'started_at=not.is.null',
     dorFields: ['implementation_notes'],
     wipLimit: 5,
     workingStatus: 'approved',
@@ -196,3 +207,4 @@ export function getQueueConfig(agentId: string): AgentQueueConfig | undefined {
 export function getAllQueueAgentIds(): string[] {
   return Object.keys(AGENT_QUEUE_CONFIGS)
 }
+// test

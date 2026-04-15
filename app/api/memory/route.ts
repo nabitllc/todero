@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
 
-// TOD-798: kaos-config is the canonical workspace since 2026-04-09.
+// TOD-798: todero/config is the canonical workspace since 2026-04-09.
 // Do not revert to .openclaw/workspace — that path was moved and will not exist.
-const MEMORY_DIR = '/Users/kemuniagent/kaos-config/memory'
+const MEMORY_DIR = '/Users/kemuniagent/todero/config/memory'
 
 function wordCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length

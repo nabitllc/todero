@@ -4,14 +4,19 @@ export type IssueStatusCategory = typeof ISSUE_STATUS_CATEGORY_LABELS[number]
 
 const ISSUE_STATUS_CATEGORY_MAP: Record<string, IssueStatusCategory> = {
   backlog: 'Planned',
-  defined: 'Planned',
+  defined: 'Planned',     // feature
+  refined: 'Planned',     // task/bug/ops/research
   open: 'Planned',
+  draft: 'Planned',       // epic
+  active: 'Ongoing',      // epic
   in_progress: 'Ongoing',
+  underway: 'Ongoing',    // feature
   code_review: 'Ongoing',
   product_review: 'Ongoing',
+  feature_review: 'Ongoing', // feature
   approved: 'Ongoing',
   released: 'SignOff',
-  completed: 'SignOff',
+  wrapped: 'SignOff',      // epic
   closed: 'Done',
 }
 

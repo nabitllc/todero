@@ -58,7 +58,7 @@ export interface AgentSpawnResult {
 export interface AgentDispatchOptions {
   /** Session identifier — usually the agent ID (one session per agent) */
   sessionId: string
-  /** Absolute path to the session state directory (~/kaos-config/sessions/<agent>/) */
+  /** Absolute path to the session state directory (~/todero/config/sessions/<agent>/) */
   sessionDir: string
   /** The task prompt to send into the existing session (no SOUL/AGENTS — already loaded) */
   taskPrompt: string

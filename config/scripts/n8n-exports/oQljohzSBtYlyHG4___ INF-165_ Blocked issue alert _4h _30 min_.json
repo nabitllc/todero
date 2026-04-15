@@ -1,0 +1,58 @@
+{
+  "id": "oQljohzSBtYlyHG4",
+  "name": "\u23f1\ufe0f INF-165: Blocked issue alert >4h (30 min)",
+  "active": false,
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/30 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst h = { apikey: SK, Authorization: `Bearer ${SK}` };\nconst {execSync} = require('child_process');\n\nconst cutoff = new Date(Date.now() - 4*60*60*1000).toISOString();\nconst res = await fetch(`${SUPA}/rest/v1/issues?status=in.(in_progress,in_review)&updated_at=lt.${cutoff}&select=task_key,title,assignee,status,updated_at&limit=20`, {headers:h});\nconst stuck = await res.json();\nif (!stuck.length) return [{json:{action:'idle'}}];\n\nconst lines = stuck.map(i => {\n  const hrs = Math.round((Date.now() - new Date(i.updated_at)) / 3600000);\n  return `\u2022 [${i.task_key}] ${i.title.slice(0,50)} \u2014 ${i.assignee||'unassigned'} \u2014 ${hrs}h in ${i.status}`;\n}).join('\\n');\n\nconst msg = '\u26a0\ufe0f Blocked issues (>4h no activity):\\n' + lines;\nconst esc = msg.replace(/'/g, \"'\\''\");\ntry { execSync(`openclaw message send --channel telegram --target 5084875115 --message '${esc}' 2>/dev/null || true`); } catch(e) {}\nreturn [{json:{action:'alerted', count: stuck.length}}];\n"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [
+          {
+            "node": "Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

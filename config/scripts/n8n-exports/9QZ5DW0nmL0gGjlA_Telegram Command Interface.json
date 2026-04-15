@@ -1,0 +1,581 @@
+{
+  "id": "9QZ5DW0nmL0gGjlA",
+  "name": "Telegram Command Interface",
+  "active": true,
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Telegram Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "telegram-commands",
+      "parameters": {
+        "path": "telegram-commands",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parse",
+      "name": "Parse Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst message = body.message || body.edited_message;\nif (!message || !message.text) {\n  return [{ json: { command: 'none', chat_id: 0 } }];\n}\nconst text = message.text.trim();\nconst chat_id = message.chat.id;\nconst parts = text.split(/\\s+/);\nconst cmd = parts[0].toLowerCase().replace(/@\\w+/, '');\nconst arg = parts.slice(1).join(' ').toLowerCase();\nreturn [{ json: { command: cmd, arg, chat_id, raw: text } }];\n"
+      }
+    },
+    {
+      "id": "router",
+      "name": "Route Command",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "outputKey": "status",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/status",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "tasks",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/tasks",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "deploy",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/deploy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "run",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/run",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "outputKey": "help",
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "/start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      }
+    },
+    {
+      "id": "fetch_status",
+      "name": "Fetch Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        -300
+      ],
+      "parameters": {
+        "url": "http://localhost:3000/api/status",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "format_status",
+      "name": "Format Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        -300
+      ],
+      "parameters": {
+        "jsCode": "const s = $input.first().json;\nconst lines = ['\ud83e\udd9e *OpenClaw Status*\\n'];\n\n// Gateway\nif (s.gateway) {\n  lines.push(`*Gateway:* ${s.gateway.status === 'online' ? '\ud83d\udfe2 Online' : '\ud83d\udd34 Offline'}`);\n}\n\n// Agents\nif (s.agents && s.agents.length) {\n  const active = s.agents.filter(a => a.status === 'active' || a.status === 'idle');\n  lines.push(`*Agents:* ${active.length}/${s.agents.length} active`);\n  for (const a of s.agents) {\n    const icon = (a.status === 'active' || a.status === 'idle') ? '\ud83d\udfe2' : '\u26aa';\n    lines.push(`  ${icon} ${a.name || a.id}`);\n  }\n}\n\n// Heartbeat\nif (s.openclaw && s.openclaw.heartbeat) {\n  lines.push(`\\n*Last heartbeat:* ${s.openclaw.heartbeat}`);\n}\n\n// Costs\nif (s.tokenUsage && s.tokenUsage.todayCost) {\n  lines.push(`*Today cost:* $${s.tokenUsage.todayCost}`);\n}\n\nconst chat_id = $('Parse Command').first().json.chat_id;\nreturn [{ json: { chat_id, text: lines.join('\\n') } }];\n"
+      }
+    },
+    {
+      "id": "fetch_tasks",
+      "name": "Fetch Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        850,
+        -100
+      ],
+      "parameters": {
+        "url": "https://twthgapiouiqhavrcnry.supabase.co/rest/v1/issues",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,title,status,priority,assigned_to"
+            },
+            {
+              "name": "status",
+              "value": "in.(open,in_progress)"
+            },
+            {
+              "name": "order",
+              "value": "priority.asc,created_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "format_tasks",
+      "name": "Format Tasks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\nconst tasks = Array.isArray(items[0]) ? items[0] : items;\nconst chat_id = $('Parse Command').first().json.chat_id;\n\nif (!tasks.length || (tasks.length === 1 && tasks[0].id === undefined)) {\n  return [{ json: { chat_id, text: '\ud83d\udccb *Tasks*\\n\\nNo open tasks found.' } }];\n}\n\nconst lines = ['\ud83d\udccb *Open Tasks*\\n'];\nconst icons = { open: '\u2b1c', in_progress: '\ud83d\udd04' };\nfor (const t of tasks) {\n  const icon = icons[t.status] || '\u2b1c';\n  const assignee = t.assigned_to ? ` \u2192 ${t.assigned_to}` : '';\n  lines.push(`${icon} *${t.title}*${assignee}`);\n  if (t.priority) lines.push(`   Priority: ${t.priority}`);\n}\n\nreturn [{ json: { chat_id, text: lines.join('\\n') } }];\n"
+      }
+    },
+    {
+      "id": "do_deploy",
+      "name": "Deploy Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        100
+      ],
+      "parameters": {
+        "jsCode": "\nconst arg = $('Parse Command').first().json.arg;\nconst chat_id = $('Parse Command').first().json.chat_id;\n// Deploy now routes through Deployer agent \u2014 no autonomous deploys\nreturn [{ json: { \n  chat_id, \n  text: `\ud83d\ude80 *Deploy Request Logged*\\n\\nDeploy target: *${arg || 'vespera'}*\\n\\nI've notified Deployer. You'll receive a formal deploy request with change summary shortly.\\n\\n_Deploys require your explicit APPROVE reply._`,\n  skip_deploy: true  \n} }];\n"
+      }
+    },
+    {
+      "id": "check_deploy",
+      "name": "Valid Deploy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skip_deploy }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "trigger_deploy",
+      "name": "Deploy Disabled (use Deployer)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        50
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "deploy_ok",
+      "name": "Deploy OK Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        50
+      ],
+      "parameters": {
+        "jsCode": "const chat_id = $('Parse Command').first().json.chat_id;\nreturn [{ json: { chat_id, text: '\ud83d\ude80 *Vespera deploy triggered!*\\n\\nVercel build started. Check dashboard for progress.' } }];\n"
+      }
+    },
+    {
+      "id": "run_handler",
+      "name": "Run Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const arg = $('Parse Command').first().json.arg;\nconst chat_id = $('Parse Command').first().json.chat_id;\nif (arg === 'scout') {\n  return [{ json: { chat_id, text: '\ud83d\udd0d *Scout queued*\\n\\nScout agent will be spawned on the next heartbeat cycle.' } }];\n}\nreturn [{ json: { chat_id, text: `\u274c Unknown agent: *${arg || '(none)'}*\\n\\nUsage: /run scout` } }];\n"
+      }
+    },
+    {
+      "id": "help_msg",
+      "name": "Help Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        450
+      ],
+      "parameters": {
+        "jsCode": "const chat_id = $('Parse Command').first().json.chat_id;\nconst text = `\ud83e\udd9e *KemuniClaw Command Interface*\\n\\n/status \u2014 System status (agents, gateway, heartbeat)\\n/tasks \u2014 Top 5 open/in-progress tasks\\n/deploy vespera \u2014 Request a deploy (requires your APPROVE)\\n/run scout \u2014 Queue Scout agent for next heartbeat\\n/help \u2014 Show this message`;\nreturn [{ json: { chat_id, text } }];\n"
+      }
+    },
+    {
+      "id": "fallback_msg",
+      "name": "Unknown Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        600
+      ],
+      "parameters": {
+        "jsCode": "const chat_id = $('Parse Command').first().json.chat_id;\nconst raw = $('Parse Command').first().json.command;\nreturn [{ json: { chat_id, text: `\u2753 Unknown command: ${raw}\\n\\nType /help for available commands.` } }];\n"
+      }
+    },
+    {
+      "id": "send_reply",
+      "name": "Send Telegram Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1650,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8556679902:AAGFg5yBUkF_6EtWHgf3TwTlxva0vbhQvVE/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"chat_id\": {{ $json.chat_id }}, \"text\": {{ JSON.stringify($json.text) }}, \"parse_mode\": \"Markdown\" }",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Parse Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Command": {
+      "main": [
+        [
+          {
+            "node": "Route Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Command": {
+      "main": [
+        [
+          {
+            "node": "Fetch Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Deploy Handler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run Handler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Help Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Status": {
+      "main": [
+        [
+          {
+            "node": "Format Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Status": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Tasks": {
+      "main": [
+        [
+          {
+            "node": "Format Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Tasks": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deploy Handler": {
+      "main": [
+        [
+          {
+            "node": "Valid Deploy?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Deploy?": {
+      "main": [
+        [
+          {
+            "node": "Trigger Vercel Deploy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Vercel Deploy": {
+      "main": [
+        [
+          {
+            "node": "Deploy OK Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deploy OK Message": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Handler": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Help Message": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unknown Command": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "errorWorkflow": "imidBGxYeGhvlyCK"
+  }
+}

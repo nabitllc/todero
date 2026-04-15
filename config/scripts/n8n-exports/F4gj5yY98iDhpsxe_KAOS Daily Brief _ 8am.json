@@ -1,0 +1,172 @@
+{
+  "id": "F4gj5yY98iDhpsxe",
+  "name": "KAOS Daily Brief \u2014 8am",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 12 * * *"
+            }
+          ]
+        }
+      },
+      "name": "8am Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        400
+      ],
+      "id": "46941546-41fc-431f-972b-9c375327f1c7"
+    },
+    {
+      "parameters": {
+        "url": "https://twthgapiouiqhavrcnry.supabase.co/rest/v1/issues?select=title,status,priority,project,assignee&limit=200",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            }
+          ]
+        }
+      },
+      "name": "Get All Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        400
+      ],
+      "id": "c67658df-f712-466d-b7bc-26a92fc4b006"
+    },
+    {
+      "parameters": {
+        "url": "https://twthgapiouiqhavrcnry.supabase.co/rest/v1/agent_runs?order=started_at.desc&limit=20&select=agent_id,task_title,status,started_at",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+            }
+          ]
+        }
+      },
+      "name": "Get Agent Runs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        560
+      ],
+      "id": "a1d091dc-937c-4cc8-8237-056838900b91"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allTasks = $('Get All Tasks').all().map(i => i.json);\nconst runs = $('Get Agent Runs').all().map(i => i.json);\n\nconst now = new Date();\nconst yesterday = new Date(now - 86400000);\nconst dateStr = now.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',timeZone:'America/New_York'});\n\nconst PROJECTS = [\n  {name:'Vespera', emoji:'\ud83d\udda4', start:new Date('2026-03-22'), deadline:new Date('2026-03-29')},\n  {name:'Kemuni', emoji:'\ud83d\ude80', start:new Date('2026-03-21'), deadline:new Date('2026-04-20')},\n  {name:'Infrastructure', emoji:'\u2699\ufe0f', start:null, deadline:null}\n];\n\nfunction progressBar(start, deadline) {\n  const total = deadline - start;\n  const elapsed = now - start;\n  const pct = Math.min(1, Math.max(0, elapsed / total));\n  const filled = Math.round(pct * 10);\n  return '[' + '\u2593'.repeat(filled) + '\u2591'.repeat(10-filled) + ']';\n}\n\nfunction statusCategory(status) {\n  if (['backlog','defined','open'].includes(status)) return 'Planned';\n  if (['in_progress','code_review','product_review','approved'].includes(status)) return 'Ongoing';\n  if (['released','completed'].includes(status)) return 'SignOff';\n  if (status === 'closed') return 'Done';\n  return 'Planned';\n}\n\nconst recentDone = runs\n  .filter(r => ['done','completed','passed'].includes(r.status) && r.started_at && new Date(r.started_at) > yesterday)\n  .map(r => r.task_title).filter(Boolean).slice(0,5);\n\nconst byProject = {};\nfor (const p of PROJECTS) byProject[p.name] = {Planned:[], Ongoing:[], SignOff:[], Done:[]};\nfor (const t of allTasks) {\n  const proj = PROJECTS.find(p => p.name === t.project) ? t.project : 'Infrastructure';\n  byProject[proj][statusCategory(t.status)].push(t);\n}\n\nconst critical = allTasks.filter(t =>\n  t.priority === 'critical' && ['Planned','Ongoing','SignOff'].includes(statusCategory(t.status)) && !t.title.includes('MANUAL')\n);\nconst criticalTitles = new Set(critical.map(t => t.title));\n\nconst todayAll = allTasks.filter(t =>\n  ['critical','high'].includes(t.priority) &&\n  ['Planned','Ongoing'].includes(statusCategory(t.status)) &&\n  !t.title.includes('MANUAL')\n).sort((a,b) => (a.priority==='critical'?0:1)-(b.priority==='critical'?0:1));\n\nconst inReview = allTasks.filter(t => ['code_review','product_review','approved'].includes(t.status));\n\nlet msg = `\ud83e\udde0 *KAOS Daily Brief \u2014 ${dateStr}*\\n\\n`;\n\nif (recentDone.length === 0) {\n  msg += `\u2705 *Done yesterday:* nothing logged\\n\\n`;\n} else if (recentDone.length <= 2) {\n  msg += `\u2705 *Done yesterday:* ${recentDone.map(t=>t.slice(0,40)).join(', ')}\\n\\n`;\n} else {\n  msg += `\u2705 *Done yesterday:*\\n` + recentDone.map(t=>`  \u2022 ${t.slice(0,45)}`).join('\\n') + '\\n\\n';\n}\n\nmsg += `\u2501\u2501\u2501 *PROJECTS* \u2501\u2501\u2501\\n\\n`;\n\nfor (const proj of PROJECTS) {\n  const d = byProject[proj.name];\n  const daysLeft = proj.deadline ? Math.ceil((proj.deadline - now) / 86400000) : null;\n  const bar = proj.start && proj.deadline ? progressBar(proj.start, proj.deadline) + ' ' : '';\n  const deadlineStr = daysLeft !== null ? `${bar}${daysLeft}d left` : 'ongoing';\n\n  const counts = `  \ud83d\udce6 ${d.Planned.length}  \ud83d\udd04 ${d.Ongoing.length}  \u270d\ufe0f ${d.SignOff.length}  \u2705 ${d.Done.length}`;\n  const projToday = todayAll.filter(t => t.project === proj.name && !criticalTitles.has(t.title)).slice(0,3);\n  const hasActive = d.Planned.length + d.Ongoing.length + d.SignOff.length > 0;\n\n  msg += `${proj.emoji} *${proj.name}* [${deadlineStr}]\\n${counts}\\n`;\n\n  if (!hasActive && proj.deadline) {\n    msg += `  _No active tasks \u2014 needs kickoff_\\n`;\n  } else if (projToday.length) {\n    msg += `  \ud83c\udfaf *Today:*\\n` + projToday.map(t=>`  \u2022 ${t.title.slice(0,50)}`).join('\\n') + '\\n';\n  }\n  msg += '\\n';\n}\n\nif (inReview.length > 0) {\n  msg += `\u2501\u2501\u2501 *\ud83d\udc40 REVIEW / SIGN-OFF (${inReview.length})* \u2501\u2501\u2501\\n`;\n  inReview.slice(0,4).forEach(t => msg += `  \u2022 ${t.title.slice(0,55)} (${(t.status || '').replace(/_/g,' ')})\\n`);\n  msg += '\\n';\n}\n\nif (critical.length > 0) {\n  msg += `\u2501\u2501\u2501 *\ud83d\udd34 CRITICAL (${critical.length})* \u2501\u2501\u2501\\n`;\n  critical.slice(0,5).forEach(t => msg += `  \u2022 ${t.title.slice(0,60)}\\n`);\n  msg += '\\n';\n}\n\nconst totalDone = allTasks.filter(t => statusCategory(t.status)==='Done').length;\nconst totalActive = allTasks.filter(t => ['Planned','Ongoing','SignOff'].includes(statusCategory(t.status))).length;\nmsg += `\ud83d\udcb3 OpenRouter: ~$7.50 \u00b7 Vercel Pro: renews Apr 24\\n`;\nmsg += `\ud83d\udcca ${totalDone} done \u00b7 ${totalActive} active \u00b7 [Mission Control](https://kaos.nabit.work)`;\n\nreturn [{ json: { text: msg } }];\n"
+      },
+      "name": "Format Daily Brief",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        480
+      ],
+      "id": "780ec22e-7eea-4d99-8e64-67236e198924"
+    },
+    {
+      "parameters": {
+        "chatId": "-1003598670302",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "disable_web_page_preview": true
+        }
+      },
+      "name": "Send to Kaos Updates",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        940,
+        480
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "hr4GqvusMW8IUI9D",
+          "name": "KemuniClaw1Bot"
+        }
+      },
+      "id": "07989201-7eb2-49cf-b19e-6e33d07a5fe7"
+    }
+  ],
+  "connections": {
+    "8am Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get All Tasks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Agent Runs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Tasks": {
+      "main": [
+        [
+          {
+            "node": "Format Daily Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Agent Runs": {
+      "main": [
+        [
+          {
+            "node": "Format Daily Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Daily Brief": {
+      "main": [
+        [
+          {
+            "node": "Send to Kaos Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "errorWorkflow": "imidBGxYeGhvlyCK",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

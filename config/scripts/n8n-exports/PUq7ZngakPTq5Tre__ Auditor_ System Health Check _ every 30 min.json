@@ -1,0 +1,56 @@
+{
+  "id": "PUq7ZngakPTq5Tre",
+  "name": "\ud83d\udd0d Auditor: System Health Check \u2014 every 30 min",
+  "active": false,
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Every 30 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "health",
+      "name": "System Health Check",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Auditor System Health Check \u2014 every 30 min\n// Catches broken automations, misassigned issues, rule violations\n// Posts alerts to #agent-logs only when something is wrong\n\nconst SK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';\nconst SUPA = 'https://twthgapiouiqhavrcnry.supabase.co';\nconst h = { apikey: SK, Authorization: 'Bearer ' + SK };\nconst MC_API = 'http://localhost:3000/api/issues';\nconst N8N_KEY = 'n8n_api_34e5ba0e4da8b759e75b310a8c014c4de0275375eba302bdf87d2e7e6dd2adac';\nconst DISCORD_TOKEN = process.env.DISCORD_TOKEN || '';\nconst ALERT_CHANNEL = '1485333335868834063'; // #alerts\n\nconst alerts = [];\nconst now = Date.now();\n\n// \u2500\u2500 1. Check critical n8n workflows \u2500\u2500\nconst CRITICAL_WORKFLOWS = [\n  { id: 'ypkSfCq0LZ6eXDvM', name: 'Auto-Activate on Open', maxErrorStreak: 3 },\n  { id: '0EwpBAD0npXKhUrW', name: 'Tester Loop', maxErrorStreak: 3 },\n  { id: 'tgwln7Ra04hKhbeC', name: 'In-Review Trigger', maxErrorStreak: 3 },\n  { id: 'TYNZOhpgz5FHaog5', name: 'KAOS Reroute', maxErrorStreak: 3 },\n  { id: 'ao4Y4wryLRGpa6F5', name: 'Auto-Trigger Deployer', maxErrorStreak: 3 },\n  { id: 'huC16MvkjX5FiI3f', name: 'PR Merge \u2192 Released', maxErrorStreak: 3 },\n];\n\nfor (const wf of CRITICAL_WORKFLOWS) {\n  try {\n    const runs = await helpers.httpRequest({\n      method: 'GET',\n      url: 'http://localhost:5678/api/v1/executions?workflowId=' + wf.id + '&limit=5',\n      headers: { 'X-N8N-API-KEY': N8N_KEY }\n    });\n    const execs = runs.data || [];\n    if (!execs.length) { alerts.push('\u26a0\ufe0f **' + wf.name + '**: no executions found'); continue; }\n    const errors = execs.filter(e => e.status === 'error').length;\n    if (errors >= wf.maxErrorStreak) {\n      alerts.push('\ud83d\udd34 **' + wf.name + '**: ' + errors + '/' + execs.length + ' recent runs errored');\n    }\n    // Check if workflow is active\n    const wfData = await helpers.httpRequest({\n      method: 'GET', url: 'http://localhost:5678/api/v1/workflows/' + wf.id,\n      headers: { 'X-N8N-API-KEY': N8N_KEY }\n    });\n    if (!wfData.active) alerts.push('\ud83d\udd34 **' + wf.name + '**: workflow is INACTIVE \u2014 should be ON');\n  } catch(e) {\n    alerts.push('\u274c **' + wf.name + '**: health check failed \u2014 ' + e.message);\n  }\n}\n\n// \u2500\u2500 2. Check for issues misassigned to main/kaos-claude (non-epic, active) \u2500\u2500\nconst ACTIVE = ['open','in_progress','code_review','in_review','product_review','approved'];\nconst misassigned = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=in.(' + ACTIVE.join(',') + ')&assignee=in.(main,kaos-claude)&type=neq.epic&select=task_key,title,type,assignee,status',\n  headers: h\n});\nif (Array.isArray(misassigned) && misassigned.length > 0) {\n  alerts.push('\ud83d\udfe1 **Misassigned to KAOS**: ' + misassigned.length + ' non-epic issues assigned to main/kaos-claude: ' +\n    misassigned.map(i => '`' + i.task_key + '`(' + i.type + ')').join(', '));\n}\n\n// \u2500\u2500 3. Issues stuck in code_review > 2h with no tester activity \u2500\u2500\nconst twoHoursAgo = new Date(now - 2 * 60 * 60 * 1000).toISOString();\nconst stuckReview = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=eq.code_review&tester_status=eq.pending&updated_at=lt.' + twoHoursAgo + '&select=task_key,title,assignee,updated_at&limit=5',\n  headers: h\n});\nif (Array.isArray(stuckReview) && stuckReview.length > 0) {\n  alerts.push('\ud83d\udfe1 **Stuck in code_review >2h**: ' + stuckReview.map(i => '`' + i.task_key + '`').join(', ') + ' \u2014 tester not responding');\n}\n\n// \u2500\u2500 4. Issues in open with started_at set but no in_progress (stuck trigger) \u2500\u2500\nconst stuckOpen = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=eq.open&started_at=not.is.null&select=task_key,assignee,started_at&limit=10',\n  headers: h\n});\nif (Array.isArray(stuckOpen) && stuckOpen.length > 0) {\n  alerts.push('\ud83d\udfe1 **Open issues with started_at set** (' + stuckOpen.length + '): trigger fired but agent never claimed \u2014 ' +\n    stuckOpen.map(i => '`' + i.task_key + '`(' + i.assignee + ')').join(', '));\n}\n\n// \u2500\u2500 5. PR Window server health \u2500\u2500\ntry {\n  const prHealth = await helpers.httpRequest({ method: 'GET', url: 'http://127.0.0.1:8787/health' });\n  if (!prHealth.ok) alerts.push('\ud83d\udd34 **PR Window server**: health check failed');\n} catch(e) {\n  alerts.push('\ud83d\udd34 **PR Window server (8787)**: not responding \u2014 LaunchAgent may be down');\n}\n\n// \u2500\u2500 6. In_progress issues stuck >4h (stale lane) \u2500\u2500\nconst fourHoursAgo = new Date(now - 4 * 60 * 60 * 1000).toISOString();\nconst stuckInProgress = await helpers.httpRequest({\n  method: 'GET',\n  url: SUPA + '/rest/v1/issues?status=eq.in_progress&started_at=lt.' + fourHoursAgo + '&select=task_key,assignee,started_at&limit=5',\n  headers: h\n});\nif (Array.isArray(stuckInProgress) && stuckInProgress.length > 0) {\n  alerts.push('\ud83d\udfe1 **In_progress >4h**: ' + stuckInProgress.map(i => '`' + i.task_key + '`(' + i.assignee + ')').join(', '));\n}\n\n\n\n// \u2500\u2500 Auto-fix actions \u2500\u2500\n// 1. Auto-reroute misassigned issues (don't wait for KAOS reroute workflow)\nif (Array.isArray(misassigned) && misassigned.length > 0) {\n  const TYPE_AGENT = { task: 'builder', bug: 'builder', feature: 'po', ops: 'ops', research: 'scout', review: 'tester' };\n  for (const issue of misassigned) {\n    const correct = TYPE_AGENT[issue.type];\n    if (correct) {\n      await helpers.httpRequest({\n        method: 'PATCH',\n        url: SUPA + '/rest/v1/issues?id=eq.' + issue.id,\n        headers: { ...h, 'Content-Type': 'application/json', Prefer: 'return=minimal' },\n        body: JSON.stringify({ assignee: correct })\n      });\n    }\n  }\n}\n\n// 2. Auto-trigger tester for stuck code_review issues\nif (Array.isArray(stuckReview) && stuckReview.length > 0) {\n  try {\n    await helpers.httpRequest({\n      method: 'POST', url: 'http://127.0.0.1:8787/trigger-agent',\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({ agentId: 'tester', message: 'Issues stuck in code_review need your review: ' + stuckReview.map(i => i.task_key).join(', ') + '. Check http://localhost:3000/api/issues for details. PATCH with tester_status=passed|failed + tester_notes.' })\n    });\n  } catch(e) {}\n}\n\n// 3. Create an issue for critical workflow failures (error streak >= 3)\nconst criticalWfFailures = alerts.filter(a => a.startsWith('\ud83d\udd34 **') && a.includes('errored'));\nfor (const failure of criticalWfFailures) {\n  const wfName = failure.match(/\\*\\*(.+?)\\*\\*/)?.[1] || 'unknown';\n  try {\n    await helpers.httpRequest({\n      method: 'POST', url: MC_API,\n      headers: { 'Content-Type': 'application/json' },\n      body: JSON.stringify({\n        title: 'CRITICAL: n8n workflow \"' + wfName + '\" error streak detected',\n        description: failure,\n        type: 'ops', project: 'Todero', priority: 'critical',\n        assignee: 'ops', status: 'open', sprint: new Date().toISOString().split('T')[0],\n        severity: 'S1', reviewer: 'auditor', owner: 'ops',\n        acceptance_criteria: 'Fix the workflow error. Verify last 3 runs succeed.'\n      })\n    });\n  } catch(e) {}\n}\n\n// \u2500\u2500 Post results \u2500\u2500\nif (alerts.length === 0) {\n  return [{ json: { status: 'healthy', checks: 6, alerts: 0 } }];\n}\n\nconst msg = '\ud83d\udd0d **Auditor Health Check** \u2014 ' + alerts.length + ' issue(s) found:\\n\\n' + alerts.join('\\n') + '\\n\\n_' + new Date().toLocaleString('en-US', {timeZone:'America/New_York'}) + '_';\n\nif (DISCORD_TOKEN) {\n  await helpers.httpRequest({\n    method: 'POST',\n    url: 'https://discord.com/api/v10/channels/' + ALERT_CHANNEL + '/messages',\n    headers: { Authorization: 'Bot ' + DISCORD_TOKEN, 'Content-Type': 'application/json' },\n    body: JSON.stringify({ content: msg })\n  });\n}\n\nreturn [{ json: { status: 'alerts', count: alerts.length, alerts } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Every 30 min": {
+      "main": [
+        [
+          {
+            "node": "System Health Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}
