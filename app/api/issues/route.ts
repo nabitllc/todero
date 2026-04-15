@@ -1409,11 +1409,17 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // Auto-clear is_blocked when an issue transitions to any new status.
-  // If it's moving through the pipeline, it's no longer blocked.
-  if (fields.status && fields.status !== before?.status && before?.is_blocked) {
-    fields.is_blocked = false
-    console.log(`[unblock] ${before?.task_key} unblocked on status transition ${before?.status}→${fields.status}`)
+  // Auto-clear is_blocked + blocked_by when an issue transitions to any new status.
+  // If it's moving through the pipeline, it's no longer blocked by anything.
+  if (fields.status && fields.status !== before?.status) {
+    if (before?.is_blocked) {
+      fields.is_blocked = false
+      console.log(`[unblock] ${before?.task_key} is_blocked cleared on transition ${before?.status}→${fields.status}`)
+    }
+    if (before?.blocked_by) {
+      fields.blocked_by = null
+      console.log(`[unblock] ${before?.task_key} blocked_by cleared on transition ${before?.status}→${fields.status}`)
+    }
   }
 
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
