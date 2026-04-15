@@ -120,7 +120,7 @@ Rules:
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Verify code changes, run npm run build. If passes: PATCH to approved with test_status=passed + reviewer_notes. If fails: PATCH back to open with reviewer_notes explaining what failed.',
+    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Check resolution_type to understand what kind of change was made (code_change = code diff to verify; config_change = config/env change; research_completed = document review; etc.). Run npm run build. If passes: PATCH to approved with test_status=passed + reviewer_notes. If fails: PATCH back to open with reviewer_notes explaining what failed.',
   },
 
   designer: {
@@ -135,7 +135,7 @@ Rules:
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check responsive layout, accessibility, design system compliance. If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
+    promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check resolution_type to understand what changed (code_change = UI code touched; config_change = settings only, less visual review needed). Check responsive layout, accessibility, design system compliance. If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
   },
 
   // TOD-XXX (2026-04-10): PO promptPrefix updated to fix sprint-date hygiene.
@@ -178,7 +178,8 @@ Steps:
 3. Assess: are ALL acceptance criteria met by the closed child issues?
 
 If YES (feature is done — all children closed, all AC met):
-- PATCH the feature: { status: "closed", resolution_type: "completed", implementation_notes: "Feature complete. All AC met: [brief summary]" }
+- PATCH the feature: { status: "closed", resolution_type: "completed", implementation_notes: "Feature complete. All AC met: [brief summary]", closing_notes: "All child issues closed. AC verified: [brief]" }
+- resolution_type is REQUIRED to close — always include it. "completed" is correct for features.
 
 If NO (children still open, OR gaps in AC coverage):
 - If children are already open: PATCH the feature back to underway: { status: "underway", reviewer_notes: "Feature reverted — child [TOD-XXX] still open: [title]" }
@@ -219,7 +220,7 @@ After finishing, call POST /api/run-agent?agent=po to claim next.`,
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Auditor. Verify this released issue: check PR was merged, build passes, acceptance criteria met, no regressions. If all good: PATCH to closed. If issues found: create a new bug issue, then PATCH current to closed.',
+    promptPrefix: 'You are Auditor. Verify this released issue: check PR was merged, build passes, acceptance criteria met, no regressions. Check resolution_type — it tells you what to verify (code_change = check the diff/build; config_change = check config; research_completed = check docs). When closing: PATCH { status: "closed", resolution_type: "<keep existing or correct it>", closing_notes: "Audit outcome: ..." }. resolution_type is REQUIRED to close — the API will reject without it. If issues found: create a new bug issue, then PATCH current to closed with closing_notes explaining what was found.',
   },
 
   deployer: {

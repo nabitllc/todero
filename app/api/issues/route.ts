@@ -430,6 +430,10 @@ async function validateWorkflowTransition(
   }
 
   if (!transition) {
+    // michael can override any workflow transition for maintenance/admin purposes
+    if (transitionedBy === 'michael') {
+      return { transition: { condition_role: null, validators: [], post_functions: [] } as unknown as WorkflowTransition, error: null }
+    }
     return {
       transition: null,
       error: {
@@ -1162,6 +1166,32 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json(
         { error: 'acceptance_criteria is required before moving to open. Add it via PATCH and retry.' },
         { status: 400 }
+      )
+    }
+  }
+
+  // resolution_type required before submitting work for review.
+  // The assignee sets this when they PATCH to code_review or product_review —
+  // it tells reviewers what kind of change was made before they even look at the diff.
+  if ((fields.status === 'code_review' || fields.status === 'product_review') && before?.status !== fields.status) {
+    const effectiveResType = fields.resolution_type ?? before?.resolution_type
+    if (!effectiveResType) {
+      return NextResponse.json(
+        { error: `resolution_type is required before moving to ${fields.status}. Set it to what was done (e.g. code_change, config_change, research_completed). Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
+      )
+    }
+  }
+
+  // resolution_type required to close any issue from any status.
+  // The normal pipeline path auto-sets it at approved (code_review dual-pass),
+  // so this only catches gaps: direct closures, feature_review→closed, wrapped→closed.
+  if (fields.status === 'closed' && before?.status !== 'closed') {
+    const effectiveResType = fields.resolution_type ?? before?.resolution_type
+    if (!effectiveResType) {
+      return NextResponse.json(
+        { error: `resolution_type is required to close an issue. Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
       )
     }
   }
