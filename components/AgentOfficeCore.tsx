@@ -1027,7 +1027,7 @@ export default function AgentOffice(){
       }catch(e){}
     };
     fetchTasks();
-    const t=setInterval(fetchTasks,30000);
+    const t=setInterval(fetchTasks,60000); // raised 30s→60s (Supabase egress)
     return()=>clearInterval(t);
   },[]);
 
@@ -1072,7 +1072,7 @@ export default function AgentOffice(){
       }catch(e){}
     };
     pollRuns();
-    const t=setInterval(pollRuns,10000);
+    const t=setInterval(pollRuns,30000); // raised 10s→30s (Supabase egress)
     return()=>{cancelled=true;clearInterval(t);};
   },[addFeed]);
 
@@ -1267,7 +1267,7 @@ export default function AgentOffice(){
         es?.close();es=null;
         if(!pollInterval){
           poll();
-          pollInterval=setInterval(poll,5000);
+          pollInterval=setInterval(poll,30000); // raised 5s→30s (Supabase egress)
         }
       };
     }catch(e3){
