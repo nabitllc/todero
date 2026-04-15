@@ -1114,7 +1114,19 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  /* ── Open-cap enforcement removed — was blocking pipeline throughput ── */
+  // TOD-1199: backlog-first policy — reject status=open when 10+ issues already open
+  if (fields.status === 'open' && before?.status !== 'open') {
+    const { count: openCount, error: countErr } = await createAdminClient()
+      .from('issues')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open')
+    if (!countErr && openCount !== null && openCount >= 10) {
+      return NextResponse.json(
+        { error: 'Open cap reached: cannot move issue to open while 10 or more issues are already open.', open_count: openCount },
+        { status: 409 }
+      )
+    }
+  }
 
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
