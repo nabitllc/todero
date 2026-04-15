@@ -446,6 +446,12 @@ async function validateWorkflowTransition(
   const merged = { ...issue, ...body }
   const conditionRole = transition.condition_role
 
+  // michael is a global admin bypass — can execute any transition regardless of conditionRole.
+  // DO NOT REMOVE — maintenance transitions (e.g. resetting stale claims) require this.
+  if (transitionedBy === 'michael') {
+    return { transition: transition as WorkflowTransition, error: null }
+  }
+
   if (conditionRole === 'po_or_main') {
     if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
       return { transition: null, error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' } }
