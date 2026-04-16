@@ -45,61 +45,118 @@ export async function GET(req: Request) {
 
   const db = createAdminClient()
   const now = Date.now()
-  const STALE_MS = 30 * 60 * 1000 // 30 min
-  const staleCutoff = new Date(now - STALE_MS).toISOString()
 
-  // ── Query 1: stale claims only ───────────────────────────────────────────────
-  // Fetch ONLY issues that are in a working status AND started_at is old.
-  // In a healthy system this returns 0 rows. Avoids full table scan.
-  const { data: staleIssues, error: staleErr } = await db
-    .from('issues')
-    .select('id,task_key,assignee,status,started_at')
-    .in('status', WORKING_STATUSES)
-    .not('started_at', 'is', null)
-    .lt('started_at', staleCutoff)
+  // Cutoffs — tiered by liveness signal quality:
+  //   HEARTBEAT: agent writes heartbeat_at every ~5 min. If 10 min stale → dead.
+  //   NO_COMMIT:  started_at old + no commit_sha → agent died before any work. 20 min.
+  //   FALLBACK:   started_at old, has commit_sha → agent did some work, be generous. 30 min.
+  //   GHOST:      in_progress with null started_at → 30 min since updated_at.
+  const HEARTBEAT_MS  = 10 * 60 * 1000
+  const NO_COMMIT_MS  = 20 * 60 * 1000
+  const FALLBACK_MS   = 30 * 60 * 1000
 
-  if (staleErr) {
-    return NextResponse.json({ error: staleErr.message }, { status: 500 })
-  }
+  const heartbeatCutoff = new Date(now - HEARTBEAT_MS).toISOString()
+  const noCommitCutoff  = new Date(now - NO_COMMIT_MS).toISOString()
+  const fallbackCutoff  = new Date(now - FALLBACK_MS).toISOString()
 
   const cleared: string[] = []
 
-  for (const issue of staleIssues ?? []) {
+  // ── Query 1a: dead by heartbeat ──────────────────────────────────────────
+  // Agent was writing heartbeats but stopped > 10 min ago → process is dead.
+  const { data: deadHeartbeat, error: hbErr } = await db
+    .from('issues')
+    .select('id,task_key,assignee,status,started_at,heartbeat_at,commit_sha')
+    .in('status', WORKING_STATUSES)
+    .not('heartbeat_at', 'is', null)
+    .lt('heartbeat_at', heartbeatCutoff)
+
+  if (hbErr) return NextResponse.json({ error: hbErr.message }, { status: 500 })
+
+  for (const issue of deadHeartbeat ?? []) {
     await db.from('issues').update({
-      status: 'open',          // return to queue so another agent can claim it
+      status: 'open',
+      started_at: null,
+      heartbeat_at: null,
+      worked_by: null,
+      transitioned_by: 'cron-watchdog',
+    }).eq('id', issue.id)
+    cleared.push(issue.task_key)
+    console.log(`[watchdog] dead heartbeat → open: ${issue.task_key} (${issue.assignee}, last hb ${issue.heartbeat_at})`)
+  }
+
+  // ── Query 1b: stale — no heartbeat, no commit_sha (20 min) ───────────────
+  // Agent claimed the issue but never wrote a heartbeat or committed.
+  // Almost certainly spawned and died immediately.
+  const { data: staleNoCommit, error: ncErr } = await db
+    .from('issues')
+    .select('id,task_key,assignee,status,started_at')
+    .in('status', WORKING_STATUSES)
+    .is('heartbeat_at', null)
+    .is('commit_sha', null)
+    .not('started_at', 'is', null)
+    .lt('started_at', noCommitCutoff)
+
+  if (ncErr) return NextResponse.json({ error: ncErr.message }, { status: 500 })
+
+  for (const issue of staleNoCommit ?? []) {
+    await db.from('issues').update({
+      status: 'open',
       started_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
     }).eq('id', issue.id)
     cleared.push(issue.task_key)
-    console.log(`[watchdog] cleared stale claim → open: ${issue.task_key} (${issue.assignee}, was ${issue.status}, started ${issue.started_at})`)
+    console.log(`[watchdog] stale no-commit → open: ${issue.task_key} (${issue.assignee}, started ${issue.started_at})`)
   }
 
-  // ── Query 1b: ghost claims — in_progress with null started_at ────────────
-  // SQL null < timestamp is always false, so Query 1 misses these entirely.
-  // Only in_progress is targeted — other statuses (approved, released, refined)
-  // legitimately have null started_at (deployer/auditor/PO use pickupStatus ===
-  // workingStatus and rely on wipExtraFilter to avoid deadlocking their queues).
+  // ── Query 1c: stale — has commit_sha but no heartbeat (30 min) ───────────
+  // Agent did some work (commit exists) but stopped. Give 30 min grace in case
+  // agent is still running a long build/test step without writing heartbeats.
+  const { data: staleWithCommit, error: wcErr } = await db
+    .from('issues')
+    .select('id,task_key,assignee,status,started_at,commit_sha')
+    .in('status', WORKING_STATUSES)
+    .is('heartbeat_at', null)
+    .not('commit_sha', 'is', null)
+    .not('started_at', 'is', null)
+    .lt('started_at', fallbackCutoff)
+
+  if (wcErr) return NextResponse.json({ error: wcErr.message }, { status: 500 })
+
+  for (const issue of staleWithCommit ?? []) {
+    await db.from('issues').update({
+      status: 'open',
+      started_at: null,
+      worked_by: null,
+      transitioned_by: 'cron-watchdog',
+    }).eq('id', issue.id)
+    cleared.push(issue.task_key)
+    console.log(`[watchdog] stale with-commit → open: ${issue.task_key} (${issue.assignee}, commit ${issue.commit_sha?.slice(0,8)}, started ${issue.started_at})`)
+  }
+
+  // ── Query 1d: ghost claims — in_progress with null started_at (30 min) ───
+  // SQL null < timestamp is always false, so above queries miss these entirely.
+  // Only in_progress targeted — other statuses legitimately have null started_at
+  // (deployer/auditor/PO use wipExtraFilter to distinguish claimed vs queued).
   const { data: ghostClaims, error: ghostErr } = await db
     .from('issues')
     .select('id,task_key,assignee,status,updated_at')
     .eq('status', 'in_progress')
     .is('started_at', null)
-    .lt('updated_at', staleCutoff)
+    .lt('updated_at', fallbackCutoff)
 
-  if (ghostErr) {
-    return NextResponse.json({ error: ghostErr.message }, { status: 500 })
-  }
+  if (ghostErr) return NextResponse.json({ error: ghostErr.message }, { status: 500 })
 
   for (const issue of ghostClaims ?? []) {
     await db.from('issues').update({
-      status: 'open',          // ghost claims had no started_at — return to queue
+      status: 'open',
       started_at: null,
+      heartbeat_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
     }).eq('id', issue.id)
     cleared.push(issue.task_key)
-    console.log(`[watchdog] cleared ghost claim → open: ${issue.task_key} (${issue.assignee}, in_progress, updated ${issue.updated_at})`)
+    console.log(`[watchdog] ghost claim → open: ${issue.task_key} (${issue.assignee}, updated ${issue.updated_at})`)
   }
 
   // ── Query 2: kick idle agents ─────────────────────────────────────────────
