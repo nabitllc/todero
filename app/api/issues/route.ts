@@ -1184,6 +1184,25 @@ export async function PATCH(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auto-reassign: if a reviewer agent (tester, designer, auditor, deployer, po)
+    // is rejecting back to open, reset the assignee to the correct implementing agent.
+    // This prevents issues from being permanently stuck when reviewers don't set assignee.
+    const REVIEWER_ONLY_AGENTS = ['tester', 'designer', 'auditor', 'deployer', 'po']
+    const currentAssignee = fields.assignee ?? before?.assignee
+    if (currentAssignee && REVIEWER_ONLY_AGENTS.includes(currentAssignee) && !fields.assignee) {
+      const issueType = (fields.type ?? before?.type ?? 'task') as string
+      const issueProject = (fields.project ?? before?.project ?? 'Todero') as string
+      if (issueProject === 'Kemuni') {
+        fields.assignee = 'kemuni-sme'
+      } else if (issueProject === 'Vespera') {
+        fields.assignee = 'vespera-sme'
+      } else if (issueType === 'ops') {
+        fields.assignee = 'ops'
+      } else {
+        fields.assignee = 'builder'
+      }
+    }
   }
 
   // resolution_type + implementation_notes required before submitting work for review.
