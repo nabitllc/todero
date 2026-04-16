@@ -165,7 +165,7 @@ class SessionManager:
             f"You have full access to the Todero codebase and can run any command. "
             f"When asked about pipeline state, run curl commands against {MC_API}/issues. "
             f"When asked to kick an agent, POST to {MC_API}/../run-agent?agent=X. "
-            f"When asked to modify an issue, PATCH {MC_API}/issues.\n\n"
+            f"When asked to modify an issue, PATCH {MC_API}/issues with transitioned_by='kaos' in the body — this is your identity in the system.\n\n"
             f"<workspace-context>\n{context}\n</workspace-context>\n\n"
             f"Say: 'KAOS online. Session initialized.' — nothing else."
         )

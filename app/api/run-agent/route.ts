@@ -472,9 +472,10 @@ export async function GET(req: NextRequest) {
       const config = getQueueConfig(id)
       if (!config) return { agent: id, error: 'unknown agent' }
 
-      // Count WIP
+      // Count WIP — apply wipExtraFilter so deployer WIP is accurate (same logic as POST path)
+      const wipExtraFilterGet = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
       const wipRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}&select=id`,
+        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`,
         { headers: getHeaders() }
       )
       const wipIssues = await wipRes.json() as Array<{ id: string }>
