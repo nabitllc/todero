@@ -79,6 +79,8 @@ PO picks up features/tasks/bugs from `backlog`. For features, PO writes 1–5 ch
 - `sprint` (today)
 - `assignee: 'builder'` (or ops, scout, etc. if routed differently)
 
+**PO assignment rule:** Before setting assignee, check agent load using `skills/issue-routing/SKILL.md` → "Agent Capability Matrix". If builder has > 3 in_progress issues, flag in implementation_notes and consider ops/scout for eligible tasks.
+
 ### Tier 3 — Task → Sub-tasks (Builder via Inbox only)
 
 Tasks shouldn't be split mid-execution. If a Builder realizes a task is too large:

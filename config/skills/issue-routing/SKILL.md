@@ -87,6 +87,64 @@ When a P0/P1 issue moves to `in_review`, `scripts/review-gate.py` auto-creates t
 
 **Idempotency:** Children are matched by title prefix + parent_id. The script won't create duplicates.
 
+## Agent Capability Matrix
+
+Use this before assigning any issue. Match issue type/domain to agent skills, then check load.
+
+| Agent | Domains / Skills | Issue Types | Max In-Progress |
+|---|---|---|---|
+| builder | TypeScript, Next.js, React, Tailwind, Supabase, API routes | task, bug | 3 |
+| ops | LaunchAgents, cron, shell scripts, infra config, Cloudflare | ops | 2 |
+| scout | research, competitive analysis, documentation, data gathering | task (research) | 2 |
+| tester | QA review, AC verification, regression testing | code_review children | 4 |
+| designer | UI/UX audit, layout review, Tailwind classes, accessibility | code_review children | 4 |
+| po | issue structuring, DoR review, AC writing, backlog refinement | feature decomposition | 1 |
+| kemuni-sme | Kemuni product domain, user flows, feature definition | feature (Kemuni) | 2 |
+| vespera-sme | Vespera product domain, user flows, feature definition | feature (Vespera) | 2 |
+| todero-sme | Todero platform, KAOS, agent pipeline, issue lifecycle | feature (Todero) | 2 |
+| infra-sme | Infrastructure, deployment, DevOps, monitoring | feature (Infrastructure) | 2 |
+
+### Load Check Query
+
+Before assigning an issue to `builder` (or any agent), check their current load:
+
+```bash
+# Count in_progress issues for a specific agent
+curl -s "http://localhost:3000/api/issues" | python3 -c "
+import json, sys
+agent = 'builder'  # change as needed
+d = json.load(sys.stdin)
+count = sum(1 for i in d if i.get('assignee') == agent and i.get('status') == 'in_progress')
+print(f'{agent} in_progress: {count}')
+"
+```
+
+All agents at once:
+```bash
+curl -s "http://localhost:3000/api/issues" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+agents = ['builder', 'ops', 'scout', 'tester', 'designer', 'po', 'kemuni-sme', 'vespera-sme', 'todero-sme', 'infra-sme']
+in_prog = [i for i in d if i.get('status') == 'in_progress']
+for a in agents:
+    count = sum(1 for i in in_prog if i.get('assignee') == a)
+    flag = ' ⚠️ OVERLOADED' if count > {'builder':3,'ops':2,'scout':2}.get(a,4) else ''
+    print(f'{a}: {count}{flag}')
+"
+```
+
+### Load-Aware Assignment Rules
+
+When PO assigns a task to builder and builder has **> 3 in_progress issues**:
+1. **Flag in the issue:** add `[LOAD:HIGH]` prefix to `implementation_notes` when creating or refining
+2. **Consider ops** if the task is infra-adjacent (scripts, config, cron) — ops max is 2 but scope is narrower
+3. **Do NOT block refinement** — always finish refining and move to `refined`; the queue-refill cron handles activation timing and will naturally pace activation when builder is loaded
+
+When builder has ≥ 5 in_progress (critical overload):
+- PATCH the issue to `refined` (not `open`) to hold it in queue
+- Add to `implementation_notes`: "Builder at critical load (≥5 in_progress) — held in refined, activate when load drops"
+- Post note to #agent-logs channel if accessible
+
 ## Validation Rules
 
 - Task: MUST have parent_id OR standalone=true in description
