@@ -53,4 +53,10 @@ for AGENT in $AGENTS; do
   fi
 done
 
+# Queue refill: promote refined → open so agents always have work.
+# The endpoint checks each lane; if open count < QUEUE_MIN (5), promotes refined issues.
+REFILL=$(curl -sf -X POST "http://localhost:3000/api/queue-refill" 2>/dev/null || echo '{"ok":false,"promoted":[]}')
+PROMOTED=$(echo "$REFILL" | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); p=d.get('promoted',[]); print(', '.join(p) if p else 'none')" 2>/dev/null || echo "?")
+log "queue-refill: promoted [$PROMOTED]"
+
 log "Done."
