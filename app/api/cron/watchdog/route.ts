@@ -74,6 +74,32 @@ export async function GET(req: Request) {
     console.log(`[watchdog] cleared stale claim: ${issue.task_key} (${issue.assignee}, ${issue.status}, started ${issue.started_at})`)
   }
 
+  // ── Query 1b: ghost claims — in_progress with null started_at ────────────
+  // SQL null < timestamp is always false, so Query 1 misses these entirely.
+  // Only in_progress is targeted — other statuses (approved, released, refined)
+  // legitimately have null started_at (deployer/auditor/PO use pickupStatus ===
+  // workingStatus and rely on wipExtraFilter to avoid deadlocking their queues).
+  const { data: ghostClaims, error: ghostErr } = await db
+    .from('issues')
+    .select('id,task_key,assignee,status,updated_at')
+    .eq('status', 'in_progress')
+    .is('started_at', null)
+    .lt('updated_at', staleCutoff)
+
+  if (ghostErr) {
+    return NextResponse.json({ error: ghostErr.message }, { status: 500 })
+  }
+
+  for (const issue of ghostClaims ?? []) {
+    await db.from('issues').update({
+      started_at: null,
+      worked_by: null,
+      transitioned_by: 'cron-watchdog',
+    }).eq('id', issue.id)
+    cleared.push(issue.task_key)
+    console.log(`[watchdog] cleared ghost claim (null started_at): ${issue.task_key} (${issue.assignee}, in_progress, updated ${issue.updated_at})`)
+  }
+
   // ── Query 2: kick idle agents ─────────────────────────────────────────────
   // Delegate to run-agent for each lane. run-agent handles:
   //   - WIP limit check (agent already busy? returns 200 with message, not an error)
