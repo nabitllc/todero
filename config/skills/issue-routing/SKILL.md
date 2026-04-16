@@ -76,7 +76,7 @@ All issues go through Tester + Designer. No skipping.
 
 ## P0/P1 Review Gate (MC-369)
 
-When a P0/P1 issue moves to `in_review`, `scripts/review-gate.py` auto-creates two child review issues:
+When a P0/P1 issue moves to `in_review`, the workflow post-function (`activate_code_review_agents`) auto-creates two child review issues:
 
 | Child | Assignee | Title Prefix | Purpose |
 |---|---|---|---|

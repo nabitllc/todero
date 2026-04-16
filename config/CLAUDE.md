@@ -53,10 +53,8 @@ UI, and issue board at `http://localhost:3000`.
 | Script | What it does |
 |---|---|
 | `scripts/builder-loop.sh` | Spawns Claude Code as Builder every 10min when open issues exist |
-| `scripts/queue-runner.py` | Per-agent queue runner — claims and dispatches issues via Claude Code |
 | `scripts/queue-watchdog.sh` | Restarts dead runners, alerts on missing heartbeats |
 | `scripts/start-queue-runner.sh` | Launches a queue runner for a given agent |
-| `scripts/review-gate.py` | Auto-creates Tester+Designer review children for P0/P1 issues |
 | `scripts/standup-report.py` | Generates daily standup summary |
 | `scripts/check-claude-limit.sh` | Checks if Claude API is rate-limited |
 
