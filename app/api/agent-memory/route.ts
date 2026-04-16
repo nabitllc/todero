@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-)
+const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+function getSupabase() {
+  return createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '')
+}
 
 export async function GET(req: NextRequest) {
+  const supabase = getSupabase()
   const agentId = req.nextUrl.searchParams.get('agent_id')
   const memoryType = req.nextUrl.searchParams.get('type')
   const date = req.nextUrl.searchParams.get('date')
 
-  let query = supabase.from('agent_memory').select('*').order('updated_at', { ascending: false })
+  let query = supabase.from('agent_memory_files').select('*').order('updated_at', { ascending: false })
   if (agentId) query = query.eq('agent_id', agentId)
   if (memoryType) query = query.eq('memory_type', memoryType)
   if (date) query = query.eq('date_key', date)
@@ -35,8 +36,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'agent_id, memory_type, content are required' }, { status: 400 })
   }
 
+  const supabase = getSupabase()
   const { data, error } = await supabase
-    .from('agent_memory')
+    .from('agent_memory_files')
     .upsert({
       agent_id: body.agent_id,
       memory_type: body.memory_type,

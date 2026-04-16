@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-)
+const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+function getSupabase() {
+  return createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '')
+}
 
 export async function GET(req: NextRequest) {
+  const supabase = getSupabase()
   const agentId = req.nextUrl.searchParams.get('agent_id')
   const docType = req.nextUrl.searchParams.get('doc_type')
 

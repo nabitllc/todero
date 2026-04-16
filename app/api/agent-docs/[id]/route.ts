@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-)
+const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+function getSupabase() {
+  return createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '')
+}
 
 function authOk(req: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -13,6 +13,7 @@ function authOk(req: NextRequest) {
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from('agent_documents')
     .select('*')
@@ -28,6 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const body = await req.json().catch(() => ({})) as { content?: string; updated_by?: string }
   if (!body.content) return NextResponse.json({ error: 'content is required' }, { status: 400 })
 
+  const supabase = getSupabase()
   const { data, error } = await supabase
     .from('agent_documents')
     .update({ content: body.content, updated_by: body.updated_by ?? 'api', updated_at: new Date().toISOString() })

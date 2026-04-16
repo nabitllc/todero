@@ -44,7 +44,7 @@ async function upsertDoc(agent_id: string, doc_type: string, slug: string, fileP
 
 async function upsertMemory(agent_id: string, memory_type: string, date_key: string | null, content: string) {
   if (!content.trim()) return
-  const res = await fetch(`${SUPA_URL}/rest/v1/agent_memory`, {
+  const res = await fetch(`${SUPA_URL}/rest/v1/agent_memory_files`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ agent_id, memory_type, date_key, content, }),

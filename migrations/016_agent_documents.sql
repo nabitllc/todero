@@ -43,3 +43,9 @@ CREATE TABLE IF NOT EXISTS agent_memory (
   updated_at  timestamptz DEFAULT now(),
   UNIQUE (agent_id, memory_type, date_key)
 );
+
+-- NOTE: agent_memory table already exists with a different schema (key/value jsonb).
+-- agent_memory_files is the new table for storing agent identity/memory file contents.
+-- Created separately via Supabase dashboard due to schema cache conflict.
+-- SQL: CREATE TABLE IF NOT EXISTS agent_memory_files (...)
+-- See seed-agent-db.ts for full schema.
