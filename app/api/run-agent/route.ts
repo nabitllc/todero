@@ -344,6 +344,16 @@ Expected response: {"ok":true}. If you get an error, keep working — heartbeat 
   const selfChain = `\n\nAFTER the PATCH succeeds, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} to auto-claim your next task.`
   const loopBreaker = `\n\nIF same error 3 times: STOP, PATCH back to open with notes explaining the blocker. Do NOT retry infinitely.`
 
+  const worktreeGuard = `
+
+🛑 WORKTREE RULES — node_modules is SHARED 🛑
+You are running inside a git worktree. Your node_modules directory is a SYMLINK to ~/todero/node_modules.
+- ❌ DO NOT run \`npm install\` or \`npm ci\` — it replaces the symlink with an incomplete local install, breaking ALL other agents
+- ❌ DO NOT run \`npm install <package>\` — if a package is missing, PATCH back to open with a note asking KAOS to install it
+- ✅ \`npm run build\` is fine — it uses the existing symlinked node_modules
+- ✅ If build fails with "Cannot find module X", check ~/todero/node_modules/X directly; if truly missing, PATCH back to open
+- ✅ Stay in your worktree directory — do NOT cd to ~/todero for any build commands`
+
   // TOD-796 follow-up: point agents at the rest of the skill library.
   // The universal bundle (proactivity/execution, self-improving/corrections, etc.) is
   // already inlined in ${context} above. This note tells the agent where to look for
@@ -378,6 +388,7 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     heartbeatInstruction,
     transitionGate,
     pushGate,
+    worktreeGuard,
     loopBreaker,
     selfChain,
   ].join('\n')

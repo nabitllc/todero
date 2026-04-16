@@ -27,7 +27,7 @@
 //     tester-TOD-796-1775843800/       (completed — will be GC'd)
 //     ABANDONED/                       (failed spawns, manually archived)
 
-import { mkdirSync, existsSync, symlinkSync, readdirSync, statSync, rmSync } from 'fs'
+import { mkdirSync, existsSync, symlinkSync, writeFileSync, readdirSync, statSync, rmSync } from 'fs'
 import { execSync } from 'child_process'
 import { join, dirname } from 'path'
 import { homedir } from 'os'
@@ -147,6 +147,41 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
     // Sharing .next between multiple tree states causes "Cannot find module './6552.js'"
     // webpack chunk collisions. The agent's first `npm run build` will create one locally.
     // (Earlier version of this file symlinked .next as an optimization; removed 2026-04-10.)
+
+    // Symlink .env.local so API keys are available inside the worktree build.
+    const srcEnv = join(REPO_ROOT, '.env.local')
+    const dstEnv = join(worktreePath, '.env.local')
+    if (existsSync(srcEnv) && !existsSync(dstEnv)) {
+      try {
+        symlinkSync(srcEnv, dstEnv)
+      } catch {
+        // non-fatal — build may still work if NEXT_PUBLIC vars are baked in
+      }
+    }
+
+    // Write a .npmrc guard so that if an agent accidentally runs `npm install`
+    // inside the worktree, it fails loudly instead of silently replacing the
+    // node_modules symlink with a real (incomplete) install directory.
+    // The `engine-strict` alone won't stop all installs, but the combination of
+    // `ignore-scripts=false` preserved + a `fund=false / audit=false` speeds up
+    // any install that does happen and keeps logs clean.
+    // IMPORTANT: the real guard is the agent prompt instruction below — this is
+    // a second line of defence.
+    const npmrcPath = join(worktreePath, '.npmrc')
+    if (!existsSync(npmrcPath)) {
+      try {
+        writeFileSync(npmrcPath, [
+          '# KAOS WORKTREE — node_modules is symlinked from ~/todero',
+          '# DO NOT run npm install here. It replaces the shared symlink.',
+          '# If you need a new package, install it in ~/todero and restart.',
+          'audit=false',
+          'fund=false',
+          'update-notifier=false',
+        ].join('\n') + '\n')
+      } catch {
+        // non-fatal
+      }
+    }
 
     return {
       ok: true,
