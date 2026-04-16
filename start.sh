@@ -29,9 +29,9 @@ if [ ! -d node_modules/typescript ]; then
   /opt/homebrew/opt/node@22/bin/npm install typescript --save-dev 2>&1 | tail -3
 fi
 
-# Also check the handful of other critical packages that break the build
-# when missing. If package.json lists them but they aren't on disk, reinstall.
-for pkg in next react @supabase/supabase-js; do
+# Also check critical packages that break the build when missing.
+# styled-jsx is an indirect dep of Next.js that gets wiped by concurrent worktree agents.
+for pkg in next react @supabase/supabase-js styled-jsx; do
   if [ ! -d "node_modules/$pkg" ]; then
     echo "[start.sh] $pkg missing from node_modules — running npm install"
     /opt/homebrew/opt/node@22/bin/npm install 2>&1 | tail -3
