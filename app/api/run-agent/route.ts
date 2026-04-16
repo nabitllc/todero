@@ -40,6 +40,74 @@ const TODERO_DIR = '/Users/kemuniagent/todero'
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
 const MAX_REJECTION_CYCLES = 3
 
+const AGENT_CONTEXT_SOURCE = process.env.AGENT_CONTEXT_SOURCE ?? 'fs'
+const MAX_CONTEXT_BYTES = 30_000
+
+async function loadContextFromDB(agentId: string): Promise<string> {
+  const supaHeaders = {
+    'apikey': getSupaKey(),
+    'Authorization': `Bearer ${getSupaKey()}`,
+    'Content-Type': 'application/json',
+  }
+
+  // Fetch global + per-agent documents
+  const docsRes = await fetch(
+    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId})&order=doc_type.asc,slug.asc`,
+    { headers: supaHeaders }
+  )
+  const docs = await docsRes.json() as Array<{ agent_id: string; doc_type: string; slug: string; content: string }>
+
+  // Fetch memory: today + yesterday daily notes + long_term + self_improving
+  const today = new Date().toISOString().slice(0, 10)
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  const memRes = await fetch(
+    `${SUPA_URL}/rest/v1/agent_memory?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&order=updated_at.desc`,
+    { headers: supaHeaders }
+  )
+  const memRows = await memRes.json() as Array<{ memory_type: string; date_key: string | null; content: string }>
+
+  const sections: string[] = []
+
+  // Global soul first
+  const globalSoul = docs.find(d => d.agent_id === 'global' && d.doc_type === 'soul')
+  if (globalSoul) sections.push(`# SOUL\n\n${globalSoul.content}`)
+
+  // Per-agent soul
+  const agentSoul = docs.find(d => d.agent_id === agentId && d.doc_type === 'soul')
+  if (agentSoul) sections.push(`# ${agentId.toUpperCase()} SOUL\n\n${agentSoul.content}`)
+
+  // Agents handbook
+  const handbook = docs.find(d => d.agent_id === 'global' && d.doc_type === 'agents')
+  if (handbook) sections.push(`# AGENTS HANDBOOK\n\n${handbook.content}`)
+
+  // Skills for this agent
+  const agentSkills = docs.filter(d => d.agent_id === agentId && d.doc_type === 'skill')
+  for (const skill of agentSkills) {
+    sections.push(`# SKILL: ${skill.slug}\n\n${skill.content}`)
+  }
+
+  // Memory: self_improving first (HOT), then long_term, then daily (newest first)
+  const siMem = memRows.find(m => m.memory_type === 'self_improving')
+  if (siMem) sections.push(`# SELF-IMPROVING MEMORY\n\n${siMem.content}`)
+
+  const ltMem = memRows.find(m => m.memory_type === 'long_term')
+  if (ltMem) sections.push(`# LONG-TERM MEMORY\n\n${ltMem.content}`)
+
+  const dailyMem = memRows.filter(m => m.memory_type === 'daily').sort((a, b) => (b.date_key ?? '').localeCompare(a.date_key ?? ''))
+  for (const m of dailyMem) {
+    sections.push(`# DAILY MEMORY (${m.date_key})\n\n${m.content}`)
+  }
+
+  // Hard context limit: drop from the end (oldest memory) until under MAX_CONTEXT_BYTES
+  let combined = sections.join('\n\n---\n\n')
+  while (combined.length > MAX_CONTEXT_BYTES && sections.length > 1) {
+    sections.pop()
+    combined = sections.join('\n\n---\n\n')
+  }
+
+  return combined
+}
+
 export async function POST(req: NextRequest) {
   // Hub pause guard — reject new agent activations when paused
   if (await isHubPaused()) {
@@ -243,53 +311,60 @@ export async function POST(req: NextRequest) {
   // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
   // TOD-796 (2026-04-10): Now also injects todero/config skills so pipeline agents inherit
   // proactivity, corrections discipline, memory hygiene, and self-reflection rules.
+  // AGENT_CONTEXT_SOURCE=db loads context from Supabase; default 'fs' keeps filesystem path.
   const readIfExists = (p: string): string => {
     try { return fsReadFileSync(p, 'utf8') } catch { return '' }
   }
   const today = new Date().toISOString().slice(0, 10)
 
-  // Workspace identity — always loaded
-  const workspaceParts = [
-    readIfExists(`${WORKSPACE}/SOUL.md`),
-    readIfExists(`${WORKSPACE}/AGENTS.md`),
-    readIfExists(`${WORKSPACE}/self-improving/memory.md`),
-    readIfExists(`${WORKSPACE}/memory/${today}.md`),
-  ].filter(Boolean)
-  const workspace = workspaceParts.join('\n\n---\n\n')
+  let context: string
+  if (AGENT_CONTEXT_SOURCE === 'db') {
+    context = await loadContextFromDB(agentId)
+    // Wrap in contextSections format matching existing structure
+    const contextSections: string[] = [`# WORKSPACE IDENTITY\n\n${context}`]
+    context = contextSections.join('\n\n===============================\n\n')
+  } else {
+    // Existing filesystem path (unchanged)
+    const workspaceParts = [
+      readIfExists(`${WORKSPACE}/SOUL.md`),
+      readIfExists(`${TODERO_DIR}/workspace-${agentId}/SOUL.md`),
+      readIfExists(`${WORKSPACE}/AGENTS.md`),
+      readIfExists(`${WORKSPACE}/self-improving/memory.md`),
+      readIfExists(`${WORKSPACE}/memory/${today}.md`),
+    ].filter(Boolean)
+    const workspace = workspaceParts.join('\n\n---\n\n')
 
-  // Universal skill bundle — behavioral rules every agent inherits
-  const universalSkills = [
-    readIfExists(`${WORKSPACE}/skills/proactivity/execution.md`),
-    readIfExists(`${WORKSPACE}/skills/proactivity/signals.md`),
-    readIfExists(`${WORKSPACE}/skills/proactivity/boundaries.md`),
-    readIfExists(`${WORKSPACE}/skills/self-improving/corrections.md`),
-    readIfExists(`${WORKSPACE}/skills/self-improving/memory.md`),
-    readIfExists(`${WORKSPACE}/skills/self-improving/reflections.md`),
-  ].filter(Boolean).join('\n\n---\n\n')
+    const universalSkills = [
+      readIfExists(`${WORKSPACE}/skills/proactivity/execution.md`),
+      readIfExists(`${WORKSPACE}/skills/proactivity/signals.md`),
+      readIfExists(`${WORKSPACE}/skills/proactivity/boundaries.md`),
+      readIfExists(`${WORKSPACE}/skills/self-improving/corrections.md`),
+      readIfExists(`${WORKSPACE}/skills/self-improving/memory.md`),
+      readIfExists(`${WORKSPACE}/skills/self-improving/reflections.md`),
+    ].filter(Boolean).join('\n\n---\n\n')
 
-  // Agent-specific skill routing
-  const agentSkillFiles: Record<string, string[]> = {
-    po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`],
-    main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
-    scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
-    builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
-    ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
-    tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
-    designer: [],
-    auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
-    deployer: [],
+    const agentSkillFiles: Record<string, string[]> = {
+      po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`],
+      main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
+      scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
+      builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
+      ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
+      tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
+      designer: [],
+      auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
+      deployer: [],
+    }
+    const agentSkills = (agentSkillFiles[agentId] ?? [])
+      .map(readIfExists)
+      .filter(Boolean)
+      .join('\n\n---\n\n')
+
+    const contextSections: string[] = []
+    if (workspace) contextSections.push(`# WORKSPACE IDENTITY\n\n${workspace}`)
+    if (universalSkills) contextSections.push(`# UNIVERSAL SKILLS (behavioral rules — follow these on every task)\n\n${universalSkills}`)
+    if (agentSkills) contextSections.push(`# ${agentId.toUpperCase()}-SPECIFIC SKILLS\n\n${agentSkills}`)
+    context = contextSections.join('\n\n===============================\n\n')
   }
-  const agentSkills = (agentSkillFiles[agentId] ?? [])
-    .map(readIfExists)
-    .filter(Boolean)
-    .join('\n\n---\n\n')
-
-  // Assemble context — workspace first (most-authoritative), then skills, then task
-  const contextSections: string[] = []
-  if (workspace) contextSections.push(`# WORKSPACE IDENTITY\n\n${workspace}`)
-  if (universalSkills) contextSections.push(`# UNIVERSAL SKILLS (behavioral rules — follow these on every task)\n\n${universalSkills}`)
-  if (agentSkills) contextSections.push(`# ${agentId.toUpperCase()}-SPECIFIC SKILLS\n\n${agentSkills}`)
-  const context = contextSections.join('\n\n===============================\n\n')
 
   // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)
   if (context.length > 25_000) {

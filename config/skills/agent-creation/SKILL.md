@@ -1,63 +1,45 @@
 ---
 name: agent-creation
-description: Create a new agent for the Todero platform. Claude Code version — no OpenClaw dependency. Use when adding a new agent role (builder, tester, scout, etc.). Creates the agent's workspace files and registers it in AGENTS.md.
+description: Create a new agent for the Todero platform. Creates workspace files, seeds identity docs into DB, registers in agent-queue.ts and AGENTS.md.
 ---
 
-# Agent Creation Skill — Claude Code
+# Agent Creation Skill
 
 ## When to Use
-Creating a new persistent agent role: "create a new agent", "add an agent", "set up [role] agent".
+Adding a new persistent agent role: "create a new agent", "add agent", "set up [role] agent".
 
-## What an Agent Is Now
+## What an Agent Is
 
 An agent is a named Claude Code session that:
-- Has a defined role (builder, tester, scout, etc.)
-- Loads workspace context (SOUL.md, AGENTS.md, self-improving/memory.md) at startup
-- Picks up issues via `queue-runner-<id>.sh` or `builder-loop.sh`
+- Has a defined role and identity (stored in `agent_documents` table, `agent_id=<name>`)
+- Picks up issues via `POST /api/run-agent?agent=<name>`
 - Reports results via MC API + Discord
-
-There is no `openclaw.json` registration. The agent exists when it's in the AGENTS.md roster and the queue-runner config.
 
 ## Checklist
 
 - [ ] 1. Choose agent ID (lowercase, no spaces: `builder`, `tester`, `ux-researcher`)
-- [ ] 2. Define role, mandate, model tier in `AGENTS.md` roster table
-- [ ] 3. Add to `scripts/queue-agent-config.json` with eligible_statuses and discord_channel
-- [ ] 4. Create agent-specific SOUL section if needed (or it inherits the shared SOUL.md)
-- [ ] 5. Test: `curl -s "http://localhost:3000/api/issues?assignee=<id>&status=open"` returns expected issues
+- [ ] 2. Add to `lib/agent-queue.ts` → `AGENT_QUEUE_CONFIGS` with correct pickup/working/completion statuses, WIP limit, model, promptPrefix
+- [ ] 3. Add to `AGENTS.md` roster table
+- [ ] 4. Create `workspace-<id>/SOUL.md` with agent identity, then seed into DB:
+  ```bash
+  # After creating the file, upsert into agent_documents via API:
+  curl -s -X POST http://localhost:3000/api/agent-docs \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $CRON_SECRET" \
+    -d '{"agent_id":"<id>","doc_type":"soul","slug":"SOUL","content":"<content>"}'
+  ```
+  Or run `npx ts-node config/migrations/seed-agent-db.ts` to re-seed all files.
+- [ ] 5. Add `workspace-<id>/HEARTBEAT.md` with heartbeat schedule and pickup logic
+- [ ] 6. Add agent skill routing in `app/api/run-agent/route.ts` → `agentSkillFiles` map
+- [ ] 7. Test: `curl -s "http://localhost:3000/api/run-agent?agent=<id>"` returns eligible issues or "no eligible issues"
 
-## queue-agent-config.json Entry
-
-```json
-"<agent-id>": {
-  "eligible_statuses": ["open"],
-  "discord_channel": "1485333334077735084"
-}
-```
-
-Adjust `eligible_statuses` per role:
-- builder → `["open"]`
-- tester → `["code_review"]`
-- designer → `["code_review"]`
-- deployer → `["approved"]`
-- auditor → `["released"]`
-
-## Model Guidelines
-
-| Complexity | Model |
-|---|---|
-| Complex reasoning, design, orchestration | claude-sonnet-4-6 |
-| Monitoring, triage, review, heartbeat | claude-haiku-4-5 |
-
-## Spawning the Agent Manually
+## Spawning Manually
 
 ```bash
-/Users/kemuniagent/.local/bin/claude \
-  --permission-mode bypassPermissions \
-  --print "$(python3 /Users/kemuniagent/.openclaw/workspace/scripts/render-agent-context.py <agent-id>)
-
-You are <AgentName>. [task here]"
+curl -s -X POST http://localhost:3000/api/run-agent?agent=<id>
 ```
+
+The `run-agent` endpoint assembles full context automatically from DB (when `AGENT_CONTEXT_SOURCE=db`) or filesystem (default).
 
 ## Current Agent Roster
 
@@ -67,10 +49,12 @@ You are <AgentName>. [task here]"
 | builder | sonnet | Code implementation |
 | tester | haiku | QA review |
 | designer | haiku | UI/UX review |
-| po | sonnet | Issue structuring, backlog |
+| po | sonnet | Product owner |
 | scout | sonnet | Research |
 | ops | haiku | Infrastructure |
 | deployer | haiku | Release coordination |
 | auditor | sonnet | Drift detection |
 | kemuni-sme | sonnet | Kemuni product specialist |
 | vespera-sme | sonnet | Vespera product specialist |
+| todero-sme | sonnet | Todero platform specialist |
+| infra-sme | sonnet | Infrastructure specialist |

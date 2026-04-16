@@ -95,12 +95,14 @@ This is intentionally friction-heavy. If tasks are regularly splitting, Tier-2 s
 ## Session Startup
 
 Before doing anything else:
-1. Read `SOUL.md` — who you are
+1. Read `SOUL.md` — who you are (or load from DB: `GET /api/agent-docs?agent_id=global&doc_type=soul`)
 2. Read `CLAUDE.md` — system overview, key paths, rules
-3. Read `USER.md` — who you're helping
-4. Read `memory/YYYY-MM-DD.md` (today + yesterday)
-5. Read `self-improving/memory.md` (HOT tier — always loaded)
-6. **Main session only**: Also read `MEMORY.md`
+3. Read `USER.md` — who you're helping (lives at `todero/config/USER.md`)
+4. Read `memory/YYYY-MM-DD.md` (today + yesterday) — or `GET /api/agent-memory?agent_id=global&type=daily&date=YYYY-MM-DD` when `AGENT_CONTEXT_SOURCE=db`
+5. Read `self-improving/memory.md` (HOT tier — always loaded) — or `GET /api/agent-memory?agent_id=global&type=self_improving`
+6. **Main session only**: Also read `MEMORY.md` — or `GET /api/agent-memory?agent_id=global&type=long_term`
+
+When `AGENT_CONTEXT_SOURCE=db`, the `run-agent` endpoint loads all of the above from DB automatically. DB is the single source of truth once seeded.
 
 ## Model Routing
 
@@ -183,18 +185,18 @@ When user corrects you:
 - Quick memory writes
 
 ### Spawning a named agent (Claude Code)
-```bash
-/Users/kemuniagent/.local/bin/claude \
-  --permission-mode bypassPermissions \
-  --print "<workspace-context>$(cat SOUL.md AGENTS.md self-improving/memory.md)</workspace-context>
 
-You are Builder. [task instructions here]"
+The correct way is via the MC API — it assembles context automatically:
+```bash
+curl -s -X POST http://localhost:3000/api/run-agent?agent=builder
 ```
 
-Or use the agent-specific runner:
+Or use the agent-specific runner directly:
 ```bash
 bash /Users/kemuniagent/todero/config/scripts/queue-runner-builder.sh --once
 ```
+
+Do NOT manually cat SOUL.md/AGENTS.md into a prompt — `run-agent` handles full context assembly including per-agent workspace files.
 
 ## Issue Status Update Rule — MANDATORY
 
@@ -230,18 +232,14 @@ curl -s -X POST http://localhost:3000/api/issues \
   -d '{"title":"...","project":"...","type":"feature","priority":"high","parent_id":"<epic-uuid>","acceptance_criteria":"..."}'
 ```
 
-## ⚠️ Builder Spawn Rules — STRICT
+## ⚠️ Builder Spawn Rules
 
-**NEVER spawn Builder autonomously.** Builder only runs when:
-1. Michael explicitly requests work ("build X", "fix Y", "start sprint")
-2. A sprint has been CONFIRMED by Michael for today
+Builder is activated automatically by the heartbeat (every 30 min) when:
+- `wip=0` for builder and `eligible>0` open issues exist assigned to builder
 
-**NEVER spawn Builder during:**
-- Heartbeats or cron triggers
-- Any automated monitoring script
-- Background work without Michael's active approval
+**KAOS does not need to manually spawn Builder.** The heartbeat handles it.
 
-If you feel the urge to spawn Builder outside a confirmed sprint — write a task, add it to the board, wait.
+If you feel the urge to spawn Builder manually — check the heartbeat ran recently first. Only spawn manually if the heartbeat is down or you need to force a specific issue immediately.
 
 ## ⚠️ Task-First Rule — MANDATORY
 
