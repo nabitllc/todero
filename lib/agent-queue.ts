@@ -167,7 +167,7 @@ Refine this issue: add description, acceptance criteria, set priority, severity,
 - TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined").
 - FEATURES: create child tasks (each 1-2 days of work) before moving to "defined".
 - EPICS: verify child features exist and have AC.
-Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition.
+Do NOT move refined issues to open yourself — the queue-refill cron handles that automatically every 30 min. Your job is backlog → refined only.
 
 ## 2. FEATURE REVIEW (feature_review issues)
 When a feature is in feature_review, your job is to confirm it is actually done.

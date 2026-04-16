@@ -66,12 +66,13 @@ export async function GET(req: Request) {
 
   for (const issue of staleIssues ?? []) {
     await db.from('issues').update({
+      status: 'open',          // return to queue so another agent can claim it
       started_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
     }).eq('id', issue.id)
     cleared.push(issue.task_key)
-    console.log(`[watchdog] cleared stale claim: ${issue.task_key} (${issue.assignee}, ${issue.status}, started ${issue.started_at})`)
+    console.log(`[watchdog] cleared stale claim → open: ${issue.task_key} (${issue.assignee}, was ${issue.status}, started ${issue.started_at})`)
   }
 
   // ── Query 1b: ghost claims — in_progress with null started_at ────────────
@@ -92,12 +93,13 @@ export async function GET(req: Request) {
 
   for (const issue of ghostClaims ?? []) {
     await db.from('issues').update({
+      status: 'open',          // ghost claims had no started_at — return to queue
       started_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
     }).eq('id', issue.id)
     cleared.push(issue.task_key)
-    console.log(`[watchdog] cleared ghost claim (null started_at): ${issue.task_key} (${issue.assignee}, in_progress, updated ${issue.updated_at})`)
+    console.log(`[watchdog] cleared ghost claim → open: ${issue.task_key} (${issue.assignee}, in_progress, updated ${issue.updated_at})`)
   }
 
   // ── Query 2: kick idle agents ─────────────────────────────────────────────

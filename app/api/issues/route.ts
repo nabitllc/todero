@@ -841,7 +841,10 @@ export async function POST(req: NextRequest) {
     else effectiveOwner = 'builder'
   }
 
-  const effectiveStatus = status ?? 'open'
+  // All issues must arrive at backlog — no skipping the intake queue.
+  // Callers cannot override this; status is ignored on creation.
+  const effectiveStatus = 'backlog'
+  void status // suppress unused-var lint
 
   // TOD-XXX (2026-04-10): sprint hygiene guard. If sprint is missing OR is a
   // past date (older than today's ET date), auto-correct to today. Closed
@@ -941,9 +944,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const finalStatus = isTesterIssue || type === 'review'
-    ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
-    : effectiveStatus
+  // effectiveStatus is always 'backlog' — all issues start in intake queue
+  const finalStatus = effectiveStatus
 
   const generatedIdentity = await prepareIssueIdentity(normalizedProject)
 
