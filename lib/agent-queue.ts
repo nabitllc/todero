@@ -156,7 +156,7 @@ Rules:
     dorFields: ['title'],
     wipLimit: 3,
     workingStatus: 'refined',
-    completionStatus: 'open',
+    completionStatus: 'refined',  // PO's job ends at refined. queue-refill cron promotes to open.
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
@@ -164,10 +164,18 @@ Rules:
 
 ## 1. REFINEMENT (backlog/defined issues)
 Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner.
-- TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined").
+- TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined", not "open").
 - FEATURES: create child tasks (each 1-2 days of work) before moving to "defined".
 - EPICS: verify child features exist and have AC.
-Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition.
+
+CRITICAL — assignee rules when creating or refining child tasks:
+- Todero tasks/bugs → assignee: "builder"
+- Ops tasks (any project) → assignee: "ops"
+- Kemuni tasks → assignee: "kemuni-sme"
+- Vespera tasks → assignee: "vespera-sme"
+- NEVER set assignee to "po" — PO only refines, never implements.
+
+Do NOT move refined issues to open yourself — queue-refill runs hourly and promotes refined → open automatically. Your job is backlog → refined only.
 
 ## 2. FEATURE REVIEW (feature_review issues)
 When a feature is in feature_review, your job is to confirm it is actually done.

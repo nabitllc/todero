@@ -13,7 +13,7 @@ Creating a new persistent agent role: "create a new agent", "add an agent", "set
 An agent is a named Claude Code session that:
 - Has a defined role (builder, tester, scout, etc.)
 - Loads workspace context (SOUL.md, AGENTS.md, self-improving/memory.md) at startup
-- Picks up issues via `queue-runner.py --agent <id>` or `builder-loop.sh`
+- Picks up issues via `queue-runner-<id>.sh` or `builder-loop.sh`
 - Reports results via MC API + Discord
 
 There is no `openclaw.json` registration. The agent exists when it's in the AGENTS.md roster and the queue-runner config.
@@ -24,7 +24,7 @@ There is no `openclaw.json` registration. The agent exists when it's in the AGEN
 - [ ] 2. Define role, mandate, model tier in `AGENTS.md` roster table
 - [ ] 3. Add to `scripts/queue-agent-config.json` with eligible_statuses and discord_channel
 - [ ] 4. Create agent-specific SOUL section if needed (or it inherits the shared SOUL.md)
-- [ ] 5. Test with dry run: `python3 scripts/queue-runner.py --agent <id> --dry-run`
+- [ ] 5. Test: `curl -s "http://localhost:3000/api/issues?assignee=<id>&status=open"` returns expected issues
 
 ## queue-agent-config.json Entry
 

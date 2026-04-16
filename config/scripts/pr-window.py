@@ -370,17 +370,16 @@ def main():
         pr_number = pr.get("number", "?")
         log(f"[pr] #{pr_number} created: {pr_url}")
 
-        # Auto-merge the PR — it's an audit trail, not a review gate.
-        # Tester + Designer already reviewed during code_review status.
-        auto_merged = False
-        if isinstance(pr_number, int):
-            auto_merged = gh_merge_pr(repo, pr_number)
-            if auto_merged:
-                # Pull merged main so next window starts clean
-                subprocess.run(["git", "checkout", "main"], cwd=repo_dir,
-                              capture_output=True, text=True, timeout=10)
-                subprocess.run(["git", "pull", "--ff-only"], cwd=repo_dir,
-                              capture_output=True, text=True, timeout=60)
+        # PR stays open for Michael to review and merge.
+        # KAOS never auto-merges — only Michael approves merges.
+        issue_keys = ", ".join(i.get("task_key", "?") for i in merged_issues)
+        review_msg = (
+            f"👀 **PR #{pr_number} ready for review** — `{pr_title}`\n"
+            f"Issues: {issue_keys}\n"
+            f"<{pr_url}>\n"
+            f"_Merge when ready — KAOS won't auto-merge._"
+        )
+        discord_post(PR_CHANNEL, review_msg)
 
         # Patch all merged issues with pr_url
         for issue in merged_issues:

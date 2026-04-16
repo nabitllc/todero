@@ -93,19 +93,20 @@ const RESOLUTION_BADGE_COLORS: Record<string, string> = {
   cannot_reproduce: '#eab308',
 }
 
-// 3-column board (TOD-XXX simplification 2026-04-10):
-// Queue   = ready to be picked up (defined + open)
+// 3-column board:
+// Queue   = ready to be picked up by an agent (open only)
 // Active  = work in flight (in_progress + both review states)
 // Achieved= shipped or ready to ship (approved + completed + released)
-// Backlog and closed are NOT columns — they surface as count chips in the header.
+// Refined, Backlog and Closed are NOT columns — they surface as count chips in the header.
 const BOARD_COLUMNS = [
-  { id:'queue',    label:'Queue',    color:'#3b82f6', active:false, statuses:['defined','open'] },
+  { id:'queue',    label:'Queue',    color:'#3b82f6', active:false, statuses:['open'] },
   { id:'ongoing',  label:'Active',   color:'#818cf8', active:true,  statuses:['in_progress','code_review','product_review'] },
   { id:'achieved', label:'Achieved', color:'#22c55e', active:false, statuses:['approved','completed','released'] },
 ]
 
 // Statuses that get a small count chip but no column
 const OFF_BOARD_STATUSES = [
+  { id:'refined', label:'Refined', color:'#6366f1', statuses:['refined'] },
   { id:'backlog', label:'Backlog', color:'#71717a', statuses:['backlog'] },
   { id:'closed',  label:'Closed',  color:'#475569', statuses:['closed'] },
 ]
@@ -226,7 +227,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   // Status filter: 'all' by default. Header count chips can switch to 'backlog',
   // 'future-sprint', or 'closed' scopes (toggle off → 'all').
   // 'active' is retained for backward compat but no longer surfaced in UI.
-  const [statusFilter, setStatusFilter] = useState<'all'|'active'|'closed'|'backlog'|'future-sprint'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all'|'active'|'closed'|'backlog'|'refined'|'future-sprint'>('all')
   const [boardSearch, setBoardSearch] = useState('')
   const [boardLimit, setBoardLimit] = useState(100)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -428,22 +429,24 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     if (EXCLUDED_BOARD_TYPES.includes(t.type ?? '')) return false
     // Default: show everything except closed. Status chips (backlog/closed) can
     // switch the scope when clicked, which is now represented by statusFilter.
-    if (statusFilter === 'all' && t.status === 'closed') return false
+    if (statusFilter === 'all' && (t.status === 'closed' || t.status === 'refined' || t.status === 'backlog')) return false
     if (statusFilter === 'closed' && t.status !== 'closed') return false
     if (statusFilter === 'backlog' && t.status !== 'backlog') return false
+    if (statusFilter === 'refined' && t.status !== 'refined') return false
     if (statusFilter === 'future-sprint' && !isFutureSprint(t.sprint)) return false
     if (statusFilter === 'active' && !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released'].includes(t.status)) return false
     // projectFilter is now applied server-side via /api/issues?project=
     if (filterTypes.length > 0 && !filterTypes.includes(t.type ?? '')) return false
     if (filterPriorities.length > 0 && !filterPriorities.includes(t.priority ?? '')) return false
     if (filterAssignees.length > 0 && !filterAssignees.includes(t.assignee?.toLowerCase() ?? '')) return false
-    // Sprint multiselect: empty = Active Sprint(s) (today's sprint date)
-    if (filterSprints.length === 0) {
-      // Default scope = active sprints only
-      if (t.sprint && !activeSprintDates.includes(t.sprint)) return false
-    } else if (!filterSprints.includes(t.sprint ?? '')) {
+    // Sprint multiselect: when a sprint is explicitly selected, filter to it.
+    // When empty (no selection), show all issues regardless of sprint date — the board
+    // should surface all pipeline work, not just today's sprint.
+    if (filterSprints.length > 0 && !filterSprints.includes(t.sprint ?? '')) {
       return false
     }
+    // For future-sprint chip only: hide issues with future sprint dates from default view
+    if (statusFilter !== 'future-sprint' && isFutureSprint(t.sprint)) return false
     // Hub filter (project name) — only effective in All-hub view
     if (filterHubs.length > 0 && !filterHubs.includes(t.project ?? '')) return false
     if (featureFilter && (t as any).parent_id !== featureFilter) return false
@@ -554,10 +557,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 Click to filter the board to that scope. */}
             {(() => {
               const scopedTasks = tasks.filter(t => !EXCLUDED_BOARD_TYPES.includes(t.type ?? ''))
+              const refinedCount = scopedTasks.filter(t => t.status === 'refined').length
               const backlogCount = scopedTasks.filter(t => t.status === 'backlog').length
               const futureCount = scopedTasks.filter(t => isFutureSprint(t.sprint) && t.status !== 'closed').length
               const closedCount = scopedTasks.filter(t => t.status === 'closed').length
               const chips: Array<{id: typeof statusFilter; label: string; color: string; count: number; title: string}> = [
+                { id: 'refined',       label: 'Refined',        color: '#6366f1', count: refinedCount, title: 'Refined issues — waiting for queue-refill to promote to Open' },
                 { id: 'backlog',       label: 'Backlog',        color: '#71717a', count: backlogCount, title: 'Backlog issues (not yet scheduled)' },
                 { id: 'future-sprint', label: 'Future Sprints', color: '#a855f7', count: futureCount,  title: 'Issues scheduled for a future sprint' },
                 { id: 'closed',        label: 'Closed',         color: '#475569', count: closedCount,  title: 'Closed issues' },

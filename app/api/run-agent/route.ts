@@ -193,6 +193,20 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify(claimFields),
   })
 
+  // ── Step 5b: Spawn-confirmation heartbeat (60 s after spawn) ──────────────
+  // If the spawned process exits immediately (context failure, missing binary,
+  // worktree error), it never writes a heartbeat. The watchdog will detect
+  // heartbeat_at < now()-10min and reset to open — catching fast-death cases
+  // that used to hold WIP for 20-30 min before the old stale check triggered.
+  void (async () => {
+    await new Promise(resolve => setTimeout(resolve, 60_000))
+    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+      method: 'PATCH',
+      headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
+    })
+  })()
+
   // ── Step 6: Log agent_run ──
   await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
     method: 'POST',
@@ -313,8 +327,32 @@ If your task feels urgent enough to warrant an immediate PR, you are WRONG. Bypa
 
 This rule exists because per-issue PRs create review fatigue and merge conflicts. One batched PR per window is the correct cadence.`
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const heartbeatInstruction = `
+
+💓 HEARTBEAT — REQUIRED EVERY 5 MINUTES 💓
+While working, write a heartbeat every ~5 minutes so the watchdog knows you're alive.
+If you stop writing heartbeats for 10 min, the watchdog assumes you died and resets the issue to open — losing your WIP slot.
+
+Run this before each major step (read → edit → build → commit):
+curl -s -X PATCH ${appUrl}/api/heartbeat \\
+  -H "Content-Type: application/json" \\
+  -d '{"task_key":"${task.task_key}"}'
+
+Expected response: {"ok":true}. If you get an error, keep working — heartbeat failures are not blockers.`
+
   const selfChain = `\n\nAFTER the PATCH succeeds, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} to auto-claim your next task.`
   const loopBreaker = `\n\nIF same error 3 times: STOP, PATCH back to open with notes explaining the blocker. Do NOT retry infinitely.`
+
+  const worktreeGuard = `
+
+🛑 WORKTREE RULES — node_modules is SHARED 🛑
+You are running inside a git worktree. Your node_modules directory is a SYMLINK to ~/todero/node_modules.
+- ❌ DO NOT run \`npm install\` or \`npm ci\` — it replaces the symlink with an incomplete local install, breaking ALL other agents
+- ❌ DO NOT run \`npm install <package>\` — if a package is missing, PATCH back to open with a note asking KAOS to install it
+- ✅ \`npm run build\` is fine — it uses the existing symlinked node_modules
+- ✅ If build fails with "Cannot find module X", check ~/todero/node_modules/X directly; if truly missing, PATCH back to open
+- ✅ Stay in your worktree directory — do NOT cd to ~/todero for any build commands`
 
   // TOD-796 follow-up: point agents at the rest of the skill library.
   // The universal bundle (proactivity/execution, self-improving/corrections, etc.) is
@@ -347,8 +385,10 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
     branchInstruction,
     skillReference,
+    heartbeatInstruction,
     transitionGate,
     pushGate,
+    worktreeGuard,
     loopBreaker,
     selfChain,
   ].join('\n')
@@ -443,9 +483,10 @@ export async function GET(req: NextRequest) {
       const config = getQueueConfig(id)
       if (!config) return { agent: id, error: 'unknown agent' }
 
-      // Count WIP
+      // Count WIP — apply wipExtraFilter so deployer WIP is accurate (same logic as POST path)
+      const wipExtraFilterGet = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
       const wipRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}&select=id`,
+        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`,
         { headers: getHeaders() }
       )
       const wipIssues = await wipRes.json() as Array<{ id: string }>

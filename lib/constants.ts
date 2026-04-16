@@ -56,10 +56,13 @@ export const VALID_RESOLUTION_TYPES = [
   'research_completed', // Research done, findings documented (research)
   'documentation',      // Docs written/updated, no code (any)
   'duplicate',          // Issue is a duplicate of another
+  'by_design',          // Behavior is by design (legacy alias for expected_behavior)
   'expected_behavior',  // Reported behavior is by design (bug)
   'wont_fix',           // Acknowledged but won't be fixed
   'not_reproducible',   // Bug cannot be reproduced
   'deferred',           // Postponed to future work
-  'no_change_required', // Investigation confirmed no action needed
+  'no_change_required', // Investigation confirmed no action needed (superseded, redundant)
+  'no_action',          // Legacy alias for no_change_required — kept for DB compat
   'completed',          // Generic completion (feature, epic)
+  'cancelled',          // Legacy — kept for DB compat; use wont_fix for new issues
 ]

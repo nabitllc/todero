@@ -446,19 +446,26 @@ async function validateWorkflowTransition(
   const merged = { ...issue, ...body }
   const conditionRole = transition.condition_role
 
+  // michael is a global admin bypass — can execute any transition regardless of conditionRole.
+  // DO NOT REMOVE — maintenance transitions (e.g. resetting stale claims) require this.
+  if (transitionedBy === 'michael') {
+    return { transition: transition as WorkflowTransition, error: null }
+  }
+
   if (conditionRole === 'po_or_main') {
-    if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' } }
+    // 'main' kept for backward compat; canonical human identity is 'michael'; kaos is orchestrator
+    if (!transitionedBy || !['po', 'main', 'michael', 'kaos'].includes(transitionedBy)) {
+      return { transition: null, error: { error: 'Only po, michael, or kaos can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_sme') {
-    const allowed = ['po', 'main', 'kemuni-sme', 'vespera-sme']
+    const allowed = ['po', 'main', 'michael', 'kaos', 'kemuni-sme', 'vespera-sme']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po, main, or an SME can execute this transition', field: 'transitioned_by' } }
+      return { transition: null, error: { error: 'Only po, michael, kaos, or an SME can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_ops') {
-    const allowed = ['po', 'main', 'ops']
+    const allowed = ['po', 'main', 'michael', 'kaos', 'ops']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po, main, or ops can execute this transition', field: 'transitioned_by' } }
+      return { transition: null, error: { error: 'Only po, michael, kaos, or ops can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'assignee') {
     const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
@@ -483,6 +490,13 @@ async function validateWorkflowTransition(
   } else if (conditionRole === 'tester_or_designer') {
     if (!transitionedBy || !['tester', 'designer', 'ux'].includes(transitionedBy)) {
       return { transition: null, error: { error: 'Only tester or designer can execute this transition', field: 'transitioned_by' } }
+    }
+  } else if (conditionRole === 'cron_or_michael_or_kaos') {
+    // refined→open is owned by the queue-refill cron, michael (admin), or kaos (orchestrator).
+    // Agents and PO must not promote to open directly — the cron maintains queue depth.
+    const allowed = ['cron-queue-refill', 'michael', 'kaos']
+    if (!transitionedBy || !allowed.includes(transitionedBy)) {
+      return { transition: null, error: { error: 'Only the queue-refill cron, michael, or kaos can move issues to open. The cron runs every 30 min and maintains queue depth automatically.', field: 'transitioned_by' } }
     }
   }
 
@@ -835,7 +849,10 @@ export async function POST(req: NextRequest) {
     else effectiveOwner = 'builder'
   }
 
-  const effectiveStatus = status ?? 'open'
+  // All issues must arrive at backlog — no skipping the intake queue.
+  // Callers cannot override this; status is ignored on creation.
+  const effectiveStatus = 'backlog'
+  void status // suppress unused-var lint
 
   // TOD-XXX (2026-04-10): sprint hygiene guard. If sprint is missing OR is a
   // past date (older than today's ET date), auto-correct to today. Closed
@@ -935,9 +952,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const finalStatus = isTesterIssue || type === 'review'
-    ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
-    : effectiveStatus
+  // effectiveStatus is always 'backlog' — all issues start in intake queue
+  const finalStatus = effectiveStatus
 
   const generatedIdentity = await prepareIssueIdentity(normalizedProject)
 
@@ -1168,16 +1184,42 @@ export async function PATCH(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auto-reassign: if a reviewer agent (tester, designer, auditor, deployer, po)
+    // is rejecting back to open, reset the assignee to the correct implementing agent.
+    // This prevents issues from being permanently stuck when reviewers don't set assignee.
+    const REVIEWER_ONLY_AGENTS = ['tester', 'designer', 'auditor', 'deployer', 'po']
+    const currentAssignee = fields.assignee ?? before?.assignee
+    if (currentAssignee && REVIEWER_ONLY_AGENTS.includes(currentAssignee) && !fields.assignee) {
+      const issueType = (fields.type ?? before?.type ?? 'task') as string
+      const issueProject = (fields.project ?? before?.project ?? 'Todero') as string
+      if (issueProject === 'Kemuni') {
+        fields.assignee = 'kemuni-sme'
+      } else if (issueProject === 'Vespera') {
+        fields.assignee = 'vespera-sme'
+      } else if (issueType === 'ops') {
+        fields.assignee = 'ops'
+      } else {
+        fields.assignee = 'builder'
+      }
+    }
   }
 
-  // resolution_type required before submitting work for review.
-  // The assignee sets this when they PATCH to code_review or product_review —
+  // resolution_type + implementation_notes required before submitting work for review.
+  // The assignee sets these when they PATCH to code_review or product_review —
   // it tells reviewers what kind of change was made before they even look at the diff.
   if ((fields.status === 'code_review' || fields.status === 'product_review') && before?.status !== fields.status) {
     const effectiveResType = fields.resolution_type ?? before?.resolution_type
     if (!effectiveResType) {
       return NextResponse.json(
         { error: `resolution_type is required before moving to ${fields.status}. Set it to what was done (e.g. code_change, config_change, research_completed). Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
+      )
+    }
+    const effectiveImplNotes = ((fields.implementation_notes ?? before?.implementation_notes) as string | null | undefined)
+    if (!effectiveImplNotes || String(effectiveImplNotes).trim().length < 10) {
+      return NextResponse.json(
+        { error: `implementation_notes is required before moving to ${fields.status}. Describe what was built/researched/changed (≥10 chars).` },
         { status: 422 }
       )
     }
@@ -1221,11 +1263,14 @@ export async function PATCH(req: NextRequest) {
   if (fields.status) {
     const now = new Date().toISOString()
 
-    // started_at + worked_by: only set on open→in_progress, auto-clear on →backlog/→refined/→open
-    if (fields.status === 'in_progress' && before?.status === 'open') {
-      if (!fields.started_at) fields.started_at = now
+    // started_at + worked_by: set on ANY transition to in_progress (not just from open).
+    // Previously only fired on open→in_progress, allowing null started_at if coming from
+    // another status — those ghost claims counted against WIP but were never cleared
+    // by the watchdog (which requires started_at IS NOT NULL for its stale check).
+    if (fields.status === 'in_progress') {
+      if (!before?.started_at && !fields.started_at) fields.started_at = now
       const effectiveAssignee = fields.assignee ?? before?.assignee
-      if (effectiveAssignee && !fields.worked_by) fields.worked_by = effectiveAssignee
+      if (effectiveAssignee && !fields.worked_by && !before?.worked_by) fields.worked_by = effectiveAssignee
     }
     if (['backlog', 'refined', 'open'].includes(fields.status as string)) {
       if (before?.started_at) fields.started_at = null
@@ -1255,6 +1300,15 @@ export async function PATCH(req: NextRequest) {
       fields.rejection_count = (before?.rejection_count ?? 0) + 1
       fields.last_rejected_at = now
       if (fields.reviewer_notes) fields.last_rejection_reason = fields.reviewer_notes
+    }
+
+    // Clear resolution_type when sent back to open from a forward status —
+    // the issue may be resolved differently when re-picked up.
+    if (fields.status === 'open' && before?.status) {
+      const FORWARD_STATUSES = ['in_progress', 'code_review', 'product_review', 'approved', 'completed']
+      if (FORWARD_STATUSES.includes(before.status as string)) {
+        fields.resolution_type = null
+      }
     }
   }
 
@@ -1457,7 +1511,7 @@ export async function PATCH(req: NextRequest) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
     if (fields.fail_count >= 3) {
       fields.is_blocked = true
-      fields.assignee = 'main'
+      fields.assignee = 'michael'  // escalate to human — michael is the canonical human identity
     }
   }
 
@@ -1586,6 +1640,28 @@ export async function PATCH(req: NextRequest) {
   // SELF-CHAIN CALL — DO NOT REMOVE (protected by .githooks/pre-commit)
   if (fields.status && data && fields.status !== before?.status) {
     selfChainOnStatus(fields.status as string)
+  }
+
+  // ── Downstream unblock: clear is_blocked on issues waiting for this one ──
+  // When an issue reaches a terminal/completion status, any issue with blocked_by=this.id
+  // is no longer blocked. Covers: closed, released, approved, completed.
+  const UNBLOCKING_STATUSES = new Set(['closed', 'released', 'approved', 'completed'])
+  if (fields.status && UNBLOCKING_STATUSES.has(fields.status as string) && id) {
+    void (async () => {
+      const { data: blockedDeps } = await createAdminClient()
+        .from('issues')
+        .select('id, task_key')
+        .eq('blocked_by', id as string)
+        .eq('is_blocked', true)
+      if (blockedDeps && blockedDeps.length > 0) {
+        await createAdminClient()
+          .from('issues')
+          .update({ is_blocked: false, blocked_by: null, updated_at: new Date().toISOString() })
+          .eq('blocked_by', id as string)
+        const unblocked = blockedDeps.map(i => i.task_key).join(', ')
+        console.log(`[unblock-downstream] ${before?.task_key ?? id} → ${fields.status}: unblocked ${unblocked}`)
+      }
+    })()
   }
 
   // Auto-promote feature from defined→underway when ANY child moves to open or beyond.

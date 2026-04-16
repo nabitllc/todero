@@ -79,6 +79,8 @@ PO picks up features/tasks/bugs from `backlog`. For features, PO writes 1–5 ch
 - `sprint` (today)
 - `assignee: 'builder'` (or ops, scout, etc. if routed differently)
 
+**PO assignment rule:** Before setting assignee, check agent load using `skills/issue-routing/SKILL.md` → "Agent Capability Matrix". If builder has > 3 in_progress issues, flag in implementation_notes and consider ops/scout for eligible tasks.
+
 ### Tier 3 — Task → Sub-tasks (Builder via Inbox only)
 
 Tasks shouldn't be split mid-execution. If a Builder realizes a task is too large:
@@ -163,7 +165,7 @@ When user corrects you:
 ### The Pattern
 1. Michael asks for something
 2. KAOS routes immediately:
-   - **Named role exists** → spawn Claude Code session as that agent using `queue-runner.py` or `builder-loop.sh`
+   - **Named role exists** → spawn Claude Code session as that agent using `builder-loop.sh` or `queue-runner-<agent>.sh`
    - **No named role / temporary task** → spawn anonymous Claude Code session with full context
 3. KAOS stays in conversation — answers questions, discusses strategy
 4. Delegated agent completes and reports back
@@ -189,9 +191,9 @@ When user corrects you:
 You are Builder. [task instructions here]"
 ```
 
-Or use the queue runner:
+Or use the agent-specific runner:
 ```bash
-python3 /Users/kemuniagent/.openclaw/workspace/scripts/queue-runner.py --agent builder --once
+bash /Users/kemuniagent/todero/config/scripts/queue-runner-builder.sh --once
 ```
 
 ## Issue Status Update Rule — MANDATORY

@@ -2,16 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getHubClient } from '@/lib/hub-client'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
+if (!process.env.DISCORD_BOT_TOKEN) {
+  throw new Error('Missing env var: DISCORD_BOT_TOKEN')
+}
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
+
 const SPRINT_CLOSE_CHANNEL = '1491991699986055208'  // #sprint-close (metrics)
 const RETRO_CHANNEL = '1491991717644075238'         // #retro
 
 function postDiscord(channelId: string, content: string) {
-  const token = process.env.DISCORD_BOT_TOKEN ?? ''
-  if (!token) return
   fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: 'POST',
     headers: {
-      Authorization: `Bot ${token}`,
+      Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
       'Content-Type': 'application/json',
       'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
     },

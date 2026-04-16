@@ -29,9 +29,9 @@ if [ ! -d node_modules/typescript ]; then
   /opt/homebrew/opt/node@22/bin/npm install typescript --save-dev 2>&1 | tail -3
 fi
 
-# Also check the handful of other critical packages that break the build
-# when missing. If package.json lists them but they aren't on disk, reinstall.
-for pkg in next react @supabase/supabase-js; do
+# Also check critical packages that break the build when missing.
+# styled-jsx is an indirect Next.js dep wiped by concurrent worktree installs (TOD-838).
+for pkg in next react @supabase/supabase-js styled-jsx; do
   if [ ! -d "node_modules/$pkg" ]; then
     echo "[start.sh] $pkg missing from node_modules — running npm install"
     /opt/homebrew/opt/node@22/bin/npm install 2>&1 | tail -3
@@ -39,15 +39,29 @@ for pkg in next react @supabase/supabase-js; do
   fi
 done
 
-# If BUILD_ID is missing or .next is broken, rebuild
+# Build lock — prevents concurrent next build processes from corrupting .next.
+# Agents may trigger builds simultaneously; only one should win.
+LOCK_FILE="/tmp/todero-build.lock"
 if [ ! -f .next/BUILD_ID ]; then
-  echo "[start.sh] BUILD_ID missing, rebuilding..."
-  rm -rf .next
-  /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -10
+  if [ -f "$LOCK_FILE" ] && kill -0 "$(cat "$LOCK_FILE" 2>/dev/null)" 2>/dev/null; then
+    echo "[start.sh] Build already in progress (PID $(cat "$LOCK_FILE")), waiting up to 120s..."
+    for i in $(seq 1 24); do
+      sleep 5
+      [ -f .next/BUILD_ID ] && break
+    done
+  fi
   if [ ! -f .next/BUILD_ID ]; then
-    echo "[start.sh] CRITICAL: build failed even after reinstall. Retrying ONCE more with clean cache."
-    rm -rf .next node_modules/.cache
-    /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -15
+    echo $$ > "$LOCK_FILE"
+    trap 'rm -f "$LOCK_FILE"' EXIT
+    echo "[start.sh] BUILD_ID missing, rebuilding..."
+    rm -rf .next
+    /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -10
+    if [ ! -f .next/BUILD_ID ]; then
+      echo "[start.sh] CRITICAL: build failed even after reinstall. Retrying ONCE more with clean cache."
+      rm -rf .next node_modules/.cache
+      /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -15
+    fi
+    rm -f "$LOCK_FILE"
   fi
 fi
 

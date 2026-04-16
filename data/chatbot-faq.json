@@ -1,0 +1,50 @@
+[
+  {
+    "question": ["what are the issue statuses", "what statuses exist", "what are the different statuses", "issue lifecycle statuses", "list all statuses"],
+    "answer": "Issues move through these statuses: backlog → defined → refined → open → in_progress → code_review → approved → done. Epics and Features also have: draft → active → underway → feature_review → closed. Each status has a designated owner agent."
+  },
+  {
+    "question": ["how do statuses transition", "how does an issue move", "what triggers a status change", "status transition rules", "how to advance an issue"],
+    "answer": "Status transitions are driven by agents via the MC API (PATCH /api/issues). PO refines issues (backlog→refined), Builder implements (open→in_progress→code_review), Tester and Designer review (code_review→approved), then it moves to done. You cannot skip stages — the API enforces the order."
+  },
+  {
+    "question": ["how do i file a bug", "report a bug", "submit a bug report", "found a bug", "something is broken"],
+    "answer": "File a bug via the MC API: POST /api/issues with type='bug', a clear title, project, priority, and acceptance_criteria describing the expected vs actual behavior. Include a parent_id linking to the affected Feature if possible. Bugs go to Builder for a fix."
+  },
+  {
+    "question": ["what is the sprint cycle", "how do sprints work", "sprint cadence", "when does a sprint start", "sprint schedule"],
+    "answer": "Sprints are human reporting cadences, not agent blockers. Agents pull continuously from the queue — they never wait for a sprint boundary. PRs are batched at 7am and 7pm ET windows by KAOS. The sprint field on an issue is just the date it was activated."
+  },
+  {
+    "question": ["what are the agent roles", "who are the agents", "list of agents", "what does each agent do", "agent responsibilities"],
+    "answer": "Agents: Builder (code implementation), Tester (QA review), Designer (UI/UX review), PO (backlog refinement), Scout (research), Ops (infrastructure), KAOS/main (orchestrator), SMEs (todero-sme, kemuni-sme, vespera-sme, infra-sme for Tier-1 decomposition), Deployer (release coordination), Auditor (drift detection)."
+  },
+  {
+    "question": ["how do i escalate", "escalate an issue", "urgent issue", "need human review", "escalation process"],
+    "answer": "To escalate: PATCH the issue back to 'open' with rejection_count incremented and an implementation_notes explaining the urgency. KAOS and Michael review escalated issues. For inbox requests or cross-domain decisions, file an Inbox issue (reference TOD-792). Never bypass the PR window — flag instead."
+  },
+  {
+    "question": ["what is todero", "what does todero do", "explain todero", "todero platform overview", "what is kaos"],
+    "answer": "Todero is a Next.js 14 platform that runs the Mission Control (KAOS) hub. It manages a multi-agent software pipeline: issues are created, refined, implemented, reviewed, and shipped by specialized AI agents. The live board is at https://kaos.nabit.work. It uses Supabase for storage and Vercel for deployment."
+  },
+  {
+    "question": ["how to use the board", "how does the issue board work", "navigate the board", "where to find issues", "board overview"],
+    "answer": "The issue board at kaos.nabit.work shows issues by status lane. Use the tabs to switch between Issues, Sprints, Epics, and the Agent Dashboard. You can filter by project, type, priority, or assignee. Click any issue to see details, history, and child issues. All changes go through the MC API — never edit Supabase directly."
+  },
+  {
+    "question": ["what are the priority levels", "priority definitions", "what does priority mean", "critical vs high vs medium vs low", "how is priority set"],
+    "answer": "Priority levels: critical (blocks production or release), high (important for current sprint), medium (next sprint candidate), low (nice-to-have, no deadline pressure). Priority is set during PO refinement and affects agent queue ordering. Critical issues should have a clear business justification."
+  },
+  {
+    "question": ["how do i check issue history", "view issue history", "who changed this issue", "audit trail", "issue changelog"],
+    "answer": "Every PATCH to an issue is logged with transitioned_by and timestamps. Open the issue detail on the board to see the full history. For deeper audit, query Supabase directly on the issues table — filter by id and sort by updated_at. The commit_sha field links to the exact code change."
+  },
+  {
+    "question": ["what is severity", "severity levels", "s0 s1 s2 s3", "how is severity used", "difference between priority and severity"],
+    "answer": "Severity rates impact scope: S0 = user-facing (full review required), S1 = API/schema change (focused review), S2 = config/infra (spot-check), S3 = cosmetic only (sanity check). Priority is about urgency; severity drives how deep Tester and Designer go in their review. Both are set during refinement."
+  },
+  {
+    "question": ["what is definition of ready", "dor requirements", "fields required to go open", "what must be filled before open", "readiness checklist"],
+    "answer": "Before an issue can move to 'open', it needs: title, description, acceptance_criteria, severity, reviewer, owner, parent_id (for tasks/bugs), sprint, priority, and assignee. The queue-refill cron auto-promotes 'refined' issues to 'open' when the queue has ≤10 open issues."
+  }
+]

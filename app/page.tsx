@@ -28,6 +28,7 @@ import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
+import ProjectsTab from '@/components/tabs/ProjectsTab'
 import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
@@ -50,6 +51,7 @@ const NAV = [
   { id:'features',     label:'Features',     icon:'🗺️' },
   { id:'pipeline',     label:'Pipeline',     icon:'🏭' },
   { id:'issues',       label:'Issues',       icon:'📝' },
+  { id:'projects',     label:'Projects',     icon:'📦' },
   { id:'product-board', label:'Product Board', icon:'🗓️' },
   { id:'divider' as any, label:'',           icon:'' },
   { id:'automations',  label:'Automations',  icon:'⚡' },
@@ -59,7 +61,7 @@ const NAV = [
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings']
+const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','projects','product-board','automations','chat','infra','settings']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
@@ -411,6 +413,7 @@ export default function Home() {
           {tab === 'features' && <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); navigate('board') }} projectFilter={selectedBusiness} />}
           {tab === 'pipeline' && <PipelineTab projectFilter={selectedBusiness} />}
           {tab === 'issues' && <IssuesTab projectFilter={selectedBusiness} />}
+          {tab === 'projects' && <ProjectsTab projectFilter={selectedBusiness} />}
           {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} />}
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}

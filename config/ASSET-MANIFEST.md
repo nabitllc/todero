@@ -107,11 +107,11 @@ Then commit it to kaos-config so Vespera context is preserved.
 | Vespera | https://pxuyvmijevxnlxyobajh.supabase.co |
 
 ### Credentials (already in scripts — keep a copy in password manager)
-- Supabase service role key (Todero) — in builder-loop.sh, queue-runner.py
+- Supabase service role key (Todero) — in builder-loop.sh
 - Supabase key (Vespera) — in workspace-vespera/app/.env.local
 - GitHub token — in pr-window.py, monitor-prs.py
 - Discord bot token — in all monitor scripts
-- Telegram bot token — in monitor-stale.py, monitor-claude-limit.py
+- Telegram bot token — in monitor-stale.py, telegram-kaos-v2.py
 - Cloudflare tunnel — in com.nabit.cloudflared.plist
 
 ---
