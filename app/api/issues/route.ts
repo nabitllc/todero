@@ -1301,6 +1301,15 @@ export async function PATCH(req: NextRequest) {
       fields.last_rejected_at = now
       if (fields.reviewer_notes) fields.last_rejection_reason = fields.reviewer_notes
     }
+
+    // Clear resolution_type when sent back to open from a forward status —
+    // the issue may be resolved differently when re-picked up.
+    if (fields.status === 'open' && before?.status) {
+      const FORWARD_STATUSES = ['code_review', 'product_review', 'approved', 'completed']
+      if (FORWARD_STATUSES.includes(before.status as string)) {
+        fields.resolution_type = null
+      }
+    }
   }
 
   const transitioningIntoCodeReview = fields.status === 'code_review' && before?.status !== 'code_review'
