@@ -15,17 +15,24 @@
 // Channel registry is below. Adding a new named channel: one line in CHANNELS.
 import { NextRequest, NextResponse } from 'next/server'
 
-// ── Token config (prefers env, falls back to hardcoded for dev) ─────────────
-const DISCORD_BOT_TOKEN =
-  process.env.DISCORD_BOT_TOKEN ??
-  'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
+// ── Token config (fail-loud at module load — no hardcoded fallbacks) ────────
+if (!process.env.DISCORD_BOT_TOKEN) {
+  throw new Error('Missing env var: DISCORD_BOT_TOKEN')
+}
+if (!process.env.TELEGRAM_BOT_TOKEN) {
+  throw new Error('Missing env var: TELEGRAM_BOT_TOKEN')
+}
+if (!process.env.TELEGRAM_GROUP_CHAT) {
+  throw new Error('Missing env var: TELEGRAM_GROUP_CHAT')
+}
+if (!process.env.TELEGRAM_DM_CHAT) {
+  throw new Error('Missing env var: TELEGRAM_DM_CHAT')
+}
 
-const TELEGRAM_BOT_TOKEN =
-  process.env.TELEGRAM_BOT_TOKEN ??
-  '8792497927:AAEcRevJI2KnxlKpHochhSJj4-SviK281is'
-
-const TELEGRAM_GROUP_CHAT = process.env.TELEGRAM_GROUP_CHAT ?? '-1003598670302'
-const TELEGRAM_DM_CHAT    = process.env.TELEGRAM_DM_CHAT    ?? '5084875115'
+const DISCORD_BOT_TOKEN   = process.env.DISCORD_BOT_TOKEN
+const TELEGRAM_BOT_TOKEN  = process.env.TELEGRAM_BOT_TOKEN
+const TELEGRAM_GROUP_CHAT = process.env.TELEGRAM_GROUP_CHAT
+const TELEGRAM_DM_CHAT    = process.env.TELEGRAM_DM_CHAT
 
 // ── Channel registry — single source of truth ──────────────────────────────
 interface ChannelConfig {
