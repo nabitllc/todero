@@ -85,7 +85,32 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
       // ignore — might be a clean repo or a stash is in the way
     }
 
-    // Check if the branch already exists locally or remotely
+    // Guard: if a worktree for this branch already exists, reuse it instead of
+    // creating a second one. Two worktrees on the same branch corrupt node_modules
+    // symlinks and cause ENOTEMPTY failures on next npm install.
+    try {
+      const existingWorktrees = execSync('git worktree list --porcelain', {
+        cwd: REPO_ROOT, stdio: 'pipe',
+      }).toString()
+      const branchLine = `branch refs/heads/${branchName}`
+      if (existingWorktrees.includes(branchLine)) {
+        // Extract the path of the existing worktree for this branch
+        const blocks = existingWorktrees.split('\n\n')
+        for (const block of blocks) {
+          if (block.includes(branchLine)) {
+            const pathMatch = block.match(/^worktree (.+)$/m)
+            if (pathMatch?.[1] && pathMatch[1] !== REPO_ROOT) {
+              console.log(`[worktree] reusing existing worktree for ${branchName}: ${pathMatch[1]}`)
+              return { ok: true, worktreePath: pathMatch[1] }
+            }
+          }
+        }
+      }
+    } catch {
+      // If listing fails, proceed with creation — worst case we get an error at add
+    }
+
+    // Check if the branch already exists locally
     let branchExistsLocal = false
     try {
       execSync(`git show-ref --verify --quiet refs/heads/${branchName}`, {

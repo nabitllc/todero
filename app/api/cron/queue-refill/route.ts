@@ -72,12 +72,15 @@ export async function GET(req: Request) {
   for (const project of projects) {
     for (const issueType of TYPES) {
       // ── Count current open issues of this type in this project ─────────────
+      // Exclude issues assigned to michael/main — those are human-owned and
+      // should not count toward the minimum (nor be promoted from refined).
       const { count: openCount, error: countErr } = await db
         .from('issues')
         .select('id', { count: 'exact', head: true })
         .eq('project', project)
         .eq('type', issueType)
         .eq('status', 'open')
+        .not('assignee', 'in', '(michael,main)')
 
       if (countErr) {
         console.warn(`[queue-refill] count error ${project}/${issueType}:`, countErr.message)
@@ -91,12 +94,14 @@ export async function GET(req: Request) {
       }
 
       // ── Fetch refined candidates ────────────────────────────────────────────
+      // Never promote issues assigned to michael/main — those are human-owned.
       const { data: candidates, error: candErr } = await db
         .from('issues')
         .select('id,task_key,type,priority,due_date,created_at,parent_id,assignee,owner')
         .eq('project', project)
         .eq('type', issueType)
         .eq('status', 'refined')
+        .not('assignee', 'in', '(michael,main)')
         .limit(50)
 
       if (candErr || !candidates?.length) continue
