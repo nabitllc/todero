@@ -35,8 +35,13 @@ export async function PATCH(req: NextRequest) {
     query = query.eq('task_key', task_key as string)
   }
 
-  // Only update if status is in_progress — don't write heartbeats on closed/open issues
-  const { error } = await query.eq('status', 'in_progress')
+  // Only update if status is a working status — agents heartbeat while:
+  // - builder/ops/scout work on 'in_progress'
+  // - tester/designer work on 'code_review'
+  // - po works on 'refined'
+  // - deployer works on 'approved'
+  // - auditor works on 'released'
+  const { error } = await query.in('status', ['in_progress', 'code_review', 'refined', 'approved', 'released'])
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
