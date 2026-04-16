@@ -25,6 +25,7 @@ import {
   resolveReopenAssignee,
 } from '@/lib/issue-routing'
 import { recordAgentFailure, resetAgentFailures } from '@/lib/loop-breaker'
+import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -779,6 +780,14 @@ export async function GET(req: NextRequest) {
 
 // ── POST ──────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'POST', '/api/issues')
+    if (!perm.allowed) {
+      return NextResponse.json(perm.body, { status: perm.status })
+    }
+  }
+
   const body = await req.json()
   const { title, description, status, assignee, project, priority, type, due_date,
           acceptance_criteria, sprint, parent_id, severity, resolution_type,
@@ -1045,6 +1054,14 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'PATCH', '/api/issues')
+    if (!perm.allowed) {
+      return NextResponse.json(perm.body, { status: perm.status })
+    }
+  }
+
   const body = await req.json()
   // business_id is extracted for hub-scoped query validation, not written back to the issue
   const { id: rawId, task_key, transitioned_by: _transitionedBy, business_id: scopeBusinessId, ...fields } = body

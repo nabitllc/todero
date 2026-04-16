@@ -1,9 +1,43 @@
 // lib/permission-check.ts
 // TOD-1498: Testable permission middleware helper
+// TOD-1048: resolveCallerRole — extract role from cookie or identity header
 // Queries role_permissions table and enforces route-level access rules for all 5 roles.
 
 import { createClient } from '@supabase/supabase-js'
+import type { NextRequest } from 'next/server'
 import type { Role, Permission } from './rbac-types'
+
+const KNOWN_ROLES: Role[] = ['owner', 'member', 'viewer', 'god', 'admin', 'tron', 'defaultbot']
+
+/**
+ * Resolve the caller's role from the request.
+ *
+ * Resolution order:
+ *   1. `mc-role` cookie (direct role, no DB round-trip)
+ *   2. `x-caller-identity` header → workspace_members lookup
+ *   3. null if neither is present or identity is not found
+ */
+export async function resolveCallerRole(req: NextRequest): Promise<Role | null> {
+  // 1. Cookie fast-path
+  const cookieRole = req.cookies.get('mc-role')?.value
+  if (cookieRole && KNOWN_ROLES.includes(cookieRole as Role)) {
+    return cookieRole as Role
+  }
+
+  // 2. Identity header → workspace_members lookup
+  const identity = req.headers.get('x-caller-identity')
+  if (!identity) return null
+
+  const supabase = getSupabase()
+  const { data } = await supabase
+    .from('workspace_members')
+    .select('role')
+    .eq('identity', identity)
+    .maybeSingle()
+
+  if (!data?.role) return null
+  return KNOWN_ROLES.includes(data.role as Role) ? (data.role as Role) : null
+}
 
 // HTTP methods that modify data
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
