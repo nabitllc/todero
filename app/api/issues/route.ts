@@ -1305,7 +1305,7 @@ export async function PATCH(req: NextRequest) {
     // Clear resolution_type when sent back to open from a forward status —
     // the issue may be resolved differently when re-picked up.
     if (fields.status === 'open' && before?.status) {
-      const FORWARD_STATUSES = ['code_review', 'product_review', 'approved', 'completed']
+      const FORWARD_STATUSES = ['in_progress', 'code_review', 'product_review', 'approved', 'completed']
       if (FORWARD_STATUSES.includes(before.status as string)) {
         fields.resolution_type = null
       }
