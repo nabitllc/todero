@@ -50,18 +50,19 @@ async function loadContextFromDB(agentId: string): Promise<string> {
     'Content-Type': 'application/json',
   }
 
-  // Fetch global + per-agent documents
+  // Fetch global + per-agent documents + shared skill docs
   const docsRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId})&order=doc_type.asc,slug.asc`,
+    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&order=doc_type.asc,slug.asc`,
     { headers: supaHeaders }
   )
   const docs = await docsRes.json() as Array<{ agent_id: string; doc_type: string; slug: string; content: string }>
 
-  // Fetch memory: today + yesterday daily notes + long_term + self_improving
+  // Fetch memory: today + yesterday daily notes + long_term + self_improving + corrections
+  // Bug fix: table was renamed agent_memory → agent_memory_files (agent_memory is the key-value store)
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
   const memRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_memory?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&order=updated_at.desc`,
+    `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&order=updated_at.desc`,
     { headers: supaHeaders }
   )
   const memRows = await memRes.json() as Array<{ memory_type: string; date_key: string | null; content: string }>
@@ -80,8 +81,8 @@ async function loadContextFromDB(agentId: string): Promise<string> {
   const handbook = docs.find(d => d.agent_id === 'global' && d.doc_type === 'agents')
   if (handbook) sections.push(`# AGENTS HANDBOOK\n\n${handbook.content}`)
 
-  // Skills for this agent
-  const agentSkills = docs.filter(d => d.agent_id === agentId && d.doc_type === 'skill')
+  // Skills: per-agent skills first, then shared skill docs (agent_id='skill')
+  const agentSkills = docs.filter(d => (d.agent_id === agentId || d.agent_id === 'skill') && d.doc_type === 'skill')
   for (const skill of agentSkills) {
     sections.push(`# SKILL: ${skill.slug}\n\n${skill.content}`)
   }

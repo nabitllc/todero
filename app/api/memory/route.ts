@@ -63,7 +63,7 @@ async function getFromDB() {
     const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
     const res = await fetch(
-      `${SUPA_URL}/rest/v1/agent_memory?agent_id=eq.global&memory_type=eq.daily&order=date_key.desc&limit=30`,
+      `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&memory_type=eq.daily&order=date_key.desc&limit=30`,
       { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
     )
     const rows = await res.json() as Array<{ date_key: string; content: string; updated_at: string }>
