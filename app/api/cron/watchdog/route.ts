@@ -159,6 +159,63 @@ export async function GET(req: Request) {
     console.log(`[watchdog] ghost claim → open: ${issue.task_key} (${issue.assignee}, updated ${issue.updated_at})`)
   }
 
+  // ── Query 1e: stale-block GC ─────────────────────────────────────────────
+  // Issues with is_blocked=true where the blocking issue has reached a
+  // terminal/completion status (closed, released, approved, completed).
+  // The downstream-unblock in PATCH fires on transition, but if it was missed
+  // (e.g. direct DB update, old code path), this catches the stragglers.
+  // Also clears is_blocked=true where blocked_by IS NULL (zombie block flag).
+  const unblockedKeys: string[] = []
+
+  // 1e-i: blocked_by points to a resolved issue
+  const { data: staleBlocked } = await db
+    .from('issues')
+    .select('id,task_key,blocked_by')
+    .eq('is_blocked', true)
+    .not('blocked_by', 'is', null)
+    .in('status', ['open', 'refined', 'backlog', 'in_progress', 'code_review'])
+
+  if (staleBlocked && staleBlocked.length > 0) {
+    const blockingIdSet: Record<string, boolean> = {}
+    staleBlocked.forEach(i => { if (i.blocked_by) blockingIdSet[i.blocked_by as string] = true })
+    const blockingIds = Object.keys(blockingIdSet)
+    const { data: blockingIssues } = await db
+      .from('issues')
+      .select('id,status')
+      .in('id', blockingIds)
+      .in('status', ['closed', 'released', 'approved', 'completed'])
+
+    const resolvedBlockers = new Set((blockingIssues ?? []).map(i => i.id))
+    for (const issue of staleBlocked) {
+      if (resolvedBlockers.has(issue.blocked_by as string)) {
+        await db.from('issues').update({
+          is_blocked: false,
+          blocked_by: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', issue.id)
+        unblockedKeys.push(issue.task_key)
+        console.log(`[watchdog] stale-block cleared: ${issue.task_key} (blocker ${issue.blocked_by} is resolved)`)
+      }
+    }
+  }
+
+  // 1e-ii: is_blocked=true but blocked_by IS NULL (zombie flag)
+  const { data: zombieBlocked } = await db
+    .from('issues')
+    .select('id,task_key')
+    .eq('is_blocked', true)
+    .is('blocked_by', null)
+    .in('status', ['open', 'refined', 'backlog', 'in_progress', 'code_review'])
+
+  for (const issue of zombieBlocked ?? []) {
+    await db.from('issues').update({
+      is_blocked: false,
+      updated_at: new Date().toISOString(),
+    }).eq('id', issue.id)
+    unblockedKeys.push(issue.task_key)
+    console.log(`[watchdog] zombie-block cleared: ${issue.task_key} (is_blocked=true but no blocked_by)`)
+  }
+
   // ── Query 2: kick idle agents ─────────────────────────────────────────────
   // Delegate to run-agent for each lane. run-agent handles:
   //   - WIP limit check (agent already busy? returns 200 with message, not an error)
@@ -190,5 +247,6 @@ export async function GET(req: Request) {
     ts: new Date().toISOString(),
     cleared,
     kicked,
+    unblocked: unblockedKeys,
   })
 }

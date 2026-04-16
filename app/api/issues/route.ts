@@ -453,18 +453,19 @@ async function validateWorkflowTransition(
   }
 
   if (conditionRole === 'po_or_main') {
-    if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' } }
+    // 'main' kept for backward compat; canonical human identity is 'michael'; kaos is orchestrator
+    if (!transitionedBy || !['po', 'main', 'michael', 'kaos'].includes(transitionedBy)) {
+      return { transition: null, error: { error: 'Only po, michael, or kaos can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_sme') {
-    const allowed = ['po', 'main', 'kemuni-sme', 'vespera-sme']
+    const allowed = ['po', 'main', 'michael', 'kaos', 'kemuni-sme', 'vespera-sme']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po, main, or an SME can execute this transition', field: 'transitioned_by' } }
+      return { transition: null, error: { error: 'Only po, michael, kaos, or an SME can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_ops') {
-    const allowed = ['po', 'main', 'ops']
+    const allowed = ['po', 'main', 'michael', 'kaos', 'ops']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po, main, or ops can execute this transition', field: 'transitioned_by' } }
+      return { transition: null, error: { error: 'Only po, michael, kaos, or ops can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'assignee') {
     const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
@@ -489,6 +490,13 @@ async function validateWorkflowTransition(
   } else if (conditionRole === 'tester_or_designer') {
     if (!transitionedBy || !['tester', 'designer', 'ux'].includes(transitionedBy)) {
       return { transition: null, error: { error: 'Only tester or designer can execute this transition', field: 'transitioned_by' } }
+    }
+  } else if (conditionRole === 'cron_or_michael_or_kaos') {
+    // refined→open is owned by the queue-refill cron, michael (admin), or kaos (orchestrator).
+    // Agents and PO must not promote to open directly — the cron maintains queue depth.
+    const allowed = ['cron-queue-refill', 'michael', 'kaos']
+    if (!transitionedBy || !allowed.includes(transitionedBy)) {
+      return { transition: null, error: { error: 'Only the queue-refill cron, michael, or kaos can move issues to open. The cron runs every 30 min and maintains queue depth automatically.', field: 'transitioned_by' } }
     }
   }
 
@@ -1475,7 +1483,7 @@ export async function PATCH(req: NextRequest) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
     if (fields.fail_count >= 3) {
       fields.is_blocked = true
-      fields.assignee = 'main'
+      fields.assignee = 'michael'  // escalate to human — michael is the canonical human identity
     }
   }
 
@@ -1604,6 +1612,28 @@ export async function PATCH(req: NextRequest) {
   // SELF-CHAIN CALL — DO NOT REMOVE (protected by .githooks/pre-commit)
   if (fields.status && data && fields.status !== before?.status) {
     selfChainOnStatus(fields.status as string)
+  }
+
+  // ── Downstream unblock: clear is_blocked on issues waiting for this one ──
+  // When an issue reaches a terminal/completion status, any issue with blocked_by=this.id
+  // is no longer blocked. Covers: closed, released, approved, completed.
+  const UNBLOCKING_STATUSES = new Set(['closed', 'released', 'approved', 'completed'])
+  if (fields.status && UNBLOCKING_STATUSES.has(fields.status as string) && id) {
+    void (async () => {
+      const { data: blockedDeps } = await createAdminClient()
+        .from('issues')
+        .select('id, task_key')
+        .eq('blocked_by', id as string)
+        .eq('is_blocked', true)
+      if (blockedDeps && blockedDeps.length > 0) {
+        await createAdminClient()
+          .from('issues')
+          .update({ is_blocked: false, blocked_by: null, updated_at: new Date().toISOString() })
+          .eq('blocked_by', id as string)
+        const unblocked = blockedDeps.map(i => i.task_key).join(', ')
+        console.log(`[unblock-downstream] ${before?.task_key ?? id} → ${fields.status}: unblocked ${unblocked}`)
+      }
+    })()
   }
 
   // Auto-promote feature from defined→underway when ANY child moves to open or beyond.
