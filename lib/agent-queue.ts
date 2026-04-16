@@ -156,7 +156,7 @@ Rules:
     dorFields: ['title'],
     wipLimit: 3,
     workingStatus: 'refined',
-    completionStatus: 'open',
+    completionStatus: 'refined',  // PO's job ends at refined. queue-refill cron promotes to open.
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
