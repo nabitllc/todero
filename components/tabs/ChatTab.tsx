@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import IssuePreviewCard from '@/components/IssuePreviewCard'
+import AgentSelector from '@/components/AgentSelector'
 
 // Chat types
 interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string }
@@ -2423,11 +2424,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                 <div className="flex-1" />
 
                 {/* Agent selector */}
-                <select
+                <AgentSelector
                   value={selectedAgent}
-                  onChange={e => {
+                  disabled={isSending}
+                  onChange={next => {
                     const prev = selectedAgent
-                    const next = e.target.value
                     setSelectedAgent(next)
                     // MC-37: Show handoff indicator in chat
                     if (activeConv && prev !== next && activeConv.messages.length > 0) {
@@ -2441,13 +2442,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                       setChats(cs => cs.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, handoffMsg] } : c))
                     }
                   }}
-                  disabled={isSending}
-                  className="px-1.5 py-1 rounded-lg bg-[#0f0f0f] border border-white/10 text-[10px] text-white/40 shrink-0 outline-none focus:border-white/20 disabled:opacity-50 cursor-pointer"
-                  title="Select agent">
-                  {AGENT_OPTIONS.map(a => (
-                    <option key={a.id} value={a.id}>{a.label}</option>
-                  ))}
-                </select>
+                />
 
                 {/* Model selector */}
                 <select
