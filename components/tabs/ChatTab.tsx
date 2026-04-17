@@ -332,7 +332,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [showImageUrlInput, setShowImageUrlInput] = useState(false)
   const [imageUrlDraft, setImageUrlDraft] = useState('')
   const [imageUrlPreview, setImageUrlPreview] = useState<string|null>(null)
-  // Sidebar tabs: mine / openclaw / heartbeats
+  // Sidebar tabs: mine / heartbeats (openclaw tab removed — Phase 4.1 TOD-1514)
   const [sidebarTab, setSidebarTab] = useState<'mine'|'openclaw'|'heartbeats'>('mine')
   const [ocSessions, setOcSessions] = useState<any[]>([])
   const [ocLoading, setOcLoading] = useState(false)
@@ -1433,9 +1433,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
               </button>
             </div>
 
-            {/* Sidebar tabs: Mine / OpenClaw / Heartbeats */}
+            {/* Sidebar tabs: Mine / Heartbeats (OpenClaw removed Phase 4.1) */}
             <div className="flex border-b border-white/10 shrink-0">
-              {([['mine','💬','Mine'],['openclaw','🤖','OpenClaw'],['heartbeats','⏱','Beats']] as const).map(([id,icon,label])=>(
+              {([['mine','💬','Mine'],['heartbeats','⏱','Beats']] as const).map(([id,icon,label])=>(
                 <button key={id} onClick={()=>setSidebarTab(id)}
                   className={'flex-1 py-2 text-[10px] font-semibold tracking-wide transition-colors flex flex-col items-center gap-0.5 ' +
                     (sidebarTab===id ? 'text-white border-b-2 border-purple-500' : 'text-white/30 hover:text-white/40 border-b-2 border-transparent')}>

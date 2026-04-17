@@ -24,7 +24,7 @@ import threading
 import time
 import urllib.request
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 try:
     from zoneinfo import ZoneInfo
@@ -182,21 +182,47 @@ class SessionManager:
             log(f"[sessions] init failed: {e}")
 
     def _build_context(self) -> str:
-        """Load workspace context files."""
+        """Load workspace context — static docs from local FS, memory from DB via MC API.
+        Phase 3.3 (TOD-1514): memory reads now use /api/agent-memory so DB is authoritative.
+        SOUL.md and AGENTS.md remain local — they're static docs edited in git, not stale.
+        """
         parts = []
         today = datetime.now().strftime("%Y-%m-%d")
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # Static docs — local files are source of truth (edited in git repo)
         for p in [
             f"{WORKSPACE}/SOUL.md",
             f"{WORKSPACE}/AGENTS.md",
-            f"{WORKSPACE}/self-improving/memory.md",
-            f"{WORKSPACE}/memory/{today}.md",
         ]:
             try:
                 content = pathlib.Path(p).read_text().strip()
                 if content:
-                    parts.append(content[:5000])  # cap per file
+                    parts.append(content[:5000])
             except Exception:
                 pass
+
+        # Memory — read from DB via MC API (authoritative since agents write there)
+        for params in [
+            f"agent_id=global&type=long_term",
+            f"agent_id=global&type=self_improving",
+            f"agent_id=global&type=daily&date={today}",
+            f"agent_id=global&type=daily&date={yesterday}",
+        ]:
+            try:
+                req = urllib.request.Request(
+                    f"{MC_API}/agent-memory?{params}",
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    rows = json.loads(r.read())
+                    if isinstance(rows, list) and rows:
+                        content = rows[0].get("content", "").strip()
+                        if content:
+                            parts.append(content[:5000])
+            except Exception:
+                pass
+
         return "\n\n---\n\n".join(parts)
 
     def reset(self, chat_id: int):

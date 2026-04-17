@@ -103,9 +103,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const n8nTotal = ls?.n8n?.totalWorkflows ?? '?'
             const vercelStatus = ls?.vercel?.lastDeploy?.status?.toUpperCase() ?? 'READY'
             const vercelSt = vercelStatus === 'READY' ? 'ok' : vercelStatus === 'ERROR' ? 'warn' : vercelStatus === 'BUILDING' ? 'scheduled' : 'ok'
-            const oc = ls?.openclaw
-            const ocVersion = oc?.version ?? '2026.3.23-2'
-            const ocUpToDate = oc?.upToDate ?? true
+            // Phase 4 (TOD-1514): OpenClaw retired 2026-04-09
             const tgOk = ls?.channels?.telegram ?? true
             const dsOk = ls?.channels?.discord ?? true
             const usageCost = ls?.usage?.totalCost ?? 0
@@ -116,7 +114,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const heartbeats: any[] = ls?.heartbeats ?? []
 
             const liveInfra = [
-              { name:'OpenClaw',     note: `v${ocVersion}${ocUpToDate ? ' \u2713 up to date' : ' \u26a0 update available'}`, status: ocUpToDate ? 'ok' : 'warn' },
+              { name:'OpenClaw',     note: 'Retired 2026-04-09 · replaced by native stack', status: 'warn' },
               { name:'Claude Max',   note:'OAuth \u00b7 sonnet-4-6 + haiku-4-5', status:'ok' },
               { name:'OpenRouter',   note:`$${orRemaining.toFixed(2)} / $${orLimit.toFixed(2)} remaining`, status: orRemaining < 1 ? 'warn' : 'ok' },
               { name:'Telegram',     note: tgOk ? '@KemuniClaw1Bot \u00b7 connected' : 'Disconnected', status: tgOk ? 'ok' : 'warn' },
@@ -256,9 +254,9 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                   <span className="text-3xl">{"\ud83d\udda5\ufe0f"}</span>
                   <div>
                     <p className="text-white font-medium text-sm">Mac mini \u00b7 Apple Silicon \u00b7 8GB \u00b7 arm64</p>
-                    <p className="text-white/50 text-xs mt-0.5">Dedicated OpenClaw machine \u00b7 macOS 26.3.1 \u00b7 Node 22.22.1</p>
+                    <p className="text-white/50 text-xs mt-0.5">Todero native stack \u00b7 macOS 26.3.1 \u00b7 Node 22.22.1</p>
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {['OpenClaw :18789','n8n :5678','Ollama :11434','Todero :3000','Cloudflare Tunnel'].map(l=><Chip key={l} label={l}/>)}
+                      {['Todero :3000','Ollama :11434','Cloudflare Tunnel'].map(l=><Chip key={l} label={l}/>)}
                     </div>
                   </div>
                 </div>
