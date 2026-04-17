@@ -16,8 +16,8 @@ interface Notification {
   dbId?: string // notifications table id for mark-read
 }
 
-const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 function timeAgo(date: Date): string {
   const mins = Math.round((Date.now() - date.getTime()) / 60000)
@@ -68,7 +68,7 @@ export default function NotificationBell() {
     // 2. Agent completions + errors from agent_runs
     try {
       const res = await fetch(
-        `${SUPA}/rest/v1/agent_runs?select=id,agent_id,task_title,status,started_at,ended_at&status=in.(completed,done,error)&ended_at=gte.${since}&order=ended_at.desc&limit=20`,
+        `${SUPA}/rest/v1/agent_runs?select=id,agent_id,task_title,status,started_at,finished_at&status=in.(completed,done,error)&finished_at=gte.${since}&order=finished_at.desc&limit=20`,
         { headers }
       )
       const rows = await res.json()
@@ -81,7 +81,7 @@ export default function NotificationBell() {
             type: 'agent_completion',
             title: `${agent?.emoji || '🤖'} ${agent?.name || r.agent_id} ${isError ? 'failed' : 'completed'}`,
             detail: (r.task_title || 'Task').slice(0, 60),
-            timestamp: new Date(r.ended_at || r.started_at),
+            timestamp: new Date(r.finished_at || r.started_at),
             color: isError ? '#f87171' : '#34d399',
             read: false,
           })

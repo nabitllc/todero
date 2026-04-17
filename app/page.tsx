@@ -101,18 +101,8 @@ function buildPath(business: string | null, tab: string): string {
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window !== 'undefined') {
-      const fromURL = parseURL()
-      if (fromURL.tab && VALID_TABS.includes(fromURL.tab)) return fromURL.tab as Tab
-      // MC-522: wrap localStorage in try/catch — throws on iOS private browsing
-      try {
-        const saved = localStorage.getItem('mc-tab') as Tab | null
-        if (saved && VALID_TABS.includes(saved)) return saved
-      } catch (_) { /* private browsing — ignore */ }
-    }
-    return 'overview'
-  })
+  // MC-hydration: start with SSR-safe default; apply URL/localStorage after mount to avoid hydration mismatch
+  const [tab, setTab] = useState<Tab>('overview')
   const [userRole, setUserRole] = useState<string | null>(null)
   const [clock, setClock] = useState('')
   const [memFiles, setMemFiles] = useState<any[]>([])
@@ -149,19 +139,12 @@ export default function Home() {
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
-  const [selectedBusiness, setSelectedBusiness] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const fromURL = parseURL()
-      if (fromURL.business) return fromURL.business
-    }
-    return null
-  })
+  // MC-hydration: start null; apply from URL after mount
+  const [selectedBusiness, setSelectedBusiness] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [businessRailRefresh, setBusinessRailRefresh] = useState(0)
-  const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(() => {
-    if (typeof window !== 'undefined') { const p = new URLSearchParams(window.location.search); return p.get('feature') ?? undefined }
-    return undefined
-  })
+  // MC-hydration: start undefined; apply from URL params after mount
+  const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(undefined)
   const [boardFeatureFilterName, setBoardFeatureFilterName] = useState<string | undefined>(undefined)
   const [issueActivity, setIssueActivity] = useState<any[]>([])
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week')
@@ -175,10 +158,27 @@ export default function Home() {
     if (match) setUserRole(decodeURIComponent(match[1]))
   }, [])
 
+  // MC-hydration: restore tab/business/feature from URL/localStorage after mount
+  useEffect(() => {
+    const { tab: urlTab, business: urlBiz } = parseURL()
+    if (urlBiz) setSelectedBusiness(urlBiz)
+    if (urlTab && VALID_TABS.includes(urlTab)) {
+      setTab(urlTab as Tab)
+    } else {
+      try {
+        const saved = localStorage.getItem('mc-tab') as Tab | null
+        if (saved && VALID_TABS.includes(saved)) setTab(saved)
+      } catch (_) { /* private browsing */ }
+    }
+    const p = new URLSearchParams(window.location.search)
+    const feat = p.get('feature')
+    if (feat) setBoardFeatureFilter(feat)
+  }, [])
+
   // Agent runs + issue counts polling
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const prevRunsRef: { current: Record<string,string> } = { current: {} }
     const fetchRuns = () => {
       fetch(`${SUPA}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`, {
@@ -216,8 +216,8 @@ export default function Home() {
 
   // Calendar issues
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     fetch(`${SUPA}/rest/v1/issues?due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`, {
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
     }).then(r => r.json()).then(data => { if (Array.isArray(data)) setCalendarIssues(data) }).catch(() => {})
@@ -225,8 +225,8 @@ export default function Home() {
 
   // Issue activity feed
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const since = new Date(Date.now() - 7 * 86400000).toISOString()
     fetch(`${SUPA}/rest/v1/issues?updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`, {
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
