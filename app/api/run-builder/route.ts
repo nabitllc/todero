@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Sort by priority → due_date → Vespera first
+  // Sort by priority → due_date → created_at (oldest first)
   readyTasks.sort((a, b) => {
     const pa = PRIORITY_ORDER.indexOf(a.priority)
     const pb = PRIORITY_ORDER.indexOf(b.priority)
@@ -91,8 +91,6 @@ export async function POST(req: NextRequest) {
     if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
     if (a.due_date) return -1
     if (b.due_date) return 1
-    if (a.project === 'Vespera' && b.project !== 'Vespera') return -1
-    if (b.project === 'Vespera' && a.project !== 'Vespera') return 1
     return 0
   })
 
