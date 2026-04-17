@@ -364,7 +364,7 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean).join('\n\n---\n\n')
 
     const agentSkillFiles: Record<string, string[]> = {
-      po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`],
+      po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`, `${WORKSPACE}/skills/grooming-architect/SKILL.md`, `${WORKSPACE}/skills/bug-diagnostics/SKILL.md`],
       main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
       scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
       builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
