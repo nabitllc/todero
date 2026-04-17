@@ -1,8 +1,8 @@
 # PRD: OpenClaw → Native Stack Migration
 
 **Created:** 2026-04-17 | **Owner:** Michael Saenz | **Author:** KAOS  
-**Status:** Approved — Implementation Pending  
-**Tracking epic:** Create INF epic in backlog
+**Status:** ✅ Complete (Phases 1–5, 8 done 2026-04-17) | Phase 6 (Chat rebuild) + Phase 7 (Cost tracking) → separate sprints  
+**Tracking epic:** TOD-1514
 
 ---
 
@@ -802,4 +802,42 @@ On build failure: posts error to Discord, does NOT restart — current running v
 | Agent DB read bugs (wrong table, skills query) | ✅ Done |
 | Discord `post_functions` on 18 workflow transitions | ✅ Done |
 | `app/api/heartbeat/route.ts` status fix | ✅ Done |
+
+---
+
+## Migration Complete — Summary
+
+**Completed 2026-04-17.** All Phases 1–5 and Phase 8 implemented in a single session.
+
+### What Was Done
+| Phase | Summary | Status |
+|---|---|---|
+| 1 | Dead path references removed from UI components (InfraTab, SettingsTab, ChatTab, CalendarTab, AutomationsTab, OnboardingWizard) | ✅ |
+| 2.1 | office-stream rewritten → reads agent_runs table (30s interval, was 3s) | ✅ |
+| 2.2 | Migration 017: tokens_used + cost_usd columns on agent_runs | ✅ |
+| 2.3 | agents/[id]/files rewritten → reads agent_documents table | ✅ |
+| 2.4 | health route → reads heartbeat_state from agent_memory_files | ✅ |
+| 2.5 | run-agent dead path removal (SOUL.md local read, skill local paths) | ✅ |
+| 3.3 | telegram-kaos-v2.py → uses /api/agent-memory for daily/memory files | ✅ |
+| 3.4 | daily-memory-seed LaunchAgent created (00:05 daily) | ✅ |
+| 4.2 | chat/route.ts + send-to-agent stubbed 501 (Phase 6 = separate sprint) | ✅ |
+| 5 | status/route.ts: openclaw exec removed → agent activity from agent_runs | ✅ |
+| 6 | Chat backend rebuild | 🔜 Separate sprint |
+| 7 | Agent cost tracking wiring (tokens_used/cost_usd in run-agent) | 🔜 Separate sprint |
+| 8.5 | monitor-prs/pr-merge/release-notes: hardcoded tokens → env vars | ✅ |
+
+### Side Effects Fixed
+- React hydration errors #418/#423/#425 (page.tsx useState → useEffect)
+- Supabase 400 on agent_runs (ended_at → finished_at in NotificationBell)
+- BoardTab 60s auto-poll removed (saves ~1.87GB/day egress)
+- OfficeTab poll slowed 30s → 120s
+- NotificationBell: hardcoded service role key replaced with env vars
+- run-builder DoR gate: nonexistent test_tier column removed from filter
+- 16 LaunchAgents loaded and active
+
+### Supabase Egress Reduction Tasks (queued for builder)
+- TOD-1995: /api/issues field projection (open)
+- TOD-1996: agent-docs LIMIT 50 + summary mode (open)
+- TOD-1997: office-stream already done (open for verification)
+- TOD-1998: /api/issues 30s server-side cache (open)
 | `config/scripts/render-agent-context.py` path update | ✅ Done (uses `~/todero/config`) |
