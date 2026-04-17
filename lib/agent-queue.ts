@@ -63,7 +63,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'sonnet',
     pickupStatus: 'open',
     extraFilters: 'type=in.(task,bug)&project=eq.Todero',  // Todero-only focus, tasks/bugs only
-    dorFields: ['description', 'acceptance_criteria'],
+    dorFields: ['description', 'acceptance_criteria', 'test_tier'],
     // TOD-XXX (2026-04-10, Michael approved): bumped from 1 to 2 for parallel
     // builds. Safe now that each spawn runs in its own isolated git worktree
     // (TOD-806) so two concurrent Builders can't collide on branch state.
@@ -98,7 +98,7 @@ Rules:
     model: 'sonnet',
     pickupStatus: 'open',
     extraFilters: 'type=eq.ops',  // Ops only handles ops-type issues (infra, config, tooling)
-    dorFields: ['description', 'acceptance_criteria'],
+    dorFields: ['description', 'acceptance_criteria', 'test_tier'],
     wipLimit: 1,
     workingStatus: 'in_progress',
     completionStatus: 'code_review',
@@ -174,6 +174,12 @@ CRITICAL — assignee rules when creating or refining child tasks:
 - Kemuni tasks → assignee: "kemuni-sme"
 - Vespera tasks → assignee: "vespera-sme"
 - NEVER set assignee to "po" — PO only refines, never implements.
+
+REQUIRED — test_tier must be set on every task, bug, and ops issue before moving to refined:
+- "smoke"       → config change, tiny fix, no new code paths (tester: build + spot check)
+- "integration" → new API route, component, or DB query (tester: check the integration end-to-end)
+- "e2e"         → user-facing flow, auth path, or anything touching sprint/issue lifecycle (tester: walk full flow)
+Research issues do NOT need test_tier (they go to product_review, not code_review).
 
 Do NOT move refined issues to open yourself — queue-refill runs hourly and promotes refined → open automatically. Your job is backlog → refined only.
 
