@@ -1192,6 +1192,18 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // description required before moving to refined (belt-and-suspenders — DB validators also enforce this,
+  // but this catches direct Supabase writes or PO sessions that omit the field from the PATCH body)
+  if (fields.status === 'refined' && before?.status !== 'refined') {
+    const effectiveDesc = ((fields.description ?? before?.description) as string | undefined | null)?.trim() ?? ''
+    if (!effectiveDesc) {
+      return NextResponse.json(
+        { error: 'description is required before moving to refined. Add a clear description of what needs to be built/done and retry.' },
+        { status: 400 }
+      )
+    }
+  }
+
   // TOD-604: acceptance_criteria required before moving to open
   if (fields.status === 'open' && before?.status !== 'open') {
     const effectiveAC = (fields.acceptance_criteria ?? before?.acceptance_criteria ?? '').trim()
