@@ -298,12 +298,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
-  // Auto-refresh Board every 60s so overnight changes appear without manual reload
-  // (raised from 30s to reduce Supabase egress — see TOD-XXX event-driven update plan)
-  useEffect(() => {
-    const iv = setInterval(() => { fetchTasks() }, 60_000)
-    return () => clearInterval(iv)
-  }, [fetchTasks])
+  // Auto-refresh removed — use the ↻ button to refresh manually (saves ~1.9 GB/day egress)
 
   const createTask = async (t: Partial<Task>) => {
     const res = await fetch('/api/issues', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })

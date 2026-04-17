@@ -43,7 +43,16 @@ const MAX_REJECTION_CYCLES = 3
 const AGENT_CONTEXT_SOURCE = process.env.AGENT_CONTEXT_SOURCE ?? 'fs'
 const MAX_CONTEXT_BYTES = 30_000
 
+// In-memory context cache keyed by agentId — TTL 5 minutes
+// Prevents redundant Supabase reads when watchdog kicks same agent repeatedly
+const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000
+const contextCache = new Map<string, { context: string; expiresAt: number }>()
+
 async function loadContextFromDB(agentId: string): Promise<string> {
+  const cached = contextCache.get(agentId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.context
+  }
   const supaHeaders = {
     'apikey': getSupaKey(),
     'Authorization': `Bearer ${getSupaKey()}`,
@@ -106,6 +115,8 @@ async function loadContextFromDB(agentId: string): Promise<string> {
     combined = sections.join('\n\n---\n\n')
   }
 
+  // Cache the result
+  contextCache.set(agentId, { context: combined, expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS })
   return combined
 }
 

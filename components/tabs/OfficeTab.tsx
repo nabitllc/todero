@@ -7,8 +7,8 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const fetchRuns = () => {
       fetch(`${SUPA}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`, {
         headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
@@ -17,7 +17,8 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
       }).catch(() => {})
     }
     fetchRuns()
-    const iv = setInterval(fetchRuns, 30000)
+    // Slowed from 30s → 120s to reduce egress; office activity is not time-critical
+    const iv = setInterval(fetchRuns, 120000)
     return () => clearInterval(iv)
   }, [])
 
