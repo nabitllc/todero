@@ -81,7 +81,9 @@ echo "$ISSUES" | jq -c '.[]' | while read -r ISSUE; do
 
     # Alert Discord
     MSG="🔴 **Smoke Test Failed: $KEY**\nBuild failed — returned to Builder.\n\`\`\`\n$FAIL_SNIPPET\n\`\`\`"
-    /opt/homebrew/bin/openclaw message send --channel discord --target "channel:$DISCORD_CHANNEL" --message "$MSG" 2>/dev/null || true
+    curl -s -X POST "http://localhost:3000/api/notify" \
+      -H "Content-Type: application/json" \
+      -d "{\"text\": \"$MSG\", \"channels\": [\"discord-alerts\"]}" 2>/dev/null || true
     FAIL_COUNT=$((FAIL_COUNT + 1))
   fi
 done

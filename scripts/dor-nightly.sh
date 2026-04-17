@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
-SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q}"
+SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}"
 MC_API="${MC_API_URL:-http://localhost:3000/api}"
 DISCORD_CHANNEL="${DISCORD_ALERTS_CHANNEL:-1487584901678104698}"
 
@@ -37,10 +37,9 @@ echo "$ALL_INCOMPLETE" | jq -c '.[]' | while read -r ISSUE; do
   ID=$(echo "$ISSUE" | jq -r '.id')
   KEY=$(echo "$ISSUE" | jq -r '.task_key // "?"')
 
-  curl -sf -X PATCH "$SUPA_URL/rest/v1/issues?id=eq.$ID" \
-    -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" \
+  curl -sf -X PATCH "$MC_API/issues" \
     -H "Content-Type: application/json" \
-    -d '{"status":"backlog"}' >/dev/null 2>&1 || true
+    -d "{\"task_key\":\"$KEY\",\"status\":\"backlog\",\"transitioned_by\":\"dor-nightly\"}" >/dev/null 2>&1 || true
 
   echo "[dor-nightly] $KEY → backlog (DoR incomplete)"
 done
@@ -49,6 +48,8 @@ done
 ITEMS=$(echo "$ALL_INCOMPLETE" | jq -r '.[] | "- **\(.task_key // "?")** (\(.project // "?")) \(.title // "")"' | head -20)
 MSG="🚫 **DoR Nightly: $COUNT builder issues moved to backlog**\n$ITEMS\n\nMissing: description, test_tier, or acceptance_criteria.\nKAOS: complete DoR before re-adding to sprint."
 
-/opt/homebrew/bin/openclaw message send --channel discord --target "channel:$DISCORD_CHANNEL" --message "$MSG" 2>/dev/null || true
+curl -s -X POST "http://localhost:3000/api/notify" \
+  -H "Content-Type: application/json" \
+  -d "{\"text\": \"$MSG\", \"channels\": [\"discord-alerts\"]}" 2>/dev/null || true
 
 echo "[dor-nightly] Enforcement complete: $COUNT issues moved to backlog"

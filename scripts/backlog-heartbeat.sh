@@ -4,10 +4,10 @@
 set -euo pipefail
 
 SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
-SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q}"
+SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}"
 DISCORD_CHANNEL="${DISCORD_ALERTS_CHANNEL:-1487584901678104698}"
 
-PROJECTS=("Vespera" "Mission Control" "Kemuni" "Infrastructure" "KAOS")
+PROJECTS=("Vespera" "Todero" "Kemuni" "KAOS")
 MIN_BACKLOG=10
 MIN_DOF_READY=3
 ALERTS=""
@@ -51,7 +51,9 @@ done
 
 if [ -n "$ALERTS" ]; then
   MSG="📊 **Backlog Heartbeat — $(date '+%Y-%m-%d %H:%M') ET**$ALERTS\n\nKAOS: generate features and prep DoF for any project below threshold."
-  /opt/homebrew/bin/openclaw message send --channel discord --target "channel:$DISCORD_CHANNEL" --message "$MSG" 2>/dev/null || true
+  curl -s -X POST "http://localhost:3000/api/notify" \
+    -H "Content-Type: application/json" \
+    -d "{\"text\": \"$MSG\", \"channels\": [\"discord-alerts\"]}" 2>/dev/null || true
   echo "[backlog-heartbeat] Alerts sent to Discord"
 else
   echo "[backlog-heartbeat] All projects meet minimums"
