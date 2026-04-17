@@ -86,28 +86,29 @@ const SKILLS_MAP: Record<string, string[]> = {
   auditor:       ['Drift Detection', 'Config Audit', 'Task Hygiene'],
 }
 
-const SOUL_PATH = '~/todero/config/SOUL.md'
-const AGENTS_PATH = '~/todero/config/AGENTS.md'
+// Context is now loaded from Supabase agent_documents table (AGENT_CONTEXT_SOURCE=db).
+// These labels are display-only strings shown in the Agent Config UI panel.
+const DB_SOURCE = 'Supabase: agent_documents (soul + agents handbook + skills)'
 
 const SYSTEM_PROMPT_MAP: Record<string, string> = {
-  main:          `${SOUL_PATH}, ${AGENTS_PATH}`,
-  builder:       `${SOUL_PATH}, ${AGENTS_PATH}, ~/agent-worktrees/builder-*/CLAUDE.md`,
-  tester:        `${SOUL_PATH}, ${AGENTS_PATH}`,
-  ops:           `${SOUL_PATH}, ${AGENTS_PATH}`,
-  scout:         `${SOUL_PATH}, ${AGENTS_PATH}`,
-  po:            `${SOUL_PATH}, ${AGENTS_PATH}`,
-  deployer:      `${SOUL_PATH}, ${AGENTS_PATH}`,
-  'kemuni-sme':  `${SOUL_PATH}, ${AGENTS_PATH}`,
-  'vespera-sme': `${SOUL_PATH}, ${AGENTS_PATH}`,
-  'todero-sme':  `${SOUL_PATH}, ${AGENTS_PATH}`,
-  'infra-sme':   `${SOUL_PATH}, ${AGENTS_PATH}`,
-  designer:      `${SOUL_PATH}, ${AGENTS_PATH}`,
-  ux:            `${SOUL_PATH}, ${AGENTS_PATH}`,
-  auditor:       `${SOUL_PATH}, ${AGENTS_PATH}`,
-  growth:        `${SOUL_PATH}, ${AGENTS_PATH}`,
-  security:      `${SOUL_PATH}, ${AGENTS_PATH}`,
-  community:     `${SOUL_PATH}, ${AGENTS_PATH}`,
-  content:       `${SOUL_PATH}, ${AGENTS_PATH}`,
+  main:          DB_SOURCE,
+  builder:       `${DB_SOURCE}, worktree CLAUDE.md`,
+  tester:        DB_SOURCE,
+  ops:           DB_SOURCE,
+  scout:         DB_SOURCE,
+  po:            DB_SOURCE,
+  deployer:      DB_SOURCE,
+  'kemuni-sme':  DB_SOURCE,
+  'vespera-sme': DB_SOURCE,
+  'todero-sme':  DB_SOURCE,
+  'infra-sme':   DB_SOURCE,
+  designer:      DB_SOURCE,
+  ux:            DB_SOURCE,
+  auditor:       DB_SOURCE,
+  growth:        DB_SOURCE,
+  security:      DB_SOURCE,
+  community:     DB_SOURCE,
+  content:       DB_SOURCE,
 }
 
 export async function GET(req: NextRequest) {
@@ -118,7 +119,7 @@ export async function GET(req: NextRequest) {
     id,
     name: id,
     model: MODEL_MAP[id] ?? 'claude-sonnet-4-6',
-    systemPromptSource: SYSTEM_PROMPT_MAP[id] ?? SOUL_PATH,
+    systemPromptSource: SYSTEM_PROMPT_MAP[id] ?? DB_SOURCE,
     queueFilter: QUEUE_FILTER_MAP[id] ?? null,
     skills: SKILLS_MAP[id] ?? [],
     escalationTriggers: ESCALATION_MAP[id] ?? [],

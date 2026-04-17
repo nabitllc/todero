@@ -1,18 +1,14 @@
-import { NextResponse } from 'next/server'
-import fs from 'fs'
-import path from 'path'
+import { NextRequest, NextResponse } from 'next/server'
+import { withPermission } from '@/lib/rbac-middleware'
 
-// TOD-798: todero/config is the canonical workspace since 2026-04-09.
-// Do not revert to .openclaw/workspace — that path was moved and will not exist.
-const MEMORY_DIR = '/Users/kemuniagent/todero/config/memory'
+// Memory is now read from Supabase agent_memory_files (AGENT_CONTEXT_SOURCE=db).
+// FS fallback removed — getFromFS() was dead code once DB mode was activated.
 
 function wordCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
 
 function parseEntries(content: string) {
-  // Split on ## headings — each becomes a journal entry
-  // First element is the H1 header block — skip it
   const sections = content.split(/^## /m).filter(Boolean).slice(1)
   return sections.map(section => {
     const lines = section.split('\n')
@@ -49,13 +45,11 @@ function friendlyDate(filename: string) {
   } catch { return d }
 }
 
-export async function GET() {
-  const useDB = process.env.AGENT_CONTEXT_SOURCE === 'db'
-
-  if (useDB) {
-    return getFromDB()
-  }
-  return getFromFS()
+export async function GET(req: NextRequest) {
+  const REQUIRED_PERMISSION = 'memory:read' as const
+  const denied = await withPermission(REQUIRED_PERMISSION)(req)
+  if (denied) return denied
+  return getFromDB()
 }
 
 async function getFromDB() {
@@ -115,43 +109,3 @@ async function getFromDB() {
   }
 }
 
-async function getFromFS() {
-  try {
-    if (!fs.existsSync(MEMORY_DIR)) return NextResponse.json({ files: [] })
-
-    const files = fs.readdirSync(MEMORY_DIR)
-      .filter(f => f.endsWith('.md'))
-      .sort()
-      .reverse()
-      .slice(0, 30)
-      .map(filename => {
-        const full = fs.readFileSync(path.join(MEMORY_DIR, filename), 'utf-8')
-        const stat = fs.statSync(path.join(MEMORY_DIR, filename))
-        const words = wordCount(full)
-        const kb = (stat.size / 1024).toFixed(1)
-        const entries = parseEntries(full)
-        const group = groupLabel(filename)
-        const label = friendlyDate(filename)
-        // First H1 line as title
-        const h1 = full.match(/^#\s+(.+)/m)
-        const title = h1 ? h1[1].trim() : label
-
-        return {
-          filename,
-          date: filename.replace('.md', '').slice(0, 10),
-          label,
-          title,
-          group,
-          words,
-          kb,
-          modifiedMs: stat.mtimeMs,
-          entries,
-          preview: full.slice(0, 400),
-        }
-      })
-
-    return NextResponse.json({ files })
-  } catch (e) {
-    return NextResponse.json({ files: [], error: String(e) })
-  }
-}
