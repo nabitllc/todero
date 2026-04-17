@@ -16,12 +16,15 @@ export async function POST(_req: NextRequest) {
     return NextResponse.json({ ok: false, message: data.message ?? 'Builder trigger failed' }, { status: res.status })
   }
 
-  // Also notify KAOS agent asynchronously (fire and forget)
-  const notifyCmd = `openclaw message --agent main --text "Sprint triggered from UI: ${data.task ?? 'builder task'} (${data.taskKey ?? ''})" 2>/dev/null &`
-  try {
-    const { exec } = await import('child_process')
-    exec(notifyCmd)
-  } catch { /* non-critical */ }
+  // Notify via /api/notify (fire and forget) — openclaw message replaced (TOD-1514)
+  fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: `🏃 Sprint triggered from UI: ${data.task ?? 'builder task'} (${data.taskKey ?? ''})`,
+      channels: ['discord-alerts'],
+    }),
+  }).catch(() => { /* non-critical */ })
 
   return NextResponse.json({ ok: true, ...data })
 }

@@ -130,7 +130,7 @@ Branch: ${branch || 'main'}
 ${branch ? `Checkout branch ${branch} (create if needed): git checkout -b ${branch} 2>/dev/null || git checkout ${branch}` : 'Work on main branch.'}
 Add [skip ci] to all commits. npm run build must pass.
 When done: curl -s -X POST http://localhost:3000/api/task-done -H 'x-internal-secret: kaos-internal-2026' -H 'Content-Type: application/json' -d '{"taskId":"${task.id}","taskTitle":"${task.title}","agentId":"builder","status":"done"}'
-Then: /opt/homebrew/bin/openclaw system event --text "Done: Builder completed ${task.title}" --mode now`
+Then notify: curl -s -X POST http://localhost:3000/api/notify -H 'Content-Type: application/json' -d '{"text":"✅ Builder completed ${task.title}","channels":["discord-alerts"]}'`
 
   const repoDir = `/tmp/builder-${task.id.slice(0, 8)}`
   execAsync(`git clone https://github.com/nabitllc/vespera.git ${repoDir} 2>/dev/null; cd ${repoDir} && claude --permission-mode bypassPermissions --print '${prompt.replace(/'/g, "\\'")}' 2>&1 &`)

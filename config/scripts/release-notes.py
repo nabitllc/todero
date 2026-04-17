@@ -29,7 +29,8 @@ except ImportError:
     ET = None
 
 MC_API = "http://localhost:3000/api/issues"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+import os
+DISCORD_BOT = os.environ.get("DISCORD_BOT_TOKEN", "")
 GUILD_ID = "1485333335868834062"  # derived from fallback channel context; unused directly
 ALERTS_CHANNEL = "1485333335868834063"   # #alerts fallback
 RELEASE_CHANNEL_NAME = "release-notes"

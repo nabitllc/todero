@@ -339,7 +339,6 @@ export async function POST(req: NextRequest) {
     // Existing filesystem path (unchanged)
     const workspaceParts = [
       readIfExists(`${WORKSPACE}/SOUL.md`),
-      readIfExists(`${TODERO_DIR}/workspace-${agentId}/SOUL.md`),
       readIfExists(`${WORKSPACE}/AGENTS.md`),
       readIfExists(`${WORKSPACE}/self-improving/memory.md`),
       readIfExists(`${WORKSPACE}/memory/${today}.md`),
@@ -447,17 +446,13 @@ You are running inside a git worktree. Your node_modules directory is a SYMLINK 
   // deeper protocols (memory templates, scaling, migration, operations playbooks) if
   // it decides the task needs them. Keeps the inline prompt small while still giving
   // agents a way to self-rescue when a task exceeds their baseline knowledge.
+  // Phase 2.5 (TOD-1514): Reference DB slugs, not local file paths
   const skillReference = `
 
-📚 Additional skills available on disk (Read on demand):
-  ~/todero/config/skills/proactivity/{setup,memory-template,migration,recovery,state,heartbeat-rules}.md
-  ~/todero/config/skills/self-improving/{SKILL,setup,scaling,operations,memory-template,learning,boundaries}.md
-  ~/todero/config/skills/agent-setup/references/{soul-template,agents-template,heartbeat-template}.md
-  ~/todero/config/skills/issue-routing/SKILL.md
-  ~/todero/config/skills/bug-report/SKILL.md
-  ~/todero/config/skills/agent-creation/SKILL.md
+📚 Additional skills available via DB slugs (already loaded in context above by slug name):
+  proactivity, self-improving, issue-routing, bug-report, agent-creation, agent-setup, deployer-prep
 
-Your universal behavioral rules (proactivity loop, corrections discipline, memory hygiene, reflections) are already inlined above. Only Read additional files when the task specifically needs deeper protocol — don't load everything speculatively.`
+Your universal behavioral rules (proactivity loop, corrections discipline, memory hygiene, reflections) are already inlined in the workspace-context above. Only request additional skill context when the task specifically needs deeper protocol — don't load everything speculatively.`
 
   const branchInstruction = branch
     ? `\nBranch: ${branch} (git checkout -b ${branch} 2>/dev/null || git checkout ${branch})`

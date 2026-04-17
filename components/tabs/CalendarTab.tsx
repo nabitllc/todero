@@ -202,10 +202,10 @@ export default function CalendarTab({
                 <SH icon="🤖">Automations</SH>
                 <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
                   {/* Group by source */}
-                  {(['openclaw-cron','n8n','openclaw'] as const).map(src => {
+                  {(['launchagent','vercel-cron','n8n'] as const).map(src => {
                     const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src)
                     if (group.length === 0) return null
-                    const srcLabel = src === 'openclaw-cron' ? '⚡ OpenClaw Crons' : src === 'n8n' ? '🔧 n8n Workflows' : '💓 Heartbeats'
+                    const srcLabel = src === 'launchagent' ? '⚡ LaunchAgents' : src === 'n8n' ? '🔧 n8n (retired)' : '⏱ Vercel Crons'
                     return (
                       <div key={src}>
                         <div className="px-4 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-white/30 border-b border-white/10" style={{background:'#080808'}}>{srcLabel}</div>
@@ -256,7 +256,7 @@ export default function CalendarTab({
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Runner</p><p className="text-white/70 text-sm font-mono">{cronModal.model}</p></div>
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-white/70 text-sm">{cronModal.status}</span></div></div>
-                      {(cronModal as any).source === 'openclaw-cron' && <>
+                      {(cronModal as any).source === 'launchagent' && <>
                         {(cronModal as any).sessionTarget && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-white/70 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
                         {(cronModal as any).lastRunAtMs && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-white/70 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
                         {(cronModal as any).lastRunStatus && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Last Status</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}

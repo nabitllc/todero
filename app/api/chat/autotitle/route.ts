@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openclaw',
+        model: 'claude-haiku-4-5',
         messages: [{
           role: 'user',
           content: `Generate a 3-5 word title for a conversation that starts with: "${firstUserMessage.slice(0, 200)}". Reply with ONLY the title, no quotes, no punctuation.`

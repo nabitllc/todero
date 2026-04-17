@@ -18,7 +18,7 @@ export default function AutomationsTab({ displayCrons }: AutomationsTabProps) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-base font-medium text-white">Automations</h2>
-          <p className="text-xs text-white/50 mt-0.5">All scheduled jobs — OpenClaw crons, n8n workflows, and heartbeats</p>
+          <p className="text-xs text-white/50 mt-0.5">All scheduled jobs — LaunchAgents, Vercel crons, and background scripts</p>
         </div>
         <a href="https://n8n.nabit.work" target="_blank" rel="noopener noreferrer"
           className="text-xs text-white/40 hover:text-white border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-lg transition-all">
@@ -56,10 +56,10 @@ export default function AutomationsTab({ displayCrons }: AutomationsTabProps) {
 
       {/* Grouped cron list */}
       <div className="rounded-xl border border-white/10 overflow-hidden bg-[#0f0f0f]">
-        {(['openclaw-cron','n8n','openclaw'] as const).map(src => {
+        {(['launchagent','vercel-cron','n8n'] as const).map(src => {
           const group = displayCrons.filter((c:any) => (c.source ?? 'n8n') === src && (!autoProjectFilter || c.project === autoProjectFilter))
           if (group.length === 0) return null
-          const srcLabel = src === 'openclaw-cron' ? '⚡ OpenClaw Crons' : src === 'n8n' ? '🔧 n8n Workflows' : '💓 Heartbeats'
+          const srcLabel = src === 'launchagent' ? '⚡ LaunchAgents' : src === 'n8n' ? '🔧 n8n (retired)' : '⏱ Vercel Crons'
           return (
             <div key={src}>
               <div className="px-4 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-white/30 border-b border-white/10 bg-[#080808]">{srcLabel}</div>
@@ -115,7 +115,7 @@ export default function AutomationsTab({ displayCrons }: AutomationsTabProps) {
               <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><StatusDot variant={cronModal.status === 'active' || cronModal.status === 'ok' ? 'active' : cronModal.status === 'error' ? 'error' : 'idle'} /><span className="text-white/70 text-sm">{cronModal.status}</span></div></div>
               {(cronModal as any).lastRunAtMs && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Last Run</p><p className="text-white/70 text-sm">{new Date((cronModal as any).lastRunAtMs).toLocaleString()}</p></div>}
               {(cronModal as any).lastRunStatus && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Last Result</p><p className={`text-sm font-mono ${(cronModal as any).lastRunStatus==='ok'||( cronModal as any).lastRunStatus==='success'?'text-green-400':'text-red-400'}`}>{(cronModal as any).lastRunStatus}</p></div>}
-              {(cronModal as any).source === 'openclaw-cron' && <>
+              {(cronModal as any).source === 'launchagent' && <>
                 {(cronModal as any).sessionTarget && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-white/70 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}
                 {(cronModal as any).consecutiveErrors > 0 && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Consecutive Errors</p><p className="text-red-400 text-sm font-mono">{(cronModal as any).consecutiveErrors}</p></div>}
               </>}

@@ -1,11 +1,11 @@
+// Phase 5 (TOD-1514): Removed openclaw CLI calls and ~/.openclaw session file reads.
+// Agent activity now sourced from agent_runs table. OpenClaw retired 2026-04-09.
 import { NextResponse } from 'next/server'
 import fs from 'fs'
-import { exec } from 'child_process'
-import { promisify } from 'util'
+import { createAdminClient } from '@/lib/hub-client'
 
-const execAsync = promisify(exec)
-const OPENROUTER_KEY = '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'
-const N8N_KEY = 'n8n_api_34e5ba0e4da8b759e75b310a8c014c4de0275375eba302bdf87d2e7e6dd2adac'
+const OPENROUTER_KEY = process.env.OPENROUTER_KEY || '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'
+const N8N_KEY = process.env.N8N_API_KEY || ''
 
 function getVercelToken(): string | null {
   try {
@@ -20,37 +20,8 @@ function getVercelToken(): string | null {
   } catch { return null }
 }
 
-function getSessionCosts(sessionsPaths: string[]) {
-  let totalCost = 0, totalTokens = 0, todayCost = 0, todayTokens = 0
-  const byModel: Record<string, number> = {}
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  for (const p of sessionsPaths) {
-    try {
-      if (!fs.existsSync(p)) continue
-      const stat = fs.statSync(p)
-      const isToday = stat.mtimeMs >= todayStart
-      const raw = JSON.parse(fs.readFileSync(p, 'utf-8'))
-      const items = typeof raw === 'object' && !Array.isArray(raw) ? Object.values(raw) : (Array.isArray(raw) ? raw : [])
-      for (const item of items as any[]) {
-        const cost = item?.estimatedCostUsd ?? 0
-        const tokens = item?.totalTokens ?? 0
-        const model = item?.model ?? 'unknown'
-        totalCost += cost
-        totalTokens += tokens
-        byModel[model] = (byModel[model] ?? 0) + cost
-        if (isToday) {
-          todayCost += cost
-          todayTokens += tokens
-        }
-      }
-    } catch { /* skip */ }
-  }
-  return { totalCost: +totalCost.toFixed(4), totalTokens, byModel, todayCost: +todayCost.toFixed(4), todayTokens }
-}
-
 export async function GET() {
-  const [openrouter, ollama, n8n, vercel, ocStatus] = await Promise.allSettled([
+  const [openrouter, ollama, n8n, vercel] = await Promise.allSettled([
     // OpenRouter
     fetch('https://openrouter.ai/api/v1/auth/key', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
@@ -60,11 +31,11 @@ export async function GET() {
     // Ollama
     fetch('http://localhost:11434/api/tags', { cache: 'no-store' }).then(r => r.json()),
 
-    // n8n
-    fetch('http://localhost:5678/api/v1/workflows', {
+    // n8n — retired but kept for backwards compat; will always fail
+    N8N_KEY ? fetch('http://localhost:5678/api/v1/workflows', {
       headers: { 'X-N8N-API-KEY': N8N_KEY },
       cache: 'no-store',
-    }).then(r => r.json()),
+    }).then(r => r.json()) : Promise.reject('n8n retired'),
 
     // Vercel
     (async () => {
@@ -76,9 +47,6 @@ export async function GET() {
       )
       return r.json()
     })(),
-
-    // OpenClaw status (local CLI)
-    execAsync('/opt/homebrew/bin/openclaw status --json', { timeout: 8000 }).then(r => JSON.parse(r.stdout)),
   ])
 
   const result: any = { gateway: { running: true } }
@@ -100,7 +68,7 @@ export async function GET() {
     result.ollama = { running: false, models: [] }
   }
 
-  // ── n8n ──
+  // ── n8n — retired ──
   if (n8n.status === 'fulfilled') {
     const workflows: any[] = n8n.value?.data ?? n8n.value ?? []
     const active = workflows.filter((w: any) => w.active).length
@@ -125,159 +93,76 @@ export async function GET() {
     result.vercel = null
   }
 
-  // ── OpenClaw (source of truth) ──
-  if (ocStatus.status === 'fulfilled') {
-    const oc: any = ocStatus.value
-
-    // Version + update
-    result.openclaw = {
-      version: oc.runtimeVersion,
-      upToDate: oc.update?.registry?.latestVersion === oc.runtimeVersion,
-      latestVersion: oc.update?.registry?.latestVersion,
-      gatewayRunning: oc.gatewayService?.running ?? true,
-      gatewayLatencyMs: oc.gateway?.connectLatencyMs,
-    }
-
-    // Channels
-    const chSummary: string[] = oc.channelSummary ?? []
-    result.channels = {
-      telegram: chSummary.some((s: string) => s.includes('Telegram: configured')),
-      discord: chSummary.some((s: string) => s.includes('Discord: configured')),
-    }
-
-    // Heartbeat schedule per agent
-    const hbAgents: any[] = oc.heartbeat?.agents ?? []
-    result.heartbeats = hbAgents.map((a: any) => ({
-      agentId: a.agentId,
-      enabled: a.enabled,
-      every: a.every,
-    }))
-
-    // Token usage from session files
-    const sessionPaths: string[] = oc.sessions?.paths ?? []
-    const costs = getSessionCosts(sessionPaths)
-    result.usage = costs
-  } else {
-    result.openclaw = null
-    result.channels = null
-    result.heartbeats = null
-    result.usage = null
+  // ── OpenClaw — retired 2026-04-09 ──
+  result.openclaw = null
+  result.channels = {
+    telegram: !!process.env.TELEGRAM_BOT_TOKEN,
+    discord: !!process.env.DISCORD_BOT_TOKEN,
   }
+  result.heartbeats = []
 
-  // ── Recent Activity + Agent current tasks from all agent sessions ──
+  // ── Agent activity from agent_runs (replaces dead openclaw session files) ──
   try {
-    const AGENT_NAMES: Record<string,string> = {
-      main:'KAOS', scout:'Scout', ops:'Ingo', 'kemuni-sme':'Kemuni SME', 'vespera-sme':'Vespera SME'
+    const db = createAdminClient()
+    const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    const { data: runs } = await db
+      .from('agent_runs')
+      .select('agent_id, task_title, status, started_at, finished_at, tokens_used, cost_usd')
+      .gte('started_at', cutoff)
+      .order('started_at', { ascending: false })
+      .limit(50)
+
+    const AGENT_EMOJIS: Record<string, string> = {
+      builder: '🔨', po: '📋', tester: '🧪', ops: '⚙️', deployer: '🚀',
+      auditor: '🔍', main: '🧠', scout: '🔍'
     }
-    const AGENT_EMOJIS: Record<string,string> = {
-      main:'🧠', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤'
-    }
-    const allAgentIds = ['main', 'scout', 'ops', 'kemuni-sme', 'vespera-sme']
-    const allActivity: any[] = []
     const agentCurrentTask: Record<string, string> = {}
+    const seen = new Set<string>()
+    const allActivity: any[] = []
 
-    for (const agentId of allAgentIds) {
-      const sessionsPath = `/Users/kemuniagent/.openclaw/agents/${agentId}/sessions/sessions.json`
-      if (!fs.existsSync(sessionsPath)) continue
-      try {
-        const raw = JSON.parse(fs.readFileSync(sessionsPath, 'utf-8'))
-        const entries = Object.entries(raw as Record<string, any>)
-          .filter(([, v]) => v && typeof v === 'object')
-          .sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-
-        // Most recent session = current task
-        if (entries.length > 0) {
-          const [key, val] = entries[0] as [string, any]
-          const channel = key.split(':')[2] || 'session'
-          const agoMin = Math.floor((Date.now() - (val.updatedAt ?? Date.now())) / 60000)
-          const tokens = val.totalTokens ?? 0
-          // Check actual session file mtime for real-time "currently processing" detection
-          let fileMtimeSec = 9999
-          try {
-            const sf = (val as any).sessionFile
-            if (sf && fs.existsSync(sf)) {
-              fileMtimeSec = Math.floor((Date.now() - fs.statSync(sf).mtimeMs) / 1000)
-            }
-          } catch { /* non-fatal */ }
-          const isActive = agoMin < 10 || fileMtimeSec < 30
-          const channelLabel = channel === 'telegram' ? 'Telegram' : channel === 'discord' ? 'Discord'
-            : channel === 'cron' ? 'Cron' : channel === 'subagent' ? 'Sub-agent' : 'Session'
-
-          // Try to get last user message from session JSONL for real task label
-          let lastUserMsg = ''
-          try {
-            const sessionFile = (val as any).sessionFile
-            if (sessionFile && isActive) {
-              const jsonlPath = sessionFile.startsWith('/')
-                ? sessionFile
-                : `/Users/kemuniagent/.openclaw/agents/${agentId}/sessions/${sessionFile}`
-              if (fs.existsSync(jsonlPath)) {
-                const lines = fs.readFileSync(jsonlPath, 'utf-8').split('\n').filter(Boolean)
-                // Walk backwards to find last user message
-                for (let i = lines.length - 1; i >= 0; i--) {
-                  try {
-                    const obj = JSON.parse(lines[i])
-                    const msg = obj.message ?? obj
-                    if (msg.role === 'user') {
-                      const content = msg.content
-                      let text = typeof content === 'string' ? content
-                        : Array.isArray(content) ? (content.find((b: any) => b.type === 'text')?.text ?? '') : ''
-                      // Strip metadata headers from MC/Telegram messages
-                      text = text.replace(/^Sender \(untrusted[^)]+\)[^]*?\n\n/m, '')
-                        .replace(/^\[.*?\]\s*/m, '')
-                        .trim()
-                      if (text && text.length > 3 && !text.startsWith('[') && !text.startsWith('Read HEARTBEAT')) {
-                        lastUserMsg = text.slice(0, 48).replace(/\n/g, ' ')
-                        break
-                      }
-                    }
-                  } catch { continue }
-                }
-              }
-            }
-          } catch { /* non-fatal */ }
-
-          const isLive = fileMtimeSec < 30
-          agentCurrentTask[agentId] = isActive
-            ? (lastUserMsg ? `${isLive ? 'Processing' : 'Active'}: ${lastUserMsg}` : `${isLive ? 'Processing' : 'Active'} on ${channelLabel} · ${(tokens/1000).toFixed(1)}k tokens`)
-            : agoMin < 60 ? `Last: ${channelLabel} ${agoMin}m ago` : `Idle · last ${Math.floor(agoMin/60)}h ago`
-        }
-
-        // Collect activity entries
-        for (const [key, val] of entries.slice(0, 10) as [string, any][]) {
-          const channel = key.split(':')[2] || 'session'
-          const tokens = val.totalTokens ?? 0
-          const cost = val.estimatedCostUsd ?? 0
-          const model = (val.model ?? '').includes('haiku') ? 'Haiku' : (val.model ?? '').includes('sonnet') ? 'Sonnet' : 'AI'
-          const channelLabel = channel === 'telegram' ? '📱 Telegram' : channel === 'discord' ? '💬 Discord'
-            : channel === 'cron' ? '⏱ Cron' : channel === 'subagent' ? '🤖 Sub-agent'
-            : channel === 'slash' ? '⚡ Slash' : '🔧 Session'
-          const agentName = AGENT_NAMES[agentId] ?? agentId
-          allActivity.push({
-            agentId,
-            agentName,
-            emoji: AGENT_EMOJIS[agentId] ?? '🤖',
-            action: channel === 'cron' ? 'cron' : channel === 'subagent' ? 'delegate' : 'session',
-            channel: channelLabel,
-            desc: `${channelLabel} · ${(tokens/1000).toFixed(1)}k tokens · ${model} · $${cost.toFixed(3)}`,
-            tokens,
-            cost,
-            model,
-            updatedAt: val.updatedAt ?? 0,
-            ago: Math.floor((Date.now() - (val.updatedAt ?? Date.now())) / 60000),
-            startedAt: val.startedAt ?? 0,
-          })
-        }
-      } catch { /* skip */ }
+    for (const r of runs ?? []) {
+      const agoMin = r.started_at
+        ? Math.floor((Date.now() - new Date(r.started_at).getTime()) / 60000)
+        : 999
+      if (!seen.has(r.agent_id)) {
+        seen.add(r.agent_id)
+        const label = (r.task_title || 'Task').slice(0, 48)
+        agentCurrentTask[r.agent_id] = r.status === 'running'
+          ? `Working: ${label}`
+          : agoMin < 30 ? `Completed: ${label} (${agoMin}m ago)` : `Idle · last ${agoMin}m ago`
+      }
+      allActivity.push({
+        agentId: r.agent_id,
+        agentName: r.agent_id,
+        emoji: AGENT_EMOJIS[r.agent_id] ?? '🤖',
+        action: 'run',
+        desc: `${r.task_title ?? 'Task'} · ${r.status}`,
+        tokens: r.tokens_used ?? 0,
+        cost: r.cost_usd ?? 0,
+        updatedAt: r.started_at ? new Date(r.started_at).getTime() : 0,
+        ago: agoMin,
+        startedAt: r.started_at ? new Date(r.started_at).getTime() : 0,
+      })
     }
 
-    // Sort all activity by recency
-    allActivity.sort((a, b) => b.updatedAt - a.updatedAt)
     result.recentActivity = allActivity.slice(0, 20)
     result.agentCurrentTask = agentCurrentTask
+
+    // Usage summary from agent_runs
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: costRows } = await db
+      .from('agent_runs')
+      .select('tokens_used, cost_usd, started_at')
+      .gte('started_at', today)
+    const todayCost = (costRows ?? []).reduce((s, r) => s + (r.cost_usd ?? 0), 0)
+    const todayTokens = (costRows ?? []).reduce((s, r) => s + (r.tokens_used ?? 0), 0)
+    result.usage = { totalCost: 0, totalTokens: 0, byModel: {}, todayCost: +todayCost.toFixed(4), todayTokens }
+    result.claude = { plan: 'Max', lastChecked: new Date().toISOString(), totalTokens: todayTokens, todayCost }
   } catch {
     result.recentActivity = []
     result.agentCurrentTask = {}
+    result.usage = null
+    result.claude = null
   }
 
   return NextResponse.json(result)
