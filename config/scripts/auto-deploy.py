@@ -4,11 +4,11 @@ auto-deploy.py — Poll GitHub for new commits on main, pull and rebuild MC auto
 Runs every 5 minutes via launchd (work.nabit.auto-deploy.plist).
 Posts to Discord when a deploy happens.
 """
-import json, subprocess, pathlib, urllib.request
+import json, os, subprocess, pathlib, urllib.request
 from datetime import datetime
 
-MC_DIR = "/Users/kemuniagent/mission-control"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+MC_DIR = "/Users/kemuniagent/todero"
+DISCORD_BOT = os.environ.get("DISCORD_BOT_TOKEN", "")
 CHANNEL = "1487584904135970816"  # #deployments
 STATE_FILE = pathlib.Path(__file__).parent / "state-auto-deploy.json"
 LOG = "/tmp/auto-deploy.log"
