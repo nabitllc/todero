@@ -275,7 +275,19 @@ export async function POST(req: NextRequest) {
 
   const task = readyTasks[0]
 
-  // ── Step 5: Claim the issue ──
+  // ── Step 5: Loop breaker check — BEFORE claim so rejected issues are never stuck ──
+  // Moved earlier (was Step 7): previously the issue was already claimed in_progress
+  // before this check ran, leaving escalated issues stuck until the watchdog cleared them.
+  const rejectionCount = (task as Record<string, unknown>).rejection_count as number ?? 0
+  if (rejectionCount >= MAX_REJECTION_CYCLES) {
+    return NextResponse.json({
+      agent: agentId,
+      message: `Issue ${task.task_key} has been rejected ${rejectionCount} times. Escalating to KAOS.`,
+      escalated: true,
+    })
+  }
+
+  // ── Step 6: Claim the issue ──
   // Always set started_at to mark the issue as claimed by this agent, even when
   // pickupStatus === workingStatus (e.g. deployer). This lets the wipExtraFilter
   // distinguish "claimed" from "queued but unclaimed" issues in the WIP count.
@@ -292,24 +304,10 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify(claimFields),
   })
 
-  // ── Step 5b: Spawn-confirmation heartbeat (60 s after spawn) ──────────────
-  // If the spawned process exits immediately (context failure, missing binary,
-  // worktree error), it never writes a heartbeat. The watchdog will detect
-  // heartbeat_at < now()-10min and reset to open — catching fast-death cases
-  // that used to hold WIP for 20-30 min before the old stale check triggered.
-  void (async () => {
-    await new Promise(resolve => setTimeout(resolve, 60_000))
-    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH',
-      headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
-    })
-  })()
-
-  // ── Step 6: Log agent_run ──
-  await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
+  // ── Step 7: Log agent_run ──
+  const agentRunRes = await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
     method: 'POST',
-    headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+    headers: { ...getHeaders(), 'Prefer': 'return=representation' },
     body: JSON.stringify({
       agent_id: agentId,
       task_id: task.id,
@@ -317,16 +315,8 @@ export async function POST(req: NextRequest) {
       status: 'running',
     }),
   })
-
-  // ── Step 7: Loop breaker check — skip if issue has been rejected too many times ──
-  const rejectionCount = (task as Record<string, unknown>).rejection_count as number ?? 0
-  if (rejectionCount >= MAX_REJECTION_CYCLES) {
-    return NextResponse.json({
-      agent: agentId,
-      message: `Issue ${task.task_key} has been rejected ${rejectionCount} times. Escalating to KAOS.`,
-      escalated: true,
-    })
-  }
+  const agentRunRows = await agentRunRes.json().catch(() => [])
+  const agentRunId: string | undefined = Array.isArray(agentRunRows) ? agentRunRows[0]?.id : undefined
 
   // ── Step 8: Auto-set feature branch for code-producing agents ──
   let branch = task.feature_branch
@@ -530,6 +520,40 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     taskId: task.id,
     bypassPermissions: true,
   })
+
+  // ── Spawn failure: reset issue to open + mark agent_run as error ──
+  // Previously a failed spawn left the issue stuck in_progress until the watchdog
+  // cleared it (up to 45 min). Now we immediately undo the claim so the next
+  // kick can retry without waiting.
+  if (!spawnResult.ok) {
+    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+      method: 'PATCH',
+      headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() }),
+    })
+    if (agentRunId) {
+      await fetch(`${SUPA_URL}/rest/v1/agent_runs?id=eq.${agentRunId}`, {
+        method: 'PATCH',
+        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'error', error: spawnResult.error, finished_at: new Date().toISOString() }),
+      })
+    }
+  } else {
+    // ── Spawn-confirmation heartbeat — only on successful spawn ──
+    // Fires 60s after spawn. If the process dies immediately (context failure,
+    // missing binary, worktree error), it never writes its own heartbeat, so this
+    // one-time write lets the watchdog detect the fast-death case (heartbeat_at
+    // < now()-10min) rather than waiting 45 min for the stale check.
+    // NOT fired on spawn failure (would mask the dead process from the watchdog).
+    void (async () => {
+      await new Promise(resolve => setTimeout(resolve, 60_000))
+      await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+        method: 'PATCH',
+        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
+      })
+    })()
+  }
 
   // TOD-799: Record spawn to token_ledger (no-op if migration not applied)
   recordSpawn({
