@@ -167,6 +167,27 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── Queue empty alert ─────────────────────────────────────────────────────
+  // If no open issues remain after refill, there's nothing for agents to work on.
+  const { count: totalOpen } = await db
+    .from('issues')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'open')
+    .not('assignee', 'in', '(michael,main)')
+
+  if ((totalOpen ?? 0) === 0 && promoted.length === 0) {
+    try {
+      await fetch(`${appUrl}/api/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: '⚠️ **Queue empty** — no open issues across any project. All work is claimed or complete. Assign more work.',
+          channels: ['discord-alerts'],
+        }),
+      })
+    } catch { /* non-fatal */ }
+  }
+
   return NextResponse.json({
     ok: true,
     ts: new Date().toISOString(),
