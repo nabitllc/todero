@@ -32,20 +32,20 @@ export async function POST(req: NextRequest) {
   }
 
   // ── INF-179: DoR gate — only fetch issues with ALL required fields ──
-  // description, test_tier, acceptance_criteria must all be present
+  // description + acceptance_criteria must both be present (test_tier column removed — doesn't exist in schema)
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.open&description=not.is.null&test_tier=not.is.null&acceptance_criteria=not.is.null&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,test_tier&limit=50`,
+    `${SUPA_URL}/rest/v1/issues?assignee=eq.builder&status=eq.open&description=not.is.null&acceptance_criteria=not.is.null&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by&limit=50`,
     { headers: HEADERS }
   )
   const tasks = await res.json() as Array<{
     id: string; title: string; description: string; priority: string;
     due_date: string | null; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
-    blocked_by: string | null; test_tier: string | null
+    blocked_by: string | null
   }>
 
   if (!tasks.length) {
-    return NextResponse.json({ message: 'No DoR-ready builder tasks (need description, test_tier, acceptance_criteria)' })
+    return NextResponse.json({ message: 'No DoR-ready builder tasks (need description + acceptance_criteria)' })
   }
 
   // ── INF-186: Dependency blocking — skip issues where blocked_by issue is not in a finished state ──
