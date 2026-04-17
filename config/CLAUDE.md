@@ -71,14 +71,19 @@ When docs/comments refer to "production", use the URL, not the launchd label. Th
 | `work.nabit.todero` | Todero Next.js app (serves `kaos.nabit.work`) |
 | `work.nabit.cloudflared` | Cloudflare tunnel → localhost:3000 |
 | `work.nabit.telegram-kaos` | Telegram bot listener (polls KaosClaudeBot + KaosGPTBot) |
-| `work.nabit.agent-heartbeat` | Every 15 min — activates idle agents |
+| `work.nabit.agent-kicker` | Every 30min — calls watchdog + queue-refill Vercel crons |
 | `work.nabit.monitor-stale` | Every 2h — auto-recovers stuck in_progress issues |
+| `work.nabit.monitor-prs` | Every 5min — new PR → Discord #pr-reviews |
+| `work.nabit.monitor-pr-merge` | Every 5min — merged PR → transition issue to released |
+| `work.nabit.auto-deploy` | Every 5min — Discord bot auto-deploy trigger |
 | `work.nabit.sprint-cycle` | Daily 6:55am ET — close/start sprint |
 | `work.nabit.pr-window` | 7am + 7pm ET — batch release PR |
 | `work.nabit.standup-report` | Daily 8am ET — standup Discord post |
-| `work.nabit.release-notes` | Daily — generate release notes |
-| `work.nabit.monitor-prs` | PR status tracker |
-| `work.nabit.monitor-pr-merge` | PR merge detector |
+| `work.nabit.release-notes` | Every 15min — generate release notes for released issues |
+| `work.nabit.dor-nightly` | Daily 2am — DoR sweep, open → backlog on missing fields |
+| `work.nabit.backlog-heartbeat` | Every 4h — backlog health check + Discord ping |
+| `work.nabit.daily-memory-seed` | Daily 00:05 — upsert today's agent_memory_files daily row |
+| `work.nabit.worktree-janitor` | Every 6h — prune stale git worktrees |
 
 ## Issue Lifecycle — MANDATORY
 
