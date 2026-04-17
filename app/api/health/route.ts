@@ -1,9 +1,7 @@
-// TOD-XXX (Gap 10): /api/health — JSON summary of the Todero stack.
+// TOD-1514 Phase 2.4: /api/health — JSON summary of the Todero stack.
 // Unauthenticated — middleware has an explicit bypass for this path.
+// Heartbeat state now read from Supabase agent_memory_files (memory_type='heartbeat_state')
 import { NextResponse } from 'next/server'
-import { readFileSync, existsSync } from 'fs'
-import { homedir } from 'os'
-import { join } from 'path'
 import { listRuntimes } from '@/lib/runtimes'
 import { listWorktrees } from '@/lib/runtimes/worktree'
 
@@ -42,18 +40,41 @@ export async function GET() {
 
   try { result.runtimes = await listRuntimes() } catch { result.runtimes = [] }
 
+  // Phase 2.4: Read heartbeat state from Supabase agent_memory_files
   try {
-    const heartbeatPath = join(homedir(), 'todero', 'config', 'self-improving', 'heartbeat-state.md')
-    if (existsSync(heartbeatPath)) {
-      const content = readFileSync(heartbeatPath, 'utf8')
-      const parsed: Record<string, string> = {}
-      for (const line of content.split('\n')) {
-        const m = line.match(/^(\w+):\s*(.+)$/)
-        if (m) parsed[m[1]] = m[2].trim()
+    const hbRes = await fetch(
+      `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&memory_type=eq.heartbeat_state&select=content&limit=1`,
+      { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }, signal: AbortSignal.timeout(3000) }
+    )
+    if (hbRes.ok) {
+      const rows = await hbRes.json() as Array<{ content: string }>
+      if (rows[0]?.content) {
+        const parsed: Record<string, string> = {}
+        for (const line of rows[0].content.split('\n')) {
+          const m = line.match(/^(\w+):\s*(.+)$/)
+          if (m) parsed[m[1]] = m[2].trim()
+        }
+        result.lastHeartbeat = parsed
       }
-      result.lastHeartbeat = parsed
     }
-  } catch {}
+  } catch {
+    // Fallback: try local file for backwards compat during transition
+    try {
+      const { readFileSync, existsSync } = await import('fs')
+      const { homedir } = await import('os')
+      const { join } = await import('path')
+      const heartbeatPath = join(homedir(), 'todero', 'config', 'self-improving', 'heartbeat-state.md')
+      if (existsSync(heartbeatPath)) {
+        const content = readFileSync(heartbeatPath, 'utf8')
+        const parsed: Record<string, string> = {}
+        for (const line of content.split('\n')) {
+          const m = line.match(/^(\w+):\s*(.+)$/)
+          if (m) parsed[m[1]] = m[2].trim()
+        }
+        result.lastHeartbeat = parsed
+      }
+    } catch { /* non-fatal */ }
+  }
 
   try {
     const worktrees = listWorktrees()

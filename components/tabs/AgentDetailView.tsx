@@ -409,7 +409,8 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
   }, [agent.id])
 
   const heartbeatCfg = config?.heartbeat ?? {}
-  const workspacePath = config?.workspaceDir ?? agent.workspace ?? `/Users/kemuniagent/.openclaw/workspace${agent.id !== 'main' ? '-' + agent.id : ''}`
+  // Phase 2.6: Removed dead openclaw fallback — workspaceDir from config or agent object only
+  const workspacePath = config?.workspaceDir ?? agent.workspace ?? ''
 
   const rows: { label: string; value: string | undefined }[] = [
     { label: 'Default Model',    value: config?.model ?? agent.model },
