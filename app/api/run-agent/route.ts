@@ -187,14 +187,14 @@ export async function POST(req: NextRequest) {
   const statusFilter = allPickupStatuses.length === 1
     ? `status=eq.${allPickupStatuses[0]}`
     : `status=in.(${allPickupStatuses.join(',')})`
-  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&${statusFilter}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type,status&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&${statusFilter}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type,status,parent_id&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
   const tasks = await res.json() as Array<{
     id: string; title: string; description: string; priority: string;
     due_date: string | null; created_at: string; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
-    blocked_by: string | null; status: string
+    blocked_by: string | null; status: string; parent_id: string | null
   }>
 
   if (!Array.isArray(tasks) || tasks.length === 0) {
@@ -241,16 +241,35 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // ── Step 4: Priority sort (fallback — Supabase already sorts, but ensure consistency) ──
-  // Order: priority → due_date (nulls last) → created_at (oldest first = FIFO within same priority)
+  // ── Step 4: Priority sort — parent underway first, then priority → due_date → created_at ──
+  // Fetch parent statuses so issues under an active feature (status=underway) jump the queue.
+  const parentIds = Array.from(new Set(readyTasks.map(t => t.parent_id).filter(Boolean))) as string[]
+  const parentStatuses: Record<string, string> = {}
+  if (parentIds.length > 0) {
+    const parentRes = await fetch(
+      `${SUPA_URL}/rest/v1/issues?id=in.(${parentIds.join(',')})&select=id,status`,
+      { headers: getHeaders() }
+    )
+    const parents = await parentRes.json() as Array<{ id: string; status: string }>
+    if (Array.isArray(parents)) {
+      for (const p of parents) parentStatuses[p.id] = p.status
+    }
+  }
+
   readyTasks.sort((a, b) => {
+    // Tier 1: issues whose parent is underway come first
+    const aUnderway = a.parent_id && parentStatuses[a.parent_id] === 'underway' ? 0 : 1
+    const bUnderway = b.parent_id && parentStatuses[b.parent_id] === 'underway' ? 0 : 1
+    if (aUnderway !== bUnderway) return aUnderway - bUnderway
+    // Tier 2: priority (critical → high → medium → low)
     const pa = PRIORITY_ORDER.indexOf(a.priority)
     const pb = PRIORITY_ORDER.indexOf(b.priority)
     if (pa !== pb) return pa - pb
+    // Tier 3: due_date (earlier first, nulls last)
     if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
     if (a.due_date) return -1
     if (b.due_date) return 1
-    // Final tiebreaker: oldest first (FIFO). All open issues lack due_date so this is the real sort.
+    // Tier 4: created_at oldest first (FIFO)
     return a.created_at.localeCompare(b.created_at)
   })
 
