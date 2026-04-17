@@ -1,7 +1,7 @@
 # PRD: OpenClaw → Native Stack Migration
 
 **Created:** 2026-04-17 | **Owner:** Michael Saenz | **Author:** KAOS  
-**Status:** ✅ Complete (Phases 1–5, 8 done 2026-04-17) | Phase 6 (Chat rebuild) + Phase 7 (Cost tracking) → separate sprints  
+**Status:** ✅ 100% Complete — All Phases 1–8 done 2026-04-17  
 **Tracking epic:** TOD-1514
 
 ---
@@ -807,7 +807,7 @@ On build failure: posts error to Discord, does NOT restart — current running v
 
 ## Migration Complete — Summary
 
-**Completed 2026-04-17.** All Phases 1–5 and Phase 8 implemented in a single session.
+**Completed 2026-04-17.** All Phases 1–8 implemented in a single session.
 
 ### What Was Done
 | Phase | Summary | Status |
@@ -822,8 +822,8 @@ On build failure: posts error to Discord, does NOT restart — current running v
 | 3.4 | daily-memory-seed LaunchAgent created (00:05 daily) | ✅ |
 | 4.2 | chat/route.ts + send-to-agent stubbed 501 (Phase 6 = separate sprint) | ✅ |
 | 5 | status/route.ts: openclaw exec removed → agent activity from agent_runs | ✅ |
-| 6 | Chat backend rebuild | 🔜 Separate sprint |
-| 7 | Agent cost tracking wiring (tokens_used/cost_usd in run-agent) | 🔜 Separate sprint |
+| 6 | Chat backend rebuild via OpenRouter — /api/chat SSE streaming, /api/chat/autotitle, /api/chat/send-to-agent | ✅ |
+| 7 | Agent cost tracking — builder-with-cost.sh wrapper + /api/agent-runs/[id] PATCH endpoint | ✅ |
 | 8.5 | monitor-prs/pr-merge/release-notes: hardcoded tokens → env vars | ✅ |
 
 ### Side Effects Fixed

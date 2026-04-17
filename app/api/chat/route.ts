@@ -1,25 +1,147 @@
-// Phase 4.2 (TOD-1514): OpenClaw gateway removed 2026-04-09. Chat backend offline.
-// This route is stubbed until Phase 7 (Chat Rebuild) ships.
-// Issue draft detection and Supabase session logic will be re-integrated in Phase 7.
+// Phase 6 (TOD-1514): Chat rebuild — OpenRouter streaming backend
+// Replaces dead OpenClaw gateway. Uses OpenRouter API (anthropic/openai models).
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { createAdminClient } from '@/lib/hub-client'
 
 export const runtime = 'nodejs'
 
-export async function POST(_req: NextRequest) {
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? ''
+const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
+
+// Map alias/agentId to OpenRouter model string
+function resolveModel(modelOverride?: string): string {
+  if (!modelOverride || modelOverride === 'default') return 'anthropic/claude-sonnet-4-5'
+  const map: Record<string, string> = {
+    sonnet: 'anthropic/claude-sonnet-4-5',
+    haiku:  'anthropic/claude-haiku-4-5',
+    opus:   'anthropic/claude-opus-4-5',
+    'gpt-4o':        'openai/gpt-4o',
+    'gpt-4o-mini':   'openai/gpt-4o-mini',
+    'claude-sonnet': 'anthropic/claude-sonnet-4-5',
+    'claude-haiku':  'anthropic/claude-haiku-4-5',
+    kaos:   'anthropic/claude-sonnet-4-5',
+  }
+  return map[modelOverride] ?? 'anthropic/claude-sonnet-4-5'
+}
+
+export async function POST(req: NextRequest) {
   const encoder = new TextEncoder()
-  // Return a proper SSE-formatted 501 so ChatTab doesn't hang waiting for stream
-  const stream = new ReadableStream({
-    start(c) {
-      c.enqueue(encoder.encode(
-        `data: ${JSON.stringify({ error: 'Chat backend offline — rebuilding in Phase 7', phase: 7 })}\n\n`
-      ))
-      c.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`))
-      c.close()
-    }
+
+  const body = await req.json().catch(() => ({}))
+  const { conversationId, messages, agentId, modelOverride } = body as {
+    conversationId?: string
+    messages?: Array<{ role: string; content: string }>
+    agentId?: string
+    modelOverride?: string
+  }
+
+  if (!messages?.length) {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'messages array is required' })}\n\n`))
+        c.close()
+      },
+    })
+    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } })
+  }
+
+  const model = resolveModel(modelOverride || agentId)
+
+  const orRes = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://kaos.nabit.work',
+      'X-Title': 'KAOS Mission Control',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      max_tokens: 4096,
+    }),
   })
-  return new Response(stream, {
-    status: 200, // keep 200 so SSE client connects; error surfaced in stream
+
+  if (!orRes.ok || !orRes.body) {
+    const errText = await orRes.text().catch(() => 'Unknown error')
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `OpenRouter error: ${orRes.status} — ${errText.slice(0, 200)}` })}\n\n`))
+        c.close()
+      },
+    })
+    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } })
+  }
+
+  // Transform OpenRouter SSE → ChatTab SSE format, then save to DB
+  const readableStream = new ReadableStream({
+    async start(controller) {
+      const reader = orRes.body!.getReader()
+      const decoder = new TextDecoder()
+      let fullContent = ''
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          const chunk = decoder.decode(value, { stream: true })
+          for (const line of chunk.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            const raw = line.slice(6).trim()
+            if (raw === '[DONE]') continue
+
+            try {
+              const parsed = JSON.parse(raw)
+              const delta = parsed?.choices?.[0]?.delta?.content
+              if (delta) {
+                fullContent += delta
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`))
+              }
+            } catch { /* skip malformed lines */ }
+          }
+        }
+      } catch (err: any) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message || 'Stream error' })}\n\n`))
+        controller.close()
+        return
+      }
+
+      // Save assistant message to Supabase
+      let savedId: string | undefined
+      if (conversationId && fullContent) {
+        try {
+          const db = createAdminClient()
+          const { data } = await db
+            .from('chat_messages')
+            .insert({
+              conversation_id: conversationId,
+              role: 'assistant',
+              content: fullContent,
+              model,
+              created_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single()
+          savedId = data?.id
+
+          // Update conversation updated_at
+          await db
+            .from('chat_conversations')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', conversationId)
+        } catch { /* non-fatal — message still streamed */ }
+      }
+
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, id: savedId })}\n\n`))
+      controller.close()
+    },
+  })
+
+  return new Response(readableStream, {
+    status: 200,
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
