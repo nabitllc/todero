@@ -920,6 +920,42 @@ export async function POST(req: NextRequest) {
     ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
     : effectiveStatus
 
+  // ── Duplicate child task guards (TOD-1496) ───────────────────────────────
+  // Prevent PO from creating near-identical child tasks on repeated runs.
+  if (parent_id && type === 'task') {
+    // Guard 1: hard cap — features should not have more than 20 open child tasks.
+    const { count: childCount } = await supabase
+      .from('issues')
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_id', parent_id)
+      .not('status', 'in', '("closed","wrapped","completed")')
+    if ((childCount ?? 0) >= 20) {
+      return NextResponse.json(
+        { error: `Child task cap reached: parent already has ${childCount} open child tasks (max 20). Close or complete existing tasks before adding more.` },
+        { status: 409 }
+      )
+    }
+
+    // Guard 2: near-duplicate title — first 50 chars match an existing open child.
+    if (title && title.length >= 10) {
+      const { data: siblings } = await supabase
+        .from('issues')
+        .select('id, task_key, title, status')
+        .eq('parent_id', parent_id)
+        .not('status', 'in', '("closed","wrapped","completed")')
+      const prefix = title.slice(0, 50).toLowerCase()
+      const nearDupe = (siblings ?? []).find(
+        s => s.title && s.title.slice(0, 50).toLowerCase() === prefix
+      )
+      if (nearDupe) {
+        return NextResponse.json(
+          { error: `Near-duplicate child task blocked: "${nearDupe.task_key}" (${nearDupe.status}) already covers "${title.slice(0, 60)}". Update the existing task instead.` },
+          { status: 409 }
+        )
+      }
+    }
+  }
+
   const generatedIdentity = await prepareIssueIdentity(normalizedProject)
 
   // Resolve business_id from project → business mapping
