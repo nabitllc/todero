@@ -1309,6 +1309,14 @@ export async function PATCH(req: NextRequest) {
 
     if (fields.status === 'code_review') fields.submitted_at = now
     if (fields.status === 'code_review') {
+      // On re-entry to code_review (after a rejection cycle), reset both reviewer lanes to
+      // pending so reviewers can re-evaluate the fix. Without this, stale 'failed' statuses
+      // from the prior rejection prevent reviewers from picking the issue up again — their
+      // queue filter is tester_status=eq.pending / designer_status=eq.pending.
+      if (before?.status !== 'code_review') {
+        if (fields.tester_status === undefined) fields.tester_status = 'pending'
+        if (fields.designer_status === undefined) fields.designer_status = 'pending'
+      }
       if (fields.tester_notes === undefined && before?.tester_notes == null) fields.tester_notes = null
       if (fields.designer_notes === undefined && before?.designer_notes == null) fields.designer_notes = null
       if (fields.tested_by === undefined && before?.tested_by == null) fields.tested_by = null

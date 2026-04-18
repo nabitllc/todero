@@ -13,6 +13,8 @@
 
 LOCKED_FILES=(
   "lib/agent-queue.ts"
+  "lib/issue-routing.ts"
+  "lib/issue-lifecycle.ts"
   "lib/runtimes/claude-code.ts"
   "lib/runtimes/worktree.ts"
   "lib/constants.ts"
