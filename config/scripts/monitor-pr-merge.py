@@ -3,8 +3,11 @@
 monitor-pr-merge.py — Poll GitHub for merged PRs → transition linked issues approved→released
 Replaces n8n workflow huC16MvkjX5FiI3f
 Runs every 5 minutes via launchd.
+
+Health check: after detecting a merge, GET the prod URL before marking released.
+HTTP 200 → released normally. Non-200 → create bug issue + Discord alert, skip release.
 """
-import json, urllib.request, pathlib
+import json, urllib.request, urllib.error, pathlib
 from datetime import datetime, timezone
 
 import os
@@ -14,6 +17,12 @@ DEPLOY_CHANNEL = "1487584904135970816"  # #deployments
 MC_API = "http://localhost:3000/api/issues"
 REPOS = ["nabitllc/todero", "nabitllc/vespera"]
 STATE_FILE = pathlib.Path(__file__).parent / "state-pr-merge.json"
+
+# Production URLs to health-check after deploy detected
+PROD_URLS = {
+    "nabitllc/todero":   "https://kaos.nabit.work",
+    "nabitllc/vespera":  "https://vespera-nabit.vercel.app",
+}
 
 def load_state():
     if STATE_FILE.exists():
@@ -44,6 +53,32 @@ def discord_post(content):
     try:
         with urllib.request.urlopen(req, timeout=10): pass
     except Exception as e: print(f"[discord] {e}")
+
+def mc_post(payload):
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(MC_API, data=data,
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=15) as r: return json.loads(r.read())
+
+def health_check(repo):
+    """GET the prod URL for the repo. Returns (ok: bool, status_code: int, url: str)."""
+    url = PROD_URLS.get(repo)
+    if not url:
+        print(f"[health-check] no prod URL configured for {repo}, skipping check")
+        return True, 0, ""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "KAOS-health-check"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            code = r.status
+            ok = (200 <= code < 300)
+            print(f"[health-check] {url} → {code}")
+            return ok, code, url
+    except urllib.error.HTTPError as e:
+        print(f"[health-check] {url} → HTTP {e.code}")
+        return False, e.code, url
+    except Exception as e:
+        print(f"[health-check] {url} → error: {e}")
+        return False, 0, url
 
 def main():
     state = load_state()
@@ -77,19 +112,55 @@ def main():
             if key in processed: continue
             processed[key] = now.isoformat()
 
+            # Health check: run once per PR (not per issue) to avoid redundant requests
+            hc_ok, hc_code, hc_url = health_check(repo)
+
             linked = issues_by_pr.get(pr["html_url"].lower(), [])
             for issue in linked:
                 if issue["status"] != "approved": continue
+                repo_short = repo.split("/")[1]
                 try:
-                    mc_patch({"id": issue["id"], "status": "released",
-                               "transitioned_by": "ops",
-                               "implementation_notes": f"Auto-released. PR merged: {pr['html_url']}"})
-                    repo_short = repo.split("/")[1]
-                    msg = (f"🚀 **Released: {issue['task_key']}** — {issue['title'][:80]}\n"
-                           f"• **Repo:** {repo_short}\n• **PR:** <{pr['html_url']}>\n"
-                           f"• approved → released | Merged: {pr['merged_at']}")
-                    discord_post(msg)
-                    print(f"[monitor-pr-merge] released {issue['task_key']}")
+                    if hc_ok:
+                        mc_patch({"id": issue["id"], "status": "released",
+                                   "transitioned_by": "ops",
+                                   "implementation_notes": f"Auto-released. PR merged: {pr['html_url']}. Health check: {hc_url} → 200 OK"})
+                        msg = (f"🚀 **Released: {issue['task_key']}** — {issue['title'][:80]}\n"
+                               f"• **Repo:** {repo_short}\n• **PR:** <{pr['html_url']}>\n"
+                               f"• approved → released | Merged: {pr['merged_at']}\n"
+                               f"• ✅ Health check passed: {hc_url}")
+                        discord_post(msg)
+                        print(f"[monitor-pr-merge] released {issue['task_key']}")
+                    else:
+                        # Health check failed — create a bug + alert; do NOT mark released
+                        bug_title = f"[Deploy smoke test failed] {repo_short} prod unhealthy after PR #{pr['number']}"
+                        bug_body = {
+                            "title": bug_title,
+                            "project": repo_short.capitalize(),
+                            "type": "bug",
+                            "priority": "high",
+                            "severity": "S0",
+                            "assignee": "builder",
+                            "parent_id": issue.get("parent_id"),
+                            "acceptance_criteria": f"Prod URL {hc_url} returns HTTP 200.",
+                            "description": (
+                                f"Health check failed after PR #{pr['number']} was merged.\n"
+                                f"URL: {hc_url}\nHTTP status: {hc_code}\n"
+                                f"Linked issue: {issue['task_key']} — {issue['title']}"
+                            ),
+                        }
+                        try:
+                            mc_post(bug_body)
+                            print(f"[monitor-pr-merge] created deploy-failure bug for {issue['task_key']}")
+                        except Exception as e:
+                            print(f"[mc-post] bug creation failed: {e}")
+
+                        msg = (f"🚨 **Deploy smoke test FAILED** — {repo_short}\n"
+                               f"• **PR:** <{pr['html_url']}>\n"
+                               f"• **URL:** {hc_url} → HTTP {hc_code}\n"
+                               f"• Issue {issue['task_key']} NOT marked released — manual check required\n"
+                               f"• Bug filed automatically")
+                        discord_post(msg)
+                        print(f"[monitor-pr-merge] health check failed for {issue['task_key']}, skipping release")
                 except Exception as e:
                     print(f"[mc-patch] {issue.get('task_key')}: {e}")
 
