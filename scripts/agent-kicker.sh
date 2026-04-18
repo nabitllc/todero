@@ -79,5 +79,8 @@ kick_agent "scout"
 kick_agent "tester"
 kick_agent "auditor"
 kick_agent "deployer"
+kick_agent "todero-sme"
+kick_agent "kemuni-sme"
+kick_agent "vespera-sme"
 
 log "Done."

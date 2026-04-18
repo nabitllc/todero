@@ -282,6 +282,63 @@ After all approved issues are processed: summarize what is ready for the PR wind
 
 NEVER run git push to main directly. NEVER create a PR. NEVER merge to main yourself. Your job ends at rebasing and validating each branch.`,
   },
+
+  // ── SME agents: Epic decomposition only ──────────────────────────────────
+  // Each SME picks epics for their hub, creates 1-5 child features, moves
+  // epic to 'draft'. They do NOT implement code — no code access required.
+  // workingStatus === pickupStatus (backlog), so wipExtraFilter guards WIP count.
+  // DO NOT REMOVE wipExtraFilter — without it all backlog epics count as WIP.
+
+  'todero-sme': {
+    agentId: 'todero-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Todero',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Todero SME. Decompose Todero epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Todero, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"todero-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=todero-sme.`,
+  },
+
+  'kemuni-sme': {
+    agentId: 'kemuni-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Kemuni',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Kemuni SME. Decompose Kemuni epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Kemuni, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"kemuni-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=kemuni-sme.`,
+  },
+
+  'vespera-sme': {
+    agentId: 'vespera-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Vespera',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Vespera SME. Decompose Vespera epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Vespera, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"vespera-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=vespera-sme.`,
+  },
 }
 
 export function getQueueConfig(agentId: string): AgentQueueConfig | undefined {
