@@ -91,7 +91,11 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 20,
-    promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci].',
+    promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci]. When done, PATCH to code_review with implementation_notes + commit_sha + regression_test. Self-chain: call POST /api/run-agent?agent=ops to claim next.',
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   tester: {
@@ -146,6 +150,10 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
     promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner. For TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined"). For FEATURES: create child tasks (each 1-2 days of work) before moving to "defined". For EPICS: verify child features exist and have AC. Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition. Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   scout: {
@@ -160,7 +168,11 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: true,
     sortOrder: 'priority.asc,due_date.asc.nullslast',
     fetchLimit: 10,
-    promptPrefix: 'You are Scout. Research the following task. Summarize findings, cite sources, provide actionable recommendations.',
+    promptPrefix: 'You are Scout. Research the following task. Summarize findings, cite sources, provide actionable recommendations. When done, PATCH to product_review with implementation_notes. Self-chain: call POST /api/run-agent?agent=scout to claim next.',
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   auditor: {
@@ -198,6 +210,96 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     fetchLimit: 20,
     promptPrefix: 'You are Deployer. Verify all approved issues have required fields (implementation_notes, commit_sha, regression_test). Prepare for PR window.',
   },
+
+  // ── SME agents: Epic decomposition only ──────────────────────────────────
+  // Each SME picks epics for their hub, creates 1-5 child features, moves
+  // epic to 'draft'. They do NOT implement code — no code access required.
+  // workingStatus === pickupStatus (backlog), so wipExtraFilter guards WIP count.
+  // DO NOT REMOVE wipExtraFilter — without it all backlog epics count as WIP.
+
+  'todero-sme': {
+    agentId: 'todero-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Todero',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Todero SME. Decompose Todero epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Todero, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"todero-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=todero-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
+  },
+
+  'kemuni-sme': {
+    agentId: 'kemuni-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Kemuni',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Kemuni SME. Decompose Kemuni epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Kemuni, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"kemuni-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=kemuni-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
+  },
+
+  'vespera-sme': {
+    agentId: 'vespera-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Vespera',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Vespera SME. Decompose Vespera epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Vespera, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"vespera-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=vespera-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
+  },
+
+  'infra-sme': {
+    agentId: 'infra-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Infrastructure',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Infrastructure SME. Decompose Infrastructure epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Infrastructure, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"infra-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=infra-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
+  },
 }
 
 export function getQueueConfig(agentId: string): AgentQueueConfig | undefined {
@@ -207,4 +309,3 @@ export function getQueueConfig(agentId: string): AgentQueueConfig | undefined {
 export function getAllQueueAgentIds(): string[] {
   return Object.keys(AGENT_QUEUE_CONFIGS)
 }
-// test
