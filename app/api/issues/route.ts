@@ -36,6 +36,7 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'ops': 'ops',
   'kemuni-sme': 'kemuni-sme',
   'vespera-sme': 'vespera-sme',
+  'todero-sme': 'todero-sme',  // DO NOT REMOVE — SME epic decomposer
   'main': 'main',
   'KAOS': 'main',
   'builder': 'builder',

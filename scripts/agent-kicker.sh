@@ -80,7 +80,8 @@ kick_agent "tester"
 kick_agent "auditor"
 kick_agent "deployer"
 kick_agent "todero-sme"
-kick_agent "kemuni-sme"
-kick_agent "vespera-sme"
+# kemuni-sme and vespera-sme PAUSED 2026-04-17 — re-enable when Todero MVP ships
+# kick_agent "kemuni-sme"
+# kick_agent "vespera-sme"
 
 log "Done."
