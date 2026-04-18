@@ -81,7 +81,7 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
 // Has been reverted 3+ times by Builder agents on stale branches.
 // ═══════════════════════════════════════════════════════════════════════════
 const STATUS_PICKUP_LANES: Record<string, string[]> = {
-  backlog:        ['po', 'todero-sme'],  // kemuni-sme, vespera-sme paused — Todero-only focus
+  backlog:        ['po', 'todero-sme', 'kemuni-sme', 'vespera-sme'],  // SMEs handle epics only (filtered by type=eq.epic in queue config)
   defined:        ['po'],
   refined:        ['po'],
   open:           ['builder', 'ops', 'scout'],
@@ -459,7 +459,7 @@ async function validateWorkflowTransition(
       return { transition: null, error: { error: 'Only po, michael, or kaos can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_sme') {
-    const allowed = ['po', 'main', 'michael', 'kaos', 'kemuni-sme', 'vespera-sme']
+    const allowed = ['po', 'main', 'michael', 'kaos', 'todero-sme', 'kemuni-sme', 'vespera-sme']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
       return { transition: null, error: { error: 'Only po, michael, kaos, or an SME can execute this transition', field: 'transitioned_by' } }
     }

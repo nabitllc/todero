@@ -101,6 +101,7 @@ export async function GET(req: Request) {
         .eq('project', project)
         .eq('type', issueType)
         .eq('status', 'refined')
+        .is('started_at', null)          // skip issues PO is actively refining
         .not('assignee', 'in', '(michael,main)')
         .limit(50)
 
