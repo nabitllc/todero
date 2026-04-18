@@ -187,14 +187,17 @@ export async function POST(req: NextRequest) {
   const statusFilter = allPickupStatuses.length === 1
     ? `status=eq.${allPickupStatuses[0]}`
     : `status=in.(${allPickupStatuses.join(',')})`
-  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&${statusFilter}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type,status,parent_id&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&${statusFilter}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
   const tasks = await res.json() as Array<{
     id: string; title: string; description: string; priority: string;
     due_date: string | null; created_at: string; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
-    blocked_by: string | null; status: string; parent_id: string | null
+    blocked_by: string | null; status: string; parent_id: string | null;
+    rejection_count: number | null;
+    tester_notes: string | null; designer_notes: string | null;
+    tester_status: string | null; designer_status: string | null;
   }>
 
   if (!Array.isArray(tasks) || tasks.length === 0) {
@@ -479,6 +482,14 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     ? `\nBranch: ${branch} (git checkout -b ${branch} 2>/dev/null || git checkout ${branch})`
     : ''
 
+  const rejectionFeedback = (task.rejection_count ?? 0) > 0 ? `
+⚠️ REJECTION FEEDBACK — READ THIS BEFORE STARTING ⚠️
+This issue has been rejected ${task.rejection_count} time(s). You MUST address the feedback below before re-submitting.
+${task.tester_status && task.tester_status !== 'pending' ? `\nTester (${task.tester_status}): ${task.tester_notes ?? 'no notes'}` : ''}
+${task.designer_status && task.designer_status !== 'pending' ? `\nDesigner (${task.designer_status}): ${task.designer_notes ?? 'no notes'}` : ''}
+
+Fix every issue mentioned above. Do NOT resubmit without addressing all feedback.` : ''
+
   const prompt = [
     `<workspace-context>${context}</workspace-context>`,
     `\nYou are ${agentId}. ${config.promptPrefix}`,
@@ -486,6 +497,7 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     `Project: ${task.project} | Priority: ${task.priority}`,
     `Description: ${task.description ?? 'See title'}`,
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
+    rejectionFeedback,
     branchInstruction,
     skillReference,
     heartbeatInstruction,

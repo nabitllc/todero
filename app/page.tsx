@@ -57,11 +57,12 @@ const NAV = [
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
   { id:'infra',        label:'Infra',        icon:'⚙️' },
+  { id:'ai-services',  label:'AI Services',  icon:'🤖' },
   { id:'settings',     label:'Settings',     icon:'⚙️' },
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','projects','product-board','automations','chat','infra','settings']
+const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','projects','product-board','automations','chat','infra','settings','ai-services']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
