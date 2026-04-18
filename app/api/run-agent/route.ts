@@ -273,17 +273,29 @@ export async function POST(req: NextRequest) {
     return a.created_at.localeCompare(b.created_at)
   })
 
-  const task = readyTasks[0]
-
-  // ── Step 5: Loop breaker check — BEFORE claim so rejected issues are never stuck ──
+  // ── Step 5: Loop breaker check — BEFORE claim, skip escalated issues ──
   // Moved earlier (was Step 7): previously the issue was already claimed in_progress
   // before this check ran, leaving escalated issues stuck until the watchdog cleared them.
-  const rejectionCount = (task as Record<string, unknown>).rejection_count as number ?? 0
-  if (rejectionCount >= MAX_REJECTION_CYCLES) {
+  // TOD-fix: instead of halting the entire queue when the top issue is escalated,
+  // skip it and try the next ready task so other work can proceed.
+  const escalatedKeys: string[] = []
+  let task: typeof readyTasks[0] | null = null
+  for (const candidate of readyTasks) {
+    const rc = (candidate as Record<string, unknown>).rejection_count as number ?? 0
+    if (rc >= MAX_REJECTION_CYCLES) {
+      escalatedKeys.push(candidate.task_key ?? candidate.id)
+      continue
+    }
+    task = candidate
+    break
+  }
+
+  if (!task) {
     return NextResponse.json({
       agent: agentId,
-      message: `Issue ${task.task_key} has been rejected ${rejectionCount} times. Escalating to KAOS.`,
+      message: `All eligible issues are escalated (rejected ${MAX_REJECTION_CYCLES}+ times). KAOS review needed.`,
       escalated: true,
+      escalatedIssues: escalatedKeys,
     })
   }
 
