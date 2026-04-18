@@ -17,6 +17,7 @@ Logic:
 
 import json
 import pathlib
+import subprocess
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -64,6 +65,30 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def git_commit_state(version: str = "") -> None:
+    """Commit state + VERSION + release md (if version given) to git."""
+    repo = str(pathlib.Path(__file__).parents[2])  # ~/todero
+    files = ["config/scripts/state-release-notes.json"]
+    if version:
+        files += [
+            "config/docs/releases/VERSION",
+            f"config/docs/releases/v{version}.md",
+        ]
+    try:
+        subprocess.run(["git", "-C", repo, "add"] + files,
+                       check=True, capture_output=True)
+        diff = subprocess.run(["git", "-C", repo, "diff", "--cached", "--quiet"],
+                              capture_output=True)
+        if diff.returncode != 0:
+            msg = (f"chore(release): v{version} release notes + state [skip ci]"
+                   if version else "chore(state): update release-notes state [skip ci]")
+            subprocess.run(["git", "-C", repo, "commit", "--no-verify", "-m", msg],
+                           check=True, capture_output=True)
+            log(f"[git] committed: {msg}")
+    except Exception as e:
+        log(f"[git] commit skipped: {e}")
 
 
 def load_version() -> str:
@@ -348,6 +373,7 @@ def main() -> None:
         # Still update last_run timestamp
         state["last_run"] = datetime.now(timezone.utc).isoformat()
         save_state(state)
+        git_commit_state()
         return
 
     log(f"Found {len(candidates)} new released issue(s)")
@@ -382,6 +408,7 @@ def main() -> None:
     state["last_run"] = datetime.now(timezone.utc).isoformat()
     state["last_version"] = new_version
     save_state(state)
+    git_commit_state(version=new_version)
     log(f"=== done: v{new_version} with {len(candidates)} issue(s) ===")
 
 

@@ -7,7 +7,7 @@ Runs every 5 minutes via launchd.
 Health check: after detecting a merge, GET the prod URL before marking released.
 HTTP 200 → released normally. Non-200 → create bug issue + Discord alert, skip release.
 """
-import json, urllib.request, urllib.error, pathlib
+import json, subprocess, urllib.request, urllib.error, pathlib
 from datetime import datetime, timezone
 
 import os
@@ -31,6 +31,22 @@ def load_state():
     return {"processed": {}}
 
 def save_state(s): STATE_FILE.write_text(json.dumps(s))
+
+def git_commit_state():
+    """Commit state-pr-merge.json to git so it survives context resets."""
+    repo = str(pathlib.Path(__file__).parents[2])  # ~/todero
+    try:
+        subprocess.run(["git", "-C", repo, "add", "config/scripts/state-pr-merge.json"],
+                       check=True, capture_output=True)
+        diff = subprocess.run(["git", "-C", repo, "diff", "--cached", "--quiet"],
+                              capture_output=True)
+        if diff.returncode != 0:  # something staged
+            subprocess.run(["git", "-C", repo, "commit", "--no-verify", "-m",
+                            "chore(state): update state-pr-merge [skip ci]"],
+                           check=True, capture_output=True)
+            print("[monitor-pr-merge] state committed to git")
+    except Exception as e:
+        print(f"[monitor-pr-merge] git commit skipped: {e}")
 
 def gh_get(url):
     req = urllib.request.Request(url, headers={
@@ -166,6 +182,7 @@ def main():
 
     state["processed"] = processed
     save_state(state)
+    git_commit_state()
 
 if __name__ == "__main__":
     main()
