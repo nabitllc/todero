@@ -1506,6 +1506,30 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // Auto-advance feature from underway→feature_review when ALL children are closed/terminal.
+  if (fields.status && data?.parent_id && isTerminalIssueStatus(fields.status)) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', data.parent_id)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
+      const { data: siblings } = await supabase
+        .from('issues')
+        .select('id, status')
+        .eq('parent_id', data.parent_id)
+      const allDone = siblings && siblings.length > 0 &&
+        siblings.every(c => isTerminalIssueStatus(c.status))
+      if (allDone) {
+        await supabase
+          .from('issues')
+          .update({ status: 'feature_review', updated_at: new Date().toISOString() })
+          .eq('id', data.parent_id)
+        console.log(`[auto-complete] Feature ${parentFeature.id} advanced underway→feature_review (all children closed)`)
+      }
+    }
+  }
+
   if (fields.pr_url && !before?.pr_url && data) {
     notifyPRReview(data)
   }
