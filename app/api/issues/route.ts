@@ -355,11 +355,21 @@ async function validateHierarchy(
 async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key: string; task_number: number }>> {
   const prefix = getProjectPrefix(project)
 
-  // Per-prefix sequence: find MAX task_number for issues with this prefix only.
-  // This gives each hub its own numbering (TOD-1,2,3 / KEM-1,2,3 / VES-1,2,3).
-  // Retry loop handles race conditions when multiple POSTs arrive simultaneously.
+  // Atomic sequence via DB function — no TOCTOU race condition possible.
+  // next_issue_number() does an atomic UPDATE...RETURNING on the issue_sequences
+  // table, guaranteeing each caller gets a unique number even under concurrent load.
+  // Migration 021_issue_sequences.sql must be applied before this runs.
+  const { data: seqData, error: seqErr } = await createAdminClient()
+    .rpc('next_issue_number', { p_prefix: prefix })
+
+  if (!seqErr && typeof seqData === 'number') {
+    return { task_key: `${prefix}-${seqData}`, task_number: seqData }
+  }
+
+  // Fallback: MAX-based scan with retry loop (used if sequence table not yet migrated).
+  console.warn(`[issues] sequence RPC unavailable (${seqErr?.message}), falling back to MAX scan`)
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: maxRow } = await supabase
+    const { data: maxRow } = await createAdminClient()
       .from('issues')
       .select('task_number')
       .like('task_key', `${prefix}-%`)
@@ -371,8 +381,7 @@ async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key
     const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1 + attempt
     const candidateKey = `${prefix}-${nextNumber}`
 
-    // Check if this key already exists (race guard)
-    const { data: existing } = await supabase
+    const { data: existing } = await createAdminClient()
       .from('issues')
       .select('id')
       .eq('task_key', candidateKey)
