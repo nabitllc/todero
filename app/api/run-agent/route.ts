@@ -166,6 +166,35 @@ export async function POST(req: NextRequest) {
 
   const task = readyTasks[0]
 
+  // ── Step 4b: Query inbox for resolved entry linked to this task ──
+  // AC (TOD-1069): inject <inbox-response> block if a resolved inbox entry exists for this issue.
+  let inboxResponseBlock = ''
+  try {
+    const inboxRes = await fetch(
+      `${SUPA_URL}/rest/v1/inbox?issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
+      { headers: HEADERS }
+    )
+    const inboxRows = await inboxRes.json() as Array<{
+      type: string; status: string; response_data: Record<string, unknown>; resolved_by: string | null
+    }>
+    if (Array.isArray(inboxRows) && inboxRows.length > 0) {
+      const entry = inboxRows[0]
+      const responseFields = Object.entries(entry.response_data ?? {})
+        .map(([k, v]) => `  <${k}>${JSON.stringify(v)}</${k}>`)
+        .join('\n')
+      inboxResponseBlock = `\n<inbox-response>
+  <request_type>${entry.type}</request_type>
+  <resolution_status>${entry.status}</resolution_status>
+  <resolved_by>${entry.resolved_by ?? 'unknown'}</resolved_by>
+  <response_data>
+${responseFields}
+  </response_data>
+</inbox-response>`
+    }
+  } catch {
+    // Best-effort — never block spawn on inbox query failure
+  }
+
   // ── Step 5: Claim the issue ──
   // Always set started_at to mark the issue as claimed by this agent, even when
   // pickupStatus === workingStatus (e.g. deployer). This lets the wipExtraFilter
@@ -328,6 +357,14 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     ? `\nBranch: ${branch} (git checkout -b ${branch} 2>/dev/null || git checkout ${branch})`
     : ''
 
+  // TOD-1069: Behavioral gate for inbox responses injected above
+  const inboxResponseGate = inboxResponseBlock ? `
+\n📬 INBOX RESPONSE DETECTED — read the <inbox-response> block above and act accordingly:
+- approved → continue with the task, using any fields in <response_data> as guidance or input
+- denied   → do NOT proceed with implementation; log the denial reason in implementation_notes and PATCH the issue back to open with rejection_count++
+- explained → treat the <response_data> as additional context and continue normally
+- timeout  → treat as informational context; proceed using best judgment` : ''
+
   const prompt = [
     `<workspace-context>${context}</workspace-context>`,
     `\nYou are ${agentId}. ${config.promptPrefix}`,
@@ -335,6 +372,8 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     `Project: ${task.project} | Priority: ${task.priority}`,
     `Description: ${task.description ?? 'See title'}`,
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
+    inboxResponseBlock,
+    inboxResponseGate,
     branchInstruction,
     skillReference,
     transitionGate,
