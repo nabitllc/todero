@@ -61,12 +61,14 @@ export interface ForbiddenBody {
   code: 'PERMISSION_DENIED'
   role: string
   required: Permission
+  /** Human-readable reason — "invalid role" or "missing permission" */
+  message: string
 }
 
 /** Build a machine-readable 403 response */
-function forbidden(role: string, required: Permission): NextResponse<ForbiddenBody> {
+function forbidden(role: string, required: Permission, message: string): NextResponse<ForbiddenBody> {
   return NextResponse.json<ForbiddenBody>(
-    { error: 'forbidden', code: 'PERMISSION_DENIED', role, required },
+    { error: 'forbidden', code: 'PERMISSION_DENIED', role, required, message },
     { status: 403 }
   )
 }
@@ -97,12 +99,12 @@ export function withPermission(
     const role = resolveRole(req)
 
     if (!role) {
-      return forbidden('unknown', permission)
+      return forbidden('unauthenticated', permission, 'invalid role: no valid session or recognized agent role')
     }
 
     const perms = ROLE_PERMISSIONS[role]
     if (!perms || !perms.includes(permission)) {
-      return forbidden(role, permission)
+      return forbidden(role, permission, `missing permission: ${permission} is not granted to role "${role}"`)
     }
 
     return handler(req, ctx)

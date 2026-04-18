@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'
+import { withPermission } from '@/lib/with-permission'
 
 // TOD-798: todero/config is the canonical workspace since 2026-04-09.
 // Do not revert to .openclaw/workspace — that path was moved and will not exist.
@@ -49,7 +50,10 @@ function friendlyDate(filename: string) {
   } catch { return d }
 }
 
-export async function GET() {
+// withPermission('memory:read') ensures only roles with memory:read can access this endpoint.
+// Unauthenticated callers receive 403 with {error:"forbidden", code:"PERMISSION_DENIED", message:"..."}.
+// See docs/permission-middleware.md for the full usage guide.
+export const GET = withPermission('memory:read', async (_req: NextRequest) => {
   try {
     if (!fs.existsSync(MEMORY_DIR)) return NextResponse.json({ files: [] })
 
@@ -88,4 +92,4 @@ export async function GET() {
   } catch (e) {
     return NextResponse.json({ files: [], error: String(e) })
   }
-}
+})
