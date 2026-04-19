@@ -1,24 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-// ── Supabase ──────────────────────────────────────────────────────────────────
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-)
+import { getHubClient } from '@/lib/hub-client'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
+if (!process.env.DISCORD_BOT_TOKEN) {
+  throw new Error('Missing env var: DISCORD_BOT_TOKEN')
+}
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
+
 const SPRINT_CLOSE_CHANNEL = '1491991699986055208'  // #sprint-close (metrics)
 const RETRO_CHANNEL = '1491991717644075238'         // #retro
 
 function postDiscord(channelId: string, content: string) {
-  const token = process.env.DISCORD_BOT_TOKEN ?? ''
-  if (!token) return
   fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: 'POST',
     headers: {
-      Authorization: `Bot ${token}`,
+      Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
       'Content-Type': 'application/json',
       'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
     },
@@ -39,11 +35,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 })
     }
 
+    const { client: db, businessId: hubId } = getHubClient(business_id)
+
     // 1. Find the active sprint for this business_id
-    const { data: activeSprint, error: findErr } = await supabase
+    const { data: activeSprint, error: findErr } = await db
       .from('sprints')
       .select('*')
-      .eq('business_id', business_id)
+      .eq('business_id', hubId)
       .eq('status', 'active')
       .limit(1)
       .single()
@@ -56,19 +54,20 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Find projects for this business
-    const { data: projects } = await supabase
+    const { data: projects } = await db
       .from('projects')
       .select('name')
-      .eq('business_id', business_id)
+      .eq('business_id', hubId)
 
     const projectNames = (projects ?? []).map((p) => p.name)
 
     // 3. Fetch all issues in this sprint
     let sprintIssues: Record<string, unknown>[] = []
     if (projectNames.length > 0) {
-      const { data: issues } = await supabase
+      const { data: issues } = await db
         .from('issues')
         .select('id, title, status, project, task_key, type, priority')
+        .eq('business_id', hubId)
         .in('project', projectNames)
         .eq('sprint', activeSprint.start_date)
 
@@ -98,12 +97,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Close the sprint
-    const { data: closedSprint, error: closeErr } = await supabase
+    const { data: closedSprint, error: closeErr } = await db
       .from('sprints')
       .update({
         status: 'closed',
         end_date: new Date().toISOString().split('T')[0],
       })
+      .eq('business_id', hubId)
       .eq('id', activeSprint.id)
       .select()
       .single()
@@ -179,9 +179,10 @@ export async function POST(req: NextRequest) {
 
       if (carriedOverIds.length > 0 && newSprint?.start_date) {
         const newSprintDate = newSprint.start_date as string
-        const { error: carryErr } = await supabase
+        const { error: carryErr } = await db
           .from('issues')
           .update({ sprint: newSprintDate, updated_at: new Date().toISOString() })
+          .eq('business_id', hubId)
           .in('id', carriedOverIds)
 
         if (!carryErr) {

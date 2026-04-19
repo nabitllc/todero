@@ -22,20 +22,103 @@ import { recordSpawn } from '@/lib/runtimes/token-ledger'
 import { logAgentCost } from '@/lib/agent-cost-log'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-// TOD-939: Fail loud if SUPABASE_SERVICE_ROLE_KEY is missing — no hardcoded key fallback (TOD-767 rule)
+// Lazy-init: avoids crashing at build time when env vars aren't set (CI).
+let _supaKey: string | null = null
 function getSupaKey(): string {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY env var is required (TOD-767)')
-  return key
+  if (!_supaKey) {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY env var is required (TOD-767)')
+    _supaKey = key
+  }
+  return _supaKey
 }
-const SUPA_KEY = getSupaKey()
-const HEADERS = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': 'application/json' }
+function getHeaders() { const k = getSupaKey(); return { 'apikey': k, 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' } }
 
 const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
 const WORKSPACE = '/Users/kemuniagent/todero/config'
 const TODERO_DIR = '/Users/kemuniagent/todero'
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
 const MAX_REJECTION_CYCLES = 3
+
+const AGENT_CONTEXT_SOURCE = process.env.AGENT_CONTEXT_SOURCE ?? 'fs'
+const MAX_CONTEXT_BYTES = 30_000
+
+// In-memory context cache keyed by agentId — TTL 5 minutes
+// Prevents redundant Supabase reads when watchdog kicks same agent repeatedly
+const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000
+const contextCache = new Map<string, { context: string; expiresAt: number }>()
+
+async function loadContextFromDB(agentId: string): Promise<string> {
+  const cached = contextCache.get(agentId)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.context
+  }
+  const supaHeaders = {
+    'apikey': getSupaKey(),
+    'Authorization': `Bearer ${getSupaKey()}`,
+    'Content-Type': 'application/json',
+  }
+
+  // Fetch global + per-agent documents + shared skill docs
+  const docsRes = await fetch(
+    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&order=doc_type.asc,slug.asc`,
+    { headers: supaHeaders }
+  )
+  const docs = await docsRes.json() as Array<{ agent_id: string; doc_type: string; slug: string; content: string }>
+
+  // Fetch memory: today + yesterday daily notes + long_term + self_improving + corrections
+  // Bug fix: table was renamed agent_memory → agent_memory_files (agent_memory is the key-value store)
+  const today = new Date().toISOString().slice(0, 10)
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+  const memRes = await fetch(
+    `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&order=updated_at.desc`,
+    { headers: supaHeaders }
+  )
+  const memRows = await memRes.json() as Array<{ memory_type: string; date_key: string | null; content: string }>
+
+  const sections: string[] = []
+
+  // Global soul first
+  const globalSoul = docs.find(d => d.agent_id === 'global' && d.doc_type === 'soul')
+  if (globalSoul) sections.push(`# SOUL\n\n${globalSoul.content}`)
+
+  // Per-agent soul
+  const agentSoul = docs.find(d => d.agent_id === agentId && d.doc_type === 'soul')
+  if (agentSoul) sections.push(`# ${agentId.toUpperCase()} SOUL\n\n${agentSoul.content}`)
+
+  // Agents handbook
+  const handbook = docs.find(d => d.agent_id === 'global' && d.doc_type === 'agents')
+  if (handbook) sections.push(`# AGENTS HANDBOOK\n\n${handbook.content}`)
+
+  // Skills: per-agent skills first, then shared skill docs (agent_id='skill')
+  const agentSkills = docs.filter(d => (d.agent_id === agentId || d.agent_id === 'skill') && d.doc_type === 'skill')
+  for (const skill of agentSkills) {
+    sections.push(`# SKILL: ${skill.slug}\n\n${skill.content}`)
+  }
+
+  // Memory: self_improving first (HOT), then long_term, then daily (newest first)
+  const siMem = memRows.find(m => m.memory_type === 'self_improving')
+  if (siMem) sections.push(`# SELF-IMPROVING MEMORY\n\n${siMem.content}`)
+
+  const ltMem = memRows.find(m => m.memory_type === 'long_term')
+  if (ltMem) sections.push(`# LONG-TERM MEMORY\n\n${ltMem.content}`)
+
+  const dailyMem = memRows.filter(m => m.memory_type === 'daily').sort((a, b) => (b.date_key ?? '').localeCompare(a.date_key ?? ''))
+  for (const m of dailyMem) {
+    sections.push(`# DAILY MEMORY (${m.date_key})\n\n${m.content}`)
+  }
+
+  // Hard context limit: drop from the end (oldest memory) until under MAX_CONTEXT_BYTES
+  let combined = sections.join('\n\n---\n\n')
+  while (combined.length > MAX_CONTEXT_BYTES && sections.length > 1) {
+    sections.pop()
+    combined = sections.join('\n\n---\n\n')
+  }
+
+  // Cache the result
+  contextCache.set(agentId, { context: combined, expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS })
+  return combined
+}
 
 export async function POST(req: NextRequest) {
   // Hub pause guard — reject new agent activations when paused
@@ -81,7 +164,7 @@ export async function POST(req: NextRequest) {
   const wipUrl = isReviewer
     ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&select=id`
     : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}${wipExtraFilter}&select=id`
-  const wipRes = await fetch(wipUrl, { headers: HEADERS })
+  const wipRes = await fetch(wipUrl, { headers: getHeaders() })
   const wipIssues = await wipRes.json() as Array<{ id: string }>
   if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
     return NextResponse.json({
@@ -99,20 +182,28 @@ export async function POST(req: NextRequest) {
   const assigneeFilter = isReviewer
     ? `${reviewStatusField}=eq.pending`
     : `assignee=eq.${agentId}`
-  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  // Support multi-status pickup (e.g. PO handles backlog + feature_review)
+  const allPickupStatuses = config.pickupStatuses ?? [config.pickupStatus]
+  const statusFilter = allPickupStatuses.length === 1
+    ? `status=eq.${allPickupStatuses[0]}`
+    : `status=in.(${allPickupStatuses.join(',')})`
+  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&${statusFilter}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
-  const res = await fetch(url, { headers: HEADERS })
+  const res = await fetch(url, { headers: getHeaders() })
   const tasks = await res.json() as Array<{
     id: string; title: string; description: string; priority: string;
-    due_date: string | null; project: string; acceptance_criteria: string | null;
+    due_date: string | null; created_at: string; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
-    blocked_by: string | null
+    blocked_by: string | null; status: string; parent_id: string | null;
+    rejection_count: number | null;
+    tester_notes: string | null; designer_notes: string | null;
+    tester_status: string | null; designer_status: string | null;
   }>
 
   if (!Array.isArray(tasks) || tasks.length === 0) {
     return NextResponse.json({
       agent: agentId,
-      message: `No eligible issues for ${agentId} (status=${config.pickupStatus}, DoR fields: ${config.dorFields.join(', ')})`,
+      message: `No eligible issues for ${agentId} (status=${allPickupStatuses.join('|')}, DoR fields: ${config.dorFields.join(', ')})`,
     })
   }
 
@@ -125,7 +216,7 @@ export async function POST(req: NextRequest) {
     if (blockedByIds.length > 0) {
       const blockerRes = await fetch(
         `${SUPA_URL}/rest/v1/issues?or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
-        { headers: HEADERS }
+        { headers: getHeaders() }
       )
       const blockers = await blockerRes.json() as Array<{ id: string; task_key: string | null; status: string }>
       if (Array.isArray(blockers)) {
@@ -153,18 +244,63 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // ── Step 4: Priority sort (fallback — Supabase already sorts, but ensure consistency) ──
+  // ── Step 4: Priority sort — parent underway first, then priority → due_date → created_at ──
+  // Fetch parent statuses so issues under an active feature (status=underway) jump the queue.
+  const parentIds = Array.from(new Set(readyTasks.map(t => t.parent_id).filter(Boolean))) as string[]
+  const parentStatuses: Record<string, string> = {}
+  if (parentIds.length > 0) {
+    const parentRes = await fetch(
+      `${SUPA_URL}/rest/v1/issues?id=in.(${parentIds.join(',')})&select=id,status`,
+      { headers: getHeaders() }
+    )
+    const parents = await parentRes.json() as Array<{ id: string; status: string }>
+    if (Array.isArray(parents)) {
+      for (const p of parents) parentStatuses[p.id] = p.status
+    }
+  }
+
   readyTasks.sort((a, b) => {
+    // Tier 1: issues whose parent is underway come first
+    const aUnderway = a.parent_id && parentStatuses[a.parent_id] === 'underway' ? 0 : 1
+    const bUnderway = b.parent_id && parentStatuses[b.parent_id] === 'underway' ? 0 : 1
+    if (aUnderway !== bUnderway) return aUnderway - bUnderway
+    // Tier 2: priority (critical → high → medium → low)
     const pa = PRIORITY_ORDER.indexOf(a.priority)
     const pb = PRIORITY_ORDER.indexOf(b.priority)
     if (pa !== pb) return pa - pb
+    // Tier 3: due_date (earlier first, nulls last)
     if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
     if (a.due_date) return -1
     if (b.due_date) return 1
-    return 0
+    // Tier 4: created_at oldest first (FIFO)
+    return a.created_at.localeCompare(b.created_at)
   })
 
-  const task = readyTasks[0]
+  // ── Step 5: Loop breaker check — BEFORE claim, skip escalated issues ──
+  // Moved earlier (was Step 7): previously the issue was already claimed in_progress
+  // before this check ran, leaving escalated issues stuck until the watchdog cleared them.
+  // TOD-fix: instead of halting the entire queue when the top issue is escalated,
+  // skip it and try the next ready task so other work can proceed.
+  const escalatedKeys: string[] = []
+  let task: typeof readyTasks[0] | null = null
+  for (const candidate of readyTasks) {
+    const rc = (candidate as Record<string, unknown>).rejection_count as number ?? 0
+    if (rc >= MAX_REJECTION_CYCLES) {
+      escalatedKeys.push(candidate.task_key ?? candidate.id)
+      continue
+    }
+    task = candidate
+    break
+  }
+
+  if (!task) {
+    return NextResponse.json({
+      agent: agentId,
+      message: `All eligible issues are escalated (rejected ${MAX_REJECTION_CYCLES}+ times). KAOS review needed.`,
+      escalated: true,
+      escalatedIssues: escalatedKeys,
+    })
+  }
 
   // ── Step 4b: Query inbox for resolved entry linked to this task ──
   // AC (TOD-1069): inject <inbox-response> block if a resolved inbox entry exists for this issue.
@@ -172,7 +308,7 @@ export async function POST(req: NextRequest) {
   try {
     const inboxRes = await fetch(
       `${SUPA_URL}/rest/v1/inbox?issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
-      { headers: HEADERS }
+      { headers: getHeaders() }
     )
     const inboxRows = await inboxRes.json() as Array<{
       type: string; status: string; response_data: Record<string, unknown>; resolved_by: string | null
@@ -208,14 +344,14 @@ ${responseFields}
   }
   await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
     method: 'PATCH',
-    headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+    headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
     body: JSON.stringify(claimFields),
   })
 
-  // ── Step 6: Log agent_run ──
-  await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
+  // ── Step 7: Log agent_run ──
+  const agentRunRes = await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
     method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+    headers: { ...getHeaders(), 'Prefer': 'return=representation' },
     body: JSON.stringify({
       agent_id: agentId,
       task_id: task.id,
@@ -223,23 +359,15 @@ ${responseFields}
       status: 'running',
     }),
   })
-
-  // ── Step 7: Loop breaker check — skip if issue has been rejected too many times ──
-  const rejectionCount = (task as Record<string, unknown>).rejection_count as number ?? 0
-  if (rejectionCount >= MAX_REJECTION_CYCLES) {
-    return NextResponse.json({
-      agent: agentId,
-      message: `Issue ${task.task_key} has been rejected ${rejectionCount} times. Escalating to KAOS.`,
-      escalated: true,
-    })
-  }
+  const agentRunRows = await agentRunRes.json().catch(() => [])
+  const agentRunId: string | undefined = Array.isArray(agentRunRows) ? agentRunRows[0]?.id : undefined
 
   // ── Step 8: Auto-set feature branch for code-producing agents ──
   let branch = task.feature_branch
   if (!branch && task.task_key && ['builder', 'ops'].includes(agentId)) {
     branch = `feat/${(task.task_key as string).toLowerCase()}`
     await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+      method: 'PATCH', headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
       body: JSON.stringify({ feature_branch: branch })
     })
   }
@@ -248,53 +376,59 @@ ${responseFields}
   // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
   // TOD-796 (2026-04-10): Now also injects todero/config skills so pipeline agents inherit
   // proactivity, corrections discipline, memory hygiene, and self-reflection rules.
+  // AGENT_CONTEXT_SOURCE=db loads context from Supabase; default 'fs' keeps filesystem path.
   const readIfExists = (p: string): string => {
     try { return fsReadFileSync(p, 'utf8') } catch { return '' }
   }
   const today = new Date().toISOString().slice(0, 10)
 
-  // Workspace identity — always loaded
-  const workspaceParts = [
-    readIfExists(`${WORKSPACE}/SOUL.md`),
-    readIfExists(`${WORKSPACE}/AGENTS.md`),
-    readIfExists(`${WORKSPACE}/self-improving/memory.md`),
-    readIfExists(`${WORKSPACE}/memory/${today}.md`),
-  ].filter(Boolean)
-  const workspace = workspaceParts.join('\n\n---\n\n')
+  let context: string
+  if (AGENT_CONTEXT_SOURCE === 'db') {
+    context = await loadContextFromDB(agentId)
+    // Wrap in contextSections format matching existing structure
+    const contextSections: string[] = [`# WORKSPACE IDENTITY\n\n${context}`]
+    context = contextSections.join('\n\n===============================\n\n')
+  } else {
+    // Existing filesystem path (unchanged)
+    const workspaceParts = [
+      readIfExists(`${WORKSPACE}/SOUL.md`),
+      readIfExists(`${WORKSPACE}/AGENTS.md`),
+      readIfExists(`${WORKSPACE}/self-improving/memory.md`),
+      readIfExists(`${WORKSPACE}/memory/${today}.md`),
+    ].filter(Boolean)
+    const workspace = workspaceParts.join('\n\n---\n\n')
 
-  // Universal skill bundle — behavioral rules every agent inherits
-  const universalSkills = [
-    readIfExists(`${WORKSPACE}/skills/proactivity/execution.md`),
-    readIfExists(`${WORKSPACE}/skills/proactivity/signals.md`),
-    readIfExists(`${WORKSPACE}/skills/proactivity/boundaries.md`),
-    readIfExists(`${WORKSPACE}/skills/self-improving/corrections.md`),
-    readIfExists(`${WORKSPACE}/skills/self-improving/memory.md`),
-    readIfExists(`${WORKSPACE}/skills/self-improving/reflections.md`),
-  ].filter(Boolean).join('\n\n---\n\n')
+    const universalSkills = [
+      readIfExists(`${WORKSPACE}/skills/proactivity/execution.md`),
+      readIfExists(`${WORKSPACE}/skills/proactivity/signals.md`),
+      readIfExists(`${WORKSPACE}/skills/proactivity/boundaries.md`),
+      readIfExists(`${WORKSPACE}/skills/self-improving/corrections.md`),
+      readIfExists(`${WORKSPACE}/skills/self-improving/memory.md`),
+      readIfExists(`${WORKSPACE}/skills/self-improving/reflections.md`),
+    ].filter(Boolean).join('\n\n---\n\n')
 
-  // Agent-specific skill routing
-  const agentSkillFiles: Record<string, string[]> = {
-    po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`],
-    main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
-    scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
-    builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
-    ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
-    tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
-    designer: [],
-    auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
-    deployer: [],
+    const agentSkillFiles: Record<string, string[]> = {
+      po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`, `${WORKSPACE}/skills/grooming-architect/SKILL.md`, `${WORKSPACE}/skills/bug-diagnostics/SKILL.md`],
+      main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
+      scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
+      builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
+      ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
+      tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
+      designer: [],
+      auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
+      deployer: [],
+    }
+    const agentSkills = (agentSkillFiles[agentId] ?? [])
+      .map(readIfExists)
+      .filter(Boolean)
+      .join('\n\n---\n\n')
+
+    const contextSections: string[] = []
+    if (workspace) contextSections.push(`# WORKSPACE IDENTITY\n\n${workspace}`)
+    if (universalSkills) contextSections.push(`# UNIVERSAL SKILLS (behavioral rules — follow these on every task)\n\n${universalSkills}`)
+    if (agentSkills) contextSections.push(`# ${agentId.toUpperCase()}-SPECIFIC SKILLS\n\n${agentSkills}`)
+    context = contextSections.join('\n\n===============================\n\n')
   }
-  const agentSkills = (agentSkillFiles[agentId] ?? [])
-    .map(readIfExists)
-    .filter(Boolean)
-    .join('\n\n---\n\n')
-
-  // Assemble context — workspace first (most-authoritative), then skills, then task
-  const contextSections: string[] = []
-  if (workspace) contextSections.push(`# WORKSPACE IDENTITY\n\n${workspace}`)
-  if (universalSkills) contextSections.push(`# UNIVERSAL SKILLS (behavioral rules — follow these on every task)\n\n${universalSkills}`)
-  if (agentSkills) contextSections.push(`# ${agentId.toUpperCase()}-SPECIFIC SKILLS\n\n${agentSkills}`)
-  const context = contextSections.join('\n\n===============================\n\n')
 
   // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)
   if (context.length > 25_000) {
@@ -332,8 +466,32 @@ If your task feels urgent enough to warrant an immediate PR, you are WRONG. Bypa
 
 This rule exists because per-issue PRs create review fatigue and merge conflicts. One batched PR per window is the correct cadence.`
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const heartbeatInstruction = `
+
+💓 HEARTBEAT — REQUIRED EVERY 5 MINUTES 💓
+While working, write a heartbeat every ~5 minutes so the watchdog knows you're alive.
+If you stop writing heartbeats for 10 min, the watchdog assumes you died and resets the issue to open — losing your WIP slot.
+
+Run this before each major step (read → edit → build → commit):
+curl -s -X PATCH ${appUrl}/api/heartbeat \\
+  -H "Content-Type: application/json" \\
+  -d '{"task_key":"${task.task_key}"}'
+
+Expected response: {"ok":true}. If you get an error, keep working — heartbeat failures are not blockers.`
+
   const selfChain = `\n\nAFTER the PATCH succeeds, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} to auto-claim your next task.`
   const loopBreaker = `\n\nIF same error 3 times: STOP, PATCH back to open with notes explaining the blocker. Do NOT retry infinitely.`
+
+  const worktreeGuard = `
+
+🛑 WORKTREE RULES — node_modules is SHARED 🛑
+You are running inside a git worktree. Your node_modules directory is a SYMLINK to ~/todero/node_modules.
+- ❌ DO NOT run \`npm install\` or \`npm ci\` — it replaces the symlink with an incomplete local install, breaking ALL other agents
+- ❌ DO NOT run \`npm install <package>\` — if a package is missing, PATCH back to open with a note asking KAOS to install it
+- ✅ \`npm run build\` is fine — it uses the existing symlinked node_modules
+- ✅ If build fails with "Cannot find module X", check ~/todero/node_modules/X directly; if truly missing, PATCH back to open
+- ✅ Stay in your worktree directory — do NOT cd to ~/todero for any build commands`
 
   // TOD-796 follow-up: point agents at the rest of the skill library.
   // The universal bundle (proactivity/execution, self-improving/corrections, etc.) is
@@ -341,17 +499,13 @@ This rule exists because per-issue PRs create review fatigue and merge conflicts
   // deeper protocols (memory templates, scaling, migration, operations playbooks) if
   // it decides the task needs them. Keeps the inline prompt small while still giving
   // agents a way to self-rescue when a task exceeds their baseline knowledge.
+  // Phase 2.5 (TOD-1514): Reference DB slugs, not local file paths
   const skillReference = `
 
-📚 Additional skills available on disk (Read on demand):
-  ~/todero/config/skills/proactivity/{setup,memory-template,migration,recovery,state,heartbeat-rules}.md
-  ~/todero/config/skills/self-improving/{SKILL,setup,scaling,operations,memory-template,learning,boundaries}.md
-  ~/todero/config/skills/agent-setup/references/{soul-template,agents-template,heartbeat-template}.md
-  ~/todero/config/skills/issue-routing/SKILL.md
-  ~/todero/config/skills/bug-report/SKILL.md
-  ~/todero/config/skills/agent-creation/SKILL.md
+📚 Additional skills available via DB slugs (already loaded in context above by slug name):
+  proactivity, self-improving, issue-routing, bug-report, agent-creation, agent-setup, deployer-prep
 
-Your universal behavioral rules (proactivity loop, corrections discipline, memory hygiene, reflections) are already inlined above. Only Read additional files when the task specifically needs deeper protocol — don't load everything speculatively.`
+Your universal behavioral rules (proactivity loop, corrections discipline, memory hygiene, reflections) are already inlined in the workspace-context above. Only request additional skill context when the task specifically needs deeper protocol — don't load everything speculatively.`
 
   const branchInstruction = branch
     ? `\nBranch: ${branch} (git checkout -b ${branch} 2>/dev/null || git checkout ${branch})`
@@ -365,6 +519,14 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
 - explained → treat the <response_data> as additional context and continue normally
 - timeout  → treat as informational context; proceed using best judgment` : ''
 
+  const rejectionFeedback = (task.rejection_count ?? 0) > 0 ? `
+⚠️ REJECTION FEEDBACK — READ THIS BEFORE STARTING ⚠️
+This issue has been rejected ${task.rejection_count} time(s). You MUST address the feedback below before re-submitting.
+${task.tester_status && task.tester_status !== 'pending' ? `\nTester (${task.tester_status}): ${task.tester_notes ?? 'no notes'}` : ''}
+${task.designer_status && task.designer_status !== 'pending' ? `\nDesigner (${task.designer_status}): ${task.designer_notes ?? 'no notes'}` : ''}
+
+Fix every issue mentioned above. Do NOT resubmit without addressing all feedback.` : ''
+
   const prompt = [
     `<workspace-context>${context}</workspace-context>`,
     `\nYou are ${agentId}. ${config.promptPrefix}`,
@@ -374,10 +536,13 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
     inboxResponseBlock,
     inboxResponseGate,
+    rejectionFeedback,
     branchInstruction,
     skillReference,
+    heartbeatInstruction,
     transitionGate,
     pushGate,
+    worktreeGuard,
     loopBreaker,
     selfChain,
   ].join('\n')
@@ -418,6 +583,40 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
     taskId: task.id,
     bypassPermissions: true,
   })
+
+  // ── Spawn failure: reset issue to open + mark agent_run as error ──
+  // Previously a failed spawn left the issue stuck in_progress until the watchdog
+  // cleared it (up to 45 min). Now we immediately undo the claim so the next
+  // kick can retry without waiting.
+  if (!spawnResult.ok) {
+    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+      method: 'PATCH',
+      headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() }),
+    })
+    if (agentRunId) {
+      await fetch(`${SUPA_URL}/rest/v1/agent_runs?id=eq.${agentRunId}`, {
+        method: 'PATCH',
+        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'error', error: spawnResult.error, finished_at: new Date().toISOString() }),
+      })
+    }
+  } else {
+    // ── Spawn-confirmation heartbeat — only on successful spawn ──
+    // Fires 60s after spawn. If the process dies immediately (context failure,
+    // missing binary, worktree error), it never writes its own heartbeat, so this
+    // one-time write lets the watchdog detect the fast-death case (heartbeat_at
+    // < now()-10min) rather than waiting 45 min for the stale check.
+    // NOT fired on spawn failure (would mask the dead process from the watchdog).
+    void (async () => {
+      await new Promise(resolve => setTimeout(resolve, 60_000))
+      await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+        method: 'PATCH',
+        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
+      })
+    })()
+  }
 
   // TOD-799: Record spawn to token_ledger (no-op if migration not applied)
   recordSpawn({
@@ -472,10 +671,11 @@ export async function GET(req: NextRequest) {
       const config = getQueueConfig(id)
       if (!config) return { agent: id, error: 'unknown agent' }
 
-      // Count WIP
+      // Count WIP — apply wipExtraFilter so deployer WIP is accurate (same logic as POST path)
+      const wipExtraFilterGet = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
       const wipRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}&select=id`,
-        { headers: HEADERS }
+        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`,
+        { headers: getHeaders() }
       )
       const wipIssues = await wipRes.json() as Array<{ id: string }>
 
@@ -484,7 +684,7 @@ export async function GET(req: NextRequest) {
       const extraFilter = config.extraFilters ? `&${config.extraFilters}` : ''
       const eligibleRes = await fetch(
         `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id&limit=100`,
-        { headers: HEADERS }
+        { headers: getHeaders() }
       )
       const eligible = await eligibleRes.json() as Array<{ id: string }>
 

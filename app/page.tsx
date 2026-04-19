@@ -15,6 +15,7 @@ import OnboardingWizard from '@/components/OnboardingWizard'
 import OverviewTab from '@/components/tabs/OverviewTab'
 import ActivityTab from '@/components/tabs/ActivityTab'
 import AgentsTab from '@/components/tabs/AgentsTab'
+import CrewTab from '@/components/tabs/CrewTab'
 import CalendarTab from '@/components/tabs/CalendarTab'
 import OfficeTab from '@/components/tabs/OfficeTab'
 import MemoryTab from '@/components/tabs/MemoryTab'
@@ -27,10 +28,12 @@ import ChatTab from '@/components/tabs/ChatTab'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
+import ProjectsTab from '@/components/tabs/ProjectsTab'
 import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
 import TopBar from '@/components/TopBar'
+import HubSwitcher from '@/components/HubSwitcher'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -48,16 +51,18 @@ const NAV = [
   { id:'features',     label:'Features',     icon:'🗺️' },
   { id:'pipeline',     label:'Pipeline',     icon:'🏭' },
   { id:'issues',       label:'Issues',       icon:'📝' },
+  { id:'projects',     label:'Projects',     icon:'📦' },
   { id:'product-board', label:'Product Board', icon:'🗓️' },
   { id:'divider' as any, label:'',           icon:'' },
   { id:'automations',  label:'Automations',  icon:'⚡' },
   { id:'chat',         label:'Chat',         icon:'💬' },
   { id:'infra',        label:'Infra',        icon:'⚙️' },
+  { id:'ai-services',  label:'AI Services',  icon:'🤖' },
   { id:'settings',     label:'Settings',     icon:'⚙️' },
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','product-board','automations','chat','infra','settings']
+const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','projects','product-board','automations','chat','infra','settings','ai-services']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
@@ -97,18 +102,9 @@ function buildPath(business: string | null, tab: string): string {
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window !== 'undefined') {
-      const fromURL = parseURL()
-      if (fromURL.tab && VALID_TABS.includes(fromURL.tab)) return fromURL.tab as Tab
-      // MC-522: wrap localStorage in try/catch — throws on iOS private browsing
-      try {
-        const saved = localStorage.getItem('mc-tab') as Tab | null
-        if (saved && VALID_TABS.includes(saved)) return saved
-      } catch (_) { /* private browsing — ignore */ }
-    }
-    return 'overview'
-  })
+  // MC-hydration: start with SSR-safe default; apply URL/localStorage after mount to avoid hydration mismatch
+  const [tab, setTab] = useState<Tab>('overview')
+  const [userRole, setUserRole] = useState<string | null>(null)
   const [clock, setClock] = useState('')
   const [memFiles, setMemFiles] = useState<any[]>([])
   const [openMem, setOpenMem] = useState<string | null>(null)
@@ -144,19 +140,12 @@ export default function Home() {
   const [agentModal, setAgentModal] = useState<any>(null)
   const [cronModal, setCronModal] = useState<any>(null)
   const [unreadChat, setUnreadChat] = useState(false)
-  const [selectedBusiness, setSelectedBusiness] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const fromURL = parseURL()
-      if (fromURL.business) return fromURL.business
-    }
-    return null
-  })
+  // MC-hydration: start null; apply from URL after mount
+  const [selectedBusiness, setSelectedBusiness] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [businessRailRefresh, setBusinessRailRefresh] = useState(0)
-  const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(() => {
-    if (typeof window !== 'undefined') { const p = new URLSearchParams(window.location.search); return p.get('feature') ?? undefined }
-    return undefined
-  })
+  // MC-hydration: start undefined; apply from URL params after mount
+  const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(undefined)
   const [boardFeatureFilterName, setBoardFeatureFilterName] = useState<string | undefined>(undefined)
   const [issueActivity, setIssueActivity] = useState<any[]>([])
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week')
@@ -164,10 +153,33 @@ export default function Home() {
   const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:string}>>({})
   const [agentIssueCounts, setAgentIssueCounts] = useState<Record<string, number>>({})
 
+  // Read mc-role cookie (not httpOnly — accessible to JS) for RBAC-aware UI
+  useEffect(() => {
+    const match = document.cookie.match(/(?:^|;\s*)mc-role=([^;]+)/)
+    if (match) setUserRole(decodeURIComponent(match[1]))
+  }, [])
+
+  // MC-hydration: restore tab/business/feature from URL/localStorage after mount
+  useEffect(() => {
+    const { tab: urlTab, business: urlBiz } = parseURL()
+    if (urlBiz) setSelectedBusiness(urlBiz)
+    if (urlTab && VALID_TABS.includes(urlTab)) {
+      setTab(urlTab as Tab)
+    } else {
+      try {
+        const saved = localStorage.getItem('mc-tab') as Tab | null
+        if (saved && VALID_TABS.includes(saved)) setTab(saved)
+      } catch (_) { /* private browsing */ }
+    }
+    const p = new URLSearchParams(window.location.search)
+    const feat = p.get('feature')
+    if (feat) setBoardFeatureFilter(feat)
+  }, [])
+
   // Agent runs + issue counts polling
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const prevRunsRef: { current: Record<string,string> } = { current: {} }
     const fetchRuns = () => {
       fetch(`${SUPA}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`, {
@@ -205,8 +217,8 @@ export default function Home() {
 
   // Calendar issues
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     fetch(`${SUPA}/rest/v1/issues?due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`, {
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
     }).then(r => r.json()).then(data => { if (Array.isArray(data)) setCalendarIssues(data) }).catch(() => {})
@@ -214,8 +226,8 @@ export default function Home() {
 
   // Issue activity feed
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
+    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const since = new Date(Date.now() - 7 * 86400000).toISOString()
     fetch(`${SUPA}/rest/v1/issues?updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`, {
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
@@ -318,6 +330,10 @@ export default function Home() {
         setUnreadChat={setUnreadChat}
         clock={clock}
         onSearchOpen={() => setSearchOpen(true)}
+        selectedBusiness={selectedBusiness}
+        onSelectBusiness={selectBusiness}
+        onNewBusiness={() => setShowOnboarding(true)}
+        businessRailRefresh={businessRailRefresh}
       />
 
       {/* MOBILE BOTTOM NAV */}
@@ -336,6 +352,16 @@ export default function Home() {
       </nav>
       {showMobileMore && (
         <div className="lg:hidden fixed bottom-[56px] left-0 right-0 z-50 border-t border-white/10 bg-neutral-950">
+          {/* TOD-1197: Hub switcher — mobile More menu */}
+          <div className="px-2 py-2 border-b border-white/[0.07]">
+            <p className="px-1 mb-1 text-[9px] font-semibold uppercase tracking-widest text-white/20 select-none">Hub</p>
+            <HubSwitcher
+              selected={selectedBusiness}
+              onSelect={(name) => { selectBusiness(name); setShowMobileMore(false) }}
+              onNew={() => { setShowOnboarding(true); setShowMobileMore(false) }}
+              refreshKey={businessRailRefresh}
+            />
+          </div>
           <div className="grid grid-cols-3 gap-px p-2">
             {NAV.filter(n => n.id !== 'divider' && !['overview','board','office','chat','calendar'].includes(n.id)).map(item => {
               const LIcon = LUCIDE_ICONS[item.id]
@@ -380,7 +406,7 @@ export default function Home() {
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
-          {tab === 'team' && <AgentsTab displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
+          {tab === 'team' && <CrewTab userRole={userRole} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
           {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} openMem={openMem} setOpenMem={setOpenMem} />}
@@ -388,6 +414,7 @@ export default function Home() {
           {tab === 'features' && <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); navigate('board') }} projectFilter={selectedBusiness} />}
           {tab === 'pipeline' && <PipelineTab projectFilter={selectedBusiness} />}
           {tab === 'issues' && <IssuesTab projectFilter={selectedBusiness} />}
+          {tab === 'projects' && <ProjectsTab projectFilter={selectedBusiness} />}
           {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} />}
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}

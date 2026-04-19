@@ -1,170 +1,147 @@
+// Phase 6 (TOD-1514): Chat rebuild — OpenRouter streaming backend
+// Replaces dead OpenClaw gateway. Uses OpenRouter API (anthropic/openai models).
+
 import { NextRequest } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-function detectIssueDraft(userMessage: string): { title: string; type: string; priority: string; assignee: string; acceptance_criteria: string } | null {
-  const lower = userMessage.toLowerCase()
-  const isFeature = /\b(add|build|create|make|implement|i want|we need|let's build)\b/.test(lower)
-  const isBug = /\b(fix|bug|broken|error|not working|issue with)\b/.test(lower)
-  if (!isFeature && !isBug) return null
-
-  const type = isBug ? 'bug' : 'feature'
-  const title = userMessage.length > 60 ? userMessage.slice(0, 57) + '...' : userMessage
-
-  return {
-    title,
-    type,
-    priority: isBug ? 'high' : 'medium',
-    assignee: 'builder',
-    acceptance_criteria: `${title} works as expected and passes review.`
-  }
-}
-
-const OPENCLAW_GATEWAY = 'http://127.0.0.1:18789'
-const OPENCLAW_TOKEN = 'eb4ac84aeab1b0f85f9b9697ee3dc707170bf0bf46a735f0'
-
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-)
+import { createAdminClient } from '@/lib/hub-client'
 
 export const runtime = 'nodejs'
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? ''
+const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
+
+// Map alias/agentId to OpenRouter model string
+function resolveModel(modelOverride?: string): string {
+  if (!modelOverride || modelOverride === 'default') return 'anthropic/claude-sonnet-4-5'
+  const map: Record<string, string> = {
+    sonnet: 'anthropic/claude-sonnet-4-5',
+    haiku:  'anthropic/claude-haiku-4-5',
+    opus:   'anthropic/claude-opus-4-5',
+    'gpt-4o':        'openai/gpt-4o',
+    'gpt-4o-mini':   'openai/gpt-4o-mini',
+    'claude-sonnet': 'anthropic/claude-sonnet-4-5',
+    'claude-haiku':  'anthropic/claude-haiku-4-5',
+    kaos:   'anthropic/claude-sonnet-4-5',
+  }
+  return map[modelOverride] ?? 'anthropic/claude-sonnet-4-5'
+}
 
 export async function POST(req: NextRequest) {
   const encoder = new TextEncoder()
 
-  const errorStream = (msg: string) => {
-    return new Response(
-      new ReadableStream({
-        start(c) {
-          c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`))
-          c.close()
-        }
-      }),
-      { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } }
-    )
+  const body = await req.json().catch(() => ({}))
+  const { conversationId, messages, agentId, modelOverride } = body as {
+    conversationId?: string
+    messages?: Array<{ role: string; content: string }>
+    agentId?: string
+    modelOverride?: string
   }
 
-  let body: any
-  try { body = await req.json() } catch { return errorStream('Invalid request body') }
-
-  const { messages, conversationId, assistantMsgId, agentId, modelOverride } = body
-  // Detect issue draft from last user message
-  const lastUserMsg = [...(messages || [])].reverse().find((m: any) => m.role === 'user')
-  const issueDraft = lastUserMsg ? detectIssueDraft(lastUserMsg.content) : null
-  if (!messages || !conversationId) return errorStream('messages and conversationId required')
-
-  const resolvedAgent = agentId || 'main'
-  const sessionKey = `mc-chat-${conversationId}`
-  const msgId = assistantMsgId || ('msg-server-' + Date.now())
-  // Model override: if set, pass as x-openclaw-model header so gateway uses that model
-  const resolvedModel = modelOverride || 'openclaw'
-
-  let upstream: Response
-  try {
-    const upstreamHeaders: Record<string, string> = {
-      'Authorization': `Bearer ${OPENCLAW_TOKEN}`,
-      'Content-Type': 'application/json',
-      'x-openclaw-agent-id': resolvedAgent,
-      'x-openclaw-session-key': sessionKey,
-    }
-    if (modelOverride) upstreamHeaders['x-openclaw-model'] = modelOverride
-    upstream = await fetch(`${OPENCLAW_GATEWAY}/v1/chat/completions`, {
-      method: 'POST',
-      headers: upstreamHeaders,
-      body: JSON.stringify({ model: resolvedModel, messages, stream: true }),
+  if (!messages?.length) {
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'messages array is required' })}\n\n`))
+        c.close()
+      },
     })
-  } catch {
-    return errorStream('Failed to reach OpenClaw gateway')
+    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } })
   }
 
-  if (!upstream.ok || !upstream.body) {
-    const err = await upstream.text().catch(() => 'unknown')
-    return errorStream(`Gateway error: ${err}`)
+  const model = resolveModel(modelOverride || agentId)
+
+  const orRes = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://kaos.nabit.work',
+      'X-Title': 'KAOS Mission Control',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      max_tokens: 4096,
+    }),
+  })
+
+  if (!orRes.ok || !orRes.body) {
+    const errText = await orRes.text().catch(() => 'Unknown error')
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `OpenRouter error: ${orRes.status} — ${errText.slice(0, 200)}` })}\n\n`))
+        c.close()
+      },
+    })
+    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } })
   }
 
-  const upstreamReader = upstream.body.getReader()
-  const decoder = new TextDecoder()
-
-  // Accumulate full content server-side, stream tokens to client simultaneously
-  let fullContent = ''
-  let finalId = msgId
-
-  const stream = new ReadableStream({
+  // Transform OpenRouter SSE → ChatTab SSE format, then save to DB
+  const readableStream = new ReadableStream({
     async start(controller) {
+      const reader = orRes.body!.getReader()
+      const decoder = new TextDecoder()
+      let fullContent = ''
+
       try {
         while (true) {
-          const { done, value } = await upstreamReader.read()
+          const { done, value } = await reader.read()
           if (done) break
 
           const chunk = decoder.decode(value, { stream: true })
           for (const line of chunk.split('\n')) {
             if (!line.startsWith('data: ')) continue
             const raw = line.slice(6).trim()
-            if (raw === '[DONE]') {
-              // Stream closed — write full message to Supabase
-              try {
-                await supabase.from('chat_messages').insert({
-                  id: finalId,
-                  conversation_id: conversationId,
-                  role: 'assistant',
-                  content: fullContent,
-                  model: 'kaos',
-                })
-                // Update conversation updated_at
-                await supabase
-                  .from('chat_conversations')
-                  .update({ updated_at: new Date().toISOString() })
-                  .eq('id', conversationId)
-              } catch { /* non-fatal — client will poll */ }
-
-              controller.enqueue(encoder.encode(
-                `data: ${JSON.stringify({ done: true, id: finalId, issue_draft: issueDraft })}\n\n`
-              ))
-              continue
-            }
+            if (raw === '[DONE]') continue
 
             try {
               const parsed = JSON.parse(raw)
-              if (parsed.id) finalId = parsed.id
-              const delta = parsed.choices?.[0]?.delta?.content
-              if (delta != null) {
+              const delta = parsed?.choices?.[0]?.delta?.content
+              if (delta) {
                 fullContent += delta
-                controller.enqueue(encoder.encode(
-                  `data: ${JSON.stringify({ delta, id: finalId })}\n\n`
-                ))
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`))
               }
-              // Forward tool_use events to client
-              if (parsed.choices?.[0]?.delta?.tool_calls) {
-                for (const tc of parsed.choices[0].delta.tool_calls) {
-                  if (tc.function) {
-                    controller.enqueue(encoder.encode(
-                      `data: ${JSON.stringify({ tool_use: { name: tc.function.name, input: tc.function.arguments }, id: finalId })}\n\n`
-                    ))
-                  }
-                }
-              }
-              // Forward thinking/reasoning blocks
-              const thinking = parsed.choices?.[0]?.delta?.reasoning_content || parsed.choices?.[0]?.delta?.thinking
-              if (thinking) {
-                controller.enqueue(encoder.encode(
-                  `data: ${JSON.stringify({ thinking, id: finalId })}\n\n`
-                ))
-              }
-            } catch { /* skip */ }
+            } catch { /* skip malformed lines */ }
           }
         }
-      } catch {
-        controller.enqueue(encoder.encode(
-          `data: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`
-        ))
-      } finally {
+      } catch (err: any) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message || 'Stream error' })}\n\n`))
         controller.close()
+        return
       }
+
+      // Save assistant message to Supabase
+      let savedId: string | undefined
+      if (conversationId && fullContent) {
+        try {
+          const db = createAdminClient()
+          const { data } = await db
+            .from('chat_messages')
+            .insert({
+              conversation_id: conversationId,
+              role: 'assistant',
+              content: fullContent,
+              model,
+              created_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single()
+          savedId = data?.id
+
+          // Update conversation updated_at
+          await db
+            .from('chat_conversations')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', conversationId)
+        } catch { /* non-fatal — message still streamed */ }
+      }
+
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, id: savedId })}\n\n`))
+      controller.close()
     },
-    cancel() { upstreamReader.cancel() }
   })
 
-  return new Response(stream, {
+  return new Response(readableStream, {
+    status: 200,
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',

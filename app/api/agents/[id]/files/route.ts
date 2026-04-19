@@ -1,37 +1,41 @@
+// Phase 2.3: Read agent docs from Supabase agent_documents instead of local filesystem
+// TOD-1514 — works on both local and remote access
+
 import { NextRequest, NextResponse } from 'next/server'
-import fs from 'fs'
-import path from 'path'
-
-const BASE = '/Users/kemuniagent/todero/config'
-
-function readFile(filePath: string): string {
-  try {
-    return fs.readFileSync(filePath, 'utf-8')
-  } catch {
-    return ''
-  }
-}
+import { createAdminClient } from '@/lib/hub-client'
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const id = params.id
-  // Validate agent id - only alphanum and dash
   if (!/^[a-z0-9-]+$/.test(id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
 
-  const workspaceDir = id === 'main'
-    ? path.join(BASE, 'workspace')
-    : path.join(BASE, `workspace-${id}`)
+  try {
+    const db = createAdminClient()
+    const { data: docs, error } = await db
+      .from('agent_documents')
+      .select('doc_type, content')
+      .or(`agent_id.eq.${id},agent_id.eq.global`)
+      .in('doc_type', ['soul', 'heartbeat', 'agents'])
 
-  const soul = readFile(path.join(workspaceDir, 'SOUL.md'))
-  const heartbeat = readFile(path.join(workspaceDir, 'HEARTBEAT.md'))
-  const agents = readFile(path.join(workspaceDir, 'AGENTS.md'))
+    if (error) {
+      return NextResponse.json({ soul: '', heartbeat: '', agents: '' }, { status: 200 })
+    }
 
-  return NextResponse.json(
-    { soul, heartbeat, agents },
-    { headers: { 'Cache-Control': 'no-store' } }
-  )
+    // Prefer agent-specific doc over global if both exist
+    const pick = (docType: string) => {
+      const agentDoc = docs?.find(d => d.doc_type === docType)
+      return agentDoc?.content || ''
+    }
+
+    return NextResponse.json(
+      { soul: pick('soul'), heartbeat: pick('heartbeat'), agents: pick('agents') },
+      { headers: { 'Cache-Control': 'max-age=300, stale-while-revalidate=60' } }
+    )
+  } catch {
+    return NextResponse.json({ soul: '', heartbeat: '', agents: '' }, { status: 200 })
+  }
 }

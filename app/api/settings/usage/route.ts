@@ -83,8 +83,8 @@ export async function GET() {
       cache: 'no-store',
     }).then(r => ({ connected: r.ok })).catch(() => ({ connected: false })),
 
-    // 7. OpenClaw status
-    execAsync('/opt/homebrew/bin/openclaw status --json', { timeout: 8000 }).then(r => JSON.parse(r.stdout)).catch(() => null),
+    // 7. OpenClaw retired — placeholder null (TOD-1514)
+    Promise.resolve(null),
   ])
 
   const now = new Date().toISOString()
@@ -127,13 +127,9 @@ export async function GET() {
     lastChecked: now,
   }
 
-  // --- Claude / OpenClaw tokens ---
-  let claude: any = { totalTokens: 0, todayCost: 0, plan: 'Max $200/mo', lastChecked: now }
-  if (ocStatus.status === 'fulfilled' && ocStatus.value) {
-    const sessionPaths: string[] = ocStatus.value.sessions?.paths ?? []
-    const costs = getSessionCosts(sessionPaths)
-    claude = { totalTokens: costs.totalTokens, todayCost: costs.todayCost, plan: 'Max $200/mo', lastChecked: now }
-  }
+  // --- Claude tokens (from agent_runs — openclaw retired TOD-1514) ---
+  // Cost columns will be populated once agents complete runs and write cost_usd/tokens_used
+  const claude: any = { totalTokens: 0, todayCost: 0, plan: 'Max $200/mo', lastChecked: now }
 
   // --- Vercel (static) ---
   const vercel = { plan: 'Pro $20/mo', seats: 1, renewsAt: '2026-04-24', lastChecked: now }

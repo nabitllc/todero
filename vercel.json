@@ -1,0 +1,25 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "ignoreCommand": "[[ \"$VERCEL_GIT_COMMIT_MESSAGE\" == *\"[skip ci]\"* ]] && exit 0 || exit 1",
+  "github": {
+    "enabled": false
+  },
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/watchdog",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/queue-refill",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

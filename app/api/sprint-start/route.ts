@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-// ── Supabase ──────────────────────────────────────────────────────────────────
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-)
+import { getHubClient, createAdminClient } from '@/lib/hub-client'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 const SPRINT_START_CHANNEL = '1491991662757548144'
@@ -35,11 +28,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 })
     }
 
+    const { client: db, businessId: hubId } = getHubClient(business_id)
+    // Non-hub table (businesses is the root entity, not partitioned by business_id)
+    const adminDb = createAdminClient()
+
     // 1. Check for existing active sprint
-    const { data: activeSprint } = await supabase
+    const { data: activeSprint } = await db
       .from('sprints')
       .select('*')
-      .eq('business_id', business_id)
+      .eq('business_id', hubId)
       .eq('status', 'active')
       .limit(1)
       .single()
@@ -52,10 +49,10 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Find the last closed sprint to determine next sprint number
-    const { data: lastSprint } = await supabase
+    const { data: lastSprint } = await db
       .from('sprints')
       .select('sprint_number')
-      .eq('business_id', business_id)
+      .eq('business_id', hubId)
       .order('sprint_number', { ascending: false })
       .limit(1)
       .single()
@@ -63,7 +60,8 @@ export async function POST(req: NextRequest) {
     const nextNumber = (lastSprint?.sprint_number ?? 0) + 1
 
     // 2b. Get business name for the sprint project field
-    const { data: business } = await supabase
+    // AGGREGATE QUERY: businesses table is not hub-scoped (it IS the hub root)
+    const { data: business } = await adminDb
       .from('businesses')
       .select('name')
       .eq('id', business_id)
@@ -77,12 +75,12 @@ export async function POST(req: NextRequest) {
     const tomorrow = new Date(today.getTime() + 86400000)
     const endDate = tomorrow.toISOString().split('T')[0]
 
-    const { data: newSprint, error: sprintErr } = await supabase
+    const { data: newSprint, error: sprintErr } = await db
       .from('sprints')
       .insert({
+        business_id: hubId,
         name: `sprint-${nextNumber}`,
         project: projectName,
-        business_id,
         goal: goal || `Sprint ${nextNumber} goals`,
         start_date: startDate,
         end_date: endDate,
@@ -97,33 +95,33 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Find projects for this business
-    const { data: projects } = await supabase
+    const { data: projects } = await db
       .from('projects')
       .select('name')
-      .eq('business_id', business_id)
+      .eq('business_id', hubId)
 
     const projectNames = (projects ?? []).map((p) => p.name)
 
     // 5. Assign unassigned / stale-sprint issues to this sprint
     let assignedCount = 0
     if (projectNames.length > 0) {
-      // Find non-backlog issues with no sprint or stale sprint
-      const { data: issues } = await supabase
+      const { data: issues } = await db
         .from('issues')
         .select('id, sprint, status, project')
+        .eq('business_id', hubId)
         .in('project', projectNames)
         .not('status', 'in', '("backlog","closed","completed")')
 
       const toAssign = (issues ?? []).filter((iss) => {
-        // No sprint assigned, or sprint is from a previous date
         return !iss.sprint || iss.sprint < startDate
       })
 
       if (toAssign.length > 0) {
         const ids = toAssign.map((i) => i.id)
-        const { error: assignErr } = await supabase
+        const { error: assignErr } = await db
           .from('issues')
           .update({ sprint: startDate, updated_at: new Date().toISOString() })
+          .eq('business_id', hubId)
           .in('id', ids)
 
         if (!assignErr) {

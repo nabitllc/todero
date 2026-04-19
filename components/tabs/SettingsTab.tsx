@@ -218,11 +218,11 @@ export default function SettingsTab() {
           )}
         </ServiceCard>
 
-        {/* Claude / OpenClaw */}
+        {/* Claude */}
         <ServiceCard emoji="🧠" name="Claude" plan={data.claude.plan}
           status="active" statusLabel="Active"
           lastChecked={data.claude.lastChecked}>
-          <div className="text-xs text-white/60">{formatTokens(data.claude.totalTokens)} tokens tracked by OpenClaw</div>
+          <div className="text-xs text-white/60">{formatTokens(data.claude.totalTokens)} tokens tracked</div>
           {data.claude.todayCost > 0 && <div className="text-xs text-white/40 mt-0.5">Today: ${data.claude.todayCost.toFixed(2)}</div>}
           <a href="https://claude.ai/settings" target="_blank" rel="noopener noreferrer"
             className="text-[10px] text-blue-400/70 hover:text-blue-400 mt-1 inline-block">claude.ai/settings</a>

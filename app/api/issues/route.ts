@@ -25,6 +25,7 @@ import {
   resolveReopenAssignee,
 } from '@/lib/issue-routing'
 import { recordAgentFailure, resetAgentFailures } from '@/lib/loop-breaker'
+import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -35,6 +36,7 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'ops': 'ops',
   'kemuni-sme': 'kemuni-sme',
   'vespera-sme': 'vespera-sme',
+  'todero-sme': 'todero-sme',  // DO NOT REMOVE — SME epic decomposer
   'main': 'main',
   'KAOS': 'main',
   'builder': 'builder',
@@ -86,8 +88,8 @@ const STATUS_PICKUP_LANES: Record<string, string[]> = {
   open:           ['builder', 'ops', 'scout'],
   underway:       [],
   code_review:    ['tester', 'designer'],
-  product_review: [],  // activate_reviewer post-function kicks PO directly
-  feature_review: [],  // activate_reviewer post-function kicks PO directly
+  product_review: ['po'],  // PO is the reviewer; selfChain kicks PO when issue enters product_review
+  feature_review: ['po'],  // PO confirms feature completion; selfChain kicks PO on feature_review entry
   approved:       ['deployer'],
   released:       ['auditor'],
 }
@@ -393,6 +395,7 @@ async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key
     console.warn(`[issues] task_key ${candidateKey} already exists, retrying (attempt ${attempt + 1})`)
   }
 
+
   // Final fallback: timestamp suffix
   const ts = Date.now() % 1000000
   return { task_key: `${prefix}-${ts}`, task_number: ts }
@@ -439,6 +442,10 @@ async function validateWorkflowTransition(
   }
 
   if (!transition) {
+    // michael can override any workflow transition for maintenance/admin purposes
+    if (transitionedBy === 'michael') {
+      return { transition: { condition_role: null, validators: [], post_functions: [] } as unknown as WorkflowTransition, error: null }
+    }
     return {
       transition: null,
       error: {
@@ -451,19 +458,26 @@ async function validateWorkflowTransition(
   const merged = { ...issue, ...body }
   const conditionRole = transition.condition_role
 
+  // michael is a global admin bypass — can execute any transition regardless of conditionRole.
+  // DO NOT REMOVE — maintenance transitions (e.g. resetting stale claims) require this.
+  if (transitionedBy === 'michael') {
+    return { transition: transition as WorkflowTransition, error: null }
+  }
+
   if (conditionRole === 'po_or_main') {
-    if (!transitionedBy || !['po', 'main'].includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po or main can execute this transition', field: 'transitioned_by' } }
+    // 'main' kept for backward compat; canonical human identity is 'michael'; kaos is orchestrator
+    if (!transitionedBy || !['po', 'main', 'michael', 'kaos'].includes(transitionedBy)) {
+      return { transition: null, error: { error: 'Only po, michael, or kaos can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_sme') {
-    const allowed = ['po', 'main', 'kemuni-sme', 'vespera-sme']
+    const allowed = ['po', 'main', 'michael', 'kaos', 'todero-sme', 'kemuni-sme', 'vespera-sme']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po, main, or an SME can execute this transition', field: 'transitioned_by' } }
+      return { transition: null, error: { error: 'Only po, michael, kaos, or an SME can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_ops') {
-    const allowed = ['po', 'main', 'ops']
+    const allowed = ['po', 'main', 'michael', 'kaos', 'ops']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
-      return { transition: null, error: { error: 'Only po, main, or ops can execute this transition', field: 'transitioned_by' } }
+      return { transition: null, error: { error: 'Only po, michael, kaos, or ops can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'assignee') {
     const issueAssignee = (issue.assignee as string) ?? (body.assignee as string)
@@ -488,6 +502,13 @@ async function validateWorkflowTransition(
   } else if (conditionRole === 'tester_or_designer') {
     if (!transitionedBy || !['tester', 'designer', 'ux'].includes(transitionedBy)) {
       return { transition: null, error: { error: 'Only tester or designer can execute this transition', field: 'transitioned_by' } }
+    }
+  } else if (conditionRole === 'cron_or_michael_or_kaos') {
+    // refined→open is owned by the queue-refill cron, michael (admin), or kaos (orchestrator).
+    // Agents and PO must not promote to open directly — the cron maintains queue depth.
+    const allowed = ['cron-queue-refill', 'michael', 'kaos']
+    if (!transitionedBy || !allowed.includes(transitionedBy)) {
+      return { transition: null, error: { error: 'Only the queue-refill cron, michael, or kaos can move issues to open. The cron runs every 30 min and maintains queue depth automatically.', field: 'transitioned_by' } }
     }
   }
 
@@ -649,6 +670,12 @@ async function executePostFunctions(
       }
     }
 
+    if (action === 'set_field') {
+      const fieldName = params.field as string
+      const fieldValue = params.value as string
+      fields[fieldName] = fieldValue
+    }
+
     if (action === 'set_timestamp') {
       const tsField = params.field as string
       fields[tsField] = new Date().toISOString()
@@ -703,13 +730,28 @@ export async function GET(req: NextRequest) {
   const statusParam = url.searchParams.get('status')
 
   // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
-  const db = businessIdParam ? getHubClient(businessIdParam) : null
-  // AGGREGATE QUERY — no business_id filter; returns issues across all hubs
-  const baseClient = db ? db.client : createAdminClient()
-  let query = baseClient.from('issues').select('*')
+  const hub = businessIdParam ? getHubClient(businessIdParam) : null
+  const baseClient = hub ? hub.client : createAdminClient()
+  //
+  // Select specific columns by default (excludes large text blobs: description,
+  // implementation_notes, reviewer_notes, regression_test, tester_notes,
+  // designer_notes) to keep response payloads small (~5KB vs ~200KB).
+  // Pass ?full=true to get all columns (used by agents that need full detail).
+  const fullFields = url.searchParams.get('full') === 'true'
+  const SELECT_COLS = [
+    'id','task_key','task_number','title','status','type','priority','severity',
+    'assignee','owner','sprint','project','due_date',
+    'created_at','updated_at','started_at','submitted_at','completed_at',
+    'is_blocked','blocked_by','parent_id','feature_branch','pr_url','commit_sha',
+    'tester_status','tested_by','tester_reviewed_at',
+    'designer_status','designed_by','designer_reviewed_at',
+    'worked_by','transitioned_by','acceptance_criteria',
+    'business_id','resolution_type',
+  ].join(',')
+  let query = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS)
 
-  if (db) {
-    query = query.eq('business_id', db.businessId)
+  if (hub) {
+    query = query.eq('business_id', hub.businessId)
   }
 
   // Direct project filter (can combine with business_id for narrowing)
@@ -725,6 +767,11 @@ export async function GET(req: NextRequest) {
     query = query.eq('status', statusParam)
   }
 
+  const parentIdParam = url.searchParams.get('parent_id')
+  if (parentIdParam) {
+    query = query.eq('parent_id', parentIdParam)
+  }
+
   if (search) {
     query = query.ilike('title', `%${search}%`)
     query = query.order('updated_at', { ascending: false })
@@ -738,11 +785,20 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(withIssueStatusCategoryList(data))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return NextResponse.json(withIssueStatusCategoryList(data as any[]))
 }
 
 // ── POST ──────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'POST', '/api/issues')
+    if (!perm.allowed) {
+      return NextResponse.json(perm.body, { status: perm.status })
+    }
+  }
+
   const body = await req.json()
   const { title, description, status, assignee, project, priority, type, due_date,
           acceptance_criteria, sprint, parent_id, severity, resolution_type,
@@ -753,12 +809,13 @@ export async function POST(req: NextRequest) {
   const missing: string[] = []
   if (!title?.trim())                missing.push('title')
   if (!normalizedProject.trim())     missing.push('project')
+  if (!description?.trim())          missing.push('description')
   if (!acceptance_criteria?.trim())  missing.push('acceptance_criteria')
 
   if (missing.length > 0) {
     return NextResponse.json(
-      { error: `Cannot create issue — missing required fields: ${missing.join(', ')}. Every issue must have acceptance criteria before work begins.` },
-      { status: 422 }
+      { error: `Cannot create issue — missing required fields: ${missing.join(', ')}. Every issue must have a description and acceptance criteria before work begins.` },
+      { status: 400 }
     )
   }
 
@@ -793,10 +850,6 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  if (type === 'feature' && !description?.trim()) {
-    return NextResponse.json({ error: 'Feature requires: description' }, { status: 422 })
-  }
-
   const hierarchyErr = await validateHierarchy(type ?? 'task', parent_id)
   if (hierarchyErr) {
     return NextResponse.json({ error: hierarchyErr.error }, { status: 400 })
@@ -816,7 +869,10 @@ export async function POST(req: NextRequest) {
     else effectiveOwner = 'builder'
   }
 
-  const effectiveStatus = status ?? 'open'
+  // All issues must arrive at backlog — no skipping the intake queue.
+  // Callers cannot override this; status is ignored on creation.
+  const effectiveStatus = 'backlog'
+  void status // suppress unused-var lint
 
   // TOD-XXX (2026-04-10): sprint hygiene guard. If sprint is missing OR is a
   // past date (older than today's ET date), auto-correct to today. Closed
@@ -916,9 +972,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const finalStatus = isTesterIssue || type === 'review'
-    ? (effectiveStatus === 'open' ? 'backlog' : effectiveStatus)
-    : effectiveStatus
+  // effectiveStatus is always 'backlog' — all issues start in intake queue
+  const finalStatus = effectiveStatus
 
   // ── Duplicate child task guards (TOD-1496) ───────────────────────────────
   // Prevent PO from creating near-identical child tasks on repeated runs.
@@ -1015,6 +1070,25 @@ export async function POST(req: NextRequest) {
     }
   }
 
+
+  // Q4: If a child issue is created under a feature in feature_review → revert to underway.
+  // Means the feature has open work remaining; PO or agent created a gap-filling child.
+  if (data && parent_id) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', parent_id as string)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'feature_review') {
+      await supabase
+        .from('issues')
+        .update({ status: 'underway', updated_at: new Date().toISOString() })
+        .eq('id', parent_id as string)
+      console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
+    }
+  }
+
+
   // Warn if bug is created without environment field
   const responseData = withIssueStatusCategory(data)
   if ((type ?? 'task') === 'bug' && !body.environment) {
@@ -1029,6 +1103,14 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'PATCH', '/api/issues')
+    if (!perm.allowed) {
+      return NextResponse.json(perm.body, { status: perm.status })
+    }
+  }
+
   const body = await req.json()
   // business_id is extracted for hub-scoped query validation, not written back to the issue
   const { id: rawId, task_key, transitioned_by: _transitionedBy, business_id: scopeBusinessId, ...fields } = body
@@ -1070,6 +1152,8 @@ export async function PATCH(req: NextRequest) {
     }
     fields.implementation_notes = fields.implementation_notes
       ?? `Backlog reset by ${transitionedBy} at ${new Date().toISOString()}.`
+    // Rule 2: backlog resets always assign to PO (bypasses post_functions early return)
+    if (!fields.assignee) fields.assignee = 'po'
     let resetQ = createAdminClient()
       .from('issues')
       .update({
@@ -1159,7 +1243,91 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  /* ── Open-cap enforcement removed — was blocking pipeline throughput ── */
+  // Rule 3: owner required before moving to defined
+  if (fields.status === 'defined' && before?.status !== 'defined') {
+    const effectiveOwner = ((fields.owner ?? before?.owner) as string | undefined | null)?.trim() ?? ''
+    if (!effectiveOwner) {
+      return NextResponse.json(
+        { error: 'owner is required before moving to defined. Set the owner field to the agent or person responsible for delivery.' },
+        { status: 400 }
+      )
+    }
+  }
+
+  // description required before moving to refined (belt-and-suspenders — DB validators also enforce this,
+  // but this catches direct Supabase writes or PO sessions that omit the field from the PATCH body)
+  if (fields.status === 'refined' && before?.status !== 'refined') {
+    const effectiveDesc = ((fields.description ?? before?.description) as string | undefined | null)?.trim() ?? ''
+    if (!effectiveDesc) {
+      return NextResponse.json(
+        { error: 'description is required before moving to refined. Add a clear description of what needs to be built/done and retry.' },
+        { status: 400 }
+      )
+    }
+  }
+
+  // TOD-604: acceptance_criteria required before moving to open
+  if (fields.status === 'open' && before?.status !== 'open') {
+    const effectiveAC = (fields.acceptance_criteria ?? before?.acceptance_criteria ?? '').trim()
+    if (!effectiveAC) {
+      return NextResponse.json(
+        { error: 'acceptance_criteria is required before moving to open. Add it via PATCH and retry.' },
+        { status: 400 }
+      )
+    }
+
+    // Auto-reassign: if a reviewer agent (tester, designer, auditor, deployer, po)
+    // is rejecting back to open, reset the assignee to the correct implementing agent.
+    // This prevents issues from being permanently stuck when reviewers don't set assignee.
+    const REVIEWER_ONLY_AGENTS = ['tester', 'designer', 'auditor', 'deployer', 'po']
+    const currentAssignee = fields.assignee ?? before?.assignee
+    if (currentAssignee && REVIEWER_ONLY_AGENTS.includes(currentAssignee) && !fields.assignee) {
+      const issueType = (fields.type ?? before?.type ?? 'task') as string
+      const issueProject = (fields.project ?? before?.project ?? 'Todero') as string
+      if (issueProject === 'Kemuni') {
+        fields.assignee = 'kemuni-sme'
+      } else if (issueProject === 'Vespera') {
+        fields.assignee = 'vespera-sme'
+      } else if (issueType === 'ops') {
+        fields.assignee = 'ops'
+      } else {
+        fields.assignee = 'builder'
+      }
+    }
+  }
+
+  // resolution_type + implementation_notes required before submitting work for review.
+  // The assignee sets these when they PATCH to code_review or product_review —
+  // it tells reviewers what kind of change was made before they even look at the diff.
+  if ((fields.status === 'code_review' || fields.status === 'product_review') && before?.status !== fields.status) {
+    const effectiveResType = fields.resolution_type ?? before?.resolution_type
+    if (!effectiveResType) {
+      return NextResponse.json(
+        { error: `resolution_type is required before moving to ${fields.status}. Set it to what was done (e.g. code_change, config_change, research_completed). Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
+      )
+    }
+    const effectiveImplNotes = ((fields.implementation_notes ?? before?.implementation_notes) as string | null | undefined)
+    if (!effectiveImplNotes || String(effectiveImplNotes).trim().length < 10) {
+      return NextResponse.json(
+        { error: `implementation_notes is required before moving to ${fields.status}. Describe what was built/researched/changed (≥10 chars).` },
+        { status: 422 }
+      )
+    }
+  }
+
+  // resolution_type required to close any issue from any status.
+  // The normal pipeline path auto-sets it at approved (code_review dual-pass),
+  // so this only catches gaps: direct closures, feature_review→closed, wrapped→closed.
+  if (fields.status === 'closed' && before?.status !== 'closed') {
+    const effectiveResType = fields.resolution_type ?? before?.resolution_type
+    if (!effectiveResType) {
+      return NextResponse.json(
+        { error: `resolution_type is required to close an issue. Allowed: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+        { status: 422 }
+      )
+    }
+  }
 
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
@@ -1184,14 +1352,30 @@ export async function PATCH(req: NextRequest) {
   if (fields.status) {
     const now = new Date().toISOString()
 
+    // started_at + worked_by: set on ANY transition to in_progress (not just from open).
+    // Previously only fired on open→in_progress, allowing null started_at if coming from
+    // another status — those ghost claims counted against WIP but were never cleared
+    // by the watchdog (which requires started_at IS NOT NULL for its stale check).
     if (fields.status === 'in_progress') {
       if (!before?.started_at && !fields.started_at) fields.started_at = now
       const effectiveAssignee = fields.assignee ?? before?.assignee
-      if (effectiveAssignee && !fields.worked_by) fields.worked_by = effectiveAssignee
+      if (effectiveAssignee && !fields.worked_by && !before?.worked_by) fields.worked_by = effectiveAssignee
+    }
+    if (['backlog', 'refined', 'open'].includes(fields.status as string)) {
+      if (before?.started_at) fields.started_at = null
+      if (before?.worked_by) fields.worked_by = null
     }
 
     if (fields.status === 'code_review') fields.submitted_at = now
     if (fields.status === 'code_review') {
+      // On re-entry to code_review (after a rejection cycle), reset both reviewer lanes to
+      // pending so reviewers can re-evaluate the fix. Without this, stale 'failed' statuses
+      // from the prior rejection prevent reviewers from picking the issue up again — their
+      // queue filter is tester_status=eq.pending / designer_status=eq.pending.
+      if (before?.status !== 'code_review') {
+        if (fields.tester_status === undefined) fields.tester_status = 'pending'
+        if (fields.designer_status === undefined) fields.designer_status = 'pending'
+      }
       if (fields.tester_notes === undefined && before?.tester_notes == null) fields.tester_notes = null
       if (fields.designer_notes === undefined && before?.designer_notes == null) fields.designer_notes = null
       if (fields.tested_by === undefined && before?.tested_by == null) fields.tested_by = null
@@ -1213,6 +1397,15 @@ export async function PATCH(req: NextRequest) {
       fields.rejection_count = (before?.rejection_count ?? 0) + 1
       fields.last_rejected_at = now
       if (fields.reviewer_notes) fields.last_rejection_reason = fields.reviewer_notes
+    }
+
+    // Clear resolution_type when sent back to open from a forward status —
+    // the issue may be resolved differently when re-picked up.
+    if (fields.status === 'open' && before?.status) {
+      const FORWARD_STATUSES = ['in_progress', 'code_review', 'product_review', 'approved', 'completed']
+      if (FORWARD_STATUSES.includes(before.status as string)) {
+        fields.resolution_type = null
+      }
     }
   }
 
@@ -1397,12 +1590,25 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // Auto-clear is_blocked + blocked_by when an issue transitions to any new status.
+  // If it's moving through the pipeline, it's no longer blocked by anything.
+  if (fields.status && fields.status !== before?.status) {
+    if (before?.is_blocked) {
+      fields.is_blocked = false
+      console.log(`[unblock] ${before?.task_key} is_blocked cleared on transition ${before?.status}→${fields.status}`)
+    }
+    if (before?.blocked_by) {
+      fields.blocked_by = null
+      console.log(`[unblock] ${before?.task_key} blocked_by cleared on transition ${before?.status}→${fields.status}`)
+    }
+  }
+
   const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
   if (isNewFailure) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
     if (fields.fail_count >= 3) {
       fields.is_blocked = true
-      fields.assignee = 'main'
+      fields.assignee = 'michael'  // escalate to human — michael is the canonical human identity
     }
   }
 
@@ -1413,6 +1619,30 @@ export async function PATCH(req: NextRequest) {
   const newRejectionCount = (fields.rejection_count as number | undefined) ?? before?.rejection_count ?? 0
   if (newRejectionCount >= 3 && !before?.is_blocked) {
     fields.is_blocked = true
+  }
+
+  // When is_blocked becomes true, post to Discord #alerts for KAOS (main) to investigate.
+  // KAOS is not a spawnable queue agent — it's the orchestrator (Telegram bot / Michael).
+  // The alert includes enough context to act: issue key, title, reason, current status, blocked_by.
+  const becomingBlocked = fields.is_blocked === true && !before?.is_blocked
+  if (becomingBlocked) {
+    const blockedIssue = { ...before, ...fields }
+    const key = (blockedIssue.task_key ?? '?') as string
+    const title = (blockedIssue.title ?? '') as string
+    const currentStatus = (blockedIssue.status ?? before?.status ?? '?') as string
+    const blockedBy = (blockedIssue.blocked_by ?? before?.blocked_by ?? null) as string | null
+    const reason = newRejectionCount >= 3
+      ? `3+ review rejections (rejection_count=${newRejectionCount})`
+      : blockedBy
+        ? `blocked_by dependency: ${blockedBy}`
+        : 'manually blocked'
+    postDiscord('1485333335868834063',
+      `🔴 **Blocked Issue — Needs KAOS Investigation**\n` +
+      `**[${key}]** ${title}\n` +
+      `Status: ${currentStatus} · Reason: ${reason}\n` +
+      `To unblock: PATCH \`{"task_key":"${key}","is_blocked":false}\` once resolved.\n` +
+      `<@409194957098713088> please investigate.`)
+    console.log(`[blocked] ${key} blocked (${reason}) — posted to #alerts`)
   }
 
   if (fields.owner !== undefined) {
@@ -1509,6 +1739,28 @@ export async function PATCH(req: NextRequest) {
     selfChainOnStatus(fields.status as string)
   }
 
+  // ── Downstream unblock: clear is_blocked on issues waiting for this one ──
+  // When an issue reaches a terminal/completion status, any issue with blocked_by=this.id
+  // is no longer blocked. Covers: closed, released, approved, completed.
+  const UNBLOCKING_STATUSES = new Set(['closed', 'released', 'approved', 'completed'])
+  if (fields.status && UNBLOCKING_STATUSES.has(fields.status as string) && id) {
+    void (async () => {
+      const { data: blockedDeps } = await createAdminClient()
+        .from('issues')
+        .select('id, task_key')
+        .eq('blocked_by', id as string)
+        .eq('is_blocked', true)
+      if (blockedDeps && blockedDeps.length > 0) {
+        await createAdminClient()
+          .from('issues')
+          .update({ is_blocked: false, blocked_by: null, updated_at: new Date().toISOString() })
+          .eq('blocked_by', id as string)
+        const unblocked = blockedDeps.map(i => i.task_key).join(', ')
+        console.log(`[unblock-downstream] ${before?.task_key ?? id} → ${fields.status}: unblocked ${unblocked}`)
+      }
+    })()
+  }
+
   // Auto-promote feature from defined→underway when ANY child moves to open or beyond.
   const ACTIVE_CHILD_STATUSES = ['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released']
   if (fields.status && data?.parent_id && ACTIVE_CHILD_STATUSES.includes(fields.status as string)) {
@@ -1523,6 +1775,34 @@ export async function PATCH(req: NextRequest) {
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', data.parent_id)
       console.log(`[auto-promote] Feature ${parentFeature.id} promoted defined→underway (child moved to ${fields.status})`)
+    }
+  }
+
+  // Auto-promote feature from underway→feature_review when ALL children are closed.
+  // Only 'closed' counts — 'released' still needs auditor, 'cancelled' is not a valid status.
+  // This triggers PO to confirm the feature is done (PO then closes or reverts to underway).
+  if (fields.status === 'closed' && data?.parent_id) {
+    const { data: parentFeature } = await supabase
+      .from('issues')
+      .select('id, type, status')
+      .eq('id', data.parent_id)
+      .maybeSingle()
+    if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
+      const { data: siblings } = await supabase
+        .from('issues')
+        .select('id, status')
+        .eq('parent_id', data.parent_id)
+      const allClosed = siblings && siblings.length > 0 &&
+        siblings.every(c => c.status === 'closed')
+      if (allClosed) {
+        await supabase
+          .from('issues')
+          .update({ status: 'feature_review', updated_at: new Date().toISOString() })
+          .eq('id', data.parent_id)
+        console.log(`[auto-promote] Feature ${parentFeature.id} promoted underway→feature_review (all children closed)`)
+        // selfChain kicks PO to confirm feature completion
+        selfChainOnStatus('feature_review')
+      }
     }
   }
 
@@ -1551,33 +1831,8 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // Auto-advance feature from underway→feature_review when ALL children are closed/terminal.
-  if (fields.status && data?.parent_id && isTerminalIssueStatus(fields.status)) {
-    const { data: parentFeature } = await supabase
-      .from('issues')
-      .select('id, type, status')
-      .eq('id', data.parent_id)
-      .maybeSingle()
-    if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
-      const { data: siblings } = await supabase
-        .from('issues')
-        .select('id, status')
-        .eq('parent_id', data.parent_id)
-      const allDone = siblings && siblings.length > 0 &&
-        siblings.every(c => isTerminalIssueStatus(c.status))
-      if (allDone) {
-        await supabase
-          .from('issues')
-          .update({ status: 'feature_review', updated_at: new Date().toISOString() })
-          .eq('id', data.parent_id)
-        console.log(`[auto-complete] Feature ${parentFeature.id} advanced underway→feature_review (all children closed)`)
-      }
-    }
-  }
-
-  if (fields.pr_url && !before?.pr_url && data) {
-    notifyPRReview(data)
-  }
+  // PR notification handled by pr-window.py (1 consolidated message per window).
+  // Per-issue notifyPRReview removed to avoid duplicate Discord messages.
 
   if (isNewFailure && data) {
     notifyTestFailure(data)

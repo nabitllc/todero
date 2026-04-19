@@ -8,6 +8,7 @@ import {
   Zap, MessageSquare, Server, Settings,
 } from 'lucide-react'
 import { Dot } from '@/lib/mc-atoms'
+import HubSwitcher from '@/components/HubSwitcher'
 
 // ── Nav group definition ────────────────────────────────────────────────────
 interface NavItem {
@@ -71,6 +72,11 @@ interface SidebarNavProps {
   setUnreadChat?: (v: boolean) => void
   clock?: string
   onSearchOpen?: () => void
+  // TOD-1035: Hub switcher props
+  selectedBusiness?: string | null
+  onSelectBusiness?: (name: string | null) => void
+  onNewBusiness?: () => void
+  businessRailRefresh?: number
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -80,6 +86,10 @@ export default function SidebarNav({
   unreadChat = false,
   setUnreadChat,
   clock,
+  selectedBusiness,
+  onSelectBusiness,
+  onNewBusiness,
+  businessRailRefresh,
 }: SidebarNavProps) {
   return (
     <aside className="w-52 shrink-0 hidden lg:flex flex-col border-r border-white/[0.07] sticky top-0 h-screen bg-[#080808]">
@@ -93,6 +103,18 @@ export default function SidebarNav({
           </div>
         </div>
       </div>
+
+      {/* TOD-1035: Hub switcher — desktop */}
+      {onSelectBusiness !== undefined && onNewBusiness !== undefined && (
+        <div className="py-2 border-b border-white/[0.07]">
+          <HubSwitcher
+            selected={selectedBusiness ?? null}
+            onSelect={onSelectBusiness}
+            onNew={onNewBusiness}
+            refreshKey={businessRailRefresh}
+          />
+        </div>
+      )}
 
       {/* Nav groups */}
       <nav className="flex-1 py-3 px-2 space-y-4 overflow-y-auto">

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Standup report — 8:00am local time.
+  Posts daily pipeline summary to Discord.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>work.nabit.standup-report</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>__TODERO_DIR__/config/scripts/standup-report.py</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>8</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key><string>/tmp/standup-report.log</string>
+    <key>StandardErrorPath</key><string>/tmp/standup-report.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key><string>__HOMEBREW_PREFIX__/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

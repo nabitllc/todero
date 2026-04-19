@@ -46,7 +46,7 @@ const MORE_ADAPTERS = [
   { id: 'opencode', label: 'OpenCode', desc: 'Open source coding agent' },
   { id: 'pi', label: 'Pi', desc: 'Inflection Pi agent' },
   { id: 'cursor', label: 'Cursor', desc: 'AI-powered IDE agent' },
-  { id: 'openclaw-gateway', label: 'OpenClaw Gateway', desc: 'Remote via OpenClaw' },
+  { id: 'native-stack', label: 'Native Stack', desc: 'Local claude CLI via run-agent' },
 ]
 
 const MODELS = [

@@ -22,8 +22,10 @@ export interface AgentQueueConfig {
   agentId: string
   /** Primary model alias (legacy — used when runtime is current default) */
   model: ModelAlias
-  /** Supabase filter for which issues this agent picks up */
+  /** Primary status this agent picks up. Use pickupStatuses (array) for multi-status lanes. */
   pickupStatus: string
+  /** Optional additional statuses to pick up (e.g. PO handles both backlog + feature_review). */
+  pickupStatuses?: string[]
   /** Additional Supabase query filters (appended to URL) */
   extraFilters: string
   /** Optional extra filter appended to WIP-count query when pickupStatus === workingStatus (deployer). */
@@ -61,7 +63,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     model: 'sonnet',
     pickupStatus: 'open',
     extraFilters: 'type=in.(task,bug)&project=eq.Todero',  // Todero-only focus, tasks/bugs only
-    dorFields: ['description', 'acceptance_criteria'],
+    dorFields: ['description', 'acceptance_criteria', 'test_tier'],
     // TOD-XXX (2026-04-10, Michael approved): bumped from 1 to 2 for parallel
     // builds. Safe now that each spawn runs in its own isolated git worktree
     // (TOD-806) so two concurrent Builders can't collide on branch state.
@@ -69,9 +71,21 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     workingStatus: 'in_progress',
     completionStatus: 'code_review',
     checkBlocking: true,
-    sortOrder: 'priority.asc,due_date.asc.nullslast',
+    sortOrder: 'priority.asc,due_date.asc.nullslast,created_at.asc',
     fetchLimit: 50,
-    promptPrefix: 'You are Builder. Implement the following task. Run npm run build to verify. Commit with [skip ci]. Add [skip ci] to ALL commits.',
+    promptPrefix: `You are Builder. Implement the following task.
+
+Rules:
+- Run npm run build before committing. Zero TypeScript errors required.
+- Add [skip ci] to ALL commits (format: "feat(TOD-XXX): description [skip ci]").
+- NEVER use gh pr create or create GitHub PRs. Deployer handles that.
+- Push your feature branch: git push origin <branch>.
+- When done, PATCH the issue to code_review via the MC API:
+  PATCH /api/issues { task_key, status: "code_review", implementation_notes: "...", commit_sha: "...", regression_test: "..." }
+- implementation_notes: what you built and how.
+- commit_sha: the full SHA of your final commit (git rev-parse HEAD).
+- regression_test: describe what to manually test to verify it works.
+- Self-chain: after the PATCH succeeds, call POST /api/run-agent?agent=builder to claim your next task immediately.`,
     modelChain: [
       { runtime: 'claude-code', alias: 'sonnet' },  // primary: Claude Sonnet 4.6
       { runtime: 'codex',       alias: 'sonnet' },  // fallback 1: Codex o4-mini
@@ -83,13 +97,13 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     agentId: 'ops',
     model: 'sonnet',
     pickupStatus: 'open',
-    extraFilters: '',
-    dorFields: ['description', 'acceptance_criteria'],
+    extraFilters: 'type=eq.ops',  // Ops only handles ops-type issues (infra, config, tooling)
+    dorFields: ['description', 'acceptance_criteria', 'test_tier'],
     wipLimit: 1,
     workingStatus: 'in_progress',
     completionStatus: 'code_review',
     checkBlocking: true,
-    sortOrder: 'priority.asc,due_date.asc.nullslast',
+    sortOrder: 'priority.asc,due_date.asc.nullslast,created_at.asc',
     fetchLimit: 20,
     promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci]. When done, PATCH to code_review with implementation_notes + commit_sha + regression_test. Self-chain: call POST /api/run-agent?agent=ops to claim next.',
     modelChain: [
@@ -110,7 +124,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Verify code changes, run npm run build. If passes: PATCH to approved with test_status=passed + reviewer_notes. If fails: PATCH back to open with reviewer_notes explaining what failed.',
+    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Check resolution_type to understand what kind of change was made (code_change = code diff to verify; config_change = config/env change; research_completed = document review; etc.). Run npm run build. If passes: PATCH to approved with test_status=passed + reviewer_notes. If fails: PATCH back to open with reviewer_notes explaining what failed.',
   },
 
   designer: {
@@ -125,7 +139,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check responsive layout, accessibility, design system compliance. If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
+    promptPrefix: 'You are Designer. Review this issue for UX/design quality. Check resolution_type to understand what changed (code_change = UI code touched; config_change = settings only, less visual review needed). Check responsive layout, accessibility, design system compliance. If passes: PATCH designer_status=ux_approved. If fails: PATCH back to open with designer_notes.',
   },
 
   // TOD-XXX (2026-04-10): PO promptPrefix updated to fix sprint-date hygiene.
@@ -136,6 +150,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     agentId: 'po',
     model: 'sonnet',
     pickupStatus: 'backlog',
+    pickupStatuses: ['backlog', 'feature_review'],  // also handles feature_review confirmation
     extraFilters: 'type=in.(feature,task,bug,ops,research)',
     // CRITICAL: pickupStatus !== workingStatus but PO leaves items in 'defined'
     // as a staging area. Without this filter, ALL defined items count as WIP,
@@ -145,11 +160,52 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     dorFields: ['title'],
     wipLimit: 3,
     workingStatus: 'refined',
-    completionStatus: 'open',
+    completionStatus: 'refined',  // PO's job ends at refined. queue-refill cron promotes to open.
     checkBlocking: false,
     sortOrder: 'priority.asc,created_at.asc',
     fetchLimit: 10,
-    promptPrefix: 'You are Product Owner. Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner. For TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined"). For FEATURES: FIRST call GET /api/issues?parent_id=<feature_id> to see existing children. If children already exist and cover the scope, groom them (fill missing fields) and PATCH the feature to "defined" — do NOT create new tasks. Only create child tasks for genuine gaps not covered by existing open children. The API will reject with 409 if you exceed 20 open children or if a near-duplicate title exists — treat this as a signal to stop creating. For EPICS: verify child features exist and have AC. Then check refined/defined issues — if they have priority, severity, assignee, owner, PATCH to "open" (tasks/bugs/ops/research) or "underway" (features). Sprint is auto-set on transition. Self-chain: after finishing, call POST /api/run-agent?agent=po to claim next.',
+    promptPrefix: `You are Product Owner. You handle two types of work:
+
+## 1. REFINEMENT (backlog/defined issues)
+Refine this issue: add description, acceptance criteria, set priority, severity, assignee, owner.
+- TASKS/BUGS/OPS/RESEARCH: PATCH status to "refined" (not "defined", not "open").
+- FEATURES: create child tasks (each 1-2 days of work) before moving to "defined".
+- EPICS: verify child features exist and have AC.
+
+CRITICAL — assignee rules when creating or refining child tasks:
+- Todero tasks/bugs → assignee: "builder"
+- Ops tasks (any project) → assignee: "ops"
+- Kemuni tasks → assignee: "kemuni-sme"
+- Vespera tasks → assignee: "vespera-sme"
+- NEVER set assignee to "po" — PO only refines, never implements.
+
+REQUIRED — test_tier must be set on every task, bug, and ops issue before moving to refined:
+- "smoke"       → config change, tiny fix, no new code paths (tester: build + spot check)
+- "integration" → new API route, component, or DB query (tester: check the integration end-to-end)
+- "e2e"         → user-facing flow, auth path, or anything touching sprint/issue lifecycle (tester: walk full flow)
+Research issues do NOT need test_tier (they go to product_review, not code_review).
+
+Do NOT move refined issues to open yourself — queue-refill runs hourly and promotes refined → open automatically. Your job is backlog → refined only.
+
+## 2. FEATURE REVIEW (feature_review issues)
+When a feature is in feature_review, your job is to confirm it is actually done.
+
+Steps:
+1. Read the feature's description and acceptance_criteria carefully.
+2. Check all child issues: GET /api/issues?parent_id={feature_id}
+3. Assess: are ALL acceptance criteria met by the closed child issues?
+
+If YES (feature is done — all children closed, all AC met):
+- PATCH the feature: { status: "closed", resolution_type: "completed", implementation_notes: "Feature complete. All AC met: [brief summary]", closing_notes: "All child issues closed. AC verified: [brief]" }
+- resolution_type is REQUIRED to close — always include it. "completed" is correct for features.
+
+If NO (children still open, OR gaps in AC coverage):
+- If children are already open: PATCH the feature back to underway: { status: "underway", reviewer_notes: "Feature reverted — child [TOD-XXX] still open: [title]" }
+- If new gaps found (no existing child covers them): create a new child task first. The feature will auto-revert to "underway" when the child is created (no manual PATCH needed for that case).
+- Always explain in reviewer_notes what criteria are not yet met.
+
+## Self-chain
+After finishing, call POST /api/run-agent?agent=po to claim next.`,
     modelChain: [
       { runtime: 'claude-code', alias: 'sonnet' },
       { runtime: 'codex',       alias: 'sonnet' },
@@ -166,7 +222,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     workingStatus: 'in_progress',
     completionStatus: 'product_review',
     checkBlocking: true,
-    sortOrder: 'priority.asc,due_date.asc.nullslast',
+    sortOrder: 'priority.asc,due_date.asc.nullslast,created_at.asc',
     fetchLimit: 10,
     promptPrefix: 'You are Scout. Research the following task. Summarize findings, cite sources, provide actionable recommendations. When done, PATCH to product_review with implementation_notes. Self-chain: call POST /api/run-agent?agent=scout to claim next.',
     modelChain: [
@@ -190,7 +246,7 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Auditor. Verify this released issue: check PR was merged, build passes, acceptance criteria met, no regressions. If all good: PATCH to closed. If issues found: create a new bug issue, then PATCH current to closed.',
+    promptPrefix: 'You are Auditor. Verify this released issue: check PR was merged, build passes, acceptance criteria met, no regressions. Check resolution_type — it tells you what to verify (code_change = check the diff/build; config_change = check config; research_completed = check docs). When closing: PATCH { status: "closed", resolution_type: "<keep existing or correct it>", closing_notes: "Audit outcome: ..." }. resolution_type is REQUIRED to close — the API will reject without it. If issues found: create a new bug issue, then PATCH current to closed with closing_notes explaining what was found.',
   },
 
   deployer: {
@@ -208,7 +264,35 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 20,
-    promptPrefix: 'You are Deployer. Verify all approved issues have required fields (implementation_notes, commit_sha, regression_test). Prepare for PR window.',
+    promptPrefix: `You are Deployer. Your job is to prepare approved branches for a clean, conflict-free PR window merge.
+
+For EACH approved issue (process one at a time, sequentially):
+
+1. VERIFY required fields exist: implementation_notes, commit_sha, regression_test, feature_branch.
+   - If any are missing: PATCH status back to in_progress with a note listing what is missing. Skip to next issue.
+
+2. REBASE the branch onto current main:
+   cd ~/todero
+   git fetch origin
+   git checkout <feature_branch>
+   git rebase origin/main
+
+3. IF rebase conflicts occur: read config/skills/resolve-conflicts/SKILL.md and follow it exactly.
+   - Resolve each conflict keeping both intents where possible.
+   - Run npm run build after resolving to verify no compile errors.
+   - If conflict is unresolvable: git rebase --abort, PATCH issue back to in_progress with detailed conflict notes, move to next issue.
+
+4. IF rebase succeeds: run npm run build to verify the branch compiles cleanly on its own.
+   - If build fails: PATCH back to in_progress with the build error. Move to next issue.
+
+5. IF build passes: git push --force-with-lease origin <feature_branch> to update the remote branch.
+   Log: "✓ TOD-XXX ready for PR window — rebased cleanly onto main"
+
+6. Move to the next approved issue. Never process two branches simultaneously.
+
+After all approved issues are processed: summarize what is ready for the PR window and what was sent back to in_progress and why.
+
+NEVER run git push to main directly. NEVER create a PR. NEVER merge to main yourself. Your job ends at rebasing and validating each branch.`,
   },
 
   // ── SME agents: Epic decomposition only ──────────────────────────────────
@@ -309,3 +393,4 @@ export function getQueueConfig(agentId: string): AgentQueueConfig | undefined {
 export function getAllQueueAgentIds(): string[] {
   return Object.keys(AGENT_QUEUE_CONFIGS)
 }
+// test
