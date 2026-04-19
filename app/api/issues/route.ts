@@ -1590,16 +1590,22 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // Auto-clear is_blocked + blocked_by when an issue transitions to any new status.
-  // If it's moving through the pipeline, it's no longer blocked by anything.
-  if (fields.status && fields.status !== before?.status) {
+  // Auto-clear is_blocked + blocked_by when an issue transitions to a new status —
+  // BUT only when the transition is performed by an authorized human/orchestrator.
+  // Agents (builder, tester, etc.) do NOT get to clear the block — only po, main,
+  // michael, or kaos can deliberately unblock an issue.
+  const authorizedUnblockers = ['po', 'main', 'michael', 'kaos']
+  if (
+    fields.status && fields.status !== before?.status &&
+    authorizedUnblockers.includes(transitionedBy ?? '')
+  ) {
     if (before?.is_blocked) {
       fields.is_blocked = false
-      console.log(`[unblock] ${before?.task_key} is_blocked cleared on transition ${before?.status}→${fields.status}`)
+      console.log(`[unblock] ${before?.task_key} is_blocked cleared on transition ${before?.status}→${fields.status} by ${transitionedBy}`)
     }
     if (before?.blocked_by) {
       fields.blocked_by = null
-      console.log(`[unblock] ${before?.task_key} blocked_by cleared on transition ${before?.status}→${fields.status}`)
+      console.log(`[unblock] ${before?.task_key} blocked_by cleared on transition ${before?.status}→${fields.status} by ${transitionedBy}`)
     }
   }
 
@@ -1619,6 +1625,9 @@ export async function PATCH(req: NextRequest) {
   const newRejectionCount = (fields.rejection_count as number | undefined) ?? before?.rejection_count ?? 0
   if (newRejectionCount >= 3 && !before?.is_blocked) {
     fields.is_blocked = true
+    // Sentinel distinguishes rejection-loop blocks from dependency blocks.
+    // run-agent and the main triage agent use this to route the issue correctly.
+    fields.blocked_by = 'system:rejection_loop'
   }
 
   // When is_blocked becomes true, post to Discord #alerts for KAOS (main) to investigate.
@@ -1631,8 +1640,8 @@ export async function PATCH(req: NextRequest) {
     const title = (blockedIssue.title ?? '') as string
     const currentStatus = (blockedIssue.status ?? before?.status ?? '?') as string
     const blockedBy = (blockedIssue.blocked_by ?? before?.blocked_by ?? null) as string | null
-    const reason = newRejectionCount >= 3
-      ? `3+ review rejections (rejection_count=${newRejectionCount})`
+    const reason = blockedBy === 'system:rejection_loop'
+      ? `3+ review rejections (rejection_count=${newRejectionCount}) — main agent will triage`
       : blockedBy
         ? `blocked_by dependency: ${blockedBy}`
         : 'manually blocked'

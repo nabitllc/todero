@@ -126,11 +126,16 @@ LaunchAgent label: `work.nabit.todero` (auto-starts at boot, serves `kaos.nabit.
 
 ## Git Branches
 
-Current active branches (as of migration):
+### Branch naming convention
+- `feat/tod-XXXX` — one branch per issue (builder/ops only create these)
+- `release/next` — staging branch, merges into main at PR windows
 - `main` — production
-- `feat/mc-features-tab`
-- `feat/mc-sprint1-polish`
-- `feat/mc-sprint2`
-- `feat/tod-activate-inprogress`
-- `feat/tod-571-kaos-backlog-reset`
-- `feat/tod-api-lane-enforcement`
+
+### Rules
+- Only `builder` and `ops` agents create feature branches (CODE_AGENTS set in `lib/claude-code.ts`)
+- Never create branches manually during development; let run-agent handle it
+- After merging, deployer runs `git fetch --prune` to clean up remote-tracking refs
+- Stale local branches should be pruned after confirming changes are in main:
+  - `backup/*`, `sync/*`, `release/<date>-*` → delete once content lands in main
+  - `feat/po-notask-*` → zombie branches from old bug; always safe to delete
+  - `deploy-*` → temporary deployer branches; delete after PR window closes

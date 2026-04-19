@@ -160,10 +160,13 @@ export async function POST(req: NextRequest) {
   // For agents where pickupStatus === workingStatus (e.g. deployer), wipExtraFilter
   // narrows WIP count to claimed issues only (started_at IS NOT NULL), preventing
   // the full queue length from being mis-counted as active WIP.
+  // For skipAssigneeFilter agents (main), count all is_blocked issues with started_at set.
   const wipExtraFilter = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
   const wipUrl = isReviewer
     ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&select=id`
-    : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}${wipExtraFilter}&select=id`
+    : config.skipAssigneeFilter
+      ? `${SUPA_URL}/rest/v1/issues?is_blocked=eq.true&started_at=not.is.null&select=id`
+      : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}${wipExtraFilter}&select=id`
   const wipRes = await fetch(wipUrl, { headers: getHeaders() })
   const wipIssues = await wipRes.json() as Array<{ id: string }>
   if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
@@ -178,23 +181,30 @@ export async function POST(req: NextRequest) {
   const dorFilter = config.dorFields.map(f => `${f}=not.is.null`).join('&')
   const extraFilter = config.extraFilters ? `&${config.extraFilters}` : ''
   // Reviewers: all code_review issues where THEIR status is pending (not tied to assignee field)
-  // Workers: issues assigned to them
+  // skipAssigneeFilter agents (main): no assignee filter — pick up any blocked issue
   const assigneeFilter = isReviewer
     ? `${reviewStatusField}=eq.pending`
-    : `assignee=eq.${agentId}`
+    : config.skipAssigneeFilter
+      ? ''
+      : `assignee=eq.${agentId}`
   // Support multi-status pickup (e.g. PO handles backlog + feature_review)
-  const allPickupStatuses = config.pickupStatuses ?? [config.pickupStatus]
-  const statusFilter = allPickupStatuses.length === 1
-    ? `status=eq.${allPickupStatuses[0]}`
-    : `status=in.(${allPickupStatuses.join(',')})`
-  const url = `${SUPA_URL}/rest/v1/issues?${assigneeFilter}&${statusFilter}&${dorFilter}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  // null pickupStatus = no status filter (main agent filters on is_blocked via extraFilters)
+  const allPickupStatuses = config.pickupStatuses ?? (config.pickupStatus ? [config.pickupStatus] : [])
+  const statusFilter = allPickupStatuses.length === 0
+    ? ''
+    : allPickupStatuses.length === 1
+      ? `status=eq.${allPickupStatuses[0]}`
+      : `status=in.(${allPickupStatuses.join(',')})`
+  // Build URL — join non-empty filters with & to avoid double-ampersand artifacts
+  const baseFilters = [assigneeFilter, statusFilter, dorFilter].filter(Boolean).join('&')
+  const url = `${SUPA_URL}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
   const tasks = await res.json() as Array<{
     id: string; title: string; description: string; priority: string;
     due_date: string | null; created_at: string; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
-    blocked_by: string | null; status: string; parent_id: string | null;
+    blocked_by: string | null; is_blocked: boolean | null; status: string; parent_id: string | null;
     rejection_count: number | null;
     tester_notes: string | null; designer_notes: string | null;
     tester_status: string | null; designer_status: string | null;
@@ -284,8 +294,7 @@ export async function POST(req: NextRequest) {
   const escalatedKeys: string[] = []
   let task: typeof readyTasks[0] | null = null
   for (const candidate of readyTasks) {
-    const rc = (candidate as Record<string, unknown>).rejection_count as number ?? 0
-    if (rc >= MAX_REJECTION_CYCLES) {
+    if (candidate.is_blocked) {
       escalatedKeys.push(candidate.task_key ?? candidate.id)
       continue
     }
@@ -296,7 +305,7 @@ export async function POST(req: NextRequest) {
   if (!task) {
     return NextResponse.json({
       agent: agentId,
-      message: `All eligible issues are escalated (rejected ${MAX_REJECTION_CYCLES}+ times). KAOS review needed.`,
+      message: `All eligible issues are blocked (is_blocked=true). Run main agent to triage.`,
       escalated: true,
       escalatedIssues: escalatedKeys,
     })
@@ -339,7 +348,7 @@ ${responseFields}
     started_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  if (config.pickupStatus !== config.workingStatus) {
+  if (config.workingStatus && config.pickupStatus !== config.workingStatus) {
     claimFields.status = config.workingStatus
   }
   await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
@@ -527,6 +536,28 @@ ${task.designer_status && task.designer_status !== 'pending' ? `\nDesigner (${ta
 
 Fix every issue mentioned above. Do NOT resubmit without addressing all feedback.` : ''
 
+  // Q5: Inject block reason so the main agent (and any agent that receives a blocked issue)
+  // knows exactly what kind of block it's dealing with before starting work.
+  const blockedReasonBlock = task.is_blocked ? (() => {
+    if (task.blocked_by === 'system:rejection_loop') {
+      return `
+🔴 BLOCKED — REJECTION LOOP
+This issue is blocked because it was rejected ${task.rejection_count ?? 3}+ times.
+Tester notes: ${task.tester_notes ?? '(none)'}
+Designer notes: ${task.designer_notes ?? '(none)'}
+Resolve the underlying problem before proceeding. Do NOT re-submit without addressing all feedback.`
+    }
+    if (task.blocked_by) {
+      return `
+🔴 BLOCKED — DEPENDENCY
+This issue is blocked on dependency: ${task.blocked_by}
+Verify the blocking issue is complete before proceeding. If it is done, unblock via PATCH { is_blocked: false, blocked_by: null, transitioned_by: "${agentId}" }.`
+    }
+    return `
+🔴 BLOCKED — MANUAL HOLD
+This issue was manually blocked. Read implementation_notes and tester_notes for context before proceeding.`
+  })() : ''
+
   const prompt = [
     `<workspace-context>${context}</workspace-context>`,
     `\nYou are ${agentId}. ${config.promptPrefix}`,
@@ -536,6 +567,7 @@ Fix every issue mentioned above. Do NOT resubmit without addressing all feedback
     `Acceptance Criteria: ${task.acceptance_criteria ?? 'See description'}`,
     inboxResponseBlock,
     inboxResponseGate,
+    blockedReasonBlock,
     rejectionFeedback,
     branchInstruction,
     skillReference,

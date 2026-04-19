@@ -22,8 +22,8 @@ export interface AgentQueueConfig {
   agentId: string
   /** Primary model alias (legacy — used when runtime is current default) */
   model: ModelAlias
-  /** Primary status this agent picks up. Use pickupStatuses (array) for multi-status lanes. */
-  pickupStatus: string
+  /** Primary status this agent picks up. null = no status filter (e.g. main triage agent). */
+  pickupStatus: string | null
   /** Optional additional statuses to pick up (e.g. PO handles both backlog + feature_review). */
   pickupStatuses?: string[]
   /** Additional Supabase query filters (appended to URL) */
@@ -34,10 +34,10 @@ export interface AgentQueueConfig {
   dorFields: string[]
   /** Max concurrent in_progress (WIP limit) */
   wipLimit: number
-  /** Status to set when agent starts working */
-  workingStatus: string
-  /** Status to set when agent completes work */
-  completionStatus: string
+  /** Status to set when agent starts working. null = don't change status on pickup. */
+  workingStatus: string | null
+  /** Status to set when agent completes work. null = agent manages its own completion. */
+  completionStatus: string | null
   /** Whether to check blocked_by dependencies */
   checkBlocking: boolean
   /** Sort order — Supabase order param */
@@ -46,6 +46,8 @@ export interface AgentQueueConfig {
   fetchLimit: number
   /** Prompt template prefix for the agent */
   promptPrefix: string
+  /** Skip the assignee=eq.agentId filter — used by triage agents that pick up any assignee */
+  skipAssigneeFilter?: boolean
   /**
    * TOD-XXX: Main + fallback chain. The dispatcher tries each binding in order
    * until one is `available` (runtime installed + API reachable). First binding
@@ -382,6 +384,45 @@ Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /a
     modelChain: [
       { runtime: 'claude-code', alias: 'sonnet' },
       { runtime: 'codex',       alias: 'sonnet' },
+    ],
+  },
+
+  // ── Main (triage/orchestrator) ───────────────────────────────────────────
+  // Picks up ANY is_blocked issue regardless of status or assignee.
+  // Does NOT change status on pickup — it resolves the block and hands back.
+  main: {
+    agentId: 'main',
+    model: 'opus',
+    pickupStatus: null,                  // no status filter — blocked issues span all statuses
+    extraFilters: 'is_blocked=eq.true',  // only blocked issues
+    skipAssigneeFilter: true,            // pick up regardless of current assignee
+    dorFields: [],                       // no DoR gate — all blocked issues need triage
+    wipLimit: 2,
+    workingStatus: null,                 // don't change status on pickup
+    completionStatus: null,              // main manages its own completion via PATCH
+    checkBlocking: false,
+    sortOrder: 'updated_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are KAOS (main orchestrator). Your job is to triage blocked issues and unblock them.
+
+For each blocked issue:
+
+1. Read \`blocked_by\` to understand WHY it's blocked:
+   - \`"system:rejection_loop"\` → Rejected 3+ times. Read tester_notes, designer_notes, and rejection history to understand what's wrong. Options: clarify requirements via implementation_notes, break into smaller issues, or escalate to michael with a clear summary of the impasse.
+   - A UUID → Dependency block. Verify if the blocking issue is actually complete (GET /api/issues?id=<uuid>). If done: PATCH this issue { is_blocked: false, blocked_by: null, transitioned_by: "main" }.
+   - null/other → Manual or unknown block. Read implementation_notes + tester_notes for context.
+
+2. Resolve the block:
+   - Dependency resolved: unblock via PATCH { is_blocked: false, blocked_by: null, transitioned_by: "main" }.
+   - Rejection loop: add clarifying implementation_notes, then PATCH { is_blocked: false, blocked_by: null, transitioned_by: "main" } to let the agent retry, OR escalate to michael if the issue is fundamentally unclear.
+   - Unknown block: investigate and either unblock or add a comment explaining the block.
+
+3. NEVER mark an issue completed or change its status lane — your job is unblocking only.
+
+Self-chain: POST /api/run-agent?agent=main`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'opus' },
+      { runtime: 'claude-code', alias: 'sonnet' },
     ],
   },
 }
