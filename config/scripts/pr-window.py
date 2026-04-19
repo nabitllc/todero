@@ -382,6 +382,32 @@ def main():
                 subprocess.run(["git", "pull", "--ff-only"], cwd=repo_dir,
                               capture_output=True, text=True, timeout=60)
 
+                # Prune merged feature branches — both remote and local.
+                # Keeps the repo clean; branches are fully in main after this point.
+                for issue in merged_issues:
+                    fb = issue.get("feature_branch", "").strip()
+                    if not fb:
+                        continue
+                    # Delete remote branch (ignore errors — branch may not exist remotely)
+                    subprocess.run(["git", "push", "origin", "--delete", fb],
+                                   cwd=repo_dir, capture_output=True, text=True, timeout=15)
+                    # Delete local branch (force — it's merged)
+                    subprocess.run(["git", "branch", "-D", fb],
+                                   cwd=repo_dir, capture_output=True, text=True, timeout=10)
+                    log(f"  [prune] deleted branch {fb}")
+
+                # Delete remote release branch (it's merged into main, no longer needed)
+                subprocess.run(["git", "push", "origin", "--delete", release_branch],
+                               cwd=repo_dir, capture_output=True, text=True, timeout=15)
+                subprocess.run(["git", "branch", "-D", release_branch],
+                               cwd=repo_dir, capture_output=True, text=True, timeout=10)
+                log(f"  [prune] deleted release branch {release_branch}")
+
+                # Sync remote-tracking refs
+                subprocess.run(["git", "fetch", "--prune"],
+                               cwd=repo_dir, capture_output=True, text=True, timeout=30)
+                log("  [prune] git fetch --prune done")
+
         # Patch all merged issues with pr_url
         for issue in merged_issues:
             try:
