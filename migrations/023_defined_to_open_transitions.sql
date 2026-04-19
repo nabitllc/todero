@@ -5,13 +5,14 @@
 -- condition_role = 'po_or_main' — PO is the grooming owner; kaos/michael can override.
 -- Validators mirror the corresponding backlog→open transitions.
 -- post_functions: set_assignee from owner (same as backlog→open pattern).
+-- Fix: validators column is jsonb, cast arrays accordingly.
 
 -- TASK: defined→open
 INSERT INTO workflow_transitions (issue_type, from_status, to_status, condition_role, validators, post_functions)
 VALUES (
   'task', 'defined', 'open',
   'po_or_main',
-  ARRAY['acceptance_criteria','sprint','priority','assignee','parent_id','reviewer','owner','severity'],
+  '["acceptance_criteria","sprint","priority","assignee","parent_id","reviewer","owner","severity"]'::jsonb,
   '[{"action":"set_assignee","params":{"source":"owner"}}]'::jsonb
 )
 ON CONFLICT (issue_type, from_status, to_status) DO UPDATE
@@ -24,7 +25,7 @@ INSERT INTO workflow_transitions (issue_type, from_status, to_status, condition_
 VALUES (
   'bug', 'defined', 'open',
   'po_or_main',
-  ARRAY['acceptance_criteria','sprint','priority','severity','assignee','parent_id','reviewer','owner','environment'],
+  '["acceptance_criteria","sprint","priority","severity","assignee","parent_id","reviewer","owner","environment"]'::jsonb,
   '[{"action":"set_assignee","params":{"source":"owner"}}]'::jsonb
 )
 ON CONFLICT (issue_type, from_status, to_status) DO UPDATE
@@ -37,7 +38,7 @@ INSERT INTO workflow_transitions (issue_type, from_status, to_status, condition_
 VALUES (
   'feature', 'defined', 'open',
   'po_or_main',
-  ARRAY['acceptance_criteria','sprint','priority','assignee','reviewer','owner'],
+  '["acceptance_criteria","sprint","priority","assignee","reviewer","owner"]'::jsonb,
   '[{"action":"set_assignee","params":{"source":"owner"}}]'::jsonb
 )
 ON CONFLICT (issue_type, from_status, to_status) DO UPDATE
@@ -50,7 +51,7 @@ INSERT INTO workflow_transitions (issue_type, from_status, to_status, condition_
 VALUES (
   'ops', 'defined', 'open',
   'po_or_main',
-  ARRAY['sprint','assignee','reviewer','owner','priority','severity'],
+  '["sprint","assignee","reviewer","owner","priority","severity"]'::jsonb,
   '[{"action":"set_assignee","params":{"source":"owner"}}]'::jsonb
 )
 ON CONFLICT (issue_type, from_status, to_status) DO UPDATE
@@ -63,7 +64,7 @@ INSERT INTO workflow_transitions (issue_type, from_status, to_status, condition_
 VALUES (
   'research', 'defined', 'open',
   'po_or_main',
-  ARRAY['acceptance_criteria','sprint','priority','assignee'],
+  '["acceptance_criteria","sprint","priority","assignee"]'::jsonb,
   '[{"action":"set_assignee","params":{"source":"assignee"}}]'::jsonb
 )
 ON CONFLICT (issue_type, from_status, to_status) DO UPDATE
