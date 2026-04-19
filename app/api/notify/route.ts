@@ -14,6 +14,7 @@
 //
 // Channel registry is below. Adding a new named channel: one line in CHANNELS.
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 
 // ── Token config (fail-loud at module load — no hardcoded fallbacks) ────────
 if (!process.env.DISCORD_BOT_TOKEN) {
@@ -124,6 +125,13 @@ function isRateLimited(channel: string): boolean {
 
 // ── POST /api/notify ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const REQUIRED_PERMISSION = 'agents:write' as const
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'POST', '/api/notify')
+    if (!perm.allowed) return NextResponse.json(perm.body, { status: perm.status })
+  }
+
   let body: {
     text?: string
     channels?: string[]

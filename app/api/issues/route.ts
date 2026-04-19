@@ -707,6 +707,13 @@ async function executePostFunctions(
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
+  const REQUIRED_PERMISSION = 'issues:read' as const
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'GET', '/api/issues')
+    if (!perm.allowed) return NextResponse.json(perm.body, { status: perm.status })
+  }
+
   const url = new URL(req.url)
   const taskKey = url.searchParams.get('task_key')
 

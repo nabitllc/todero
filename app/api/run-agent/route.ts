@@ -20,6 +20,7 @@ import { readFileSync as fsReadFileSync } from 'fs'
 import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
 import { recordSpawn } from '@/lib/runtimes/token-ledger'
 import { logAgentCost } from '@/lib/agent-cost-log'
+import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 // Lazy-init: avoids crashing at build time when env vars aren't set (CI).
@@ -121,6 +122,13 @@ async function loadContextFromDB(agentId: string): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
+  const REQUIRED_PERMISSION = 'agents:spawn' as const
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'POST', '/api/run-agent')
+    if (!perm.allowed) return NextResponse.json(perm.body, { status: perm.status })
+  }
+
   // Hub pause guard — reject new agent activations when paused
   if (await isHubPaused()) {
     return NextResponse.json({ error: 'Agents are paused', paused: true }, { status: 503 })
@@ -707,6 +715,13 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
 
 // GET /api/run-agent — status/heartbeat for all queue lanes
 export async function GET(req: NextRequest) {
+  const REQUIRED_PERMISSION = 'agents:read' as const
+  const callerRole = await resolveCallerRole(req)
+  if (callerRole !== null) {
+    const perm = await checkRoutePermission(callerRole, 'GET', '/api/run-agent')
+    if (!perm.allowed) return NextResponse.json(perm.body, { status: perm.status })
+  }
+
   const agentId = req.nextUrl.searchParams.get('agent')
   const agentIds = agentId ? [agentId] : getAllQueueAgentIds()
 
