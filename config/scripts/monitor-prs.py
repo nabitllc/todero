@@ -7,9 +7,8 @@ Runs every 5 minutes via launchd.
 import json, urllib.request, pathlib
 from datetime import datetime, timezone, timedelta
 
-import os
-GH_TOKEN = os.environ.get("GH_TOKEN", "")
-DISCORD_BOT = os.environ.get("DISCORD_BOT_TOKEN", "")
+GH_TOKEN = "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"
+DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
 PR_CHANNEL = "1487826368170299592"  # #pr-reviews
 MC_API = "http://localhost:3000/api/issues"
 REPOS = ["nabitllc/kaos-mission-control", "nabitllc/vespera"]

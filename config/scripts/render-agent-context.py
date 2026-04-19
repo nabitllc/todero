@@ -5,13 +5,12 @@ Claude Code version — reads from unified todero/config workspace."""
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import sys
 from typing import Iterable
 
 # All agents now share the unified workspace in todero/config
-WORKSPACE_ROOT = pathlib.Path("/Users/kemuniagent/todero/config")
+WORKSPACE_ROOT = pathlib.Path("/Users/kemuniagent/.openclaw/workspace")
 
 
 def optional_read_text(path: pathlib.Path) -> str | None:
@@ -64,30 +63,6 @@ def build_context(agent: str, agent_root: pathlib.Path | None = None) -> str:
     session_state = optional_read_text(session_state_path)
     if session_state:
         parts.extend([section(f"Session State ({session_state_path.name})", session_state), ""])
-
-    # ── Universal skills injection ────────────────────────────────────────────
-    # Read skills-inject.json to get the list of skill files to always inject.
-    # Adding a new universal skill = add one entry to skills-inject.json.
-    skills_config_path = WORKSPACE_ROOT / "scripts" / "skills-inject.json"
-    skill_texts = []
-    if skills_config_path.exists():
-        try:
-            skills_config = json.loads(skills_config_path.read_text())
-            for rel_path in skills_config.get("universal", []):
-                skill_text = optional_read_text(WORKSPACE_ROOT / rel_path)
-                if skill_text:
-                    skill_texts.append((pathlib.Path(rel_path).name, skill_text))
-        except Exception:
-            pass
-
-    if skill_texts:
-        skills_section = ["# UNIVERSAL SKILLS (behavioral rules — follow these on every task)", ""]
-        for skill_name, skill_text in skill_texts:
-            skills_section.append(skill_text.strip())
-            skills_section.append("")
-            skills_section.append("===============================")
-            skills_section.append("")
-        parts.extend([section("Universal Skills", "\n".join(skills_section)), ""])
 
     parts.extend(["---", "## Task"])
     return "\n".join(parts)

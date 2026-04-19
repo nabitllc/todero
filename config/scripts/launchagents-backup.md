@@ -13,7 +13,7 @@
 | com.nabit.monitor-pr-merge | scripts/monitor-pr-merge.py | Every 5min |
 | com.nabit.monitor-stale | scripts/monitor-stale.py | Every 2h |
 | com.nabit.monitor-review-transition | scripts/monitor-review-transition.py | Every 2min |
-| ~~com.nabit.monitor-claude-limit~~ | ~~scripts/monitor-claude-limit.py~~ | Removed — Claude subscription has no API rate limit |
+| com.nabit.monitor-claude-limit | scripts/monitor-claude-limit.py | Every 15min |
 | com.nabit.cloudflared | cloudflared tunnel | Always on |
 
 ## Quick install on new Mac

@@ -28,12 +28,12 @@ File: `/Users/kemuniagent/.openclaw/workspace/scripts/queue-agent-config.json`
 
 ### Step 3 — Verify with dry run
 ```bash
-curl -s "http://localhost:3000/api/issues?assignee=<id>&status=open" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} issues ready for <id>')"
+python3 /Users/kemuniagent/.openclaw/workspace/scripts/queue-runner.py --agent <id> --dry-run
 ```
 
 ### Step 4 — Commit
 ```bash
-cd /Users/kemuniagent/todero/config
+cd /Users/kemuniagent/.openclaw/workspace
 git add -A && git commit -m "feat(agent): add <id> agent — AGENTS.md + queue config"
 ```
 

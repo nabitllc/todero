@@ -223,9 +223,11 @@ def main():
         log(f"[mc-api] Failed to fetch issues: {e}")
         sys.exit(1)
 
-    # Find approved issues with a feature_branch set and no pr_url yet
+    # Find approved issues that deployer has validated (deployer_status=ready),
+    # have a feature branch, and haven't already been batched into a PR.
     ready = [i for i in all_issues
              if i.get("status") == "approved"
+             and i.get("deployer_status") == "ready"
              and i.get("feature_branch")
              and not i.get("pr_url")]
 
@@ -289,8 +291,8 @@ def main():
             continue
 
         # Merge each feature branch into release branch.
-        # First rebase each branch on main to minimize conflicts from
-        # stale branches that diverged while other work landed.
+        # Deployer has already rebased each branch onto main and marked deployer_status=ready,
+        # so all branches here are guaranteed to be clean. No pre-flight rebase needed.
         merged_issues = []
         merge_failed = []
         for issue in issues:
@@ -298,27 +300,6 @@ def main():
             if not branch:
                 continue
 
-            # Step 1: Rebase the feature branch on main (in the release branch context)
-            # This brings the feature branch up to date with main before merging.
-            rebase_ok = subprocess.run(
-                ["git", "rebase", "main", branch],
-                cwd=repo_dir, capture_output=True, text=True, timeout=60
-            )
-            if rebase_ok.returncode != 0:
-                subprocess.run(["git", "rebase", "--abort"], cwd=repo_dir,
-                              capture_output=True, text=True, timeout=10)
-                # Rebase failed — try merge anyway (might still work for trivial divergence)
-                log(f"  [rebase] {branch} failed to rebase — falling back to direct merge")
-                # Go back to release branch
-                subprocess.run(["git", "checkout", release_branch], cwd=repo_dir,
-                              capture_output=True, text=True, timeout=10)
-            else:
-                log(f"  [rebase] {branch} rebased on main")
-                # Go back to release branch
-                subprocess.run(["git", "checkout", release_branch], cwd=repo_dir,
-                              capture_output=True, text=True, timeout=10)
-
-            # Step 2: Merge the (now-rebased) feature branch
             result = subprocess.run(
                 ["git", "merge", branch, "--no-edit", "-m",
                  f"Merge {branch} ({issue.get('task_key', '?')})"],
@@ -328,11 +309,17 @@ def main():
                 merged_issues.append(issue)
                 log(f"  Merged {branch} ({issue.get('task_key')})")
             else:
-                # Abort failed merge and skip this branch
+                # Abort failed merge and skip this branch.
+                # Reset deployer_status so deployer re-evaluates on the next cycle.
                 subprocess.run(["git", "merge", "--abort"], cwd=repo_dir,
                               capture_output=True, text=True, timeout=10)
                 merge_failed.append(issue)
                 log(f"  CONFLICT: {branch} ({issue.get('task_key')}) — skipped")
+                try:
+                    mc_patch({"id": issue["id"], "deployer_status": None,
+                              "deployer_notes": f"Branch-on-branch conflict in release batch — {branch} could not be merged into the release branch alongside other branches in this window. Deployer will re-validate on the next cycle."})
+                except Exception as e:
+                    log(f"  [mc-patch] failed to reset deployer_status for {issue.get('task_key')}: {e}")
 
         if not merged_issues:
             log(f"No branches merged successfully for {repo}")
@@ -370,16 +357,8 @@ def main():
         pr_number = pr.get("number", "?")
         log(f"[pr] #{pr_number} created: {pr_url}")
 
-        # PR stays open for Michael to review and merge.
-        # KAOS never auto-merges — only Michael approves merges.
-        issue_keys = ", ".join(i.get("task_key", "?") for i in merged_issues)
-        review_msg = (
-            f"👀 **PR #{pr_number} ready for review** — `{pr_title}`\n"
-            f"Issues: {issue_keys}\n"
-            f"<{pr_url}>\n"
-            f"_Merge when ready — KAOS won't auto-merge._"
-        )
-        discord_post(PR_CHANNEL, review_msg)
+        # PR is created for human review. monitor-pr-merge.py handles branch
+        # cleanup and approved→released transition after the human merges.
 
         # Patch all merged issues with pr_url
         for issue in merged_issues:

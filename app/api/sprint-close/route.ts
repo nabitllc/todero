@@ -35,13 +35,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 })
     }
 
-    // Hub-scoped client: all hub table queries auto-filtered to this business_id
-    const db = getHubClient(business_id)
+    const { client: db, businessId: hubId } = getHubClient(business_id)
 
-    // 1. Find the active sprint for this business_id (business_id filter auto-injected)
+    // 1. Find the active sprint for this business_id
     const { data: activeSprint, error: findErr } = await db
       .from('sprints')
       .select('*')
+      .eq('business_id', hubId)
       .eq('status', 'active')
       .limit(1)
       .single()
@@ -53,19 +53,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 2. Find projects for this business (business_id filter auto-injected)
+    // 2. Find projects for this business
     const { data: projects } = await db
       .from('projects')
       .select('name')
+      .eq('business_id', hubId)
 
     const projectNames = (projects ?? []).map((p) => p.name)
 
-    // 3. Fetch all issues in this sprint (business_id filter auto-injected)
+    // 3. Fetch all issues in this sprint
     let sprintIssues: Record<string, unknown>[] = []
     if (projectNames.length > 0) {
       const { data: issues } = await db
         .from('issues')
         .select('id, title, status, project, task_key, type, priority')
+        .eq('business_id', hubId)
         .in('project', projectNames)
         .eq('sprint', activeSprint.start_date)
 
@@ -94,13 +96,14 @@ export async function POST(req: NextRequest) {
       by_status: byStatus,
     }
 
-    // 5. Close the sprint (business_id filter auto-injected, scoped by id too)
+    // 5. Close the sprint
     const { data: closedSprint, error: closeErr } = await db
       .from('sprints')
       .update({
         status: 'closed',
         end_date: new Date().toISOString().split('T')[0],
       })
+      .eq('business_id', hubId)
       .eq('id', activeSprint.id)
       .select()
       .single()
@@ -179,6 +182,7 @@ export async function POST(req: NextRequest) {
         const { error: carryErr } = await db
           .from('issues')
           .update({ sprint: newSprintDate, updated_at: new Date().toISOString() })
+          .eq('business_id', hubId)
           .in('id', carriedOverIds)
 
         if (!carryErr) {

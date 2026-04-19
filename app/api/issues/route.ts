@@ -82,7 +82,7 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
 // Has been reverted 3+ times by Builder agents on stale branches.
 // ═══════════════════════════════════════════════════════════════════════════
 const STATUS_PICKUP_LANES: Record<string, string[]> = {
-  backlog:        ['po', 'todero-sme', 'kemuni-sme', 'vespera-sme'],  // SMEs handle epics only (filtered by type=eq.epic in queue config)
+  backlog:        ['po', 'todero-sme'],  // kemuni-sme, vespera-sme paused — Todero-only focus
   defined:        ['po'],
   refined:        ['po'],
   open:           ['builder', 'ops', 'scout'],
@@ -357,11 +357,21 @@ async function validateHierarchy(
 async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key: string; task_number: number }>> {
   const prefix = getProjectPrefix(project)
 
-  // Per-prefix sequence: find MAX task_number for issues with this prefix only.
-  // This gives each hub its own numbering (TOD-1,2,3 / KEM-1,2,3 / VES-1,2,3).
-  // Retry loop handles race conditions when multiple POSTs arrive simultaneously.
+  // Atomic sequence via DB function — no TOCTOU race condition possible.
+  // next_issue_number() does an atomic UPDATE...RETURNING on the issue_sequences
+  // table, guaranteeing each caller gets a unique number even under concurrent load.
+  // Migration 021_issue_sequences.sql must be applied before this runs.
+  const { data: seqData, error: seqErr } = await createAdminClient()
+    .rpc('next_issue_number', { p_prefix: prefix })
+
+  if (!seqErr && typeof seqData === 'number') {
+    return { task_key: `${prefix}-${seqData}`, task_number: seqData }
+  }
+
+  // Fallback: MAX-based scan with retry loop (used if sequence table not yet migrated).
+  console.warn(`[issues] sequence RPC unavailable (${seqErr?.message}), falling back to MAX scan`)
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: maxRow } = await supabase
+    const { data: maxRow } = await createAdminClient()
       .from('issues')
       .select('task_number')
       .like('task_key', `${prefix}-%`)
@@ -373,8 +383,7 @@ async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key
     const nextNumber = ((maxRow as { task_number?: number } | null)?.task_number ?? 0) + 1 + attempt
     const candidateKey = `${prefix}-${nextNumber}`
 
-    // Check if this key already exists (race guard)
-    const { data: existing } = await supabase
+    const { data: existing } = await createAdminClient()
       .from('issues')
       .select('id')
       .eq('task_key', candidateKey)
@@ -385,6 +394,7 @@ async function prepareIssueIdentity(project: string): Promise<Partial<{ task_key
     }
     console.warn(`[issues] task_key ${candidateKey} already exists, retrying (attempt ${attempt + 1})`)
   }
+
 
   // Final fallback: timestamp suffix
   const ts = Date.now() % 1000000
@@ -720,8 +730,8 @@ export async function GET(req: NextRequest) {
   const statusParam = url.searchParams.get('status')
 
   // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
-  const db = businessIdParam ? getHubClient(businessIdParam) : createAdminClient()
-  // getHubClient auto-injects business_id on hub-scoped tables
+  const hub = businessIdParam ? getHubClient(businessIdParam) : null
+  const baseClient = hub ? hub.client : createAdminClient()
   //
   // Select specific columns by default (excludes large text blobs: description,
   // implementation_notes, reviewer_notes, regression_test, tester_notes,
@@ -735,13 +745,14 @@ export async function GET(req: NextRequest) {
     'is_blocked','blocked_by','parent_id','feature_branch','pr_url','commit_sha',
     'tester_status','tested_by','tester_reviewed_at',
     'designer_status','designed_by','designer_reviewed_at',
+    'deployer_status','deployer_notes',
     'worked_by','transitioned_by','acceptance_criteria',
     'business_id','resolution_type',
   ].join(',')
-  let query = db.from('issues').select(fullFields ? '*' : SELECT_COLS)
+  let query = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS)
 
-  if (false) {
-    // business_id filtering now handled by getHubClient wrapper automatically
+  if (hub) {
+    query = query.eq('business_id', hub.businessId)
   }
 
   // Direct project filter (can combine with business_id for narrowing)
@@ -965,6 +976,42 @@ export async function POST(req: NextRequest) {
   // effectiveStatus is always 'backlog' — all issues start in intake queue
   const finalStatus = effectiveStatus
 
+  // ── Duplicate child task guards (TOD-1496) ───────────────────────────────
+  // Prevent PO from creating near-identical child tasks on repeated runs.
+  if (parent_id && type === 'task') {
+    // Guard 1: hard cap — features should not have more than 20 open child tasks.
+    const { count: childCount } = await supabase
+      .from('issues')
+      .select('id', { count: 'exact', head: true })
+      .eq('parent_id', parent_id)
+      .not('status', 'in', '("closed","wrapped","completed")')
+    if ((childCount ?? 0) >= 20) {
+      return NextResponse.json(
+        { error: `Child task cap reached: parent already has ${childCount} open child tasks (max 20). Close or complete existing tasks before adding more.` },
+        { status: 409 }
+      )
+    }
+
+    // Guard 2: near-duplicate title — first 50 chars match an existing open child.
+    if (title && title.length >= 10) {
+      const { data: siblings } = await supabase
+        .from('issues')
+        .select('id, task_key, title, status')
+        .eq('parent_id', parent_id)
+        .not('status', 'in', '("closed","wrapped","completed")')
+      const prefix = title.slice(0, 50).toLowerCase()
+      const nearDupe = (siblings ?? []).find(
+        s => s.title && s.title.slice(0, 50).toLowerCase() === prefix
+      )
+      if (nearDupe) {
+        return NextResponse.json(
+          { error: `Near-duplicate child task blocked: "${nearDupe.task_key}" (${nearDupe.status}) already covers "${title.slice(0, 60)}". Update the existing task instead.` },
+          { status: 409 }
+        )
+      }
+    }
+  }
+
   const generatedIdentity = await prepareIssueIdentity(normalizedProject)
 
   // Resolve business_id from project → business mapping
@@ -1024,6 +1071,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
+
   // Q4: If a child issue is created under a feature in feature_review → revert to underway.
   // Means the feature has open work remaining; PO or agent created a gap-filling child.
   if (data && parent_id) {
@@ -1040,6 +1088,7 @@ export async function POST(req: NextRequest) {
       console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
     }
   }
+
 
   // Warn if bug is created without environment field
   const responseData = withIssueStatusCategory(data)
@@ -1104,6 +1153,8 @@ export async function PATCH(req: NextRequest) {
     }
     fields.implementation_notes = fields.implementation_notes
       ?? `Backlog reset by ${transitionedBy} at ${new Date().toISOString()}.`
+    // Rule 2: backlog resets always assign to PO (bypasses post_functions early return)
+    if (!fields.assignee) fields.assignee = 'po'
     let resetQ = createAdminClient()
       .from('issues')
       .update({
@@ -1193,6 +1244,17 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // Rule 3: owner required before moving to defined
+  if (fields.status === 'defined' && before?.status !== 'defined') {
+    const effectiveOwner = ((fields.owner ?? before?.owner) as string | undefined | null)?.trim() ?? ''
+    if (!effectiveOwner) {
+      return NextResponse.json(
+        { error: 'owner is required before moving to defined. Set the owner field to the agent or person responsible for delivery.' },
+        { status: 400 }
+      )
+    }
+  }
+
   // description required before moving to refined (belt-and-suspenders — DB validators also enforce this,
   // but this catches direct Supabase writes or PO sessions that omit the field from the PATCH body)
   if (fields.status === 'refined' && before?.status !== 'refined') {
@@ -1267,8 +1329,6 @@ export async function PATCH(req: NextRequest) {
       )
     }
   }
-
-  /* ── Open cap removed — was blocking pipeline throughput ── */
 
   if (fields.status && before?.status && fields.status !== before.status) {
     const issueType = (fields.type ?? before?.type ?? 'task') as string
@@ -1531,16 +1591,35 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // Auto-clear is_blocked + blocked_by when an issue transitions to any new status.
-  // If it's moving through the pipeline, it's no longer blocked by anything.
-  if (fields.status && fields.status !== before?.status) {
+  // Reset deployer_status when issue leaves approved — either rejected back to open
+  // (needs re-rebase) or promoted to released (done; field no longer meaningful).
+  if (fields.status && fields.status !== before?.status && before?.status === 'approved') {
+    fields.deployer_status = null
+  }
+
+  // Also reset deployer_status when builder resubmits (in_progress → code_review/product_review).
+  // Ensures deployer re-validates the branch even if it was previously marked ready on an older commit.
+  if (fields.status && fields.status !== before?.status && before?.status === 'in_progress' &&
+      (fields.status === 'code_review' || fields.status === 'product_review')) {
+    fields.deployer_status = null
+  }
+
+  // Auto-clear is_blocked + blocked_by when an issue transitions to a new status —
+  // BUT only when the transition is performed by an authorized human/orchestrator.
+  // Agents (builder, tester, etc.) do NOT get to clear the block — only po, main,
+  // michael, or kaos can deliberately unblock an issue.
+  const authorizedUnblockers = ['po', 'main', 'michael', 'kaos']
+  if (
+    fields.status && fields.status !== before?.status &&
+    authorizedUnblockers.includes(transitionedBy ?? '')
+  ) {
     if (before?.is_blocked) {
       fields.is_blocked = false
-      console.log(`[unblock] ${before?.task_key} is_blocked cleared on transition ${before?.status}→${fields.status}`)
+      console.log(`[unblock] ${before?.task_key} is_blocked cleared on transition ${before?.status}→${fields.status} by ${transitionedBy}`)
     }
     if (before?.blocked_by) {
       fields.blocked_by = null
-      console.log(`[unblock] ${before?.task_key} blocked_by cleared on transition ${before?.status}→${fields.status}`)
+      console.log(`[unblock] ${before?.task_key} blocked_by cleared on transition ${before?.status}→${fields.status} by ${transitionedBy}`)
     }
   }
 
@@ -1560,6 +1639,9 @@ export async function PATCH(req: NextRequest) {
   const newRejectionCount = (fields.rejection_count as number | undefined) ?? before?.rejection_count ?? 0
   if (newRejectionCount >= 3 && !before?.is_blocked) {
     fields.is_blocked = true
+    // Sentinel distinguishes rejection-loop blocks from dependency blocks.
+    // run-agent and the main triage agent use this to route the issue correctly.
+    fields.blocked_by = 'system:rejection_loop'
   }
 
   // When is_blocked becomes true, post to Discord #alerts for KAOS (main) to investigate.
@@ -1572,8 +1654,8 @@ export async function PATCH(req: NextRequest) {
     const title = (blockedIssue.title ?? '') as string
     const currentStatus = (blockedIssue.status ?? before?.status ?? '?') as string
     const blockedBy = (blockedIssue.blocked_by ?? before?.blocked_by ?? null) as string | null
-    const reason = newRejectionCount >= 3
-      ? `3+ review rejections (rejection_count=${newRejectionCount})`
+    const reason = blockedBy === 'system:rejection_loop'
+      ? `3+ review rejections (rejection_count=${newRejectionCount}) — main agent will triage`
       : blockedBy
         ? `blocked_by dependency: ${blockedBy}`
         : 'manually blocked'

@@ -6,9 +6,8 @@ export async function GET(req: Request) {
   const business_id = searchParams.get('business_id')
 
   if (business_id) {
-    // Hub-scoped: business_id filter auto-injected by getHubClient
-    const db = getHubClient(business_id)
-    const { data, error } = await db.from('agents').select('*').order('created_at')
+    const hub = getHubClient(business_id)
+    const { data, error } = await hub.client.from('agents').select('*').eq('business_id', hub.businessId).order('created_at')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
@@ -24,10 +23,10 @@ export async function POST(req: Request) {
   const body = await req.json()
   const { business_id, name, adapter, model, api_key_enc, heartbeat_every, description } = body
   if (!business_id || !name) return NextResponse.json({ error: 'business_id and name required' }, { status: 400 })
-  // Hub-scoped insert: business_id auto-injected
-  const db = getHubClient(business_id)
-  const { data, error } = await db.from('agents')
+  const hub = getHubClient(business_id)
+  const { data, error } = await hub.client.from('agents')
     .insert({
+      business_id,
       name,
       adapter: adapter || 'claude-code',
       model: model || 'anthropic/claude-sonnet-4-6',

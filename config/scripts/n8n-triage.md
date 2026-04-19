@@ -35,7 +35,7 @@ Python scripts add: ~5KB each, zero overhead, already in your scripts/ folder pa
 | `dDcSY7ZWV04AgHmW` | PR Notifications → #pr-reviews | `scripts/monitor-prs.py` |
 | `huC16MvkjX5FiI3f` | PR Merge → Issue Released | `scripts/monitor-pr-merge.py` |
 | `uQKbhz8eQOJwqB9p` | Stale Task Watchdog — 2h | `scripts/monitor-stale.py` (no agent trigger) |
-| `LtI70OKEg5lmztlf` | Claude Rate Limit Monitor | ~~`scripts/monitor-claude-limit.py`~~ (deleted — Claude subscription has no API rate limit) |
+| `LtI70OKEg5lmztlf` | Claude Rate Limit Monitor | `scripts/monitor-claude-limit.py` |
 | `ao4Y4wryLRGpa6F5` | Auto-Trigger Deployer on Approved Tasks | `scripts/monitor-deployer.py` |
 | `9Frgx5Odj57qrVnk` | Tester Auto-Trigger in_review → code_review | `scripts/monitor-review-transition.py` |
 | `fB1x5k7m4YyARPSi` | INF-163: All feature tasks passed → in_review | `scripts/monitor-feature-advance.py` |

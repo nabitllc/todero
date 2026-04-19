@@ -22,8 +22,8 @@ export interface AgentQueueConfig {
   agentId: string
   /** Primary model alias (legacy — used when runtime is current default) */
   model: ModelAlias
-  /** Primary status this agent picks up. Use pickupStatuses (array) for multi-status lanes. */
-  pickupStatus: string
+  /** Primary status this agent picks up. null = no status filter (e.g. main triage agent). */
+  pickupStatus: string | null
   /** Optional additional statuses to pick up (e.g. PO handles both backlog + feature_review). */
   pickupStatuses?: string[]
   /** Additional Supabase query filters (appended to URL) */
@@ -34,10 +34,10 @@ export interface AgentQueueConfig {
   dorFields: string[]
   /** Max concurrent in_progress (WIP limit) */
   wipLimit: number
-  /** Status to set when agent starts working */
-  workingStatus: string
-  /** Status to set when agent completes work */
-  completionStatus: string
+  /** Status to set when agent starts working. null = don't change status on pickup. */
+  workingStatus: string | null
+  /** Status to set when agent completes work. null = agent manages its own completion. */
+  completionStatus: string | null
   /** Whether to check blocked_by dependencies */
   checkBlocking: boolean
   /** Sort order — Supabase order param */
@@ -46,6 +46,8 @@ export interface AgentQueueConfig {
   fetchLimit: number
   /** Prompt template prefix for the agent */
   promptPrefix: string
+  /** Skip the assignee=eq.agentId filter — used by triage agents that pick up any assignee */
+  skipAssigneeFilter?: boolean
   /**
    * TOD-XXX: Main + fallback chain. The dispatcher tries each binding in order
    * until one is `available` (runtime installed + API reachable). First binding
@@ -106,6 +108,10 @@ Rules:
     sortOrder: 'priority.asc,due_date.asc.nullslast,created_at.asc',
     fetchLimit: 20,
     promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci]. When done, PATCH to code_review with implementation_notes + commit_sha + regression_test. Self-chain: call POST /api/run-agent?agent=ops to claim next.',
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   tester: {
@@ -202,6 +208,10 @@ If NO (children still open, OR gaps in AC coverage):
 
 ## Self-chain
 After finishing, call POST /api/run-agent?agent=po to claim next.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   scout: {
@@ -217,6 +227,10 @@ After finishing, call POST /api/run-agent?agent=po to claim next.`,
     sortOrder: 'priority.asc,due_date.asc.nullslast,created_at.asc',
     fetchLimit: 10,
     promptPrefix: 'You are Scout. Research the following task. Summarize findings, cite sources, provide actionable recommendations. When done, PATCH to product_review with implementation_notes. Self-chain: call POST /api/run-agent?agent=scout to claim next.',
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   auditor: {
@@ -241,23 +255,30 @@ After finishing, call POST /api/run-agent?agent=po to claim next.`,
     agentId: 'deployer',
     model: 'haiku',
     pickupStatus: 'approved',
-    extraFilters: '',
+    // Only issues with a feature_branch set (no branch = nothing to rebase).
+    // Skip issues already prepped (deployer_status=ready) — don't re-process a clean branch.
+    extraFilters: 'feature_branch=not.is.null&or=(deployer_status.is.null,deployer_status.eq.failed)',
     // pickupStatus === workingStatus → same deadlock as PO/auditor.
     // DO NOT REMOVE — has been reverted 3 times.
-    wipExtraFilter: 'started_at=not.is.null',
+    // Exclude deployer_status=ready from WIP — deployer is done with those; they're just waiting for human merge.
+    wipExtraFilter: 'started_at=not.is.null&or=(deployer_status.is.null,deployer_status.eq.failed)',
     dorFields: ['implementation_notes'],
-    wipLimit: 5,
+    // wipLimit=1 — deployer runs in ~/todero (shared repo, no worktree isolation).
+    // Concurrent instances would conflict on git checkout. One session at a time.
+    wipLimit: 1,
     workingStatus: 'approved',
-    completionStatus: 'released',
+    // Deployer never patches status to released — PR Window owns that transition.
+    // null here suppresses the transitionGate curl command in run-agent prompt.
+    completionStatus: null,
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 20,
-    promptPrefix: `You are Deployer. Your job is to prepare approved branches for a clean, conflict-free PR window merge.
+    promptPrefix: `You are Deployer. Your job is to prepare ONE approved branch per session, then self-chain for the next.
 
-For EACH approved issue (process one at a time, sequentially):
+Process the single issue assigned to you:
 
 1. VERIFY required fields exist: implementation_notes, commit_sha, regression_test, feature_branch.
-   - If any are missing: PATCH status back to in_progress with a note listing what is missing. Skip to next issue.
+   - If any are missing: PATCH status back to open, assignee to owner, with a note listing what is missing. Done — self-chain.
 
 2. REBASE the branch onto current main:
    cd ~/todero
@@ -268,19 +289,24 @@ For EACH approved issue (process one at a time, sequentially):
 3. IF rebase conflicts occur: read config/skills/resolve-conflicts/SKILL.md and follow it exactly.
    - Resolve each conflict keeping both intents where possible.
    - Run npm run build after resolving to verify no compile errors.
-   - If conflict is unresolvable: git rebase --abort, PATCH issue back to in_progress with detailed conflict notes, move to next issue.
+   - If conflict is unresolvable: git rebase --abort, then git checkout main. PATCH issue back to open, assign to the issue's owner, write conflict details to deployer_notes:
+     PATCH /api/issues { "id": "<id>", "status": "open", "assignee": "<owner field value>", "deployer_notes": "Rebase conflict on <feature_branch>:\n<conflict details>\nPlease resolve conflicts, rebuild, and resubmit to code_review.", "transitioned_by": "deployer" }
+     Done — self-chain.
 
-4. IF rebase succeeds: run npm run build to verify the branch compiles cleanly on its own.
-   - If build fails: PATCH back to in_progress with the build error. Move to next issue.
+4. IF rebase succeeds: run npm run build to verify the branch compiles cleanly.
+   - If build fails: git checkout main, then PATCH issue back to open, assign to owner, write error to deployer_notes:
+     PATCH /api/issues { "id": "<id>", "status": "open", "assignee": "<owner field value>", "deployer_notes": "Build failed after rebase on <feature_branch>:\n<error output>\nPlease fix the build errors and resubmit to code_review.", "transitioned_by": "deployer" }
+     Done — self-chain.
 
-5. IF build passes: git push --force-with-lease origin <feature_branch> to update the remote branch.
+5. IF build passes:
+   a. git push --force-with-lease origin <feature_branch>
+   b. PATCH deployer_status=ready:
+      PATCH /api/issues { "id": "<issue_id>", "deployer_status": "ready", "transitioned_by": "deployer" }
+   c. git checkout main
    Log: "✓ TOD-XXX ready for PR window — rebased cleanly onto main"
+   Done — self-chain.
 
-6. Move to the next approved issue. Never process two branches simultaneously.
-
-After all approved issues are processed: summarize what is ready for the PR window and what was sent back to in_progress and why.
-
-NEVER run git push to main directly. NEVER create a PR. NEVER merge to main yourself. Your job ends at rebasing and validating each branch.`,
+NEVER run git push to main directly. NEVER create a PR. NEVER merge to main yourself.`,
   },
 
   // ── SME agents: Epic decomposition only ──────────────────────────────────
@@ -304,6 +330,10 @@ NEVER run git push to main directly. NEVER create a PR. NEVER merge to main your
     fetchLimit: 5,
     promptPrefix: `You are Todero SME. Decompose Todero epics into child features.
 Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Todero, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"todero-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=todero-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   'kemuni-sme': {
@@ -321,6 +351,10 @@ Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /a
     fetchLimit: 5,
     promptPrefix: `You are Kemuni SME. Decompose Kemuni epics into child features.
 Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Kemuni, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"kemuni-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=kemuni-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
   },
 
   'vespera-sme': {
@@ -338,6 +372,70 @@ Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /a
     fetchLimit: 5,
     promptPrefix: `You are Vespera SME. Decompose Vespera epics into child features.
 Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Vespera, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"vespera-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=vespera-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
+  },
+
+  'infra-sme': {
+    agentId: 'infra-sme',
+    model: 'sonnet',
+    pickupStatus: 'backlog',
+    extraFilters: 'type=eq.epic&project=eq.Infrastructure',
+    wipExtraFilter: 'started_at=not.is.null',
+    dorFields: ['description', 'acceptance_criteria'],
+    wipLimit: 1,
+    workingStatus: 'backlog',
+    completionStatus: 'draft',
+    checkBlocking: false,
+    sortOrder: 'priority.asc,created_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are Infrastructure SME. Decompose Infrastructure epics into child features.
+Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Infrastructure, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"infra-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=infra-sme.`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'sonnet' },
+      { runtime: 'codex',       alias: 'sonnet' },
+    ],
+  },
+
+  // ── Main (triage/orchestrator) ───────────────────────────────────────────
+  // Picks up ANY is_blocked issue regardless of status or assignee.
+  // Does NOT change status on pickup — it resolves the block and hands back.
+  main: {
+    agentId: 'main',
+    model: 'opus',
+    pickupStatus: null,                  // no status filter — blocked issues span all statuses
+    extraFilters: 'is_blocked=eq.true',  // only blocked issues
+    skipAssigneeFilter: true,            // pick up regardless of current assignee
+    dorFields: [],                       // no DoR gate — all blocked issues need triage
+    wipLimit: 2,
+    workingStatus: null,                 // don't change status on pickup
+    completionStatus: null,              // main manages its own completion via PATCH
+    checkBlocking: false,
+    sortOrder: 'updated_at.asc',
+    fetchLimit: 5,
+    promptPrefix: `You are KAOS (main orchestrator). Your job is to triage blocked issues and unblock them.
+
+For each blocked issue:
+
+1. Read \`blocked_by\` to understand WHY it's blocked:
+   - \`"system:rejection_loop"\` → Rejected 3+ times. Read tester_notes, designer_notes, and rejection history to understand what's wrong. Options: clarify requirements via implementation_notes, break into smaller issues, or escalate to michael with a clear summary of the impasse.
+   - A UUID → Dependency block. Verify if the blocking issue is actually complete (GET /api/issues?id=<uuid>). If done: PATCH this issue { is_blocked: false, blocked_by: null, transitioned_by: "main" }.
+   - null/other → Manual or unknown block. Read implementation_notes + tester_notes for context.
+
+2. Resolve the block:
+   - Dependency resolved: unblock via PATCH { is_blocked: false, blocked_by: null, transitioned_by: "main" }.
+   - Rejection loop: add clarifying implementation_notes, then PATCH { is_blocked: false, blocked_by: null, transitioned_by: "main" } to let the agent retry, OR escalate to michael if the issue is fundamentally unclear.
+   - Unknown block: investigate and either unblock or add a comment explaining the block.
+
+3. NEVER mark an issue completed or change its status lane — your job is unblocking only.
+
+Self-chain: POST /api/run-agent?agent=main`,
+    modelChain: [
+      { runtime: 'claude-code', alias: 'opus' },
+      { runtime: 'claude-code', alias: 'sonnet' },
+    ],
   },
 }
 

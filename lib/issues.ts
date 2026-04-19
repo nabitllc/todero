@@ -62,6 +62,8 @@ export interface Task {
   reviewer_notes?: string
   regression_test?: string
   feature_branch?: string
+  deployer_status?: 'ready' | 'failed' | null
+  deployer_notes?: string | null
   commit_sha?: string
   rejection_count?: number
   last_rejection_reason?: string

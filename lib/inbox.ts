@@ -15,7 +15,7 @@ if (!SUPA_URL || !SUPA_KEY) {
 
 const supabase = createClient(SUPA_URL, SUPA_KEY)
 
-export type ApprovalStatus = 'approved' | 'denied' | 'timeout'
+export type ApprovalStatus = 'approved' | 'denied' | 'timeout' | 'explained'
 
 export interface ApprovalResult {
   id: string
@@ -34,11 +34,13 @@ export interface InboxEntry {
   agent: string
   type: string
   context: unknown
-  status: 'pending' | 'approved' | 'denied' | 'timeout'
+  status: 'pending' | 'approved' | 'denied' | 'timeout' | 'explained'
   created_at: string
   expires_at: string | null
   resolved_at: string | null
   resolved_by: string | null
+  response_data: unknown | null
+  issue_id: string | null
 }
 
 /**

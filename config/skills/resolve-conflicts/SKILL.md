@@ -84,14 +84,14 @@ redesigned the same component in incompatible ways.
 
 In this case:
 - Run `git rebase --abort` to restore the branch to its pre-rebase state
-- PATCH the issue back to `in_progress`:
+- Run `git checkout main` to return the repo to a clean state before continuing
+- PATCH the issue back to `open`, assign to the issue's `owner`, and write details to `deployer_notes`:
   ```json
   {
-    "task_key": "TOD-XXX",
-    "status": "in_progress",
-    "started_at": null,
-    "worked_by": null,
-    "implementation_notes": "CONFLICT: Branch feat/TOD-XXX conflicts with main on [file]. Both branches modified [what]. Manual resolution required. Rebase aborted — branch preserved at [commit_sha].",
+    "id": "<issue_id>",
+    "status": "open",
+    "assignee": "<owner field value>",
+    "deployer_notes": "Rebase conflict on feat/TOD-XXX:\n- File: path/to/file.ts\n- Both main and this branch modified [describe what]. Manual resolution required.\n- To fix: git checkout feat/TOD-XXX && git rebase origin/main, resolve conflicts, then resubmit to code_review.",
     "transitioned_by": "deployer"
   }
   ```
