@@ -4,9 +4,10 @@ monitor-pr-merge.py — Poll GitHub for merged PRs → transition linked issues 
 Replaces n8n workflow huC16MvkjX5FiI3f
 Runs every 5 minutes via launchd.
 """
-import json, urllib.request, pathlib
+import json, subprocess, urllib.request, pathlib
 from datetime import datetime, timezone
 
+REPO_DIR = "/Users/kemuniagent/todero"
 GH_TOKEN = "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"
 DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
 DEPLOY_CHANNEL = "1487584904135970816"  # #deployments
@@ -77,6 +78,7 @@ def main():
             processed[key] = now.isoformat()
 
             linked = issues_by_pr.get(pr["html_url"].lower(), [])
+            released_any = False
             for issue in linked:
                 if issue["status"] != "approved": continue
                 try:
@@ -89,8 +91,32 @@ def main():
                            f"• approved → released | Merged: {pr['merged_at']}")
                     discord_post(msg)
                     print(f"[monitor-pr-merge] released {issue['task_key']}")
+                    released_any = True
+
+                    # Prune the feature branch now that it's in main
+                    fb = issue.get("feature_branch", "").strip()
+                    if fb:
+                        subprocess.run(["git", "push", "origin", "--delete", fb],
+                                       cwd=REPO_DIR, capture_output=True, text=True, timeout=15)
+                        subprocess.run(["git", "branch", "-D", fb],
+                                       cwd=REPO_DIR, capture_output=True, text=True, timeout=10)
+                        print(f"[monitor-pr-merge] pruned feature branch {fb}")
                 except Exception as e:
                     print(f"[mc-patch] {issue.get('task_key')}: {e}")
+
+            # Prune the release branch (e.g. release/2026-04-19-7pm) — it's merged, no longer needed.
+            # pr["head"]["ref"] is the source branch of the PR (the release branch).
+            if released_any:
+                release_branch = pr.get("head", {}).get("ref", "")
+                if release_branch and release_branch.startswith("release/"):
+                    subprocess.run(["git", "push", "origin", "--delete", release_branch],
+                                   cwd=REPO_DIR, capture_output=True, text=True, timeout=15)
+                    subprocess.run(["git", "branch", "-D", release_branch],
+                                   cwd=REPO_DIR, capture_output=True, text=True, timeout=10)
+                    print(f"[monitor-pr-merge] pruned release branch {release_branch}")
+                subprocess.run(["git", "fetch", "--prune"], cwd=REPO_DIR,
+                               capture_output=True, text=True, timeout=30)
+                print("[monitor-pr-merge] git fetch --prune done")
 
     state["processed"] = processed
     save_state(state)

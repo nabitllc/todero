@@ -745,6 +745,7 @@ export async function GET(req: NextRequest) {
     'is_blocked','blocked_by','parent_id','feature_branch','pr_url','commit_sha',
     'tester_status','tested_by','tester_reviewed_at',
     'designer_status','designed_by','designer_reviewed_at',
+    'deployer_status','deployer_notes',
     'worked_by','transitioned_by','acceptance_criteria',
     'business_id','resolution_type',
   ].join(',')
@@ -1588,6 +1589,19 @@ export async function PATCH(req: NextRequest) {
         }
       }
     }
+  }
+
+  // Reset deployer_status when issue leaves approved — either rejected back to open
+  // (needs re-rebase) or promoted to released (done; field no longer meaningful).
+  if (fields.status && fields.status !== before?.status && before?.status === 'approved') {
+    fields.deployer_status = null
+  }
+
+  // Also reset deployer_status when builder resubmits (in_progress → code_review/product_review).
+  // Ensures deployer re-validates the branch even if it was previously marked ready on an older commit.
+  if (fields.status && fields.status !== before?.status && before?.status === 'in_progress' &&
+      (fields.status === 'code_review' || fields.status === 'product_review')) {
+    fields.deployer_status = null
   }
 
   // Auto-clear is_blocked + blocked_by when an issue transitions to a new status —

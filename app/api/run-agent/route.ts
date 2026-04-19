@@ -197,7 +197,7 @@ export async function POST(req: NextRequest) {
       : `status=in.(${allPickupStatuses.join(',')})`
   // Build URL — join non-empty filters with & to avoid double-ampersand artifacts
   const baseFilters = [assigneeFilter, statusFilter, dorFilter].filter(Boolean).join('&')
-  const url = `${SUPA_URL}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  const url = `${SUPA_URL}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
   const tasks = await res.json() as Array<{
@@ -208,6 +208,7 @@ export async function POST(req: NextRequest) {
     rejection_count: number | null;
     tester_notes: string | null; designer_notes: string | null;
     tester_status: string | null; designer_status: string | null;
+    owner: string | null; deployer_notes: string | null;
   }>
 
   if (!Array.isArray(tasks) || tasks.length === 0) {
@@ -444,7 +445,7 @@ ${responseFields}
     console.warn(`[run-agent] context for ${agentId} is ${context.length} bytes — trim skill selection if this keeps climbing`)
   }
 
-  const transitionGate = `
+  const transitionGate = config.completionStatus ? `
 
 🚨 NON-NEGOTIABLE FINAL STEP 🚨
 Your work is NOT COMPLETE until you PATCH the issue status. If you skip this step, your work is LOST because another agent cannot pick up this issue while it is still in its current status.
@@ -458,7 +459,7 @@ VERIFY the response shows status="${config.completionStatus}". If you get an err
 2. Fix the issue and retry the PATCH
 3. Do NOT end your session until the PATCH succeeds
 
-This is a HARD RULE. Do not treat it as optional. Do not assume someone else will do it for you.`
+This is a HARD RULE. Do not treat it as optional. Do not assume someone else will do it for you.` : ''
 
   const pushGate = `
 
@@ -492,7 +493,9 @@ Expected response: {"ok":true}. If you get an error, keep working — heartbeat 
   const selfChain = `\n\nAFTER the PATCH succeeds, call: curl -s -X POST http://localhost:3000/api/run-agent?agent=${agentId} to auto-claim your next task.`
   const loopBreaker = `\n\nIF same error 3 times: STOP, PATCH back to open with notes explaining the blocker. Do NOT retry infinitely.`
 
-  const worktreeGuard = `
+  // Only builder and ops run in isolated git worktrees — all other agents run in ~/todero directly.
+  const CODE_AGENTS_SET = new Set(['builder', 'ops'])
+  const worktreeGuard = CODE_AGENTS_SET.has(agentId) ? `
 
 🛑 WORKTREE RULES — node_modules is SHARED 🛑
 You are running inside a git worktree. Your node_modules directory is a SYMLINK to ~/todero/node_modules.
@@ -500,7 +503,7 @@ You are running inside a git worktree. Your node_modules directory is a SYMLINK 
 - ❌ DO NOT run \`npm install <package>\` — if a package is missing, PATCH back to open with a note asking KAOS to install it
 - ✅ \`npm run build\` is fine — it uses the existing symlinked node_modules
 - ✅ If build fails with "Cannot find module X", check ~/todero/node_modules/X directly; if truly missing, PATCH back to open
-- ✅ Stay in your worktree directory — do NOT cd to ~/todero for any build commands`
+- ✅ Stay in your worktree directory — do NOT cd to ~/todero for any build commands` : ''
 
   // TOD-796 follow-up: point agents at the rest of the skill library.
   // The universal bundle (proactivity/execution, self-improving/corrections, etc.) is
@@ -527,6 +530,14 @@ Your universal behavioral rules (proactivity loop, corrections discipline, memor
 - denied   → do NOT proceed with implementation; log the denial reason in implementation_notes and PATCH the issue back to open with rejection_count++
 - explained → treat the <response_data> as additional context and continue normally
 - timeout  → treat as informational context; proceed using best judgment` : ''
+
+  const deployerFeedback = task.deployer_notes ? `
+⚠️ DEPLOYER FEEDBACK — READ THIS BEFORE STARTING ⚠️
+This issue was bounced back by Deployer. You MUST fix the issue below before resubmitting to code_review.
+
+${task.deployer_notes}
+
+Do NOT resubmit without resolving the above.` : ''
 
   const rejectionFeedback = (task.rejection_count ?? 0) > 0 ? `
 ⚠️ REJECTION FEEDBACK — READ THIS BEFORE STARTING ⚠️
@@ -568,6 +579,7 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     inboxResponseBlock,
     inboxResponseGate,
     blockedReasonBlock,
+    deployerFeedback,
     rejectionFeedback,
     branchInstruction,
     skillReference,

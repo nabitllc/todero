@@ -255,23 +255,30 @@ After finishing, call POST /api/run-agent?agent=po to claim next.`,
     agentId: 'deployer',
     model: 'haiku',
     pickupStatus: 'approved',
-    extraFilters: '',
+    // Only issues with a feature_branch set (no branch = nothing to rebase).
+    // Skip issues already prepped (deployer_status=ready) — don't re-process a clean branch.
+    extraFilters: 'feature_branch=not.is.null&or=(deployer_status.is.null,deployer_status.eq.failed)',
     // pickupStatus === workingStatus → same deadlock as PO/auditor.
     // DO NOT REMOVE — has been reverted 3 times.
-    wipExtraFilter: 'started_at=not.is.null',
+    // Exclude deployer_status=ready from WIP — deployer is done with those; they're just waiting for human merge.
+    wipExtraFilter: 'started_at=not.is.null&or=(deployer_status.is.null,deployer_status.eq.failed)',
     dorFields: ['implementation_notes'],
-    wipLimit: 5,
+    // wipLimit=1 — deployer runs in ~/todero (shared repo, no worktree isolation).
+    // Concurrent instances would conflict on git checkout. One session at a time.
+    wipLimit: 1,
     workingStatus: 'approved',
-    completionStatus: 'released',
+    // Deployer never patches status to released — PR Window owns that transition.
+    // null here suppresses the transitionGate curl command in run-agent prompt.
+    completionStatus: null,
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 20,
-    promptPrefix: `You are Deployer. Your job is to prepare approved branches for a clean, conflict-free PR window merge.
+    promptPrefix: `You are Deployer. Your job is to prepare ONE approved branch per session, then self-chain for the next.
 
-For EACH approved issue (process one at a time, sequentially):
+Process the single issue assigned to you:
 
 1. VERIFY required fields exist: implementation_notes, commit_sha, regression_test, feature_branch.
-   - If any are missing: PATCH status back to in_progress with a note listing what is missing. Skip to next issue.
+   - If any are missing: PATCH status back to open, assignee to owner, with a note listing what is missing. Done — self-chain.
 
 2. REBASE the branch onto current main:
    cd ~/todero
@@ -282,19 +289,24 @@ For EACH approved issue (process one at a time, sequentially):
 3. IF rebase conflicts occur: read config/skills/resolve-conflicts/SKILL.md and follow it exactly.
    - Resolve each conflict keeping both intents where possible.
    - Run npm run build after resolving to verify no compile errors.
-   - If conflict is unresolvable: git rebase --abort, PATCH issue back to in_progress with detailed conflict notes, move to next issue.
+   - If conflict is unresolvable: git rebase --abort, then git checkout main. PATCH issue back to open, assign to the issue's owner, write conflict details to deployer_notes:
+     PATCH /api/issues { "id": "<id>", "status": "open", "assignee": "<owner field value>", "deployer_notes": "Rebase conflict on <feature_branch>:\n<conflict details>\nPlease resolve conflicts, rebuild, and resubmit to code_review.", "transitioned_by": "deployer" }
+     Done — self-chain.
 
-4. IF rebase succeeds: run npm run build to verify the branch compiles cleanly on its own.
-   - If build fails: PATCH back to in_progress with the build error. Move to next issue.
+4. IF rebase succeeds: run npm run build to verify the branch compiles cleanly.
+   - If build fails: git checkout main, then PATCH issue back to open, assign to owner, write error to deployer_notes:
+     PATCH /api/issues { "id": "<id>", "status": "open", "assignee": "<owner field value>", "deployer_notes": "Build failed after rebase on <feature_branch>:\n<error output>\nPlease fix the build errors and resubmit to code_review.", "transitioned_by": "deployer" }
+     Done — self-chain.
 
-5. IF build passes: git push --force-with-lease origin <feature_branch> to update the remote branch.
+5. IF build passes:
+   a. git push --force-with-lease origin <feature_branch>
+   b. PATCH deployer_status=ready:
+      PATCH /api/issues { "id": "<issue_id>", "deployer_status": "ready", "transitioned_by": "deployer" }
+   c. git checkout main
    Log: "✓ TOD-XXX ready for PR window — rebased cleanly onto main"
+   Done — self-chain.
 
-6. Move to the next approved issue. Never process two branches simultaneously.
-
-After all approved issues are processed: summarize what is ready for the PR window and what was sent back to in_progress and why.
-
-NEVER run git push to main directly. NEVER create a PR. NEVER merge to main yourself. Your job ends at rebasing and validating each branch.`,
+NEVER run git push to main directly. NEVER create a PR. NEVER merge to main yourself.`,
   },
 
   // ── SME agents: Epic decomposition only ──────────────────────────────────
