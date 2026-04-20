@@ -16,6 +16,7 @@ Logic:
 """
 
 import json
+import os
 import pathlib
 import urllib.request
 import urllib.error
@@ -29,7 +30,7 @@ except ImportError:
     ET = None
 
 MC_API = "http://localhost:3000/api/issues"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
+DISCORD_BOT = os.environ.get("DISCORD_BOT_TOKEN", "")
 ALERTS_CHANNEL = "1485333335868834063"   # #alerts fallback
 RELEASE_CHANNEL = "1492003782605930560"  # #release-notes
 
