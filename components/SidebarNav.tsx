@@ -188,6 +188,7 @@ export default function SidebarNav({
               {!collapsed && (
                 <button
                   onClick={() => toggleSection(group.label)}
+                  aria-expanded={!isSectionCollapsed}
                   className="w-full px-3 mb-1 flex items-center justify-between group/sec"
                 >
                   <p className="text-[9px] font-semibold uppercase tracking-widest text-white/20 select-none group-hover/sec:text-white/40 transition-colors">
@@ -211,6 +212,7 @@ export default function SidebarNav({
 
                     const btn = (
                       <button
+                        aria-label={item.label}
                         onClick={() => {
                           navigate(item.id)
                           if (isChat && setUnreadChat) setUnreadChat(false)
@@ -243,7 +245,7 @@ export default function SidebarNav({
                           <span className={[
                             'min-w-[16px] h-4 flex items-center justify-center rounded-full',
                             'bg-amber-500 text-[9px] font-bold text-black px-1 shrink-0',
-                            collapsed ? 'absolute -top-0.5 -right-0.5' : 'ml-auto',
+                            collapsed ? 'absolute -top-0.5 -right-0.5 z-10' : 'ml-auto',
                           ].join(' ')}>
                             {inboxCount > 99 ? '99+' : inboxCount}
                           </span>
