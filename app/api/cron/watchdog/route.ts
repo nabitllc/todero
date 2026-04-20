@@ -61,6 +61,18 @@ export async function GET(req: Request) {
 
   const cleared: string[] = []
 
+  // Status-aware reset: preserve earned status rather than always reverting to open.
+  //   approved → approved  (passed code review; deployer re-picks)
+  //   released → released  (passed deploy; auditor re-picks)
+  //   refined  → backlog   (PO was mid-refinement; send back to PO queue)
+  //   all else → open
+  function watchdogReset(status: string): { resetStatus: string; extra: Record<string, unknown> } {
+    if (status === 'approved') return { resetStatus: 'approved', extra: { deployer_status: null } }
+    if (status === 'released') return { resetStatus: 'released', extra: {} }
+    if (status === 'refined')  return { resetStatus: 'backlog',  extra: {} }
+    return { resetStatus: 'open', extra: {} }
+  }
+
   // ── Query 1a: dead by heartbeat ──────────────────────────────────────────
   // Agent was writing heartbeats but stopped > 10 min ago → process is dead.
   const { data: deadHeartbeat, error: hbErr } = await db
@@ -73,15 +85,17 @@ export async function GET(req: Request) {
   if (hbErr) return NextResponse.json({ error: hbErr.message }, { status: 500 })
 
   for (const issue of deadHeartbeat ?? []) {
+    const { resetStatus, extra } = watchdogReset(issue.status)
     await db.from('issues').update({
-      status: 'open',
+      status: resetStatus,
       started_at: null,
       heartbeat_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
+      ...extra,
     }).eq('id', issue.id)
     cleared.push(issue.task_key)
-    console.log(`[watchdog] dead heartbeat → open: ${issue.task_key} (${issue.assignee}, last hb ${issue.heartbeat_at})`)
+    console.log(`[watchdog] dead heartbeat → ${resetStatus}: ${issue.task_key} (${issue.assignee}, last hb ${issue.heartbeat_at})`)
   }
 
   // ── Query 1b: stale — no heartbeat, no commit_sha (20 min) ───────────────
@@ -99,10 +113,7 @@ export async function GET(req: Request) {
   if (ncErr) return NextResponse.json({ error: ncErr.message }, { status: 500 })
 
   for (const issue of staleNoCommit ?? []) {
-    // approved issues earned their status through code review — reset to approved not open.
-    // Just clear the stale claim so deployer can re-pick.
-    const resetStatus = issue.status === 'approved' ? 'approved' : 'open'
-    const extra = issue.status === 'approved' ? { deployer_status: null } : {}
+    const { resetStatus, extra } = watchdogReset(issue.status)
     await db.from('issues').update({
       status: resetStatus,
       started_at: null,
@@ -129,8 +140,7 @@ export async function GET(req: Request) {
   if (wcErr) return NextResponse.json({ error: wcErr.message }, { status: 500 })
 
   for (const issue of staleWithCommit ?? []) {
-    const resetStatus = issue.status === 'approved' ? 'approved' : 'open'
-    const extra = issue.status === 'approved' ? { deployer_status: null } : {}
+    const { resetStatus, extra } = watchdogReset(issue.status)
     await db.from('issues').update({
       status: resetStatus,
       started_at: null,

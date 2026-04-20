@@ -342,6 +342,16 @@ def main():
             failed.append(release_branch)
             continue
 
+        # Delete local feature branches — content is now safely in the remote release branch.
+        # monitor-pr-merge.py will delete them remotely after the PR merges.
+        for issue in merged_issues:
+            branch = issue.get("feature_branch", "").strip()
+            if branch:
+                result = subprocess.run(["git", "branch", "-D", branch],
+                                        cwd=repo_dir, capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    log(f"  Cleaned local branch {branch}")
+
         # Build PR
         keys = ", ".join(i.get("task_key", "?") for i in merged_issues)
         pr_title = f"Release {window} {now_date}: {keys}"
