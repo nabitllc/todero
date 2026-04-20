@@ -21,6 +21,7 @@ LOCKED_FILES=(
   "app/api/issues/route.ts"
   "app/api/run-agent/route.ts"
   "app/api/notify/route.ts"
+  "app/api/queue-refill/route.ts"
 )
 
 # Get current branch
