@@ -31,6 +31,7 @@ import ProductBoardTab from '@/components/tabs/ProductBoardTab'
 import ProjectsTab from '@/components/tabs/ProjectsTab'
 import InboxTab from '@/components/tabs/InboxTab'
 import AIServicesTab from '@/components/tabs/AIServicesTab'
+import EpicMapTab from '@/components/tabs/EpicMapTab'
 import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
@@ -51,6 +52,7 @@ const NAV = [
   { id:'memory',       label:'Memory',       icon:'🧠' },
   { id:'board',        label:'Board',        icon:'📋' },
   { id:'features',     label:'Features',     icon:'🗺️' },
+  { id:'epic-map',     label:'Epic Map',     icon:'🗂️' },
   { id:'pipeline',     label:'Pipeline',     icon:'🏭' },
   { id:'issues',       label:'Issues',       icon:'📝' },
   { id:'projects',     label:'Projects',     icon:'📦' },
@@ -65,7 +67,7 @@ const NAV = [
 ] as const
 type Tab = typeof NAV[number]['id']
 
-const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','pipeline','issues','projects','product-board','automations','chat','infra','settings','ai-services','inbox']
+const VALID_TABS = ['overview','activity','team','calendar','office','memory','board','features','epic-map','pipeline','issues','projects','product-board','automations','chat','infra','settings','ai-services','inbox']
 
 const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
@@ -423,6 +425,7 @@ export default function Home() {
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
           {tab === 'product-board' && <ProductBoardTab projectFilter={selectedBusiness} />}
           {tab === 'settings' && <SettingsTab />}
+          {tab === 'epic-map' && <EpicMapTab />}
           {tab === 'ai-services' && <AIServicesTab />}
           {tab === 'inbox' && <InboxTab />}
         </main>
