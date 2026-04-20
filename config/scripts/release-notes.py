@@ -20,7 +20,7 @@ import pathlib
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 
 try:
     from zoneinfo import ZoneInfo
@@ -29,10 +29,9 @@ except ImportError:
     ET = None
 
 MC_API = "http://localhost:3000/api/issues"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
-GUILD_ID = "1485333335868834062"  # derived from fallback channel context; unused directly
+DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 ALERTS_CHANNEL = "1485333335868834063"   # #alerts fallback
-RELEASE_CHANNEL_NAME = "release-notes"
+RELEASE_CHANNEL = "1492003782605930560"  # #release-notes
 
 SCRIPT_DIR = pathlib.Path(__file__).parent
 STATE_FILE = SCRIPT_DIR / "state-release-notes.json"
@@ -100,42 +99,7 @@ def mc_get_all() -> List[dict]:
         return json.loads(r.read())
 
 
-def discord_request(method: str, path: str, payload: Optional[dict] = None) -> Any:
-    url = f"https://discord.com/api/v10{path}"
-    data = json.dumps(payload).encode() if payload is not None else None
-    headers = {
-        "Authorization": f"Bot {DISCORD_BOT}",
-        "User-Agent": "KAOS-release-notes",
-    }
-    if payload is not None:
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        body = r.read()
-        if not body:
-            return None
-        return json.loads(body)
 
-
-def find_release_channel() -> str:
-    """Look up #release-notes in the guild via the fallback channel. Fallback to #alerts."""
-    try:
-        # Get the fallback channel to determine the guild
-        ch = discord_request("GET", f"/channels/{ALERTS_CHANNEL}")
-        guild_id = ch.get("guild_id") if isinstance(ch, dict) else None
-        if not guild_id:
-            log("[discord] could not determine guild_id; using #alerts")
-            return ALERTS_CHANNEL
-        channels = discord_request("GET", f"/guilds/{guild_id}/channels")
-        if isinstance(channels, list):
-            for c in channels:
-                if c.get("name") == RELEASE_CHANNEL_NAME:
-                    log(f"[discord] found #{RELEASE_CHANNEL_NAME} -> {c.get('id')}")
-                    return c.get("id")
-        log(f"[discord] #{RELEASE_CHANNEL_NAME} not found; falling back to #alerts")
-    except Exception as e:
-        log(f"[discord] channel lookup failed: {e}; using #alerts")
-    return ALERTS_CHANNEL
 
 
 def discord_post(channel_id: str, content: str) -> None:
@@ -298,22 +262,24 @@ def build_markdown(version: str, issues: List[dict], now_local: datetime) -> str
 def build_discord_summary(version: str, issues: List[dict], md_path: pathlib.Path) -> str:
     groups = group_issues(issues)
     breaking = [i for i in issues if (i.get("severity") or "").upper() == "S0"]
-    lines = [f"📦 **Release v{version}** — {len(issues)} issue(s) released"]
+    now_et = datetime.now(ET) if ET else datetime.now()
+    ts = now_et.strftime("%b %-d, %I:%M %p EST")
+    lines = [f"📦 **Release v{version}** — {len(issues)} issue(s)"]
     if groups["feature"]:
-        lines.append(f"• ✨ {len(groups['feature'])} feature(s)")
+        lines.append(f"↳ ✨ {len(groups['feature'])} feature(s)")
     if groups["bug"]:
-        lines.append(f"• 🐛 {len(groups['bug'])} bug fix(es)")
+        lines.append(f"↳ 🐛 {len(groups['bug'])} bug fix(es)")
     if groups["ops"]:
-        lines.append(f"• ⚙️ {len(groups['ops'])} improvement(s)")
+        lines.append(f"↳ ⚙️ {len(groups['ops'])} improvement(s)")
     if groups["research"]:
-        lines.append(f"• 🔬 {len(groups['research'])} research")
+        lines.append(f"↳ 🔬 {len(groups['research'])} research")
     if breaking:
-        lines.append(f"• 💥 {len(breaking)} breaking change(s)")
+        lines.append(f"↳ 💥 {len(breaking)} breaking change(s)")
     keys = ", ".join((i.get("task_key") or "?") for i in issues[:8])
     if len(issues) > 8:
         keys += f", +{len(issues) - 8} more"
-    lines.append(f"Issues: {keys}")
-    lines.append(f"Notes: `{md_path}`")
+    lines.append(f"↳ {keys}")
+    lines.append(f"↳ {ts}")
     return "\n".join(lines)
 
 
@@ -367,11 +333,8 @@ def main() -> None:
     log(f"Wrote {md_path}")
 
     # Discord
-    channel = find_release_channel()
-    if channel == ALERTS_CHANNEL:
-        log("WARNING: #release-notes channel not found; posted to #alerts fallback")
     summary = build_discord_summary(new_version, candidates, md_path)
-    discord_post(channel, summary)
+    discord_post(RELEASE_CHANNEL, summary)
 
     # Persist state + version
     save_version(new_version)

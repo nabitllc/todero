@@ -7,8 +7,8 @@ Posts to Discord when a deploy happens.
 import json, subprocess, pathlib, urllib.request
 from datetime import datetime
 
-MC_DIR = "/Users/kemuniagent/mission-control"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+MC_DIR = "/Users/kemuniagent/todero"
+DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 CHANNEL = "1487584904135970816"  # #deployments
 STATE_FILE = pathlib.Path(__file__).parent / "state-auto-deploy.json"
 LOG = "/tmp/auto-deploy.log"
@@ -57,6 +57,14 @@ def main():
 
     log(f"new commit detected: {remote_commit[:8]} (was {state['last_commit'][:8] if state['last_commit'] else 'none'})")
 
+    # Skip if monitor-pr-merge already handled this commit (avoids double-build)
+    merged = state.get("merged_commit", "")
+    if merged and remote_commit.startswith(merged):
+        log(f"commit {remote_commit[:8]} already deployed by monitor-pr-merge — skipping")
+        state["last_commit"] = remote_commit
+        save_state(state)
+        return
+
     # Pull
     code, out, err = run("git pull origin main", cwd=MC_DIR)
     if code != 0:
@@ -79,7 +87,8 @@ def main():
     save_state(state)
 
     log(f"deployed {remote_commit[:8]} ✅")
-    discord_post(f"🚀 **Auto-deployed** | commit `{remote_commit[:8]}` | kaos.nabit.work updated")
+    ts = datetime.now().strftime("%b %-d, %I:%M %p EST")
+    discord_post(f"🚀 **Deployed** — commit `{remote_commit[:8]}`\n↳ Direct push · {ts}")
 
 if __name__ == "__main__":
     main()

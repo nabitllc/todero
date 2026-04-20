@@ -79,7 +79,6 @@ When docs/comments refer to "production", use the URL, not the launchd label. Th
 | `work.nabit.sprint-cycle` | Daily 6:55am ET — close/start sprint |
 | `work.nabit.pr-window` | 7am + 7pm ET — batch release PR |
 | `work.nabit.standup-report` | Daily 8am ET — standup Discord post |
-| `work.nabit.release-notes` | Every 15min — generate release notes for released issues |
 | `work.nabit.dor-nightly` | Daily 2am — DoR sweep, open → backlog on missing fields |
 | `work.nabit.backlog-heartbeat` | Every 4h — backlog health check + Discord ping |
 | `work.nabit.daily-memory-seed` | Daily 00:05 — upsert today's agent_memory_files daily row |

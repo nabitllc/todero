@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 REPO_DIR = "/Users/kemuniagent/todero"
 GH_TOKEN = "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"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 DEPLOY_CHANNEL = "1487584904135970816"  # #deployments
 MC_API = "http://localhost:3000/api/issues"
 REPOS = ["nabitllc/todero", "nabitllc/vespera"]
@@ -78,20 +78,18 @@ def main():
             processed[key] = now.isoformat()
 
             linked = issues_by_pr.get(pr["html_url"].lower(), [])
-            released_any = False
+            released_keys = []
+            merge_sha = (pr.get("merge_commit_sha") or "")[:8]
+            ts = datetime.fromisoformat(pr["merged_at"].replace("Z", "+00:00")).strftime("%b %-d, %I:%M %p EST")
+
             for issue in linked:
                 if issue["status"] != "approved": continue
                 try:
                     mc_patch({"id": issue["id"], "status": "released",
                                "transitioned_by": "ops",
                                "implementation_notes": f"Auto-released. PR merged: {pr['html_url']}"})
-                    repo_short = repo.split("/")[1]
-                    msg = (f"🚀 **Released: {issue['task_key']}** — {issue['title'][:80]}\n"
-                           f"• **Repo:** {repo_short}\n• **PR:** <{pr['html_url']}>\n"
-                           f"• approved → released | Merged: {pr['merged_at']}")
-                    discord_post(msg)
-                    print(f"[monitor-pr-merge] released {issue['task_key']}")
-                    released_any = True
+                    released_keys.append(issue.get("task_key", issue["id"][:8]))
+                    print(f"[monitor-pr-merge] released {issue.get('task_key')}")
 
                     # Prune the feature branch now that it's in main
                     fb = issue.get("feature_branch", "").strip()
@@ -104,8 +102,9 @@ def main():
                 except Exception as e:
                     print(f"[mc-patch] {issue.get('task_key')}: {e}")
 
-            # Prune the release branch (e.g. release/2026-04-19-7pm) — it's merged, no longer needed.
-            # pr["head"]["ref"] is the source branch of the PR (the release branch).
+            released_any = bool(released_keys)
+
+            # Prune the release branch and rebuild if needed
             if released_any:
                 release_branch = pr.get("head", {}).get("ref", "")
                 if release_branch and release_branch.startswith("release/"):
@@ -118,21 +117,58 @@ def main():
                                capture_output=True, text=True, timeout=30)
                 print("[monitor-pr-merge] git fetch --prune done")
 
-                # Rebuild and restart the production server when todero code merges
+                build_ok = True
                 if repo == "nabitllc/todero":
                     print("[monitor-pr-merge] todero PR merged — rebuilding and restarting server")
                     subprocess.run(["git", "checkout", "main"], cwd=REPO_DIR, capture_output=True, text=True, timeout=15)
                     subprocess.run(["git", "pull", "origin", "main"], cwd=REPO_DIR, capture_output=True, text=True, timeout=30)
                     build = subprocess.run(["npm", "run", "build"], cwd=REPO_DIR, capture_output=True, text=True, timeout=300)
-                    if build.returncode == 0:
+                    build_ok = build.returncode == 0
+                    if build_ok:
                         subprocess.run(["launchctl", "stop", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
                         subprocess.run(["launchctl", "start", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
                         print("[monitor-pr-merge] server restarted successfully")
-                        discord_post("🔄 **Production rebuilt & restarted** — new code is live")
+                        # Write deployed commit so auto-deploy.py skips this one
+                        deploy_state_path = pathlib.Path(__file__).parent / "state-auto-deploy.json"
+                        deploy_state = {}
+                        if deploy_state_path.exists():
+                            try: deploy_state = json.loads(deploy_state_path.read_text())
+                            except: pass
+                        deploy_state["merged_commit"] = merge_sha
+                        deploy_state_path.write_text(json.dumps(deploy_state))
                     else:
-                        err = build.stderr[-500:] if build.stderr else "(no output)"
+                        err = build.stderr[-300:] if build.stderr else "(no output)"
                         print(f"[monitor-pr-merge] build FAILED: {err}")
-                        discord_post(f"⚠️ **Production build FAILED** after PR merge — server still on old build\n```{err}```")
+                        discord_post(f"⚠️ **Deploy failed** — PR #{pr['number']}\n↳ Build error: `{err[:150]}`\n↳ `{merge_sha}` · {ts}")
+                        continue
+
+                # One unified message per PR
+                n = len(released_keys)
+                msg = f"🚀 **Deployed** — PR #{pr['number']} · {n} issue{'s' if n != 1 else ''}\n"
+                msg += f"↳ {', '.join(released_keys)}\n"
+                msg += f"↳ `{merge_sha}` · {ts}\n"
+                msg += f"<{pr['html_url']}>"
+                discord_post(msg)
+
+                # Create release note in DB
+                released_ids = [i["id"] for i in linked if i.get("task_key") in released_keys]
+                try:
+                    payload = json.dumps({
+                        "pr_number": pr["number"],
+                        "pr_url": pr["html_url"],
+                        "commit_sha": merge_sha,
+                        "repo": repo,
+                        "issue_ids": released_ids,
+                        "merged_at": pr["merged_at"],
+                    }).encode()
+                    req_r = urllib.request.Request(
+                        "http://localhost:3000/api/releases", data=payload,
+                        headers={"Content-Type": "application/json"}, method="POST")
+                    with urllib.request.urlopen(req_r, timeout=15) as r:
+                        result = json.loads(r.read())
+                        print(f"[monitor-pr-merge] release created: v{result.get('version')}")
+                except Exception as e:
+                    print(f"[monitor-pr-merge] release creation failed: {e}")
 
     state["processed"] = processed
     save_state(state)

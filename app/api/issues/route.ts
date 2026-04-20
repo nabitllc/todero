@@ -176,6 +176,29 @@ function fmtDiscordMsg(
   return `${statusPart} | ${typeEmoji} **${key}** — ${issue.title ?? ''}\n↳ By: ${meta.join(' · ')}`
 }
 
+function fmtDiscordMsgClosed(
+  issue: Record<string, unknown>,
+  actor?: string,
+  parentKey?: string | null,
+  fromStatus?: string | null
+): string {
+  const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
+  const fromEmoji = fromStatus ? (STATUS_EMOJI[fromStatus] ?? '') : ''
+  const key = (issue.task_key ?? '?') as string
+  const resolution = (issue.resolution_type as string) ?? ''
+  const prio = issue.priority as string | undefined
+  const prioEmoji = prio ? `P${PRIORITY_EMOJI[prio] ?? prio}` : null
+  const sev = issue.severity as string | undefined
+  const sevEmoji = sev ? `S${SEVERITY_EMOJI[sev] ?? sev}` : null
+  const by = actor ?? (issue.assignee as string) ?? 'unknown'
+  const meta: string[] = [by]
+  if (prioEmoji) meta.push(prioEmoji)
+  if (sevEmoji) meta.push(sevEmoji)
+  if (parentKey) meta.push(parentKey)
+  const statusPart = fromEmoji ? `${fromEmoji}→🔒` : '🔒'
+  return `${typeEmoji} **${key}** — ${issue.title ?? ''}\n↳ ${statusPart} | ${resolution}\n↳ By: ${meta.join(' · ')}`
+}
+
 const RESOLUTION_LABELS: Record<string, string> = {
   code_change: 'Code Change',
   config_change: 'Config Change',
@@ -648,7 +671,11 @@ async function executePostFunctions(
         const { data: par } = await supabase.from('issues').select('task_key').eq('id', notifyIssue.parent_id as string).maybeSingle()
         parentKey = par?.task_key ?? null
       }
-      postDiscord(channelId, fmtDiscordMsg(notifyIssue, toStatus, actor, parentKey, fromStatus))
+      if (toStatus === 'closed') {
+        postDiscord(channelId, fmtDiscordMsgClosed(notifyIssue, actor, parentKey, fromStatus))
+      } else {
+        postDiscord(channelId, fmtDiscordMsg(notifyIssue, toStatus, actor, parentKey, fromStatus))
+      }
     }
 
     if (action === 'notify_rejection') {

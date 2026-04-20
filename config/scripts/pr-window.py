@@ -37,7 +37,7 @@ MC_API = "http://localhost:3000/api/issues"
 MC_DIR = "/Users/kemuniagent/todero"
 GH_TOKEN = "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"
 GH_ORG = "nabitllc"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 DEPLOY_CHANNEL = "1487584904135970816"   # #deployments
 PR_CHANNEL = "1487826368170299592"       # #pr-reviews
 LOG_FILE = "/tmp/pr-window.log"
@@ -373,19 +373,19 @@ def main():
 
     # Post summary to Discord
     if pushed:
-        lines = [f"🔀 **PR Window — {window_label()}** | {now_str} | {len(pushed)} release PR(s)\n"]
+        lines = [f"🔀 **PR Window — {window_label()}** | {now_str} | {len(pushed)} PR(s)\n"]
         for p in pushed:
             issue_keys = ", ".join(i.get("task_key", "?") for i in p["issues"])
-            lines.append(f"• **PR #{p['pr_number']}** — `{p['branch']}` | {len(p['issues'])} issues: {issue_keys}")
+            lines.append(f"↳ **PR #{p['pr_number']}** — `{p['branch']}` · {issue_keys}")
             lines.append(f"  <{p['pr_url']}>")
             if p.get("conflicts"):
                 conflict_keys = ", ".join(i.get("task_key", "?") for i in p["conflicts"])
-                lines.append(f"  ⚠️ Conflicts (skipped): {conflict_keys}")
+                lines.append(f"  ⚠️ Conflicts skipped: {conflict_keys}")
         discord_post(DEPLOY_CHANNEL, "\n".join(lines))
         discord_post(PR_CHANNEL, "\n".join(lines))
 
     if failed:
-        fail_msg = f"⚠️ **PR Window** | Failed: `{'`, `'.join(failed)}` — needs manual check"
+        fail_msg = f"⚠️ **PR Window failed** — `{'`, `'.join(failed)}`\n↳ Needs manual check · {now_str}"
         discord_post(DEPLOY_CHANNEL, fail_msg)
         log(f"Failed: {failed}")
 

@@ -14,7 +14,7 @@ Treated as a first-class project with its own epics, backlog, and SME. Everythin
   - `work.nabit.cloudflared` (tunnel to kaos.nabit.work)
   - `work.nabit.telegram-kaos` (Telegram bot polling)
   - `work.nabit.agent-heartbeat`, `work.nabit.monitor-stale`, `work.nabit.monitor-stale-smoke`
-  - `work.nabit.sprint-cycle`, `work.nabit.pr-window`, `work.nabit.standup-report`, `work.nabit.release-notes`
+  - `work.nabit.sprint-cycle`, `work.nabit.pr-window`, `work.nabit.standup-report`
   - `work.nabit.monitor-prs`, `work.nabit.monitor-pr-merge`, `work.nabit.plist-drift-check`
 - **Start scripts** (`~/todero/start.sh`) — self-healing boot sequence
 - **node_modules integrity** (`ensure-deps`, `predev/prebuild/prestart` hooks)
