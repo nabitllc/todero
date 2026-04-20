@@ -80,8 +80,9 @@ export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
 Rules:
 - Run npm run build before committing. Zero TypeScript errors required.
 - Add [skip ci] to ALL commits (format: "feat(TOD-XXX): description [skip ci]").
-- NEVER use gh pr create or create GitHub PRs. Deployer handles that.
-- Push your feature branch: git push origin <branch>.
+- NEVER run git push, git push origin, or any variant. You do NOT push branches. Ever.
+- NEVER run gh pr create, gh pr merge, gh pr close, gh pr edit, or ANY gh command. You have no GitHub access. Deployer and KAOS handle all GitHub operations at PR windows (7am/7pm ET).
+- After committing, the ONLY allowed next actions are: (1) PATCH the issue to code_review, then (2) exit. Nothing else.
 - When done, PATCH the issue to code_review via the MC API:
   PATCH /api/issues { task_key, status: "code_review", implementation_notes: "...", commit_sha: "...", regression_test: "..." }
 - implementation_notes: what you built and how.
