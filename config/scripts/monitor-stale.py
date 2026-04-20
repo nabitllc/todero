@@ -33,7 +33,7 @@ TELEGRAM_BOT = os.environ.get("TELEGRAM_BOT_TOKEN", "8792497927:AAEcRevJI2KnxlKp
 DISCORD_ALERTS_CHANNEL = "1485333335868834063"
 DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 
-SMOKE_STATE = Path.home() / "todero/config" / "self-improving" / "monitor-stale-smoke.json"
+SMOKE_STATE = Path(__file__).parent / "state-monitor-stale-smoke.json"
 MEMORY_API = "http://localhost:3000/api/agent-memory"
 TELEGRAM_DM_CHAT = "5084875115"  # Michael's private DM
 

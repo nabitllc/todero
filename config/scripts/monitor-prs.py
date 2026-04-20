@@ -8,10 +8,10 @@ import json, urllib.request, pathlib
 from datetime import datetime, timezone, timedelta
 
 GH_TOKEN = "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"
-DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 PR_CHANNEL = "1487826368170299592"  # #pr-reviews
 MC_API = "http://localhost:3000/api/issues"
-REPOS = ["nabitllc/kaos-mission-control", "nabitllc/vespera"]
+REPOS = ["nabitllc/vespera", "nabitllc/todero"]
 STATE_FILE = pathlib.Path(__file__).parent / "state-prs.json"
 
 TYPE_EMOJI = {"feature": "✨", "task": "📋", "bug": "🐛", "epic": "🏔️", "ops": "⚙️", "research": "🔬"}
