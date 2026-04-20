@@ -360,9 +360,43 @@ def clear_stale_started_at():
         print(f"[monitor-stale] cleared {len(cleared)} stale started_at leaks: {cleared}")
 
 
+def clear_stale_reviewer_statuses():
+    """Reset tester_status/designer_status stuck in 'running'/'in_progress' on
+    code_review issues where heartbeat is older than 30 min. These are reviewer
+    WIP leaks — the tester/designer process died without resetting its status
+    field, permanently occupying the wipLimit slot."""
+    cutoff_iso = datetime.fromtimestamp(
+        datetime.now(timezone.utc).timestamp() - 30 * 60, tz=timezone.utc
+    ).isoformat()
+    headers = {"apikey": SK, "Authorization": f"Bearer {SK}",
+               "Content-Type": "application/json", "Prefer": "return=minimal"}
+    for field in ("tester_status", "designer_status"):
+        stuck = supa_get(
+            f"issues?status=eq.code_review"
+            f"&{field}=in.(running,in_progress)"
+            f"&heartbeat_at=lt.{cutoff_iso}"
+            f"&select=id,task_key,{field},heartbeat_at"
+        )
+        if not stuck:
+            continue
+        for issue in stuck:
+            try:
+                data = json.dumps({field: "pending", "heartbeat_at": None}).encode()
+                req = urllib.request.Request(
+                    f"{SUPA}/rest/v1/issues?id=eq.{issue['id']}",
+                    data=data, headers=headers, method="PATCH")
+                with urllib.request.urlopen(req, timeout=10):
+                    pass
+                print(f"[reviewer-leak] reset {field} on {issue['task_key']} "
+                      f"(was={issue.get(field)}, heartbeat={issue.get('heartbeat_at')})")
+            except Exception as e:
+                print(f"[reviewer-leak] failed to reset {issue['task_key']}: {e}")
+
+
 def main():
     # ── WIP-slot leak cleanup (PO refined+started_at, etc.) ──────────────────
     clear_stale_started_at()
+    clear_stale_reviewer_statuses()
 
     now = datetime.now(timezone.utc)
     statuses = ",".join(THRESHOLDS.keys())

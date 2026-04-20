@@ -677,19 +677,24 @@ export async function GET(req: NextRequest) {
       const config = getQueueConfig(id)
       if (!config) return { agent: id, error: 'unknown agent' }
 
-      // Count WIP — apply wipExtraFilter so deployer WIP is accurate (same logic as POST path)
+      // Count WIP — mirror the POST path exactly for each agent type
+      const isReviewerGet = id === 'tester' || id === 'designer'
+      const reviewStatusFieldGet = id === 'tester' ? 'tester_status' : 'designer_status'
       const wipExtraFilterGet = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
-      const wipRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`,
-        { headers: getHeaders() }
-      )
+      const wipUrlGet = isReviewerGet
+        ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusFieldGet}=in.(running,in_progress)&is_blocked=eq.false&select=id`
+        : `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`
+      const wipRes = await fetch(wipUrlGet, { headers: getHeaders() })
       const wipIssues = await wipRes.json() as Array<{ id: string }>
 
-      // Count eligible
+      // Count eligible — reviewers filter by pending review status, not assignee
       const dorFilter = config.dorFields.map(f => `${f}=not.is.null`).join('&')
       const extraFilter = config.extraFilters ? `&${config.extraFilters}` : ''
+      const eligibleFilter = isReviewerGet
+        ? `status=eq.${config.pickupStatus}&${reviewStatusFieldGet}=eq.pending`
+        : `assignee=eq.${id}&status=eq.${config.pickupStatus}`
       const eligibleRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.pickupStatus}&${dorFilter}${extraFilter}&select=id&limit=100`,
+        `${SUPA_URL}/rest/v1/issues?${eligibleFilter}&${dorFilter}${extraFilter}&select=id&limit=100`,
         { headers: getHeaders() }
       )
       const eligible = await eligibleRes.json() as Array<{ id: string }>
