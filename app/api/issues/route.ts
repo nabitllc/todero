@@ -640,9 +640,14 @@ async function executePostFunctions(
       if (sourceKey === null || ('source' in params && params.source === null) || ('to' in params && params.to === null)) {
         fields.assignee = null
       } else if (sourceKey) {
-        const newAssignee = (updatedIssue[sourceKey] ?? issue[sourceKey]) as string | null
-        if (newAssignee !== undefined) {
-          fields.assignee = newAssignee
+        // Only set assignee from source if not already explicitly set by the caller
+        // (e.g. PO sets assignee=builder; don't clobber with owner=main)
+        const alreadySet = (updatedIssue.assignee ?? issue.assignee) as string | null
+        if (!alreadySet) {
+          const newAssignee = (updatedIssue[sourceKey] ?? issue[sourceKey]) as string | null
+          if (newAssignee !== undefined) {
+            fields.assignee = newAssignee
+          }
         }
       }
     }
