@@ -169,12 +169,13 @@ export async function POST(req: NextRequest) {
   // narrows WIP count to claimed issues only (started_at IS NOT NULL), preventing
   // the full queue length from being mis-counted as active WIP.
   // For skipAssigneeFilter agents (main), count all is_blocked issues with started_at set.
+  // is_blocked=false excluded from WIP: a blocked in-progress issue must not hold the WIP slot.
   const wipExtraFilter = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
   const wipUrl = isReviewer
-    ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&select=id`
+    ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&is_blocked=eq.false&select=id`
     : config.skipAssigneeFilter
       ? `${SUPA_URL}/rest/v1/issues?is_blocked=eq.true&started_at=not.is.null&select=id`
-      : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}${wipExtraFilter}&select=id`
+      : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&is_blocked=eq.false${wipExtraFilter}&select=id`
   const wipRes = await fetch(wipUrl, { headers: getHeaders() })
   const wipIssues = await wipRes.json() as Array<{ id: string }>
   if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
@@ -204,7 +205,8 @@ export async function POST(req: NextRequest) {
       ? `status=eq.${allPickupStatuses[0]}`
       : `status=in.(${allPickupStatuses.join(',')})`
   // Build URL — join non-empty filters with & to avoid double-ampersand artifacts
-  const baseFilters = [assigneeFilter, statusFilter, dorFilter].filter(Boolean).join('&')
+  // is_blocked=eq.false ensures agents never receive blocked issues (even when blocked_by=null)
+  const baseFilters = [assigneeFilter, statusFilter, dorFilter, 'is_blocked=eq.false'].filter(Boolean).join('&')
   const url = `${SUPA_URL}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
