@@ -99,14 +99,19 @@ export async function GET(req: Request) {
   if (ncErr) return NextResponse.json({ error: ncErr.message }, { status: 500 })
 
   for (const issue of staleNoCommit ?? []) {
+    // approved issues earned their status through code review — reset to approved not open.
+    // Just clear the stale claim so deployer can re-pick.
+    const resetStatus = issue.status === 'approved' ? 'approved' : 'open'
+    const extra = issue.status === 'approved' ? { deployer_status: null } : {}
     await db.from('issues').update({
-      status: 'open',
+      status: resetStatus,
       started_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
+      ...extra,
     }).eq('id', issue.id)
     cleared.push(issue.task_key)
-    console.log(`[watchdog] stale no-commit → open: ${issue.task_key} (${issue.assignee}, started ${issue.started_at})`)
+    console.log(`[watchdog] stale no-commit → ${resetStatus}: ${issue.task_key} (${issue.assignee}, started ${issue.started_at})`)
   }
 
   // ── Query 1c: stale — has commit_sha but no heartbeat (30 min) ───────────
@@ -124,14 +129,17 @@ export async function GET(req: Request) {
   if (wcErr) return NextResponse.json({ error: wcErr.message }, { status: 500 })
 
   for (const issue of staleWithCommit ?? []) {
+    const resetStatus = issue.status === 'approved' ? 'approved' : 'open'
+    const extra = issue.status === 'approved' ? { deployer_status: null } : {}
     await db.from('issues').update({
-      status: 'open',
+      status: resetStatus,
       started_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
+      ...extra,
     }).eq('id', issue.id)
     cleared.push(issue.task_key)
-    console.log(`[watchdog] stale with-commit → open: ${issue.task_key} (${issue.assignee}, commit ${issue.commit_sha?.slice(0,8)}, started ${issue.started_at})`)
+    console.log(`[watchdog] stale with-commit → ${resetStatus}: ${issue.task_key} (${issue.assignee}, commit ${issue.commit_sha?.slice(0,8)}, started ${issue.started_at})`)
   }
 
   // ── Query 1d: ghost claims — in_progress with null started_at (30 min) ───

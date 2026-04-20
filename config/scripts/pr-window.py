@@ -275,12 +275,17 @@ def main():
             except Exception as e:
                 log(f"[pr] Failed to close old PR: {e}")
 
-        # Create release branch from main, merge all feature branches into it
+        # Create release branch from main, merge all feature branches into it.
+        # Push main to origin first — keeps PR diff clean (feature changes only,
+        # not infra commits that accumulated between push windows).
         try:
             subprocess.run(["git", "checkout", "main"], cwd=repo_dir,
                           capture_output=True, text=True, timeout=30)
-            subprocess.run(["git", "pull", "--ff-only"], cwd=repo_dir,
+            push_main = subprocess.run(["git", "push", "origin", "main"], cwd=repo_dir,
                           capture_output=True, text=True, timeout=60)
+            if push_main.returncode != 0 and "Everything up-to-date" not in push_main.stderr:
+                log(f"[git] Warning: push origin main failed: {push_main.stderr[:200]}")
+                # Non-fatal — continue with release branch from local main
             subprocess.run(["git", "branch", "-D", release_branch], cwd=repo_dir,
                           capture_output=True, text=True, timeout=10)  # delete if exists
             subprocess.run(["git", "checkout", "-b", release_branch], cwd=repo_dir,

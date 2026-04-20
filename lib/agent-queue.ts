@@ -285,7 +285,7 @@ Process the single issue assigned to you:
    cd ~/todero
    git fetch origin
    git checkout <feature_branch>
-   git rebase origin/main
+   git rebase main
 
 3. IF rebase conflicts occur: load the resolve-conflicts skill from DB (slug: resolve-conflicts) and follow it exactly.
    - Resolve each conflict keeping both intents where possible.
@@ -301,8 +301,8 @@ Process the single issue assigned to you:
 
 5. IF build passes:
    a. git push --force-with-lease origin <feature_branch>
-   b. PATCH deployer_status=ready:
-      PATCH /api/issues { "id": "<issue_id>", "deployer_status": "ready", "transitioned_by": "deployer" }
+   b. PATCH deployer_status=ready and clear started_at:
+      PATCH /api/issues { "id": "<issue_id>", "deployer_status": "ready", "started_at": null, "transitioned_by": "deployer" }
    c. git checkout main
    Log: "✓ TOD-XXX ready for PR window — rebased cleanly onto main"
    Done — self-chain.
