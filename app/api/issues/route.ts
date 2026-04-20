@@ -70,9 +70,11 @@ function activateAgentAsync(assignee: string, taskKey: string, title: string, st
   void taskKey; void title
 }
 
-function activateCodeReviewAgents(taskKey: string, title: string) {
+function activateCodeReviewAgents(taskKey: string, title: string, issueType = 'task') {
   activateAgentAsync('tester', taskKey, title, 'code_review')
-  activateAgentAsync('designer', taskKey, title, 'code_review')
+  if (issueType !== 'ops') {
+    activateAgentAsync('designer', taskKey, title, 'code_review')
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -694,7 +696,7 @@ async function executePostFunctions(
 
     if (action === 'activate_code_review_agents') {
       const nextIssue = { ...issue, ...updatedIssue, ...fields }
-      activateCodeReviewAgents((nextIssue.task_key ?? '?') as string, (nextIssue.title ?? '') as string)
+      activateCodeReviewAgents((nextIssue.task_key ?? '?') as string, (nextIssue.title ?? '') as string, (nextIssue.type ?? 'task') as string)
     }
 
     if (action === 'activate_reviewer') {
@@ -1758,7 +1760,7 @@ export async function PATCH(req: NextRequest) {
   if (fields.status && data && !NON_ACTIVATING_STATUSES.has(fields.status)) {
     const newAssignee = data.assignee ?? fields.assignee
     if (fields.status === 'code_review') {
-      activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '')
+      activateCodeReviewAgents(data.task_key ?? '?', data.title ?? '', (data.type ?? fields.type ?? 'task') as string)
     } else if (newAssignee) {
       activateAgentAsync(newAssignee, data.task_key ?? '?', data.title ?? '', fields.status, data.id as string | undefined)
     }

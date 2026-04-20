@@ -61,7 +61,8 @@ export function applyExecutionStatusRouting(
       fields.assignee = reviewer
     }
     fields.tester_status = 'pending'
-    fields.designer_status = 'pending'
+    const issueType = typeof (fields.type ?? before?.type) === 'string' ? String(fields.type ?? before?.type) : 'task'
+    fields.designer_status = issueType === 'ops' ? 'pre_approved' : 'pending'
     if (fields.test_status === undefined) fields.test_status = 'pending'
   }
 
