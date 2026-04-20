@@ -112,7 +112,7 @@ function selfChainOnStatus(toStatus: string | undefined | null) {
 const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
 const ALERTS_CHANNEL          = '1485333335868834063'
 const CREATED_CHANNEL         = '1492576650137964694'
-const GROOMED_CHANNEL         = '1492576650137964694'
+
 const QUEUE_CHANNEL           = '1494440278524694608' // #1-queue
 const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
 
@@ -1926,30 +1926,6 @@ export async function PATCH(req: NextRequest) {
   // PR notification handled by pr-window.py (1 consolidated message per window).
   // Per-issue notifyPRReview removed to avoid duplicate Discord messages.
 
-  // Notify #0-ready on backlog → refined / defined / draft
-  if (data && fields.status && before?.status === 'backlog' &&
-      ['refined', 'defined', 'draft'].includes(fields.status as string)) {
-    try {
-      const typeEmoji = TYPE_EMOJI[(data.type as string) ?? 'task'] ?? '📋'
-      const key = (data.task_key as string) ?? '?'
-      const prioMap: Record<string,string> = {critical:'P0',high:'P1',medium:'P2',low:'P3'}
-      const prio = prioMap[(data.priority as string)] ?? (data.priority as string ?? 'medium').toUpperCase()
-      const statusEmoji: Record<string,string> = { refined: '✅', defined: '📐', draft: '📝' }
-      const sEmoji = statusEmoji[fields.status as string] ?? '➡️'
-      const actor = transitionedBy ?? 'unknown'
-      let parentKey: string | null = null
-      if (data.parent_id) {
-        const { data: par } = await supabase.from('issues').select('task_key').eq('id', data.parent_id as string).maybeSingle()
-        parentKey = par?.task_key ?? null
-      }
-      const meta: string[] = [prio]
-      if (data.severity) meta.push(data.severity as string)
-      if (parentKey) meta.push(`Parent: ${parentKey}`)
-      postDiscord(GROOMED_CHANNEL, `${sEmoji} ${typeEmoji} **${key}** → \`${fields.status}\` — ${data.title ?? ''}\n↳ By: ${actor} · ${meta.join(' · ')}`)
-    } catch (e) {
-      console.warn('[discord-groomed] notify failed:', e)
-    }
-  }
 
   if (isNewFailure && data) {
     notifyTestFailure(data)
