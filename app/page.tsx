@@ -181,6 +181,14 @@ export default function Home() {
     if (feat) setBoardFeatureFilter(feat)
   }, [])
 
+  // Auto-trigger onboarding wizard when no businesses exist (workspace not yet onboarded)
+  useEffect(() => {
+    fetch('/api/businesses')
+      .then(r => r.json())
+      .then((d: unknown) => { if (Array.isArray(d) && d.length === 0) setShowOnboarding(true) })
+      .catch(() => {})
+  }, [])
+
   // Agent runs + issue counts polling
   useEffect(() => {
     const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'

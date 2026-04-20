@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, ArrowRight, ArrowLeft, Sparkles, Check, ChevronDown, ChevronUp, Building2, Bot, ClipboardList, Rocket } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { Input, Textarea, Select } from '@/components/ui'
@@ -70,6 +70,37 @@ interface Props { onClose: () => void; onComplete: (businessName: string) => voi
 
 export default function OnboardingWizard({ onClose, onComplete }: Props) {
   const [step, setStep] = useState(1) // 1–4
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  // Focus trap: keep focus within modal; re-run when step changes
+  useEffect(() => {
+    const modal = modalRef.current
+    if (!modal) return
+    const focusable = modal.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    first?.focus()
+
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last?.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first?.focus() }
+      }
+    }
+    modal.addEventListener('keydown', trap)
+    return () => modal.removeEventListener('keydown', trap)
+  }, [step])
+
+  // Close on Escape
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [onClose])
 
   // Step 1
   const [companyName, setCompanyName] = useState('')
@@ -133,11 +164,18 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0f0f0f] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: '90vh' }}>
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wizard-dialog-title"
+        className="bg-[#0f0f0f] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden"
+        style={{ maxHeight: '90vh' }}
+      >
 
         {/* ── Top bar ── */}
         <div className="flex items-center justify-between px-5 pt-5 pb-0 shrink-0">
-          <span className="text-white/30 text-xs font-medium tracking-widest uppercase">New Business</span>
+          <span id="wizard-dialog-title" className="text-white/30 text-xs font-medium tracking-widest uppercase">New Business</span>
           <Button variant="icon" onClick={onClose} aria-label="Close">
             <X size={16}/>
           </Button>
@@ -405,7 +443,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                 loading={loading}
                 className="w-full justify-center rounded-xl py-3"
               >
-                {loading ? 'Setting up your business...' : <>Create &amp; Open Issue <ArrowRight size={14}/></>}
+                {loading ? 'Setting up your business...' : <>Create & Open Issue <ArrowRight size={14}/></>}
               </Button>
             </div>
           )}
