@@ -256,6 +256,19 @@ export async function GET(req: Request) {
     }).catch(() => {/* non-critical */})
   }
 
+  // TOD-758: Discord alert for stale/stuck auto-recoveries
+  if (cleared.length > 0) {
+    const lines = cleared.map(k => `• ${k}`).join('\n')
+    fetch(`${appUrl}/api/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `⚠️ **Stale agent auto-recovery** — ${cleared.length} issue(s) reset to open:\n${lines}`,
+        channels: ['discord-alerts'],
+      }),
+    }).catch(() => {/* non-critical */})
+  }
+
   return NextResponse.json({
     ok: true,
     ts: new Date().toISOString(),
