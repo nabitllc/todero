@@ -15,14 +15,14 @@
 import claudeCodeRuntime from './claude-code'
 import codexRuntime from './codex'
 import cursorRuntime from './cursor'
+import { openaiApiRuntime } from './openai-api'
 import type { AgentRuntime, RuntimeRegistration } from './types'
 
 const REGISTRY: RuntimeRegistration[] = [
   { runtime: claudeCodeRuntime, priority: 100 },
   { runtime: codexRuntime,      priority: 90  },
   { runtime: cursorRuntime,     priority: 80  },
-  // Future:
-  // { runtime: openaiApiRuntime, priority: 70  },  // lib/runtimes/openai-api.ts (direct API + tool loop)
+  { runtime: openaiApiRuntime,  priority: 70  }, // openai-api
 ]
 
 /**
