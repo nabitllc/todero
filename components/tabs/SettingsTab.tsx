@@ -86,6 +86,8 @@ export default function SettingsTab() {
   const [data, setData] = useState<UsageData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [currentTheme, setCurrentTheme] = useState<ThemeId>('dark')
+  const [themeSaving, setThemeSaving] = useState(false)
 
   const fetchUsage = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
@@ -102,6 +104,10 @@ export default function SettingsTab() {
     const iv = setInterval(() => fetchUsage(), 60_000)
     return () => clearInterval(iv)
   }, [fetchUsage])
+
+  useEffect(() => {
+    fetch('/api/theme').then(r => r.json()).then(d => { if (d.themeId) setCurrentTheme(d.themeId) }).catch(() => {})
+  }, [])
 
   if (loading) {
     return (
@@ -120,14 +126,6 @@ export default function SettingsTab() {
       </div>
     )
   }
-
-  // INF-223: Theme selector state
-  const [currentTheme, setCurrentTheme] = useState<ThemeId>('dark')
-  const [themeSaving, setThemeSaving] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/theme').then(r => r.json()).then(d => { if (d.themeId) setCurrentTheme(d.themeId) }).catch(() => {})
-  }, [])
 
   const handleThemeChange = async (themeId: ThemeId) => {
     setCurrentTheme(themeId)
