@@ -322,7 +322,48 @@ def auto_advance_completed(issues):
     return advanced
 
 
+def clear_stale_started_at():
+    """Clear started_at on issues that are NOT in_progress but still have it set
+    with a heartbeat older than 30 min. These are WIP-slot leaks — the agent
+    completed (or died after the spawn-watcher already reset status) but never
+    cleared started_at, permanently counting toward the WIP limit.
+    Runs as a safety net for what the spawn-watcher should have already done."""
+    cutoff = (datetime.now(timezone.utc).timestamp() - 30 * 60)
+    cutoff_iso = datetime.fromtimestamp(cutoff, tz=timezone.utc).isoformat()
+    leaks = supa_get(
+        "issues?started_at=not.is.null"
+        f"&heartbeat_at=lt.{cutoff_iso}"
+        "&status=not.eq.in_progress"
+        "&select=id,task_key,status,assignee,heartbeat_at"
+    )
+    if not leaks:
+        return
+    supa_url = SUPA
+    sk = SK
+    headers = {"apikey": sk, "Authorization": f"Bearer {sk}",
+               "Content-Type": "application/json", "Prefer": "return=minimal"}
+    cleared = []
+    for issue in leaks:
+        try:
+            data = json.dumps({"started_at": None, "heartbeat_at": None}).encode()
+            req = urllib.request.Request(
+                f"{supa_url}/rest/v1/issues?id=eq.{issue['id']}",
+                data=data, headers=headers, method="PATCH")
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+            cleared.append(issue["task_key"])
+            print(f"[wip-leak] cleared started_at on {issue['task_key']} "
+                  f"(status={issue['status']}, assignee={issue.get('assignee')})")
+        except Exception as e:
+            print(f"[wip-leak] failed to clear {issue['task_key']}: {e}")
+    if cleared:
+        print(f"[monitor-stale] cleared {len(cleared)} stale started_at leaks: {cleared}")
+
+
 def main():
+    # ── WIP-slot leak cleanup (PO refined+started_at, etc.) ──────────────────
+    clear_stale_started_at()
+
     now = datetime.now(timezone.utc)
     statuses = ",".join(THRESHOLDS.keys())
     issues = supa_get(
