@@ -7,41 +7,22 @@ set -euo pipefail
 API="http://localhost:3000/api/run-agent"
 DISCORD_CHANNEL="1485333335868834063"
 LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')]"
-# TOD-800: heartbeat state tracking per self-improving/heartbeat-rules.md
-STATE_FILE="$HOME/todero/config/self-improving/heartbeat-state.md"
+STATE_FILE="$HOME/todero/config/scripts/state-heartbeat.json"
 RUN_START_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 log() { echo "${LOG_PREFIX} $1"; }
 
-# Write state at start so a crash is still visible
 write_state_start() {
-  mkdir -p "$(dirname "$STATE_FILE")"
-  {
-    echo "# Heartbeat State"
-    echo
-    echo "last_heartbeat_started_at: $RUN_START_ISO"
-    echo "last_heartbeat_result: IN_PROGRESS"
-    echo "last_heartbeat_source: agent-heartbeat.sh"
-  } > "$STATE_FILE"
+  python3 -c "import json; open('$STATE_FILE','w').write(json.dumps({'last_heartbeat_started_at':'$RUN_START_ISO','last_heartbeat_result':'IN_PROGRESS','last_heartbeat_source':'agent-heartbeat.sh'}, indent=2))"
 }
 
 write_state_done() {
-  local result="$1"      # HEARTBEAT_OK or HEARTBEAT_ERROR
-  local activated="$2"   # count
-  local skipped="$3"     # count
-  local idle="$4"        # count
+  local result="$1"
+  local activated="$2"
+  local skipped="$3"
+  local idle="$4"
   local finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  {
-    echo "# Heartbeat State"
-    echo
-    echo "last_heartbeat_started_at: $RUN_START_ISO"
-    echo "last_heartbeat_finished_at: $finished"
-    echo "last_heartbeat_result: $result"
-    echo "last_heartbeat_source: agent-heartbeat.sh"
-    echo "last_activated_count: $activated"
-    echo "last_skipped_count: $skipped"
-    echo "last_idle_lanes: $idle"
-  } > "$STATE_FILE"
+  python3 -c "import json; open('$STATE_FILE','w').write(json.dumps({'last_heartbeat_started_at':'$RUN_START_ISO','last_heartbeat_finished_at':'$finished','last_heartbeat_result':'$result','last_heartbeat_source':'agent-heartbeat.sh','last_activated_count':$activated,'last_skipped_count':$skipped,'last_idle_lanes':$idle}, indent=2))"
 }
 
 write_state_start
