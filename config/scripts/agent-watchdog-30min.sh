@@ -59,7 +59,7 @@ fi
 
 # ── 2. Kick every lane ──────────────────────────────────────────────────────
 SPAWNED=""
-for AGENT in builder tester designer ops po auditor deployer todero-sme kemuni-sme vespera-sme infra-sme; do
+for AGENT in builder tester designer ops po auditor deployer todero-sme kemuni-sme vespera-sme infra-sme main; do
   R=$(curl -s -X POST "$RUN_API?agent=$AGENT")
   if echo "$R" | grep -q '"ok":true'; then
     KEY=$(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('task',{}).get('taskKey','?'))" 2>/dev/null || echo '?')

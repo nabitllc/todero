@@ -1314,8 +1314,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // description required before moving to refined (belt-and-suspenders — DB validators also enforce this,
-  // but this catches direct Supabase writes or PO sessions that omit the field from the PATCH body)
+  // description + test_tier required before moving to refined
   if (fields.status === 'refined' && before?.status !== 'refined') {
     const effectiveDesc = ((fields.description ?? before?.description) as string | undefined | null)?.trim() ?? ''
     if (!effectiveDesc) {
@@ -1323,6 +1322,16 @@ export async function PATCH(req: NextRequest) {
         { error: 'description is required before moving to refined. Add a clear description of what needs to be built/done and retry.' },
         { status: 400 }
       )
+    }
+    const effectiveType = (fields.type ?? before?.type ?? 'task') as string
+    if (['task', 'bug', 'ops'].includes(effectiveType)) {
+      const effectiveTier = (fields.test_tier ?? before?.test_tier ?? '') as string
+      if (!effectiveTier) {
+        return NextResponse.json(
+          { error: 'test_tier is required for task/bug/ops before moving to refined. Set it to smoke, integration, or e2e.' },
+          { status: 400 }
+        )
+      }
     }
   }
 
@@ -1703,9 +1712,8 @@ export async function PATCH(req: NextRequest) {
     fields.blocked_by = 'system:rejection_loop'
   }
 
-  // When is_blocked becomes true, post to Discord #alerts for KAOS (main) to investigate.
-  // KAOS is not a spawnable queue agent — it's the orchestrator (Telegram bot / Michael).
-  // The alert includes enough context to act: issue key, title, reason, current status, blocked_by.
+  // When is_blocked becomes true, post to Discord #alerts and kick main (KAOS) to triage.
+  // main IS a spawnable queue agent — it picks up all is_blocked=true issues.
   const becomingBlocked = fields.is_blocked === true && !before?.is_blocked
   if (becomingBlocked) {
     const blockedIssue = { ...before, ...fields }
@@ -1725,6 +1733,8 @@ export async function PATCH(req: NextRequest) {
       `To unblock: PATCH \`{"task_key":"${key}","is_blocked":false}\` once resolved.\n` +
       `<@409194957098713088> please investigate.`)
     console.log(`[blocked] ${key} blocked (${reason}) — posted to #alerts`)
+    // Kick main (KAOS) immediately — don't wait for next watchdog tick
+    void fetch('http://localhost:3000/api/run-agent?agent=main', { method: 'POST' }).catch(() => {})
   }
 
   // owner is immutable after creation — always strip it from PATCH payloads
