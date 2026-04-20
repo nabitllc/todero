@@ -1,7 +1,10 @@
 'use client'
 import React, { useState, useEffect, useCallback } from 'react'
-import { X, Clock, CheckCircle2, Activity, ExternalLink } from 'lucide-react'
+import { X, Clock } from 'lucide-react'
 import { Button } from '@/components/ui'
+import AssignedPanel from '@/components/tabs/AssignedPanel'
+import ActivityPanel from '@/components/tabs/ActivityPanel'
+import { Issue, ActivityItem } from '@/lib/member-utils'
 
 interface HumanMember {
   id: string
@@ -11,154 +14,12 @@ interface HumanMember {
   joinDate: string
 }
 
-interface Issue {
-  id: string
-  task_key?: string
-  title: string
-  status: string
-  priority?: string
-  type?: string
-  project?: string
-  updated_at?: string
-}
-
-interface ActivityItem {
-  id: string
-  task_key?: string
-  title: string
-  status: string
-  project?: string
-  updated_at?: string
-}
-
 interface MemberDetailViewProps {
   member: HumanMember
   onClose: () => void
   onNavigateToIssue?: (issueId: string) => void
 }
 
-function statusColor(s: string) {
-  if (s === 'in_progress') return 'text-amber-400'
-  if (s === 'code_review' || s === 'product_review') return 'text-purple-400'
-  if (s === 'open') return 'text-blue-400'
-  if (['closed', 'completed', 'released', 'done'].includes(s)) return 'text-emerald-400'
-  if (s === 'backlog') return 'text-white/30'
-  return 'text-white/50'
-}
-
-function priorityBadge(p: string | undefined) {
-  if (!p) return null
-  const cls = p === 'critical' ? 'bg-red-500/20 text-red-400 border-red-500/30'
-    : p === 'high' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-    : p === 'medium' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-    : 'bg-white/5 text-white/40 border-white/10'
-  return (
-    <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold uppercase ${cls}`}>
-      {p}
-    </span>
-  )
-}
-
-function relTime(iso: string | undefined): string {
-  if (!iso) return '—'
-  const diff = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
-  if (diff < 1) return 'Just now'
-  if (diff < 60) return `${diff}m ago`
-  if (diff < 1440) return `${Math.round(diff / 60)}h ago`
-  return `${Math.round(diff / 1440)}d ago`
-}
-
-function statusVerb(s: string): string {
-  const map: Record<string, string> = {
-    open: 'opened', in_progress: 'started', code_review: 'sent for review',
-    product_review: 'in product review', approved: 'approved',
-    completed: 'completed', released: 'released', closed: 'closed',
-    backlog: 'in backlog', defined: 'defined', cancelled: 'cancelled',
-  }
-  return map[s] ?? s.replace('_', ' ')
-}
-
-// ── Assigned Issues panel ─────────────────────────────────────────────────────
-function AssignedPanel({
-  issues,
-  loading,
-  onNavigate,
-}: {
-  issues: Issue[]
-  loading: boolean
-  onNavigate?: (id: string) => void
-}) {
-  if (loading) return <p className="text-white/20 text-xs">Loading…</p>
-  if (issues.length === 0) return <p className="text-white/20 text-xs italic">No active issues assigned.</p>
-
-  return (
-    <div className="space-y-2">
-      {issues.slice(0, 15).map(issue => (
-        <div
-          key={issue.id}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f] group"
-        >
-          <CheckCircle2 size={12} className={statusColor(issue.status)} />
-          <div className="flex-1 min-w-0">
-            <p className="text-white/70 text-xs truncate">{issue.title}</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              {issue.task_key && (
-                <span className="text-[9px] text-white/30 font-mono">{issue.task_key}</span>
-              )}
-              <span className={`text-[9px] ${statusColor(issue.status)}`}>
-                {issue.status.replace('_', ' ')}
-              </span>
-              {issue.project && (
-                <span className="text-[9px] text-white/20">{issue.project}</span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {priorityBadge(issue.priority)}
-            {onNavigate && (
-              <button
-                onClick={() => onNavigate(issue.id)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                title="View on board"
-                aria-label={`View issue ${issue.task_key ?? issue.title} on board`}
-              >
-                <ExternalLink size={11} className="text-white/40 hover:text-white/70" />
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Activity Feed panel ───────────────────────────────────────────────────────
-function ActivityPanel({ items, loading }: { items: ActivityItem[]; loading: boolean }) {
-  if (loading) return <p className="text-white/20 text-xs">Loading…</p>
-  if (items.length === 0) return <p className="text-white/20 text-xs italic">No recent activity.</p>
-
-  return (
-    <div className="space-y-2">
-      {items.map(item => (
-        <div key={item.id} className="flex gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
-          <Activity size={12} className={`${statusColor(item.status)} mt-0.5 shrink-0`} />
-          <div className="flex-1 min-w-0">
-            <p className="text-white/70 text-xs truncate">
-              {item.task_key && <span className="text-white/30 font-mono mr-1.5">{item.task_key}</span>}
-              {item.title} → <span className={statusColor(item.status)}>{statusVerb(item.status)}</span>
-            </p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              {item.project && <span className="text-[9px] text-white/20">{item.project}</span>}
-              <span className="text-[9px] text-white/25">{relTime(item.updated_at)}</span>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ── Main Component ────────────────────────────────────────────────────────────
 export default function MemberDetailView({ member, onClose, onNavigateToIssue }: MemberDetailViewProps) {
   const [activeTab, setActiveTab] = useState<'assigned' | 'activity'>('assigned')
   const [assignedIssues, setAssignedIssues] = useState<Issue[]>([])
