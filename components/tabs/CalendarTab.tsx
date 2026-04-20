@@ -14,6 +14,7 @@ export default function CalendarTab({
   nextRuns,
   cronModal,
   setCronModal,
+  projectFilter,
 }: {
   calendarIssues: any[]
   sprintProjects: any[]
@@ -23,8 +24,11 @@ export default function CalendarTab({
   nextRuns: any[]
   cronModal: any
   setCronModal: (c: any) => void
+  projectFilter?: string | null
 }) {
-            const calIssues = (calendarIssues ?? []) as any[]
+            const calIssues = ((calendarIssues ?? []) as any[]).filter(
+              (i: any) => !projectFilter || i.project === projectFilter
+            )
             const calSprints = (sprintProjects ?? []) as any[]
             const calView = calendarView
             const todayIdx = new Date().getDay()
