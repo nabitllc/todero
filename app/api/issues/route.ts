@@ -640,14 +640,9 @@ async function executePostFunctions(
       if (sourceKey === null || ('source' in params && params.source === null) || ('to' in params && params.to === null)) {
         fields.assignee = null
       } else if (sourceKey) {
-        // Only set assignee from source if not already explicitly set by the caller
-        // (e.g. PO sets assignee=builder; don't clobber with owner=main)
-        const alreadySet = (updatedIssue.assignee ?? issue.assignee) as string | null
-        if (!alreadySet) {
-          const newAssignee = (updatedIssue[sourceKey] ?? issue[sourceKey]) as string | null
-          if (newAssignee !== undefined) {
-            fields.assignee = newAssignee
-          }
+        const newAssignee = (updatedIssue[sourceKey] ?? issue[sourceKey]) as string | null
+        if (newAssignee !== undefined) {
+          fields.assignee = newAssignee
         }
       }
     }
@@ -913,16 +908,17 @@ export async function POST(req: NextRequest) {
     return 'todero-sme'
   }
 
-  let effectiveOwner = owner
-  if (!effectiveOwner) {
-    const issueType = type ?? 'task'
-    if (issueType === 'task' || issueType === 'bug') effectiveOwner = 'builder'
-    else if (issueType === 'feature') effectiveOwner = 'po'
-    else if (issueType === 'epic') effectiveOwner = hubSmeForProject(normalizedProject)
-    else if (issueType === 'ops') effectiveOwner = 'ops'
-    else if (issueType === 'research') effectiveOwner = 'scout'
-    else effectiveOwner = 'builder'
-  }
+  // Owner is always determined by issue type — callers cannot override.
+  // Same rule as status (always backlog on creation): structural field, not user input.
+  const issueTypeForOwner = type ?? 'task'
+  let effectiveOwner: string
+  if (issueTypeForOwner === 'task' || issueTypeForOwner === 'bug') effectiveOwner = 'builder'
+  else if (issueTypeForOwner === 'feature') effectiveOwner = 'po'
+  else if (issueTypeForOwner === 'epic') effectiveOwner = hubSmeForProject(normalizedProject)
+  else if (issueTypeForOwner === 'ops') effectiveOwner = 'ops'
+  else if (issueTypeForOwner === 'research') effectiveOwner = 'scout'
+  else effectiveOwner = 'builder'
+  void owner // caller value ignored
 
   // All issues must arrive at backlog — no skipping the intake queue.
   // Callers cannot override this; status is ignored on creation.
@@ -1731,11 +1727,9 @@ export async function PATCH(req: NextRequest) {
     console.log(`[blocked] ${key} blocked (${reason}) — posted to #alerts`)
   }
 
+  // owner is immutable after creation — always strip it from PATCH payloads
   if (fields.owner !== undefined) {
-    const currentStatus = before?.status ?? ''
-    if (isActiveWorkIssueStatus(currentStatus)) {
-      delete fields.owner
-    }
+    delete fields.owner
   }
 
   let updateQ = createAdminClient()
