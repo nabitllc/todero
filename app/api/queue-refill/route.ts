@@ -7,9 +7,7 @@
 //      b. If below the QUEUE_MIN threshold, find refined issues assigned to that agent
 //      c. Promote up to (QUEUE_MIN - current_open) issues from refined → open
 //
-// Refined issues are expected to have the correct assignee already set by PO.
-// NEVER modifies assignee — only transitions status.
-//
+// Sets assignee=lane.agent on promote (self-healing: corrects stale assignees from owner-field clobber).
 // This does NOT promote po/michael/main assignees. Those are human/orchestrator lanes.
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -92,6 +90,7 @@ export async function POST(_req: NextRequest) {
             body: JSON.stringify({
               id: issue.id,
               status: 'open',
+              assignee: lane.agent,
               transitioned_by: 'cron-queue-refill',
             }),
             signal: AbortSignal.timeout(10_000),
