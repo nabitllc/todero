@@ -37,6 +37,7 @@ import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
 import TopBar from '@/components/TopBar'
 import HubSwitcher from '@/components/HubSwitcher'
+import InboxDrawer from '@/components/InboxDrawer'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -117,6 +118,8 @@ export default function Home() {
   const [tick, setTick] = useState(0)
   const [showMobileMore, setShowMobileMore] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [inboxOpen, setInboxOpen] = useState(false)
+  const [inboxPendingCount, setInboxPendingCount] = useState(0)
   const [liveStatus, setLiveStatus] = useState<any>(null)
   const [statusAt, setStatusAt] = useState<number>(0)
   const [agoSec, setAgoSec] = useState<number>(0)
@@ -260,6 +263,25 @@ export default function Home() {
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
   }, [])
 
+  // Cmd+[ inbox drawer
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === '[') { e.preventDefault(); setInboxOpen(v => !v) } }
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
+  }, [])
+
+  // Inbox pending count polling
+  useEffect(() => {
+    const fetch_ = () => {
+      fetch('/api/inbox?status=pending')
+        .then(r => r.json())
+        .then(d => { if (Array.isArray(d)) setInboxPendingCount(d.length) })
+        .catch(() => {})
+    }
+    fetch_()
+    const iv = setInterval(fetch_, 30000)
+    return () => clearInterval(iv)
+  }, [])
+
   // Browser back/forward
   useEffect(() => {
     const onPop = () => {
@@ -397,6 +419,8 @@ export default function Home() {
           onNavigate={navigate}
           agentRunsData={agentRunsData}
           unreadChat={unreadChat}
+          inboxPendingCount={inboxPendingCount}
+          onOpenInbox={() => setInboxOpen(true)}
         />
 
         {/* Business context header */}
@@ -445,6 +469,7 @@ export default function Home() {
         onStartChat={() => navigate('chat')}
       />
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} onNavigate={navigate} />
+      <InboxDrawer open={inboxOpen} onClose={() => setInboxOpen(false)} pendingCount={inboxPendingCount} />
       {globalToasts.length > 0 && (
         <div className="fixed bottom-[72px] right-4 z-[9999] flex flex-col gap-1.5 pointer-events-none">
           {globalToasts.map(t => (
