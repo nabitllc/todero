@@ -1,5 +1,5 @@
 'use client'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Dot, Chip, Bar, SH } from '@/lib/mc-atoms'
 import type { CostSnapshot } from '@/lib/issues'
 import { Button, EmptyState } from '@/components/ui'
@@ -112,6 +112,18 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const todayCost = ls?.usage?.todayCost ?? 0
             const todayTokens = ls?.usage?.todayTokens ?? 0
             const heartbeats: any[] = ls?.heartbeats ?? []
+
+            // TOD-768: circuit breaker state
+            const [cbState, setCbState] = useState<Record<string, {tripped: boolean; consecutive_failures: number; last_error?: string; tripped_at?: string}>>({})
+            const fetchCb = useCallback(() => {
+              fetch('/api/circuit-breaker')
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d?.providers) setCbState(d.providers) })
+                .catch(() => {})
+            }, [])
+            useEffect(() => { fetchCb() }, [fetchCb])
+            const cbProviders = Object.entries(cbState)
+            const cbTripped = cbProviders.some(([, p]) => p.tripped)
 
             const liveInfra = [
               { name:'OpenClaw',     note: 'Retired 2026-04-09 · replaced by native stack', status: 'warn' },
@@ -260,6 +272,49 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* TOD-768: Circuit Breaker card */}
+              <SH icon="⚡">Circuit Breaker</SH>
+              <div className="rounded-2xl border border-white/10 p-3 sm:p-4" style={{background: cbTripped ? 'rgba(239,68,68,0.1)' : '#0f0f0f'}}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${cbTripped ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
+                    <span className="text-xs font-medium text-white">{cbTripped ? 'TRIPPED — agents paused' : 'Healthy'}</span>
+                  </div>
+                  <button onClick={fetchCb} className="text-white/30 hover:text-white/60 text-xs transition-colors">↻ refresh</button>
+                </div>
+                {cbProviders.length === 0 ? (
+                  <p className="text-white/30 text-xs">No failures recorded.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {cbProviders.map(([provider, ps]) => (
+                      <div key={provider} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${ps.tripped ? 'bg-red-500' : 'bg-white/20'}`} />
+                          <span className="text-white/70 truncate">{provider}</span>
+                          {ps.last_error && <span className="text-white/30 truncate hidden sm:block">{ps.last_error.slice(0, 60)}</span>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={ps.tripped ? 'text-red-400' : 'text-white/40'}>
+                            {ps.consecutive_failures} fail{ps.consecutive_failures !== 1 ? 's' : ''}
+                          </span>
+                          {ps.tripped && (
+                            <button
+                              onClick={async () => {
+                                await fetch('/api/circuit-breaker', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ provider }) })
+                                fetchCb()
+                              }}
+                              className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white/60 text-[10px] transition-colors"
+                            >
+                              reset
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <SH icon="\ud83d\udcb3">OpenRouter Balance</SH>

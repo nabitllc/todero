@@ -216,7 +216,7 @@ export async function GET(req: Request) {
     console.log(`[watchdog] zombie-block cleared: ${issue.task_key} (is_blocked=true but no blocked_by)`)
   }
 
-  // ── Query 2: kick idle agents ─────────────────────────────────────────────
+  // ── Query 2: kick idle agents (TOD-770) ──────────────────────────────────
   // Delegate to run-agent for each lane. run-agent handles:
   //   - WIP limit check (agent already busy? returns 200 with message, not an error)
   //   - DoR gate (description + AC present)
@@ -241,6 +241,20 @@ export async function GET(req: Request) {
       console.warn(`[watchdog] kick ${agent} failed:`, e)
     }
   }))
+
+  // Discord alert for kicked lanes (TOD-770 AC #3)
+  if (kicked.length > 0) {
+    const ts = new Date().toISOString()
+    const lines = kicked.map(k => `• ${k}`).join('\n')
+    fetch(`${appUrl}/api/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `🔄 **Idle lanes re-triggered** (${ts.slice(0,16)}Z)\n${lines}`,
+        channels: ['discord-alerts'],
+      }),
+    }).catch(() => {/* non-critical */})
+  }
 
   return NextResponse.json({
     ok: true,
