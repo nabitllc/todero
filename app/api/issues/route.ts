@@ -863,15 +863,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: hierarchyErr.error }, { status: 400 })
   }
 
+  // Hub SME by project — used for epic owner/assignee
+  function hubSmeForProject(proj: string): string {
+    if (proj === 'Kemuni') return 'kemuni-sme'
+    if (proj === 'Vespera') return 'vespera-sme'
+    if (proj === 'Infrastructure') return 'infra-sme'
+    return 'todero-sme'
+  }
+
   let effectiveOwner = owner
   if (!effectiveOwner) {
     const issueType = type ?? 'task'
     if (issueType === 'task' || issueType === 'bug') effectiveOwner = 'builder'
-    else if (issueType === 'feature') {
-      if (normalizedProject === 'Kemuni') effectiveOwner = 'kemuni-sme'
-      else if (normalizedProject === 'Vespera') effectiveOwner = 'vespera-sme'
-      else effectiveOwner = 'main'
-    } else if (issueType === 'epic') effectiveOwner = 'main'
+    else if (issueType === 'feature') effectiveOwner = 'po'
+    else if (issueType === 'epic') effectiveOwner = hubSmeForProject(normalizedProject)
     else if (issueType === 'ops') effectiveOwner = 'ops'
     else if (issueType === 'research') effectiveOwner = 'scout'
     else effectiveOwner = 'builder'
@@ -922,7 +927,7 @@ export async function POST(req: NextRequest) {
       // 'defined' then to 'open' once they're ready for Builder.
       effectiveAssignee = 'po'; routingNote = `[auto-routed to po: type=feature + project=${projectStr}]`
     } else if (effectiveType === 'epic') {
-      effectiveAssignee = 'main'; routingNote = '[auto-routed to main: type=epic]'
+      effectiveAssignee = hubSmeForProject(normalizedProject); routingNote = `[auto-routed to ${hubSmeForProject(normalizedProject)}: type=epic]`
     } else {
       effectiveAssignee = 'builder'; routingNote = '[auto-routed to builder: default fallback]'
     }
