@@ -9,8 +9,7 @@ import CostBreakdownTable from '@/components/CostBreakdownTable'
 interface UsageData {
   supabase: { dbBytes: number | null; dbLimitBytes: number; plan: string; lastChecked: string }
   openrouter: { balance: number | null; limit: number | null; used: number | null; isFreeTier: boolean; lastChecked: string }
-  n8n: { running: boolean; activeWorkflows: number; totalWorkflows: number; plan: string; lastChecked: string }
-  cloudflare: { kaos: { up: boolean; lastChecked: string }; n8n: { up: boolean; lastChecked: string } }
+  cloudflare: { kaos: { up: boolean; lastChecked: string } }
   discord: { connected: boolean; lastChecked: string }
   claude: { totalTokens: number; todayCost: number; plan: string; lastChecked: string }
   vercel: { plan: string; seats: number; renewsAt: string; lastChecked: string }
@@ -190,17 +189,6 @@ export default function SettingsTab() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* n8n */}
-        <ServiceCard emoji="🔄" name="n8n" plan={data.n8n.plan}
-          status={data.n8n.running ? 'active' : 'error'}
-          statusLabel={data.n8n.running ? 'Online' : 'Offline'}
-          lastChecked={data.n8n.lastChecked}>
-          <div className="text-xs text-white/60">
-            {data.n8n.activeWorkflows} active / {data.n8n.totalWorkflows} total workflows
-          </div>
-          <div className="text-[10px] text-green-400/80 mt-1">Self-hosted — unlimited executions</div>
-        </ServiceCard>
-
         {/* Supabase */}
         <ServiceCard emoji="🗄️" name="Supabase" plan={data.supabase.plan}
           status={dbPct != null ? (dbPct >= 90 ? 'error' : dbPct >= 70 ? 'warning' : 'active') : 'idle'}
@@ -253,17 +241,13 @@ export default function SettingsTab() {
 
         {/* Cloudflare */}
         <ServiceCard emoji="☁️" name="Cloudflare Tunnels" plan="Free Tier"
-          status={data.cloudflare.kaos.up && data.cloudflare.n8n.up ? 'active' : (!data.cloudflare.kaos.up && !data.cloudflare.n8n.up) ? 'error' : 'warning'}
-          statusLabel={data.cloudflare.kaos.up && data.cloudflare.n8n.up ? 'All up' : 'Degraded'}
+          status={data.cloudflare.kaos.up ? 'active' : 'error'}
+          statusLabel={data.cloudflare.kaos.up ? 'Up' : 'Down'}
           lastChecked={data.cloudflare.kaos.lastChecked}>
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-xs">
               <StatusDot variant={data.cloudflare.kaos.up ? 'active' : 'error'} sm />
               <span className="text-white/60">kaos.nabit.work</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <StatusDot variant={data.cloudflare.n8n.up ? 'active' : 'error'} sm />
-              <span className="text-white/60">n8n.nabit.work</span>
             </div>
           </div>
         </ServiceCard>

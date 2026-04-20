@@ -432,7 +432,7 @@ ${responseFields}
       builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
       ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
       tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
-      designer: [],
+      designer: [`${WORKSPACE}/skills/uiux-standards/SKILL.md`],
       auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
       deployer: [],
     }

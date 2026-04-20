@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server'
-import { exec } from 'child_process'
 import { promisify } from 'util'
 import fs from 'fs'
 
-const execAsync = promisify(exec)
+const promisifyExec = promisify
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 const OPENROUTER_KEY = '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'
-const N8N_KEY = 'n8n_api_34e5ba0e4da8b759e75b310a8c014c4de0275375eba302bdf87d2e7e6dd2adac'
 
 let cache: { data: any; ts: number } | null = null
 const CACHE_TTL = 30_000
@@ -38,7 +36,7 @@ export async function GET() {
     return NextResponse.json(cache.data)
   }
 
-  const [supabaseDb, openrouter, n8nRes, cfKaos, cfN8n, discordBot, ocStatus] = await Promise.allSettled([
+  const [supabaseDb, openrouter, cfKaos, discordBot] = await Promise.allSettled([
     // 1. Supabase DB size via REST RPC
     fetch(`${SUPABASE_URL}/rest/v1/rpc/pg_database_size_bytes`, {
       method: 'POST',
@@ -57,34 +55,18 @@ export async function GET() {
       cache: 'no-store',
     }).then(r => r.json()),
 
-    // 3. n8n workflows
-    fetch('http://localhost:5678/api/v1/workflows', {
-      headers: { 'X-N8N-API-KEY': N8N_KEY },
-      cache: 'no-store',
-    }).then(r => r.json()),
-
-    // 4. Cloudflare tunnel - kaos.nabit.work
+    // 3. Cloudflare tunnel - kaos.nabit.work
     fetch('https://kaos.nabit.work', {
       signal: AbortSignal.timeout(3000),
       redirect: 'manual',
     }).then(r => ({ ok: r.status < 400 || r.status === 307, status: r.status }))
       .catch(() => ({ ok: false, status: 0 })),
 
-    // 5. Cloudflare tunnel - n8n.nabit.work
-    fetch('https://n8n.nabit.work', {
-      signal: AbortSignal.timeout(3000),
-      redirect: 'manual',
-    }).then(r => ({ ok: r.status < 400 || r.status === 307, status: r.status }))
-      .catch(() => ({ ok: false, status: 0 })),
-
-    // 6. Discord bot status
+    // 4. Discord bot status
     fetch('https://discord.com/api/v10/users/@me', {
       headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN || ''}` },
       cache: 'no-store',
     }).then(r => ({ connected: r.ok })).catch(() => ({ connected: false })),
-
-    // 7. OpenClaw retired — placeholder null (TOD-1514)
-    Promise.resolve(null),
   ])
 
   const now = new Date().toISOString()
@@ -108,17 +90,9 @@ export async function GET() {
     }
   }
 
-  // --- n8n ---
-  let n8n: any = { running: false, activeWorkflows: 0, totalWorkflows: 0, plan: 'Self-hosted', lastChecked: now }
-  if (n8nRes.status === 'fulfilled') {
-    const workflows: any[] = n8nRes.value?.data ?? n8nRes.value ?? []
-    n8n = { running: true, activeWorkflows: workflows.filter((w: any) => w.active).length, totalWorkflows: workflows.length, plan: 'Self-hosted', lastChecked: now }
-  }
-
   // --- Cloudflare tunnels ---
   const cloudflare = {
     kaos: { up: cfKaos.status === 'fulfilled' ? (cfKaos.value as any).ok : false, lastChecked: now },
-    n8n: { up: cfN8n.status === 'fulfilled' ? (cfN8n.value as any).ok : false, lastChecked: now },
   }
 
   // --- Discord ---
@@ -128,13 +102,12 @@ export async function GET() {
   }
 
   // --- Claude tokens (from agent_runs — openclaw retired TOD-1514) ---
-  // Cost columns will be populated once agents complete runs and write cost_usd/tokens_used
   const claude: any = { totalTokens: 0, todayCost: 0, plan: 'Max $200/mo', lastChecked: now }
 
   // --- Vercel (static) ---
   const vercel = { plan: 'Pro $20/mo', seats: 1, renewsAt: '2026-04-24', lastChecked: now }
 
-  const data = { supabase, openrouter: openrouterResult, n8n, cloudflare, discord, claude, vercel }
+  const data = { supabase, openrouter: openrouterResult, cloudflare, discord, claude, vercel }
   cache = { data, ts: Date.now() }
   return NextResponse.json(data)
 }

@@ -5,21 +5,27 @@
 -- from dependency blocks. If blocked_by is type UUID in Postgres, this value is invalid
 -- and causes "invalid input syntax for type uuid" errors on any query scanning that table.
 --
--- Fix: if the column is TEXT, this NULL-ifies those rows so normal queries work.
--- If the column is UUID, PostgreSQL already rejects these values — this is a no-op.
+-- Fix: drop the FK constraint first (it prevents type change), then widen to TEXT.
+-- The FK is intentionally not re-added — blocked_by must support non-UUID sentinels.
 
--- Alter blocked_by to TEXT to allow non-UUID sentinels (if it isn't already)
--- and clear any existing non-UUID values.
 DO $$
 BEGIN
-  -- Check column type; alter only if it's uuid
+  -- Drop FK constraint if it exists (blocks column type change)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'tasks_blocked_by_fkey'
+      AND table_name = 'issues'
+  ) THEN
+    ALTER TABLE issues DROP CONSTRAINT tasks_blocked_by_fkey;
+  END IF;
+
+  -- Widen to TEXT if still UUID
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'issues'
       AND column_name = 'blocked_by'
       AND data_type = 'uuid'
   ) THEN
-    -- Alter to text so sentinels can be stored
     ALTER TABLE issues ALTER COLUMN blocked_by TYPE TEXT USING blocked_by::TEXT;
   END IF;
 END $$;

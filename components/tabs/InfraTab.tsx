@@ -98,9 +98,6 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const orPct = orLimit > 0 ? Math.min(100, Math.round((orUsed / orLimit) * 100)) : 0
             const ollamaOk = ls?.ollama?.running ?? true
             const ollamaModels = ls?.ollama?.models ?? ['gemma3:4b']
-            const n8nOk = ls?.n8n?.running ?? true
-            const n8nWf = ls?.n8n?.activeWorkflows ?? '?'
-            const n8nTotal = ls?.n8n?.totalWorkflows ?? '?'
             const vercelStatus = ls?.vercel?.lastDeploy?.status?.toUpperCase() ?? 'READY'
             const vercelSt = vercelStatus === 'READY' ? 'ok' : vercelStatus === 'ERROR' ? 'warn' : vercelStatus === 'BUILDING' ? 'scheduled' : 'ok'
             // Phase 4 (TOD-1514): OpenClaw retired 2026-04-09
@@ -131,7 +128,6 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
               { name:'OpenRouter',   note:`$${orRemaining.toFixed(2)} / $${orLimit.toFixed(2)} remaining`, status: orRemaining < 1 ? 'warn' : 'ok' },
               { name:'Telegram',     note: tgOk ? '@KemuniClaw1Bot \u00b7 connected' : 'Disconnected', status: tgOk ? 'ok' : 'warn' },
               { name:'Discord',      note: dsOk ? 'Kemuni Server \u00b7 connected' : 'Disconnected', status: dsOk ? 'ok' : 'warn' },
-              { name:'n8n',          note: n8nOk ? `:5678 \u00b7 ${n8nWf}/${n8nTotal} active` : 'Offline', status: n8nOk ? 'ok' : 'warn' },
               { name:'Ollama',       note: ollamaOk ? ollamaModels.join(', ') : 'Offline', status: ollamaOk ? 'ok' : 'warn' },
               { name:'Vercel',       note: ls?.vercel ? `${vercelStatus}${ls.vercel.lastDeploy?.branch?' \u00b7 '+ls.vercel.lastDeploy.branch:''}${ls.vercel.lastDeploy?.commitSha?' \u00b7 '+ls.vercel.lastDeploy.commitSha.slice(0,7):''}${ls.vercel.lastDeploy?.createdAt?' \u00b7 '+new Date(ls.vercel.lastDeploy.createdAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):''}` : 'Unknown', status: vercelSt },
               { name:'Supabase',     note:'Kemuni Agent HQ \u00b7 Vespera + Agent Brain', status:'ok' },
