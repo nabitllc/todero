@@ -110,6 +110,8 @@ function selfChainOnStatus(toStatus: string | undefined | null) {
 
 // ── Discord helpers ───────────────────────────────────────────────────────────
 const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
+const CREATED_CHANNEL        = '1492576650137964694'
+const GROOMED_CHANNEL        = '1492576650137964694' // TODO: replace with #0-ready channel ID
 const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
 
 const PROJECT_EMOJI: Record<string, string> = {
@@ -1074,10 +1076,17 @@ export async function POST(req: NextRequest) {
       const key = (data.task_key as string) ?? '?'
       const prioMap: Record<string,string> = {critical:'P0',high:'P1',medium:'P2',low:'P3'}
       const prio = prioMap[(data.priority as string)] ?? (data.priority as string ?? 'medium').toUpperCase()
-      const sev = data.severity ? (data.severity as string) : '—'
-      const creator = (data.owner as string) ?? (data.assignee as string) ?? 'unknown'
-      const msg = `${typeEmoji} **${key}** [${prio}] [${sev}] — ${data.title ?? ''}\n↳ created_by: ${creator}`
-      postDiscord('1492576650137964694', msg)
+      const creator = (body.transitioned_by as string) ?? (body.assignee as string) ?? 'unknown'
+      let parentKey: string | null = null
+      if (data.parent_id) {
+        const { data: par } = await supabase.from('issues').select('task_key').eq('id', data.parent_id as string).maybeSingle()
+        parentKey = par?.task_key ?? null
+      }
+      const meta: string[] = []
+      if (data.severity) meta.push(data.severity as string)
+      if (parentKey) meta.push(`Parent: ${parentKey}`)
+      const metaStr = meta.length ? ` · ${meta.join(' · ')}` : ''
+      postDiscord(CREATED_CHANNEL, `${typeEmoji} **${key}** — ${data.title ?? ''}\n↳ Creator: ${creator} · ${prio}${metaStr}`)
     } catch (e) {
       console.warn('[discord-created] notify failed:', e)
     }
@@ -1774,6 +1783,18 @@ export async function PATCH(req: NextRequest) {
     selfChainOnStatus(fields.status as string)
   }
 
+  // ── Close agent_runs on status change ──
+  // When an issue status changes, any running agent_run for this task is done.
+  if (fields.status && fields.status !== before?.status && id) {
+    void (async () => {
+      await createAdminClient()
+        .from('agent_runs')
+        .update({ status: 'completed', finished_at: new Date().toISOString() })
+        .eq('task_id', id as string)
+        .eq('status', 'running')
+    })()
+  }
+
   // ── Downstream unblock: clear is_blocked on issues waiting for this one ──
   // When an issue reaches a terminal/completion status, any issue with blocked_by=this.id
   // is no longer blocked. Covers: closed, released, approved, completed.
@@ -1868,6 +1889,31 @@ export async function PATCH(req: NextRequest) {
 
   // PR notification handled by pr-window.py (1 consolidated message per window).
   // Per-issue notifyPRReview removed to avoid duplicate Discord messages.
+
+  // Notify #0-ready on backlog → refined / defined / draft
+  if (data && fields.status && before?.status === 'backlog' &&
+      ['refined', 'defined', 'draft'].includes(fields.status as string)) {
+    try {
+      const typeEmoji = TYPE_EMOJI[(data.type as string) ?? 'task'] ?? '📋'
+      const key = (data.task_key as string) ?? '?'
+      const prioMap: Record<string,string> = {critical:'P0',high:'P1',medium:'P2',low:'P3'}
+      const prio = prioMap[(data.priority as string)] ?? (data.priority as string ?? 'medium').toUpperCase()
+      const statusEmoji: Record<string,string> = { refined: '✅', defined: '📐', draft: '📝' }
+      const sEmoji = statusEmoji[fields.status as string] ?? '➡️'
+      const actor = transitionedBy ?? 'unknown'
+      let parentKey: string | null = null
+      if (data.parent_id) {
+        const { data: par } = await supabase.from('issues').select('task_key').eq('id', data.parent_id as string).maybeSingle()
+        parentKey = par?.task_key ?? null
+      }
+      const meta: string[] = [prio]
+      if (data.severity) meta.push(data.severity as string)
+      if (parentKey) meta.push(`Parent: ${parentKey}`)
+      postDiscord(GROOMED_CHANNEL, `${sEmoji} ${typeEmoji} **${key}** → \`${fields.status}\` — ${data.title ?? ''}\n↳ By: ${actor} · ${meta.join(' · ')}`)
+    } catch (e) {
+      console.warn('[discord-groomed] notify failed:', e)
+    }
+  }
 
   if (isNewFailure && data) {
     notifyTestFailure(data)

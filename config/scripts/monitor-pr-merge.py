@@ -118,6 +118,22 @@ def main():
                                capture_output=True, text=True, timeout=30)
                 print("[monitor-pr-merge] git fetch --prune done")
 
+                # Rebuild and restart the production server when todero code merges
+                if repo == "nabitllc/todero":
+                    print("[monitor-pr-merge] todero PR merged — rebuilding and restarting server")
+                    subprocess.run(["git", "checkout", "main"], cwd=REPO_DIR, capture_output=True, text=True, timeout=15)
+                    subprocess.run(["git", "pull", "origin", "main"], cwd=REPO_DIR, capture_output=True, text=True, timeout=30)
+                    build = subprocess.run(["npm", "run", "build"], cwd=REPO_DIR, capture_output=True, text=True, timeout=300)
+                    if build.returncode == 0:
+                        subprocess.run(["launchctl", "stop", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
+                        subprocess.run(["launchctl", "start", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
+                        print("[monitor-pr-merge] server restarted successfully")
+                        discord_post("🔄 **Production rebuilt & restarted** — new code is live")
+                    else:
+                        err = build.stderr[-500:] if build.stderr else "(no output)"
+                        print(f"[monitor-pr-merge] build FAILED: {err}")
+                        discord_post(f"⚠️ **Production build FAILED** after PR merge — server still on old build\n```{err}```")
+
     state["processed"] = processed
     save_state(state)
 
