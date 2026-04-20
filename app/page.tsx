@@ -30,6 +30,7 @@ import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
 import ProjectsTab from '@/components/tabs/ProjectsTab'
 import InboxTab from '@/components/tabs/InboxTab'
+import AIServicesTab from '@/components/tabs/AIServicesTab'
 import QuickActionFab from '@/components/QuickActionFab'
 import SidebarNav from '@/components/SidebarNav'
 import SearchOverlay from '@/components/SearchOverlay'
@@ -422,6 +423,7 @@ export default function Home() {
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
           {tab === 'product-board' && <ProductBoardTab projectFilter={selectedBusiness} />}
           {tab === 'settings' && <SettingsTab />}
+          {tab === 'ai-services' && <AIServicesTab />}
           {tab === 'inbox' && <InboxTab />}
         </main>
       </div>
