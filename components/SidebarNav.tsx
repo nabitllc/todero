@@ -8,7 +8,6 @@ import {
   Zap, MessageSquare, Server, Settings,
 } from 'lucide-react'
 import { Dot } from '@/lib/mc-atoms'
-import HubRail from '@/components/HubRail'
 
 // ── Nav group definition ────────────────────────────────────────────────────
 interface NavItem {
@@ -103,15 +102,6 @@ export default function SidebarNav({
           </div>
         </div>
       </div>
-
-      {/* TOD-723: Hub rail — circular hub icons */}
-      {onSelectBusiness !== undefined && (
-        <HubRail
-          selected={selectedBusiness ?? null}
-          onSelect={onSelectBusiness}
-          refreshKey={businessRailRefresh}
-        />
-      )}
 
       {/* Nav groups */}
       <nav className="flex-1 py-3 px-2 space-y-4 overflow-y-auto">
