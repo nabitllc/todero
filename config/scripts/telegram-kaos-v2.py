@@ -182,21 +182,45 @@ class SessionManager:
             log(f"[sessions] init failed: {e}")
 
     def _build_context(self) -> str:
-        """Load workspace context files."""
+        """Load workspace context from Supabase agent_documents + agent_memory_files."""
+        import urllib.request
+        SUPA_URL = "https://twthgapiouiqhavrcnry.supabase.co"
+        env = pathlib.Path(WORKSPACE).parent / ".env.local"
+        supa_key = ""
+        for line in env.read_text().splitlines():
+            if line.startswith("SUPABASE_SERVICE_ROLE_KEY="):
+                supa_key = line.split("=", 1)[1].strip()
+        if not supa_key:
+            return ""
+        headers = {"apikey": supa_key, "Authorization": f"Bearer {supa_key}"}
+
         parts = []
+        try:
+            req = urllib.request.Request(
+                f"{SUPA_URL}/rest/v1/agent_documents?agent_id=eq.global&doc_type=in.(soul,agents)&select=doc_type,content&order=doc_type.asc",
+                headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                for row in json.loads(r.read()):
+                    if row.get("content", "").strip():
+                        parts.append(row["content"].strip()[:5000])
+        except Exception:
+            pass
+
         today = datetime.now().strftime("%Y-%m-%d")
-        for p in [
-            f"{WORKSPACE}/SOUL.md",
-            f"{WORKSPACE}/AGENTS.md",
-            f"{WORKSPACE}/self-improving/memory.md",
-            f"{WORKSPACE}/memory/{today}.md",
-        ]:
-            try:
-                content = pathlib.Path(p).read_text().strip()
-                if content:
-                    parts.append(content[:5000])  # cap per file
-            except Exception:
-                pass
+        yesterday = (datetime.now() - __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
+        try:
+            req = urllib.request.Request(
+                f"{SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global"
+                f"&or=(memory_type.in.(self_improving,corrections),and(memory_type.eq.daily,date_key.in.({today},{yesterday})))"
+                f"&select=memory_type,content&order=updated_at.desc",
+                headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                for row in json.loads(r.read()):
+                    if row.get("content", "").strip():
+                        parts.append(row["content"].strip()[:3000])
+        except Exception:
+            pass
+
         return "\n\n---\n\n".join(parts)
 
     def reset(self, chat_id: int):

@@ -16,7 +16,6 @@ import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { isAgentPaused } from '@/lib/loop-breaker'
 import { exec } from 'child_process'
-import { readFileSync as fsReadFileSync } from 'fs'
 import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
 import { recordSpawn } from '@/lib/runtimes/token-ledger'
 import { logAgentCost } from '@/lib/agent-cost-log'
@@ -41,7 +40,6 @@ const TODERO_DIR = '/Users/kemuniagent/todero'
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
 const MAX_REJECTION_CYCLES = 3
 
-const AGENT_CONTEXT_SOURCE = process.env.AGENT_CONTEXT_SOURCE ?? 'fs'
 const MAX_CONTEXT_BYTES = 30_000
 
 // In-memory context cache keyed by agentId — TTL 5 minutes
@@ -394,61 +392,8 @@ ${responseFields}
 
   // ── Step 9: Spawn Claude Code agent in background ──
   // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
-  // TOD-796 (2026-04-10): Now also injects todero/config skills so pipeline agents inherit
-  // proactivity, corrections discipline, memory hygiene, and self-reflection rules.
-  // AGENT_CONTEXT_SOURCE=db loads context from Supabase; default 'fs' keeps filesystem path.
-  const readIfExists = (p: string): string => {
-    try { return fsReadFileSync(p, 'utf8') } catch { return '' }
-  }
-  const today = new Date().toISOString().slice(0, 10)
-
-  let context: string
-  if (AGENT_CONTEXT_SOURCE === 'db') {
-    context = await loadContextFromDB(agentId)
-    // Wrap in contextSections format matching existing structure
-    const contextSections: string[] = [`# WORKSPACE IDENTITY\n\n${context}`]
-    context = contextSections.join('\n\n===============================\n\n')
-  } else {
-    // Existing filesystem path (unchanged)
-    const workspaceParts = [
-      readIfExists(`${WORKSPACE}/SOUL.md`),
-      readIfExists(`${WORKSPACE}/AGENTS.md`),
-      readIfExists(`${WORKSPACE}/self-improving/memory.md`),
-      readIfExists(`${WORKSPACE}/memory/${today}.md`),
-    ].filter(Boolean)
-    const workspace = workspaceParts.join('\n\n---\n\n')
-
-    const universalSkills = [
-      readIfExists(`${WORKSPACE}/skills/proactivity/execution.md`),
-      readIfExists(`${WORKSPACE}/skills/proactivity/signals.md`),
-      readIfExists(`${WORKSPACE}/skills/proactivity/boundaries.md`),
-      readIfExists(`${WORKSPACE}/skills/self-improving/corrections.md`),
-      readIfExists(`${WORKSPACE}/skills/self-improving/memory.md`),
-      readIfExists(`${WORKSPACE}/skills/self-improving/reflections.md`),
-    ].filter(Boolean).join('\n\n---\n\n')
-
-    const agentSkillFiles: Record<string, string[]> = {
-      po:       [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-setup/SKILL.md`, `${WORKSPACE}/skills/grooming-architect/SKILL.md`, `${WORKSPACE}/skills/bug-diagnostics/SKILL.md`],
-      main:     [`${WORKSPACE}/skills/issue-routing/SKILL.md`, `${WORKSPACE}/skills/agent-creation/SKILL.md`],
-      scout:    [`${WORKSPACE}/skills/issue-routing/SKILL.md`],
-      builder:  [`${WORKSPACE}/skills/self-improving/learning.md`],
-      ops:      [`${WORKSPACE}/skills/self-improving/operations.md`],
-      tester:   [`${WORKSPACE}/skills/bug-report/SKILL.md`],
-      designer: [`${WORKSPACE}/skills/uiux-standards/SKILL.md`],
-      auditor:  [`${WORKSPACE}/skills/self-improving/reflections.md`],
-      deployer: [],
-    }
-    const agentSkills = (agentSkillFiles[agentId] ?? [])
-      .map(readIfExists)
-      .filter(Boolean)
-      .join('\n\n---\n\n')
-
-    const contextSections: string[] = []
-    if (workspace) contextSections.push(`# WORKSPACE IDENTITY\n\n${workspace}`)
-    if (universalSkills) contextSections.push(`# UNIVERSAL SKILLS (behavioral rules — follow these on every task)\n\n${universalSkills}`)
-    if (agentSkills) contextSections.push(`# ${agentId.toUpperCase()}-SPECIFIC SKILLS\n\n${agentSkills}`)
-    context = contextSections.join('\n\n===============================\n\n')
-  }
+  const dbContext = await loadContextFromDB(agentId)
+  const context = `# WORKSPACE IDENTITY\n\n${dbContext}`
 
   // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)
   if (context.length > 25_000) {

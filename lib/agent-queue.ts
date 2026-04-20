@@ -286,7 +286,7 @@ Process the single issue assigned to you:
    git checkout <feature_branch>
    git rebase origin/main
 
-3. IF rebase conflicts occur: read config/skills/resolve-conflicts/SKILL.md and follow it exactly.
+3. IF rebase conflicts occur: load the resolve-conflicts skill from DB (slug: resolve-conflicts) and follow it exactly.
    - Resolve each conflict keeping both intents where possible.
    - Run npm run build after resolving to verify no compile errors.
    - If conflict is unresolvable: git rebase --abort, then git checkout main. PATCH issue back to open, assign to the issue's owner, write conflict details to deployer_notes:

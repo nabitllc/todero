@@ -110,8 +110,10 @@ function selfChainOnStatus(toStatus: string | undefined | null) {
 
 // ── Discord helpers ───────────────────────────────────────────────────────────
 const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
-const CREATED_CHANNEL        = '1492576650137964694'
-const GROOMED_CHANNEL        = '1492576650137964694' // TODO: replace with #0-ready channel ID
+const ALERTS_CHANNEL          = '1485333335868834063'
+const CREATED_CHANNEL         = '1492576650137964694'
+const GROOMED_CHANNEL         = '1492576650137964694'
+const QUEUE_CHANNEL           = '1494440278524694608' // #1-queue
 const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
 
 const PROJECT_EMOJI: Record<string, string> = {
@@ -132,10 +134,46 @@ function postDiscord(channelId: string, content: string) {
 }
 
 const STATUS_EMOJI: Record<string, string> = {
-  approved: '🚢', completed: '✅', closed: '✅', released: '🚀'
+  backlog: '📥', refined: '✅', defined: '📐', draft: '📝',
+  open: '🟢', in_progress: '🔨',
+  code_review: '👀', product_review: '🧐', feature_review: '🎯',
+  underway: '⚡', active: '🔥',
+  approved: '🚢', completed: '🏁', wrapped: '📦', released: '🚀',
+  closed: '🔒', escalated: '🚨', failed: '❌',
 }
 const TYPE_EMOJI: Record<string, string> = {
   task: '📋', bug: '🐛', feature: '✨', epic: '🏔️', ops: '⚙️', research: '🔍'
+}
+const PRIORITY_EMOJI: Record<string, string> = {
+  critical: '🔴', high: '🟠', medium: '🟡', low: '🟢'
+}
+const SEVERITY_EMOJI: Record<string, string> = {
+  S0: '🔴', S1: '🟠', S2: '🟡', S3: '🟢'
+}
+
+function fmtDiscordMsg(
+  issue: Record<string, unknown>,
+  toStatus: string,
+  actor?: string,
+  parentKey?: string | null,
+  fromStatus?: string | null
+): string {
+  const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
+  const toEmoji = STATUS_EMOJI[toStatus] ?? '✅'
+  const statusPart = fromStatus
+    ? `${STATUS_EMOJI[fromStatus] ?? ''}→${toEmoji}`
+    : toEmoji
+  const key = (issue.task_key ?? '?') as string
+  const prio = issue.priority as string | undefined
+  const prioEmoji = prio ? `P${PRIORITY_EMOJI[prio] ?? prio}` : null
+  const sev = issue.severity as string | undefined
+  const sevEmoji = sev ? `S${SEVERITY_EMOJI[sev] ?? sev}` : null
+  const by = actor ?? (issue.assignee as string) ?? 'unknown'
+  const meta: string[] = [by]
+  if (prioEmoji) meta.push(prioEmoji)
+  if (sevEmoji) meta.push(sevEmoji)
+  if (parentKey) meta.push(parentKey)
+  return `${statusPart} | ${typeEmoji} **${key}** — ${issue.title ?? ''}\n↳ By: ${meta.join(' · ')}`
 }
 
 const RESOLUTION_LABELS: Record<string, string> = {
@@ -152,61 +190,20 @@ const RESOLUTION_LABELS: Record<string, string> = {
   completed: 'Completed',
 }
 
-function notifyDiscord(issue: { task_key?: string; title?: string; project?: string; resolution_type?: string; assignee?: string; severity?: string; status?: string; type?: string }) {
-  const key = issue.task_key ?? '?'
-  const status = issue.status ?? 'completed'
-  const statusEmoji = STATUS_EMOJI[status] ?? '✅'
-  const typeEmoji = TYPE_EMOJI[issue.type ?? 'task'] ?? '📋'
-  const rawResType = issue.resolution_type ?? status
-  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
-  const ts = new Date().toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-    hour12: true
-  }) + ' EST'
-  const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''} at ${ts}`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+function notifyDiscord(issue: { task_key?: string; title?: string; assignee?: string; severity?: string; status?: string; type?: string; priority?: string }) {
+  postDiscord(COMPLETED_TASKS_CHANNEL, fmtDiscordMsg(issue as Record<string, unknown>, issue.status ?? 'completed'))
 }
 
-function notifyCompletedTask(issue: Record<string, unknown>, toStatus: string) {
-  const key = issue.task_key ?? '?'
-  const statusEmoji = STATUS_EMOJI[toStatus] ?? '✅'
-  const typeEmoji = TYPE_EMOJI[(issue.type as string) ?? 'task'] ?? '📋'
-  const rawResType = (issue.resolution_type as string) ?? toStatus
-  const resType = RESOLUTION_LABELS[rawResType] ?? rawResType
-  const ts = new Date().toLocaleString('en-US', {
-    timeZone: 'America/New_York',
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-    hour12: true
-  }) + ' EST'
-  const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${issue.title ?? ''} at ${ts}`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+function notifyEscalation(issue: { task_key?: string; title?: string; project?: string; acceptance_criteria?: string; type?: string; priority?: string; assignee?: string; severity?: string }) {
+  const ac = (issue.acceptance_criteria ?? '').slice(0, 200)
+  const base = fmtDiscordMsg(issue as Record<string, unknown>, 'escalated', 'kaos')
+  postDiscord(ALERTS_CHANNEL, `🚨 ${base}\n⚠️ 3 failed reviews · AC: ${ac || 'none'}\n<@409194957098713088> manual investigation required.`)
 }
 
-function notifyPRReview(issue: { task_key?: string; title?: string; project?: string; feature_branch?: string; pr_url?: string }) {
-  const key = issue.task_key ?? '?'
-  const msg = `🔀 **PR Ready for Review**\n**[${key}]** ${issue.title ?? ''}\nProject: ${issue.project ?? ''} · Branch: ${issue.feature_branch ?? ''}\nPR: ${issue.pr_url ?? ''}\n<@409194957098713088> ready to merge`
-  postDiscord('1487826368170299592', msg)
-}
-
-function notifyEscalation(issue: { task_key?: string; title?: string; project?: string; acceptance_criteria?: string; description?: string }) {
-  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
-  const key = issue.task_key ?? '?'
-  const ac = (issue.acceptance_criteria ?? '').slice(0, 300)
-  const desc = (issue.description ?? '').slice(0, 300)
-  const msg = `🚨🚨 **ESCALATION: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n⚠️ **3 failed reviews — escalated to KAOS**\n📋 AC: ${ac}\n📝 Notes: ${desc}\n\n<@409194957098713088> manual investigation required.`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
-}
-
-function notifyTestFailure(issue: { task_key?: string; title?: string; project?: string; description?: string }) {
-  const emoji = PROJECT_EMOJI[issue.project ?? ''] ?? '📌'
-  const key = issue.task_key ?? '?'
+function notifyTestFailure(issue: { task_key?: string; title?: string; description?: string; type?: string; priority?: string; assignee?: string; severity?: string }) {
   const desc = issue.description ?? ''
-  const failureSection = desc.includes('---') ? desc.split('---').pop()?.trim().slice(0, 300) : desc.slice(0, 300)
-  const msg = `🚨 **Test Failed: [${key}]** ${issue.title ?? ''}\n${emoji} Project: ${issue.project ?? ''}\n📝 Tester notes: ${failureSection || 'No details provided'}\n\nBuilder: pick up fix on next loop tick.`
-  postDiscord(COMPLETED_TASKS_CHANNEL, msg)
+  const notes = ((desc.includes('---') ? desc.split('---').pop()?.trim() : desc) ?? '').slice(0, 300) || 'No details provided'
+  postDiscord(ALERTS_CHANNEL, `🚨 ${fmtDiscordMsg(issue as Record<string, unknown>, 'failed')}\n↳ Tester notes: ${notes}`)
 }
 
 // ── TOD-1226 / TOD-1236: Watcher notifications on resolution ─────────────────
@@ -643,19 +640,30 @@ async function executePostFunctions(
 
     if (action === 'notify_discord') {
       const channelId = (params.channel as string) ?? COMPLETED_TASKS_CHANNEL
+      const fromStatus = issue.status as string | undefined
       const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
-      const key = (notifyIssue.task_key ?? '?') as string
-      const ts = new Date().toLocaleString('en-US', {
-        timeZone: 'America/New_York',
-        month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-        hour12: true
-      }) + ' EST'
-      const statusEmoji = STATUS_EMOJI[toStatus] ?? '✅'
-      const typeEmoji = TYPE_EMOJI[(notifyIssue.type as string) ?? 'task'] ?? '📋'
-      const resType = (notifyIssue.resolution_type as string) ?? toStatus
-      const msg = `${statusEmoji} ${resType} | ${typeEmoji} **${key}** — ${notifyIssue.title ?? ''} at ${ts}`
-      postDiscord(channelId, msg)
+      const actor = (fields.transitioned_by ?? notifyIssue.assignee ?? 'unknown') as string
+      let parentKey: string | null = null
+      if (notifyIssue.parent_id) {
+        const { data: par } = await supabase.from('issues').select('task_key').eq('id', notifyIssue.parent_id as string).maybeSingle()
+        parentKey = par?.task_key ?? null
+      }
+      postDiscord(channelId, fmtDiscordMsg(notifyIssue, toStatus, actor, parentKey, fromStatus))
+    }
+
+    if (action === 'notify_rejection') {
+      const fromStatus = issue.status as string | undefined
+      const notifyIssue = { ...issue, ...updatedIssue, ...(fields as Record<string, unknown>), status: toStatus } as Record<string, unknown>
+      const actor = (fields.transitioned_by ?? notifyIssue.assignee ?? 'unknown') as string
+      const notes = (notifyIssue.tester_notes ?? notifyIssue.designer_notes ?? notifyIssue.reviewer_notes ?? notifyIssue.last_rejection_reason ?? '') as string
+      const count = (notifyIssue.rejection_count as number) ?? 1
+      let parentKey: string | null = null
+      if (notifyIssue.parent_id) {
+        const { data: par } = await supabase.from('issues').select('task_key').eq('id', notifyIssue.parent_id as string).maybeSingle()
+        parentKey = par?.task_key ?? null
+      }
+      const base = fmtDiscordMsg(notifyIssue, toStatus, actor, parentKey, fromStatus)
+      postDiscord(QUEUE_CHANNEL, `${base}\n↳ Rejection #${count}${notes ? ` · ${notes.slice(0, 150)}` : ''}`)
     }
 
     if (action === 'increment_rejection') {
@@ -1074,19 +1082,21 @@ export async function POST(req: NextRequest) {
     try {
       const typeEmoji = TYPE_EMOJI[(data.type as string) ?? 'task'] ?? '📋'
       const key = (data.task_key as string) ?? '?'
-      const prioMap: Record<string,string> = {critical:'P0',high:'P1',medium:'P2',low:'P3'}
-      const prio = prioMap[(data.priority as string)] ?? (data.priority as string ?? 'medium').toUpperCase()
+      const prio = data.priority as string | undefined
+      const prioEmoji = prio ? `P${PRIORITY_EMOJI[prio] ?? prio}` : null
+      const sev = data.severity as string | undefined
+      const sevEmoji = sev ? `S${SEVERITY_EMOJI[sev] ?? sev}` : null
       const creator = (body.transitioned_by as string) ?? (body.assignee as string) ?? 'unknown'
       let parentKey: string | null = null
       if (data.parent_id) {
         const { data: par } = await supabase.from('issues').select('task_key').eq('id', data.parent_id as string).maybeSingle()
         parentKey = par?.task_key ?? null
       }
-      const meta: string[] = []
-      if (data.severity) meta.push(data.severity as string)
+      const meta: string[] = [`Creator: ${creator}`]
+      if (prioEmoji) meta.push(prioEmoji)
+      if (sevEmoji) meta.push(sevEmoji)
       if (parentKey) meta.push(`Parent: ${parentKey}`)
-      const metaStr = meta.length ? ` · ${meta.join(' · ')}` : ''
-      postDiscord(CREATED_CHANNEL, `${typeEmoji} **${key}** — ${data.title ?? ''}\n↳ Creator: ${creator} · ${prio}${metaStr}`)
+      postDiscord(CREATED_CHANNEL, `${typeEmoji} **${key}** — ${data.title ?? ''}\n↳ ${meta.join(' · ')}`)
     } catch (e) {
       console.warn('[discord-created] notify failed:', e)
     }
