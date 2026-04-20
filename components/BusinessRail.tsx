@@ -92,7 +92,7 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
 
       {/* Error state */}
       {!loading && fetchError && (
-        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white/20 text-xs" title="Failed to load businesses">!</div>
+        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white/20 text-xs" aria-label="Failed to load businesses">!</div>
       )}
 
       {/* Business list */}
