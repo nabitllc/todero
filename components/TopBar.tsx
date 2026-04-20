@@ -1,11 +1,14 @@
 'use client'
 // TOD-630: Top bar — Todero logo left, search center, actions right
+// TOD-2233: Play/pause wired to hub-pause API; ActiveAgentsIndicator + SprintCountdownChip extracted
 
 import React from 'react'
 import {
   Search, MessageSquare, ListTodo, User, Play, Pause,
 } from 'lucide-react'
 import NotificationBell from './NotificationBell'
+import ActiveAgentsIndicator from './ActiveAgentsIndicator'
+import SprintCountdownChip from './SprintCountdownChip'
 
 interface TopBarProps {
   tab: string
@@ -30,10 +33,6 @@ export default function TopBar({
   hubPaused = false,
   onTogglePause,
 }: TopBarProps) {
-  const activeAgentCount = Object.values(agentRunsData).filter(
-    a => a.status === 'running'
-  ).length
-
   return (
     <header className="border-b border-white/[0.07] px-3 md:px-5 h-11 grid grid-cols-[auto_1fr_auto] items-center shrink-0 sticky top-0 z-20 bg-[#080808]">
       {/* LEFT — Todero logo (text placeholder for SVG) */}
@@ -42,13 +41,14 @@ export default function TopBar({
         <span className="text-white text-sm font-semibold tracking-wide">Todero</span>
       </div>
 
-      {/* CENTER — Global search bar (triggers Cmd+K) */}
-      <div className="flex justify-center px-4">
+      {/* CENTER — Global search bar (triggers Cmd+K) + sprint countdown */}
+      <div className="flex justify-center items-center gap-2 px-4">
         <button
           onClick={onSearchOpen}
-          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] transition-colors max-w-[320px] w-full"
+          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] transition-colors max-w-[280px] w-full"
+          aria-label="Search issues (⌘K)"
         >
-          <Search size={13} className="text-white/30 shrink-0" />
+          <Search size={13} className="text-white/30 shrink-0" aria-hidden="true" />
           <span className="text-white/25 text-xs flex-1 text-left">Search issues...</span>
           <kbd className="text-[10px] text-white/20 border border-white/[0.07] rounded px-1 py-0.5 font-mono">⌘K</kbd>
         </button>
@@ -57,12 +57,15 @@ export default function TopBar({
           onClick={onSearchOpen}
           className="sm:hidden p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
           title="Search (⌘K)"
+          aria-label="Search (⌘K)"
         >
-          <Search size={15} />
+          <Search size={15} aria-hidden="true" />
         </button>
+
+        <SprintCountdownChip />
       </div>
 
-      {/* RIGHT — My Tasks + Agent Chat + Notifications + Profile */}
+      {/* RIGHT — Play/Pause + Active Agents + My Tasks + Agent Chat + Notifications + Profile */}
       <div className="flex items-center gap-1">
         {onTogglePause && (
           <button
@@ -73,38 +76,29 @@ export default function TopBar({
                 : 'hover:bg-white/[0.05] text-white/40 hover:text-white/60'
             }`}
             title={hubPaused ? 'Hub paused — click to resume agents' : 'Pause all agents'}
+            aria-label={hubPaused ? 'Resume all agents' : 'Pause all agents'}
+            aria-pressed={hubPaused}
           >
             {hubPaused ? (
               <>
-                <Play size={14} className="text-red-400" />
+                <Play size={14} className="text-red-400" aria-hidden="true" />
                 <span className="hidden sm:inline text-[10px] font-medium">Paused</span>
               </>
             ) : (
-              <Pause size={14} />
+              <Pause size={14} aria-hidden="true" />
             )}
           </button>
         )}
 
-        {activeAgentCount > 0 && (
-          <button
-            onClick={() => onNavigate('team')}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] transition-colors"
-            title={`${activeAgentCount} agent${activeAgentCount > 1 ? 's' : ''} running`}
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-            </span>
-            <span className="text-[10px] text-emerald-400 font-medium">{activeAgentCount}</span>
-          </button>
-        )}
+        <ActiveAgentsIndicator agentRunsData={agentRunsData} onNavigate={onNavigate} />
 
         <button
           onClick={() => onNavigate('board')}
           className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
           title="My Tasks"
+          aria-label={myTaskCount > 0 ? `My Tasks (${myTaskCount})` : 'My Tasks'}
         >
-          <ListTodo size={15} />
+          <ListTodo size={15} aria-hidden="true" />
           {myTaskCount > 0 && (
             <span className="text-[10px] font-medium bg-white/10 text-white/60 rounded-full px-1.5 py-0.5 leading-none min-w-[18px] text-center">
               {myTaskCount}
@@ -116,10 +110,11 @@ export default function TopBar({
           onClick={() => onNavigate('chat')}
           className="relative p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
           title="Agent Chat"
+          aria-label={unreadChat ? 'Agent Chat (unread messages)' : 'Agent Chat'}
         >
-          <MessageSquare size={15} />
+          <MessageSquare size={15} aria-hidden="true" />
           {unreadChat && (
-            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" aria-hidden="true" />
           )}
         </button>
 
@@ -129,8 +124,9 @@ export default function TopBar({
           onClick={() => onNavigate('settings')}
           className="ml-1 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/[0.15] transition-colors"
           title="Profile & Settings"
+          aria-label="Profile & Settings"
         >
-          <User size={13} className="text-white/50" />
+          <User size={13} className="text-white/50" aria-hidden="true" />
         </button>
       </div>
     </header>
