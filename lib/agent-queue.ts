@@ -110,7 +110,8 @@ Rules:
     fetchLimit: 20,
     promptPrefix: 'You are Ingo (Infrastructure Agent). Handle this infrastructure/config task. Verify changes work. Commit with [skip ci]. When done, PATCH to code_review with implementation_notes + commit_sha + regression_test. Self-chain: call POST /api/run-agent?agent=ops to claim next.',
     modelChain: [
-      { runtime: 'claude-code', alias: 'haiku' },  // lightweight ops work
+      { runtime: 'claude-code', alias: 'sonnet' },  // primary: heavy ops/infra reasoning
+      { runtime: 'codex',       alias: 'sonnet' },  // fallback: Codex o4-mini
     ],
   },
 
