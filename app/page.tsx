@@ -157,6 +157,7 @@ export default function Home() {
   const [calendarIssues, setCalendarIssues] = useState<any[]>([])
   const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:string}>>({})
   const [agentIssueCounts, setAgentIssueCounts] = useState<Record<string, number>>({})
+  const [hubPaused, setHubPaused] = useState(false)
 
   // Read mc-role cookie (not httpOnly — accessible to JS) for RBAC-aware UI
   useEffect(() => {
@@ -254,11 +255,17 @@ export default function Home() {
     }).catch(() => {})
   }, [tab])
 
+  // TOD-2233: Load hub pause state on mount
+  useEffect(() => {
+    fetch('/api/hub-pause').then(r => r.json()).then(d => { if (typeof d.paused === 'boolean') setHubPaused(d.paused) }).catch(() => {})
+  }, [])
+
   // Cmd+K search
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(v => !v) } }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
   }, [])
+
 
   // Browser back/forward
   useEffect(() => {
@@ -330,6 +337,37 @@ export default function Home() {
     pushURL(name, tab)
   }, [tab, pushURL])
 
+  // TOD-2233: Cmd+C — Create issue shortcut (navigate to board when no text selected)
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'c') return
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if (window.getSelection()?.toString()) return
+      e.preventDefault()
+      navigate('board')
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [navigate])
+
+  // TOD-2233: toggle hub pause via /api/hub-pause
+  const handleTogglePause = useCallback(async () => {
+    const next = !hubPaused
+    setHubPaused(next)
+    try {
+      const res = await fetch('/api/hub-pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused: next, paused_by: 'user' }),
+      })
+      const data = await res.json()
+      if (typeof data.paused === 'boolean') setHubPaused(data.paused)
+    } catch {
+      setHubPaused(!next) // revert on error
+    }
+  }, [hubPaused])
+
   return (
     <div className="min-h-screen flex bg-neutral-950">
       <BusinessRail selected={selectedBusiness} onSelect={selectBusiness} onNew={() => setShowOnboarding(true)} refreshKey={businessRailRefresh} />
@@ -397,6 +435,8 @@ export default function Home() {
           onNavigate={navigate}
           agentRunsData={agentRunsData}
           unreadChat={unreadChat}
+          hubPaused={hubPaused}
+          onTogglePause={handleTogglePause}
         />
 
         {/* Business context header */}
