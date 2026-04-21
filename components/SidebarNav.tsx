@@ -269,6 +269,7 @@ export default function SidebarNav({
         {/* Collapse toggle */}
         <button
           onClick={toggleCollapsed}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="w-full flex items-center justify-center gap-2 py-1.5 rounded-lg text-white/30 hover:text-white/60 hover:bg-white/[0.05] transition-all mb-1"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
