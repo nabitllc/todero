@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useId } from 'react'
 import { Plus } from 'lucide-react'
 
 interface Business { id: string; name: string; type: string; status: string }
@@ -18,6 +18,36 @@ interface Props {
   onSelect: (name: string | null) => void
   onNew: () => void
   refreshKey?: number
+}
+
+function HubButton({ business, isSelected, onSelect }: {
+  business: Business
+  isSelected: boolean
+  onSelect: () => void
+}) {
+  const tooltipId = useId()
+  const emoji = EMOJI[business.name]
+
+  return (
+    <div className="relative group">
+      <button
+        onClick={onSelect}
+        aria-label={business.name}
+        aria-describedby={tooltipId}
+        className={`w-8 h-8 rounded-full flex items-center justify-center text-base transition-all focus:outline-none focus:ring-2 focus:ring-white/30
+          ${isSelected ? 'ring-2 ring-white rounded-2xl bg-[#1a1a1a]' : 'bg-[#0f0f0f] hover:rounded-2xl'}`}
+      >
+        {emoji || <span className="text-xs font-bold text-white/60">{getInitials(business.name)}</span>}
+      </button>
+      <div
+        id={tooltipId}
+        role="tooltip"
+        className="absolute left-10 top-1/2 -translate-y-1/2 bg-zinc-900 text-white text-xs px-2 py-1 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 border border-white/10 transition-opacity"
+      >
+        {business.name}
+      </div>
+    </div>
+  )
 }
 
 export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: Props) {
@@ -41,9 +71,8 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
       {/* All */}
       <button
         onClick={() => onSelect(null)}
-        title="All Businesses"
         aria-label="All Businesses"
-        className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-white/30
+        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-white/30
           ${selected === null ? 'bg-white text-black ring-2 ring-white' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}
       >
         All
@@ -55,51 +84,37 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
       {/* Loading skeleton */}
       {loading && (
         <>
-          <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse" />
-          <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse" />
-          <div className="w-10 h-10 rounded-full bg-white/5 animate-pulse" />
+          <div className="w-8 h-8 rounded-full bg-white/5 animate-pulse" />
+          <div className="w-8 h-8 rounded-full bg-white/5 animate-pulse" />
+          <div className="w-8 h-8 rounded-full bg-white/5 animate-pulse" />
         </>
       )}
 
       {/* Error state */}
       {!loading && fetchError && (
-        <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white/20 text-xs" title="Failed to load businesses">!</div>
+        <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-white/20 text-xs" aria-label="Failed to load businesses">!</div>
       )}
 
       {/* Business list */}
-      {!loading && businesses.filter(b => b.status === 'active').map(b => {
-        const emoji = EMOJI[b.name]
-        const isSelected = selected === b.name
-        return (
-          <div key={b.id} className="relative group">
-            <button
-              onClick={() => onSelect(b.name)}
-              title={b.name}
-              aria-label={b.name}
-              className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-all focus:outline-none focus:ring-2 focus:ring-white/30
-                ${isSelected ? 'ring-2 ring-white rounded-2xl bg-[#1a1a1a]' : 'bg-[#0f0f0f] hover:rounded-2xl'}`}
-            >
-              {emoji || <span className="text-xs font-bold text-white/60">{getInitials(b.name)}</span>}
-            </button>
-            {/* Tooltip */}
-            <div className="absolute left-14 top-1/2 -translate-y-1/2 bg-[#080808] text-white text-xs px-2 py-1 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 border border-white/10">
-              {b.name}
-            </div>
-          </div>
-        )
-      })}
+      {!loading && businesses.filter(b => b.status === 'active').map(b => (
+        <HubButton
+          key={b.id}
+          business={b}
+          isSelected={selected === b.name}
+          onSelect={() => onSelect(b.name)}
+        />
+      ))}
 
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* New business */}
+      {/* Add hub — always visible */}
       <button
         onClick={onNew}
-        title="Add Business"
-        aria-label="Add Business"
-        className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white/40 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-white/30"
+        aria-label="Add hub"
+        className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white/40 hover:text-white transition-all focus:outline-none focus:ring-2 focus:ring-white/30"
       >
-        <Plus size={18} />
+        <Plus size={16} />
       </button>
     </div>
   )
