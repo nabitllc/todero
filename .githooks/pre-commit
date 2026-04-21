@@ -32,6 +32,38 @@ if [ "$BRANCH" = "main" ]; then
   exit 0
 fi
 
+# ── WORKTREE ISOLATION GUARD ────────────────────────────────────────────────
+# Code agents (builder/ops) must commit from an isolated worktree, not the
+# main checkout. Committing from main means the agent's working tree is the
+# same as every other session's, which caused edit races where one session
+# silently reverted another's changes.
+#
+# Detection: a worktree's --git-dir differs from --git-common-dir. If they
+# match, this IS the main checkout.
+# Bypass (human manual fixup on a feat/ branch): git commit --no-verify
+# ──────────────────────────────────────────────────────────────────────────
+if echo "$BRANCH" | grep -qE '^feat/(tod|TOD)-[0-9]+$'; then
+  GIT_DIR=$(git rev-parse --git-dir 2>/dev/null)
+  COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+  # Normalize paths — --git-dir can be relative, --git-common-dir absolute
+  GIT_DIR_ABS=$(cd "$GIT_DIR" 2>/dev/null && pwd)
+  COMMON_DIR_ABS=$(cd "$COMMON_DIR" 2>/dev/null && pwd)
+  if [ -n "$GIT_DIR_ABS" ] && [ "$GIT_DIR_ABS" = "$COMMON_DIR_ABS" ]; then
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  🔒 BLOCKED: $BRANCH committed from the MAIN checkout,"
+    echo "     not an isolated worktree."
+    echo ""
+    echo "  Code agents (builder/ops) must run in ~/agent-worktrees/<key>/"
+    echo "  to prevent edit races between parallel sessions."
+    echo ""
+    echo "  Bypass (human manual fixup): git commit --no-verify"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+    exit 1
+  fi
+fi
+
 # Check if any staged files are in the locked list
 STAGED=$(git diff --cached --name-only)
 BLOCKED=""

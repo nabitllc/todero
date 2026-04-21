@@ -43,12 +43,26 @@ export const claudeCodeRuntime: AgentRuntime = {
     // branches (feat/designer-notask-*, feat/po-notask-*, etc.) and
     // wasted disk. DO NOT add agents to this list unless they `git commit`.
     const CODE_AGENTS = new Set(['builder', 'ops'])
-    const useWorktree = CODE_AGENTS.has(opts.agentId) && opts.branch
+    const isCodeAgent = CODE_AGENTS.has(opts.agentId)
+
+    // Code agents MUST run in an isolated worktree. Running them in the
+    // shared repo root causes concurrent edits to fight each other (an
+    // agent on main reverted another session's in-flight changes once —
+    // the session that reverted had no worktree and was operating on the
+    // same files a human was editing). Non-code agents don't write files
+    // so they're fine in the shared dir.
+    if (isCodeAgent && !opts.branch) {
+      return {
+        ok: false,
+        error: `code agent ${opts.agentId} requires a branch (for worktree isolation)`,
+        runtime: 'claude-code',
+      }
+    }
 
     let effectiveWorkingDir = opts.workingDir
     let teardownPath: string | null = null
 
-    if (useWorktree) {
+    if (isCodeAgent && opts.branch) {
       const wtResult = prepareWorktree({
         agentId: opts.agentId,
         taskKey: extractTaskKeyFromBranch(opts.branch),
@@ -58,9 +72,13 @@ export const claudeCodeRuntime: AgentRuntime = {
         effectiveWorkingDir = wtResult.worktreePath
         teardownPath = wtResult.worktreePath
       } else {
-        console.warn(
-          `[claude-code] worktree setup failed for ${opts.agentId} — falling back to shared dir. ${wtResult.error}`
-        )
+        // Fail loud — no fallback. A code agent running in the shared
+        // repo root is the bug this enforcement exists to prevent.
+        return {
+          ok: false,
+          error: `worktree setup failed for ${opts.agentId} (refusing to fall back to shared dir): ${wtResult.error}`,
+          runtime: 'claude-code',
+        }
       }
     }
 
