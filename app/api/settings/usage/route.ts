@@ -5,7 +5,7 @@ import fs from 'fs'
 const promisifyExec = promisify
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const OPENROUTER_KEY = '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'
 
 let cache: { data: any; ts: number } | null = null
