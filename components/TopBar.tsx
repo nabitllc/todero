@@ -3,7 +3,7 @@
 
 import React from 'react'
 import {
-  Search, MessageSquare, ListTodo, User, Play, Pause,
+  Search, MessageSquare, Inbox, User, Play, Pause,
 } from 'lucide-react'
 import NotificationBell from './NotificationBell'
 
@@ -14,7 +14,8 @@ interface TopBarProps {
   onNavigate: (tab: string) => void
   agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: string }>
   unreadChat?: boolean
-  myTaskCount?: number
+  inboxPendingCount?: number
+  onOpenInbox?: () => void
   hubPaused?: boolean
   onTogglePause?: () => void
 }
@@ -26,7 +27,8 @@ export default function TopBar({
   onNavigate,
   agentRunsData,
   unreadChat = false,
-  myTaskCount = 0,
+  inboxPendingCount = 0,
+  onOpenInbox,
   hubPaused = false,
   onTogglePause,
 }: TopBarProps) {
@@ -100,14 +102,14 @@ export default function TopBar({
         )}
 
         <button
-          onClick={() => onNavigate('board')}
-          className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
-          title="My Tasks"
+          onClick={onOpenInbox}
+          className="relative flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
+          title="Inbox (⌘[)"
         >
-          <ListTodo size={15} />
-          {myTaskCount > 0 && (
-            <span className="text-[10px] font-medium bg-white/10 text-white/60 rounded-full px-1.5 py-0.5 leading-none min-w-[18px] text-center">
-              {myTaskCount}
+          <Inbox size={15} />
+          {inboxPendingCount > 0 && (
+            <span className="text-[10px] font-bold bg-amber-500 text-black rounded-full px-1.5 py-0.5 leading-none min-w-[18px] text-center">
+              {inboxPendingCount}
             </span>
           )}
         </button>
