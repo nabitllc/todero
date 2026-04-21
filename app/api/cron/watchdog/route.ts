@@ -59,7 +59,7 @@ export async function GET(req: Request) {
   const noCommitCutoff  = new Date(now - NO_COMMIT_MS).toISOString()
   const fallbackCutoff  = new Date(now - FALLBACK_MS).toISOString()
 
-  const cleared: string[] = []
+  const cleared: Array<{ key: string; resetStatus: string }> = []
 
   // Status-aware reset: preserve earned status rather than always reverting to open.
   //   approved → approved  (passed code review; deployer re-picks)
@@ -94,7 +94,7 @@ export async function GET(req: Request) {
       transitioned_by: 'cron-watchdog',
       ...extra,
     }).eq('id', issue.id)
-    cleared.push(issue.task_key)
+    cleared.push({ key: issue.task_key, resetStatus })
     console.log(`[watchdog] dead heartbeat → ${resetStatus}: ${issue.task_key} (${issue.assignee}, last hb ${issue.heartbeat_at})`)
   }
 
@@ -121,7 +121,7 @@ export async function GET(req: Request) {
       transitioned_by: 'cron-watchdog',
       ...extra,
     }).eq('id', issue.id)
-    cleared.push(issue.task_key)
+    cleared.push({ key: issue.task_key, resetStatus })
     console.log(`[watchdog] stale no-commit → ${resetStatus}: ${issue.task_key} (${issue.assignee}, started ${issue.started_at})`)
   }
 
@@ -148,7 +148,7 @@ export async function GET(req: Request) {
       transitioned_by: 'cron-watchdog',
       ...extra,
     }).eq('id', issue.id)
-    cleared.push(issue.task_key)
+    cleared.push({ key: issue.task_key, resetStatus })
     console.log(`[watchdog] stale with-commit → ${resetStatus}: ${issue.task_key} (${issue.assignee}, commit ${issue.commit_sha?.slice(0,8)}, started ${issue.started_at})`)
   }
 
@@ -173,7 +173,7 @@ export async function GET(req: Request) {
       worked_by: null,
       transitioned_by: 'cron-watchdog',
     }).eq('id', issue.id)
-    cleared.push(issue.task_key)
+    cleared.push({ key: issue.task_key, resetStatus: 'open' })
     console.log(`[watchdog] ghost claim → open: ${issue.task_key} (${issue.assignee}, updated ${issue.updated_at})`)
   }
 
@@ -241,24 +241,32 @@ export async function GET(req: Request) {
   //   - Blocked-item skip
   //   - Priority sort
   // If WIP limit is reached or no eligible work, run-agent returns a non-ok body — we skip.
+  //
+  // On Vercel serverless, the claude-code runtime can't spawn the local CLI — every
+  // kick would be a no-op. Skip the kick loop there; the Mac Mini LaunchAgent
+  // (work.nabit.agent-kicker → pipeline-watchdog.sh) handles kicks locally.
+  // This also avoids duplicate "Idle lanes re-triggered" Discord messages.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const kicked: string[] = []
+  const isVercel = process.env.VERCEL === '1'
 
-  await Promise.all(AGENT_LANES.map(async (agent) => {
-    try {
-      const res = await fetch(`${appUrl}/api/run-agent?agent=${agent}`, {
-        method: 'POST',
-        signal: AbortSignal.timeout(15000),
-      })
-      const body = await res.json() as { ok?: boolean; task?: { taskKey?: string }; wip?: number; message?: string }
-      if (body.ok && body.task?.taskKey) {
-        kicked.push(`${agent}:${body.task.taskKey}`)
+  if (!isVercel) {
+    await Promise.all(AGENT_LANES.map(async (agent) => {
+      try {
+        const res = await fetch(`${appUrl}/api/run-agent?agent=${agent}`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(15000),
+        })
+        const body = await res.json() as { ok?: boolean; task?: { taskKey?: string }; wip?: number; message?: string }
+        if (body.ok && body.task?.taskKey) {
+          kicked.push(`${agent}:${body.task.taskKey}`)
+        }
+        // WIP-limit and "no eligible issues" responses are silent no-ops (correct behavior)
+      } catch (e) {
+        console.warn(`[watchdog] kick ${agent} failed:`, e)
       }
-      // WIP-limit and "no eligible issues" responses are silent no-ops (correct behavior)
-    } catch (e) {
-      console.warn(`[watchdog] kick ${agent} failed:`, e)
-    }
-  }))
+    }))
+  }
 
   // Discord alert for kicked lanes (TOD-770 AC #3)
   if (kicked.length > 0) {
@@ -274,14 +282,23 @@ export async function GET(req: Request) {
     }).catch(() => {/* non-critical */})
   }
 
-  // TOD-758: Discord alert for stale/stuck auto-recoveries
+  // TOD-758: Discord alert for stale/stuck auto-recoveries.
+  // Group by actual reset status so the message accurately reflects where each
+  // issue landed (status-aware reset: refined→backlog, approved→approved, etc.).
   if (cleared.length > 0) {
-    const lines = cleared.map(k => `• ${k}`).join('\n')
+    const byStatus: Record<string, string[]> = {}
+    for (const { key, resetStatus } of cleared) {
+      ;(byStatus[resetStatus] ||= []).push(key)
+    }
+    const groups = Object.entries(byStatus)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([status, keys]) => `→ **${status}** (${keys.length}): ${keys.join(', ')}`)
+      .join('\n')
     fetch(`${appUrl}/api/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: `⚠️ **Stale agent auto-recovery** — ${cleared.length} issue(s) reset to open:\n${lines}`,
+        text: `⚠️ **Stale agent auto-recovery** — ${cleared.length} issue(s) reset:\n${groups}`,
         channels: ['discord-alerts'],
       }),
     }).catch(() => {/* non-critical */})
@@ -290,7 +307,8 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     ts: new Date().toISOString(),
-    cleared,
+    cleared: cleared.map(c => c.key),
+    clearedDetail: cleared,
     kicked,
     unblocked: unblockedKeys,
   })
