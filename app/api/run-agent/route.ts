@@ -670,6 +670,40 @@ export async function GET(req: NextRequest) {
   }
 
   const agentId = req.nextUrl.searchParams.get('agent')
+  const infoMode = req.nextUrl.searchParams.get('info') === '1'
+
+  // GET /api/run-agent?agent=X&info=1 — resolve runtime config without spawning
+  if (infoMode) {
+    if (!agentId) {
+      return NextResponse.json({ error: '?agent=X is required when ?info=1' }, { status: 400 })
+    }
+    const config = getQueueConfig(agentId)
+    if (!config) {
+      return NextResponse.json({ error: `Unknown agent: ${agentId}` }, { status: 400 })
+    }
+    const chainLength = config.modelChain?.length ?? 0
+    let resolvedRuntime: string
+    let modelAlias: string
+    if (config.modelChain && config.modelChain.length > 0) {
+      const defaultRuntime = await getDefaultRuntime()
+      resolvedRuntime = defaultRuntime.name
+      modelAlias = config.model
+      for (const binding of config.modelChain) {
+        const r = await getRuntimeByName(binding.runtime)
+        if (r) {
+          resolvedRuntime = r.name
+          modelAlias = binding.alias
+          break
+        }
+      }
+    } else {
+      const defaultRuntime = await getDefaultRuntime()
+      resolvedRuntime = defaultRuntime.name
+      modelAlias = config.model
+    }
+    return NextResponse.json({ agent: agentId, resolvedRuntime, modelAlias, chainLength })
+  }
+
   const agentIds = agentId ? [agentId] : getAllQueueAgentIds()
 
   const lanes = await Promise.all(
