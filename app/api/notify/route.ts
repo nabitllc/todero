@@ -13,56 +13,50 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 
-// ── Token config (fail-loud at module load — no hardcoded fallbacks) ────────
-if (!process.env.DISCORD_BOT_TOKEN) {
-  throw new Error('Missing env var: DISCORD_BOT_TOKEN')
+// ── Token config (lazy getters — fail at request time, not module load) ─────
+// Module-load reads break `next build` on CI, which doesn't have .env.local
+// or GitHub Secrets for bot tokens. Lazy access still fails loud when an
+// actual send is attempted, preventing silent empty-token prod deploys.
+function requireEnv(name: string): string {
+  const v = process.env[name]
+  if (!v) throw new Error(`Missing env var: ${name}`)
+  return v
 }
-if (!process.env.TELEGRAM_BOT_TOKEN) {
-  throw new Error('Missing env var: TELEGRAM_BOT_TOKEN')
-}
-if (!process.env.TELEGRAM_GROUP_CHAT) {
-  throw new Error('Missing env var: TELEGRAM_GROUP_CHAT')
-}
-if (!process.env.TELEGRAM_DM_CHAT) {
-  throw new Error('Missing env var: TELEGRAM_DM_CHAT')
-}
-
-const DISCORD_BOT_TOKEN   = process.env.DISCORD_BOT_TOKEN
-const TELEGRAM_BOT_TOKEN  = process.env.TELEGRAM_BOT_TOKEN
-const TELEGRAM_GROUP_CHAT = process.env.TELEGRAM_GROUP_CHAT
-const TELEGRAM_DM_CHAT    = process.env.TELEGRAM_DM_CHAT
 
 // ── Channel registry — single source of truth ──────────────────────────────
+// `target` is a thunk so env-var-backed targets (Telegram chat IDs) resolve
+// at request time, not at module load.
 interface ChannelConfig {
   transport: 'discord' | 'telegram'
-  target: string  // channel ID or chat ID
+  target: () => string
   label: string
 }
 
 const CHANNELS: Record<string, ChannelConfig> = {
   // Discord channels
-  'discord-alerts':        { transport: 'discord', target: '1485333335868834063', label: '#alerts' },
-  'discord-deploy':        { transport: 'discord', target: '1487826368170299592', label: '#3-ready-for-deploy' },
-  'discord-completed':     { transport: 'discord', target: '1487584901678104698', label: '#4-done' },
-  'discord-daily-standup': { transport: 'discord', target: '1489262030115012648', label: '#daily-standup' },
-  'discord-sprint-close':  { transport: 'discord', target: '1489262074687983656', label: '#sprint-close' },
-  'discord-retro':         { transport: 'discord', target: '1489262104677568542', label: '#retro' },
-  'discord-sprint-start':  { transport: 'discord', target: '1489262137221976115', label: '#sprint-start' },
-  'discord-signoff':       { transport: 'discord', target: '1489262196969263165', label: '#3-signoff' },
-  'discord-rejected':      { transport: 'discord', target: '1489262259762667580', label: '#2-rejected' },
+  'discord-alerts':        { transport: 'discord', target: () => '1485333335868834063', label: '#alerts' },
+  'discord-deploy':        { transport: 'discord', target: () => '1487826368170299592', label: '#3-ready-for-deploy' },
+  'discord-completed':     { transport: 'discord', target: () => '1487584901678104698', label: '#4-done' },
+  'discord-daily-standup': { transport: 'discord', target: () => '1489262030115012648', label: '#daily-standup' },
+  'discord-sprint-close':  { transport: 'discord', target: () => '1489262074687983656', label: '#sprint-close' },
+  'discord-retro':         { transport: 'discord', target: () => '1489262104677568542', label: '#retro' },
+  'discord-sprint-start':  { transport: 'discord', target: () => '1489262137221976115', label: '#sprint-start' },
+  'discord-signoff':       { transport: 'discord', target: () => '1489262196969263165', label: '#3-signoff' },
+  'discord-rejected':      { transport: 'discord', target: () => '1489262259762667580', label: '#2-rejected' },
 
   // Telegram
-  'telegram-dm':    { transport: 'telegram', target: TELEGRAM_DM_CHAT,    label: 'Michael DM' },
-  'telegram-group': { transport: 'telegram', target: TELEGRAM_GROUP_CHAT, label: 'KAOS group' },
+  'telegram-dm':    { transport: 'telegram', target: () => requireEnv('TELEGRAM_DM_CHAT'),    label: 'Michael DM' },
+  'telegram-group': { transport: 'telegram', target: () => requireEnv('TELEGRAM_GROUP_CHAT'), label: 'KAOS group' },
 }
 
 // ── Transport implementations ───────────────────────────────────────────────
 async function sendDiscord(channelId: string, text: string): Promise<{ ok: boolean; status?: number; error?: string }> {
   try {
+    const token = requireEnv('DISCORD_BOT_TOKEN')
     const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bot ${DISCORD_BOT_TOKEN}`,
+        'Authorization': `Bot ${token}`,
         'Content-Type': 'application/json',
         'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
       },
@@ -78,13 +72,14 @@ async function sendDiscord(channelId: string, text: string): Promise<{ ok: boole
 
 async function sendTelegram(chatId: string, text: string): Promise<{ ok: boolean; status?: number; error?: string }> {
   try {
+    const token = requireEnv('TELEGRAM_BOT_TOKEN')
     // Split oversized messages — Telegram's limit is 4096 chars
     const chunks: string[] = []
     for (let i = 0; i < text.length; i += 4000) {
       chunks.push(text.slice(i, i + 4000))
     }
     for (const chunk of chunks) {
-      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text: chunk }),
@@ -182,9 +177,17 @@ export async function POST(req: NextRequest) {
       continue
     }
 
+    let target: string
+    try {
+      target = cfg.target()
+    } catch (e) {
+      results.push({ channel: channelName, ok: false, error: e instanceof Error ? e.message : String(e) })
+      continue
+    }
+
     const r = cfg.transport === 'discord'
-      ? await sendDiscord(cfg.target, text)
-      : await sendTelegram(cfg.target, text)
+      ? await sendDiscord(target, text)
+      : await sendTelegram(target, text)
     results.push({ channel: channelName, ...r })
   }
 
