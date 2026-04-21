@@ -62,14 +62,20 @@ export async function GET(req: Request) {
   const cleared: Array<{ key: string; resetStatus: string }> = []
 
   // Status-aware reset: preserve earned status rather than always reverting to open.
-  //   approved → approved  (passed code review; deployer re-picks)
-  //   released → released  (passed deploy; auditor re-picks)
-  //   refined  → backlog   (PO was mid-refinement; send back to PO queue)
-  //   all else → open
+  //   approved    → approved     (passed code review; deployer re-picks)
+  //   released    → released     (passed deploy; auditor re-picks)
+  //   refined     → backlog      (PO was mid-refinement; send back to PO queue)
+  //   code_review → code_review  (reviewer died mid-review; tester/designer re-pick)
+  //   backlog     → backlog      (idempotent; PO queue preserved)
+  //   open        → open         (idempotent; builder queue preserved)
+  //   else        → open         (in_progress and anything unknown → reset)
   function watchdogReset(status: string): { resetStatus: string; extra: Record<string, unknown> } {
-    if (status === 'approved') return { resetStatus: 'approved', extra: { deployer_status: null } }
-    if (status === 'released') return { resetStatus: 'released', extra: {} }
-    if (status === 'refined')  return { resetStatus: 'backlog',  extra: {} }
+    if (status === 'approved')    return { resetStatus: 'approved',    extra: { deployer_status: null } }
+    if (status === 'released')    return { resetStatus: 'released',    extra: {} }
+    if (status === 'refined')     return { resetStatus: 'backlog',     extra: {} }
+    if (status === 'code_review') return { resetStatus: 'code_review', extra: {} }
+    if (status === 'backlog')     return { resetStatus: 'backlog',     extra: {} }
+    if (status === 'open')        return { resetStatus: 'open',        extra: {} }
     return { resetStatus: 'open', extra: {} }
   }
 
