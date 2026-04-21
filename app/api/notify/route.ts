@@ -1,7 +1,4 @@
 // TOD-801: Single notification endpoint for all Todero-pipeline scripts.
-// Replaces direct Discord webhook POSTs, openclaw message send calls, and
-// direct Telegram API calls scattered across ~6 scripts + 3 routes.
-//
 // One endpoint. One place to rotate tokens. One place to fan out to channels.
 //
 // POST body shape:

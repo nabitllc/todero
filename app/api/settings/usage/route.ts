@@ -101,7 +101,7 @@ export async function GET() {
     lastChecked: now,
   }
 
-  // --- Claude tokens (from agent_runs — openclaw retired TOD-1514) ---
+  // --- Claude tokens (from agent_runs) ---
   const claude: any = { totalTokens: 0, todayCost: 0, plan: 'Max $200/mo', lastChecked: now }
 
   // --- Vercel (static) ---

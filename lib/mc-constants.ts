@@ -74,7 +74,7 @@ export const ALL_AGENTS = [
   { id:'scout',   name:'Scout',   emoji:'🔍', role:'Research Agent',    status:'scheduled', model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#a855f7', desc:'Morning scan: goth scene, competitors, PropTech trends.', capabilities:['Web Research','Summarization','Trends'], floor: true },
 ]
 
-export const PROJECT_COLORS: Record<string,string> = { Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280', OpenClaw:'#10b981' }
+export const PROJECT_COLORS: Record<string,string> = { Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280' }
 export const TYPE_COLORS: Record<string,string> = { feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b' }
 
 export const DEFAULT_SPRINT_PROJECTS = [

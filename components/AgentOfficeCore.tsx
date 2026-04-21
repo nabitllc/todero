@@ -1115,7 +1115,6 @@ export default function AgentOffice(){
           if(!ag.active) return;
           const prev=prevStates[ag.id]||"idle";
           const rawTask=taskMap[ag.id]||"";
-          // Parse OpenClaw status strings
           const lower=rawTask.toLowerCase();
           const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running")||lower.startsWith("processing");
           // Clean the description: "Active on Telegram · 53.5k tokens" → "Processing session"
@@ -1307,24 +1306,6 @@ export default function AgentOffice(){
     fetchRealCounts();
     const t=setInterval(fetchRealCounts,30000);
     return()=>clearInterval(t);
-  },[]);
-
-// ── OPENCLAW_STATE postMessage listener ──────────────────────────────────
-  useEffect(()=>{
-    const handler=(event:MessageEvent)=>{
-      if(event.data?.type==='OPENCLAW_STATE'&&simRef.current?.agents){
-        const{agents:stateAgents}=event.data;
-        if(!stateAgents) return;
-        stateAgents.forEach((real:any)=>{
-          const ag=simRef.current.agents.find((a:any)=>a.id===real.id);
-          if(!ag) return;
-          if(real.currentTask){ag.state='working';ag.task=real.currentTask;}
-          if(real.state==='idle'&&ag.state!=='working'&&ag.state!=='meeting'&&ag.state!=='moving_to_meeting'){ag.state='idle';}
-        });
-      }
-    };
-    window.addEventListener('message',handler);
-    return()=>window.removeEventListener('message',handler);
   },[]);
 
   // ── Hotkeys ───────────────────────────────────────────────────────────────
@@ -1878,7 +1859,7 @@ export default function AgentOffice(){
               </div>
             ))}
             <div style={{marginBottom:14,padding:"8px",background:"#0a0a18",borderRadius:4}}>
-              <div style={{fontSize:10,color:"#6a6a8e",lineHeight:1.6}}>Agent behavior is driven by real OpenClaw sessions. Visual config (name/color) is cosmetic only.</div>
+              <div style={{fontSize:10,color:"#6a6a8e",lineHeight:1.6}}>Agent behavior is driven by live agent runs. Visual config (name/color) is cosmetic only.</div>
             </div>
             <div style={{display:"flex",gap:7}}>
               <button onClick={saveConfig} style={{flex:1,background:"#6C5CE7",border:"none",borderRadius:4,color:"#fff",padding:"7px",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Save</button>

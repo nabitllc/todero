@@ -331,7 +331,6 @@ function SkillsTab({ agent }: { agent: Agent }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Get skills from openclaw status endpoint
     fetch('/api/status')
       .then(r => r.json())
       .then((data: any) => {
@@ -409,7 +408,6 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
   }, [agent.id])
 
   const heartbeatCfg = config?.heartbeat ?? {}
-  // Phase 2.6: Removed dead openclaw fallback — workspaceDir from config or agent object only
   const workspacePath = config?.workspaceDir ?? agent.workspace ?? ''
 
   const rows: { label: string; value: string | undefined }[] = [

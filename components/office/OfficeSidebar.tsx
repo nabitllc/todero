@@ -122,7 +122,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
               </div>
             ))}
             <div className="mb-3.5 p-2 bg-[#080808] rounded-lg">
-              <div className="text-[10px] text-white/50 leading-relaxed">Agent behavior is driven by real OpenClaw sessions. Visual config (name/color) is cosmetic only.</div>
+              <div className="text-[10px] text-white/50 leading-relaxed">Agent behavior is driven by live agent runs. Visual config (name/color) is cosmetic only.</div>
             </div>
             <div className="flex gap-2">
               <button onClick={saveConfig} className="flex-1 bg-[#6C5CE7] border-none rounded-lg text-white py-2 text-[10px] cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30">Save</button>

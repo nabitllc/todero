@@ -1,8 +1,7 @@
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Phase 2.1: Rebuilt to read from agent_runs table instead of dead ~/.openclaw paths
-// TOD-1997 / TOD-1514
+// Reads from the agent_runs table.
 
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/hub-client';

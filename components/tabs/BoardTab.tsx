@@ -195,7 +195,7 @@ const PRIORITY_COLORS: Record<string,string> = {
 }
 
 const PROJECT_COLORS: Record<string,string> = {
-  Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280', OpenClaw:'#10b981',
+  Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280',
 }
 
 const TYPE_COLORS: Record<string,string> = {

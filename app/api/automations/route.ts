@@ -1,5 +1,4 @@
-// TOD-1.10: Automations data — Vercel crons + LaunchAgents + recent agent_runs
-// Replaces dead n8n + openclaw queries (both services retired 2026-04).
+// Automations data — Vercel crons + LaunchAgents + recent agent_runs.
 import { NextResponse } from 'next/server'
 import fs from 'fs'
 import path from 'path'

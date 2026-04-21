@@ -225,7 +225,6 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
           if(!ag.active) return;
           const prev=prevStates[ag.id]||"idle";
           const rawTask=taskMap[ag.id]||"";
-          // Parse OpenClaw status strings
           const lower=rawTask.toLowerCase();
           const isActive=lower.startsWith("active")||lower.startsWith("working")||lower.startsWith("running")||lower.startsWith("processing");
           // Clean the description: "Active on Telegram · 53.5k tokens" → "Processing session"
@@ -417,24 +416,6 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
     fetchRealCounts();
     const t=setInterval(fetchRealCounts,30000);
     return()=>clearInterval(t);
-  },[]);
-
-  // ── OPENCLAW_STATE postMessage listener ──────────────────────────────────
-  useEffect(()=>{
-    const handler=(event:MessageEvent)=>{
-      if(event.data?.type==='OPENCLAW_STATE'&&simRef.current?.agents){
-        const{agents:stateAgents}=event.data;
-        if(!stateAgents) return;
-        stateAgents.forEach((real:any)=>{
-          const ag=simRef.current.agents.find((a:any)=>a.id===real.id);
-          if(!ag) return;
-          if(real.currentTask){ag.state='working';ag.task=real.currentTask;}
-          if(real.state==='idle'&&ag.state!=='working'&&ag.state!=='meeting'&&ag.state!=='moving_to_meeting'){ag.state='idle';}
-        });
-      }
-    };
-    window.addEventListener('message',handler);
-    return()=>window.removeEventListener('message',handler);
   },[]);
 
   // ── Hotkeys ───────────────────────────────────────────────────────────────

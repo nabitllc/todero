@@ -1,4 +1,4 @@
-// Phase 6 (TOD-1514): Auto-title via OpenRouter — replaces dead OPENCLAW_GATEWAY
+// Auto-title via OpenRouter.
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 

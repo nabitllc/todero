@@ -100,7 +100,6 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const ollamaModels = ls?.ollama?.models ?? ['gemma3:4b']
             const vercelStatus = ls?.vercel?.lastDeploy?.status?.toUpperCase() ?? 'READY'
             const vercelSt = vercelStatus === 'READY' ? 'ok' : vercelStatus === 'ERROR' ? 'warn' : vercelStatus === 'BUILDING' ? 'scheduled' : 'ok'
-            // Phase 4 (TOD-1514): OpenClaw retired 2026-04-09
             const tgOk = ls?.channels?.telegram ?? true
             const dsOk = ls?.channels?.discord ?? true
             const usageCost = ls?.usage?.totalCost ?? 0
@@ -123,7 +122,6 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const cbTripped = cbProviders.some(([, p]) => p.tripped)
 
             const liveInfra = [
-              { name:'OpenClaw',     note: 'Retired 2026-04-09 · replaced by native stack', status: 'warn' },
               { name:'Claude Max',   note:'OAuth \u00b7 sonnet-4-6 + haiku-4-5', status:'ok' },
               { name:'OpenRouter',   note:`$${orRemaining.toFixed(2)} / $${orLimit.toFixed(2)} remaining`, status: orRemaining < 1 ? 'warn' : 'ok' },
               { name:'Telegram',     note: tgOk ? '@KemuniClaw1Bot \u00b7 connected' : 'Disconnected', status: tgOk ? 'ok' : 'warn' },

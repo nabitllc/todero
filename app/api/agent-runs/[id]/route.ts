@@ -1,9 +1,7 @@
 // app/api/agent-runs/[id]/route.ts
 // Internal PATCH endpoint — updates cost/token stats (and optionally status)
 // on an agent_runs row after a builder session completes.
-//
 // Called by scripts/builder-with-cost.sh with x-internal-secret.
-// Phase 7 of OpenClaw → Native Stack migration (TOD-1514).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'

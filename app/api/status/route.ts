@@ -1,5 +1,4 @@
-// Phase 5 (TOD-1514): Removed openclaw CLI calls and ~/.openclaw session file reads.
-// Agent activity now sourced from agent_runs table. OpenClaw retired 2026-04-09.
+// Agent activity is sourced from the agent_runs table.
 import { NextResponse } from 'next/server'
 import fs from 'fs'
 import { createAdminClient } from '@/lib/hub-client'
@@ -93,15 +92,13 @@ export async function GET() {
     result.vercel = null
   }
 
-  // ── OpenClaw — retired 2026-04-09 ──
-  result.openclaw = null
   result.channels = {
     telegram: !!process.env.TELEGRAM_BOT_TOKEN,
     discord: !!process.env.DISCORD_BOT_TOKEN,
   }
   result.heartbeats = []
 
-  // ── Agent activity from agent_runs (replaces dead openclaw session files) ──
+  // ── Agent activity from agent_runs ──
   try {
     const db = createAdminClient()
     const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()

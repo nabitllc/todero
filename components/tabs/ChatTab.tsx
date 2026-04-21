@@ -116,8 +116,8 @@ const AGENT_MODEL_MAP: Record<string, string> = {
   'scout': 'Gemma 3 4B (local)',
 }
 
-// Model options available in chat (maps to OpenClaw agent or model override)
-// Grouped by provider with context window sizes
+// Model options available in chat (agent default or per-message override).
+// Grouped by provider with context window sizes.
 const MODEL_OPTIONS: { id: string; label: string; desc: string; provider: string; ctx?: string }[] = [
   { id: 'default',                       label: '⚡ Agent default',          desc: 'Use the selected agent\'s default model', provider: 'System' },
   // Anthropic
@@ -332,8 +332,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [showImageUrlInput, setShowImageUrlInput] = useState(false)
   const [imageUrlDraft, setImageUrlDraft] = useState('')
   const [imageUrlPreview, setImageUrlPreview] = useState<string|null>(null)
-  // Sidebar tabs: mine / heartbeats (openclaw tab removed — Phase 4.1 TOD-1514)
-  const [sidebarTab, setSidebarTab] = useState<'mine'|'openclaw'|'heartbeats'>('mine')
+  const [sidebarTab, setSidebarTab] = useState<'mine'|'heartbeats'>('mine')
   const [ocSessions, setOcSessions] = useState<any[]>([])
   const [ocLoading, setOcLoading] = useState(false)
   // NEW: Send-to-agent dropdown
@@ -596,7 +595,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       .catch(() => {})
   }, [showFileBrowser, fileBrowserPath])
 
-  // Fetch OpenClaw sessions when sidebar tab switches to openclaw/heartbeats
+  // Fetch agent activity when sidebar tab switches to heartbeats
   useEffect(() => {
     if (sidebarTab === 'mine') return
     setOcLoading(true)
@@ -1433,7 +1432,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
               </button>
             </div>
 
-            {/* Sidebar tabs: Mine / Heartbeats (OpenClaw removed Phase 4.1) */}
+            {/* Sidebar tabs: Mine / Heartbeats */}
             <div className="flex border-b border-white/10 shrink-0">
               {([['mine','💬','Mine'],['heartbeats','⏱','Beats']] as const).map(([id,icon,label])=>(
                 <button key={id} onClick={()=>setSidebarTab(id)}
@@ -1613,14 +1612,12 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
             </div>
             </>}
 
-            {/* OpenClaw / Heartbeats tab content */}
-            {sidebarTab !== 'mine' && (
+            {/* Heartbeats tab content */}
+            {sidebarTab === 'heartbeats' && (
               <div className="flex-1 overflow-y-auto">
                 {ocLoading && <div className="p-4 text-center text-white/30 text-xs">Loading…</div>}
                 {!ocLoading && (() => {
-                  const items = sidebarTab === 'heartbeats'
-                    ? ocSessions.filter(s => s.action === 'cron' || s.channel?.includes('Cron'))
-                    : ocSessions.filter(s => s.action !== 'cron' && !s.channel?.includes('Cron'))
+                  const items = ocSessions.filter(s => s.action === 'cron' || s.channel?.includes('Cron'))
                   if (items.length === 0) return <div className="p-4 text-center text-white/30 text-xs">No sessions found</div>
                   return items.map((s: any, i: number) => (
                     <div key={i} className="px-3 py-2.5 border-b border-white/10 hover:bg-[#0f0f0f]/50 cursor-default">

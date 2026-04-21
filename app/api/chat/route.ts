@@ -1,5 +1,4 @@
-// Phase 6 (TOD-1514): Chat rebuild — OpenRouter streaming backend
-// Replaces dead OpenClaw gateway. Uses OpenRouter API (anthropic/openai models).
+// Chat streaming backend — OpenRouter API (anthropic/openai models).
 
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'

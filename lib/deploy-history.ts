@@ -9,7 +9,7 @@ const supabase = createClient(SUPA_URL, SUPA_KEY)
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type DeployStatus = 'pending' | 'building' | 'ready' | 'error' | 'canceled'
-export type DeploySource = 'vercel' | 'manual' | 'github_action' | 'openclaw'
+export type DeploySource = 'vercel' | 'manual' | 'github_action'
 
 export interface DeployRecord {
   id: string
