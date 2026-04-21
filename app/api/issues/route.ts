@@ -1561,30 +1561,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  // V3 — Feature must have ≥1 child task before leaving defined
-  // (i.e. feature in `defined` cannot transition to `open` without children)
-  const transitioningFeatureOutOfDefined =
-    fields.status === 'open' &&
-    before?.status === 'defined' &&
-    (before?.type === 'feature' || fields.type === 'feature')
-  if (transitioningFeatureOutOfDefined) {
-    const featureId = before?.id
-    if (featureId) {
-      let childCountQ = createAdminClient()
-        .from('issues')
-        .select('id', { count: 'exact', head: true })
-        .eq('parent_id', featureId)
-      if (hubScope) childCountQ = childCountQ.eq('business_id', hubScope.businessId)
-      const { count: childCount } = await childCountQ
-      if ((childCount ?? 0) < 1) {
-        return NextResponse.json(
-          { error: 'Feature must have at least 1 child task before transitioning from defined to open. Create child tasks first.', field: 'children' },
-          { status: 422 }
-        )
-      }
-    }
-  }
-
   // V4 — closing_notes required for released/completed → closed, and only auditor
   const transitioningToClosed =
     fields.status === 'closed' &&

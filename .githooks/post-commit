@@ -1,0 +1,34 @@
+#!/bin/bash
+# post-commit hook: auto-populate commit_sha on the issue matching the current
+# feat/tod-* branch, so Builder agents don't have to include it in their PATCH.
+# This kills a whole class of "forgot to send commit_sha with in_review" errors.
+#
+# Only fires on feat/(tod|TOD)-NNNN branches. Silent no-op everywhere else.
+# Non-blocking: any failure prints a warning and exits 0 — never break a commit.
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+
+if [ -z "$BRANCH" ] || [ -z "$SHA" ]; then
+  exit 0
+fi
+
+# Match feat/tod-NNNN or feat/TOD-NNNN; extract the key.
+if ! echo "$BRANCH" | grep -qE '^feat/(tod|TOD)-[0-9]+$'; then
+  exit 0
+fi
+
+TASK_KEY=$(echo "$BRANCH" | sed -E 's|^feat/(tod|TOD)-([0-9]+)$|TOD-\2|')
+
+# POST to MC API. 2s timeout — if the local server isn't running, we don't
+# want to block the commit. Suppress output on success; log failures to stderr.
+RESPONSE=$(curl -sS --max-time 2 \
+  -X PATCH "http://localhost:3000/api/issues" \
+  -H "Content-Type: application/json" \
+  -d "{\"task_key\":\"$TASK_KEY\",\"commit_sha\":\"$SHA\"}" 2>&1)
+
+if [ $? -ne 0 ]; then
+  echo "[post-commit] MC API unreachable — commit_sha not auto-set for $TASK_KEY" >&2
+fi
+
+exit 0
