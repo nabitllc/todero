@@ -66,17 +66,17 @@ Two workflows live in `.github/workflows/`:
 real DB, and no visual / E2E tests. Builds pass or fail purely on
 TypeScript and unit-level Jest. See §5.
 
-### 3b. Auto-Deploy (Mac Mini, `auto-deploy.py`)
+### 3b. Auto-Deploy (archived, TOD-2295)
 
-Runs every 5 minutes via launchd (`work.nabit.auto-deploy`).
+Previously `auto-deploy.py` polled `main` every 5 minutes and rebuilt. It
+was causing a deploy on every merged PR, creating noise and overlap with
+`monitor-pr-merge.py` (which already rebuilds + restarts on merge).
 
-1. `git fetch origin main` and checks for new commits.
-2. If found → `git pull`, `npm run build`, `launchctl kickstart -k work.nabit.todero`.
-3. Posts the deploy to Discord `#deployments`.
-
-This is what actually restarts the production Next.js process the Cloudflare
-tunnel points at. GitHub's Vercel deploy is a *secondary* path (for web
-previews); the Mac-Mini launchd service is the real prod server.
+**Current state:** plist removed, script moved to `config/scripts/archive/`.
+Deploys now happen only via:
+- `monitor-pr-merge.py` (on PR merge into `main`) — rebuilds + kickstarts
+  `work.nabit.todero`.
+- Manual `launchctl kickstart -k work.nabit.todero` when needed.
 
 ### 3c. The PR Window (`pr-window.py`, twice daily)
 
@@ -89,7 +89,8 @@ Runs at 7am and 7pm ET via launchd (`work.nabit.pr-window`).
 4. Push the release branch and **open a single PR** containing all ready issues.
 5. Auto-squash-merge that PR via the GitHub API.
 6. On merge, `monitor-pr-merge` (every 5m) transitions each contained issue
-   to `released` and eventually `closed` (triggering `auto-deploy.py`).
+   to `released` and eventually `closed`, and rebuilds/kickstarts the
+   production process.
 
 **Why this exists:** agents commit *constantly*. Pushing every Builder
 commit to `main` would create a firehose of micro-deploys and make revert
@@ -163,16 +164,13 @@ merged.
 that doesn't require a full APM stack? A dead-man's-switch plus structured
 logs to a dashboard seems right, but I don't know the current best-in-class.
 
-### 5c. Auto-deploy is a racy push-pull
+### 5c. Auto-deploy consolidation (resolved 2026-04-21)
 
-`auto-deploy.py` pulls every 5 min. `monitor-pr-merge.py` also watches for
-merges and kicks the server. They both try to rebuild and have overlap
-avoidance via a `merged_commit` state file, but it's fragile. Fresh
-installs don't remember the last-merged SHA and will rebuild unnecessarily.
-
-**Ask:** Should I collapse these into one script? Or is the separation (one
-for human-pushed commits, one for PR-window merges) actually right, and I
-just need better coordination?
+Previously `auto-deploy.py` (every 5m) and `monitor-pr-merge.py` (every 5m)
+both tried to rebuild on main commits, with fragile `merged_commit` state
+coordinating them. Collapsed to a single path: `monitor-pr-merge.py` is
+the only deployer; `auto-deploy.py` is archived (TOD-2295). Manual
+`launchctl kickstart` covers the direct-push case.
 
 ### 5d. The agent-worktree isolation is still being worked out
 
@@ -211,8 +209,8 @@ pragmatic check-on-write.
 
 ### 5f. Secrets & tokens in scripts
 
-Several scripts (pr-window.py, auto-deploy.py) have tokens hardcoded at
-the top of the file. I know this is bad. These scripts run on a
+Several scripts (pr-window.py, monitor-pr-merge.py, monitor-prs.py) have
+tokens hardcoded at the top of the file. I know this is bad. These scripts run on a
 machine only I have access to, so it's not a real-world risk today, but
 it is a scaling/handoff risk.
 
@@ -261,7 +259,7 @@ conversations.
 | MC API / workflow engine | `app/api/issues/route.ts` |
 | Transition rules (DB) | `workflow_transitions` table (Supabase) |
 | PR window | `config/scripts/pr-window.py` |
-| Auto-deploy | `config/scripts/auto-deploy.py` |
+| PR-merge deploy | `config/scripts/monitor-pr-merge.py` |
 | Worktree runtime | `lib/runtimes/worktree.ts`, `lib/runtimes/claude-code.ts` |
 | Pre-commit hook | `.githooks/pre-commit` |
 | CI workflows | `.github/workflows/test.yml`, `deploy-production.yml` |

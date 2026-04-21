@@ -31,7 +31,8 @@ def discord_post(content):
     data = json.dumps({"content": content}).encode()
     req = urllib.request.Request(
         f"https://discord.com/api/v10/channels/{CHANNEL}/messages", data=data,
-        headers={"Authorization": f"Bot {DISCORD_BOT}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bot {DISCORD_BOT}", "Content-Type": "application/json",
+                 "User-Agent": "DiscordBot (https://kaos.nabit.work, 1.0)"},
         method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10): pass

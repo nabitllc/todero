@@ -75,7 +75,6 @@ When docs/comments refer to "production", use the URL, not the launchd label. Th
 | `work.nabit.monitor-stale` | Every 2h — auto-recovers stuck in_progress issues |
 | `work.nabit.monitor-prs` | Every 5min — new PR → Discord #pr-reviews |
 | `work.nabit.monitor-pr-merge` | Every 5min — merged PR → transition issue to released |
-| `work.nabit.auto-deploy` | Every 5min — Discord bot auto-deploy trigger |
 | `work.nabit.sprint-cycle` | Daily 6:55am ET — close/start sprint |
 | `work.nabit.pr-window` | 7am + 7pm ET — batch release PR |
 | `work.nabit.standup-report` | Daily 8am ET — standup Discord post |

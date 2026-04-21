@@ -72,7 +72,7 @@ def post_to_discord(message: str):
         headers={
             "Authorization": f"Bot {DISCORD_TOKEN}",
             "Content-Type": "application/json",
-            "User-Agent": "DiscordBot (https://openclaw.ai, 1.0)",
+            "User-Agent": "DiscordBot (https://kaos.nabit.work, 1.0)",
         },
         method="POST",
     )

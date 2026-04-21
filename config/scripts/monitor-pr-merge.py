@@ -39,7 +39,8 @@ def discord_post(content):
     data = json.dumps({"content": content}).encode()
     req = urllib.request.Request(
         f"https://discord.com/api/v10/channels/{DEPLOY_CHANNEL}/messages", data=data,
-        headers={"Authorization": f"Bot {DISCORD_BOT}", "Content-Type": "application/json"},
+        headers={"Authorization": f"Bot {DISCORD_BOT}", "Content-Type": "application/json",
+                 "User-Agent": "DiscordBot (https://kaos.nabit.work, 1.0)"},
         method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10): pass
@@ -128,14 +129,6 @@ def main():
                         subprocess.run(["launchctl", "stop", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
                         subprocess.run(["launchctl", "start", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
                         print("[monitor-pr-merge] server restarted successfully")
-                        # Write deployed commit so auto-deploy.py skips this one
-                        deploy_state_path = pathlib.Path(__file__).parent / "state-auto-deploy.json"
-                        deploy_state = {}
-                        if deploy_state_path.exists():
-                            try: deploy_state = json.loads(deploy_state_path.read_text())
-                            except: pass
-                        deploy_state["merged_commit"] = merge_sha
-                        deploy_state_path.write_text(json.dumps(deploy_state))
                     else:
                         err = build.stderr[-300:] if build.stderr else "(no output)"
                         print(f"[monitor-pr-merge] build FAILED: {err}")

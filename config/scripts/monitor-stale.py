@@ -102,6 +102,7 @@ def discord_send(text):
         headers={
             "Authorization": f"Bot {DISCORD_BOT_TOKEN}",
             "Content-Type": "application/json",
+            "User-Agent": "DiscordBot (https://kaos.nabit.work, 1.0)",
         },
         method="POST",
     )

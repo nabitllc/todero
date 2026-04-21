@@ -37,6 +37,7 @@ discord_alert() {
   curl -s -X POST "https://discord.com/api/v10/channels/${DISCORD_CHANNEL}/messages" \
     -H "Authorization: Bot ${token}" \
     -H "Content-Type: application/json" \
+    -H "User-Agent: DiscordBot (https://kaos.nabit.work, 1.0)" \
     -d "{\"content\": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$msg")}" \
     >/dev/null 2>&1 || true
 }
