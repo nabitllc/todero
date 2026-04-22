@@ -82,6 +82,7 @@ When docs/comments refer to "production", use the URL, not the launchd label. Th
 | `work.nabit.backlog-heartbeat` | Every 4h — backlog health check + Discord ping |
 | `work.nabit.daily-memory-seed` | Daily 00:05 — upsert today's agent_memory_files daily row |
 | `work.nabit.worktree-janitor` | Every 6h — prune stale git worktrees |
+| `work.nabit.drift-audit-nightly` | Daily 2:30am — merged-branches-audit + direct-to-main-audit (flag code/issue drift) |
 
 ## Issue Lifecycle — MANDATORY
 
