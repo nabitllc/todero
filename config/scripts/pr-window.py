@@ -198,6 +198,46 @@ def get_current_branch(repo_dir: str) -> str:
     return result.stdout.strip()
 
 
+def push_main_to_origin(repo_dir: str) -> tuple[bool, int, list[str]]:
+    """Push local main to origin. Must run unconditionally at each window —
+    not just when feature branches are ready. See gap #4: direct-to-main
+    commits (infra files edited on main per the pre-commit hook's guidance,
+    or agent-driven local merges) otherwise sit local-only indefinitely.
+
+    Returns (push_ok, commits_pushed, subject_lines_of_pushed_commits).
+    """
+    try:
+        subprocess.run(["git", "checkout", "main"], cwd=repo_dir,
+                       capture_output=True, text=True, timeout=30)
+        # Refresh origin/main so the ahead-count below is accurate.
+        subprocess.run(["git", "fetch", "origin", "main"], cwd=repo_dir,
+                       capture_output=True, text=True, timeout=30)
+        ahead = subprocess.run(
+            ["git", "rev-list", "--count", "origin/main..main"],
+            cwd=repo_dir, capture_output=True, text=True, timeout=10)
+        count = int(ahead.stdout.strip()) if ahead.returncode == 0 and ahead.stdout.strip().isdigit() else 0
+        subjects: list[str] = []
+        if count > 0:
+            sub = subprocess.run(
+                ["git", "log", "--format=%h %s", "origin/main..main"],
+                cwd=repo_dir, capture_output=True, text=True, timeout=10)
+            if sub.returncode == 0:
+                subjects = [line for line in sub.stdout.strip().splitlines() if line]
+        push = subprocess.run(["git", "push", "origin", "main"], cwd=repo_dir,
+                              capture_output=True, text=True, timeout=60)
+        if push.returncode == 0:
+            if count > 0:
+                log(f"[git] pushed main ({count} direct-to-main commit(s))")
+            return True, count, subjects
+        if "Everything up-to-date" in push.stderr:
+            return True, 0, []
+        log(f"[git] push origin main FAILED: {push.stderr[:200]}")
+        return False, count, subjects
+    except Exception as e:
+        log(f"[git] push-main exception: {e}")
+        return False, 0, []
+
+
 def build_pr_body(issues: list) -> str:
     """Build the PR description from linked issues."""
     lines = ["## Issues in this PR\n"]
@@ -217,6 +257,22 @@ def window_label() -> str:
 
 def main():
     log(f"=== PR Window — {window_label()} ===")
+
+    # Gap #4: push any direct-to-main commits unconditionally, before we decide
+    # whether there's feature-branch work to do. Infra files (per the pre-commit
+    # hook's LOCKED_FILES list) can only be committed on main, and until this
+    # ran they sat local-only whenever no approved branches were queued.
+    main_ok, main_ahead, main_subjects = push_main_to_origin(MC_DIR)
+    if main_ahead > 0 and main_ok:
+        lines = [f"⬆️ **main → origin** ({main_ahead} direct commit{'s' if main_ahead != 1 else ''})"]
+        for s in main_subjects[:10]:
+            lines.append(f"↳ `{s}`")
+        if len(main_subjects) > 10:
+            lines.append(f"↳ …(+{len(main_subjects) - 10} more)")
+        discord_post(DEPLOY_CHANNEL, "\n".join(lines))
+    elif not main_ok:
+        discord_post(DEPLOY_CHANNEL,
+            f"⚠️ **PR Window — {window_label()}** | `git push origin main` FAILED. Check /tmp/pr-window.log.")
 
     try:
         all_issues = mc_get()
