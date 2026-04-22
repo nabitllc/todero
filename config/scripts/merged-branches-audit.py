@@ -54,7 +54,7 @@ from pathlib import Path
 REPO_DIR = Path("/Users/kemuniagent/todero")
 MC_API = "http://localhost:3000/api/issues"
 TOD_KEY_RE = re.compile(r"\b(TOD-\d+)\b")
-BRANCH_KEY_RE = re.compile(r"^feat/tod-(\d+)$")  # only the numeric convention
+BRANCH_KEY_RE = re.compile(r"^(?:feat|infra)/tod-(\d+)$")  # only the numeric convention
 TERMINAL_STATUSES = {"closed", "done", "released", "cancelled", "canceled"}
 DRIFT_MARKER = "DRIFT AUDIT"  # presence in reviewer_notes ⇒ already flagged
 
@@ -68,9 +68,12 @@ def git(*args: str, check: bool = True) -> str:
 
 
 def list_candidate_branches() -> list[tuple[str, str]]:
-    """Return [(ref, display_name), ...] for every feat/tod-* branch local or on origin."""
+    """Return [(ref, display_name), ...] for every feat/tod-* or infra/tod-*
+    branch local or on origin. Both prefixes follow the one-issue-per-branch
+    convention (P3 / Gap #3); infra/ is the ops-typed sibling of feat/."""
     out = git("for-each-ref", "--format=%(refname)",
-              "refs/heads/feat/tod-*", "refs/remotes/origin/feat/tod-*")
+              "refs/heads/feat/tod-*", "refs/heads/infra/tod-*",
+              "refs/remotes/origin/feat/tod-*", "refs/remotes/origin/infra/tod-*")
     refs = [r for r in out.splitlines() if r]
     seen: set[str] = set()
     result: list[tuple[str, str]] = []
@@ -95,7 +98,8 @@ def is_merged_into_main(ref: str) -> bool:
 
 
 def primary_key_from_branch(display: str) -> str | None:
-    """Extract TOD-NNNN from a branch name following the feat/tod-NNNN convention.
+    """Extract TOD-NNNN from a branch name following the feat/tod-NNNN or
+    infra/tod-NNNN convention.
 
     Non-conforming historic names (feat/tod-field-enforcement, feat/skill-*, etc)
     return None and are logged separately for human review — see TOD-604 for why

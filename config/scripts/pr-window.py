@@ -169,6 +169,48 @@ def gh_find_existing_pr(repo: str, branch: str) -> Optional[dict]:
         return None
 
 
+def gh_list_open_release_prs(repo: str) -> list[dict]:
+    """List all open PRs whose head branch starts with 'release/'. Used by the
+    rolling-release supersede step: any still-open release PR from a prior
+    window is closed, and its linked issues are re-rolled into the new PR.
+
+    See pr-window.py header for the rolling-release rationale (gap "missed
+    approval → multiple PRs pile up"). GitHub's /pulls?head= filter requires
+    an exact branch name, so we list all open PRs and filter in Python.
+    """
+    url = f"https://api.github.com/repos/{GH_ORG}/{repo}/pulls?state=open&per_page=100"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {GH_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "KAOS-pr-window",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            prs = json.loads(r.read())
+            return [p for p in prs if (p.get("head") or {}).get("ref", "").startswith("release/")]
+    except Exception as e:
+        log(f"[gh] list open release PRs failed: {e}")
+        return []
+
+
+def gh_close_pr(repo: str, pr_number: int) -> bool:
+    close_data = json.dumps({"state": "closed"}).encode()
+    req = urllib.request.Request(
+        f"https://api.github.com/repos/{GH_ORG}/{repo}/pulls/{pr_number}",
+        data=close_data, method="PATCH",
+        headers={"Authorization": f"Bearer {GH_TOKEN}",
+                 "Accept": "application/vnd.github+json",
+                 "Content-Type": "application/json",
+                 "User-Agent": "KAOS-pr-window"})
+    try:
+        urllib.request.urlopen(req, timeout=15)
+        return True
+    except Exception as e:
+        log(f"[pr] close #{pr_number} failed: {e}")
+        return False
+
+
 def git_push(branch: str, repo_dir: str) -> bool:
     """Push a branch to origin. Returns True on success."""
     try:
@@ -280,8 +322,38 @@ def main():
         log(f"[mc-api] Failed to fetch issues: {e}")
         sys.exit(1)
 
+    # Rolling-release supersede: close any still-open release/* PR from a prior
+    # window and clear pr_url on its linked issues so they get re-rolled into
+    # this window's fresh PR. One live PR at a time per repo; missing an
+    # approval never causes multiple PRs to pile up, and merge-order concerns
+    # disappear because there's only ever one PR to merge.
+    superseded_urls: set[str] = set()
+    for repo in set(PROJECT_REPOS.values()):
+        for pr in gh_list_open_release_prs(repo):
+            url = pr.get("html_url", "")
+            num = pr.get("number")
+            if gh_close_pr(repo, num):
+                log(f"[supersede] closed stale release PR #{num} ({url})")
+                if url:
+                    superseded_urls.add(url)
+    if superseded_urls:
+        for issue in all_issues:
+            if issue.get("pr_url") in superseded_urls:
+                try:
+                    mc_patch({"id": issue["id"], "pr_url": None})
+                    log(f"[supersede] cleared pr_url on {issue.get('task_key')}")
+                except Exception as e:
+                    log(f"[supersede] failed to clear pr_url on {issue.get('task_key')}: {e}")
+        # Re-fetch so the filter below sees the cleared pr_url values.
+        try:
+            all_issues = mc_get()
+        except Exception as e:
+            log(f"[mc-api] re-fetch after supersede failed: {e}")
+
     # Find approved issues that deployer has validated (deployer_status=ready),
     # have a feature branch, and haven't already been batched into a PR.
+    # Issues whose prior PR was just superseded had pr_url cleared above, so
+    # they're included here as if for the first time.
     ready = [i for i in all_issues
              if i.get("status") == "approved"
              and i.get("deployer_status") == "ready"
@@ -315,22 +387,9 @@ def main():
 
         log(f"Building release branch {release_branch} for {repo} ({len(issues)} issue(s))")
 
-        # Close any existing open PR for this repo from a previous window
-        existing_pr = gh_find_existing_pr(repo, release_branch)
-        if existing_pr:
-            pr_num = existing_pr.get("number")
-            log(f"[pr] Closing superseded PR #{pr_num}")
-            try:
-                close_data = json.dumps({"state": "closed"}).encode()
-                close_req = urllib.request.Request(
-                    f"https://api.github.com/repos/{GH_ORG}/{repo}/pulls/{pr_num}",
-                    data=close_data, method="PATCH",
-                    headers={"Authorization": f"Bearer {GH_TOKEN}",
-                             "Accept": "application/vnd.github+json",
-                             "Content-Type": "application/json"})
-                urllib.request.urlopen(close_req, timeout=15)
-            except Exception as e:
-                log(f"[pr] Failed to close old PR: {e}")
+        # Note: stale release PRs from prior windows were already closed in the
+        # rolling supersede pass at the top of main() — no per-repo close step
+        # is needed here.
 
         # Create release branch from main, merge all feature branches into it.
         # Push main to origin first — keeps PR diff clean (feature changes only,
@@ -399,15 +458,13 @@ def main():
             failed.append(release_branch)
             continue
 
-        # Delete local feature branches — content is now safely in the remote release branch.
-        # monitor-pr-merge.py will delete them remotely after the PR merges.
-        for issue in merged_issues:
-            branch = issue.get("feature_branch", "").strip()
-            if branch:
-                result = subprocess.run(["git", "branch", "-D", branch],
-                                        cwd=repo_dir, capture_output=True, text=True, timeout=10)
-                if result.returncode == 0:
-                    log(f"  Cleaned local branch {branch}")
+        # Rolling-release note: do NOT delete local feature branches here.
+        # In Flavor B, the PR may be superseded next window before the human
+        # merges it — if we deleted branches now, the next window's release
+        # branch couldn't re-merge them. Branch cleanup moves to
+        # monitor-pr-merge.py, which runs branch -D only after the PR actually
+        # merges. The branch-janitor (separate cron) sweeps abandoned feat/
+        # branches whose issues never reach released.
 
         # Build PR
         keys = ", ".join(i.get("task_key", "?") for i in merged_issues)
