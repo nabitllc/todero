@@ -63,9 +63,9 @@ export default function AgentDetail({ agent, onToggleActive }: AgentDetailProps)
   const isActive = agent.status !== 'paused' && agent.status !== 'inactive'
 
   useEffect(() => {
-    fetch(`/api/issues?assignee=${encodeURIComponent(agent.id)}`)
+    fetch(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
       .then(r => r.json())
-      .then((data: Issue[]) => setIssues(Array.isArray(data) ? data : []))
+      .then((data: any) => setIssues(Array.isArray(data) ? data : data?.data ?? []))
       .catch(() => {})
       .finally(() => setLoadingIssues(false))
   }, [agent.id])

@@ -696,9 +696,10 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       }
     } else if (cmd === '/tasks') {
       try {
-        const r = await fetch('/api/issues')
+        const r = await fetch('/api/issues?limit=0')
         const data = await r.json()
-        const open = (Array.isArray(data) ? data : []).filter((i: any) => i.status === 'open' || i.status === 'in_progress')
+        const issues = Array.isArray(data) ? data : data?.data ?? []
+        const open = issues.filter((i: any) => i.status === 'open' || i.status === 'in_progress')
         const lines = open.slice(0, 15).map((i: any) => `- **${i.task_key || '?'}** ${i.title} — _${i.status}_ (${i.priority || 'med'}) ${i.assignee ? `→ ${i.assignee}` : ''}`).join('\n')
         const tasksMsg: ChatMessage = { id: 'tasks-'+Date.now(), role: 'assistant', content: `**Open Tasks** (${open.length})\n\n${lines || '_No open tasks_'}`, ts: Date.now() }
         setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, tasksMsg] } : c))

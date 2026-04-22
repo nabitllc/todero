@@ -32,10 +32,10 @@ export default function ProjectsTab({ projectFilter }: { projectFilter?: string 
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/issues')
+    fetch('/api/issues?limit=0')
       .then(r => r.json())
-      .then((data: Issue[]) => {
-        const issues = Array.isArray(data) ? data : []
+      .then((data: any) => {
+        const issues: Issue[] = Array.isArray(data) ? data : data?.data ?? []
         const projects = projectFilter ? [projectFilter] : KNOWN_PROJECTS
 
         const built: ProjectRow[] = projects.map(name => {

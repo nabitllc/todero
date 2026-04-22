@@ -162,9 +162,13 @@ export default function ProductBoardTab({ projectFilter }: { projectFilter?: str
     try {
       const params = new URLSearchParams()
       if (projectFilter) params.set('project', projectFilter)
+      params.set('limit', '0')
       const qs = params.toString()
       const res = await fetch(`/api/issues${qs ? `?${qs}` : ''}`)
-      if (res.ok) setIssues(await res.json())
+      if (res.ok) {
+        const d = await res.json()
+        setIssues(Array.isArray(d) ? d : d?.data ?? [])
+      }
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [projectFilter])

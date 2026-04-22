@@ -777,7 +777,13 @@ export async function GET(req: NextRequest) {
   }
 
   const search = url.searchParams.get('search')
-  const limit = parseInt(url.searchParams.get('limit') || '0', 10)
+  // TOD-1999: default limit=50 keeps no-param responses under 200KB.
+  // Pass ?limit=0 for unbounded (agent/script callers). ?page=N for offset.
+  const limitParam = url.searchParams.get('limit')
+  const limit = limitParam !== null ? parseInt(limitParam, 10) : 50
+  const pageParam = url.searchParams.get('page')
+  const page = Math.max(1, parseInt(pageParam || '1', 10))
+  const offset = limit > 0 ? (page - 1) * limit : 0
   const projectParam = url.searchParams.get('project')
   const businessIdParam = url.searchParams.get('business_id')
   const assigneeParam = url.searchParams.get('assignee')
@@ -803,7 +809,7 @@ export async function GET(req: NextRequest) {
     'worked_by','transitioned_by','acceptance_criteria',
     'business_id','resolution_type',
   ].join(',')
-  let query = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS)
+  let query = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS, { count: 'exact' })
 
   if (hub) {
     query = query.eq('business_id', hub.businessId)
@@ -835,13 +841,18 @@ export async function GET(req: NextRequest) {
   }
 
   if (limit > 0) {
-    query = query.limit(limit)
+    query = query.range(offset, offset + limit - 1)
   }
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const total = count ?? 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return NextResponse.json(withIssueStatusCategoryList(data as any[]))
+  const resultData = withIssueStatusCategoryList(data as any[])
+  const hasMore = limit > 0 ? offset + (data?.length ?? 0) < total : false
+  const res = NextResponse.json({ data: resultData, total, page, limit, has_more: hasMore })
+  res.headers.set('X-Total-Count', String(total))
+  return res
 }
 
 // ── POST ──────────────────────────────────────────────────────────────────────

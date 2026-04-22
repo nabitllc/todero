@@ -279,11 +279,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     try {
       const params = new URLSearchParams()
       if (projectFilter) params.set('project', projectFilter)
+      params.set('limit', '0')
       const qs = params.toString()
       const res = await fetch(`/api/issues${qs ? `?${qs}` : ''}`)
       if (res.ok) {
         const d = await res.json()
-        setTasks(d)
+        setTasks(Array.isArray(d) ? d : d?.data ?? [])
       } else {
         let msg = `Failed to load issues (HTTP ${res.status})`
         try { const e = await res.json(); if (e?.error) msg = e.error } catch {}
