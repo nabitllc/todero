@@ -189,6 +189,28 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 
   const buildingWIP = stageMap.Building.features.length + stageMap.Building.issues.length
 
+  // TOD-2299/TOD-2301 — aggregate pipeline health metrics strip
+  type Metrics = {
+    window: '7d' | '30d'
+    prs_merged: number
+    merge_conflicts: number
+    build_failures: number
+    review_rejections: number
+    avg_cycle_time_hours: number | null
+    cycle_sample_size: number
+    generated_at: string
+  }
+  const [metricsWindow, setMetricsWindow] = useState<'7d' | '30d'>('7d')
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/pipeline-metrics?window=${metricsWindow}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d && !d.error) setMetrics(d) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [metricsWindow])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -232,6 +254,51 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
             </Button>
           ))}
         </div>
+      </div>
+
+      {/* Aggregate pipeline health (TOD-2299) */}
+      <div className="rounded-xl border border-white/10 bg-[#080808] px-3 py-2">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] uppercase tracking-wide text-white/40">
+            Pipeline health · last {metricsWindow}
+          </span>
+          <div className="flex items-center gap-1 rounded-md border border-white/10 p-0.5 bg-[#0f0f0f]">
+            {(['7d', '30d'] as const).map(w => (
+              <button
+                key={w}
+                onClick={() => setMetricsWindow(w)}
+                className={`px-1.5 py-0.5 text-[10px] rounded ${
+                  metricsWindow === w ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                {w}
+              </button>
+            ))}
+          </div>
+        </div>
+        {metrics ? (
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-[11px]">
+            {[
+              { label: 'PRs merged', value: metrics.prs_merged, color: '#10b981' },
+              { label: 'Conflicts', value: metrics.merge_conflicts, color: metrics.merge_conflicts > 0 ? '#f59e0b' : '#52525b' },
+              { label: 'Build fails', value: metrics.build_failures, color: metrics.build_failures > 0 ? '#ef4444' : '#52525b' },
+              { label: 'Rejections', value: metrics.review_rejections, color: metrics.review_rejections > 0 ? '#a855f7' : '#52525b' },
+              {
+                label: 'Avg cycle',
+                value: metrics.avg_cycle_time_hours != null ? `${metrics.avg_cycle_time_hours}h` : '—',
+                color: '#3b82f6',
+              },
+              { label: 'Sample', value: metrics.cycle_sample_size, color: '#71717a' },
+            ].map(m => (
+              <div key={m.label} className="flex flex-col">
+                <span className="text-white/40 text-[10px]">{m.label}</span>
+                <span className="font-semibold" style={{ color: m.color }}>{m.value}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-white/30 text-[11px]">loading…</div>
+        )}
       </div>
 
       {/* Stage rooms — horizontal scroll */}
