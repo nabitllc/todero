@@ -83,8 +83,72 @@ def main():
             merge_sha = (pr.get("merge_commit_sha") or "")[:8]
             ts = datetime.fromisoformat(pr["merged_at"].replace("Z", "+00:00")).strftime("%b %-d, %I:%M %p EST")
 
-            for issue in linked:
-                if issue["status"] != "approved": continue
+            # TOD-1919 ordering fix: build-check BEFORE transitioning issues
+            # to released. Previously the transition ran here unconditionally;
+            # a post-merge build failure produced a Discord warning while
+            # issues were already marked released, so the drift signal was
+            # lost. Now the transition only happens if the build passes.
+            pending = [i for i in linked if i.get("status") == "approved"]
+
+            # Prune the release branch regardless — it's already merged into
+            # main, so removing it is safe independent of the build result.
+            release_branch = pr.get("head", {}).get("ref", "")
+            if release_branch and release_branch.startswith("release/"):
+                subprocess.run(["git", "push", "origin", "--delete", release_branch],
+                               cwd=REPO_DIR, capture_output=True, text=True, timeout=15)
+                subprocess.run(["git", "branch", "-D", release_branch],
+                               cwd=REPO_DIR, capture_output=True, text=True, timeout=10)
+                print(f"[monitor-pr-merge] pruned release branch {release_branch}")
+            subprocess.run(["git", "fetch", "--prune"], cwd=REPO_DIR,
+                           capture_output=True, text=True, timeout=30)
+            print("[monitor-pr-merge] git fetch --prune done")
+
+            build_ok = True
+            build_err = ""
+            if repo == "nabitllc/todero" and pending:
+                print("[monitor-pr-merge] todero PR merged — build check before release transition")
+                subprocess.run(["git", "checkout", "main"], cwd=REPO_DIR,
+                               capture_output=True, text=True, timeout=15)
+                subprocess.run(["git", "pull", "origin", "main"], cwd=REPO_DIR,
+                               capture_output=True, text=True, timeout=30)
+                build = subprocess.run(["npm", "run", "build"], cwd=REPO_DIR,
+                                       capture_output=True, text=True, timeout=300)
+                build_ok = build.returncode == 0
+                if not build_ok:
+                    build_err = (build.stderr[-300:] if build.stderr else "(no output)")
+
+            if pending and not build_ok:
+                # Build broke after merge: do NOT transition, do NOT prune feat
+                # branches, do NOT restart the server. Alert loudly, annotate
+                # each affected issue so a human can fix the build on main and
+                # then PATCH these to released manually.
+                keys = ", ".join(i.get("task_key", "?") for i in pending)
+                print(f"[monitor-pr-merge] build FAILED — leaving {keys} in approved")
+                discord_post(
+                    f"⚠️ **Deploy failed** — PR #{pr['number']} merged but `npm run build` failed on main.\n"
+                    f"↳ Issues left in **approved**: {keys}\n"
+                    f"↳ Build error: `{build_err[:150]}`\n"
+                    f"↳ `{merge_sha}` · {ts}\n"
+                    f"<{pr['html_url']}>"
+                )
+                for issue in pending:
+                    try:
+                        existing = issue.get("reviewer_notes") or ""
+                        note = (
+                            f"Auto-release skipped — PR #{pr['number']} merged ({merge_sha}) "
+                            f"but `npm run build` failed on main at {ts}. Feature branch was "
+                            f"NOT pruned; server was NOT restarted. Fix the build on main, "
+                            f"verify `npm run build` passes, then manually PATCH this issue "
+                            f"to released. Build error excerpt: {build_err[:200]}"
+                        )
+                        combined = (existing + "\n\n---\n" + note) if existing else note
+                        mc_patch({"id": issue["id"], "reviewer_notes": combined})
+                    except Exception as e:
+                        print(f"[mc-patch] failed to annotate {issue.get('task_key')}: {e}")
+                continue  # skip the released-any block below for this PR
+
+            # Build passed (or no build check applied) — proceed with transitions.
+            for issue in pending:
                 try:
                     mc_patch({"id": issue["id"], "status": "released",
                                "transitioned_by": "ops",
@@ -105,35 +169,13 @@ def main():
 
             released_any = bool(released_keys)
 
-            # Prune the release branch and rebuild if needed
             if released_any:
-                release_branch = pr.get("head", {}).get("ref", "")
-                if release_branch and release_branch.startswith("release/"):
-                    subprocess.run(["git", "push", "origin", "--delete", release_branch],
-                                   cwd=REPO_DIR, capture_output=True, text=True, timeout=15)
-                    subprocess.run(["git", "branch", "-D", release_branch],
-                                   cwd=REPO_DIR, capture_output=True, text=True, timeout=10)
-                    print(f"[monitor-pr-merge] pruned release branch {release_branch}")
-                subprocess.run(["git", "fetch", "--prune"], cwd=REPO_DIR,
-                               capture_output=True, text=True, timeout=30)
-                print("[monitor-pr-merge] git fetch --prune done")
-
-                build_ok = True
                 if repo == "nabitllc/todero":
-                    print("[monitor-pr-merge] todero PR merged — rebuilding and restarting server")
-                    subprocess.run(["git", "checkout", "main"], cwd=REPO_DIR, capture_output=True, text=True, timeout=15)
-                    subprocess.run(["git", "pull", "origin", "main"], cwd=REPO_DIR, capture_output=True, text=True, timeout=30)
-                    build = subprocess.run(["npm", "run", "build"], cwd=REPO_DIR, capture_output=True, text=True, timeout=300)
-                    build_ok = build.returncode == 0
-                    if build_ok:
-                        subprocess.run(["launchctl", "stop", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
-                        subprocess.run(["launchctl", "start", "work.nabit.todero"], capture_output=True, text=True, timeout=10)
-                        print("[monitor-pr-merge] server restarted successfully")
-                    else:
-                        err = build.stderr[-300:] if build.stderr else "(no output)"
-                        print(f"[monitor-pr-merge] build FAILED: {err}")
-                        discord_post(f"⚠️ **Deploy failed** — PR #{pr['number']}\n↳ Build error: `{err[:150]}`\n↳ `{merge_sha}` · {ts}")
-                        continue
+                    subprocess.run(["launchctl", "stop", "work.nabit.todero"],
+                                   capture_output=True, text=True, timeout=10)
+                    subprocess.run(["launchctl", "start", "work.nabit.todero"],
+                                   capture_output=True, text=True, timeout=10)
+                    print("[monitor-pr-merge] server restarted successfully")
 
                 # One unified message per PR
                 n = len(released_keys)
