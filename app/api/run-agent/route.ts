@@ -465,6 +465,29 @@ You are running inside a git worktree. Your node_modules directory is a SYMLINK 
 - ✅ If build fails with "Cannot find module X", check ~/todero/node_modules/X directly; if truly missing, PATCH back to open
 - ✅ Stay in your worktree directory — do NOT cd to ~/todero for any build commands` : ''
 
+  // Branch-scope rules (P3 / Gap #3) — builder + ops only.
+  // The API has already created the correct branch prefix for this issue's
+  // type (feat/ for app-code, infra/ for pipeline infra). The pre-commit
+  // hook enforces the separation. This block tells the agent what it means
+  // so it doesn't fight the hook.
+  const branchScopeRules = CODE_AGENTS_SET.has(agentId) ? `
+
+🧭 BRANCH SCOPE — feat/ vs infra/ 🧭
+Your branch prefix is set by the API from the issue's type (${task.type ?? 'unknown'}) — you do NOT choose it.
+- \`feat/tod-NNNN\` (app-code only): edit anything EXCEPT the LOCKED_FILES below. The hook blocks LOCKED_FILES on feat/.
+- \`infra/tod-NNNN\` (pipeline infra only): edit ONLY the LOCKED_FILES below. The hook blocks every other path on infra/.
+
+LOCKED_FILES (the pipeline-critical set — only touchable from infra/):
+  lib/agent-queue.ts, lib/issue-routing.ts, lib/issue-lifecycle.ts,
+  lib/runtimes/claude-code.ts, lib/runtimes/worktree.ts, lib/constants.ts,
+  app/api/issues/route.ts, app/api/run-agent/route.ts, app/api/notify/route.ts,
+  app/api/queue-refill/route.ts, .githooks/pre-commit
+
+If the hook blocks your commit:
+- On feat/ blocking LOCKED_FILES → your task should not need those files; skip them. If it truly does, the issue is mis-typed: PATCH back to open with notes asking PO to re-type it as \`ops\`.
+- On infra/ blocking app-code → your task should not need app-code; skip it. If it truly does, this is a mixed-concern issue: PATCH back to open with notes asking PO to split it into sibling issues (type=feature for app-code + type=ops for infra).
+- Never mix: the split-issue rule prevents TOD-604-style drift where one PR shipped partial app-code + partial infra and both sides got stuck in review.` : ''
+
   // TOD-796 follow-up: point agents at the rest of the skill library.
   // The universal bundle (proactivity/execution, self-improving/corrections, etc.) is
   // already inlined in ${context} above. This note tells the agent where to look for
@@ -547,6 +570,7 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     transitionGate,
     pushGate,
     worktreeGuard,
+    branchScopeRules,
     loopBreaker,
     selfChain,
   ].join('\n')
