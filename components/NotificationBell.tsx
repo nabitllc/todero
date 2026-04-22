@@ -11,7 +11,7 @@ interface Notification {
   title: string
   detail: string
   timestamp: Date
-  color: string
+  colorClass: string
   read: boolean
   dbId?: string // notifications table id for mark-read
 }
@@ -57,7 +57,7 @@ export default function NotificationBell() {
             title: r.title || 'Status change',
             detail: r.body || '',
             timestamp: new Date(r.created_at),
-            color: isRelease ? '#a78bfa' : isApproved ? '#34d399' : isReview ? '#60a5fa' : '#71717a',
+            colorClass: isRelease ? 'text-violet-400' : isApproved ? 'text-emerald-400' : isReview ? 'text-blue-400' : 'text-zinc-500',
             read: r.read,
             dbId: r.id,
           })
@@ -82,7 +82,7 @@ export default function NotificationBell() {
             title: `${agent?.emoji || '🤖'} ${agent?.name || r.agent_id} ${isError ? 'failed' : 'completed'}`,
             detail: (r.task_title || 'Task').slice(0, 60),
             timestamp: new Date(r.finished_at || r.started_at),
-            color: isError ? '#f87171' : '#34d399',
+            colorClass: isError ? 'text-red-400' : 'text-emerald-400',
             read: false,
           })
         }
@@ -146,6 +146,7 @@ export default function NotificationBell() {
     <div className="relative" ref={panelRef}>
       <button
         onClick={handleOpen}
+        aria-label="Notifications"
         className="relative p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
         title="Notifications"
       >
@@ -166,6 +167,7 @@ export default function NotificationBell() {
               {unreadCount > 0 && (
                 <button
                   onClick={markAllRead}
+                  aria-label="Mark all notifications read"
                   className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-white/40 hover:text-white/70 hover:bg-white/[0.06] transition-colors"
                   title="Mark all read"
                 >
@@ -175,6 +177,7 @@ export default function NotificationBell() {
               )}
               <button
                 onClick={() => setOpen(false)}
+                aria-label="Close notifications"
                 className="p-0.5 rounded hover:bg-white/[0.06] text-white/30 hover:text-white/60 transition-colors"
               >
                 <X size={13} />
@@ -196,7 +199,7 @@ export default function NotificationBell() {
                     {!n.read && <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span style={{ color: n.color }}>{typeIcon(n.type)}</span>
+                        <span className={n.colorClass}>{typeIcon(n.type)}</span>
                         <span className="text-[11px] font-medium text-white/70 truncate">{n.title}</span>
                       </div>
                       <p className="text-[10px] text-white/35 mt-0.5 truncate">{n.detail}</p>
