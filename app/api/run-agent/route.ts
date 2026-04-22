@@ -488,6 +488,22 @@ If the hook blocks your commit:
 - On infra/ blocking app-code → your task should not need app-code; skip it. If it truly does, this is a mixed-concern issue: PATCH back to open with notes asking PO to split it into sibling issues (type=feature for app-code + type=ops for infra).
 - Never mix: the split-issue rule prevents TOD-604-style drift where one PR shipped partial app-code + partial infra and both sides got stuck in review.` : ''
 
+  // TOD-2300: Builder self-triage on pickup. Agents were occasionally writing
+  // redundant code for issues whose AC was already satisfied by prior work
+  // (follow-ups filed before the parent landed, duplicate tickets, backlog
+  // rot). This block tells Builder to verify before writing.
+  const selfTriageRules = agentId === 'builder' ? `
+
+🔎 SELF-TRIAGE ON PICKUP — verify BEFORE writing 🔎
+Before any edit, check whether the Acceptance Criteria are already satisfied:
+1. Parse each AC bullet into a concrete, checkable assertion (file exists / function exists / behavior present / field in schema).
+2. Verify each assertion against the current repo (Read / Grep). Do not infer from issue title or description alone.
+3. Decide:
+   - ALL assertions already satisfied → close out. PATCH to code_review with resolution_type=no_change_required, implementation_notes listing each AC + the file/line proving it, commit_sha from current HEAD, regression_test="n/a — no code change, verified pre-existing state". Do NOT write code.
+   - SOME satisfied → document the partials in implementation_notes, implement ONLY the missing pieces, then submit normally.
+   - NONE satisfied → proceed with implementation as usual.
+Rationale: writing redundant code wastes a review cycle and pollutes the diff; shipping no_change_required when warranted keeps the board honest.` : ''
+
   // TOD-796 follow-up: point agents at the rest of the skill library.
   // The universal bundle (proactivity/execution, self-improving/corrections, etc.) is
   // already inlined in ${context} above. This note tells the agent where to look for
@@ -571,6 +587,7 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     pushGate,
     worktreeGuard,
     branchScopeRules,
+    selfTriageRules,
     loopBreaker,
     selfChain,
   ].join('\n')
