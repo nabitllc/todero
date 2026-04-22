@@ -200,6 +200,107 @@ def prune_abandoned_feat_branches(prune: bool) -> tuple[int, int]:
     return stale, deleted
 
 
+def prune_orphan_feat_branches(age_days: int, prune: bool) -> tuple[int, int]:
+    """Delete local feat/tod-NNNN or infra/tod-NNNN whose issue no longer exists
+    in MC API (purged from DB) and whose branch tip is ≥ age_days old.
+
+    Closes the orphan gap that `prune_abandoned_feat_branches` doesn't cover:
+    that one only fires when the issue is in a terminal status, so a purged
+    issue (no record at all) leaves its branch behind forever.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=age_days)
+    code, out, _ = git("for-each-ref", "--format=%(refname:short) %(committerdate:iso-strict)",
+                       "refs/heads/feat/tod-*", "refs/heads/infra/tod-*")
+    if code != 0:
+        return 0, 0
+    stale = 0
+    deleted = 0
+    for line in out.strip().splitlines():
+        parts = line.rsplit(" ", 1)
+        if len(parts) != 2:
+            continue
+        branch, committed = parts
+        m = BRANCH_KEY_RE.match(branch)
+        if not m:
+            continue
+        try:
+            commit_dt = datetime.fromisoformat(committed)
+        except ValueError:
+            continue
+        if commit_dt > cutoff:
+            continue  # too recent — give it room to progress
+        key = f"TOD-{m.group(1)}"
+        issue = mc_get_issue(key)
+        if issue is not None:
+            continue  # issue still exists — other janitor paths handle it
+        stale += 1
+        label = f"{branch} (no MC issue, tip {committed[:10]})"
+        if prune:
+            r = subprocess.run(
+                ["git", "-C", str(REPO_DIR), "branch", "-D", branch],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                print(f"  deleted: {label}")
+                deleted += 1
+            else:
+                print(f"  FAILED: {label} — {r.stderr.strip()[:120]}")
+        else:
+            print(f"  orphan: {label}")
+    return stale, deleted
+
+
+def prune_orphan_origin_branches(repos: list[str], age_days: int, prune: bool) -> tuple[int, int]:
+    """Delete feat/tod-NNNN or infra/tod-NNNN on origin whose issue no longer
+    exists in MC API and whose tip is ≥ age_days old."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=age_days)
+    stale = 0
+    deleted = 0
+    for repo in repos:
+        for prefix in ("feat/tod-", "infra/tod-"):
+            try:
+                branches = gh_get(
+                    f"https://api.github.com/repos/{GH_ORG}/{repo}/branches"
+                    f"?per_page=100"
+                )
+            except Exception as e:
+                print(f"[warn] list branches {repo}: {e}", file=sys.stderr)
+                continue
+            for b in branches:
+                name = b.get("name", "")
+                m = BRANCH_KEY_RE.match(name)
+                if not m:
+                    continue
+                key = f"{'VES' if repo == 'vespera' else 'TOD'}-{m.group(1)}"
+                issue = mc_get_issue(key)
+                if issue is not None:
+                    continue
+                sha = (b.get("commit") or {}).get("sha")
+                if not sha:
+                    continue
+                try:
+                    commit = gh_get(
+                        f"https://api.github.com/repos/{GH_ORG}/{repo}/commits/{sha}"
+                    )
+                    dt = commit["commit"]["committer"]["date"]
+                    commit_dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+                if commit_dt > cutoff:
+                    continue
+                stale += 1
+                label = f"{repo}:{name} (no MC issue, tip {dt[:10]})"
+                if prune:
+                    ok, msg = gh_delete_ref(repo, name)
+                    print(f"  {'deleted' if ok else 'FAILED'}: {label} — {msg}")
+                    if ok:
+                        deleted += 1
+                else:
+                    print(f"  orphan: {label}")
+            break  # gh_get returned all branches; inner prefix loop not needed
+    return stale, deleted
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--prune", action="store_true", help="Actually delete (default: dry-run)")
@@ -212,12 +313,18 @@ def main() -> int:
     r_stale, r_deleted = prune_stale_release_branches(REPOS, args.age, args.prune)
     print("\n# Abandoned local feat/tod-NNNN or infra/tod-NNNN (issue terminal, branch not in main):")
     f_stale, f_deleted = prune_abandoned_feat_branches(args.prune)
+    print("\n# Orphan local feat/infra (issue no longer in MC, tip ≥ age_days old):")
+    ol_stale, ol_deleted = prune_orphan_feat_branches(args.age, args.prune)
+    print("\n# Orphan origin feat/infra (issue no longer in MC, tip ≥ age_days old):")
+    orm_stale, orm_deleted = prune_orphan_origin_branches(REPOS, args.age, args.prune)
 
     print(
         f"\n# summary: release_stale={r_stale} release_deleted={r_deleted} "
-        f"feat_stale={f_stale} feat_deleted={f_deleted}"
+        f"feat_stale={f_stale} feat_deleted={f_deleted} "
+        f"orphan_local_stale={ol_stale} orphan_local_deleted={ol_deleted} "
+        f"orphan_origin_stale={orm_stale} orphan_origin_deleted={orm_deleted}"
     )
-    if not args.prune and (r_stale or f_stale):
+    if not args.prune and (r_stale or f_stale or ol_stale or orm_stale):
         print("# (dry run — re-run with --prune to delete)")
     return 0
 
