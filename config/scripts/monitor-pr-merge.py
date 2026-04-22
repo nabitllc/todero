@@ -170,12 +170,34 @@ def main():
             released_any = bool(released_keys)
 
             if released_any:
+                restart_ok = True
+                restart_err = ""
                 if repo == "nabitllc/todero":
+                    # stop + start are not atomic. If stop succeeds and start
+                    # fails, the site goes down until a human intervenes, so
+                    # treat a non-zero start as a loud failure. Previously
+                    # this block always printed "restarted successfully"
+                    # regardless of exit code (TOD-1514 P4 gap).
                     subprocess.run(["launchctl", "stop", "work.nabit.todero"],
                                    capture_output=True, text=True, timeout=10)
-                    subprocess.run(["launchctl", "start", "work.nabit.todero"],
-                                   capture_output=True, text=True, timeout=10)
-                    print("[monitor-pr-merge] server restarted successfully")
+                    start = subprocess.run(["launchctl", "start", "work.nabit.todero"],
+                                           capture_output=True, text=True, timeout=10)
+                    if start.returncode != 0:
+                        restart_ok = False
+                        restart_err = (start.stderr or start.stdout or f"exit {start.returncode}")[:200]
+                        print(f"[monitor-pr-merge] SERVER RESTART FAILED: {restart_err}")
+                        discord_post(
+                            f"🚨 **Server restart FAILED** — PR #{pr['number']} deployed but "
+                            f"`launchctl start work.nabit.todero` returned non-zero.\n"
+                            f"↳ kaos.nabit.work may be down. Issues already marked **released**: "
+                            f"{', '.join(released_keys)}\n"
+                            f"↳ Error: `{restart_err[:150]}`\n"
+                            f"↳ Fix: run `launchctl start work.nabit.todero` manually and check "
+                            f"`tail /tmp/todero-error.log`.\n"
+                            f"↳ `{merge_sha}` · {ts}"
+                        )
+                    else:
+                        print("[monitor-pr-merge] server restarted successfully")
 
                 # One unified message per PR
                 n = len(released_keys)
