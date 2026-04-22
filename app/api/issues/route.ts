@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { exec as execAsync } from 'child_process'
 import { createAdminClient, getHubClient } from '@/lib/hub-client'
 import {
@@ -297,10 +297,20 @@ function notifyWatchers(issue: {
 }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// set (CI builds import every route for page-data collection). Throws at first
+// request instead of at module load, so `next build` can complete without the
+// env var. (TOD-2296 — same pattern as app/api/run-agent/route.ts.)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      'https://twthgapiouiqhavrcnry.supabase.co',
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabase
+}
 
 // ── Activity event capture ────────────────────────────────────────────────────
 const KNOWN_AGENT_IDS = new Set([
@@ -321,7 +331,7 @@ function recordActivityEvent(
   actor: string | null | undefined,
   metadata: Record<string, unknown>
 ) {
-  void supabase.from('activity_events').insert({
+  void getSupabase().from('activity_events').insert({
     issue_id: issueId,
     issue_key: issueKey ?? null,
     event_type: eventType,
@@ -340,7 +350,7 @@ async function validateHierarchy(
     if (!parentId) {
       return { error: `type=${type} requires parent_id pointing to a feature issue` }
     }
-    const { data: parent, error: dbErr } = await supabase
+    const { data: parent, error: dbErr } = await getSupabase()
       .from('issues')
       .select('id, type, task_key')
       .eq('id', parentId)
@@ -354,7 +364,7 @@ async function validateHierarchy(
   } else if (type === 'feature') {
     // TOD-1203: parent_id is optional at creation; if provided, must point to an epic
     if (parentId) {
-      const { data: parent, error: dbErr } = await supabase
+      const { data: parent, error: dbErr } = await getSupabase()
         .from('issues')
         .select('id, type, task_key')
         .eq('id', parentId)
@@ -450,7 +460,7 @@ async function validateWorkflowTransition(
     return { transition: null, error: null } as unknown as { transition: WorkflowTransition; error: null }
   }
 
-  const { data: transition, error: dbErr } = await supabase
+  const { data: transition, error: dbErr } = await getSupabase()
     .from('workflow_transitions')
     .select('condition_role, validators, post_functions')
     .eq('issue_type', issueType)
@@ -558,7 +568,7 @@ async function validateWorkflowTransition(
     } else if (v === 'children_exist') {
       const issueId = issue.id as string
       if (issueId) {
-        const { count } = await supabase
+        const { count } = await getSupabase()
           .from('issues')
           .select('id', { count: 'exact', head: true })
           .eq('parent_id', issueId)
@@ -586,13 +596,13 @@ async function validateWorkflowTransition(
 
   // 6.7 (TOD-1204): Auto-activate parent epic when feature moves to open
   if (issueType === 'feature' && newStatus === 'open' && issue.parent_id) {
-    const { data: parentEpic } = await supabase
+    const { data: parentEpic } = await getSupabase()
       .from('issues')
       .select('id, status, type, task_key')
       .eq('id', issue.parent_id as string)
       .single()
     if (parentEpic?.type === 'epic' && ['backlog', 'draft'].includes(parentEpic.status)) {
-      const { error: activateErr } = await supabase
+      const { error: activateErr } = await getSupabase()
         .from('issues')
         .update({ status: 'active' })
         .eq('id', parentEpic.id)
@@ -610,7 +620,7 @@ async function validateWorkflowTransition(
 // ── executePostFunctions ──────────────────────────────────────────────────────
 async function getActiveSprintForProject(project: string | null | undefined): Promise<{ name: string; start_date: string } | null> {
   if (!project) return null
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('sprints')
     .select('name, start_date')
     .eq('project', project)
@@ -668,7 +678,7 @@ async function executePostFunctions(
       const actor = (fields.transitioned_by ?? notifyIssue.assignee ?? 'unknown') as string
       let parentKey: string | null = null
       if (notifyIssue.parent_id) {
-        const { data: par } = await supabase.from('issues').select('task_key').eq('id', notifyIssue.parent_id as string).maybeSingle()
+        const { data: par } = await getSupabase().from('issues').select('task_key').eq('id', notifyIssue.parent_id as string).maybeSingle()
         parentKey = par?.task_key ?? null
       }
       if (toStatus === 'closed') {
@@ -686,7 +696,7 @@ async function executePostFunctions(
       const count = (notifyIssue.rejection_count as number) ?? 1
       let parentKey: string | null = null
       if (notifyIssue.parent_id) {
-        const { data: par } = await supabase.from('issues').select('task_key').eq('id', notifyIssue.parent_id as string).maybeSingle()
+        const { data: par } = await getSupabase().from('issues').select('task_key').eq('id', notifyIssue.parent_id as string).maybeSingle()
         parentKey = par?.task_key ?? null
       }
       const base = fmtDiscordMsg(notifyIssue, toStatus, actor, parentKey, fromStatus)
@@ -994,7 +1004,7 @@ export async function POST(req: NextRequest) {
 
   const isTesterIssue = (title ?? '').startsWith('🧪 Tester:') || (title ?? '').includes('Tester: Review')
   if (isTesterIssue || type === 'review') {
-    const { data: existingByTitle } = await supabase
+    const { data: existingByTitle } = await getSupabase()
       .from('issues')
       .select('id, task_key, status')
       .eq('title', title)
@@ -1007,7 +1017,7 @@ export async function POST(req: NextRequest) {
       )
     }
     if (parent_id && type === 'review') {
-      const { data: existingByParent } = await supabase
+      const { data: existingByParent } = await getSupabase()
         .from('issues')
         .select('id, task_key, status')
         .eq('parent_id', parent_id)
@@ -1030,7 +1040,7 @@ export async function POST(req: NextRequest) {
   // Prevent PO from creating near-identical child tasks on repeated runs.
   if (parent_id && type === 'task') {
     // Guard 1: hard cap — features should not have more than 20 open child tasks.
-    const { count: childCount } = await supabase
+    const { count: childCount } = await getSupabase()
       .from('issues')
       .select('id', { count: 'exact', head: true })
       .eq('parent_id', parent_id)
@@ -1044,7 +1054,7 @@ export async function POST(req: NextRequest) {
 
     // Guard 2: near-duplicate title — first 50 chars match an existing open child.
     if (title && title.length >= 10) {
-      const { data: siblings } = await supabase
+      const { data: siblings } = await getSupabase()
         .from('issues')
         .select('id, task_key, title, status')
         .eq('parent_id', parent_id)
@@ -1067,7 +1077,7 @@ export async function POST(req: NextRequest) {
   // Resolve business_id from project → business mapping
   let effectiveBusinessId = body.business_id ?? null
   if (!effectiveBusinessId && normalizedProject) {
-    const { data: proj } = await supabase
+    const { data: proj } = await getSupabase()
       .from('projects')
       .select('business_id')
       .eq('name', normalizedProject)
@@ -1075,7 +1085,7 @@ export async function POST(req: NextRequest) {
     if (proj?.business_id) effectiveBusinessId = proj.business_id
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('issues')
     .insert({
       title, description: effectiveDescription, status: finalStatus,
@@ -1117,7 +1127,7 @@ export async function POST(req: NextRequest) {
       const creator = (body.transitioned_by as string) ?? (body.assignee as string) ?? 'unknown'
       let parentKey: string | null = null
       if (data.parent_id) {
-        const { data: par } = await supabase.from('issues').select('task_key').eq('id', data.parent_id as string).maybeSingle()
+        const { data: par } = await getSupabase().from('issues').select('task_key').eq('id', data.parent_id as string).maybeSingle()
         parentKey = par?.task_key ?? null
       }
       const meta: string[] = [`Creator: ${creator}`]
@@ -1134,13 +1144,13 @@ export async function POST(req: NextRequest) {
   // Q4: If a child issue is created under a feature in feature_review → revert to underway.
   // Means the feature has open work remaining; PO or agent created a gap-filling child.
   if (data && parent_id) {
-    const { data: parentFeature } = await supabase
+    const { data: parentFeature } = await getSupabase()
       .from('issues')
       .select('id, type, status')
       .eq('id', parent_id as string)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'feature_review') {
-      await supabase
+      await getSupabase()
         .from('issues')
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', parent_id as string)
@@ -1516,7 +1526,7 @@ export async function PATCH(req: NextRequest) {
       const featureProject = (fields.project ?? before?.project ?? 'Mission Control') as string
 
       // Search for an existing epic in the same project that's in draft/active/backlog
-      const { data: existingEpics } = await supabase
+      const { data: existingEpics } = await getSupabase()
         .from('issues')
         .select('id, task_key, title')
         .eq('type', 'epic')
@@ -1752,7 +1762,7 @@ export async function PATCH(req: NextRequest) {
     const WORKFLOW_TYPES = ['task', 'bug', 'feature', 'epic', 'ops', 'research']
 
     if (WORKFLOW_TYPES.includes(issueType) && data) {
-      const { data: transition } = await supabase
+      const { data: transition } = await getSupabase()
         .from('workflow_transitions')
         .select('post_functions')
         .eq('issue_type', issueType)
@@ -1842,13 +1852,13 @@ export async function PATCH(req: NextRequest) {
   // Auto-promote feature from defined→underway when ANY child moves to open or beyond.
   const ACTIVE_CHILD_STATUSES = ['open', 'in_progress', 'code_review', 'product_review', 'approved', 'released']
   if (fields.status && data?.parent_id && ACTIVE_CHILD_STATUSES.includes(fields.status as string)) {
-    const { data: parentFeature } = await supabase
+    const { data: parentFeature } = await getSupabase()
       .from('issues')
       .select('id, type, status')
       .eq('id', data.parent_id)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'defined') {
-      await supabase
+      await getSupabase()
         .from('issues')
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', data.parent_id)
@@ -1860,20 +1870,20 @@ export async function PATCH(req: NextRequest) {
   // Only 'closed' counts — 'released' still needs auditor, 'cancelled' is not a valid status.
   // This triggers PO to confirm the feature is done (PO then closes or reverts to underway).
   if (fields.status === 'closed' && data?.parent_id) {
-    const { data: parentFeature } = await supabase
+    const { data: parentFeature } = await getSupabase()
       .from('issues')
       .select('id, type, status')
       .eq('id', data.parent_id)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
-      const { data: siblings } = await supabase
+      const { data: siblings } = await getSupabase()
         .from('issues')
         .select('id, status')
         .eq('parent_id', data.parent_id)
       const allClosed = siblings && siblings.length > 0 &&
         siblings.every(c => c.status === 'closed')
       if (allClosed) {
-        await supabase
+        await getSupabase()
           .from('issues')
           .update({ status: 'feature_review', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
@@ -1887,20 +1897,20 @@ export async function PATCH(req: NextRequest) {
   // Auto-revert feature from underway→defined when ALL child issues are in backlog/refined.
   // This means no child is actively being worked on, so the feature is no longer "underway".
   if (fields.status && data?.parent_id && ['backlog', 'refined'].includes(fields.status as string)) {
-    const { data: parentFeature } = await supabase
+    const { data: parentFeature } = await getSupabase()
       .from('issues')
       .select('id, type, status')
       .eq('id', data.parent_id)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'underway') {
-      const { data: siblings } = await supabase
+      const { data: siblings } = await getSupabase()
         .from('issues')
         .select('id, status')
         .eq('parent_id', data.parent_id)
       const allIdle = siblings && siblings.length > 0 &&
         siblings.every(c => ['backlog', 'refined', 'defined'].includes(c.status as string))
       if (allIdle) {
-        await supabase
+        await getSupabase()
           .from('issues')
           .update({ status: 'defined', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
@@ -1934,7 +1944,7 @@ export async function PATCH(req: NextRequest) {
 
   if (isCompletedIssueStatus(fields.status) && before?.assignee === 'ux' && before?.parent_id) {
     // Determine correct completion status for parent type
-    const { data: uxParent } = await supabase.from('issues').select('type').eq('id', before.parent_id).maybeSingle()
+    const { data: uxParent } = await getSupabase().from('issues').select('type').eq('id', before.parent_id).maybeSingle()
     const parentCompletionStatus = uxParent?.type === 'epic' ? 'wrapped' : 'closed'
     let parentUpdateQ = createAdminClient()
       .from('issues')
@@ -2007,7 +2017,7 @@ export async function PATCH(req: NextRequest) {
     const taskKey = data.task_key ?? before.task_key ?? ''
     const title = data.title ?? before.title ?? ''
     const actor = (fields.transitioned_by ?? data.transitioned_by ?? 'system') as string
-    supabase.from('notifications').insert({
+    getSupabase().from('notifications').insert({
       type: 'status_change',
       title: `${taskKey} → ${fields.status}`,
       body: title,
@@ -2067,7 +2077,7 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-  const { error } = await supabase.from('issues').delete().eq('id', id)
+  const { error } = await getSupabase().from('issues').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }
