@@ -44,9 +44,10 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   useEffect(() => {
     const params = new URLSearchParams()
     if (projectFilter) params.set('project', projectFilter)
+    params.set('limit', '0')
     const qs = params.toString()
     fetch(`/api/issues${qs ? `?${qs}` : ''}`).then(r=>r.json()).then(d => {
-      setIssues(Array.isArray(d) ? d : d.data ?? d)
+      setIssues(Array.isArray(d) ? d : d?.data ?? [])
       setFetchError(null)
     }).catch(() => setFetchError('Failed to load issues')).finally(()=>setLoading(false))
   }, [projectFilter])
@@ -192,7 +193,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
         {fetchError && (
           <div className="flex flex-col items-center py-8 gap-3">
             <p className="text-red-400 text-sm">{fetchError}</p>
-            <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues').then(r=>r.json()).then(d => { setIssues(Array.isArray(d)?d:d.data??d); setFetchError(null) }).catch(()=>setFetchError('Failed to load issues')).finally(()=>setLoading(false)) }}>
+            <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues?limit=0').then(r=>r.json()).then(d => { setIssues(Array.isArray(d)?d:d?.data??[]); setFetchError(null) }).catch(()=>setFetchError('Failed to load issues')).finally(()=>setLoading(false)) }}>
               Retry
             </Button>
           </div>

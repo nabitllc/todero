@@ -60,9 +60,10 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
   useEffect(() => {
     const params = new URLSearchParams()
     if (projectFilter) params.set('project', projectFilter)
+    params.set('limit', '0')
     const qs = params.toString()
     fetch(`/api/issues${qs ? `?${qs}` : ''}`).then(r => r.json()).then(d => {
-      if (Array.isArray(d)) setIssues(d)
+      setIssues(Array.isArray(d) ? d : d?.data ?? [])
       setFetchError(null)
     }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false))
   }, [projectFilter])
@@ -107,7 +108,7 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <p className="text-red-400 text-sm">{fetchError}</p>
-        <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); const p = new URLSearchParams(); if (projectFilter) p.set('project', projectFilter); const q = p.toString(); fetch(`/api/issues${q ? `?${q}` : ''}`).then(r => r.json()).then(d => { if (Array.isArray(d)) setIssues(d) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}>
+        <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); const p = new URLSearchParams(); if (projectFilter) p.set('project', projectFilter); p.set('limit', '0'); const q = p.toString(); fetch(`/api/issues${q ? `?${q}` : ''}`).then(r => r.json()).then(d => { setIssues(Array.isArray(d) ? d : d?.data ?? []) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}>
           Retry
         </Button>
       </div>

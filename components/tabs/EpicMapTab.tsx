@@ -45,9 +45,10 @@ export default function EpicMapTab() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/issues?limit=500')
+        const res = await fetch('/api/issues?limit=0')
         if (res.ok) {
-          const all: Issue[] = await res.json()
+          const d = await res.json()
+          const all: Issue[] = Array.isArray(d) ? d : d?.data ?? []
           setEpics(all.filter(i => i.type === 'epic'))
           setFeatures(all.filter(i => i.type === 'feature'))
         }
