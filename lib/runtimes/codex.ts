@@ -107,7 +107,7 @@ export const codexRuntime: AgentRuntime = {
 
 function extractTaskKeyFromBranch(branch: string | null | undefined): string | null {
   if (!branch) return null
-  const match = branch.match(/(?:feat\/)?(tod|mc|inf|ves|kem|task)-(\d+)/i)
+  const match = branch.match(/(?:feat\/|infra\/)?(tod|mc|inf|ves|kem|task)-(\d+)/i)
   if (!match) return null
   return `${match[1].toUpperCase()}-${match[2]}`
 }

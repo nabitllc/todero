@@ -1,15 +1,20 @@
 #!/bin/bash
-# pre-commit hook: prevent Builder/agent feature branches from modifying
-# infrastructure files that control the pipeline itself.
+# pre-commit hook: enforce branch/file separation for agent commits.
 #
-# These files have been reverted 5+ times by agents working on stale
-# feature branches. The revert wipes critical configs (wipExtraFilter,
-# selfChainOnStatus, channel routing, worktree isolation) and breaks
-# the pipeline for hours until someone notices.
+# BRANCH RULES (enforced below):
+#   main                — allows everything (KAOS/michael's path)
+#   feat/tod-NNNN       — app-code only. LOCKED_FILES blocked.
+#   infra/tod-NNNN      — LOCKED_FILES only. App-code blocked. (P3 new.)
+#   anything else       — no enforcement (human fixup branches)
 #
-# Only commits on `main` by `michael` or `main` (KAOS) are allowed to
-# touch these files. Feature-branch commits are rejected with a
-# descriptive error.
+# WHY TWO BRANCH PREFIXES
+# Before P3, any infra-touching work had to happen on main, which required a
+# human since agents are scoped to feature branches. That bottlenecked
+# ops-typed issues. With infra/tod-NNNN, a type=ops issue's agent commits
+# LOCKED_FILES in its own worktree and the pr-window rolls it into release
+# just like feat/tod-NNNN. App-code changes stay blocked on infra/ so the two
+# paths can't accidentally mix into one PR (the failure mode that produced
+# TOD-604 mixed-commit drift).
 
 LOCKED_FILES=(
   "lib/agent-queue.ts"
@@ -22,6 +27,7 @@ LOCKED_FILES=(
   "app/api/run-agent/route.ts"
   "app/api/notify/route.ts"
   "app/api/queue-refill/route.ts"
+  ".githooks/pre-commit"
 )
 
 # Get current branch
@@ -40,9 +46,9 @@ fi
 #
 # Detection: a worktree's --git-dir differs from --git-common-dir. If they
 # match, this IS the main checkout.
-# Bypass (human manual fixup on a feat/ branch): git commit --no-verify
+# Bypass (human manual fixup on a feat/ or infra/ branch): git commit --no-verify
 # ──────────────────────────────────────────────────────────────────────────
-if echo "$BRANCH" | grep -qE '^feat/(tod|TOD)-[0-9]+$'; then
+if echo "$BRANCH" | grep -qE '^(feat|infra)/(tod|TOD)-[0-9]+$'; then
   GIT_DIR=$(git rev-parse --git-dir 2>/dev/null)
   COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
   # Normalize paths — --git-dir can be relative, --git-common-dir absolute
@@ -64,10 +70,55 @@ if echo "$BRANCH" | grep -qE '^feat/(tod|TOD)-[0-9]+$'; then
   fi
 fi
 
-# Check if any staged files are in the locked list
+# ── LOCKED_FILES RULES (branch-aware) ───────────────────────────────────────
+# feat/tod-*  → LOCKED_FILES are BLOCKED.
+# infra/tod-* → LOCKED_FILES are ALLOWED; app-code is BLOCKED.
+# Anything else → no enforcement (human fixup branches).
+# ──────────────────────────────────────────────────────────────────────────
 STAGED=$(git diff --cached --name-only)
-BLOCKED=""
 
+if echo "$BRANCH" | grep -qE '^infra/(tod|TOD)-[0-9]+$'; then
+  # Infra branch: app-code blocked, LOCKED_FILES allowed.
+  APP_BLOCKED=""
+  while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    is_locked=0
+    for locked in "${LOCKED_FILES[@]}"; do
+      if [ "$file" = "$locked" ]; then
+        is_locked=1
+        break
+      fi
+    done
+    if [ "$is_locked" -eq 0 ]; then
+      APP_BLOCKED="${APP_BLOCKED}
+  ❌ $file"
+    fi
+  done <<< "$STAGED"
+
+  if [ -n "$APP_BLOCKED" ]; then
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  🔒 BLOCKED: infra/ branches may only modify LOCKED_FILES"
+    echo "     (pipeline infrastructure). App-code changes belong on a"
+    echo "     feat/ branch."
+    echo ""
+    echo "  Blocked (non-LOCKED) files:${APP_BLOCKED}"
+    echo ""
+    echo "  Branch: $BRANCH"
+    echo ""
+    echo "  If this issue needs both app-code + infra changes, split it"
+    echo "  into two sibling tasks: type=feature (feat/) + type=ops"
+    echo "  (infra/). Mixed-concern branches were the bug this rule"
+    echo "  exists to prevent (TOD-604-style drift)."
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+    exit 1
+  fi
+  exit 0
+fi
+
+# Feat branch (or any non-infra non-main branch): LOCKED_FILES blocked.
+BLOCKED=""
 for file in "${LOCKED_FILES[@]}"; do
   if echo "$STAGED" | grep -qx "$file"; then
     BLOCKED="${BLOCKED}
@@ -82,14 +133,18 @@ if [ -n "$BLOCKED" ]; then
   echo "     feature branches. These files control the pipeline and"
   echo "     have been accidentally reverted 5+ times."
   echo ""
-  echo "  Blocked files:${BLOCKED}
-"
+  echo "  Blocked files:${BLOCKED}"
   echo ""
   echo "  Branch: $BRANCH"
   echo ""
-  echo "  If you need to change these files, commit directly on main."
   echo "  If you're a Builder agent: skip these files. Your task"
   echo "  should not require modifying pipeline infrastructure."
+  echo ""
+  echo "  If you're an Ops agent and your issue IS pipeline infra,"
+  echo "  your branch should have been created as infra/tod-NNNN"
+  echo "  rather than feat/tod-NNNN. Patch the issue's feature_branch"
+  echo "  field to infra/<key> and retry — your next spawn will land"
+  echo "  on the correct branch."
   echo "═══════════════════════════════════════════════════════════════"
   echo ""
   exit 1

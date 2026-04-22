@@ -213,7 +213,7 @@ export async function POST(req: NextRequest) {
     due_date: string | null; created_at: string; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
     blocked_by: string | null; is_blocked: boolean | null; status: string; parent_id: string | null;
-    rejection_count: number | null;
+    rejection_count: number | null; type: string | null;
     tester_notes: string | null; designer_notes: string | null;
     tester_status: string | null; designer_status: string | null;
     owner: string | null; deployer_notes: string | null;
@@ -381,9 +381,14 @@ ${responseFields}
   const agentRunId: string | undefined = Array.isArray(agentRunRows) ? agentRunRows[0]?.id : undefined
 
   // ── Step 8: Auto-set feature branch for code-producing agents ──
+  // Branch-prefix routing (P3 / Gap #3): type=ops issues land on
+  // infra/tod-NNNN; everything else lands on feat/tod-NNNN.
+  // The pre-commit hook enforces file-scope separation between the two
+  // prefixes so mixed-concern commits can never enter the pipeline.
   let branch = task.feature_branch
   if (!branch && task.task_key && ['builder', 'ops'].includes(agentId)) {
-    branch = `feat/${(task.task_key as string).toLowerCase()}`
+    const prefix = task.type === 'ops' ? 'infra' : 'feat'
+    branch = `${prefix}/${(task.task_key as string).toLowerCase()}`
     await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
       method: 'PATCH', headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
       body: JSON.stringify({ feature_branch: branch })
