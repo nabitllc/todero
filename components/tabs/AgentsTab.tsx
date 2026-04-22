@@ -4,7 +4,6 @@ import { Chip, Dot, SH } from '@/lib/mc-atoms'
 import { Button, EmptyState as EmptyStateUI } from '@/components/ui'
 import { Users } from 'lucide-react'
 import AgentDetailView from '@/components/tabs/AgentDetailView'
-import CrewTab from '@/components/tabs/CrewTab'
 
 function formatAgo(ms: number): string {
   const sec = Math.floor(ms / 1000)
@@ -165,10 +164,6 @@ export default function AgentsTab({
                 </div>
               </>)}
 
-
-              {/* Human Crew section */}
-              <SH icon="👤">Human Crew</SH>
-              <CrewTab />
 
               {/* Agent Detail View */}
               {agentModal && (

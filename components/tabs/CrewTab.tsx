@@ -6,6 +6,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { Users, ShieldCheck, Eye, UserCog, Plus, Trash2, RefreshCw, AlertCircle } from 'lucide-react'
 import AgentsTab from '@/components/tabs/AgentsTab'
+import MemberDetailView from '@/components/tabs/MemberDetailView'
 import type { WorkspaceMember } from '@/lib/rbac-types'
 
 // ── Role badges ───────────────────────────────────────────────────────────────
@@ -125,12 +126,14 @@ function AddMemberModal({
 // ── MemberRow ─────────────────────────────────────────────────────────────────
 
 function MemberRow({
+  onSelect,
   member,
   isOwner,
   currentIdentity,
   onRoleChange,
   onRemove,
 }: {
+  onSelect: (member: WorkspaceMember) => void
   member: WorkspaceMember
   isOwner: boolean
   currentIdentity: string | null
@@ -151,7 +154,12 @@ function MemberRow({
       <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs font-medium flex-shrink-0">
         {member.identity.charAt(0).toUpperCase()}
       </div>
-      <div className="flex-1 min-w-0">
+      <button
+        type="button"
+        onClick={() => onSelect(member)}
+        className="flex-1 min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-white/50 transition-colors"
+        aria-label={`Open details for ${member.identity}`}
+      >
         <div className="flex items-center gap-2">
           <span className="text-white text-sm font-medium truncate">{member.identity}</span>
           {currentIdentity === member.identity && (
@@ -161,7 +169,7 @@ function MemberRow({
         {member.assigned_by && (
           <span className="text-white/30 text-[10px]">assigned by {member.assigned_by}</span>
         )}
-      </div>
+      </button>
       {isOwner ? (
         <select
           value={member.role}
@@ -218,6 +226,7 @@ export default function CrewTab({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<WorkspaceMember | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -341,6 +350,7 @@ export default function CrewTab({
                 currentIdentity={null}
                 onRoleChange={handleRoleChange}
                 onRemove={handleRemove}
+                onSelect={setSelectedMember}
               />
             ))}
           </div>
@@ -368,6 +378,22 @@ export default function CrewTab({
         <AddMemberModal
           onClose={() => setShowAdd(false)}
           onAdded={load}
+        />
+      )}
+
+      {selectedMember && (
+        <MemberDetailView
+          member={{
+            id: selectedMember.id,
+            name: selectedMember.identity,
+            emoji: '👤',
+            role: selectedMember.role,
+            joinDate: selectedMember.assigned_by ? `assigned by ${selectedMember.assigned_by}` : '',
+          }}
+          onClose={() => setSelectedMember(null)}
+          onNavigateToIssue={issueId => {
+            window.location.href = `/?issue=${encodeURIComponent(issueId)}`
+          }}
         />
       )}
     </div>
