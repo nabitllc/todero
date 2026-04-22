@@ -4,16 +4,22 @@
 //   const result = await requestApproval('builder', 'deploy', { issueId: 'abc' })
 //   if (result.status === 'approved') { ... }
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-if (!SUPA_URL || !SUPA_KEY) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars')
+// Lazy-init: avoids crashing at build time when env vars aren't set (CI).
+// First call throws if still missing. (TOD-2296)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!url || !key) {
+      throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars')
+    }
+    _supabase = createClient(url, key)
+  }
+  return _supabase
 }
-
-const supabase = createClient(SUPA_URL, SUPA_KEY)
 
 export type ApprovalStatus = 'approved' | 'denied' | 'timeout' | 'explained'
 
@@ -62,7 +68,7 @@ export async function requestApproval(
 
   const expiresAt = new Date(Date.now() + timeoutMs).toISOString()
 
-  const { data: entry, error: insertError } = await supabase
+  const { data: entry, error: insertError } = await getSupabase()
     .from('inbox')
     .insert({ agent, type, context, expires_at: expiresAt })
     .select('id')
@@ -77,7 +83,7 @@ export async function requestApproval(
   return new Promise((resolve) => {
     const deadline = setTimeout(async () => {
       clearInterval(poller)
-      await supabase
+      await getSupabase()
         .from('inbox')
         .update({ status: 'timeout', resolved_at: new Date().toISOString() })
         .eq('id', id)
@@ -85,7 +91,7 @@ export async function requestApproval(
     }, timeoutMs)
 
     const poller = setInterval(async () => {
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from('inbox')
         .select('status')
         .eq('id', id)

@@ -1,10 +1,15 @@
 // INF-209: Deploy history log — schema, types, and data layer
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-const supabase = createClient(SUPA_URL, SUPA_KEY)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  }
+  return _supabase
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -30,7 +35,7 @@ export interface DeployRecord {
 // ── Data layer ─────────────────────────────────────────────────────────────
 
 export async function listDeploys(opts?: { project?: string; limit?: number }) {
-  let query = supabase
+  let query = getSupabase()
     .from('deploy_history')
     .select('*')
     .order('created_at', { ascending: false })
@@ -42,7 +47,7 @@ export async function listDeploys(opts?: { project?: string; limit?: number }) {
 }
 
 export async function insertDeploy(record: Omit<DeployRecord, 'id' | 'created_at'>) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('deploy_history')
     .insert(record)
     .select()
@@ -51,7 +56,7 @@ export async function insertDeploy(record: Omit<DeployRecord, 'id' | 'created_at
 }
 
 export async function updateDeploy(id: string, fields: Partial<DeployRecord>) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('deploy_history')
     .update(fields)
     .eq('id', id)

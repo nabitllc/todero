@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      'https://twthgapiouiqhavrcnry.supabase.co',
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabase
+}
 
 // GET /api/notifications — list recent notifications (newest first)
 export async function GET(req: NextRequest) {
@@ -12,7 +18,7 @@ export async function GET(req: NextRequest) {
   const unreadOnly = url.searchParams.get('unread') === 'true'
   const limit = Math.min(Number(url.searchParams.get('limit') ?? '50'), 100)
 
-  let query = supabase
+  let query = getSupabase()
     .from('notifications')
     .select('*')
     .order('created_at', { ascending: false })
@@ -34,7 +40,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'type and title are required' }, { status: 400 })
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('notifications')
     .insert({ type, title, body: notifBody, issue_key, issue_id, actor })
     .select()
@@ -50,7 +56,7 @@ export async function PATCH(req: NextRequest) {
   const { ids, mark_all_read } = body
 
   if (mark_all_read) {
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('notifications')
       .update({ read: true })
       .eq('read', false)
@@ -62,7 +68,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'ids array or mark_all_read required' }, { status: 400 })
   }
 
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from('notifications')
     .update({ read: true })
     .in('id', ids)

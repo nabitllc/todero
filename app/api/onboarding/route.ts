@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      'https://twthgapiouiqhavrcnry.supabase.co',
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabase
+}
 
 export async function POST(req: Request) {
   const { name, type, vision, agentName, model, apiKey, taskTitle, taskDescription } = await req.json()
   if (!name || !type) return NextResponse.json({ error: 'name and type required' }, { status: 400 })
+
+  const supabase = getSupabase()
 
   // Create business
   const { data: business, error: bErr } = await supabase
