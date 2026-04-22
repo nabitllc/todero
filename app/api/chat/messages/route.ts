@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      'https://twthgapiouiqhavrcnry.supabase.co',
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabase
+}
 
 // POST /api/chat/messages — insert a message and return assistant reply
 export async function POST(req: NextRequest) {
   const { conversation_id, role, content, model, id, image_url } = await req.json()
+
+  const supabase = getSupabase()
 
   const { error } = await supabase
     .from('chat_messages')
@@ -31,7 +39,7 @@ export async function PATCH(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const updates: Record<string, unknown> = {}
   if (bookmarked !== undefined) updates.bookmarked = bookmarked
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from('chat_messages')
     .update(updates)
     .eq('id', id)
@@ -51,7 +59,7 @@ export async function DELETE(req: NextRequest) {
 
   // Per-message delete by ID
   if (id) {
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('chat_messages')
       .delete()
       .eq('id', id)
@@ -65,7 +73,7 @@ export async function DELETE(req: NextRequest) {
 
   if (clear === 'true') {
     // Delete ALL messages in the conversation
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('chat_messages')
       .delete()
       .eq('conversation_id', conversation_id)
@@ -76,7 +84,7 @@ export async function DELETE(req: NextRequest) {
   if (!after_ts) {
     return NextResponse.json({ error: 'after_ts or clear=true required' }, { status: 400 })
   }
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from('chat_messages')
     .delete()
     .eq('conversation_id', conversation_id)

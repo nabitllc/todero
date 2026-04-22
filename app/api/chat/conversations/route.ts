@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  'https://twthgapiouiqhavrcnry.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(
+      'https://twthgapiouiqhavrcnry.supabase.co',
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+  }
+  return _supabase
+}
 
 // GET /api/chat/conversations — list all conversations with their messages
 export async function GET() {
+  const supabase = getSupabase()
   const { data: convs, error: convErr } = await supabase
     .from('chat_conversations')
     .select('*')
@@ -33,7 +40,7 @@ export async function GET() {
 // POST /api/chat/conversations — create a conversation
 export async function POST(req: NextRequest) {
   const { id, title, model } = await req.json()
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('chat_conversations')
     .insert({ id, title, model })
     .select()
@@ -46,7 +53,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const { id, ...fields } = await req.json()
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('chat_conversations')
     .update({ ...fields, updated_at: new Date().toISOString() })
     .eq('id', id)
@@ -60,7 +67,7 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-  const { error } = await supabase.from('chat_conversations').delete().eq('id', id)
+  const { error } = await getSupabase().from('chat_conversations').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

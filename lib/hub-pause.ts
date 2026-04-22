@@ -1,14 +1,21 @@
 // TOD-632: Shared hub pause state reader
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// set (CI). First call throws if still missing. (TOD-2296)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  }
+  return _supabase
+}
 
 export async function isHubPaused(): Promise<boolean> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getSupabase()
       .from('agent_memory')
       .select('value')
       .eq('agent_id', 'system')

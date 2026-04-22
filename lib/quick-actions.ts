@@ -1,10 +1,17 @@
 // INF-206: Quick-action floating button — schema, types, and data layer
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-const supabase = createClient(SUPA_URL, SUPA_KEY)
+// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// set (CI). First call throws if still missing. (TOD-2296)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  }
+  return _supabase
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +41,7 @@ export const DEFAULT_QUICK_ACTIONS: Omit<QuickAction, 'id' | 'created_at'>[] = [
 // ── Data layer (persisted actions — optional, falls back to defaults) ──────
 
 export async function listQuickActions(): Promise<QuickAction[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('quick_actions')
     .select('*')
     .eq('enabled', true)
@@ -51,7 +58,7 @@ export async function listQuickActions(): Promise<QuickAction[]> {
 }
 
 export async function upsertQuickAction(action: Partial<QuickAction> & { label: string }) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('quick_actions')
     .upsert(action, { onConflict: 'id' })
     .select()

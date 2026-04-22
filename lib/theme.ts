@@ -1,10 +1,17 @@
 // INF-221: Theme selector — schema, types, and data layer
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-const supabase = createClient(SUPA_URL, SUPA_KEY)
+// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// set (CI). First call throws if still missing. (TOD-2296)
+let _supabase: SupabaseClient | null = null
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    _supabase = createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  }
+  return _supabase
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +80,7 @@ export const THEME_IDS = Object.keys(THEMES) as ThemeId[]
 const THEME_KEY = 'mc_theme'
 
 export async function getThemePreference(): Promise<ThemeId> {
-  const { data } = await supabase
+  const { data } = await getSupabase()
     .from('agent_memory')
     .select('value')
     .eq('agent_id', 'system')
@@ -85,7 +92,7 @@ export async function getThemePreference(): Promise<ThemeId> {
 }
 
 export async function setThemePreference(themeId: ThemeId) {
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from('agent_memory')
     .upsert(
       { agent_id: 'system', key: THEME_KEY, value: themeId, updated_at: new Date().toISOString() },
