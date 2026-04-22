@@ -37,7 +37,7 @@ export default function TopBar({
   ).length
 
   return (
-    <header className="border-b border-white/[0.07] px-3 md:px-5 h-11 grid grid-cols-[auto_1fr_auto] items-center shrink-0 sticky top-0 z-20 bg-[#080808]">
+    <header className="border-b border-white/[0.07] px-3 md:px-5 h-12 grid grid-cols-[auto_1fr_auto] items-center shrink-0 sticky top-0 z-20 bg-[#080808]">
       {/* LEFT — Todero logo (text placeholder for SVG) */}
       <div className="flex items-center gap-2 min-w-0 shrink-0">
         <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center text-[11px] font-bold text-white">T</div>
@@ -48,6 +48,7 @@ export default function TopBar({
       <div className="flex justify-center px-4">
         <button
           onClick={onSearchOpen}
+          aria-label="Open search (⌘K)"
           className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] transition-colors max-w-[320px] w-full"
         >
           <Search size={13} className="text-white/30 shrink-0" />
@@ -57,6 +58,7 @@ export default function TopBar({
         {/* Mobile search icon */}
         <button
           onClick={onSearchOpen}
+          aria-label="Search (⌘K)"
           className="sm:hidden p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
           title="Search (⌘K)"
         >
@@ -69,6 +71,7 @@ export default function TopBar({
         {onTogglePause && (
           <button
             onClick={onTogglePause}
+            aria-label={hubPaused ? 'Hub paused — click to resume agents' : 'Pause all agents'}
             className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors ${
               hubPaused
                 ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400'
@@ -90,6 +93,7 @@ export default function TopBar({
         {activeAgentCount > 0 && (
           <button
             onClick={() => onNavigate('team')}
+            aria-label={`${activeAgentCount} agent${activeAgentCount > 1 ? 's' : ''} running`}
             className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] transition-colors"
             title={`${activeAgentCount} agent${activeAgentCount > 1 ? 's' : ''} running`}
           >
@@ -103,6 +107,7 @@ export default function TopBar({
 
         <button
           onClick={onOpenInbox}
+          aria-label="Inbox (⌘[)"
           className="relative flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
           title="Inbox (⌘[)"
         >
@@ -116,6 +121,7 @@ export default function TopBar({
 
         <button
           onClick={() => onNavigate('chat')}
+          aria-label="Agent Chat"
           className="relative p-2 rounded-md hover:bg-white/[0.05] text-white/40 hover:text-white/60 transition-colors"
           title="Agent Chat"
         >
@@ -129,6 +135,7 @@ export default function TopBar({
 
         <button
           onClick={() => onNavigate('settings')}
+          aria-label="Profile & Settings"
           className="ml-1 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/[0.15] transition-colors"
           title="Profile & Settings"
         >
