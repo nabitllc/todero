@@ -25,3 +25,8 @@ export const AGENTS: AgentConfig[] = [
 ]
 
 export const AGENT_MAP = Object.fromEntries(AGENTS.map(a => [a.id, a])) as Record<string, AgentConfig>
+
+// TOD-1598: Agent detection for /crew/[id] routing
+export function isAgent(id: string): boolean {
+  return id in AGENT_MAP
+}
