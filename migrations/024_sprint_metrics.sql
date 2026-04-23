@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS sprint_metrics (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  sprint_id            uuid NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
+  sprint_id            text NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
   project              text NOT NULL,
   issues_closed        integer NOT NULL DEFAULT 0,
   issues_rolled_over   integer NOT NULL DEFAULT 0,
