@@ -108,6 +108,22 @@ function selfChainOnStatus(toStatus: string | undefined | null) {
   }
 }
 
+// Kick main when a rejection loop or manual block appears.
+// Dependency blocks (blocked_by=<uuid>) are handled by the DB trigger (TOD-607) — no main needed.
+function selfChainOnBlocked(isBlocked: boolean | undefined, blockedBy: string | null | undefined) {
+  if (!isBlocked) return
+  const isRejectionLoop = blockedBy === 'system:rejection_loop'
+  const isManualBlock = !blockedBy
+  if (!isRejectionLoop && !isManualBlock) return
+  void (async () => {
+    try {
+      await fetch('http://localhost:3000/api/run-agent?agent=main', { method: 'POST' })
+    } catch (err) {
+      console.warn('[selfChain] main for blocked:', err instanceof Error ? err.message : String(err))
+    }
+  })()
+}
+
 // ── Discord helpers ───────────────────────────────────────────────────────────
 const COMPLETED_TASKS_CHANNEL = '1487584901678104698'
 const ALERTS_CHANNEL          = '1485333335868834063'
@@ -1824,6 +1840,11 @@ export async function PATCH(req: NextRequest) {
   // SELF-CHAIN CALL — DO NOT REMOVE (protected by .githooks/pre-commit)
   if (fields.status && data && fields.status !== before?.status) {
     selfChainOnStatus(fields.status as string)
+  }
+
+  // Kick main when a new rejection-loop or manual block appears
+  if (fields.is_blocked === true && !before?.is_blocked) {
+    selfChainOnBlocked(fields.is_blocked, fields.blocked_by as string | null | undefined)
   }
 
   // ── Close agent_runs on status change ──
