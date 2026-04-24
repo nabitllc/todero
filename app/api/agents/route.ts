@@ -2,33 +2,81 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 const execAsync = promisify(exec)
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-// Maps agent IDs to display metadata
+// Maps agent IDs to UI display metadata — emoji, color, capabilities, floor, queue_filter
+// model and role are sourced from AGENTS.md; values here serve as fallback only
 const AGENT_META: Record<string, { name: string; emoji: string; role: string; color: string; capabilities: string[]; floor: boolean; model: string; queue_filter: string[] }> = {
   'main':        { name: 'KAOS',        emoji: '🧠', role: 'Chief Orchestrator',   color: '#6b7280', capabilities: ['Orchestration', 'Memory', 'Strategy', 'Comms', 'Delegation'], floor: true,  model: 'claude-sonnet-4-6', queue_filter: [] },
   'scout':       { name: 'Scout',       emoji: '🔍', role: 'Research Agent',        color: '#a855f7', capabilities: ['Web Research', 'Summarization', 'Trends'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: ['open'] },
-  'ops':         { name: 'Ingo',         emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true,                model: 'claude-haiku-4-5',  queue_filter: ['open'] },
+  'ops':         { name: 'Ingo',        emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true,                  model: 'claude-haiku-4-5',  queue_filter: ['open'] },
   'kemuni-sme':  { name: 'Kemuni SME',  emoji: '🚀', role: 'Kemuni Product Expert', color: '#3b82f6', capabilities: ['Product Strategy', 'Kemuni', 'PropTech'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: [] },
   'vespera-sme': { name: 'Vespera SME', emoji: '🖤', role: 'Vespera Product Expert', color: '#ec4899', capabilities: ['Product Strategy', 'Vespera', 'Community'], floor: true,                model: 'claude-sonnet-4-6', queue_filter: [] },
   'builder':     { name: 'Builder',     emoji: '🔨', role: 'Coding Agent',           color: '#f59e0b', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true,     model: 'claude-sonnet-4-6', queue_filter: ['open'] },
   'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true,     model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
   'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true,                model: 'claude-haiku-4-5',  queue_filter: ['approved'] },
-  'ux':          { name: 'UX Designer',      emoji: '🎨', role: 'UX & Design Agent',        color: '#ec4899', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false, model: 'claude-sonnet-4-6', queue_filter: [] },
-  'designer':    { name: 'Designer',        emoji: '🖌️', role: 'Design Review Agent',      color: '#d946ef', capabilities: ['Design System', 'UI Review', 'Visual QA', 'Accessibility'], floor: false, model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
-  'po':          { name: 'Product Owner',    emoji: '📋', role: 'Product Owner',             color: '#f59e0b', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false,  model: 'claude-sonnet-4-6', queue_filter: ['defined'] },
-  'growth':      { name: 'Growth',           emoji: '📈', role: 'Growth Strategist',         color: '#10b981', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false,           model: 'claude-sonnet-4-6', queue_filter: [] },
-  'security':    { name: 'Security',         emoji: '🔐', role: 'Security Auditor',          color: '#ef4444', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false,   model: 'claude-sonnet-4-6', queue_filter: [] },
-  'community':   { name: 'Community Mgr',    emoji: '🖤', role: 'Community Manager',         color: '#a78bfa', capabilities: ['Social Content', 'Brand Voice', 'Colombia Goth'], floor: false,      model: 'claude-sonnet-4-6', queue_filter: [] },
-  'content':     { name: 'Content Creator',  emoji: '✍️', role: 'Content Creator',           color: '#60a5fa', capabilities: ['Blog', 'SEO', 'Email', 'Help Docs'], floor: false,                  model: 'claude-sonnet-4-6', queue_filter: [] },
-  'auditor':     { name: 'Auditor',     emoji: '🔎', role: 'System Truth Enforcer',  color: '#ef4444', capabilities: ['Drift Detection', 'Config Audit', 'Task Hygiene'], floor: true,             model: 'claude-sonnet-4-6', queue_filter: ['released'] },
+  'ux':          { name: 'UX Designer',     emoji: '🎨', role: 'UX & Design Agent',       color: '#ec4899', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false, model: 'claude-sonnet-4-6', queue_filter: [] },
+  'designer':    { name: 'Designer',        emoji: '🖌️', role: 'Design Review Agent',     color: '#d946ef', capabilities: ['Design System', 'UI Review', 'Visual QA', 'Accessibility'], floor: false, model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
+  'po':          { name: 'Product Owner',   emoji: '📋', role: 'Product Owner',            color: '#f59e0b', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false,  model: 'claude-sonnet-4-6', queue_filter: ['defined'] },
+  'growth':      { name: 'Growth',          emoji: '📈', role: 'Growth Strategist',        color: '#10b981', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false,           model: 'claude-sonnet-4-6', queue_filter: [] },
+  'security':    { name: 'Security',        emoji: '🔐', role: 'Security Auditor',         color: '#ef4444', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false,   model: 'claude-sonnet-4-6', queue_filter: [] },
+  'community':   { name: 'Community Mgr',   emoji: '🖤', role: 'Community Manager',        color: '#a78bfa', capabilities: ['Social Content', 'Brand Voice', 'Colombia Goth'], floor: false,      model: 'claude-sonnet-4-6', queue_filter: [] },
+  'content':     { name: 'Content Creator', emoji: '✍️', role: 'Content Creator',          color: '#60a5fa', capabilities: ['Blog', 'SEO', 'Email', 'Help Docs'], floor: false,                  model: 'claude-sonnet-4-6', queue_filter: [] },
+  'auditor':     { name: 'Auditor',     emoji: '🔎', role: 'System Truth Enforcer',  color: '#ef4444', capabilities: ['Drift Detection', 'Config Audit', 'Task Hygiene'], floor: true,            model: 'claude-sonnet-4-6', queue_filter: ['released'] },
+}
+
+interface ParsedAgent {
+  id: string
+  name: string
+  role: string
+  model: string
+}
+
+// Parse the Agent Roster table from kaos-config/AGENTS.md at request time.
+// This is the authoritative source for id, name, role, and model.
+const AGENTS_MD_PATH = join(process.env.HOME ?? '/Users/kemuniagent', 'kaos-config', 'AGENTS.md')
+
+function parseAgentsFromMd(): ParsedAgent[] {
+  const content = readFileSync(AGENTS_MD_PATH, 'utf-8')
+  const lines = content.split('\n')
+  const headerIdx = lines.findIndex(l => /\|\s*Agent\s*\|\s*Model\s*\|\s*Notes\s*\|/i.test(l))
+  if (headerIdx === -1) throw new Error('Agent Roster table not found in AGENTS.md')
+  const agents: ParsedAgent[] = []
+  // Skip header + separator
+  for (let i = headerIdx + 2; i < lines.length; i++) {
+    const line = lines[i].trim()
+    if (!line.startsWith('|')) break
+    const cols = line.split('|').map(c => c.trim()).filter(Boolean)
+    if (cols.length < 3) continue
+    const [agentCol, modelCol, notesCol] = cols
+    // "main (KAOS)" → id="main", name="KAOS"; "builder" → id="builder", name="Builder"
+    const parenMatch = agentCol.match(/^(.+?)\s*\((.+?)\)$/)
+    const id = parenMatch ? parenMatch[1].trim().toLowerCase() : agentCol.toLowerCase()
+    const name = parenMatch ? parenMatch[2].trim() : agentCol.charAt(0).toUpperCase() + agentCol.slice(1)
+    agents.push({ id, name, role: notesCol, model: modelCol })
+  }
+  if (agents.length === 0) throw new Error('No agents parsed from AGENTS.md roster table')
+  return agents
 }
 
 export async function GET() {
+  // Parse AGENTS.md first — fail fast with 500 if it can't be read/parsed
+  let parsedAgents: ParsedAgent[]
+  try {
+    parsedAgents = parseAgentsFromMd()
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: `Failed to parse AGENTS.md: ${e.message}` },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
+    )
+  }
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
     const now = Date.now()
@@ -108,17 +156,28 @@ export async function GET() {
       }
     } catch { /* no agent processes running */ }
 
-    // 4. Build agent list from AGENT_META + active issue data + process status
-    const agents = Object.entries(AGENT_META).map(([id, meta]) => {
+    // 4. Build agent list:
+    //    - AGENTS.md roster is authoritative for id/name/role/model
+    //    - AGENT_META provides emoji/color/capabilities/floor/queue_filter overrides
+    //    - Agents in AGENT_META but not in AGENTS.md are deprecated (active=false)
+    const agentMdIds = new Set(parsedAgents.map(a => a.id))
+    const allIdSet = new Set([...parsedAgents.map(a => a.id), ...Object.keys(AGENT_META)])
+    const allIds = Array.from(allIdSet)
+
+    const agents = allIds.map(id => {
+      const parsed = parsedAgents.find(a => a.id === id)
+      const meta = AGENT_META[id]
+      const inAgentsMd = agentMdIds.has(id)
+
       const issue = agentIssue[id]
       const lastTs = agentLastActive[id] ?? 0
       const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
 
-      // Agent is "active" if they have a running process OR an in_progress issue
       const isRunning = runningAgents.has(id)
       const hasInProgressIssue = !!issue && issue.status === 'in_progress'
-      const isActive = isRunning || hasInProgressIssue
-      const isScheduled = id === 'ops' && !isActive
+      // Deprecated agents (not in AGENTS.md) are never active
+      const isActive = inAgentsMd && (isRunning || hasInProgressIssue)
+      const isScheduled = inAgentsMd && id === 'ops' && !isActive
 
       // Compute next scheduled run based on fixed 30-min intervals anchored to the hour
       // Ops heartbeat fires at :00 and :30 of every hour (fixed schedule, not relative)
@@ -131,27 +190,31 @@ export async function GET() {
         nextRunTs = now + msUntilNext
       }
 
+      const model = parsed?.model ?? meta?.model ?? ''
+      const role = parsed?.role ?? meta?.role ?? ''
+
       return {
         id,
-        name: meta.name,
-        emoji: meta.emoji,
-        role: meta.role,
+        name: meta?.name ?? parsed?.name ?? id,
+        emoji: meta?.emoji ?? '🤖',
+        role,
+        model,
+        active: isActive,
         status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
         isRunning,
         nextRunTs,
-        model: meta.model,
-        modelShort: meta.model.includes('haiku') ? 'Haiku 4.5' : 'Sonnet 4.6',
-        queue_filter: meta.queue_filter,
-        color: meta.color,
-        desc: meta.role,
-        capabilities: meta.capabilities,
-        floor: meta.floor,
+        modelShort: model.includes('haiku') ? 'Haiku 4.5' : 'Sonnet 4.6',
+        queue_filter: meta?.queue_filter ?? [],
+        color: meta?.color ?? '#6b7280',
+        desc: role,
+        capabilities: meta?.capabilities ?? [],
+        floor: meta?.floor ?? false,
         workspace: null,
         sessions: 0,
         ago: agoMin,
         lastUpdatedAt: lastTs,
         currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : null,
-        workStartedAt: issue?.startedAt ?? null, // timestamp when agent started on this specific issue
+        workStartedAt: issue?.startedAt ?? null,
       }
     })
 
