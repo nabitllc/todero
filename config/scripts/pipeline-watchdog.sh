@@ -22,6 +22,15 @@ NOTIFY_API="http://localhost:3000/api/notify"
 AGENTS_API="http://localhost:3000/api/agents"
 TODERO_DIR="/Users/kemuniagent/todero"
 STATE=/tmp/pipeline-watchdog.state.json
+ENV_FILE="${TODERO_DIR}/.env.local"
+
+# ── Load Supabase credentials ────────────────────────────────────────────
+SUPABASE_URL=""
+SUPABASE_KEY=""
+if [ -f "$ENV_FILE" ]; then
+  SUPABASE_URL=$(grep '^NEXT_PUBLIC_SUPABASE_URL=' "$ENV_FILE" | cut -d= -f2-)
+  SUPABASE_KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$ENV_FILE" | cut -d= -f2-)
+fi
 
 # Thresholds (seconds)
 BUILDER_STALE=2700    # 45 min
@@ -66,9 +75,25 @@ except: pass
 }
 
 # ── Fetch state ─────────────────────────────────────────────────────────
-ISSUES=$(curl -s "$API" 2>/dev/null)
-if [ -z "$ISSUES" ] || echo "$ISSUES" | grep -q '"error"'; then
-  echo "[FATAL] API unreachable"
+# Query Supabase REST directly (bypasses MC API 1000-row cap) with a
+# status filter so we only fetch active-pipeline issues (~50-100 rows vs
+# ~1000). Old issues with low task_key numbers are now visible because
+# the filter is by status, not creation order.
+ACTIVE_STATUSES="open,in_progress,code_review,backlog,defined,approved,released"
+if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_KEY" ]; then
+  ISSUES=$(curl -s \
+    "${SUPABASE_URL}/rest/v1/issues?status=in.(${ACTIVE_STATUSES})&select=id,task_key,status,assignee,type,tester_status,designer_status,is_blocked,started_at,updated_at,created_at&order=created_at.asc&limit=2000" \
+    -H "apikey: ${SUPABASE_KEY}" \
+    -H "Authorization: Bearer ${SUPABASE_KEY}" \
+    2>/dev/null)
+else
+  # Fallback to MC API if Supabase creds unavailable (legacy path)
+  echo "[WARN] Supabase creds not found, falling back to MC API (1000-row cap applies)"
+  ISSUES=$(curl -s "$API" 2>/dev/null)
+fi
+
+if [ -z "$ISSUES" ] || ! echo "$ISSUES" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,list) else 1)" 2>/dev/null; then
+  echo "[FATAL] Issue fetch failed or returned non-array response"
   NOTABLE="${NOTABLE}SERVER_DOWN "
   exit 1
 fi
@@ -83,7 +108,7 @@ NOTABLE=""
 # Get all lanes' state in one python call
 LANE_STATE=$(echo "$ISSUES" | python3 -c "
 import json, sys, datetime
-raw = json.load(sys.stdin)
+raw = json.loads(sys.stdin.read(), strict=False)
 issues = raw.get('data', raw) if isinstance(raw, dict) else raw
 now = datetime.datetime.now(datetime.timezone.utc)
 
@@ -111,7 +136,6 @@ for agent, cfg in lanes.items():
         eligible = sum(1 for i in issues
             if i.get('status') == cfg['pickup']
             and i.get(field) == 'pending'
-            and i.get('acceptance_criteria')
             and not i.get('is_blocked'))
     elif agent == 'todero-sme':
         eligible = sum(1 for i in issues
@@ -193,7 +217,7 @@ done <<< "$LANE_STATE"
 
 read OPEN_WORK DEF_FEAT BKLOG_FEAT <<< $(echo "$ISSUES" | python3 -c "
 import json, sys
-raw = json.load(sys.stdin)
+raw = json.loads(sys.stdin.read(), strict=False)
 issues = raw.get('data', raw) if isinstance(raw, dict) else raw
 ow = sum(1 for i in issues if i.get('status')=='open' and i.get('type') in ('task','bug','ops','research') and not i.get('is_blocked'))
 df = sum(1 for i in issues if i.get('status')=='defined' and i.get('type')=='feature' and not i.get('is_blocked'))
