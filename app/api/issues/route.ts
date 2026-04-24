@@ -1382,6 +1382,18 @@ export async function PATCH(req: NextRequest) {
       )
     }
 
+    // TOD-1199: backlog-first policy — cap open issues at 10
+    const { count: openCount, error: countErr } = await getSupabase()
+      .from('issues')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'open')
+    if (!countErr && openCount !== null && openCount >= 10) {
+      return NextResponse.json(
+        { error: 'Backlog-first policy: cannot move issue to open when 10 or more issues are already open. Finish or backlog existing open issues first.', open_count: openCount },
+        { status: 409 }
+      )
+    }
+
     // Auto-reassign: if a reviewer agent (tester, designer, auditor, deployer, po)
     // is rejecting back to open, reset the assignee to the correct implementing agent.
     // This prevents issues from being permanently stuck when reviewers don't set assignee.
