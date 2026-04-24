@@ -203,8 +203,10 @@ export async function POST(req: NextRequest) {
       ? `status=eq.${allPickupStatuses[0]}`
       : `status=in.(${allPickupStatuses.join(',')})`
   // Build URL — join non-empty filters with & to avoid double-ampersand artifacts
-  // is_blocked=eq.false ensures agents never receive blocked issues (even when blocked_by=null)
-  const baseFilters = [assigneeFilter, statusFilter, dorFilter, 'is_blocked=eq.false'].filter(Boolean).join('&')
+  // is_blocked=eq.false ensures agents never receive blocked issues (even when blocked_by=null).
+  // main (skipAssigneeFilter) uses extraFilters=is_blocked=eq.true — omit the false filter so they don't conflict.
+  const blockedFilter = config.skipAssigneeFilter ? '' : 'is_blocked=eq.false'
+  const baseFilters = [assigneeFilter, statusFilter, dorFilter, blockedFilter].filter(Boolean).join('&')
   const url = `${SUPA_URL}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
