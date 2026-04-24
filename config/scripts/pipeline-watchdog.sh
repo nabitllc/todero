@@ -83,7 +83,8 @@ NOTABLE=""
 # Get all lanes' state in one python call
 LANE_STATE=$(echo "$ISSUES" | python3 -c "
 import json, sys, datetime
-issues = json.load(sys.stdin)
+raw = json.load(sys.stdin)
+issues = raw.get('data', raw) if isinstance(raw, dict) else raw
 now = datetime.datetime.now(datetime.timezone.utc)
 
 def age_sec(ts):
@@ -192,7 +193,8 @@ done <<< "$LANE_STATE"
 
 read OPEN_WORK DEF_FEAT BKLOG_FEAT <<< $(echo "$ISSUES" | python3 -c "
 import json, sys
-issues = json.load(sys.stdin)
+raw = json.load(sys.stdin)
+issues = raw.get('data', raw) if isinstance(raw, dict) else raw
 ow = sum(1 for i in issues if i.get('status')=='open' and i.get('type') in ('task','bug','ops','research') and not i.get('is_blocked'))
 df = sum(1 for i in issues if i.get('status')=='defined' and i.get('type')=='feature' and not i.get('is_blocked'))
 bf = sum(1 for i in issues if i.get('status')=='backlog' and i.get('type')=='feature' and not i.get('is_blocked'))
