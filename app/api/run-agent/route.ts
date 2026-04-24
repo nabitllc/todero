@@ -305,7 +305,8 @@ export async function POST(req: NextRequest) {
   const escalatedKeys: string[] = []
   let task: typeof readyTasks[0] | null = null
   for (const candidate of readyTasks) {
-    if (candidate.is_blocked) {
+    // main (skipAssigneeFilter) intentionally picks up blocked issues — skip the guard for it
+    if (candidate.is_blocked && !config.skipAssigneeFilter) {
       escalatedKeys.push(candidate.task_key ?? candidate.id)
       continue
     }
