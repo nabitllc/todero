@@ -149,9 +149,11 @@ function MemberRow({
     setChanging(false)
   }
 
+  const isMe = currentIdentity !== null && currentIdentity === member.identity
+
   return (
     <div className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
-      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs font-medium flex-shrink-0">
+      <div className={`w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs font-medium flex-shrink-0${isMe ? ' ring-2 ring-blue-500/60' : ''}`}>
         {member.identity.charAt(0).toUpperCase()}
       </div>
       <button
@@ -162,8 +164,8 @@ function MemberRow({
       >
         <div className="flex items-center gap-2">
           <span className="text-white text-sm font-medium truncate">{member.identity}</span>
-          {currentIdentity === member.identity && (
-            <span className="text-white/30 text-[10px]">(you)</span>
+          {isMe && (
+            <span className="bg-blue-500/30 text-blue-300 border border-blue-500/40 px-1.5 py-0.5 rounded text-[9px] font-semibold">You</span>
           )}
         </div>
         {member.assigned_by && (
@@ -201,6 +203,7 @@ function MemberRow({
 
 export default function CrewTab({
   userRole,
+  currentIdentity,
   displayAgents,
   agentLiveStatus,
   agentRunsData,
@@ -211,6 +214,7 @@ export default function CrewTab({
   projectFilter,
 }: {
   userRole: string | null
+  currentIdentity: string | null
   displayAgents: any[]
   agentLiveStatus: (agentId: string) => { dot: 'green' | 'amber' | 'grey'; label: string }
   agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: string }>
@@ -342,12 +346,18 @@ export default function CrewTab({
 
         {members.length > 0 && (
           <div className="bg-white/3 border border-white/8 rounded-xl px-4">
-            {members.map(m => (
+            {[...members].sort((a, b) => {
+              const aIsMe = currentIdentity ? a.identity === currentIdentity : false
+              const bIsMe = currentIdentity ? b.identity === currentIdentity : false
+              if (aIsMe && !bIsMe) return -1
+              if (!aIsMe && bIsMe) return 1
+              return 0
+            }).map(m => (
               <MemberRow
                 key={m.id}
                 member={m}
                 isOwner={isOwner}
-                currentIdentity={null}
+                currentIdentity={currentIdentity}
                 onRoleChange={handleRoleChange}
                 onRemove={handleRemove}
                 onSelect={setSelectedMember}

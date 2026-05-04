@@ -67,6 +67,12 @@ export default function AgentsTab({
                         {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgents[0].modelShort}</span>}
                       </div>
                       <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
+                      {agentRunsData[displayAgents[0].id]?.status === 'running' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium mt-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          On duty
+                        </span>
+                      )}
                       {ls0.dot === 'green' && <p className="text-emerald-400/80 text-[10px] font-mono mt-0.5 truncate max-w-[200px]">↳ {ls0.label}</p>}
                       {ls0.dot === 'amber' && <p className="text-amber-400/70 text-[10px] font-mono mt-0.5">{ls0.label}</p>}
                       {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">Idle · last active {lastActiveLabel(displayAgents[0].id, agentRunsData)}</p>}
@@ -111,6 +117,12 @@ export default function AgentsTab({
                           {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
                         </div>
                         <p className="text-white/50 text-xs truncate">{a.role}</p>
+                        {agentRunsData[a.id]?.status === 'running' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            On duty
+                          </span>
+                        )}
                         <p className={`text-[10px] font-mono truncate ${ls.dot==='green'?'text-emerald-400/80':ls.dot==='amber'?'text-amber-400/70':'text-white/20'}`}>
                           {ls.dot === 'green' ? `↳ ${ls.label}` : ls.label}
                         </p>

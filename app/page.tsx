@@ -111,6 +111,7 @@ export default function Home() {
   // MC-hydration: start with SSR-safe default; apply URL/localStorage after mount to avoid hydration mismatch
   const [tab, setTab] = useState<Tab>('overview')
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [currentIdentity, setCurrentIdentity] = useState<string | null>(null)
   const [clock, setClock] = useState('')
   const [memFiles, setMemFiles] = useState<any[]>([])
   const [openMem, setOpenMem] = useState<string | null>(null)
@@ -164,7 +165,16 @@ export default function Home() {
   // Read mc-role cookie (not httpOnly — accessible to JS) for RBAC-aware UI
   useEffect(() => {
     const match = document.cookie.match(/(?:^|;\s*)mc-role=([^;]+)/)
-    if (match) setUserRole(decodeURIComponent(match[1]))
+    if (match) {
+      const raw = decodeURIComponent(match[1])
+      const colonIdx = raw.indexOf(':')
+      if (colonIdx !== -1) {
+        setCurrentIdentity(raw.slice(0, colonIdx))
+        setUserRole(raw.slice(colonIdx + 1))
+      } else {
+        setUserRole(raw)
+      }
+    }
   }, [])
 
   // MC-hydration: restore tab/business/feature from URL/localStorage after mount
@@ -443,7 +453,7 @@ export default function Home() {
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
-          {tab === 'team' && <CrewTab userRole={userRole} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
+          {tab === 'team' && <CrewTab userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
           {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} openMem={openMem} setOpenMem={setOpenMem} />}
