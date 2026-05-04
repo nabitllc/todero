@@ -265,6 +265,32 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // ── Step 3.5: Feature-lock (TOD-2344) — stick to one feature until siblings reviewed ──
+  // If this agent has any in-progress task with a parent_id, restrict the next pick to
+  // siblings of that parent. Produces coherent feature batches and reduces context switching.
+  // Lock auto-releases when no in-progress task for this agent has a parent_id, or when
+  // readyTasks contains no siblings of locked parent (fallback to global queue to avoid starve).
+  {
+    const inProgressRes = await fetch(
+      `${SUPA_URL}/rest/v1/issues?status=eq.in_progress&assignee=eq.${agentId}&parent_id=not.is.null&select=parent_id`,
+      { headers: getHeaders() }
+    )
+    const inProgressTasks = await inProgressRes.json() as Array<{ parent_id: string | null }>
+    if (Array.isArray(inProgressTasks) && inProgressTasks.length > 0) {
+      const lockedParents = new Set(inProgressTasks.map(t => t.parent_id).filter(Boolean) as string[])
+      if (lockedParents.size > 0) {
+        const filtered = readyTasks.filter(t => t.parent_id && lockedParents.has(t.parent_id))
+        const parentList = Array.from(lockedParents).join(',')
+        if (filtered.length > 0) {
+          console.log(`[feature-lock] ${agentId} locked to parent(s) ${parentList} — ${filtered.length} sibling(s) remaining (was ${readyTasks.length} eligible)`)
+          readyTasks = filtered
+        } else {
+          console.log(`[feature-lock] ${agentId} parent(s) ${parentList} have no eligible siblings — releasing lock`)
+        }
+      }
+    }
+  }
+
   // ── Step 4: Priority sort — parent underway first, then priority → due_date → created_at ──
   // Fetch parent statuses so issues under an active feature (status=underway) jump the queue.
   const parentIds = Array.from(new Set(readyTasks.map(t => t.parent_id).filter(Boolean))) as string[]
