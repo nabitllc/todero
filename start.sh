@@ -53,17 +53,19 @@ if [ ! -f .next/BUILD_ID ]; then
   if [ ! -f .next/BUILD_ID ]; then
     echo $$ > "$LOCK_FILE"
     trap 'rm -f "$LOCK_FILE"' EXIT
+    # Try incremental build first (fast if .next partially exists, avoids downtime).
+    # Use || true so set -e doesn't abort before the clean-build fallback runs.
     echo "[start.sh] BUILD_ID missing, rebuilding (incremental)..."
-    /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -10
+    /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -10 || true
     if [ ! -f .next/BUILD_ID ]; then
       echo "[start.sh] Incremental build failed — trying clean build..."
       rm -rf .next
-      /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -10
+      /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -10 || true
     fi
     if [ ! -f .next/BUILD_ID ]; then
       echo "[start.sh] CRITICAL: both builds failed. Cleaning cache and retrying once more."
       rm -rf .next node_modules/.cache
-      /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -15
+      /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -15 || true
     fi
     rm -f "$LOCK_FILE"
   fi
