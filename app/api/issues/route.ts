@@ -167,6 +167,10 @@ const SEVERITY_EMOJI: Record<string, string> = {
   S0: '🔴', S1: '🟠', S2: '🟡', S3: '🟢'
 }
 
+// ── GET response cache (30s TTL, keyed by query string) ───────────────────────
+const issuesCache = new Map<string, { data: unknown; ts: number }>()
+const ISSUES_CACHE_TTL = 30_000
+
 function fmtDiscordMsg(
   issue: Record<string, unknown>,
   toStatus: string,
@@ -792,6 +796,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(withIssueStatusCategory(data))
   }
 
+  const cacheKey = url.search
+  const cached = issuesCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < ISSUES_CACHE_TTL) {
+    return NextResponse.json(cached.data)
+  }
+
   const search = url.searchParams.get('search')
   // TOD-1999: default limit=50 keeps no-param responses under 200KB.
   // Pass ?limit=0 for unbounded (agent/script callers). ?page=N for offset.
@@ -866,7 +876,9 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resultData = withIssueStatusCategoryList(data as any[])
   const hasMore = limit > 0 ? offset + (data?.length ?? 0) < total : false
-  const res = NextResponse.json({ data: resultData, total, page, limit, has_more: hasMore })
+  const responseBody = { data: resultData, total, page, limit, has_more: hasMore }
+  issuesCache.set(cacheKey, { data: responseBody, ts: Date.now() })
+  const res = NextResponse.json(responseBody)
   res.headers.set('X-Total-Count', String(total))
   return res
 }
@@ -1188,6 +1200,7 @@ export async function POST(req: NextRequest) {
 
   // Warn if bug is created without environment field
   const responseData = withIssueStatusCategory(data)
+  issuesCache.clear()
   if ((type ?? 'task') === 'bug' && !body.environment) {
     return NextResponse.json({
       ...responseData,
@@ -2114,6 +2127,7 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  issuesCache.clear()
   return NextResponse.json(data ? withIssueStatusCategory(data) : data)
 }
 
