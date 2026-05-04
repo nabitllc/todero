@@ -3,6 +3,7 @@
 set -e
 
 TODERO_DIR="/Users/kemuniagent/todero"
+LOCK_FILE="/tmp/todero-build.lock"
 
 # Kill anything on port 3000
 PID=$(/usr/sbin/lsof -ti :3000 2>/dev/null || true)
@@ -13,6 +14,19 @@ if [ -n "$PID" ]; then
 fi
 
 cd "$TODERO_DIR"
+
+# Kill any orphaned next build processes left running in the main todero dir from
+# prior start.sh restarts. When launchd kills start.sh, bash children (next build)
+# survive and accumulate — they corrupt .next when multiple builds run concurrently.
+STALE_BUILDS=$(pgrep -f "node.*next.*build" 2>/dev/null | while read p; do
+  lsof -p "$p" 2>/dev/null | grep -q "todero/node_modules/next" && echo "$p" || true
+done | tr '\n' ' ')
+if [ -n "$STALE_BUILDS" ]; then
+  echo "[start.sh] Killing orphaned next build processes: $STALE_BUILDS"
+  echo "$STALE_BUILDS" | xargs kill -9 2>/dev/null || true
+  sleep 1
+fi
+rm -f "$LOCK_FILE"
 
 # Ensure we're always on main (agents may leave us on feature branches)
 git checkout main 2>/dev/null || true
@@ -41,7 +55,6 @@ done
 
 # Build lock — prevents concurrent next build processes from corrupting .next.
 # Agents may trigger builds simultaneously; only one should win.
-LOCK_FILE="/tmp/todero-build.lock"
 if [ ! -f .next/BUILD_ID ]; then
   if [ -f "$LOCK_FILE" ] && kill -0 "$(cat "$LOCK_FILE" 2>/dev/null)" 2>/dev/null; then
     echo "[start.sh] Build already in progress (PID $(cat "$LOCK_FILE")), waiting up to 120s..."
