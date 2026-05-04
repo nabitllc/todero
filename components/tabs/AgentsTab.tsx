@@ -64,6 +64,9 @@ export default function AgentsTab({
                       <div className="flex items-center gap-2">
                         <p className="text-white font-semibold">{displayAgents[0].name}</p>
                         <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`} title={ls0.label} />
+                        {displayAgents[0].type === 'consultant' && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+                        )}
                         {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgents[0].modelShort}</span>}
                       </div>
                       <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
@@ -114,6 +117,9 @@ export default function AgentsTab({
                         <div className="flex items-center gap-1.5">
                           <p className="text-white text-sm font-semibold truncate">{a.name}</p>
                           <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={ls.label} />
+                          {a.type === 'consultant' && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+                          )}
                           {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
                         </div>
                         <p className="text-white/50 text-xs truncate">{a.role}</p>
@@ -156,6 +162,9 @@ export default function AgentsTab({
                           <div className="flex items-center gap-1.5">
                             <p className="text-white/40 text-sm font-semibold truncate">{a.name}</p>
                             <span className="text-[8px] px-1.5 py-0.5 rounded-full border border-white/10 text-white/50 bg-[#0f0f0f] font-semibold uppercase">Planned</span>
+                            {a.type === 'consultant' && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+                            )}
                             {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
                           </div>
                           <p className="text-white/30 text-xs truncate">{a.role}</p>

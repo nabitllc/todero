@@ -685,6 +685,9 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
               {agent.status === 'planned' && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-white/10 text-white/50 bg-[#0f0f0f] font-semibold uppercase">Planned</span>
               )}
+              {agent.type === 'consultant' && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+              )}
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{agent.modelShort}</span>
             </div>
             <p className="text-white/50 text-xs">{agent.role}</p>

@@ -10,6 +10,7 @@ export interface AgentCapability {
   capabilities: string[]
   floor: boolean
   modelShort?: string
+  type?: 'consultant' | 'permanent'
 }
 
 export type AgentId =
@@ -26,13 +27,13 @@ export const AGENT_REGISTRY: Record<AgentId, AgentCapability> = {
   builder:       { id: 'builder',     name: 'Builder',        emoji: '🔨', role: 'Coding Agent',            color: '#f59e0b', description: 'On-demand coding. Next.js, Supabase, Vespera and Kemuni builds.', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true },
   tester:        { id: 'tester',      name: 'Tester',         emoji: '🧪', role: 'QA Agent',                color: '#06b6d4', description: 'Code review, QA, test suites, DoD enforcement.', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true },
   deployer:      { id: 'deployer',    name: 'Deployer',       emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', description: 'Deployments, webhooks, release notes.', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true },
-  ux:            { id: 'ux',          name: 'UX Designer',    emoji: '🎨', role: 'UX & Design Agent',       color: '#ec4899', description: 'UI review, mobile UX, design system, accessibility.', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false },
-  designer:      { id: 'designer',    name: 'Designer',       emoji: '🖌️', role: 'Design Review Agent',    color: '#d946ef', description: 'Design system, UI review, visual QA, accessibility.', capabilities: ['Design System', 'UI Review', 'Visual QA', 'Accessibility'], floor: false },
-  po:            { id: 'po',          name: 'Product Owner',  emoji: '📋', role: 'Product Owner',           color: '#f59e0b', description: 'PRDs, backlog grooming, sprint facilitation, DoR.', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false },
-  growth:        { id: 'growth',      name: 'Growth',         emoji: '📈', role: 'Growth Strategist',       color: '#10b981', description: 'Monetization, GTM, pricing, LATAM market.', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false },
-  security:      { id: 'security',    name: 'Security',       emoji: '🔐', role: 'Security Auditor',        color: '#ef4444', description: 'OWASP, auth review, RLS audit, CVE scanning.', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false },
-  community:     { id: 'community',   name: 'Community Mgr',  emoji: '🖤', role: 'Community Manager',       color: '#a78bfa', description: 'Social content, brand voice, Colombia goth scene.', capabilities: ['Social Content', 'Brand Voice', 'Colombia Goth'], floor: false },
-  content:       { id: 'content',     name: 'Content Creator',emoji: '✍️', role: 'Content Creator',        color: '#60a5fa', description: 'Blog, SEO, email, help docs.', capabilities: ['Blog', 'SEO', 'Email', 'Help Docs'], floor: false },
+  ux:            { id: 'ux',          name: 'UX Designer',    emoji: '🎨', role: 'UX & Design Agent',       color: '#ec4899', description: 'UI review, mobile UX, design system, accessibility.', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false, type: 'consultant' },
+  designer:      { id: 'designer',    name: 'Designer',       emoji: '🖌️', role: 'Design Review Agent',    color: '#d946ef', description: 'Design system, UI review, visual QA, accessibility.', capabilities: ['Design System', 'UI Review', 'Visual QA', 'Accessibility'], floor: false, type: 'consultant' },
+  po:            { id: 'po',          name: 'Product Owner',  emoji: '📋', role: 'Product Owner',           color: '#f59e0b', description: 'PRDs, backlog grooming, sprint facilitation, DoR.', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false, type: 'consultant' },
+  growth:        { id: 'growth',      name: 'Growth',         emoji: '📈', role: 'Growth Strategist',       color: '#10b981', description: 'Monetization, GTM, pricing, LATAM market.', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false, type: 'consultant' },
+  security:      { id: 'security',    name: 'Security',       emoji: '🔐', role: 'Security Auditor',        color: '#ef4444', description: 'OWASP, auth review, RLS audit, CVE scanning.', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false, type: 'consultant' },
+  community:     { id: 'community',   name: 'Community Mgr',  emoji: '🖤', role: 'Community Manager',       color: '#a78bfa', description: 'Social content, brand voice, Colombia goth scene.', capabilities: ['Social Content', 'Brand Voice', 'Colombia Goth'], floor: false, type: 'consultant' },
+  content:       { id: 'content',     name: 'Content Creator',emoji: '✍️', role: 'Content Creator',        color: '#60a5fa', description: 'Blog, SEO, email, help docs.', capabilities: ['Blog', 'SEO', 'Email', 'Help Docs'], floor: false, type: 'consultant' },
   auditor:       { id: 'auditor',     name: 'Auditor',        emoji: '🔎', role: 'System Truth Enforcer',   color: '#ef4444', description: 'Drift detection, config audit, task hygiene.', capabilities: ['Drift Detection', 'Config Audit', 'Task Hygiene'], floor: true },
 }
 
