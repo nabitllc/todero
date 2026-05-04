@@ -21,20 +21,27 @@ for PROJECT in "${PROJECTS[@]}"; do
   BACKLOG_COUNT=$(echo "$BACKLOG" | jq 'length')
 
   # Count DoF-ready features (have description + AC + at least one child task)
-  # First get features with description + AC that are open (DoF-ready = status=open with children)
+  # Batch: single query for candidate features, then one query for all their children
   DOF_FEATURES=$(curl -sf "$SUPA_URL/rest/v1/issues?project=eq.$PROJECT&type=eq.feature&status=eq.open&description=not.is.null&acceptance_criteria=not.is.null&select=id" \
     -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
   DOF_COUNT=0
 
-  # Check each feature has child tasks
-  for FID in $(echo "$DOF_FEATURES" | jq -r '.[].id'); do
-    CHILDREN=$(curl -sf "$SUPA_URL/rest/v1/issues?parent_id=eq.$FID&select=id&limit=1" \
-      -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
-    CHILD_COUNT=$(echo "$CHILDREN" | jq 'length')
-    if [ "$CHILD_COUNT" -gt 0 ]; then
-      DOF_COUNT=$((DOF_COUNT + 1))
-    fi
-  done
+  FEATURE_IDS=$(echo "$DOF_FEATURES" | jq -r '[.[].id] | join(",")' 2>/dev/null || echo "")
+  if [ -n "$FEATURE_IDS" ]; then
+    DOF_COUNT=$(python3 - "$SUPA_URL" "$SUPA_KEY" "$FEATURE_IDS" "$DOF_FEATURES" <<'INNERPY'
+import json, sys, urllib.request
+supa_url, supa_key, ids, cands_json = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+cands = json.loads(cands_json)
+req = urllib.request.Request(
+    f"{supa_url}/rest/v1/issues?parent_id=in.({ids})&select=parent_id&limit=500",
+    headers={"apikey": supa_key, "Authorization": f"Bearer {supa_key}"})
+with urllib.request.urlopen(req, timeout=15) as r:
+    children = json.loads(r.read())
+parents_with_children = {c["parent_id"] for c in children}
+print(sum(1 for i in cands if i["id"] in parents_with_children))
+INNERPY
+    )
+  fi
 
   echo "[backlog-heartbeat] $PROJECT: backlog=$BACKLOG_COUNT (min $MIN_BACKLOG), DoF-ready=$DOF_COUNT (min $MIN_DOF_READY)"
 

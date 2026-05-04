@@ -4,7 +4,7 @@ monitor-pr-merge.py — Poll GitHub for merged PRs → transition linked issues 
 Replaces n8n workflow huC16MvkjX5FiI3f
 Runs every 5 minutes via launchd.
 """
-import json, subprocess, urllib.request, pathlib
+import json, os, subprocess, urllib.request, pathlib
 from datetime import datetime, timezone
 
 REPO_DIR = "/Users/kemuniagent/todero"
@@ -12,6 +12,8 @@ GH_TOKEN = "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"
 DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 DEPLOY_CHANNEL = "1487584904135970816"  # #deployments
 MC_API = "http://localhost:3000/api/issues"
+SUPA_URL = "https://twthgapiouiqhavrcnry.supabase.co"
+SUPA_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 REPOS = ["nabitllc/todero", "nabitllc/vespera"]
 STATE_FILE = pathlib.Path(__file__).parent / "state-pr-merge.json"
 
@@ -55,16 +57,26 @@ def main():
     processed = {k: v for k, v in processed.items()
                  if (now - datetime.fromisoformat(v)).days < 30}
 
-    try:
-        with urllib.request.urlopen(MC_API, timeout=15) as r:
-            all_issues = json.loads(r.read())
-    except Exception as e:
-        print(f"[mc-api] {e}"); return
-
+    # Fetch only issues with pr_url set — targeted Supabase query, no full table scan
     issues_by_pr = {}
-    for i in all_issues:
-        if i.get("pr_url"):
-            issues_by_pr.setdefault(i["pr_url"].lower(), []).append(i)
+    if SUPA_KEY:
+        try:
+            req = urllib.request.Request(
+                f"{SUPA_URL}/rest/v1/issues?pr_url=not.is.null&select=id,task_key,title,type,status,pr_url,feature_branch&limit=200",
+                headers={"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                for i in json.loads(r.read()):
+                    issues_by_pr.setdefault(i["pr_url"].lower(), []).append(i)
+        except Exception as e:
+            print(f"[supa] {e}"); return
+    else:
+        try:
+            with urllib.request.urlopen(MC_API, timeout=15) as r:
+                for i in json.loads(r.read()):
+                    if i.get("pr_url"):
+                        issues_by_pr.setdefault(i["pr_url"].lower(), []).append(i)
+        except Exception as e:
+            print(f"[mc-api] {e}"); return
 
     for repo in REPOS:
         try:

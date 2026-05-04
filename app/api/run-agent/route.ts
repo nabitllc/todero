@@ -42,9 +42,9 @@ const MAX_REJECTION_CYCLES = 3
 
 const MAX_CONTEXT_BYTES = 30_000
 
-// In-memory context cache keyed by agentId — TTL 5 minutes
-// Prevents redundant Supabase reads when watchdog kicks same agent repeatedly
-const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000
+// In-memory context cache keyed by agentId — TTL 30 minutes
+// Agent memory/context changes at most daily; short TTL was causing unnecessary DB reads
+const CONTEXT_CACHE_TTL_MS = 30 * 60 * 1000
 const contextCache = new Map<string, { context: string; expiresAt: number }>()
 
 async function loadContextFromDB(agentId: string): Promise<string> {
