@@ -12,13 +12,13 @@ DISCORD_CHANNEL="${DISCORD_ALERTS_CHANNEL:-1487584901678104698}"
 echo "[dor-nightly] Starting DoR enforcement check..."
 
 # Find builder-assigned non-terminal/non-backlog issues missing DoR fields
-MISSING_DESC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&description=is.null&select=id,task_key,title,project" \
+MISSING_DESC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&description=is.null&select=id,task_key,title,project&limit=200" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
 
-MISSING_TIER=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&test_tier=is.null&select=id,task_key,title,project" \
+MISSING_TIER=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&test_tier=is.null&select=id,task_key,title,project&limit=200" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
 
-MISSING_AC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&acceptance_criteria=is.null&select=id,task_key,title,project" \
+MISSING_AC=$(curl -sf "$SUPA_URL/rest/v1/issues?assignee=eq.builder&status=not.in.(completed,closed,backlog)&acceptance_criteria=is.null&select=id,task_key,title,project&limit=200" \
   -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null || echo "[]")
 
 # Combine and deduplicate by id

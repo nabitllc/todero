@@ -53,17 +53,21 @@ if [ ! -f .next/BUILD_ID ]; then
   if [ ! -f .next/BUILD_ID ]; then
     echo $$ > "$LOCK_FILE"
     trap 'rm -f "$LOCK_FILE"' EXIT
-    echo "[start.sh] BUILD_ID missing, rebuilding..."
-    rm -rf .next
-    /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -10
+    echo "[start.sh] BUILD_ID missing, rebuilding (incremental)..."
+    /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -10
     if [ ! -f .next/BUILD_ID ]; then
-      echo "[start.sh] CRITICAL: build failed even after reinstall. Retrying ONCE more with clean cache."
+      echo "[start.sh] Incremental build failed — trying clean build..."
+      rm -rf .next
+      /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -10
+    fi
+    if [ ! -f .next/BUILD_ID ]; then
+      echo "[start.sh] CRITICAL: both builds failed. Cleaning cache and retrying once more."
       rm -rf .next node_modules/.cache
-      /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next build 2>&1 | tail -15
+      /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next build 2>&1 | tail -15
     fi
     rm -f "$LOCK_FILE"
   fi
 fi
 
 echo "[start.sh] Starting Next.js on port 3000..."
-exec /opt/homebrew/opt/node@22/bin/node node_modules/.bin/next start --port 3000
+exec /opt/homebrew/opt/node@22/bin/node node_modules/next/dist/bin/next start --port 3000

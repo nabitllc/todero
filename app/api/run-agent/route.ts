@@ -60,7 +60,7 @@ async function loadContextFromDB(agentId: string): Promise<string> {
 
   // Fetch global + per-agent documents + shared skill docs
   const docsRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&order=doc_type.asc,slug.asc`,
+    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
     { headers: supaHeaders }
   )
   const docs = await docsRes.json() as Array<{ agent_id: string; doc_type: string; slug: string; content: string }>
@@ -70,7 +70,7 @@ async function loadContextFromDB(agentId: string): Promise<string> {
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
   const memRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&order=updated_at.desc`,
+    `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&select=memory_type,date_key,content&order=updated_at.desc&limit=20`,
     { headers: supaHeaders }
   )
   const memRows = await memRes.json() as Array<{ memory_type: string; date_key: string | null; content: string }>

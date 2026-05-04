@@ -401,10 +401,15 @@ def main():
 
     now = datetime.now(timezone.utc)
     statuses = ",".join(THRESHOLDS.keys())
+    # Only fetch issues updated within the longest stale threshold (48h + buffer)
+    # — issues last touched >72h ago are already known-stale and don't change state
+    lookback = (now - timedelta(hours=72)).strftime("%Y-%m-%dT%H:%M:%SZ")
     issues = supa_get(
         f"issues?status=in.({statuses})"
+        f"&updated_at=gte.{lookback}"
         "&select=id,task_key,title,status,assignee,worked_by,updated_at,"
         "implementation_notes,rejection_count,type"
+        "&limit=500"
     )
 
     # ── Fast-path: auto-advance in_progress with implementation_notes ─────────
@@ -413,8 +418,10 @@ def main():
     # Re-fetch after possible advances
     issues = supa_get(
         f"issues?status=in.({statuses})"
+        f"&updated_at=gte.{lookback}"
         "&select=id,task_key,title,status,assignee,worked_by,updated_at,"
         "implementation_notes,rejection_count,type"
+        "&limit=500"
     )
 
     stale_by_status = {}

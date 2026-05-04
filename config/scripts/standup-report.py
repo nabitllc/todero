@@ -33,6 +33,8 @@ except ImportError:
     except ImportError:
         ET = None
 
+SUPA_URL = "https://twthgapiouiqhavrcnry.supabase.co"
+SUPA_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 MC_API = "http://localhost:3000/api/issues"
 DISCORD_TOKEN = os.environ.get(
     "DISCORD_TOKEN",
@@ -57,6 +59,23 @@ def mc_get(url=MC_API):
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         return json.loads(resp.read().decode())
+
+
+def fetch_recent_issues(cutoff: "datetime") -> list:
+    """Fetch issues updated in the last 24h directly from Supabase — avoids full table scan."""
+    if not SUPA_KEY:
+        return mc_get()
+    cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = (
+        f"{SUPA_URL}/rest/v1/issues"
+        f"?updated_at=gte.{cutoff_iso}"
+        f"&select=id,task_key,title,status,assignee,type,updated_at,completed_at"
+        f"&order=updated_at.desc&limit=500"
+    )
+    req = urllib.request.Request(url, headers={
+        "apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
 
 
 def post_to_discord(message: str):
@@ -220,9 +239,9 @@ def main():
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
     try:
-        all_issues = mc_get()
+        all_issues = fetch_recent_issues(cutoff)
     except Exception as e:
-        print(f"Failed to fetch issues from MC API: {e}", file=sys.stderr)
+        print(f"Failed to fetch issues: {e}", file=sys.stderr)
         sys.exit(1)
 
     agents = classify_issues(all_issues, cutoff)
