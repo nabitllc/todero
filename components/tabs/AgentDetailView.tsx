@@ -25,6 +25,7 @@ interface Agent {
   ago?: number | null
   lastUpdatedAt?: number
   currentTask?: string | null
+  type?: 'consultant' | 'permanent'
 }
 
 interface Issue {
