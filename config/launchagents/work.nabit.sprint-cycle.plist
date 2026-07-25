@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  Sprint cycle — runs at 6:55am local time (5 min before PR window).
-  Closes the outgoing sprint and opens the new one.
--->
 <plist version="1.0">
 <dict>
     <key>Label</key><string>work.nabit.sprint-cycle</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>__TODERO_DIR__/config/scripts/sprint-cycle.sh</string>
+        <string>/Users/kemuniagent/todero/config/scripts/sprint-cycle.sh</string>
     </array>
+    <!-- LaunchAgents uses LOCAL time. 6:55 local = 6:55am ET (5min before PR window at 7am) -->
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key><integer>6</integer>
@@ -22,9 +19,9 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>__HOMEBREW_PREFIX__/opt/node@22/bin:__HOMEBREW_PREFIX__/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
-        <string>__HOME__</string>
+        <string>/Users/kemuniagent</string>
     </dict>
 </dict>
 </plist>

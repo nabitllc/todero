@@ -1,18 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  PR window — runs at 7:00am and 7:00pm local time.
-  Batches all approved PRs and merges them to main.
-  LaunchAgents uses LOCAL time.
--->
 <plist version="1.0">
 <dict>
     <key>Label</key><string>work.nabit.pr-window</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>__TODERO_DIR__/config/scripts/pr-window.py</string>
+        <string>/Users/kemuniagent/todero/config/scripts/pr-window.py</string>
     </array>
+    <!-- LaunchAgents uses LOCAL time. 7:00 and 19:00 local = 7am/7pm ET -->
     <key>StartCalendarInterval</key>
     <array>
         <dict>
@@ -29,9 +25,9 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>__HOMEBREW_PREFIX__/opt/node@22/bin:__HOMEBREW_PREFIX__/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
-        <string>__HOME__</string>
+        <string>/Users/kemuniagent</string>
     </dict>
 </dict>
 </plist>

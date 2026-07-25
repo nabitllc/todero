@@ -1,21 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  Cloudflared tunnel — exposes localhost:3000 as kaos.nabit.work.
-  Only needed when NOT using Vercel for public access.
-  Requires: cloudflared installed + authenticated (~/.cloudflared/config.yml).
-  If using Vercel: skip this plist.
--->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>work.nabit.cloudflared</string>
     <key>ProgramArguments</key>
     <array>
-        <string>__HOMEBREW_PREFIX__/bin/cloudflared</string>
+        <string>/opt/homebrew/bin/cloudflared</string>
         <string>tunnel</string>
         <string>--config</string>
-        <string>__HOME__/.cloudflared/config.yml</string>
+        <string>/Users/kemuniagent/.cloudflared/config.yml</string>
         <string>run</string>
     </array>
     <key>RunAtLoad</key>

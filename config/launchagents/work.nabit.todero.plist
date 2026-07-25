@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  Todero Next.js server — keeps the app running at localhost:3000.
-  Install: cp this file to ~/Library/LaunchAgents/ then run bootstrap.sh
-  (bootstrap.sh replaces __HOME__ and __TODERO_DIR__ with real paths)
--->
 <plist version="1.0">
 <dict>
     <key>Label</key>
@@ -12,10 +7,10 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>__TODERO_DIR__/start.sh</string>
+        <string>/Users/kemuniagent/todero/start.sh</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>__TODERO_DIR__</string>
+    <string>/Users/kemuniagent/todero</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -29,7 +24,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>__HOMEBREW_PREFIX__/bin:__HOMEBREW_PREFIX__/opt/node@22/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/opt/homebrew/bin:/opt/homebrew/opt/node@22/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>NODE_ENV</key>
         <string>production</string>
     </dict>

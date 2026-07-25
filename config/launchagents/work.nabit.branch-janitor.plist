@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>work.nabit.branch-janitor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>echo "=== branch-janitor $(date) ===" &amp;&amp; /Users/kemuniagent/todero/config/scripts/branch-janitor.py --prune --age 7</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>21600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/branch-janitor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/branch-janitor.log</string>
+</dict>
+</plist>
