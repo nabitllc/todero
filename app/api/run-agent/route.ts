@@ -83,7 +83,14 @@ const MAX_REJECTION_CYCLES = 3
 // here; it is already a small, budgeted, ranked query per spawn, not the
 // wholesale dump the cache originally existed to avoid re-querying.
 const CONTEXT_CACHE_TTL_MS = 30 * 60 * 1000
-const contextCache = new Map<string, { context: string; expiresAt: number }>()
+
+/** One identity section (SOUL/skill/daily-note) dropped for budget overflow — see `loadIdentityContext`. */
+interface DroppedIdentitySection {
+  label: string
+  estTokens: number
+}
+
+const contextCache = new Map<string, { context: string; droppedSections: DroppedIdentitySection[]; expiresAt: number }>()
 
 /**
  * Budget for the identity half of the spawn context (SOUL, per-agent SOUL,
@@ -119,7 +126,13 @@ function getIdentityContextBudgetTokens(): number {
  * applies to ranked records: never chop a section, never silently drop the
  * first (most important) one.
  */
-async function loadIdentityContext(agentId: string): Promise<string> {
+/** Return value of `loadIdentityContext` — text plus which sections (if any) did not fit the budget. */
+interface IdentityContextResult {
+  text: string
+  droppedSections: DroppedIdentitySection[]
+}
+
+async function loadIdentityContext(agentId: string): Promise<IdentityContextResult> {
   // Fetch global + per-agent documents + shared skill docs
   const docs = await selectRows<{ agent_id: string; doc_type: string; slug: string; content: string }>(
     'agent_documents',
@@ -168,30 +181,62 @@ async function loadIdentityContext(agentId: string): Promise<string> {
 
   // Whole-section budget selection — the same discipline
   // lib/memory-retrieval.ts applies to ranked records: estimate tokens per
-  // section, keep adding whole sections while under budget, STOP (never
-  // chop) once the running total would overflow. The one section that may
-  // never be silently dropped is the first non-empty one — an agent's own
-  // identity (global SOUL, or whatever section landed first) — mirroring
-  // "the top-ranked record" in buildRetrievedContext: if it alone exceeds
-  // the budget, that is RetrievalBudgetExceededError, raised rather than
-  // truncated. This replaces the old `while (...) sections.pop()` loop,
-  // which silently dropped whichever section happened to land last,
-  // regardless of whether that was the important one.
+  // section, keep adding whole sections while under budget, and — mirroring
+  // buildRetrievedContext's "a single oversized LOWER-ranked record must not
+  // exclude smaller records that still fit" — CONTINUE scanning past an
+  // oversized section rather than stopping selection outright, so one big
+  // skill doc mid-list does not silently exclude every smaller section after
+  // it. The one section that may never be silently dropped is the first
+  // non-empty one — an agent's own identity (global SOUL, or whatever
+  // section landed first) — mirroring "the top-ranked record" in
+  // buildRetrievedContext: if it alone exceeds the budget, that is
+  // RetrievalBudgetExceededError, raised rather than truncated. This
+  // replaces the old `while (...) sections.pop()` loop, which silently
+  // dropped whichever section happened to land last, regardless of whether
+  // that was the important one.
+  //
+  // Every section that does not fit is recorded (label + est. tokens), not
+  // just discarded: the caller surfaces the list both as a visible note in
+  // the returned prompt text and as a console.warn, so truncation here is
+  // never invisible the way it was before this fix — matching the contract
+  // buildRetrievedContext already honors via possiblyIncompleteScan.
   const budgetTokens = getIdentityContextBudgetTokens()
   const selected: string[] = []
+  const dropped: DroppedIdentitySection[] = []
   let usedTokens = 0
   for (const section of sections) {
     const sectionTokens = estimateTokens(section)
+    const label = section.split('\n', 1)[0].replace(/^#\s*/, '')
     if (selected.length === 0 && sectionTokens > budgetTokens) {
-      const label = section.split('\n', 1)[0].replace(/^#\s*/, '')
       throw new RetrievalBudgetExceededError(agentId, '(identity-context)', label, sectionTokens, budgetTokens)
     }
-    if (usedTokens + sectionTokens > budgetTokens) break
+    if (usedTokens + sectionTokens > budgetTokens) {
+      dropped.push({ label, estTokens: sectionTokens })
+      continue
+    }
     selected.push(section)
     usedTokens += sectionTokens
   }
 
-  return selected.join('\n\n---\n\n')
+  let text = selected.join('\n\n---\n\n')
+
+  if (dropped.length > 0) {
+    const droppedTokensTotal = dropped.reduce((sum, d) => sum + d.estTokens, 0)
+    const shownLabels = dropped.slice(0, 3).map(d => d.label)
+    const labelList = dropped.length > shownLabels.length ? `${shownLabels.join(', ')}, …` : shownLabels.join(', ')
+    const note =
+      `_(identity context truncated to fit the ${budgetTokens}-token budget: ` +
+      `${dropped.length} of ${sections.length} sections omitted (~${droppedTokensTotal} est. tokens) — ${labelList})_`
+    text = text ? `${text}\n\n---\n\n${note}` : note
+
+    console.warn(
+      `[run-agent] identity context for ${agentId} truncated to fit the ${budgetTokens}-token budget: ` +
+      `${dropped.length}/${sections.length} sections omitted (~${droppedTokensTotal} est. tokens) — ` +
+      dropped.map(d => `${d.label} (~${d.estTokens} est. tokens)`).join(', '),
+    )
+  }
+
+  return { text, droppedSections: dropped }
 }
 
 /**
@@ -201,14 +246,30 @@ async function loadIdentityContext(agentId: string): Promise<string> {
  * not against nothing, and is never served from `contextCache` (see the
  * comment on that Map).
  */
-async function loadContextFromDB(agentId: string, taskKey: string, taskTitle: string): Promise<string> {
+/**
+ * Full result of `loadContextFromDB` — the assembled prompt text plus both
+ * halves' honesty signals, mirroring `RetrievalResult.possiblyIncompleteScan`:
+ * a caller (or a future caller) can inspect `identityDroppedSections` /
+ * `retrieval` without having to re-parse the visible note out of `text`.
+ */
+interface LoadedAgentContext {
+  text: string
+  identityDroppedSections: DroppedIdentitySection[]
+  retrieval: Awaited<ReturnType<typeof buildRetrievedContext>>
+}
+
+async function loadContextFromDB(agentId: string, taskKey: string, taskTitle: string): Promise<LoadedAgentContext> {
   const cached = contextCache.get(agentId)
-  let identityContext: string
+  let identity: IdentityContextResult
   if (cached && cached.expiresAt > Date.now()) {
-    identityContext = cached.context
+    identity = { text: cached.context, droppedSections: cached.droppedSections }
   } else {
-    identityContext = await loadIdentityContext(agentId)
-    contextCache.set(agentId, { context: identityContext, expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS })
+    identity = await loadIdentityContext(agentId)
+    contextCache.set(agentId, {
+      context: identity.text,
+      droppedSections: identity.droppedSections,
+      expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS,
+    })
   }
 
   const retrieved = await buildRetrievedContext(agentId, taskKey, taskTitle)
@@ -218,7 +279,11 @@ async function loadContextFromDB(agentId: string, taskKey: string, taskTitle: st
     )
   }
 
-  return [identityContext, retrieved.text].filter(Boolean).join('\n\n---\n\n')
+  return {
+    text: [identity.text, retrieved.text].filter(Boolean).join('\n\n---\n\n'),
+    identityDroppedSections: identity.droppedSections,
+    retrieval: retrieved,
+  }
 }
 
 
@@ -668,8 +733,8 @@ ${responseFields}
   // spawns an agent, so it must be the one that carries the task key/title
   // through to retrieval — without them, loadContextFromDB cannot rank
   // anything and retrieval degrades to "nothing to search for".
-  const dbContext = await loadContextFromDB(agentId, task.task_key ?? task.id, task.title ?? '')
-  const context = `# WORKSPACE IDENTITY\n\n${dbContext}`
+  const loadedContext = await loadContextFromDB(agentId, task.task_key ?? task.id, task.title ?? '')
+  const context = `# WORKSPACE IDENTITY\n\n${loadedContext.text}`
 
   // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)
   if (context.length > 25_000) {
