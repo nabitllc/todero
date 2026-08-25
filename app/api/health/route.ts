@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 import { listRuntimes } from '@/lib/runtimes'
 import { listWorktrees } from '@/lib/runtimes/worktree'
 import { db, type DbResult } from '@/lib/db'
+import { checkRequiredTables } from '@/lib/required-tables'
 
 /**
  * Bound a query so a hung database cannot hold the health check open. Rejects
