@@ -60,6 +60,12 @@ for (const agentId of agents) {
 
   log(`${agentId}: ${summary.rowsExamined} failed/rejected run record(s) examined`)
 
+  // Round-4 repair: the `rowsExamined < PROMOTION_THRESHOLD` gate used to be
+  // decided HERE and only here — promoteHotPatterns() itself had no such
+  // check, so POST /api/promote-hot-patterns (the other caller) ran the full
+  // pattern-extraction pass even below threshold. The gate now lives inside
+  // promoteHotPatterns() so both callers share it; this script just reports
+  // which case applied for a summary that already reflects the gate.
   if (summary.rowsExamined < PROMOTION_THRESHOLD) {
     log(`${agentId}: below threshold (${PROMOTION_THRESHOLD}) — skipping promotion`)
     continue

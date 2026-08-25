@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { dbQueryErrorResponse } from '@/lib/db-http'
 import { AGENT_META, loadAgentRoster, type ParsedAgent } from '@/lib/agent-roster'
+import { loadVaultAgentRoster, localRoutingFor, type VaultAgent } from '@/lib/vault-agents'
 import {
   classifyLiveness,
   readHeartbeats,
@@ -37,12 +38,19 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const
  * registered through POST /api/connect but is not named in any AGENTS.md
  * (or vice versa) is real and must be reported, not silently dropped because
  * it does not match the one source this type used to allow for.
- *   'agents-md'  — every agent came from the roster file, no registrations
- *   'registered' — every agent came from agent_registrations, no roster file
- *   'both'       — at least one row from each source
- *   'none'       — neither source had anything
+ *
+ * Widened again (docs/brain2-integration.md) for a third source: the Brain2
+ * vault's `Global_Agents/<id>/manifest.json` registry (lib/vault-agents.ts).
+ * A vault agent is only added as its own row when no roster or registration
+ * row already claims its id — see `respond()` — so this never double-counts
+ * an agent that happens to exist in two sources.
+ *   'agents-md'  — every agent came from the roster file only
+ *   'registered' — every agent came from agent_registrations only
+ *   'vault'      — every agent came from the Brain2 vault only
+ *   'both'       — rows came from more than one source
+ *   'none'       — no source had anything
  */
-type RosterSource = 'agents-md' | 'registered' | 'both' | 'none'
+type RosterSource = 'agents-md' | 'registered' | 'vault' | 'both' | 'none'
 
 /**
  * Where "is this agent running?" was answered from.
@@ -96,7 +104,26 @@ type AgentDto = {
    * #3: "An agent that is over budget is marked as such in the roster with
    * the reason visible" — this is that field.
    */
-  overCeiling: { ceiling: CeilingName; reason: string } | null
+  overCeiling?: { ceiling: CeilingName; reason: string } | null
+  /**
+   * Brain2 vault manifest data for this agent's id, when
+   * `Global_Agents/<id>/manifest.json` exists — null for every agent the
+   * vault does not name (including when the vault itself is absent). This is
+   * the "tier drives model selection, local_eligible drives whether a run may
+   * be routed to Ollama, fallback_local names the model" mapping from the
+   * piece brief, exposed for any caller (dispatch, UI) that wants it — this
+   * route only reports it, it does not itself route a run anywhere.
+   */
+  vault: {
+    tier: string
+    claudeCodeAlias: string
+    preferred: string
+    fallbackLocal: string
+    localEligible: boolean
+    /** Resolved from `localEligible`/`fallbackLocal` — null unless a local run is actually allowed. */
+    localModel: string | null
+    description: string
+  } | null
 }
 
 /** Live run state: issue/run history from the database, plus recorded heartbeats. */
@@ -128,6 +155,15 @@ type AgentsResponse = {
   heartbeatStore: HeartbeatStore | null
   /** Why liveness is degraded or unavailable, when it is. */
   heartbeatWarning: string | null
+  /**
+   * The Brain2 vault's Global_Agents/ directory actually scanned, or null
+   * when the vault (or that directory) was not found on this host — see
+   * lib/vault-agents.ts. Envelope-level, same pattern as rosterPath, so an
+   * empty vault contribution can still name the path it looked in.
+   */
+  vaultPath: string | null
+  /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
+  vaultWarning: string | null
 }
 
 function emptyRunState(): RunState {
@@ -193,6 +229,20 @@ async function fetchVerifiedAgentSchedule(): Promise<Map<string, number>> {
   return schedule
 }
 
+/** Build one row's `vault` field from its Global_Agents manifest, when it has one. */
+function vaultInfoFor(agent: VaultAgent): AgentDto['vault'] {
+  const routing = localRoutingFor(agent)
+  return {
+    tier: agent.model.tier,
+    claudeCodeAlias: agent.model.claude_code_alias,
+    preferred: agent.model.preferred,
+    fallbackLocal: agent.model.fallback_local,
+    localEligible: agent.local_eligible,
+    localModel: routing.model,
+    description: agent.description,
+  }
+}
+
 function shortModelLabel(model: string): string {
   const m = model.trim()
   if (!m) return ''
@@ -221,6 +271,7 @@ function buildAgents(
   rosterPath: string | null,
   state: RunState,
   schedule: Map<string, number>,
+  vaultById: Map<string, VaultAgent>,
 ): AgentDto[] {
   const now = Date.now()
 
@@ -291,6 +342,10 @@ function buildAgents(
       rosterSource,
       rosterWarning,
       rosterPath,
+      vault: (() => {
+        const v = vaultById.get(id)
+        return v ? vaultInfoFor(v) : null
+      })(),
     }
   })
 }
@@ -324,7 +379,7 @@ function buildAgents(
  * MORE offline, never resurrect it as live — a disconnect can never be
  * silently undone by whichever store happened to answer first.
  */
-function buildRegistrationAgent(reg: AgentRegistration, state: RunState): AgentDto {
+function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultById: Map<string, VaultAgent>): AgentDto {
   const now = Date.now()
   const beat = state.heartbeats.get(reg.id) ?? null
   const beatSeen = beat?.lastSeen ?? null
@@ -373,6 +428,62 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState): AgentD
     rosterSource: 'registered',
     rosterWarning: null,
     rosterPath: null,
+    vault: (() => {
+      const v = vaultById.get(reg.id)
+      return v ? vaultInfoFor(v) : null
+    })(),
+  }
+}
+
+/**
+ * A synthesized row for a Brain2 vault agent with no AGENTS.md row and no
+ * self-registration — the concrete union this piece exists to add: an agent
+ * the vault names, and nothing else on this host does, still shows up. Reuses
+ * `state.heartbeats` for liveness the same way every other row does (it will
+ * simply never have one, since nothing dispatches a vault-only agent yet),
+ * so it is not held to a different truth standard than a roster row.
+ */
+function buildVaultOnlyAgent(agent: VaultAgent, state: RunState, rosterWarning: string | null, rosterPath: string | null): AgentDto {
+  const now = Date.now()
+  const beat = state.heartbeats.get(agent.id) ?? null
+  const lastSeenAt = beat?.lastSeen ?? null
+  const liveness: Liveness = state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
+  const isRunning = liveness === 'live'
+  const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
+  const vault = vaultInfoFor(agent)
+  const model = agent.model.preferred || agent.model.claude_code_alias || ''
+
+  return {
+    id: agent.id,
+    name: agent.name,
+    // Neutral display, distinct from the registration glyph — this agent is
+    // named by the vault, not by a live connection or a Todero roster row.
+    emoji: '🗂️',
+    role: agent.model.tier ? `${agent.model.tier} tier` : '',
+    model,
+    active: isRunning,
+    status: isRunning ? 'active' : 'idle',
+    isRunning,
+    lastSeenAt,
+    liveness,
+    livenessSource: state.livenessSource,
+    nextRunTs: null,
+    modelShort: shortModelLabel(model),
+    queue_filter: [],
+    color: agent.model.tier === 'frontier' ? '#8b5cf6' : agent.model.tier === 'mid' ? '#3b82f6' : '#6b7280',
+    desc: agent.description,
+    capabilities: agent.tools,
+    floor: false,
+    workspace: null,
+    sessions: 0,
+    ago: agoMin,
+    lastUpdatedAt: lastSeenAt ?? 0,
+    currentTask: beat?.task ?? null,
+    workStartedAt: null,
+    rosterSource: 'vault',
+    rosterWarning,
+    rosterPath,
+    vault,
   }
 }
 
@@ -388,6 +499,20 @@ export async function GET() {
   const baseRosterSource: 'agents-md' | 'none' = roster.agents.length > 0 ? 'agents-md' : 'none'
   const rosterWarning = roster.warning
   const rosterPath = roster.path
+
+  // Brain2 vault registry (docs/brain2-integration.md) — a third, independent
+  // source of "who exists". Never throws by construction (lib/vault-agents.ts
+  // catches every fs error internally); the extra try/catch is defense in
+  // depth so a future change there still cannot 500 this route — a vault
+  // read is exactly the kind of optional-infrastructure failure this route
+  // has already promised never crashes it.
+  let vaultRoster: ReturnType<typeof loadVaultAgentRoster>
+  try {
+    vaultRoster = loadVaultAgentRoster()
+  } catch (e) {
+    vaultRoster = { agents: [], path: null, warning: e instanceof Error ? e.message : String(e) }
+  }
+  const vaultById = new Map(vaultRoster.agents.map((a) => [a.id, a]))
 
   // Independent of the roster and of Supabase — fetched once and reused by
   // every response branch below, success or failure alike.
@@ -409,9 +534,19 @@ export async function GET() {
     const rosterIds = new Set(parsedAgents.map((a) => a.id))
     const registrationOnly = Array.from(registrations.values()).filter((r) => !rosterIds.has(r.id))
 
+    // Vault agents not already named by AGENTS.md or a live registration —
+    // the third leg of the same union `registrationOnly` above already does.
+    // An id present in either of the other two sources is enriched via the
+    // per-row `vault` field instead (buildAgents/buildRegistrationAgent both
+    // look it up), so it never renders twice.
+    const knownIds = new Set(rosterIds)
+    for (const id of Array.from(registrations.keys())) knownIds.add(id)
+    const vaultOnly = vaultRoster.agents.filter((v) => !knownIds.has(v.id))
+
     const agents: AgentDto[] = [
-      ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule),
-      ...registrationOnly.map((r) => buildRegistrationAgent(r, state)),
+      ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule, vaultById),
+      ...registrationOnly.map((r) => buildRegistrationAgent(r, state, vaultById)),
+      ...vaultOnly.map((v) => buildVaultOnlyAgent(v, state, vaultRoster.warning, vaultRoster.path)),
     ]
 
     // TOD-2381 round 3: over-ceiling flag per agent, only when the database
@@ -432,14 +567,13 @@ export async function GET() {
       for (const a of agents) a.overCeiling = null
     }
 
+    const sourcesPresent = [
+      parsedAgents.length > 0 && 'agents-md',
+      registrations.size > 0 && 'registered',
+      vaultOnly.length > 0 && 'vault',
+    ].filter((s): s is 'agents-md' | 'registered' | 'vault' => s !== false)
     const rosterSource: RosterSource =
-      parsedAgents.length > 0 && registrations.size > 0
-        ? 'both'
-        : parsedAgents.length > 0
-          ? 'agents-md'
-          : registrations.size > 0
-            ? 'registered'
-            : 'none'
+      sourcesPresent.length > 1 ? 'both' : sourcesPresent.length === 1 ? sourcesPresent[0] : 'none'
 
     const body: AgentsResponse = {
       agents,
@@ -451,6 +585,8 @@ export async function GET() {
       livenessSource: state.livenessSource,
       heartbeatStore,
       heartbeatWarning,
+      vaultPath: vaultRoster.path,
+      vaultWarning: vaultRoster.warning,
     }
     return NextResponse.json(body, { status, headers: NO_STORE })
   }

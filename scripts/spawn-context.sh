@@ -3,9 +3,31 @@
 # Reads SOUL.md, AGENTS.md key sections, and self-improving/memory.md
 # and formats them as a context preamble for named-agent spawns.
 #
+# memory-loop-retrieval piece: section 4 used to `cat` (well, `grep -A10 |
+# tail -n90`, which is the same failure mode by a different name)
+# self-improving/corrections.md WHOLESALE — every correction ever written for
+# this agent, in file order, capped only by a fixed line count with no idea
+# whether those 90 lines are relevant to the task about to be spawned. That is
+# the exact bug this piece exists to fix: uncapped, unranked injection burying
+# whatever record actually matters under everything else. Section 4 below now
+# calls `scripts/retrieve-context.mjs`, which ranks this agent's run records
+# (FTS5 search — see lib/memory-retrieval.ts) by relevance to AGENT_ID/TASK_KEY
+# and injects only the top matches under a small, configurable, hard token
+# budget. `set -euo pipefail` (below) means that if the budget is exceeded —
+# the single most relevant record does not fit even alone — this script exits
+# non-zero rather than silently injecting a truncated one. That is
+# intentional: a caller of this script must see the failure, not a quietly
+# shortened context.
+#
 # Usage:
-#   bash scripts/spawn-context.sh [workspace_dir]
-#   bash scripts/spawn-context.sh              # defaults to current dir
+#   bash scripts/spawn-context.sh [workspace_dir] [agent_id] [task_key] [task_title...]
+#   bash scripts/spawn-context.sh                                # workspace_dir defaults to .
+#   bash scripts/spawn-context.sh . builder TOD-1234 "Fix the thing"
+#
+# When agent_id/task_key are omitted, section 4 is skipped rather than run
+# without knowing what to retrieve FOR — there is no task to rank relevance
+# against, so "nothing" is the honest answer, not "everything" (the old
+# behaviour) and not a guess.
 #
 # Output: Formatted markdown context block to stdout.
 # Intended to be captured and prepended to agent task prompts.
@@ -13,6 +35,12 @@
 set -euo pipefail
 
 WORKSPACE="${1:-.}"
+AGENT_ID="${2:-}"
+TASK_KEY="${3:-}"
+shift $(( $# < 3 ? $# : 3 )) || true
+TASK_TITLE="$*"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 emit_section() {
   local file="$1"
@@ -81,15 +109,28 @@ for memfile in "${MEMORY_CANDIDATES[@]}"; do
   fi
 done
 
-# 4. self-improving/corrections.md — recent corrections (last 30 entries max)
-CORRECTIONS_FILE="${WORKSPACE}/self-improving/corrections.md"
-if [[ -f "$CORRECTIONS_FILE" ]]; then
-  echo "## Recent Corrections (self-improving)"
+# 4. Ranked, budgeted retrieval from the run-record store (memory-loop-retrieval).
+# Replaces the old wholesale `corrections.md` dump. Needs an agent + a task to
+# rank relevance against; without both, retrieval has nothing to search FOR,
+# so this is skipped rather than guessed.
+if [[ -n "$AGENT_ID" && -n "$TASK_KEY" ]]; then
+  echo "## Relevant Past Experience (retrieved)"
   echo ""
-  # Show header + last 30 correction entries to keep context manageable
-  head -n 6 "$CORRECTIONS_FILE"
-  echo ""
-  grep -A 10 "^### " "$CORRECTIONS_FILE" | tail -n 90
+  if RETRIEVED=$(node "${REPO_ROOT}/scripts/retrieve-context.mjs" "$AGENT_ID" "$TASK_KEY" "$TASK_TITLE" 2>/dev/null); then
+    if [[ -n "$RETRIEVED" ]]; then
+      echo "$RETRIEVED"
+    else
+      echo "_(no past run record ranked relevant to this task)_"
+    fi
+  else
+    # Non-zero exit here is `retrieve-context.mjs` reporting
+    # RetrievalBudgetExceededError (or a genuine failure) — `set -e` above
+    # already means this whole script stops rather than continuing with a
+    # partial context, but the explicit branch keeps the failure message
+    # attributable to retrieval specifically rather than an opaque abort.
+    echo "ERROR: retrieval failed or exceeded its context budget — see stderr" >&2
+    exit 1
+  fi
   echo ""
   echo "---"
   echo ""

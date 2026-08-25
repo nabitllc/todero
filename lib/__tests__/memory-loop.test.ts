@@ -164,6 +164,73 @@ describe('promoteHotPatterns idempotency (round-3 repair)', () => {
     expect(contentAfterSecond!.match(/#### Promoted /g) ?? []).toHaveLength(1)
   })
 
+  /**
+   * Round-4 repair: the occurrence unit used to be one TEXT FIELD, not one
+   * RUN RECORD. promoteHotPatterns() fed a row's rejection_reason and its
+   * reviewer_notes into extractPatterns() as two independent entries, so a
+   * single run whose rejection_reason and reviewer_notes normalize to the
+   * same sentence (a reviewer echoing the rejection reason into their
+   * notes, which is a routine thing for a reviewer to do) counted as TWO
+   * occurrences of one run. Two such rows — two real runs — inflated to a
+   * reported count of 4, clearing the (unchanged) threshold of 3 at ~1.5
+   * real runs and drafting a vault proposal claiming
+   * "Occurrences: 4 (threshold: 3)" backed by only 2 distinct tasks.
+   *
+   * This test seeds exactly that shape — 2 rows, each with the identical
+   * phrase in BOTH rejection_reason and reviewer_notes — and asserts the
+   * fixed count is 2 (one per row), which does not clear the threshold, so
+   * nothing is promoted and no vault proposal is drafted.
+   */
+  it('extractPatterns counts a run record once, not once per text field, when rejection_reason and reviewer_notes normalize to the same phrase', () => {
+    const { memoryLoop } = loadModules()
+
+    const phrase = 'Reviewer rejected: missing regression test on the PATCH endpoint.'
+    // Two runs (ids run-1, run-2), each contributing the SAME phrase from
+    // BOTH its rejection_reason and its reviewer_notes — four text entries,
+    // two distinct run records. Threshold dropped to 1 so the raw count is
+    // observable directly, independent of any promotion gate.
+    const texts = [
+      { id: 'run-1', text: phrase, example: '[DUP-1] ' + phrase },
+      { id: 'run-1', text: phrase, example: '[DUP-1] ' + phrase },
+      { id: 'run-2', text: phrase, example: '[DUP-2] ' + phrase },
+      { id: 'run-2', text: phrase, example: '[DUP-2] ' + phrase },
+    ]
+
+    const hits = memoryLoop.extractPatterns(texts, 1)
+    expect(hits).toHaveLength(1)
+    // The regression: this used to be 4 (one per text entry). It is now 2 —
+    // one per distinct run record id.
+    expect(hits[0].count).toBe(2)
+  })
+
+  it('promotes nothing when 2 run records duplicate the same phrase across both text columns (2 runs, not 3)', async () => {
+    const { memoryLoop } = loadModules()
+
+    const phrase = 'Reviewer rejected: missing regression test on the PATCH endpoint.'
+    for (let i = 0; i < 2; i++) {
+      const err = await memoryLoop.writeRunRecord({
+        agentId: AGENT_ID,
+        taskKey: `DUP-${i}`,
+        failed: true,
+        rejectionReason: phrase,
+        reviewerNotes: phrase,
+      })
+      expect(err).toBeNull()
+    }
+
+    const summary = await memoryLoop.promoteHotPatterns(AGENT_ID)
+    expect(summary.dbError).toBeUndefined()
+    // Two run records examined, not four text entries.
+    expect(summary.rowsExamined).toBe(2)
+    // Before this fix, 2 rows x 2 duplicated columns inflated to a reported
+    // count of 4, clearing the threshold of 3 at only 2 real runs and
+    // drafting a vault proposal claiming 4 occurrences. Fixed: 2 real runs
+    // is below threshold, so nothing is promoted and no proposal is drafted.
+    expect(summary.hits).toEqual([])
+    expect(summary.promotedToHot).toEqual([])
+    expect(summary.proposals).toEqual([])
+  })
+
   it('bounds the self_improving row to MEMORY_BUDGET, keeping the most recent blocks', async () => {
     const { memoryLoop, db } = loadModules()
 

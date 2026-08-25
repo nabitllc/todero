@@ -196,6 +196,22 @@ export interface PatternHit {
 // formatting differences (a trailing period, doubled whitespace, different
 // capitalisation) still count as the same recurrence — so three occurrences
 // of the same sentence draft exactly one proposal.
+//
+// Round-4 repair: "three occurrences" was still wrong in a second way. One
+// `agent_run_records` ROW is one run — but promoteHotPatterns() fed BOTH its
+// rejection_reason and its reviewer_notes into this function as two
+// independent text entries. A single run whose rejection_reason and
+// reviewer_notes normalize to the same phrase (a reviewer routinely echoes
+// the rejection reason into their notes) therefore counted as TWO
+// occurrences of one run. Proven by seeding two rows for one agent, each
+// with the same sentence duplicated across both columns: the old code
+// returned count: 4 and promoted at ~1.5 real runs, and the drafted vault
+// proposal read "Occurrences: 4 (threshold: 3)" while listing only 2 example
+// tasks — a number nobody measured, handed to the owner as if it were.
+// The unit is now the RUN RECORD, not the text field: every text entry
+// carries the id of the record it came from, and a signature's count is the
+// number of *distinct record ids* that produced it, not the number of text
+// entries. A row that says the same thing twice still counts once.
 const MIN_PHRASE_LENGTH = 8
 
 /** Lowercase, strip punctuation, collapse whitespace — same sentence, same signature. */
@@ -209,28 +225,34 @@ function normalizePhrase(text: string): string {
  * grouping). Returns hits meeting `threshold`, most frequent first, each
  * carrying up to 3 example snippets so a proposal can show its work instead
  * of asserting a bare claim.
+ *
+ * `id` identifies the source agent_run_records row each text entry came
+ * from (round-4 repair). Counting is per distinct id, not per text entry —
+ * see the comment above `MIN_PHRASE_LENGTH` — so a run contributing the
+ * same phrase via both rejection_reason and reviewer_notes still increments
+ * the pattern's count by exactly one.
  */
 export function extractPatterns(
-  texts: Array<{ text: string; example: string }>,
+  texts: Array<{ id: string; text: string; example: string }>,
   threshold = PROMOTION_THRESHOLD,
 ): PatternHit[] {
-  const counts = new Map<string, { count: number; examples: string[]; display: string }>()
-  for (const { text, example } of texts) {
+  const counts = new Map<string, { ids: Set<string>; examples: string[]; display: string }>()
+  for (const { id, text, example } of texts) {
     if (!text) continue
     const signature = normalizePhrase(text)
     if (signature.length < MIN_PHRASE_LENGTH) continue
-    const entry = counts.get(signature) ?? { count: 0, examples: [], display: text.trim() }
-    entry.count += 1
+    const entry = counts.get(signature) ?? { ids: new Set<string>(), examples: [], display: text.trim() }
+    entry.ids.add(id)
     if (entry.examples.length < 3 && example && !entry.examples.includes(example)) {
       entry.examples.push(example)
     }
     counts.set(signature, entry)
   }
   return Array.from(counts.values())
-    .filter(v => v.count >= threshold)
-    .sort((a, b) => b.count - a.count)
+    .filter(v => v.ids.size >= threshold)
+    .sort((a, b) => b.ids.size - a.ids.size)
     .slice(0, 10)
-    .map(v => ({ phrase: v.display, count: v.count, examples: v.examples }))
+    .map(v => ({ phrase: v.display, count: v.ids.size, examples: v.examples }))
 }
 
 /**
@@ -372,7 +394,7 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
 
   const { data, error } = await db()
     .from('agent_run_records')
-    .select('task_key,rejection_reason,reviewer_notes,failed,rejection_count')
+    .select('id,task_key,rejection_reason,reviewer_notes,failed,rejection_count')
     .eq('agent_id', agentId)
     .order('created_at', { ascending: false })
     .limit(500)
@@ -383,16 +405,23 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
   if (!data) return summary
 
   const rows = data as Array<{
-    task_key: string; rejection_reason: string | null; reviewer_notes: string | null
+    id: string; task_key: string; rejection_reason: string | null; reviewer_notes: string | null
     failed: boolean; rejection_count: number
   }>
   const relevant = rows.filter(r => r.failed || r.rejection_count > 0)
   summary.rowsExamined = relevant.length
 
+  // Round-4 repair: this gate used to live only in
+  // scripts/promote-hot-patterns.mjs, so the CLI skipped a promotion pass
+  // below PROMOTION_THRESHOLD rows but POST /api/promote-hot-patterns (the
+  // other caller of this function) did not — same class of bug, guarded in
+  // only one of its two callers. Moved here so both callers share one gate.
+  if (summary.rowsExamined < PROMOTION_THRESHOLD) return summary
+
   const texts = relevant.flatMap(r => {
-    const out: Array<{ text: string; example: string }> = []
-    if (r.rejection_reason) out.push({ text: r.rejection_reason, example: `[${r.task_key}] ${r.rejection_reason}` })
-    if (r.reviewer_notes) out.push({ text: r.reviewer_notes, example: `[${r.task_key}] ${r.reviewer_notes}` })
+    const out: Array<{ id: string; text: string; example: string }> = []
+    if (r.rejection_reason) out.push({ id: r.id, text: r.rejection_reason, example: `[${r.task_key}] ${r.rejection_reason}` })
+    if (r.reviewer_notes) out.push({ id: r.id, text: r.reviewer_notes, example: `[${r.task_key}] ${r.reviewer_notes}` })
     return out
   })
 

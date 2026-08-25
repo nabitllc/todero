@@ -615,55 +615,104 @@ function RunsTab({ agent }: { agent: Agent }) {
 }
 
 // ── Tab: Budget ───────────────────────────────────────────────────────────────
-function BudgetTab({ agent }: { agent: Agent }) {
-  const [budgetLimit, setBudgetLimit] = useState('')
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent config row
-  const [config, setConfig] = useState<any>(null)
-  const [budgetError, setBudgetError] = useState<ApiError | null>(null)
-
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
-    fetchJson<any>('/api/status')
-      .then(r => {
-        if (!r.ok) { setBudgetError(r.error); setConfig(null); return }
-        setBudgetError(null)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
-        const agentsList: any[] = r.data?.agents?.agents ?? []
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
-        const found = agentsList.find((a: any) => a.id === agent.id)
-        setConfig(found ?? null)
-      })
-  }, [agent.id])
-
-  // Calculate projected monthly cost. Rate table lives in lib/agent-cost-log
-  // — an unrecognized model (any local Ollama tag included) rates 0 rather
-  // than a guessed cloud number.
-  const heartbeatEvery = config?.heartbeat?.everyMinutes ?? 60
-  const avgTokens = 2000
-  const rate = estimateModelRateUsd(agent.model)
-  const projected = ((1440 / heartbeatEvery) * 30 * avgTokens / 1_000_000 * rate).toFixed(2)
-
-  function saveBudgetLimit() {
-    fetch(`/api/agents/${agent.id}/config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ budgetLimit: Number(budgetLimit) }),
-    })
-      .then(r => { if (!r.ok) throw new Error('Failed') })
-      .catch(() => alert('Failed to save budget limit'))
+//
+// TOD-2381 (agent-budget-stop) round 3: this tab used to POST to
+// /api/agents/{id}/config, a route that has never existed (a 404 every save
+// silently swallowed), and its "Projected Monthly" figure multiplied a
+// hardcoded avgTokens=2000 guess by a heartbeat cadence — never a real number.
+// It now reads and writes the actual enforcement path: GET/PATCH
+// /api/agents/{id}/budget, backed by lib/agent-budget.ts and the same
+// agent_runs/token_ledger rows the dispatch and heartbeat ceiling checks read.
+interface BudgetGetResponse {
+  budget: {
+    period: 'run' | 'daily' | 'monthly'
+    limitUsd: number | null
+    maxConcurrentPerAgent: number
+    maxRunMs: number
+    noProgressHeartbeats: number
+    maxRunsPerPeriod: number
+    source: 'row' | 'default' | 'unavailable'
   }
+  spend: {
+    runningNow: number
+    runningTotalAllAgents: number
+    runsInLast24h: number
+    spendUsdThisPeriod: number | null
+    spendError: string | null
+    overConcurrency: boolean
+    overRunCount: boolean
+    overDollarBudget: boolean
+  }
+  overCeiling: { ceiling: string; reason?: string } | null
+}
+
+function BudgetTab({ agent }: { agent: Agent }) {
+  const { data, error, loading, refetch } = useApiData<BudgetGetResponse>(`/api/agents/${agent.id}/budget`)
+  const [limitUsd, setLimitUsd] = useState('')
+  const [maxRunsPerPeriod, setMaxRunsPerPeriod] = useState('')
+  const [maxConcurrentPerAgent, setMaxConcurrentPerAgent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<ApiError | null>(null)
+
+  // Seed the editable fields from the server once per load — never on every
+  // render, or a keystroke would be stomped by the next poll.
+  useEffect(() => {
+    if (!data) return
+    setLimitUsd(data.budget.limitUsd == null ? '' : String(data.budget.limitUsd))
+    setMaxRunsPerPeriod(String(data.budget.maxRunsPerPeriod))
+    setMaxConcurrentPerAgent(String(data.budget.maxConcurrentPerAgent))
+  }, [data])
+
+  async function saveBudget() {
+    setSaving(true)
+    setSaveError(null)
+    const body: Record<string, unknown> = {
+      maxRunsPerPeriod: Number(maxRunsPerPeriod),
+      maxConcurrentPerAgent: Number(maxConcurrentPerAgent),
+      limitUsd: limitUsd.trim() === '' ? null : Number(limitUsd),
+    }
+    const r = await fetchJson<{ ok: boolean }>(`/api/agents/${agent.id}/budget`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    setSaving(false)
+    if (!r.ok) { setSaveError(r.error); return }
+    refetch()
+  }
+
+  const rate = estimateModelRateUsd(agent.model)
+  const schemaUnavailable = data?.budget.source === 'unavailable'
 
   return (
     <div className="space-y-5">
-      {budgetError && <ApiErrorBanner error={budgetError} />}
-      <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">Budget &amp; Token Usage</p>
+      {error && <ApiErrorBanner error={error} />}
+      {saveError && <ApiErrorBanner error={saveError} />}
+      <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">Budget &amp; Ceilings</p>
 
-      {/* Stat cards */}
+      {loading && !data && <p className="text-white/20 text-xs">Loading…</p>}
+
+      {schemaUnavailable && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+          Ceiling schema not migrated on this database — every dispatch for this
+          agent is being refused (fail-closed) rather than run with an
+          unverifiable ceiling. Apply migrations/038_agent_budgets_and_ceilings.sql.
+        </div>
+      )}
+
+      {data?.overCeiling && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300 font-medium">
+          Over ceiling — {data.overCeiling.ceiling}
+          {data.overCeiling.reason ? `: ${data.overCeiling.reason}` : ''}
+        </div>
+      )}
+
+      {/* Stat cards — real numbers from the enforcement path, never an estimate */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'This Week', value: '—' },
-          { label: 'This Month', value: '—' },
-          { label: 'Projected Monthly', value: `$${projected}` },
+          { label: 'Spend (period)', value: data?.spend.spendUsdThisPeriod != null ? `$${data.spend.spendUsdThisPeriod.toFixed(4)}` : data?.spend.spendError ? 'error' : '—' },
+          { label: 'Runs (24h)', value: data ? `${data.spend.runsInLast24h}/${data.budget.maxRunsPerPeriod}` : '—' },
+          { label: 'Running now', value: data ? `${data.spend.runningNow}/${data.budget.maxConcurrentPerAgent}` : '—' },
         ].map(s => (
           <div key={s.label} className="bg-[#0f0f0f] border border-white/10 rounded-xl p-4">
             <p className="text-white/30 text-[10px] mb-1">{s.label}</p>
@@ -672,40 +721,44 @@ function BudgetTab({ agent }: { agent: Agent }) {
         ))}
       </div>
 
-      {/* Projection formula */}
-      <div className="rounded-xl border border-white/10 p-3 bg-[#0f0f0f]">
-        <p className="text-white/30 text-[10px] mb-1">Projection formula</p>
-        <p className="text-white/40 text-[10px] font-mono">
-          (1440/{heartbeatEvery}) × 30 × {avgTokens} / 1M × ${rate.toFixed(2)} = ${projected}/mo
-        </p>
-      </div>
-
-      {/* Budget limit */}
+      {/* Ceilings — the operator's lever. PATCH /api/agents/{id}/budget is
+          how "set a deliberately tiny limit and show it refuse" is done for
+          real (piece brief's own words for the required demonstration). */}
       <div className="rounded-xl border border-white/10 p-4 space-y-3 bg-[#0f0f0f]">
-        <p className="text-white/50 text-xs font-semibold">Budget Limit</p>
-        <div className="flex gap-2">
-          <Input
-            type="number"
-            placeholder="No limit set"
-            value={budgetLimit}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBudgetLimit(e.target.value)}
-            className="flex-1"
-          />
-          <Button variant="secondary" size="sm" onClick={saveBudgetLimit}>Save</Button>
-        </div>
-      </div>
-
-      {/* Token breakdown */}
-      <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
-        <p className="text-white/50 text-xs font-semibold mb-3">Token Breakdown</p>
+        <p className="text-white/50 text-xs font-semibold">Ceilings</p>
         <div className="space-y-2">
-          {['Input tokens', 'Output tokens', 'Cached'].map(label => (
-            <div key={label} className="flex justify-between text-xs">
-              <span className="text-white/30">{label}</span>
-              <span className="text-white/50 font-mono">—</span>
-            </div>
-          ))}
+          <label className="block">
+            <span className="text-white/30 text-[10px] uppercase tracking-wider">Max runs / 24h — bounds a self-retriggering loop</span>
+            <Input
+              type="number"
+              value={maxRunsPerPeriod}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxRunsPerPeriod(e.target.value)}
+              className="mt-1"
+            />
+          </label>
+          <label className="block">
+            <span className="text-white/30 text-[10px] uppercase tracking-wider">Max concurrent runs (this agent)</span>
+            <Input
+              type="number"
+              value={maxConcurrentPerAgent}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxConcurrentPerAgent(e.target.value)}
+              className="mt-1"
+            />
+          </label>
+          <label className="block">
+            <span className="text-white/30 text-[10px] uppercase tracking-wider">Dollar limit — dormant on a local-model host (rate ${rate.toFixed(2)}/1M)</span>
+            <Input
+              type="number"
+              placeholder="No limit set"
+              value={limitUsd}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLimitUsd(e.target.value)}
+              className="mt-1"
+            />
+          </label>
         </div>
+        <Button variant="secondary" size="sm" onClick={saveBudget} disabled={saving || !data}>
+          {saving ? 'Saving…' : 'Save ceilings'}
+        </Button>
       </div>
     </div>
   )

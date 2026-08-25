@@ -40,11 +40,13 @@ const picked = only ? ALL.filter(c => c.piece === only || c.id === only) : ALL
 const results = []
 for (const c of picked) {
   let r
-  // A check that needs the server cannot be graded while the server is down.
-  if (!serverUp && c.needsServer !== false && /http|api|endpoint|route|reports|armed|persists|reachable/i.test(c.id + c.desc)) {
+  try { r = await c.run() } catch (e) { r = { ok: false, detail: `check threw: ${e.message}` } }
+  // Classified by EVIDENCE, not by name. While the server is down, a failure whose
+  // detail shows a transport fault did not measure the product — it measured a dead
+  // socket. Name-matching missed dispatch-guard-untouched and let it report
+  // "guard present but POST returned 404", which reads as a safety hole and is not one.
+  if (!r.ok && !serverUp && /(0|404|502|503|504)|NETWORK|ECONNREFUSED|not serving|unreachable|timeout/i.test(String(r.detail))) {
     r = { ok: false, inconclusive: true, detail: 'INCONCLUSIVE — dev server not serving; not a product regression' }
-  } else {
-    try { r = await c.run() } catch (e) { r = { ok: false, detail: `check threw: ${e.message}` } }
   }
   results.push({ ...c, ...r })
 }
