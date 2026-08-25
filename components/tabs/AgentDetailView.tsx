@@ -45,10 +45,13 @@ interface Agent {
   // from the "Remove" action below; an AGENTS.md-defined agent has no
   // registration row for DELETE /api/agents/{id} to remove.
   rosterSource?: string
+<<<<<<< Updated upstream
   // Brain2 vault manifest data for this id, or null/undefined when the
   // vault does not name it. Optional for the same reason as the liveness
   // fields above — a partial agent object should still compile.
   vault?: VaultBadgeInfo | null
+=======
+>>>>>>> Stashed changes
 }
 
 interface Issue {

@@ -24,7 +24,6 @@
 // number pretending to be telemetry.
 
 import { db, DB_ERROR, type DbError } from '@/lib/db'
-import { readHeartbeat } from '@/lib/agent-heartbeats'
 
 // Same test as lib/db-http.ts's isMissingTableError, duplicated rather than
 // imported: that file also exports Next route helpers built on `NextResponse`,
@@ -102,6 +101,59 @@ export async function checkBudgetSchema(): Promise<SchemaAvailability> {
   const result: SchemaAvailability = { available: missing.length === 0, missing, checkedAt: Date.now() }
   schemaCache = result
   return result
+}
+
+/**
+ * Last observed heartbeat for one agent, in epoch ms — or null when no beat
+ * has ever landed for it. Deliberately NOT `import`ed from
+ * lib/agent-heartbeats.ts: that module pulls in lib/agent-registrations.ts,
+ * which pulls in lib/db-http.ts, which pulls in `next/server` — exactly the
+ * dependency `isMissingTableError` above is duplicated to avoid. This is the
+ * same duplication trade for the same reason, reading the identical two
+ * stores lib/agent-heartbeats.ts writes (`agent_heartbeats`, falling back to
+ * `agent_memory` under key `'heartbeat'`) so it sees the same beat that
+ * route recorded.
+ */
+async function lastHeartbeatMs(agentId: string): Promise<number | null> {
+  try {
+    const { data, error } = await db()
+      .from('agent_heartbeats')
+      .select('last_seen')
+      .eq('agent_id', agentId)
+      .maybeSingle<{ last_seen: string | number }>()
+    if (!error) {
+      if (data?.last_seen == null) return null
+      const ms = typeof data.last_seen === 'number' ? data.last_seen : new Date(data.last_seen).getTime()
+      return Number.isFinite(ms) ? ms : null
+    }
+    if (!isMissingTableError(error)) return null
+  } catch {
+    // fall through to the pre-migration store
+  }
+  try {
+    const { data, error } = await db()
+      .from('agent_memory')
+      .select('value')
+      .eq('agent_id', agentId)
+      .eq('key', 'heartbeat')
+      .maybeSingle<{ value: unknown }>()
+    if (error || !data) return null
+    let parsed: unknown = data.value
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed)
+      } catch {
+        return null
+      }
+    }
+    if (!parsed || typeof parsed !== 'object') return null
+    const lastSeen = (parsed as Record<string, unknown>).last_seen
+    if (typeof lastSeen !== 'string' && typeof lastSeen !== 'number') return null
+    const ms = typeof lastSeen === 'number' ? lastSeen : new Date(lastSeen).getTime()
+    return Number.isFinite(ms) ? ms : null
+  } catch {
+    return null
+  }
 }
 
 // ── Defaults — used whenever no agent_budgets row exists yet, and whenever
@@ -440,11 +492,23 @@ export async function checkInFlightCeilings(
   agentId: string,
   issue: { id: string; task_key: string | null; updated_at: string },
 ): Promise<CeilingResult & { runId?: string }> {
+  // Same dead-row filter checkDispatchCeilings applies to its concurrency
+  // counts, and for the identical reason: without it, a `status='running'`
+  // row that was never closed (this host has 67,591 of them, 0 started in
+  // the last 6h) reads as an active run forever. Before this filter, ANY
+  // ordinary heartbeat for an issue with a zombie run row underneath it
+  // computed ageMs from a started_at months old, tripped the wall-clock
+  // ceiling, and blocked a live issue off a dead process — measured doing
+  // exactly that to TOD-614 from one normal beat. A row past this cutoff is
+  // not "a run to stop", it is a row nobody ever closed; `!run` below then
+  // returns allowed:true instead of inventing a stop for it.
+  const staleCutoff = new Date(Date.now() - STALE_RUN_CUTOFF_MS).toISOString()
   const { data: run, error } = await db()
     .from('agent_runs')
     .select('*')
     .eq('task_id', issue.id)
     .eq('status', 'running')
+    .gte('started_at', staleCutoff)
     .order('started_at', { ascending: false })
     .limit(1)
     .maybeSingle<{
@@ -457,9 +521,19 @@ export async function checkInFlightCeilings(
 
   // ── 1. Wall clock — a run older than the ceiling is stopped outright, no
   // matter what it is doing. Enforced by the supervisor reading started_at,
-  // not by anything the agent reports about itself. ──
+  // not by anything the agent reports about itself. The started_at cutoff
+  // above only screens out rows that are unambiguously dead (no beat in 6h);
+  // it does not by itself prove THIS agent is still alive right now, so the
+  // stop additionally requires a heartbeat observed inside that same 6h
+  // window. A row with started_at inside the cutoff but no beat at all is
+  // still stale, not running, and must not block its issue either. ──
   const ageMs = Date.now() - new Date(run.started_at).getTime()
   if (ageMs > budget.maxRunMs) {
+    const lastBeatMs = await lastHeartbeatMs(agentId)
+    const heartbeatRecent = lastBeatMs !== null && (Date.now() - lastBeatMs) < STALE_RUN_CUTOFF_MS
+    if (!heartbeatRecent) {
+      return { allowed: true, runId: run.id }
+    }
     await stopRun(run.id, agentId, issue, run.pid, 'wall_clock',
       `run exceeded ${Math.round(budget.maxRunMs / 60000)} min wall clock (${Math.round(ageMs / 60000)} min elapsed)`,
       { ageMs, limitMs: budget.maxRunMs })

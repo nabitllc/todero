@@ -38,7 +38,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbUnavailableResponse } from '@/lib/db-http'
 import { resolveAgentIdentity } from '@/lib/agent-roster'
+<<<<<<< Updated upstream
 import { registerAgent, readRegistrations, setRegistrationStatus } from '@/lib/agent-registrations'
+=======
+import { registerAgent, readRegistrations, setRegistrationStatus, deleteRegistration } from '@/lib/agent-registrations'
+>>>>>>> Stashed changes
 import { recordHeartbeat, clearHeartbeat } from '@/lib/agent-heartbeats'
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const
