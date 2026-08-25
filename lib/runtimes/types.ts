@@ -20,6 +20,18 @@ export interface AgentSpawnOptions {
    * may ignore it.
    */
   model?: 'opus' | 'sonnet' | 'haiku'
+  /**
+   * Concrete model id to use instead of resolving `model` through an
+   * alias/env-var chain — e.g. a vault agent's `fallback_local`
+   * (Global_Agents/<id>/manifest.json's `model.fallback_local`) or an
+   * explicit `?model=` override on the dispatch request. Only adapters that
+   * talk to a live model roster (openai-api) can honor this; adapters that
+   * shell out to a fixed CLI alias (claude-code, codex, cursor) ignore it.
+   * Still validated against the endpoint's live model list before use — an
+   * override naming a model the endpoint does not serve is reported by name,
+   * never silently substituted.
+   */
+  modelOverride?: string
   /** Absolute path to write the agent's stdout+stderr log */
   logFile: string
   /** If set, the adapter should checkout/create this branch before running */

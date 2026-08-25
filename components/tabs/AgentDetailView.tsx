@@ -13,6 +13,8 @@ import { fetchJson, useApiData, type ApiError } from '@/hooks/useApiData'
 import { dbUrl } from '@/lib/db/browser'
 import { estimateModelRateUsd } from '@/lib/model-rates'
 import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+import AgentLaunchControl from '@/components/tabs/AgentLaunchControl'
+import AgentRunTrace from '@/components/tabs/AgentRunTrace'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Agent {
@@ -566,6 +568,9 @@ function ConfigurationTab({ agent, localProviderConfigured }: { agent: Agent; lo
 // ── Tab: Runs ─────────────────────────────────────────────────────────────────
 function RunsTab({ agent }: { agent: Agent }) {
   const [subTab, setSubTab] = useState<'task' | 'heartbeat'>('task')
+  // run-agent-locally piece: which run's trace is expanded, if any. One at a
+  // time — a second click on the same row collapses it.
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
   // Real agent_runs rows for this agent, through the same session-gated db proxy
   // OfficeCanvas/useAgentStatus already use — not a bespoke /api/agents/:id/runs
   // endpoint that never existed. A failed load leaves `runs` null so the empty
@@ -632,17 +637,25 @@ function RunsTab({ agent }: { agent: Agent }) {
       ) : filteredRuns.length > 0 ? (
         <div className="space-y-2">
           {filteredRuns.map((run, i: number) => (
-            <div key={run.id ?? i} className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
-              <PlayCircle size={12} className="text-white/30" />
-              <div className="flex-1 min-w-0">
-                <p className="text-white/70 text-xs truncate">{run.task_title ?? `Run #${i + 1}`}</p>
-                <p className="text-white/30 text-[10px]">{run.started_at ? relTime(new Date(run.started_at).getTime()) : '—'}</p>
-              </div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${
-                run.status === 'done' || run.status === 'success' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                : run.status === 'error' || run.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                : 'bg-white/5 text-white/40 border-white/10'
-              }`}>{run.status ?? 'unknown'}</span>
+            <div key={run.id ?? i}>
+              <button
+                type="button"
+                onClick={() => run.id && setExpandedRunId(id => id === run.id ? null : run.id!)}
+                className="w-full flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f] text-left hover:border-white/20 transition-colors focus:outline-none focus:ring-2 focus:ring-white/30"
+                title="Open this run's trace — every model call and tool call it made"
+              >
+                <PlayCircle size={12} className="text-white/30 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/70 text-xs truncate">{run.task_title ?? `Run #${i + 1}`}</p>
+                  <p className="text-white/30 text-[10px]">{run.started_at ? relTime(new Date(run.started_at).getTime()) : '—'}</p>
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold shrink-0 ${
+                  run.status === 'done' || run.status === 'success' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : run.status === 'error' || run.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                  : 'bg-white/5 text-white/40 border-white/10'
+                }`}>{run.status ?? 'unknown'}</span>
+              </button>
+              {expandedRunId === run.id && run.id && <AgentRunTrace runId={run.id} />}
             </div>
           ))}
         </div>
@@ -930,6 +943,7 @@ export default function AgentDetailView({ agent, onClose, onRemoved, localProvid
             <p className="text-white/50 text-xs">{agent.role}</p>
           </div>
           <div className="flex items-center gap-1.5 ml-auto shrink-0">
+            <AgentLaunchControl agentId={agent.id} vault={agent.vault} />
             <Button variant="secondary" size="sm" onClick={handleAssignTask}>
               <Plus size={12} className="mr-1" /> Assign Task
             </Button>

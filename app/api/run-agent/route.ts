@@ -872,11 +872,21 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     runtime = await getDefaultRuntime()
   }
 
+  // run-agent-locally piece: an explicit ?model= override — a concrete model
+  // id (typically a vault agent's `model.fallback_local` from
+  // Global_Agents/<id>/manifest.json, e.g. "qwen2.5-coder:14b") the caller
+  // already resolved, rather than the per-agent Claude alias in
+  // agent-queue.ts. Only lib/runtimes/openai-api.ts reads it
+  // (AgentSpawnOptions.modelOverride); other adapters ignore it. Absent =
+  // unchanged behavior — config.model still resolves as before.
+  const modelOverride = req.nextUrl.searchParams.get('model') ?? undefined
+
   const spawnResult = await runtime.spawn({
     agentId,
     workingDir: TODERO_DIR,
     prompt,
     model: config.model,
+    modelOverride,
     logFile,
     branch,
     taskId: task.id,
@@ -907,6 +917,21 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
         try {
           const { error } = await db().from('agent_runs').update({ pid: spawnResult.pid }).eq('id', agentRunId)
           if (error) console.warn(`[run-agent] pid persist failed: ${error.message}`)
+        } catch { /* best-effort */ }
+      })()
+    }
+    // run-agent-locally piece: persist the log file path so GET
+    // /api/run-agent/trace can find it later — before this, a run's trace
+    // (or its plain claude-code transcript) was only ever locatable by
+    // already knowing the temp filename from this one HTTP response.
+    // migrations/046_agent_runs_log_file.sql; best-effort like the pid
+    // persist above — a database that has not run that migration yet just
+    // never gets this column filled in, not an error.
+    if (agentRunId && spawnResult.logFile) {
+      void (async () => {
+        try {
+          const { error } = await db().from('agent_runs').update({ log_file: spawnResult.logFile }).eq('id', agentRunId)
+          if (error) console.warn(`[run-agent] log_file persist failed: ${error.message}`)
         } catch { /* best-effort */ }
       })()
     }

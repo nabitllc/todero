@@ -20,6 +20,8 @@ import { LLM_BASE_URL, fetchLiveModels, resolveModelId } from '@/lib/llm-provide
 import type { LiveModelsResult } from '@/lib/llm-provider'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 import { recordRunOnExit } from '../memory-loop'
+import { finalizeRun } from './token-ledger'
+import { estimateModelRateUsd } from '../model-rates'
 
 // ---------------------------------------------------------------------------
 // Provider resolution - OpenAI-compatible, not OpenAI-only
@@ -198,14 +200,23 @@ export function resetProviderProbeCache(): void {
  *
  * Returns null when nothing matches — including when the endpoint is
  * unreachable — so the caller reports the tier by name instead of guessing.
+ *
+ * `overrideId` (run-agent-locally piece) takes precedence over every env-var
+ * candidate when given — it is a concrete id the caller already resolved
+ * (typically a vault agent's `fallback_local`, e.g. "qwen2.5-coder:14b") —
+ * but it is still checked against the endpoint's live roster like every
+ * other candidate: a stale manifest naming a model this Ollama has not
+ * pulled is reported by name, never dispatched anyway.
  */
 export async function mapModel(
   alias: 'opus' | 'sonnet' | 'haiku' | undefined,
+  overrideId?: string,
 ): Promise<string | null> {
   const live = await fetchLiveModels()
   if (!live.ok) return null
   const ids = live.models.map(m => m.id)
   const candidates = [
+    overrideId,
     alias ? process.env[`LLM_MODEL_${alias.toUpperCase()}`] : undefined,
     process.env.LLM_MODEL,
     alias,
@@ -471,30 +482,105 @@ const RUNNER_SCRIPT = [
   '  if (name === "run_bash") { try { return cp.execSync(args.command, { encoding: "utf8", timeout: 30000 }) } catch(e) { return "Error running command: " + e.message } }',
   '  return "Unknown tool: " + name',
   '}',
+  // run-agent-locally piece: every step this loop takes — each model call,
+  // each tool call, each token count the endpoint reports — is written as a
+  // structured `[trace] {...}` JSON line, one per line, on top of the
+  // existing human-readable `[openai-api] ...` lines. This is the whole of
+  // the drillable trace: no separate DB write from the child process (it has
+  // no import of the server\'s db seam and no session cookie to call an
+  // authenticated API with), so the log file itself is the source of truth.
+  // parseOpenAiTrace() (this same module, running server-side) reads these
+  // lines back into a run -> steps -> tool-calls structure once the process
+  // has exited.
+  'function trace(obj) { fs.appendFileSync(LOG_F, "[trace] " + JSON.stringify(obj) + "\\n") }',
   'async function main() {',
   '  fs.appendFileSync(LOG_F, "[openai-api] provider=" + BASE_URL + " model=" + MODEL + " prompt_bytes=" + prompt.length + "\\n")',
+  '  trace({ type: "run_start", model: MODEL, provider: BASE_URL, promptBytes: prompt.length, at: new Date().toISOString() })',
   '  const messages = [{ role: "user", content: prompt }]',
+  '  let totalIn = 0, totalOut = 0',
   '  for (let iter = 1; iter <= MAX_ITER; iter++) {',
+  '    const callStart = Date.now()',
   '    const resp = await callApi({ model: MODEL, messages: messages, tools: TOOLS, tool_choice: "auto" })',
-  '    if (resp.error) { fs.appendFileSync(LOG_F, "[openai-api] API error: " + JSON.stringify(resp.error) + "\\n"); process.exit(1) }',
+  '    const usage = resp && resp.usage ? resp.usage : {}',
+  '    const tokensIn = usage.prompt_tokens || 0, tokensOut = usage.completion_tokens || 0',
+  '    totalIn += tokensIn; totalOut += tokensOut',
+  '    if (resp.error) {',
+  '      trace({ type: "model_call", iter: iter, ok: false, error: String(resp.error.message || resp.error), ms: Date.now() - callStart })',
+  '      fs.appendFileSync(LOG_F, "[openai-api] API error: " + JSON.stringify(resp.error) + "\\n"); process.exit(1)',
+  '    }',
   '    const choice = resp.choices && resp.choices[0]',
-  '    if (!choice) { fs.appendFileSync(LOG_F, "[openai-api] No choices\\n"); process.exit(1) }',
+  '    if (!choice) { trace({ type: "model_call", iter: iter, ok: false, error: "no choices in response" }); fs.appendFileSync(LOG_F, "[openai-api] No choices\\n"); process.exit(1) }',
   '    const msg = choice.message',
   '    messages.push(msg)',
+  '    trace({ type: "model_call", iter: iter, ok: true, finishReason: choice.finish_reason, tokensIn: tokensIn, tokensOut: tokensOut, ms: Date.now() - callStart, toolCalls: (msg.tool_calls || []).map(function(t) { return t.function.name }) })',
   '    if (choice.finish_reason === "stop" || !msg.tool_calls || msg.tool_calls.length === 0) {',
-  '      fs.appendFileSync(LOG_F, "[openai-api] Final (iter=" + iter + "):\\n" + (msg.content || "") + "\\n"); return',
+  '      fs.appendFileSync(LOG_F, "[openai-api] Final (iter=" + iter + "):\\n" + (msg.content || "") + "\\n")',
+  '      trace({ type: "run_end", status: "completed", iterations: iter, tokensIn: totalIn, tokensOut: totalOut, at: new Date().toISOString() })',
+  '      return',
   '    }',
   '    for (const tc of msg.tool_calls) {',
   '      let args = {}; try { args = JSON.parse(tc.function.arguments) } catch {}',
+  '      const toolStart = Date.now()',
   '      const result = executeTool(tc.function.name, args)',
   '      fs.appendFileSync(LOG_F, "[openai-api] tool_call " + tc.function.name + "\\n")',
+  '      trace({ type: "tool_call", iter: iter, tool: tc.function.name, args: JSON.stringify(args).slice(0, 500), result: String(result).slice(0, 500), ms: Date.now() - toolStart })',
   '      messages.push({ role: "tool", tool_call_id: tc.id, content: String(result) })',
   '    }',
   '  }',
   '  fs.appendFileSync(LOG_F, "[openai-api] Max iterations reached\\n")',
+  '  trace({ type: "run_end", status: "max_iterations", iterations: MAX_ITER, tokensIn: totalIn, tokensOut: totalOut, at: new Date().toISOString() })',
   '}',
-  'main().catch(function(e) { fs.appendFileSync(LOG_F, "[openai-api] Fatal: " + e.message + "\\n"); process.exit(1) })',
+  'main().catch(function(e) { fs.appendFileSync(LOG_F, "[openai-api] Fatal: " + e.message + "\\n"); trace({ type: "run_end", status: "failed", error: e.message, at: new Date().toISOString() }); process.exit(1) })',
 ].join('\n')
+
+// ---------------------------------------------------------------------------
+// Trace parsing — the log file IS the trace store (see RUNNER_SCRIPT above).
+// ---------------------------------------------------------------------------
+
+export interface TraceStep {
+  type: string
+  [key: string]: unknown
+}
+
+export interface ParsedTrace {
+  steps: TraceStep[]
+  totals: { tokensIn: number; tokensOut: number; costUsd: number; toolCalls: number }
+  status: 'completed' | 'failed' | 'max_iterations' | 'running' | 'unknown'
+}
+
+/**
+ * Read a run's log file back into the trace structure the RUNNER_SCRIPT
+ * wrote (`[trace] {...}` JSON lines). Best-effort: a log file that does not
+ * exist, or one written by a runtime that never emitted `[trace]` lines
+ * (claude-code, codex, cursor), returns an empty step list rather than
+ * throwing — the caller reports "no structured trace for this run" instead
+ * of a 500.
+ */
+export function parseOpenAiTrace(logFile: string, model: string): ParsedTrace {
+  const steps: TraceStep[] = []
+  let raw = ''
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    raw = (require('fs') as typeof import('fs')).readFileSync(logFile, 'utf8')
+  } catch {
+    return { steps, totals: { tokensIn: 0, tokensOut: 0, costUsd: 0, toolCalls: 0 }, status: 'unknown' }
+  }
+  for (const line of raw.split('\n')) {
+    const idx = line.indexOf('[trace] ')
+    if (idx === -1) continue
+    try {
+      steps.push(JSON.parse(line.slice(idx + '[trace] '.length)) as TraceStep)
+    } catch { /* one malformed line does not lose the rest of the trace */ }
+  }
+  const runEnd = [...steps].reverse().find(s => s.type === 'run_end')
+  const tokensIn = Number(runEnd?.tokensIn ?? 0)
+  const tokensOut = Number(runEnd?.tokensOut ?? 0)
+  const rate = estimateModelRateUsd(model)
+  const costUsd = ((tokensIn + tokensOut) / 1_000_000) * rate
+  const toolCalls = steps.filter(s => s.type === 'tool_call').length
+  const status = (runEnd?.status as ParsedTrace['status'] | undefined) ?? (steps.length > 0 ? 'running' : 'unknown')
+  return { steps, totals: { tokensIn, tokensOut, costUsd, toolCalls }, status }
+}
 
 // ---------------------------------------------------------------------------
 // Runtime adapter
@@ -538,7 +624,7 @@ export const openaiApiRuntime: AgentRuntime = {
     // roster matches is reported by name here rather than swapped for a model
     // from a vendor the operator never configured.
     const tier = opts.model ?? 'default'
-    const model = await mapModel(opts.model)
+    const model = await mapModel(opts.model, opts.modelOverride)
     if (!model) {
       return {
         ok: false,
@@ -617,12 +703,29 @@ export const openaiApiRuntime: AgentRuntime = {
     }
 
     appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
+    const spawnStartedAt = Date.now()
     watchChildExit(result.pid, opts.logFile, () => {
       // tmpDir holds the prompt + runner; only safe to drop once the child
       // that reads them is gone.
       try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
       // memory-loop-write (round 2): one agent_run_records row per run.
       void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
+      // run-agent-locally piece: close the ledger row with REAL numbers —
+      // before this, openai-api spawns were the one runtime whose token_ledger
+      // row never closed with token counts/cost at all (only claude-code.ts
+      // called finalizeRun). The trace lines RUNNER_SCRIPT wrote to this same
+      // log file are the only record of what the endpoint actually reported;
+      // parseOpenAiTrace() reads them back now that the process has exited.
+      const parsed = parseOpenAiTrace(opts.logFile, model)
+      finalizeRun({
+        logFile: opts.logFile,
+        status: parsed.status === 'completed' ? 'completed' : parsed.status === 'failed' ? 'failed' : 'completed',
+        durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
+        taskId: opts.taskId ?? null,
+        inputTokens: parsed.totals.tokensIn || undefined,
+        outputTokens: parsed.totals.tokensOut || undefined,
+        costUsd: parsed.totals.costUsd || undefined,
+      })
     }, { maxMinutes: 90 })
 
     return {

@@ -269,7 +269,7 @@ section{margin-top:42px;scroll-margin-top:16px}
 <header>
   <div class="eyebrow">Todero · Mission Control · rebuild program</div>
   <h1>Flight Board</h1>
-  <p class="sub">Live scoring of Todero against the best mission controls people actually build and buy. Waves keep running until Todero wins.</p>
+  <p class="sub">Todero has to do two jobs: <b>build</b> a project and then <b>operate</b> it. Scored against the best mission controls people actually build and buy. Waves keep running until Todero wins.</p>
 </header>
 
 <div class="band">
@@ -293,7 +293,7 @@ section{margin-top:42px;scroll-margin-top:16px}
 
 <section id="channels">
   <div class="shead"><h2>Channels</h2><div class="note">Sorted by distance from goal · ${cleared} of ${channels.channels.length} cleared</div></div>
-  <p class="lede">Solid bar is where Todero is now; the ghost behind it is where it started; the pin is the goal it has to meet or beat. Each goal names the tool and the feature it is measured against. <b>These are judged</b>, not measured — a fresh blind panel re-scores all ${channels.channels.length} at Wave 8, and that is the number that decides whether the program loops.</p>
+  <p class="lede"><b>Scope moved on 25 Aug.</b> Todero is no longer only a build tool — it must also run the project it built: customers, orders, conversations. Three channels were added for that, and one for the post-MVP multi-tenant goal. All four start at zero, so the honest effect is that the finish line got further away, not closer.<br><br>Solid bar is where Todero is now; the ghost behind it is where it started; the pin is the goal it has to meet or beat. Each goal names the tool and the feature it is measured against. <b>These are judged</b>, not measured — a fresh blind panel re-scores all ${channels.channels.length} at Wave 8, and that is the number that decides whether the program loops.</p>
   <div class="grid">
 ${cards}
   </div>

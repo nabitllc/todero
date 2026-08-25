@@ -126,6 +126,33 @@
    "wave": 6,
    "evidence": "Swim lanes are real — BoardTab has together/business/feature/sprint — but there is no lane by agent, the one that matters for a fleet. And the Pipeline cannot reflect true state by construction: 7 invented display stages against 11 real lifecycle statuses, with column membership decided by ad-hoc conditions in the render. It also hardcodes a 4-agent array and filters on a status string absent from the lifecycle module.",
    "goal_text": "Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through."
+  },
+  {
+   "name": "Customer Conversations",
+   "baseline": 0,
+   "current": 0,
+   "goal": 9,
+   "wave": 7,
+   "evidence": "New scope, added 25 Aug. Todero must not only build a project but operate it — the first real test is answering customers on WhatsApp and on the site. Nothing exists: no conversation store, no draft-approve-send path, no channel integration beyond outbound Discord/Telegram alerts.",
+   "goal_text": "Grok Bot — works while you are away and surfaces only what needs you. Todero drafts the customer reply, you approve from your phone, Todero sends."
+  },
+  {
+   "name": "Commerce Operations",
+   "baseline": 0,
+   "current": 0,
+   "goal": 8,
+   "wave": 7,
+   "evidence": "New scope, added 25 Aug. Operating a storefront means orders, catalog and inventory are objects an operator acts on. Todero has none of them — it models issues and agents only. This is the channel that decides whether Todero is a dev tool or a business console.",
+   "goal_text": "Shopify admin — orders, catalog and inventory as first-class objects you can act on, not a dashboard that only reports what happened."
+  },
+  {
+   "name": "Multi-tenancy & Identity",
+   "baseline": 0,
+   "current": 0,
+   "goal": 8,
+   "wave": 9,
+   "evidence": "Post-MVP, added 25 Aug. Today authentication is three shared passwords and every record is global. For anyone else to run Todero for their own business, identity and per-tenant isolation have to be real. Deliberately after one project works well.",
+   "goal_text": "Linear — sign in and see only your workspace. Anyone runs Todero for their own business and projects, isolated from everyone else."
   }
  ]
 }

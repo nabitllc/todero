@@ -151,13 +151,18 @@
   },
   {
    "n": 7,
-   "name": "Neon",
-   "detail": "Repository layer, ~24 typed modules. Gated on the seam, error surfacing, and a green coherence pass."
+   "name": "First managed project",
+   "detail": "Todero builds AND operates one real project end to end. Catalog and storefront first, then order intake against sandbox keys, then customer replies drafted by an agent and approved by Michael before they send."
   },
   {
    "n": 8,
    "name": "Judgment",
-   "detail": "Fresh blind re-score of all 13 channels. Loop back into whichever scored lowest."
+   "detail": "Fresh blind re-score of every channel. Loop back into whichever scored lowest."
+  },
+  {
+   "n": 9,
+   "name": "Post-MVP — multi-tenant",
+   "detail": "Real identity, sign-in, per-tenant isolation. Anyone runs Todero for their own business. Deliberately last: one project has to work well first."
   }
  ]
 }
