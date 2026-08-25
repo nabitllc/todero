@@ -2,7 +2,7 @@
 import { db, type DbAdapter } from '@/lib/db'
 
 
-// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// Lazy-init: avoids crashing at build time when the database credentials aren't
 // set (CI). First call throws if still missing. (TOD-2296)
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {

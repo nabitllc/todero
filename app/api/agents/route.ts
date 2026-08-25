@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { processListCommand } from '@/lib/paths'
@@ -9,16 +9,14 @@ const execFileAsync = promisify(execFile)
 
 
 /**
- * Nullable on purpose. This used to be `process.env.SUPABASE_SERVICE_ROLE_KEY!`,
- * which made the database client throw "key is required" on every host but the
- * author's — and the GET handler swallowed that into an empty 200. A machine
- * that was never configured then looked identical to a machine with no agents.
- * Keep it null-able so the route can say which one it is.
+ * Asked of the seam, never of the environment. This route used to read the
+ * credential itself, which made the database client throw "key is required" on
+ * every host but the author's — and the GET handler swallowed that into an
+ * empty 200. A machine that was never configured then looked identical to a
+ * machine with no agents. `dbStatusMessage()` says which one it is, naming the
+ * variables the active adapter actually wants.
  */
-const SUPABASE_KEY: string | null = process.env.SUPABASE_SERVICE_ROLE_KEY ?? null
-
-const NO_KEY_ERROR =
-  'SUPABASE_SERVICE_ROLE_KEY is not set — agent run state unavailable'
+const NO_KEY_ERROR = () => `${dbStatusMessage()} — agent run state unavailable`
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const
 
@@ -229,10 +227,10 @@ export async function GET() {
 
   // Unconfigured host: the roster is still real and process detection is still
   // local, so return both — with 503 and the reason, never a bare empty 200.
-  if (!SUPABASE_KEY) {
+  if (!isDbConfigured()) {
     const state = emptyRunState()
     state.runningAgents = await detectRunningAgents()
-    return respond(state, false, NO_KEY_ERROR, 503)
+    return respond(state, false, NO_KEY_ERROR(), 503)
   }
 
   try {
@@ -304,7 +302,7 @@ export async function GET() {
 
 // INF-237: Agent capability registry — persist capabilities to Supabase agent_memory
 export async function POST(req: NextRequest) {
-  if (!SUPABASE_KEY) return NextResponse.json({ error: NO_KEY_ERROR }, { status: 503 })
+  if (!isDbConfigured()) return NextResponse.json({ error: NO_KEY_ERROR() }, { status: 503 })
   try {
     const body = await req.json()
     const { agent_id, capabilities, role, description } = body
@@ -330,7 +328,7 @@ export async function POST(req: NextRequest) {
 
 // INF-237: Update agent capabilities
 export async function PATCH(req: NextRequest) {
-  if (!SUPABASE_KEY) return NextResponse.json({ error: NO_KEY_ERROR }, { status: 503 })
+  if (!isDbConfigured()) return NextResponse.json({ error: NO_KEY_ERROR() }, { status: 503 })
   try {
     const body = await req.json()
     const { agent_id, capabilities, role, description, floor } = body

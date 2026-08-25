@@ -1,12 +1,21 @@
 #!/usr/bin/env node
-/* ─── Portability + secret guard ──────────────────────────────────────────────
+/* ─── Portability + seam guard ────────────────────────────────────────────────
  *
- * Fails if the tracked source tree hardcodes one operator's database project or
- * embeds a credential. Todero has to run on a stranger's machine from a fresh
- * clone plus a .env.local; a literal project ref or a JWT in the tree means it
- * does not, and a JWT in a client component means it ships to every browser.
+ * Two jobs, both about being able to run somewhere else:
  *
- * Run:  node scripts/check-no-secrets.js
+ *  1. No credential and no one operator's database project may appear in
+ *     tracked source. Todero has to run on a stranger's machine from a fresh
+ *     clone plus a .env.local; a literal project ref or a JWT in the tree means
+ *     it does not, and a JWT in a client component ships to every browser.
+ *
+ *  2. No code may go around the database seam. `lib/db.ts` is the only path to
+ *     persistence, so swapping the adapter swaps the whole app. Two ways to
+ *     break that keep coming back, and both fail the build here:
+ *       - building a vendor HTTP URL (`rest/v1/...`) instead of `db().from()`
+ *       - reading the adapter's own env vars outside `lib/db/`, which pins the
+ *         app to whichever vendor those variables belong to
+ *
+ * Run:  node scripts/check-no-secrets.js   (npm run check:secrets)
  * CI:   runs automatically via the `prebuild` npm script.
  *
  * Node rather than bash on purpose — this guard has to run on the same set of
@@ -18,33 +27,83 @@ const path = require('path')
 
 const REPO = path.resolve(__dirname, '..')
 
-/**
- * Literals that must never appear in tracked source.
- *
- * Each needle is assembled from fragments so that this file is not itself a hit
- * for the thing it is looking for — otherwise every grep for the banned string
- * finds the scanner and the count is never zero.
- */
-const PATTERNS = [
-  { needle: 'twthgapio' + 'uiqhavrcnry', why: "one operator's database project ref" },
-  { needle: 'eyJhbGc' + 'iOi', why: 'JWT header — a credential, not configuration' },
-  { needle: 'service' + '_role', why: 'full-privilege key name in a value or URL' },
-]
-
-/** Paths where a match is expected and harmless. */
-const EXCLUDES = [
+/** Paths where a credential match is expected and harmless. */
+const SECRET_EXCLUDES = [
   ':(exclude).env*',
   ':(exclude)**/.env*',
   ':(exclude)scripts/check-no-secrets.js',
   ':(exclude)scripts/check-no-secrets.sh',
+  // Acceptance harness: it greps for these literals, so it necessarily spells them.
+  ':(exclude)scripts/acceptance/**',
+]
+
+/**
+ * Every needle is assembled from fragments so that this file is not itself a
+ * hit for the thing it looks for — otherwise every grep for the banned string
+ * finds the scanner and the count is never zero.
+ *
+ * `paths` are git pathspecs: where to look, and what to forgive.
+ */
+const PATTERNS = [
+  {
+    needle: 'twthgapio' + 'uiqhavrcnry',
+    why: "one operator's database project ref",
+    paths: SECRET_EXCLUDES,
+    fix: 'read the URL from the environment, via lib/db.ts.',
+  },
+  {
+    needle: 'eyJhbGc' + 'iOi',
+    why: 'JWT header — a credential, not configuration',
+    paths: SECRET_EXCLUDES,
+    fix: 'read the key from the environment, via lib/db.ts.',
+  },
+  {
+    needle: 'service' + '_role',
+    why: 'full-privilege key name in a value or URL',
+    paths: SECRET_EXCLUDES,
+    fix: 'read the key from the environment, via lib/db.ts.',
+  },
+  {
+    needle: 'sk-or-' + 'v1-',
+    why: 'OpenRouter API key',
+    // App tree only. `config/scripts/*.py` are archived standalone bots that
+    // still embed a key; they are outside the Next app and tracked separately.
+    paths: ['app/', 'lib/', 'components/', 'hooks/'],
+    fix: 'read it from process.env.OPENROUTER_API_KEY.',
+  },
+  {
+    // The seam's whole point: no call site may speak a vendor's HTTP dialect.
+    needle: 'rest' + '/v1',
+    why: 'vendor REST path — this bypasses the database seam',
+    paths: ['app/', 'lib/', 'components/', 'hooks/', ':(exclude)app/api/db/**'],
+    fix: 'use db().from(table) from lib/db.ts instead of building a URL.',
+  },
+  {
+    needle: 'SUPABASE_SERVICE' + '_ROLE_KEY',
+    why: "an adapter's env var read outside lib/db/",
+    paths: [
+      'app/', 'lib/', 'components/', 'hooks/',
+      ':(exclude)lib/db.ts', ':(exclude)lib/db/**', ':(exclude)lib/__tests__/**',
+    ],
+    fix: 'use isDbConfigured() / dbMissingEnv() / dbStatusMessage() from lib/db.ts.',
+  },
+  {
+    needle: 'NEXT_PUBLIC_SUPABASE' + '_URL',
+    why: "an adapter's env var read outside lib/db/",
+    paths: [
+      'app/', 'lib/', 'components/', 'hooks/',
+      ':(exclude)lib/db.ts', ':(exclude)lib/db/**', ':(exclude)lib/__tests__/**',
+    ],
+    fix: 'use isDbConfigured() / dbMissingEnv() / dbStatusMessage() from lib/db.ts.',
+  },
 ]
 
 let failed = false
 
-for (const { needle, why } of PATTERNS) {
-  // --untracked so a brand-new file cannot smuggle a key past the guard;
+for (const { needle, why, paths, fix } of PATTERNS) {
+  // --untracked so a brand-new file cannot smuggle a match past the guard;
   // .gitignore still applies, so node_modules/ and .next/ stay out.
-  const res = spawnSync('git', ['grep', '-n', '-I', '-F', '--untracked', needle, '--', ...EXCLUDES], {
+  const res = spawnSync('git', ['grep', '-n', '-I', '-F', '--untracked', needle, '--', ...paths], {
     cwd: REPO,
     encoding: 'utf8',
   })
@@ -58,16 +117,18 @@ for (const { needle, why } of PATTERNS) {
     failed = true
     console.error(`FAIL: "${needle}" (${why}) found in tracked source:`)
     for (const line of hits.split('\n')) console.error('  ' + line.slice(0, 160))
+    console.error(`  Fix: ${fix}`)
     console.error('')
   }
 }
 
 if (failed) {
-  console.error('Fix: read the value from the environment instead.')
-  console.error('  server code  -> lib/db.ts (db(), isDbConfigured()) or lib/db/rest.ts')
+  console.error('The database seam is lib/db.ts. Nothing above it may name a vendor,')
+  console.error('a project URL, a credential, or a vendor HTTP path.')
+  console.error('  server code  -> db(), isDbConfigured(), dbMissingEnv() from lib/db.ts')
   console.error('  client code  -> lib/db/browser.ts (same-origin proxy, no credentials)')
-  console.error('  shell/python -> $NEXT_PUBLIC_SUPABASE_URL / $SUPABASE_SERVICE_ROLE_KEY')
+  console.error('  shell/python -> read the values from the environment')
   process.exit(1)
 }
 
-console.log('OK: no hardcoded project refs or credentials in tracked source.')
+console.log('OK: no hardcoded credentials, and no code bypassing the database seam.')

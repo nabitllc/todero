@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import type { CostSnapshot } from '@/lib/issues'
 
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
 // INF-204: Cost trend sparkline — return 7-day cost history from agent_memory
 export async function GET() {
   try {

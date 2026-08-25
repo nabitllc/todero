@@ -25,7 +25,7 @@ export async function logAgentCost(entry: CostEntry): Promise<boolean> {
   }
 
   try {
-    const { error } = await db().from('agent_cost_log').insert(entry)
+    const { error } = await db().from('agent_cost_log').insert({ ...entry })
     if (error) {
       console.warn(`[agent-cost-log] INSERT failed: ${error.message}`)
       return false

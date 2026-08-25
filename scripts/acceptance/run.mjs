@@ -8,7 +8,8 @@
 // Exit code is the number of failures, capped at 100 — so `&&` chains work and a
 // caller can tell "one thing broke" from "nothing works".
 
-import { runAll } from './checks.mjs'
+import { CHECKS } from './checks.mjs'
+import { TRUTH_CHECKS } from './checks-truth.mjs'
 import { writeFile } from 'node:fs/promises'
 
 const args = process.argv.slice(2)
@@ -19,7 +20,14 @@ const outIdx = args.indexOf('--out')
 const outPath = outIdx >= 0 ? args[outIdx + 1] : null
 
 const started = Date.now()
-const results = await runAll({ only })
+const ALL = [...CHECKS, ...TRUTH_CHECKS]
+const picked = only ? ALL.filter(c => c.piece === only || c.id === only) : ALL
+const results = []
+for (const c of picked) {
+  let r
+  try { r = await c.run() } catch (e) { r = { ok: false, detail: `check threw: ${e.message}` } }
+  results.push({ ...c, ...r })
+}
 const elapsed = Date.now() - started
 
 const passed = results.filter(r => r.ok)

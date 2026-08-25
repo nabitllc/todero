@@ -1,8 +1,7 @@
 // Environment resolution for the Supabase adapter.
 //
-// Split out from `supabase-adapter.ts` so that the transitional HTTP helpers in
-// `lib/db/rest.ts` can resolve credentials without dragging the Supabase SDK
-// into every bundle that touches them.
+// Split out from `supabase-adapter.ts` so the env check can run without
+// dragging the Supabase SDK into every bundle that touches it.
 //
 // This and `supabase-adapter.ts` are the ONLY files allowed to name these
 // environment variables.
@@ -38,17 +37,4 @@ export function assertSupabaseConfigured(): void {
       missing,
     )
   }
-}
-
-/** Base URL for direct HTTP access, without a trailing slash. */
-export function supabaseRestBase(): string {
-  assertSupabaseConfigured()
-  return readSupabaseEnv('NEXT_PUBLIC_SUPABASE_URL').replace(/\/+$/, '')
-}
-
-/** Service-credential headers for direct HTTP access. Server only. */
-export function supabaseServiceHeaders(): Record<string, string> {
-  assertSupabaseConfigured()
-  const key = readSupabaseEnv('SUPABASE_SERVICE_ROLE_KEY')
-  return { apikey: key, Authorization: `Bearer ${key}` }
 }

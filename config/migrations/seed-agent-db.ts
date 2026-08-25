@@ -1,6 +1,6 @@
 #!/usr/bin/env npx ts-node
 // Run: npx ts-node config/migrations/seed-agent-db.ts
-// Seeds agent_documents and agent_memory from filesystem into Supabase.
+// Seeds agent_documents and agent_memory from the filesystem into the database.
 // Idempotent — safe to run multiple times.
 
 import fs from 'fs'
@@ -8,22 +8,15 @@ import path from 'path'
 // Relative (not '@/lib/paths') so `npx ts-node` resolves it without the Next.js
 // path aliases.
 import { CONFIG_DIR, TODERO_DIR } from '../../lib/paths'
+import { db, dbMissingEnv } from '../../lib/db'
 
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 const CONFIG = CONFIG_DIR
 const TODERO = TODERO_DIR
 
-if (!SUPA_KEY) {
-  console.error('SUPABASE_SERVICE_ROLE_KEY is required')
+const missing = dbMissingEnv()
+if (missing.length > 0) {
+  console.error(`Database is not configured. Missing: ${missing.join(', ')}. Set them in .env.local.`)
   process.exit(1)
-}
-
-const headers = {
-  'apikey': SUPA_KEY,
-  'Authorization': `Bearer ${SUPA_KEY}`,
-  'Content-Type': 'application/json',
-  'Prefer': 'resolution=merge-duplicates',
 }
 
 function readIfExists(p: string): string {
@@ -33,13 +26,11 @@ function readIfExists(p: string): string {
 async function upsertDoc(agent_id: string, doc_type: string, slug: string, filePath: string) {
   const content = readIfExists(filePath)
   if (!content) { console.log(`  skip (empty): ${filePath}`); return }
-  const res = await fetch(`${SUPA_URL}/rest/v1/agent_documents`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ agent_id, doc_type, slug, content, updated_by: 'seed' }),
-  })
-  if (!res.ok) {
-    console.error(`  error upserting ${agent_id}/${doc_type}/${slug}:`, await res.text())
+  const { error } = await db()
+    .from('agent_documents')
+    .upsert({ agent_id, doc_type, slug, content, updated_by: 'seed' })
+  if (error) {
+    console.error(`  error upserting ${agent_id}/${doc_type}/${slug}:`, error.message)
   } else {
     console.log(`  ✓ ${agent_id}/${doc_type}/${slug}`)
   }
@@ -47,13 +38,11 @@ async function upsertDoc(agent_id: string, doc_type: string, slug: string, fileP
 
 async function upsertMemory(agent_id: string, memory_type: string, date_key: string | null, content: string) {
   if (!content.trim()) return
-  const res = await fetch(`${SUPA_URL}/rest/v1/agent_memory_files`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ agent_id, memory_type, date_key, content, }),
-  })
-  if (!res.ok) {
-    console.error(`  error upserting memory ${agent_id}/${memory_type}/${date_key}:`, await res.text())
+  const { error } = await db()
+    .from('agent_memory_files')
+    .upsert({ agent_id, memory_type, date_key, content })
+  if (error) {
+    console.error(`  error upserting memory ${agent_id}/${memory_type}/${date_key}:`, error.message)
   } else {
     console.log(`  ✓ memory ${agent_id}/${memory_type}/${date_key ?? 'null'}`)
   }

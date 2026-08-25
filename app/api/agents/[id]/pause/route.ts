@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-
 // POST /api/agents/[id]/pause — toggle pause state
 export async function POST(
   req: NextRequest,

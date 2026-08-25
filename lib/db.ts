@@ -13,15 +13,18 @@
 //
 // HOW TO ADD AN ADAPTER (the contract, for whoever writes lib/db/neon-adapter.ts)
 //   One sentence: implement `DbAdapterFactory.create()` so it returns a
-//   `DbAdapter` whose `from(table)` hands back a chainable `DbQueryBuilder` that
-//   resolves to `DbResult` — i.e. a PostgREST-shaped fluent query surface over
-//   the SQL driver of your choice — plus `rpc()`, plus `missingEnv()` naming any
-//   env vars it needs but cannot find. Then register it in `lib/db/adapters.ts`.
-//   Nothing else in the app changes; `TODERO_DB_PROVIDER` selects it at runtime.
+//   `DbAdapter` whose `from(table)` hands back a chainable `DbQueryBuilder`
+//   compiling to SQL and resolving to `DbResult`, plus `rpc()`, plus
+//   `missingEnv()` naming any env vars it needs but cannot find. Then register
+//   it in `lib/db/adapters.ts`. Nothing else in the app changes;
+//   `TODERO_DB_PROVIDER` selects it at runtime.
 //
 // Note for reviewers: this file deliberately contains no vendor name and no env
 // var name. Both live in the adapter, which is the only place that should have
-// to change when the vendor does.
+// to change when the vendor does. Every verb, filter and modifier below maps
+// one-to-one onto a SQL clause — SELECT column list, WHERE predicate,
+// ON CONFLICT target, ORDER BY, LIMIT/OFFSET — so a SQL-driver adapter can be
+// written as a query object that builds a statement and runs it on `then()`.
 
 import { DEFAULT_DB_PROVIDER, DB_ADAPTERS } from './db/adapters'
 import { DbConfigurationError } from './db/errors'
@@ -34,7 +37,7 @@ export const DB_PROVIDER: string = process.env.TODERO_DB_PROVIDER ?? DEFAULT_DB_
 /** A row as the app hands it to the seam — column name to value. */
 export type DbRow = Record<string, unknown>
 
-/** Error envelope returned alongside data, never thrown, PostgREST-style. */
+/** Error envelope returned alongside data. Errors are returned, never thrown. */
 export interface DbError {
   message: string
   code?: string
@@ -70,6 +73,10 @@ export interface DbSelectOptions {
 
 /** Options accepted by `upsert()`. */
 export interface DbUpsertOptions extends DbSelectOptions {
+  /**
+   * Comma-separated column names forming the unique constraint to merge on —
+   * the `ON CONFLICT (…)` target. Omit it to use the table's primary key.
+   */
   onConflict?: string
   ignoreDuplicates?: boolean
   defaultToNull?: boolean
@@ -87,13 +94,13 @@ export interface DbOrderOptions {
  * A chainable query against one table.
  *
  * Every modifier returns the builder so calls can be chained, and the builder
- * itself is thenable so `await` runs it. This is the PostgREST fluent shape —
- * chosen because it is what all existing call sites already speak, not because
- * of any vendor. A SQL-driver adapter is expected to implement it as a small
- * query-object that compiles to SQL on `then()`.
+ * itself is thenable so `await` runs it. Each method names a SQL clause, not a
+ * transport: a driver-based adapter implements it as a query object that
+ * compiles a statement and executes it on `then()`.
  */
 export interface DbQueryBuilder extends PromiseLike<DbResult> {
   // ── verbs ──
+  /** Column list for the SELECT — `'*'`, or `'id,title'`. Default `'*'`. */
   select(columns?: string, options?: DbSelectOptions): DbQueryBuilder
   insert(values: DbRow | DbRow[], options?: DbSelectOptions): DbQueryBuilder
   upsert(values: DbRow | DbRow[], options?: DbUpsertOptions): DbQueryBuilder

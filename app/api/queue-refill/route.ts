@@ -13,8 +13,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const MC_API = process.env.NEXT_PUBLIC_APP_URL
   ? `${process.env.NEXT_PUBLIC_APP_URL}/api/issues`
   : 'http://localhost:3000/api/issues'
@@ -31,15 +29,6 @@ const LANES = [
   { agent: 'kemuni-sme', typeFilter: ['task','bug','ops'], project: 'Kemuni' },
   { agent: 'vespera-sme', typeFilter: ['task','bug','ops'], project: 'Vespera' },
 ]
-
-function getHeaders() {
-  return {
-    apikey: SUPA_KEY,
-    Authorization: `Bearer ${SUPA_KEY}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=minimal',
-  }
-}
 
 export async function POST(_req: NextRequest) {
   const supabase = db()

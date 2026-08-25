@@ -4,10 +4,10 @@ import fs from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { isDarwin } from '@/lib/paths'
 
-const NO_KEY_ERROR =
-  'SUPABASE_SERVICE_ROLE_KEY is not set — automation run history unavailable'
+const NO_KEY_ERROR = () => `${dbStatusMessage()} — automation run history unavailable`
 
 interface AutomationItem {
   id: string
@@ -121,8 +121,8 @@ export async function GET() {
   }
 
   // ── Recent agent_runs — enrich with last run data ─────────────────────────
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    fatal = fatal ?? NO_KEY_ERROR
+  if (!isDbConfigured()) {
+    fatal = fatal ?? NO_KEY_ERROR()
   } else {
     try {
       const db = createAdminClient()

@@ -24,19 +24,34 @@ import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 import { CONFIG_DIR, LOG_DIR, TODERO_DIR as TODERO_ROOT, resolveBinary } from '@/lib/paths'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { dbRestBase } from '@/lib/db/rest'
+import { db } from '@/lib/db'
+import { applyFilters, applyShaping, readQueryShape } from '@/lib/db/query-params'
 
-// Lazy-init: avoids crashing at build time when env vars aren't set (CI).
-let _supaKey: string | null = null
-function getSupaKey(): string {
-  if (!_supaKey) {
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY env var is required (TOD-767)')
-    _supaKey = key
+/**
+ * Run one of the queue's filter strings through the database seam.
+ *
+ * `lib/agent-queue.ts` stores each lane's filters as query fragments
+ * (`type=in.(task,bug)&project=eq.Todero`, `sortOrder: 'priority.asc'`). They
+ * are translated into `DbQueryBuilder` calls here rather than pasted onto a
+ * vendor URL, so this route sits behind `lib/db.ts` like everything else and a
+ * different adapter needs no HTTP API of its own.
+ *
+ * Returns `[]` and warns on a query error — the callers below all treat a
+ * non-array as "nothing eligible", which is the behaviour this preserves.
+ */
+async function selectRows<T>(table: string, query: string): Promise<T[]> {
+  const params = new URLSearchParams(query)
+  const { select } = readQueryShape(params)
+  let builder = db().from(table).select(select)
+  builder = applyFilters(builder, params)
+  builder = applyShaping(builder, params)
+  const { data, error } = await builder
+  if (error) {
+    console.warn(`[run-agent] ${table} query failed: ${error.message}`)
+    return []
   }
-  return _supaKey
+  return (data ?? []) as T[]
 }
-function getHeaders() { const k = getSupaKey(); return { 'apikey': k, 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' } }
 
 // Machine-portable paths. These used to name one developer's Mac home
 // directory, so every dispatch on any other host died before the first HTTP
@@ -63,28 +78,20 @@ async function loadContextFromDB(agentId: string): Promise<string> {
   if (cached && cached.expiresAt > Date.now()) {
     return cached.context
   }
-  const supaHeaders = {
-    'apikey': getSupaKey(),
-    'Authorization': `Bearer ${getSupaKey()}`,
-    'Content-Type': 'application/json',
-  }
-
   // Fetch global + per-agent documents + shared skill docs
-  const docsRes = await fetch(
-    `${dbRestBase()}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
-    { headers: supaHeaders }
+  const docs = await selectRows<{ agent_id: string; doc_type: string; slug: string; content: string }>(
+    'agent_documents',
+    `or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
   )
-  const docs = await docsRes.json() as Array<{ agent_id: string; doc_type: string; slug: string; content: string }>
 
   // Fetch memory: today + yesterday daily notes + long_term + self_improving + corrections
   // Bug fix: table was renamed agent_memory → agent_memory_files (agent_memory is the key-value store)
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-  const memRes = await fetch(
-    `${dbRestBase()}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&select=memory_type,date_key,content&order=updated_at.desc&limit=20`,
-    { headers: supaHeaders }
+  const memRows = await selectRows<{ memory_type: string; date_key: string | null; content: string }>(
+    'agent_memory_files',
+    `agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&select=memory_type,date_key,content&order=updated_at.desc&limit=20`,
   )
-  const memRows = await memRes.json() as Array<{ memory_type: string; date_key: string | null; content: string }>
 
   const sections: string[] = []
 
@@ -264,14 +271,13 @@ export async function POST(req: NextRequest) {
   // For skipAssigneeFilter agents (main), count all is_blocked issues with started_at set.
   // is_blocked=false excluded from WIP: a blocked in-progress issue must not hold the WIP slot.
   const wipExtraFilter = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
-  const wipUrl = isReviewer
-    ? `${dbRestBase()}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&is_blocked=eq.false&select=id`
+  const wipQuery = isReviewer
+    ? `status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&is_blocked=eq.false&select=id`
     : config.skipAssigneeFilter
-      ? `${dbRestBase()}/rest/v1/issues?is_blocked=eq.true&started_at=not.is.null&select=id`
-      : `${dbRestBase()}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&is_blocked=eq.false${wipExtraFilter}&select=id`
-  const wipRes = await fetch(wipUrl, { headers: getHeaders() })
-  const wipIssues = await wipRes.json() as Array<{ id: string }>
-  if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
+      ? `is_blocked=eq.true&started_at=not.is.null&select=id`
+      : `assignee=eq.${agentId}&status=eq.${config.workingStatus}&is_blocked=eq.false${wipExtraFilter}&select=id`
+  const wipIssues = await selectRows<{ id: string }>('issues', wipQuery)
+  if (wipIssues.length >= config.wipLimit) {
     return NextResponse.json({
       agent: agentId,
       message: `WIP limit reached: ${wipIssues.length}/${config.wipLimit} ${config.workingStatus}. Finish current work first.`,
@@ -302,10 +308,9 @@ export async function POST(req: NextRequest) {
   // main (skipAssigneeFilter) uses extraFilters=is_blocked=eq.true — omit the false filter so they don't conflict.
   const blockedFilter = config.skipAssigneeFilter ? '' : 'is_blocked=eq.false'
   const baseFilters = [assigneeFilter, statusFilter, dorFilter, blockedFilter].filter(Boolean).join('&')
-  const url = `${dbRestBase()}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  const query = `${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
-  const res = await fetch(url, { headers: getHeaders() })
-  const tasks = await res.json() as Array<{
+  const tasks = await selectRows<{
     id: string; title: string; description: string; priority: string;
     due_date: string | null; created_at: string; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
@@ -314,9 +319,9 @@ export async function POST(req: NextRequest) {
     tester_notes: string | null; designer_notes: string | null;
     tester_status: string | null; designer_status: string | null;
     owner: string | null; deployer_notes: string | null;
-  }>
+  }>('issues', query)
 
-  if (!Array.isArray(tasks) || tasks.length === 0) {
+  if (tasks.length === 0) {
     return NextResponse.json({
       agent: agentId,
       message: `No eligible issues for ${agentId} (status=${allPickupStatuses.join('|')}, DoR fields: ${config.dorFields.join(', ')})`,
@@ -330,16 +335,13 @@ export async function POST(req: NextRequest) {
     let blockerStatuses: Record<string, string> = {}
 
     if (blockedByIds.length > 0) {
-      const blockerRes = await fetch(
-        `${dbRestBase()}/rest/v1/issues?or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
-        { headers: getHeaders() }
+      const blockers = await selectRows<{ id: string; task_key: string | null; status: string }>(
+        'issues',
+        `or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
       )
-      const blockers = await blockerRes.json() as Array<{ id: string; task_key: string | null; status: string }>
-      if (Array.isArray(blockers)) {
-        for (const b of blockers) {
-          blockerStatuses[b.id] = b.status
-          if (b.task_key) blockerStatuses[b.task_key] = b.status
-        }
+      for (const b of blockers) {
+        blockerStatuses[b.id] = b.status
+        if (b.task_key) blockerStatuses[b.task_key] = b.status
       }
     }
 
@@ -366,12 +368,11 @@ export async function POST(req: NextRequest) {
   // Lock auto-releases when no in-progress task for this agent has a parent_id, or when
   // readyTasks contains no siblings of locked parent (fallback to global queue to avoid starve).
   {
-    const inProgressRes = await fetch(
-      `${dbRestBase()}/rest/v1/issues?status=eq.in_progress&assignee=eq.${agentId}&parent_id=not.is.null&select=parent_id`,
-      { headers: getHeaders() }
+    const inProgressTasks = await selectRows<{ parent_id: string | null }>(
+      'issues',
+      `status=eq.in_progress&assignee=eq.${agentId}&parent_id=not.is.null&select=parent_id`,
     )
-    const inProgressTasks = await inProgressRes.json() as Array<{ parent_id: string | null }>
-    if (Array.isArray(inProgressTasks) && inProgressTasks.length > 0) {
+    if (inProgressTasks.length > 0) {
       const lockedParents = new Set(inProgressTasks.map(t => t.parent_id).filter(Boolean) as string[])
       if (lockedParents.size > 0) {
         const filtered = readyTasks.filter(t => t.parent_id && lockedParents.has(t.parent_id))
@@ -391,12 +392,11 @@ export async function POST(req: NextRequest) {
   const parentIds = Array.from(new Set(readyTasks.map(t => t.parent_id).filter(Boolean))) as string[]
   const parentStatuses: Record<string, string> = {}
   if (parentIds.length > 0) {
-    const parentRes = await fetch(
-      `${dbRestBase()}/rest/v1/issues?id=in.(${parentIds.join(',')})&select=id,status`,
-      { headers: getHeaders() }
+    const parents = await selectRows<{ id: string; status: string }>(
+      'issues',
+      `id=in.(${parentIds.join(',')})&select=id,status`,
     )
-    const parents = await parentRes.json() as Array<{ id: string; status: string }>
-    if (Array.isArray(parents)) {
+    {
       for (const p of parents) parentStatuses[p.id] = p.status
     }
   }
@@ -448,14 +448,13 @@ export async function POST(req: NextRequest) {
   // AC (TOD-1069): inject <inbox-response> block if a resolved inbox entry exists for this issue.
   let inboxResponseBlock = ''
   try {
-    const inboxRes = await fetch(
-      `${dbRestBase()}/rest/v1/inbox?issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
-      { headers: getHeaders() }
-    )
-    const inboxRows = await inboxRes.json() as Array<{
+    const inboxRows = await selectRows<{
       type: string; status: string; response_data: Record<string, unknown>; resolved_by: string | null
-    }>
-    if (Array.isArray(inboxRows) && inboxRows.length > 0) {
+    }>(
+      'inbox',
+      `issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
+    )
+    if (inboxRows.length > 0) {
       const entry = inboxRows[0]
       const responseFields = Object.entries(entry.response_data ?? {})
         .map(([k, v]) => `  <${k}>${JSON.stringify(v)}</${k}>`)
@@ -484,25 +483,19 @@ ${responseFields}
   if (config.workingStatus && config.pickupStatus !== config.workingStatus) {
     claimFields.status = config.workingStatus
   }
-  await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
-    method: 'PATCH',
-    headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-    body: JSON.stringify(claimFields),
-  })
+  await db().from('issues').update(claimFields).eq('id', task.id)
 
   // ── Step 7: Log agent_run ──
-  const agentRunRes = await fetch(`${dbRestBase()}/rest/v1/agent_runs`, {
-    method: 'POST',
-    headers: { ...getHeaders(), 'Prefer': 'return=representation' },
-    body: JSON.stringify({
+  const { data: agentRunRows } = await db()
+    .from('agent_runs')
+    .insert({
       agent_id: agentId,
       task_id: task.id,
       task_title: task.title,
       status: 'running',
-    }),
-  })
-  const agentRunRows = await agentRunRes.json().catch(() => [])
-  const agentRunId: string | undefined = Array.isArray(agentRunRows) ? agentRunRows[0]?.id : undefined
+    })
+    .select('id')
+  const agentRunId: string | undefined = (agentRunRows as Array<{ id: string }> | null)?.[0]?.id
 
   // ── Step 8: Auto-set feature branch for code-producing agents ──
   // Branch-prefix routing (P3 / Gap #3): type=ops issues land on
@@ -513,10 +506,7 @@ ${responseFields}
   if (!branch && task.task_key && ['builder', 'ops'].includes(agentId)) {
     const prefix = task.type === 'ops' ? 'infra' : 'feat'
     branch = `${prefix}/${(task.task_key as string).toLowerCase()}`
-    await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH', headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ feature_branch: branch })
-    })
+    await db().from('issues').update({ feature_branch: branch }).eq('id', task.id)
   }
 
   // ── Step 9: Spawn Claude Code agent in background ──
@@ -761,17 +751,15 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
   // cleared it (up to 45 min). Now we immediately undo the claim so the next
   // kick can retry without waiting.
   if (!spawnResult.ok) {
-    await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH',
-      headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() }),
-    })
+    await db()
+      .from('issues')
+      .update({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() })
+      .eq('id', task.id)
     if (agentRunId) {
-      await fetch(`${dbRestBase()}/rest/v1/agent_runs?id=eq.${agentRunId}`, {
-        method: 'PATCH',
-        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'error', error: spawnResult.error, finished_at: new Date().toISOString() }),
-      })
+      await db()
+        .from('agent_runs')
+        .update({ status: 'error', error: spawnResult.error, finished_at: new Date().toISOString() })
+        .eq('id', agentRunId)
     }
   } else {
     // ── Spawn-confirmation heartbeat — only on successful spawn ──
@@ -785,11 +773,7 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
       // Only vouch for a process that is still there. Writing this blind is
       // what let a child that died at second 3 look alive to the watchdog.
       if (spawnResult.pid && !isAlive(spawnResult.pid)) return
-      await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
-        method: 'PATCH',
-        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
-      })
+      await db().from('issues').update({ heartbeat_at: new Date().toISOString() }).eq('id', task.id)
     })()
   }
 
@@ -903,11 +887,10 @@ export async function GET(req: NextRequest) {
       const isReviewerGet = id === 'tester' || id === 'designer'
       const reviewStatusFieldGet = id === 'tester' ? 'tester_status' : 'designer_status'
       const wipExtraFilterGet = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
-      const wipUrlGet = isReviewerGet
-        ? `${dbRestBase()}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusFieldGet}=in.(running,in_progress)&is_blocked=eq.false&select=id`
-        : `${dbRestBase()}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`
-      const wipRes = await fetch(wipUrlGet, { headers: getHeaders() })
-      const wipIssues = await wipRes.json() as Array<{ id: string }>
+      const wipQueryGet = isReviewerGet
+        ? `status=eq.${config.workingStatus}&${reviewStatusFieldGet}=in.(running,in_progress)&is_blocked=eq.false&select=id`
+        : `assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`
+      const wipIssues = await selectRows<{ id: string }>('issues', wipQueryGet)
 
       // Count eligible — reviewers filter by pending review status, not assignee
       const dorFilter = config.dorFields.map(f => `${f}=not.is.null`).join('&')
@@ -915,17 +898,16 @@ export async function GET(req: NextRequest) {
       const eligibleFilter = isReviewerGet
         ? `status=eq.${config.pickupStatus}&${reviewStatusFieldGet}=eq.pending`
         : `assignee=eq.${id}&status=eq.${config.pickupStatus}`
-      const eligibleRes = await fetch(
-        `${dbRestBase()}/rest/v1/issues?${eligibleFilter}&${dorFilter}${extraFilter}&select=id&limit=100`,
-        { headers: getHeaders() }
+      const eligible = await selectRows<{ id: string }>(
+        'issues',
+        `${eligibleFilter}&${dorFilter}${extraFilter}&select=id&limit=100`,
       )
-      const eligible = await eligibleRes.json() as Array<{ id: string }>
 
       return {
         agent: id,
-        wip: Array.isArray(wipIssues) ? wipIssues.length : 0,
+        wip: wipIssues.length,
         wipLimit: config.wipLimit,
-        eligible: Array.isArray(eligible) ? eligible.length : 0,
+        eligible: eligible.length,
         pickupStatus: config.pickupStatus,
         workingStatus: config.workingStatus,
       }

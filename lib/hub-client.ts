@@ -1,8 +1,5 @@
 import { db, type DbAdapter } from '@/lib/db'
 
-const SUPA_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-
 /** Tables that are partitioned by business_id — auto-inject filter/row data. */
 export const HUB_SCOPED_TABLES = [
   'issues', 'sprints', 'agents', 'projects', 'workspace_members',

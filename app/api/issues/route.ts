@@ -317,7 +317,7 @@ function notifyWatchers(issue: {
 }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
-// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// Lazy-init: avoids crashing at build time when the database credentials aren't
 // set (CI builds import every route for page-data collection). Throws at first
 // request instead of at module load, so `next build` can complete without the
 // env var. (TOD-2296 — same pattern as app/api/run-agent/route.ts.)
@@ -770,7 +770,8 @@ async function executePostFunctions(
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────
-export async function GET(req: NextRequest) {  const REQUIRED_PERMISSION = 'issues:read' as const
+export async function GET(req: NextRequest) {
+  const REQUIRED_PERMISSION = 'issues:read' as const
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
     const perm = await checkRoutePermission(callerRole, 'GET', '/api/issues')
@@ -831,47 +832,60 @@ export async function GET(req: NextRequest) {  const REQUIRED_PERMISSION = 'iss
     'worked_by','transitioned_by','acceptance_criteria',
     'business_id','resolution_type',
   ].join(',')
-  let query = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS, { count: 'exact' })
-
-  if (hub) {
-    query = query.eq('business_id', hub.businessId)
-  }
-
-  // Direct project filter (can combine with business_id for narrowing)
-  if (projectParam) {
-    query = query.eq('project', projectParam)
-  }
-
-  if (assigneeParam) {
-    query = query.eq('assignee', assigneeParam)
-  }
-
-  if (statusParam) {
-    query = query.eq('status', statusParam)
-  }
-
   const parentIdParam = url.searchParams.get('parent_id')
-  if (parentIdParam) {
-    query = query.eq('parent_id', parentIdParam)
+
+  // Rebuildable per batch: PostgREST/Supabase caps a single request's rows at
+  // its own server-side max (commonly 1000) regardless of what .range() asks
+  // for, so a query object can't just be re-awaited to get "the rest" — a
+  // fresh builder has to be issued per page. Everything above ?limit=0's
+  // request just gets one page of it; ?limit=0 below pages through all of
+  // them itself instead of trusting a single response to be complete.
+  function buildQuery() {
+    let q = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS, { count: 'exact' })
+    if (hub) q = q.eq('business_id', hub.businessId)
+    if (projectParam) q = q.eq('project', projectParam)
+    if (assigneeParam) q = q.eq('assignee', assigneeParam)
+    if (statusParam) q = q.eq('status', statusParam)
+    if (parentIdParam) q = q.eq('parent_id', parentIdParam)
+    if (search) {
+      q = q.ilike('title', `%${search}%`)
+      q = q.order('updated_at', { ascending: false })
+    } else {
+      q = q.order('created_at', { ascending: false })
+    }
+    return q
   }
 
-  if (search) {
-    query = query.ilike('title', `%${search}%`)
-    query = query.order('updated_at', { ascending: false })
-  } else {
-    query = query.order('created_at', { ascending: false })
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] = []
+  let total = 0
 
   if (limit > 0) {
-    query = query.range(offset, offset + limit - 1)
+    const { data: page, error, count } = await buildQuery().range(offset, offset + limit - 1)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    data = page ?? []
+    total = count ?? 0
+  } else {
+    // ?limit=0 means "every matching row" (agent/script callers). PostgREST's
+    // per-request row cap means that has to be assembled from multiple
+    // batched requests, not a single unbounded one — a single request here
+    // used to come back truncated at ~1000 rows while claiming has_more=false.
+    const BATCH = 1000
+    let from = 0
+    for (;;) {
+      const { data: batch, error, count } = await buildQuery().range(from, from + BATCH - 1)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      total = count ?? 0
+      const rows = batch ?? []
+      data = data.concat(rows)
+      from += BATCH
+      if (rows.length < BATCH || data.length >= total) break
+    }
   }
 
-  const { data, error, count } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  const total = count ?? 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resultData = withIssueStatusCategoryList(data as any[])
-  const hasMore = limit > 0 ? offset + (data?.length ?? 0) < total : false
+  const hasMore = limit > 0 ? offset + data.length < total : false
   const responseBody = { data: resultData, total, page, limit, has_more: hasMore }
   issuesCache.set(cacheKey, { data: responseBody, ts: Date.now() })
   const res = NextResponse.json(responseBody)
