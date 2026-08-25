@@ -45,8 +45,9 @@ import DestinationShell from '@/components/nav/DestinationShell'
 import ChatOverlay from '@/components/nav/ChatOverlay'
 import RunsView from '@/components/nav/RunsView'
 import NowSignal from '@/components/nav/NowSignal'
+import { ProjectScopeProvider } from '@/components/nav/ProjectScope'
 import { DEFAULT_VIEW, LEGACY_TAB_MAP, isDestinationId, viewsOf, destinationOf, type DestinationId } from '@/components/nav/config'
-import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders, issuesUrl } from '@/lib/db/browser'
 import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
 
@@ -54,6 +55,21 @@ const BIZ_EMOJI: Record<string, string> = {
   'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
   'Infrastructure': '⚙️', 'KAOS': '🤖',
 }
+
+// scope-is-a-boundary (item 7): design/Work.dc.html specifies four Work
+// views (Board, List, Epics, Sprint). These are the sub-tab groups for the
+// two views that absorbed more than one of the old eight — see
+// components/nav/config.ts's comment on the `work` destination for the full
+// old-view -> new-location table.
+const WORK_EPICS_SUB_VIEWS = [
+  { id: 'map', label: 'Epic Map' },
+  { id: 'features', label: 'Features' },
+  { id: 'roadmap', label: 'Product Board' },
+]
+const WORK_SPRINT_SUB_VIEWS = [
+  { id: 'pipeline', label: 'Pipeline' },
+  { id: 'due-dates', label: 'Due dates' },
+]
 
 function bizToSlug(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-')
@@ -94,9 +110,24 @@ function parseURL(): ParsedURL {
     business = slugToBizName(parts[1])
     rest = parts.slice(2)
   }
-  const params = new URLSearchParams(window.location.search)
-  const projParam = params.get('project')
-  const project = projParam ? slugToProjectName(projParam) : null
+  // scope-is-a-boundary (build instruction 1): project is a PATH segment, not
+  // a query string — `/b/todero/p/limiglow/work` is a URL that cannot be
+  // reached without a project in it; `?project=limiglow` was a hint a caller
+  // could always drop. `/p/<slug>` is read here before any destination
+  // segment.
+  let project: string | null = null
+  if (rest[0] === 'p' && rest[1]) {
+    project = slugToProjectName(rest[1])
+    rest = rest.slice(2)
+  }
+  // Legacy support for the old `?project=` query bookmark (pre path-scoping):
+  // read it once so an old link still resolves to the right project; the
+  // mount-time replaceState below rewrites it into the canonical path so it
+  // never round-trips through the query string again.
+  if (!project) {
+    const legacyProj = new URLSearchParams(window.location.search).get('project')
+    if (legacyProj) project = slugToProjectName(legacyProj)
+  }
 
   const first = rest[0]
   if (first === 'chat') {
@@ -117,17 +148,20 @@ function parseURL(): ParsedURL {
 
 function buildPath(business: string | null, destination: DestinationId, view: string, project: string | null): string {
   const defaultView = DEFAULT_VIEW[destination]
-  const segs = view !== defaultView ? [destination, view] : [destination]
-  let base: string
+  const destSegs = view !== defaultView ? [destination, view] : [destination]
+  // scope-is-a-boundary: project renders as a `/p/<slug>` path segment,
+  // ahead of the destination, whenever one is known — never a `?project=`
+  // query string. No project known yet (transient, pre-derivation state) ->
+  // no `/p/` segment, same as before.
+  const projSegs = project ? ['p', projectToSlug(project)] : []
+  const segs = [...projSegs, ...destSegs]
   if (business) {
-    base = `/b/${bizToSlug(business)}/${segs.join('/')}`
-  } else if (destination === 'now' && view === 'overview') {
-    base = '/'
-  } else {
-    base = `/${segs.join('/')}`
+    return `/b/${bizToSlug(business)}/${segs.join('/')}`
   }
-  const qs = project ? `?project=${projectToSlug(project)}` : ''
-  return base + qs
+  if (!project && destination === 'now' && view === 'overview') {
+    return '/'
+  }
+  return `/${segs.join('/')}`
 }
 
 /**
@@ -310,6 +344,13 @@ export default function Home() {
   // MC-hydration: start undefined; apply from URL params after mount
   const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(undefined)
   const [boardFeatureFilterName, setBoardFeatureFilterName] = useState<string | undefined>(undefined)
+  // scope-is-a-boundary (item 7): Work's Epics and Sprint views each absorbed
+  // more than one of the old eight Work views; which of the absorbed views is
+  // showing is local UI state, not part of the URL (a documented gap — see
+  // the builder report — everything here is still reachable by clicking,
+  // just not independently deep-linkable yet).
+  const [workEpicsSubView, setWorkEpicsSubView] = useState<string>('map')
+  const [workSprintSubView, setWorkSprintSubView] = useState<string>('pipeline')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
   const [issueActivity, setIssueActivity] = useState<any[] | null>(null)
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week')
@@ -360,12 +401,31 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-trigger onboarding wizard when no businesses exist (workspace not yet onboarded)
+  // Auto-trigger onboarding wizard when no businesses exist (workspace not yet
+  // onboarded); auto-select the business on a true cold load otherwise.
+  //
+  // scope-is-a-boundary (build instruction 5, acceptance item 4): before this,
+  // the app cold-loaded with NOTHING selected — page.tsx "bails before
+  // deriving a project and every panel goes global" (the piece's own words).
+  // With exactly one business in the table today, a cold load with no
+  // business already in the URL now selects it, which in turn drives the
+  // existing project-derivation effect below, which in turn is what the
+  // render-gate further down requires before it will render ANY destination
+  // content. `parseURL()` (not `selectedBusiness` state) is read here — this
+  // effect runs in the same mount pass as the hydration effect above, before
+  // that effect's setState is visible through this effect's own closure, so
+  // asking "did the URL specify one" directly is the only way to avoid
+  // stomping on an explicit URL business with the auto-picked one.
   useEffect(() => {
     // Only a confirmed-empty 200 means "not onboarded yet"; a 403/500 must
     // never auto-open the wizard as though the workspace were blank.
-    fetchJson<unknown>('/api/businesses').then(r => {
-      if (r.ok && Array.isArray(r.data) && r.data.length === 0) setShowOnboarding(true)
+    fetchJson<{ id?: string; name?: string }[]>('/api/businesses').then(r => {
+      if (!r.ok || !Array.isArray(r.data)) return
+      if (r.data.length === 0) { setShowOnboarding(true); return }
+      const { business: urlBusiness } = parseURL()
+      if (!urlBusiness && r.data.length === 1 && r.data[0].name) {
+        setSelectedBusiness(r.data[0].name)
+      }
     })
   }, [])
 
@@ -386,6 +446,22 @@ export default function Home() {
       }
     })
   }, [selectedBusiness])
+
+  // Keep the URL's `/p/<project>` path segment in sync once auto-derivation
+  // (above) resolves a scope the URL didn't already carry — via replaceState,
+  // because resolving a default scope is not a navigation the operator did
+  // and must not create a back-button entry. This is what makes cold-loading
+  // `/` actually land on `/b/todero/p/limiglow` instead of a project that is
+  // only ever true in React state and never in the address bar.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !selectedProject) return
+    const path = buildPath(selectedBusiness, destination, view, selectedProject)
+    const current = window.location.pathname + window.location.search
+    if (current !== path) {
+      window.history.replaceState({ biz: selectedBusiness, destination, view, project: selectedProject }, '', path)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBusiness, selectedProject])
 
   // Real issue total for the scoped project — never a placeholder, never carried
   // over from a different project.
@@ -434,12 +510,17 @@ export default function Home() {
       })
     }
     const fetchAgentIssues = () => {
-      // Scoped, and archived rows excluded. Unscoped, this rendered "· N open
-      // issues" next to a live agent where N counted archived backlog from
-      // projects the operator had not selected — a number on screen with no
-      // traceable source, in the one file this piece owned outright.
-      const scope = selectedProject ? `&project=eq.${encodeURIComponent(selectedProject)}` : ''
-      const countsUrl = dbUrl(`issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&archived_at=is.null${scope}&select=assignee&limit=500`)
+      // scope-is-a-boundary: no `selectedProject`, no query — issuesUrl()
+      // requires a scope argument and throws without one, so "forgot to
+      // scope" cannot silently degrade into "scoped to everything" any more.
+      // Before this project resolves (brief cold-load window) this simply
+      // does not fetch, same effect as the old empty-scope branch used to
+      // have, but structural instead of conventional.
+      if (!selectedProject) return
+      const countsUrl = issuesUrl(
+        `status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&select=assignee&limit=500`,
+        { project: selectedProject }
+      )
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
       fetchJson<any[]>(countsUrl, { headers: dbRestHeaders() }).then(res => {
         // A failed poll leaves the previous counts alone rather than zeroing them.
@@ -464,8 +545,11 @@ export default function Home() {
   // Calendar issues — scoped to the selected project so Work's due-dates view
   // and Settings' job-timing view never show another project's issue.
   useEffect(() => {
-    const projectClause = selectedProject ? `&project=eq.${encodeURIComponent(selectedProject)}` : ''
-    const calUrl = dbUrl(`issues?due_date=not.is.null${projectClause}&select=id,task_key,title,due_date,project,status&limit=200`)
+    if (!selectedProject) { setCalendarIssues(null); return }
+    const calUrl = issuesUrl(
+      `due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`,
+      { project: selectedProject }
+    )
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
     fetchJson<any[]>(calUrl, { headers: dbRestHeaders() }).then(res => {
       if (!res.ok) { setCalendarError(res.error); setCalendarIssues(null); return }
@@ -479,10 +563,13 @@ export default function Home() {
   // project). Refetches on destination change to keep Now/Activity reasonably
   // fresh when the operator navigates back to it, same as before this rewrite.
   useEffect(() => {
+    if (!selectedProject) { setIssueActivity(null); return }
     const since = new Date(Date.now() - 7 * 86400000).toISOString()
-    const projectClause = selectedProject ? `&project=eq.${encodeURIComponent(selectedProject)}` : ''
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
-    fetchJson<any[]>(dbUrl(`issues?updated_at=gte.${since}${projectClause}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`), {
+    fetchJson<any[]>(issuesUrl(
+      `updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`,
+      { project: selectedProject }
+    ), {
       headers: dbRestHeaders()
     }).then(res => {
       if (!res.ok) { setActivityError(res.error); setIssueActivity(null); return }
@@ -717,12 +804,48 @@ export default function Home() {
         )}
 
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
+          {/*
+            scope-is-a-boundary (build instruction 1, acceptance item 3): this
+            is the code path that makes "a destination cannot be rendered
+            without a scope" structural rather than conventional. It is not a
+            per-tab check any of the ~14 destination branches below could
+            forget to add — there is exactly one gate, above all of them, and
+            every branch is unreachable JSX until `selectedProject` is
+            truthy. ProjectScopeProvider carries that same value to
+            DestinationShell and RunsView (components/nav/ProjectScope.tsx)
+            so there is one scope source for everything under this gate.
+          */}
+          <ProjectScopeProvider project={selectedProject}>
+            {!selectedProject ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-24 text-center">
+                <div className="h-5 w-5 rounded-full border-2 border-white/20 border-t-white/70 animate-spin" />
+                <p className="text-white/60 text-sm">Resolving project scope…</p>
+                <p className="text-white/35 text-xs max-w-sm">
+                  No destination renders until a project is selected — this resolves automatically
+                  from /api/businesses and /api/projects, normally in well under a second.
+                </p>
+              </div>
+            ) : (
           <DestinationShell
             destination={destinationOf(destination)}
             activeView={view}
             onSelectView={(v) => goTo(destination, v)}
-            projectName={selectedProject}
             projectIssueTotal={destination === 'now' || destination === 'work' ? projectIssueTotal : null}
+            subViews={
+              destination === 'work' && view === 'epics' ? WORK_EPICS_SUB_VIEWS :
+              destination === 'work' && view === 'sprint' ? WORK_SPRINT_SUB_VIEWS :
+              undefined
+            }
+            activeSubView={
+              destination === 'work' && view === 'epics' ? workEpicsSubView :
+              destination === 'work' && view === 'sprint' ? workSprintSubView :
+              undefined
+            }
+            onSelectSubView={
+              destination === 'work' && view === 'epics' ? setWorkEpicsSubView :
+              destination === 'work' && view === 'sprint' ? setWorkSprintSubView :
+              undefined
+            }
           >
             {destination === 'now' && view === 'overview' && (
               <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} projectsError={projectsError} onRetryProjects={loadProjects} onNavigate={navigate} projectFilter={selectedProject} />
@@ -741,18 +864,26 @@ export default function Home() {
               />
             )}
 
+            {/*
+              scope-is-a-boundary (item 7): Work is FOUR views now (Board,
+              List, Epics, Sprint — design/Work.dc.html), not eight. Epics and
+              Sprint each absorbed more than one old view as a SUB-view (the
+              pill row DestinationShell renders from `subViews` above) — see
+              components/nav/config.ts for the full old -> new table.
+            */}
             {destination === 'work' && view === 'board' && (
               <BoardTab featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} projectFilter={selectedProject} />
             )}
-            {destination === 'work' && view === 'issues' && <IssuesTab projectFilter={selectedProject} />}
-            {destination === 'work' && view === 'features' && (
+            {destination === 'work' && view === 'list' && <IssuesTab projectFilter={selectedProject} />}
+
+            {destination === 'work' && view === 'epics' && workEpicsSubView === 'map' && <EpicMapTab />}
+            {destination === 'work' && view === 'epics' && workEpicsSubView === 'features' && (
               <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); goTo('work', 'board') }} projectFilter={selectedProject} />
             )}
-            {destination === 'work' && view === 'pipeline' && <PipelineTab projectFilter={selectedProject} />}
-            {destination === 'work' && view === 'product-board' && <ProductBoardTab projectFilter={selectedProject} />}
-            {destination === 'work' && view === 'epic-map' && <EpicMapTab />}
-            {destination === 'work' && view === 'projects' && <ProjectsTab projectFilter={selectedProject} />}
-            {destination === 'work' && view === 'calendar' && (
+            {destination === 'work' && view === 'epics' && workEpicsSubView === 'roadmap' && <ProductBoardTab projectFilter={selectedProject} />}
+
+            {destination === 'work' && view === 'sprint' && workSprintSubView === 'pipeline' && <PipelineTab projectFilter={selectedProject} />}
+            {destination === 'work' && view === 'sprint' && workSprintSubView === 'due-dates' && (
               <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedProject} cronsMeta={cronsMeta} />
             )}
 
@@ -761,7 +892,7 @@ export default function Home() {
             )}
             {destination === 'fleet' && view === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
 
-            {destination === 'runs' && <RunsView projectName={selectedProject} />}
+            {destination === 'runs' && <RunsView />}
 
             {destination === 'memory' && (
               <MemoryTab memFiles={memFiles} error={memError} onRetry={refetchMem} openMem={openMem} setOpenMem={setOpenMem} />
@@ -776,7 +907,11 @@ export default function Home() {
             {destination === 'settings' && view === 'calendar' && (
               <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedProject} cronsMeta={cronsMeta} />
             )}
+            {/* scope-is-a-boundary (item 7): relocated from work/projects — see components/nav/config.ts */}
+            {destination === 'settings' && view === 'projects' && <ProjectsTab projectFilter={selectedProject} />}
           </DestinationShell>
+            )}
+          </ProjectScopeProvider>
         </main>
       </div>
 

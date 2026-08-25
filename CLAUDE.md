@@ -85,18 +85,35 @@ Required PATCH fields when moving to `in_review`:
 - Run `npm run build` before every commit — zero TypeScript errors required
 - Run `bash scripts/smoke-test-layout.sh` after any change to `app/page.tsx`, sidebar, or mobile nav
 
-## Layout Integrity (MC-175) — CRITICAL
+## Layout Integrity (MC-175, updated TOD-2381 / scope-is-a-boundary) — CRITICAL
 
 The responsive layout has broken multiple times. These patterns must never be removed:
 
 | Element | Required class |
 |---|---|
-| Desktop sidebar | `hidden md:flex` |
-| Mobile bottom nav | `lg:hidden fixed bottom-0` |
-| Hamburger button | `md:hidden` |
-| Mobile more menu | `lg:hidden fixed bottom-[56px]` |
+| Desktop sidebar (`components/nav/PrimaryNav.tsx`) | `hidden lg:flex` |
+| Mobile bottom nav (`components/nav/MobileNav.tsx`) | `lg:hidden fixed bottom-0` |
+
+There is no hamburger button and no mobile "more" menu. Both existed in the
+old 20-item flat tab bar and were deliberately removed at TOD-2381
+(nav-six-destinations): the six destinations — and now, within Work, four
+views instead of eight (design/Work.dc.html; see components/nav/config.ts) —
+all fit in the bottom nav's `grid-cols-6` without an overflow menu.
+`PrimaryNav`/`MobileNav` do not render one, and restoring one is a regression,
+not a fix.
+
+The sidebar pairs with the phone nav at the `lg:` breakpoint, not `md:`, and
+this is intentional, not a typo of the historical `hidden md:flex`: an `md:`
+sidebar shown alongside an `lg:hidden` phone nav would put BOTH on screen at
+once between 768px and 1023px wide (`md` starts at 768, `lg` at 1024). The
+two breakpoints must always match each other, whichever one they are.
 
 After any layout-touching commit, run smoke test before marking `in_review`.
+`bash scripts/smoke-test-layout.sh` also runs `scripts/no-silent-empty.mjs`
+(no tab may render an empty state over an unchecked API error) and
+`scripts/no-unscoped-issues.mjs` (no `dbUrl('issues?...')` call may skip the
+project + archived-rows clauses — see that script's header for what it does
+and does not cover).
 
 ## Code Quality Rules
 

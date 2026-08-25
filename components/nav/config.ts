@@ -38,18 +38,25 @@ export const DESTINATIONS: Destination[] = [
     ],
   },
   {
+    // scope-is-a-boundary (item 7): design/Work.dc.html specifies FOUR views
+    // — Board, List, Epics, Sprint — not the eight pills this destination
+    // absorbed at TOD-2381. The other four (Features, Product Board, Epic
+    // Map, Pipeline, Due dates — five, because Epic Map and Features both
+    // fold under Epics) are not deleted; they are regrouped as SUB-views
+    // nested one level under Epics and Sprint, rendered by app/page.tsx's own
+    // secondary pill row (see DestinationShell's `subViews` prop). See the
+    // builder report for the full old-view -> new-location table; `projects`
+    // (a cross-project list) moved out of Work entirely, into Settings, where
+    // its content — is not scoped to one project by nature — actually
+    // belongs.
     id: 'work',
     label: 'Work',
     question: 'What is the work, and where is it stuck?',
     views: [
       { id: 'board', label: 'Board' },
-      { id: 'issues', label: 'Issues' },
-      { id: 'features', label: 'Features' },
-      { id: 'pipeline', label: 'Pipeline' },
-      { id: 'product-board', label: 'Product Board' },
-      { id: 'epic-map', label: 'Epic Map' },
-      { id: 'projects', label: 'Projects' },
-      { id: 'calendar', label: 'Due dates' },
+      { id: 'list', label: 'List' },
+      { id: 'epics', label: 'Epics' },
+      { id: 'sprint', label: 'Sprint' },
     ],
   },
   {
@@ -87,6 +94,11 @@ export const DESTINATIONS: Destination[] = [
       { id: 'automations', label: 'Automations' },
       { id: 'infra', label: 'Infra' },
       { id: 'calendar', label: 'Job timing' },
+      // scope-is-a-boundary (item 7): relocated from work/projects. ProjectsTab
+      // lists every project across every business — it is not, and should not
+      // be, filtered to the one scoped project, so it does not belong inside
+      // a destination whose other three views all render "just this project".
+      { id: 'projects', label: 'Projects' },
     ],
   },
 ]
@@ -107,16 +119,25 @@ export const DEFAULT_VIEW: Record<DestinationId, string> = {
  * in app/page.tsx special-cases it before this map is consulted.
  *
  * Two ids split rather than move (nav-six-destinations piece, item 2):
- * - 'calendar' -> work/calendar is the redirect target (due dates); the same
- *   underlying CalendarTab is ALSO reachable at settings/calendar (job
- *   timing) — see app/page.tsx. This is a placement split, not a code split:
- *   CalendarTab's internals combine both concerns and are owned by another
- *   piece, so the "split" is achieved by surfacing the one component from
- *   two destinations, not by dividing its UI.
+ * - 'calendar' -> work/sprint is the redirect target (due dates, now a
+ *   sub-view of Sprint — see the scope-is-a-boundary builder report for the
+ *   full Work regrouping table). The same underlying CalendarTab is ALSO
+ *   reachable at settings/calendar (job timing) — see app/page.tsx. This is a
+ *   placement split, not a code split: CalendarTab's internals combine both
+ *   concerns and are owned by another piece, so the "split" is achieved by
+ *   surfacing the one component from two destinations, not by dividing its UI.
  * - 'infra' -> settings/infra is the redirect target (the detail, i.e. the
  *   full InfraTab). Now/signal is a NEW, separate, minimal real-data summary
  *   (see NowSignal.tsx) — not a code split of InfraTab either, for the same
  *   ownership reason.
+ *
+ * scope-is-a-boundary (item 7): Work collapsed from eight top-level views to
+ * four (board, list, epics, sprint); 'features', 'epic-map', 'product-board'
+ * and 'pipeline' are now SUB-views rendered under work/epics or work/sprint
+ * (see DestinationShell's `subViews`), not top-level view ids any more — a
+ * legacy link now lands on the parent view (Epics or Sprint) rather than the
+ * exact sub-view, same tradeoff this map already made for calendar/infra
+ * above. 'projects' moved out of Work into Settings — see config.ts DESTINATIONS.
  */
 export const LEGACY_TAB_MAP: Record<string, [DestinationId, string]> = {
   overview: ['now', 'overview'],
@@ -125,15 +146,15 @@ export const LEGACY_TAB_MAP: Record<string, [DestinationId, string]> = {
   infra: ['settings', 'infra'],
   team: ['fleet', 'team'],
   office: ['fleet', 'office'],
-  calendar: ['work', 'calendar'],
+  calendar: ['work', 'sprint'],
   memory: ['memory', 'memory'],
   board: ['work', 'board'],
-  features: ['work', 'features'],
-  'epic-map': ['work', 'epic-map'],
-  pipeline: ['work', 'pipeline'],
-  issues: ['work', 'issues'],
-  projects: ['work', 'projects'],
-  'product-board': ['work', 'product-board'],
+  features: ['work', 'epics'],
+  'epic-map': ['work', 'epics'],
+  pipeline: ['work', 'sprint'],
+  issues: ['work', 'list'],
+  projects: ['settings', 'projects'],
+  'product-board': ['work', 'epics'],
   automations: ['settings', 'automations'],
   'ai-services': ['settings', 'ai-services'],
   settings: ['settings', 'settings'],

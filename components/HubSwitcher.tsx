@@ -9,10 +9,10 @@ import { ChevronDown, Plus, Check } from 'lucide-react'
 
 interface Business { id: string; name: string; type: string; status: string }
 
-const HUB_EMOJI: Record<string, string> = {
-  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
-  'Infrastructure': '⚙️', 'KAOS': '🤖',
-}
+// TOD (no-invented-projects): this used to be HUB_EMOJI, keyed by six
+// hardcoded business names. GET /api/businesses sends no emoji field, so
+// every hub now gets the single neutral default (🏢) that was previously
+// only the fallback for names the table didn't happen to list.
 
 interface HubSwitcherProps {
   selected: string | null
@@ -43,9 +43,7 @@ export default function HubSwitcher({ selected, onSelect, onNew, refreshKey }: H
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  const label = selected
-    ? (HUB_EMOJI[selected] ? `${HUB_EMOJI[selected]} ${selected}` : selected)
-    : 'All hubs'
+  const label = selected ?? 'All hubs'
 
   return (
     <div ref={ref} className="relative px-2">
@@ -90,7 +88,7 @@ export default function HubSwitcher({ selected, onSelect, onNew, refreshKey }: H
               onClick={() => { onSelect(b.name); setOpen(false) }}
               className="w-full flex items-center gap-2 px-3 py-2.5 text-xs hover:bg-white/[0.05] transition-colors"
             >
-              <span className="text-base leading-none">{HUB_EMOJI[b.name] || '🏢'}</span>
+              <span className="text-base leading-none">🏢</span>
               <span className="flex-1 text-left text-white/70 truncate">{b.name}</span>
               {selected === b.name && <Check size={11} className="text-white/50 shrink-0" />}
             </button>

@@ -17,12 +17,21 @@ export default function IssuePreviewCard({ draft, project }: Props) {
   if (state === 'dismissed') return null
 
   const create = async () => {
+    if (!project) {
+      setError({ status: 0, endpoint: '/api/issues', message: 'No project selected — an issue cannot be filed without one.' })
+      setState('idle')
+      return
+    }
     setState('creating')
     setError(null)
     const r = await fetchJson<{ task_key?: string }>('/api/issues', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...draft, project: project || 'Todero', sprint: new Date().toISOString().split('T')[0] })
+      // Fell back to 'Todero' when no project was supplied — a name no longer
+      // in the projects table, so the fallback wrote a row under a project that
+      // does not exist. There is no safe default: without a project this
+      // refuses, and says so.
+      body: JSON.stringify({ ...draft, project, sprint: new Date().toISOString().split('T')[0] })
     })
     // The green "Created" state must only ever follow a 2xx that actually
     // carried a task_key back — never a fetch failure or a body missing the

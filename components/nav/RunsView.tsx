@@ -17,6 +17,7 @@
 import React, { useEffect, useState } from 'react'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import { fetchJson } from '@/hooks/useApiData'
+import { useProjectScope } from './ProjectScope'
 
 interface AgentRunRow {
   id: string
@@ -47,7 +48,12 @@ const STATUS_TONE: Record<string, string> = {
   failed: 'text-red-400 bg-red-500/10 border-red-500/25',
 }
 
-export default function RunsView({ projectName }: { projectName?: string | null }) {
+export default function RunsView() {
+  // scope-is-a-boundary: read from the one Context Provider instead of a
+  // same-named prop — see components/nav/ProjectScope.tsx. Runs is
+  // deliberately agent-wide (see file header), so the scope is used only for
+  // the copy below, never as a query filter.
+  const { project: projectName } = useProjectScope()
   const [rows, setRows] = useState<AgentRunRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 

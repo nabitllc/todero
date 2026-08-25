@@ -156,7 +156,7 @@ const FILE_TYPE_GROUPS = [
 const PROJECT_TAG_DEFAULT_COLOR = '#3b82f6'
 
 const PROMPT_TEMPLATES = [
-  { label: '🗺️ Plan a feature', text: 'Help me plan a new feature for Kemuni. The feature is: ' },
+  { label: '🗺️ Plan a feature', text: 'Help me plan a new feature. The feature is: ' },
   { label: '🐛 Debug code', text: 'I have a bug in my code. Here\'s what\'s happening:\n\n' },
   { label: '📋 Write a PRD', text: 'Write a product requirements document for: ' },
   { label: '🔍 Research topic', text: 'Research and summarize the latest developments in: ' },
@@ -374,6 +374,20 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // roster yields an empty list here, which correctly renders no dropdown at
   // all rather than a menu of invented recipients.
   const { agents: rosterAgents, byId: rosterById } = useAgentRoster()
+  // Project tag options for the filter pills and the conversation-header
+  // cycle button — see PROJECT_TAG_DEFAULT_COLOR above. `null` while
+  // /api/projects has not answered yet, so both surfaces render nothing
+  // extra rather than a guessed list.
+  const [liveProjectNames, setLiveProjectNames] = useState<string[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<Array<{ name: string }>>('/api/projects').then(res => {
+      if (cancelled) return
+      if (!res.ok) { setLiveProjectNames([]); return }
+      setLiveProjectNames(Array.isArray(res.data) ? res.data.map(p => p.name).filter(Boolean) : [])
+    })
+    return () => { cancelled = true }
+  }, [])
   // Chat-row avatar. The module-level AGENT_BADGE_MAP this replaces knew four
   // agents and handed every other one KAOS's 🧠, so a conversation with the
   // Tester was labelled as a conversation with the orchestrator.
@@ -1572,14 +1586,14 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   (!projectFilter && !starredFilter ? 'bg-white/15 text-white border-white/20' : 'text-white/50 border-white/10 hover:border-white/10')}>
                 All
               </button>
-              {Object.entries(PROJECT_TAG_COLORS).map(([proj, color]) => (
+              {(liveProjectNames ?? []).map(proj => (
                 <button
                   key={proj}
                   onClick={() => { setProjectFilter(projectFilter === proj ? null : proj); setStarredFilter(false) }}
                   className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
                     (projectFilter === proj ? 'text-white' : 'text-white/50 hover:text-white/70')}
                   style={projectFilter === proj
-                    ? { background: color + '30', borderColor: color + '80', color }
+                    ? { background: PROJECT_TAG_DEFAULT_COLOR + '30', borderColor: PROJECT_TAG_DEFAULT_COLOR + '80', color: PROJECT_TAG_DEFAULT_COLOR }
                     : { borderColor: '#27272a' }}>
                   {proj}
                 </button>
@@ -1648,7 +1662,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                           ? searchResults.find(r => r.conversation_id === c.id)?.content.slice(0, 60)
                           : lastMsg ? stripMarkdownPreview(lastMsg.content) : ''
                         const agentBadge = agentBadgeFor(c.agent_id ?? 'main')
-                        const projColor = c.project ? PROJECT_TAG_COLORS[c.project] : null
+                        const projColor = c.project ? PROJECT_TAG_DEFAULT_COLOR : null
                         const highlightedPreview = searchMode === 'messages' && preview && search.length >= 3
                           ? (() => {
                               const idx = preview.toLowerCase().indexOf(search.toLowerCase())
@@ -1850,17 +1864,23 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                       onDoubleClick={() => setRenamingTitle(activeConv.title)}>
                       {activeConv.title}
                     </h2>
-                    {/* Feature 9: project badge in header */}
+                    {/* Feature 9: project badge in header. Cycles through
+                        null + the real /api/projects rows (projectCycle
+                        below) — never a hardcoded four-name list. Until
+                        those rows have loaded, the button is a no-op rather
+                        than offering a guessed project. */}
                     <button
                       onClick={() => {
+                        const projectCycle: (string | null)[] = [null, ...(liveProjectNames ?? [])]
+                        if (projectCycle.length <= 1) return
                         const current = activeConv.project || null
-                        const idx = PROJECT_CYCLE.indexOf(current as any)
-                        const next = PROJECT_CYCLE[(idx + 1) % PROJECT_CYCLE.length]
+                        const idx = projectCycle.indexOf(current)
+                        const next = projectCycle[(idx + 1) % projectCycle.length]
                         setConvProject(activeConv.id, next)
                       }}
                       className="text-[9px] px-2 py-0.5 rounded-full border transition-colors shrink-0"
                       style={activeConv.project
-                        ? { background: (PROJECT_TAG_COLORS[activeConv.project] || '#555') + '20', color: PROJECT_TAG_COLORS[activeConv.project] || '#aaa', borderColor: (PROJECT_TAG_COLORS[activeConv.project] || '#555') + '50' }
+                        ? { background: PROJECT_TAG_DEFAULT_COLOR + '20', color: PROJECT_TAG_DEFAULT_COLOR, borderColor: PROJECT_TAG_DEFAULT_COLOR + '50' }
                         : { color: '#555', borderColor: '#2a2a2a', background: '#141414' }}
                       title="Click to cycle project tag">
                       {activeConv.project || '+ project'}

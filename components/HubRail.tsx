@@ -6,10 +6,10 @@ import { fetchJson } from '@/hooks/useApiData'
 
 interface Business { id: string; name: string; type: string; status: string }
 
-const HUB_EMOJI: Record<string, string> = {
-  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
-  'Infrastructure': '⚙️', 'KAOS': '🤖',
-}
+// TOD (no-invented-projects): this used to be HUB_EMOJI, keyed by six
+// hardcoded business names. GET /api/businesses sends no emoji field, so
+// every hub now gets the single neutral default (🏢) that was previously
+// only the fallback for names the table didn't happen to list.
 
 interface HubRailProps {
   selected: string | null
@@ -59,7 +59,7 @@ export default function HubRail({ selected, onSelect, refreshKey }: HubRailProps
                 : 'bg-white/[0.05] hover:bg-white/10 ring-2 ring-transparent'
             }`}
           >
-            {HUB_EMOJI[b.name] || '🏢'}
+            🏢
           </button>
         )
       })}

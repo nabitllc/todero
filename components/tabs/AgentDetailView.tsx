@@ -895,6 +895,22 @@ export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDeta
   // click can hard-delete a row by accident.
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [removing, setRemoving] = useState(false)
+  // TOD (no-invented-projects): "Assign Task" used to POST a hardcoded
+  // project: 'Mission Control' — a name absent from GET /api/projects on
+  // this installation, so every click wrote a real issue row tagged with a
+  // project that does not exist. The quick-assign action now uses the
+  // first real project from /api/projects; `null` while unanswered or if
+  // none exist, in which case the button is disabled rather than guessing.
+  const [firstLiveProject, setFirstLiveProject] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<Array<{ name: string }>>('/api/projects').then(res => {
+      if (cancelled || !res.ok) return
+      const name = Array.isArray(res.data) ? res.data[0]?.name : undefined
+      if (name) setFirstLiveProject(name)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // Reset edit mode on tab switch
   useEffect(() => {
@@ -902,6 +918,7 @@ export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDeta
   }, [activeTab])
 
   async function handleAssignTask() {
+    if (!firstLiveProject) return
     setActionError(null); setActionNote(null)
     const r = await fetchJson<{ task_key?: string }>('/api/issues', {
       method: 'POST',
@@ -909,7 +926,7 @@ export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDeta
       body: JSON.stringify({
         title: 'Task for ' + agent.name,
         assignee: agent.id,
-        project: 'Mission Control',
+        project: firstLiveProject,
         type: 'task',
         priority: 'medium',
         status: 'backlog',
@@ -994,7 +1011,8 @@ export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDeta
           </div>
           <div className="flex items-center gap-1.5 ml-auto shrink-0">
             <AgentLaunchControl agentId={agent.id} vault={agent.vault} />
-            <Button variant="secondary" size="sm" onClick={handleAssignTask}>
+            <Button variant="secondary" size="sm" onClick={handleAssignTask} disabled={!firstLiveProject}
+              title={firstLiveProject ? undefined : 'No project found via /api/projects yet'}>
               <Plus size={12} className="mr-1" /> Assign Task
             </Button>
             <Button variant="secondary" size="sm" onClick={handleRunHeartbeat}>

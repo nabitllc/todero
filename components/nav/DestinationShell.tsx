@@ -8,14 +8,18 @@
 
 import React from 'react'
 import type { Destination } from './config'
+import { useProjectScope } from './ProjectScope'
+
+interface SubView {
+  id: string
+  label: string
+}
 
 interface Props {
   destination: Destination
   activeView: string
   onSelectView: (viewId: string) => void
   children: React.ReactNode
-  /** Real project name (e.g. "Limiglow"), or null when nothing is scoped. */
-  projectName?: string | null
   /**
    * Real issue total for the scoped project, straight from /api/issues'
    * `total`. null = not loaded / not applicable to this destination. Only
@@ -23,9 +27,26 @@ interface Props {
    * Settings are not "empty" just because a project has zero issues.
    */
   projectIssueTotal?: number | null
+  /**
+   * scope-is-a-boundary (item 7): a second, smaller pill row for a top-level
+   * view that absorbed more than one of the old eight Work views (Epics =
+   * Epic Map + Features + Product Board; Sprint = Pipeline + Due dates).
+   * Only rendered when the caller passes 2+ entries — a single-entry group
+   * would just be the view itself with an extra click in the way.
+   */
+  subViews?: SubView[]
+  activeSubView?: string
+  onSelectSubView?: (subViewId: string) => void
 }
 
-export default function DestinationShell({ destination, activeView, onSelectView, children, projectName, projectIssueTotal }: Props) {
+export default function DestinationShell({
+  destination, activeView, onSelectView, children, projectIssueTotal,
+  subViews, activeSubView, onSelectSubView,
+}: Props) {
+  // scope-is-a-boundary: the project name comes from the one Context
+  // Provider (app/page.tsx), not from a same-named prop threaded in from the
+  // caller — there is exactly one place in the tree this can disagree with.
+  const { project: projectName } = useProjectScope()
   const showEmptyNote = !!projectName && projectIssueTotal === 0
 
   return (
@@ -48,6 +69,24 @@ export default function DestinationShell({ destination, activeView, onSelectView
               }
             >
               {v.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {subViews && subViews.length > 1 && onSelectSubView && (
+        <div className="flex gap-1 flex-wrap bg-white/[0.03] border border-white/[0.06] rounded-md p-0.5 w-fit">
+          {subViews.map(sv => (
+            <button
+              key={sv.id}
+              onClick={() => onSelectSubView(sv.id)}
+              aria-current={activeSubView === sv.id ? 'page' : undefined}
+              className={
+                'text-[11px] font-medium rounded px-2.5 py-1 transition-colors ' +
+                (activeSubView === sv.id ? 'bg-white/15 text-white' : 'text-white/50 hover:text-white/80')
+              }
+            >
+              {sv.label}
             </button>
           ))}
         </div>

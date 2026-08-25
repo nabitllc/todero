@@ -5,10 +5,12 @@ import { Plus } from 'lucide-react'
 
 interface Business { id: string; name: string; type: string; status: string }
 
-const EMOJI: Record<string, string> = {
-  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
-  'Infrastructure': '⚙️', 'KAOS': '🤖'
-}
+// TOD (no-invented-projects): this used to be an EMOJI map keyed by six
+// hardcoded business names ('Vespera'/'Kemuni'/'Mission Control'/'Todero'/
+// 'Infrastructure'/'KAOS'). GET /api/businesses sends no emoji field on a
+// row, so every business now renders its initials — the one neutral default
+// — rather than a lookup that silently goes stale the moment a business is
+// renamed or a new one is created.
 
 function getInitials(name: string) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -70,7 +72,6 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
 
       {/* Business list */}
       {!loading && businesses.filter(b => b.status === 'active').map(b => {
-        const emoji = EMOJI[b.name]
         const isSelected = selected === b.name
         return (
           <div key={b.id} className="relative group">
@@ -81,7 +82,7 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
               className={`w-10 h-10 rounded-full flex items-center justify-center text-lg transition-all focus:outline-none focus:ring-2 focus:ring-white/30
                 ${isSelected ? 'ring-2 ring-white rounded-2xl bg-[#1a1a1a]' : 'bg-[#0f0f0f] hover:rounded-2xl'}`}
             >
-              {emoji || <span className="text-xs font-bold text-white/60">{getInitials(b.name)}</span>}
+              <span className="text-xs font-bold text-white/60">{getInitials(b.name)}</span>
             </button>
             {/* Tooltip */}
             <div className="absolute left-14 top-1/2 -translate-y-1/2 bg-[#080808] text-white text-xs px-2 py-1 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50 border border-white/10">

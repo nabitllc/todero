@@ -196,9 +196,9 @@ const PRIORITY_COLORS: Record<string,string> = {
   critical:'#ef4444', high:'#f97316', medium:'#3f3f46', low:'#27272a',
 }
 
-const PROJECT_COLORS: Record<string,string> = {
-  Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280',
-}
+// TOD (no-invented-projects): PROJECT_COLORS — a three-name table
+// (Kemuni/Vespera/Ops) — was dead code, unused anywhere in this file.
+// Deleted rather than kept as an unused invented-name list.
 
 const TYPE_COLORS: Record<string,string> = {
   feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b',
@@ -248,6 +248,27 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const groupByBusiness = swimlane === 'business'
   const groupBySprint = swimlane === 'sprint'
   const [collapsedBiz, setCollapsedBiz] = useState<Record<string,boolean>>(() => { try { return JSON.parse(localStorage.getItem('board-biz-collapsed') ?? '{}') } catch { return {} } })
+  // Business swimlane: which business each project belongs to. This used to
+  // be BIZ_PROJECTS, a hand-written table of five business/project names —
+  // an operator with one real project (Limiglow) saw four empty business
+  // groups next to it. Now sourced from GET /api/projects, whose `businesses`
+  // join names the real owner of each project row. `null` = not answered yet.
+  const [projectToBusiness, setProjectToBusiness] = useState<Record<string, string> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/projects').then(async res => {
+      if (cancelled) return
+      if (!res.ok) { setProjectToBusiness({}); return }
+      const rows = await res.json()
+      if (cancelled || !Array.isArray(rows)) { setProjectToBusiness({}); return }
+      const map: Record<string, string> = {}
+      for (const row of rows) {
+        if (row?.name) map[row.name] = row?.businesses?.name || 'Unassigned'
+      }
+      setProjectToBusiness(map)
+    }).catch(() => { if (!cancelled) setProjectToBusiness({}) })
+    return () => { cancelled = true }
+  }, [])
 
   // Persist multiselect filters to localStorage
   useEffect(() => {
@@ -933,33 +954,28 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
       {/* Business-grouped view */}
       {!loadError && groupByBusiness && (() => {
-        const BIZ_PROJECTS: Record<string, {label: string; emoji: string; projects: string[]}> = {
-          'Vespera':          { label: 'Vespera',          emoji: '🖤', projects: ['Vespera'] },
-          'Kemuni':           { label: 'Kemuni',           emoji: '🚀', projects: ['Kemuni'] },
-          'Mission Control':  { label: 'Mission Control',  emoji: '🧠', projects: ['Mission Control'] },
-          'Todero':          { label: 'Todero',          emoji: '🧠', projects: ['Todero'] },
-          'Infrastructure':   { label: 'Infrastructure',   emoji: '⚙️', projects: ['Infrastructure', 'KAOS'] },
-        }
-        const bizOrder = ['Vespera', 'Kemuni', 'Mission Control', 'Todero', 'Infrastructure']
-        // Reverse map: project → business
-        const projToBiz: Record<string, string> = {}
-        for (const [biz, info] of Object.entries(BIZ_PROJECTS)) {
-          for (const p of info.projects) projToBiz[p] = biz
-        }
-        // Group tasks by business → project
+        // Group tasks by business → project using the real project→business
+        // map from /api/projects (projectToBusiness, declared above). While
+        // that map hasn't answered yet every task falls into one honest
+        // "Loading businesses…" bucket rather than a guessed grouping.
         const bizGroups: Record<string, Record<string, typeof filtered>> = {}
         for (const t of filtered) {
-          const biz = projToBiz[t.project ?? ''] ?? 'Other'
+          const biz = projectToBusiness === null
+            ? 'Loading businesses…'
+            : (projectToBusiness[t.project ?? ''] ?? 'Unassigned')
           const proj = t.project ?? 'Unassigned'
           if (!bizGroups[biz]) bizGroups[biz] = {}
           if (!bizGroups[biz][proj]) bizGroups[biz][proj] = []
           bizGroups[biz][proj].push(t)
         }
-        const allKeys = [...bizOrder.filter(k => bizGroups[k]), ...Object.keys(bizGroups).filter(k => !bizOrder.includes(k) && bizGroups[k])]
+        const allKeys = Object.keys(bizGroups).sort()
         return (
           <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
             {allKeys.map(bizKey => {
-              const biz = BIZ_PROJECTS[bizKey] || { label: bizKey, emoji: '📁', projects: [] }
+              // No hand-written emoji table keyed by business name: every
+              // group gets the same neutral icon, since /api/projects's
+              // `businesses` join sends no emoji field on the row.
+              const biz = { label: bizKey, emoji: '🏢' }
               const bizProjectGroups = bizGroups[bizKey] || {}
               const allBizTasks = Object.values(bizProjectGroups).flat()
               const isCollapsed = collapsedBiz[bizKey] ?? true
@@ -1154,7 +1170,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </Select>
               </FormGroup>
               <FormGroup label="Project">
-                <Input placeholder="e.g. Kemuni" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} />
+                {/* Free-text on purpose (an issue can name a project ahead of
+                    its /api/projects row existing), but the placeholder must
+                    not suggest a specific project — that used to be
+                    "e.g. Kemuni", a name this installation may not have. */}
+                <Input placeholder="Project name" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} />
               </FormGroup>
               <FormGroup label="Assignee">
                 <Select value={newTask.assignee??''} onChange={e=>{

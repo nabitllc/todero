@@ -58,5 +58,15 @@ else
   exit 1
 fi
 
+# Check 7 (scope-is-a-boundary): no dbUrl('issues?...') literal may skip the
+# project + archived clauses that issuesUrl() otherwise injects once.
+echo ""
+if node "$(dirname "$0")/no-unscoped-issues.mjs"; then
+  echo "✅ Scope guard passed"
+else
+  echo "❌ Scope guard FAILED — see scripts/no-unscoped-issues.mjs"
+  exit 1
+fi
+
 echo ""
 echo "✅ Smoke test complete"
