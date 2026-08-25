@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Bell, Bot, ArrowRightLeft, Rocket, X, CheckCheck } from 'lucide-react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 
 interface Notification {
   id: string
@@ -40,7 +40,7 @@ export default function NotificationBell() {
     // 1. Notifications table (status_change events from issue PATCH)
     try {
       const res = await fetch(
-        `${dbRestBase()}/rest/v1/notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`,
+        dbUrl(`notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`),
         { headers }
       )
       const rows = await res.json()
@@ -66,7 +66,7 @@ export default function NotificationBell() {
     // 2. Agent completions + errors from agent_runs
     try {
       const res = await fetch(
-        `${dbRestBase()}/rest/v1/agent_runs?select=id,agent_id,task_title,status,started_at,finished_at&status=in.(completed,done,error)&finished_at=gte.${since}&order=finished_at.desc&limit=20`,
+        dbUrl(`agent_runs?select=id,agent_id,task_title,status,started_at,finished_at&status=in.(completed,done,error)&finished_at=gte.${since}&order=finished_at.desc&limit=20`),
         { headers }
       )
       const rows = await res.json()

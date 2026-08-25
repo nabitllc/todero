@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { getPipelineStage, isBlocked, nextPRWindow, type PipelineStage, STAGE_COLORS } from '@/lib/pipeline'
 import { EmptyState, Button } from '@/components/ui'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 
 const HEADERS = { ...dbRestHeaders(), 'Content-Type': 'application/json' }
 
@@ -73,7 +73,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
     // Optimistic update
     setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: newStatus } : i))
     try {
-      await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${issueId}`, {
+      await fetch(dbUrl(`issues?id=eq.${issueId}`), {
         method: 'PATCH',
         headers: HEADERS,
         body: JSON.stringify({ status: newStatus }),
@@ -107,8 +107,8 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       // Fetch active issues + recently finished issues under the canonical lifecycle
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const [activeRes, finishedRes] = await Promise.all([
-        fetch(`${dbRestBase()}/rest/v1/issues?status=not.in.(closed,completed,released)&select=*&limit=100`, { headers: HEADERS }),
-        fetch(`${dbRestBase()}/rest/v1/issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`, { headers: HEADERS }),
+        fetch(dbUrl(`issues?status=not.in.(closed,completed,released)&select=*&limit=100`), { headers: HEADERS }),
+        fetch(dbUrl(`issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`), { headers: HEADERS }),
       ])
       const active = await activeRes.json()
       const finished = await finishedRes.json()

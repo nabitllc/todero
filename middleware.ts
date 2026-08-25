@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { hasPermission } from '@/lib/rbac-types'
 import type { Role } from '@/lib/rbac-types'
+import { isInternalCall } from '@/lib/internal-auth'
 
 const ADMIN_PASSWORD = process.env.MC_PASSWORD ?? 'kaos2026'
 const VIEWER_PASSWORD = process.env.MC_VIEWER_PASSWORD ?? 'view2026'
@@ -18,6 +19,15 @@ function getRoleFromCookie(req: NextRequest): Role | null {
   if (!raw) return null
   const known: Role[] = ['owner', 'member', 'viewer', 'god', 'admin', 'tron', 'defaultbot']
   return known.includes(raw as Role) ? (raw as Role) : null
+}
+
+/** True when the request carries a password cookie matching a configured role password. */
+function hasValidSession(req: NextRequest): boolean {
+  const auth = req.cookies.get('mc-auth')?.value
+  if (!auth) return false
+  const memberPassword = process.env.MC_MEMBER_PASSWORD
+  return auth === ADMIN_PASSWORD || auth === VIEWER_PASSWORD ||
+    (!!memberPassword && auth === memberPassword)
 }
 
 /** Returns true if the role can perform write operations on issues/board. */
@@ -38,8 +48,26 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
-  // For API routes: enforce role-based access on write operations
+  // Unauthenticated endpoints: the login handshake itself.
+  if (pathname === '/api/auth' || pathname === '/api/auth-form') {
+    return NextResponse.next()
+  }
+
+  // For API routes: every request must prove who it is BEFORE any role logic.
+  //
+  // This used to gate only WRITE_METHODS and treated a missing cookie as a
+  // server-side call to pass through. The result was that anonymous callers got
+  // 200 on GET /api/issues and on DELETE /api/issues. Absence of a session is no
+  // longer evidence of anything: internal calls present a shared secret
+  // (lib/internal-auth.ts), everyone else presents a session.
   if (pathname.startsWith('/api/')) {
+    if (!isInternalCall(req.headers) && !hasValidSession(req)) {
+      return NextResponse.json(
+        { error: 'Unauthenticated: sign in to use the Todero API.', code: 'UNAUTHENTICATED' },
+        { status: 401 }
+      )
+    }
+
     if (WRITE_METHODS.has(req.method)) {
       const role = getRoleFromCookie(req)
 

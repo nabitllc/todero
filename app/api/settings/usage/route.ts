@@ -3,12 +3,12 @@ import { NextResponse } from 'next/server'
 import { fetchJsonOrThrow } from '@/lib/fetch-json'
 import { promisify } from 'util'
 import fs from 'fs'
-import { dbRestBase } from '@/lib/db/rest'
+import { db, isDbConfigured } from '@/lib/db'
 
 const promisifyExec = promisify
 
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const OPENROUTER_KEY = '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'
+/** Configuration, not a constant. An absent key simply means "no balance shown". */
+const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY ?? ''
 
 let cache: { data: any; ts: number } | null = null
 const CACHE_TTL = 30_000
@@ -33,31 +33,36 @@ function getSessionCosts(sessionsPaths: string[]) {
   return { totalTokens, todayCost: +todayCost.toFixed(4) }
 }
 
+/** Database size in bytes, or null when unavailable. Never throws. */
+async function dbSizeBytes(): Promise<number | null> {
+  if (!isDbConfigured()) return null
+  try {
+    const { data, error } = await db().rpc('pg_database_size_bytes')
+    if (error) return null
+    return typeof data === 'number' ? data : null
+  } catch {
+    return null
+  }
+}
+
 export async function GET() {
   if (cache && Date.now() - cache.ts < CACHE_TTL) {
     return NextResponse.json(cache.data)
   }
 
   const [supabaseDb, openrouter, cfKaos, discordBot] = await Promise.allSettled([
-    // 1. Supabase DB size via REST RPC
-    // TOD-654: a non-ok upstream rejects instead of handing back its error
-    // body, which the readers below would otherwise treat as a real number.
-    fetchJsonOrThrow<any>(`${dbRestBase()}/rest/v1/rpc/pg_database_size_bytes`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({}),
-      cache: 'no-store',
-    }).catch(() => null),
+    // 1. Database size, through the seam's stored-procedure call.
+    // TOD-654: an upstream failure resolves to null rather than an error body,
+    // which the readers below would otherwise treat as a real number.
+    dbSizeBytes(),
 
-    // 2. OpenRouter balance
-    fetchJsonOrThrow<any>('https://openrouter.ai/api/v1/auth/key', {
-      headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-      cache: 'no-store',
-    }),
+    // 2. OpenRouter balance — skipped when no key is configured.
+    OPENROUTER_KEY
+      ? fetchJsonOrThrow<any>('https://openrouter.ai/api/v1/auth/key', {
+          headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
+          cache: 'no-store',
+        })
+      : Promise.resolve(null),
 
     // 3. Cloudflare tunnel - kaos.nabit.work
     fetch('https://kaos.nabit.work', {

@@ -1,6 +1,5 @@
 // Shared task update helper — used by all agent run endpoints
-import { dbRestBase } from '@/lib/db/rest'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+import { db } from '@/lib/db'
 
 export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'code_review' | 'approved' | 'released' | 'completed' | 'closed'
 
@@ -72,16 +71,10 @@ export interface Task {
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${taskId}`, {
-    method: 'PATCH',
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${SUPA_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal',
-    },
-    body: JSON.stringify({ status, updated_at: new Date().toISOString() }),
-  })
+  await db()
+    .from('issues')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', taskId)
 }
 
 export async function logAgentRun(agentId: string, taskId: string | null, taskTitle: string, status: 'running' | 'done' | 'failed', output?: string, error?: string) {
@@ -91,16 +84,6 @@ export async function logAgentRun(agentId: string, taskId: string | null, taskTi
   if (output) body.output = output.slice(-2000)
   if (error) body.error = error
 
-  const res = await fetch(`${dbRestBase()}/rest/v1/agent_runs`, {
-    method: 'POST',
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${SUPA_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation',
-    },
-    body: JSON.stringify(body),
-  })
-  const data = await res.json()
-  return data[0]?.id ?? null
+  const { data } = await db().from('agent_runs').insert(body).select('id')
+  return (data as Array<{ id: string }> | null)?.[0]?.id ?? null
 }

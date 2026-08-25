@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { fetchJson, formatApiError } from '@/hooks/useApiData'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 
 // ─── Supabase agent_runs ──────────────────────────────────────────────────────
 const SUPA_AGENTS = ['main','scout','ops','kemuni-sme','vespera-sme','builder','tester','deployer'] as const;
@@ -11,7 +11,7 @@ interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: s
 
 async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
-    `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
+    dbUrl(`agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`),
     { headers: dbRestHeaders() }
   );
   if (!res.ok) return {};

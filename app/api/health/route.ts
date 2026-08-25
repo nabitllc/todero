@@ -1,25 +1,36 @@
 // TOD-1514 Phase 2.4: /api/health — JSON summary of the Todero stack.
 // Unauthenticated — middleware has an explicit bypass for this path.
-// Heartbeat state now read from Supabase agent_memory_files (memory_type='heartbeat_state')
+// Heartbeat state read from agent_memory_files (memory_type='heartbeat_state')
 import { NextResponse } from 'next/server'
 import { listRuntimes } from '@/lib/runtimes'
 import { listWorktrees } from '@/lib/runtimes/worktree'
-import { dbRestBase } from '@/lib/db/rest'
+import { db, type DbResult } from '@/lib/db'
 
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+/**
+ * Bound a query so a hung database cannot hold the health check open. Rejects
+ * rather than resolving empty — a health probe that pretends is worse than none.
+ */
+function withTimeout(query: PromiseLike<DbResult>, ms: number): Promise<DbResult> {
+  return Promise.race([
+    Promise.resolve(query),
+    new Promise<DbResult>((_, reject) =>
+      setTimeout(() => reject(new Error(`database query timed out after ${ms}ms`)), ms),
+    ),
+  ])
+}
 
 export async function GET() {
   const result: Record<string, unknown> = { ok: true, ts: new Date().toISOString() }
 
   const dbStart = Date.now()
   try {
-    const res = await fetch(
-      `${dbRestBase()}/rest/v1/issues?status=neq.closed&select=status&limit=500`,
-      { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }, signal: AbortSignal.timeout(5000) }
+    const { data, error } = await withTimeout(
+      db().from('issues').select('status').neq('status', 'closed').limit(500),
+      5000,
     )
     const dbLatency = Date.now() - dbStart
-    if (res.ok) {
-      const rows = await res.json() as Array<{ status: string }>
+    if (!error) {
+      const rows = (data ?? []) as Array<{ status: string }>
       result.db = { reachable: true, latencyMs: dbLatency }
       result.counts = {
         open:       rows.filter(r => r.status === 'open').length,
@@ -31,7 +42,7 @@ export async function GET() {
       }
     } else {
       result.ok = false
-      result.db = { reachable: false, latencyMs: dbLatency, error: `HTTP ${res.status}` }
+      result.db = { reachable: false, latencyMs: dbLatency, error: error.message }
     }
   } catch (e) {
     result.ok = false
@@ -40,14 +51,20 @@ export async function GET() {
 
   try { result.runtimes = await listRuntimes() } catch { result.runtimes = [] }
 
-  // Phase 2.4: Read heartbeat state from Supabase agent_memory_files
+  // Phase 2.4: Read heartbeat state from agent_memory_files
   try {
-    const hbRes = await fetch(
-      `${dbRestBase()}/rest/v1/agent_memory_files?agent_id=eq.global&memory_type=eq.heartbeat_state&select=content&limit=1`,
-      { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }, signal: AbortSignal.timeout(3000) }
+    const { data: hbData, error: hbError } = await withTimeout(
+      db()
+        .from('agent_memory_files')
+        .select('content')
+        .eq('agent_id', 'global')
+        .eq('memory_type', 'heartbeat_state')
+        .limit(1),
+      3000,
     )
-    if (hbRes.ok) {
-      const rows = await hbRes.json() as Array<{ content: string }>
+    if (hbError) throw new Error(hbError.message)
+    {
+      const rows = (hbData ?? []) as Array<{ content: string }>
       if (rows[0]?.content) {
         const parsed: Record<string, string> = {}
         for (const line of rows[0].content.split('\n')) {

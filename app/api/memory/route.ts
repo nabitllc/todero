@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withPermission } from '@/lib/rbac-middleware'
-import { dbRestBase } from '@/lib/db/rest'
+import { db } from '@/lib/db'
 
 // Memory is now read from Supabase agent_memory_files (AGENT_CONTEXT_SOURCE=db).
 // FS fallback removed — getFromFS() was dead code once DB mode was activated.
@@ -55,12 +55,15 @@ export async function GET(req: NextRequest) {
 
 async function getFromDB() {
   try {
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-    const res = await fetch(
-      `${dbRestBase()}/rest/v1/agent_memory_files?agent_id=eq.global&memory_type=eq.daily&order=date_key.desc&limit=30`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
-    )
-    const rows = await res.json() as Array<{ date_key: string; content: string; updated_at: string }>
+    const { data, error } = await db()
+      .from('agent_memory_files')
+      .select('date_key,content,updated_at')
+      .eq('agent_id', 'global')
+      .eq('memory_type', 'daily')
+      .order('date_key', { ascending: false })
+      .limit(30)
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as Array<{ date_key: string; content: string; updated_at: string }>
 
     const now = new Date()
     const today = now.toISOString().slice(0, 10)

@@ -1,13 +1,22 @@
 // TOD-799: Token ledger middleware + TOD-XXX (2026-04-10) completion hook.
-// Records each spawn to the token_ledger Supabase table. Best-effort: silently
-// no-ops if the table is missing (warns once then suppresses). Runtime-agnostic:
-// Claude Code, Codex, Cursor, OpenAI API adapters all write to the same table.
+// Records each spawn to the token_ledger table through the database seam.
+// Best-effort: silently no-ops if the table is missing (warns once then
+// suppresses). Runtime-agnostic: Claude Code, Codex, Cursor and OpenAI API
+// adapters all write to the same table.
 
-import { dbRestBase } from '@/lib/db/rest'
-const SUPA_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+import { db, type DbError } from '@/lib/db'
 
 let tableMissingWarned = false
+
+/** Postgres/PostgREST codes that mean "this table was never migrated". */
+const MISSING_TABLE_CODES = new Set(['42P01', 'PGRST205', 'PGRST202'])
+
+function isMissingTable(error: DbError): boolean {
+  return (
+    (error.code != null && MISSING_TABLE_CODES.has(error.code))
+    || /does not exist|could not find the table/i.test(error.message)
+  )
+}
 
 export interface TokenLedgerEntry {
   agentId: string
@@ -34,30 +43,20 @@ export function recordSpawn(entry: TokenLedgerEntry): void {
         metadata: entry.metadata ?? null,
         status: 'spawned',
       }
-      const res = await fetch(`${dbRestBase()}/rest/v1/token_ledger`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPA_KEY,
-          'Authorization': `Bearer ${SUPA_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        if (res.status === 404 || res.status === 400) {
+      const { error } = await db().from('token_ledger').insert(body)
+      if (error) {
+        if (isMissingTable(error)) {
           if (!tableMissingWarned) {
             tableMissingWarned = true
             console.warn(
-              `[token-ledger] table not found (HTTP ${res.status}). ` +
-              `Run migrations/008_token_ledger.sql in Supabase Dashboard SQL editor. ` +
+              `[token-ledger] table not found (${error.code ?? 'no code'}). ` +
+              `Run migrations/008_token_ledger.sql against the database. ` +
               `Subsequent warnings suppressed.`
             )
           }
           return
         }
-        const text = await res.text().catch(() => '')
-        console.warn(`[token-ledger] HTTP ${res.status}: ${text.slice(0, 200)}`)
+        console.warn(`[token-ledger] insert failed: ${error.message.slice(0, 200)}`)
       }
     } catch (err) {
       console.warn(
@@ -91,13 +90,14 @@ export function recordCompletion(entry: CompletionEntry): void {
   void (async () => {
     try {
       // Find the token_ledger row for this log file
-      const findUrl = `${dbRestBase()}/rest/v1/token_ledger?log_file=eq.${encodeURIComponent(entry.logFile)}&select=id&order=spawned_at.desc&limit=1`
-      const findRes = await fetch(findUrl, {
-        headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` },
-      })
-      if (!findRes.ok) return
-      const rows = await findRes.json() as Array<{ id: string }>
-      const row = rows?.[0]
+      const { data, error: findError } = await db()
+        .from('token_ledger')
+        .select('id')
+        .eq('log_file', entry.logFile)
+        .order('spawned_at', { ascending: false })
+        .limit(1)
+      if (findError) return
+      const row = ((data ?? []) as Array<{ id: string }>)[0]
       if (!row) return
 
       const updatePayload: Record<string, unknown> = {
@@ -117,16 +117,7 @@ export function recordCompletion(entry: CompletionEntry): void {
         }
       }
 
-      await fetch(`${dbRestBase()}/rest/v1/token_ledger?id=eq.${row.id}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': SUPA_KEY,
-          'Authorization': `Bearer ${SUPA_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify(updatePayload),
-      })
+      await db().from('token_ledger').update(updatePayload).eq('id', row.id)
     } catch (err) {
       console.warn(`[token-ledger:recordCompletion] ${err instanceof Error ? err.message : String(err)}`)
     }

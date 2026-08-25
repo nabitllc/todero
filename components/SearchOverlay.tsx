@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, X } from 'lucide-react'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 
 interface SearchOverlayProps {
   open: boolean
@@ -41,7 +41,7 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
       try {
         const encoded = encodeURIComponent('%' + query + '%')
         const res = await fetch(
-          dbRestBase() + '/rest/v1/issues?or=(title.ilike.' + encoded + ',task_key.ilike.' + encoded + ')&order=updated_at.desc&limit=15&select=task_key,title,status',
+          dbUrl('issues?or=(title.ilike.' + encoded + ',task_key.ilike.' + encoded + ')&order=updated_at.desc&limit=15&select=task_key,title,status'),
           { headers: dbRestHeaders() }
         )
         const data = await res.json()

@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
 import { Button, EmptyState, Badge, PriorityBadge } from '@/components/ui'
 import { Radio } from 'lucide-react'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
 
@@ -16,14 +16,14 @@ function AttentionAndShipped({ agents }: { agents: any[] }) {
   React.useEffect(() => {
     const h = dbRestHeaders() as Record<string, string>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
-    fetchJson<any[]>(`${dbRestBase()}/rest/v1/issues?status=in.(code_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`, {headers: h})
+    fetchJson<any[]>(dbUrl(`issues?status=in.(code_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`), {headers: h})
       .then(res => {
         if (!res.ok) { setError(res.error); return }
         setError(null)
         if (Array.isArray(res.data)) setData(prev => ({...prev, attention: res.data}))
       })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
-    fetchJson<any[]>(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`, {headers: h})
+    fetchJson<any[]>(dbUrl(`issues?status=in.(completed,released,closed)&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`), {headers: h})
       .then(res => {
         if (!res.ok) { setError(res.error); return }
         setError(null)

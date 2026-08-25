@@ -5,14 +5,29 @@
 // posts to Discord #alerts, and creates an inbox request.
 // Resets the counter when an issue succeeds (test_status=passed).
 
-import { dbRestBase } from '@/lib/db/rest'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+import { db } from '@/lib/db'
 const DISCORD_ALERTS_CHANNEL = '1485333335868834063'
 
-const HEADERS = {
-  'apikey': SUPA_KEY,
-  'Authorization': `Bearer ${SUPA_KEY}`,
-  'Content-Type': 'application/json',
+/** Read one `agent_memory` value, or null when absent or unreadable. */
+async function readMemoryValue<T>(agentId: string, key: string): Promise<T | null> {
+  const { data, error } = await db()
+    .from('agent_memory')
+    .select('value')
+    .eq('agent_id', agentId)
+    .eq('key', key)
+    .limit(1)
+  if (error) return null
+  return ((data ?? []) as Array<{ value: T }>)[0]?.value ?? null
+}
+
+/** Write one `agent_memory` value, replacing whatever was there. */
+async function writeMemoryValue(agentId: string, key: string, value: unknown): Promise<void> {
+  await db().from('agent_memory').upsert({
+    agent_id: agentId,
+    key,
+    value,
+    updated_at: new Date().toISOString(),
+  })
 }
 
 function postDiscordAlert(content: string) {
@@ -35,13 +50,8 @@ interface LoopBreakerState {
 
 /** Returns true if the agent has been paused by the loop breaker. */
 export async function isAgentPaused(agentId: string): Promise<boolean> {
-  const res = await fetch(
-    `${dbRestBase()}/rest/v1/agent_memory?agent_id=eq.${agentId}&key=eq.is_paused&limit=1`,
-    { headers: HEADERS }
-  )
-  if (!res.ok) return false
-  const data = await res.json() as Array<{ value: { paused?: boolean } }>
-  return data[0]?.value?.paused === true
+  const value = await readMemoryValue<{ paused?: boolean }>(agentId, 'is_paused')
+  return value?.paused === true
 }
 
 /** Record a test failure for the agent; pause if 3 consecutive failures reached. */
@@ -51,31 +61,16 @@ export async function recordAgentFailure(
   issueTitle?: string
 ): Promise<void> {
   // Read current consecutive failure count
-  const stateRes = await fetch(
-    `${dbRestBase()}/rest/v1/agent_memory?agent_id=eq.${agentId}&key=eq.loop_breaker&limit=1`,
-    { headers: HEADERS }
-  )
-  const stateData = stateRes.ok
-    ? (await stateRes.json() as Array<{ value: LoopBreakerState }>)
-    : []
-  const current = stateData[0]?.value ?? { consecutive_failures: 0, last_failure_at: '' }
+  const current = (await readMemoryValue<LoopBreakerState>(agentId, 'loop_breaker'))
+    ?? { consecutive_failures: 0, last_failure_at: '' }
   const newCount = (current.consecutive_failures ?? 0) + 1
 
   // Persist updated state
-  await fetch(`${dbRestBase()}/rest/v1/agent_memory`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      agent_id: agentId,
-      key: 'loop_breaker',
-      value: {
-        consecutive_failures: newCount,
-        last_failure_at: new Date().toISOString(),
-        last_issue_id: issueId,
-      } satisfies LoopBreakerState,
-      updated_at: new Date().toISOString(),
-    }),
-  })
+  await writeMemoryValue(agentId, 'loop_breaker', {
+    consecutive_failures: newCount,
+    last_failure_at: new Date().toISOString(),
+    last_issue_id: issueId,
+  } satisfies LoopBreakerState)
 
   // Append to per-agent failure history (queryable audit log)
   const historyEntry = {
@@ -84,23 +79,13 @@ export async function recordAgentFailure(
     failed_at: new Date().toISOString(),
     consecutive_count: newCount,
   }
-  const histRes = await fetch(
-    `${dbRestBase()}/rest/v1/agent_memory?agent_id=eq.${agentId}&key=eq.loop_breaker_history&limit=1`,
-    { headers: HEADERS }
-  )
-  const histData = histRes.ok ? (await histRes.json() as Array<{ value: unknown[] }>) : []
-  const existingHistory: unknown[] = Array.isArray(histData[0]?.value) ? histData[0].value : []
-  await fetch(`${dbRestBase()}/rest/v1/agent_memory`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      agent_id: agentId,
-      key: 'loop_breaker_history',
-      // Keep last 50 entries
-      value: [...existingHistory.slice(-49), historyEntry],
-      updated_at: new Date().toISOString(),
-    }),
-  })
+  const stored = await readMemoryValue<unknown[]>(agentId, 'loop_breaker_history')
+  const existingHistory: unknown[] = Array.isArray(stored) ? stored : []
+  // Keep last 50 entries
+  await writeMemoryValue(agentId, 'loop_breaker_history', [
+    ...existingHistory.slice(-49),
+    historyEntry,
+  ])
 
   if (newCount >= MAX_CONSECUTIVE_FAILURES) {
     await pauseAgent(agentId, issueId, issueTitle)
@@ -109,48 +94,28 @@ export async function recordAgentFailure(
 
 /** Reset consecutive failure count on agent success (test passed / issue approved). */
 export async function resetAgentFailures(agentId: string): Promise<void> {
-  await fetch(`${dbRestBase()}/rest/v1/agent_memory`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      agent_id: agentId,
-      key: 'loop_breaker',
-      value: { consecutive_failures: 0, last_failure_at: new Date().toISOString() } satisfies LoopBreakerState,
-      updated_at: new Date().toISOString(),
-    }),
-  })
+  await writeMemoryValue(agentId, 'loop_breaker', {
+    consecutive_failures: 0,
+    last_failure_at: new Date().toISOString(),
+  } satisfies LoopBreakerState)
 }
 
 async function pauseAgent(agentId: string, issueId: string, issueTitle?: string): Promise<void> {
   const now = new Date().toISOString()
 
   // Mark agent as paused in agent_memory
-  await fetch(`${dbRestBase()}/rest/v1/agent_memory`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      agent_id: agentId,
-      key: 'is_paused',
-      value: {
-        paused: true,
-        paused_at: now,
-        reason: `Loop breaker: ${MAX_CONSECUTIVE_FAILURES} consecutive test failures`,
-        last_issue_id: issueId,
-      },
-      updated_at: now,
-    }),
+  await writeMemoryValue(agentId, 'is_paused', {
+    paused: true,
+    paused_at: now,
+    reason: `Loop breaker: ${MAX_CONSECUTIVE_FAILURES} consecutive test failures`,
+    last_issue_id: issueId,
   })
 
   // Mark the failing issue as is_blocked so main (KAOS) picks it up for triage
-  await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${issueId}`, {
-    method: 'PATCH',
-    headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-    body: JSON.stringify({
-      is_blocked: true,
-      blocked_by: 'system:loop_breaker',
-      updated_at: now,
-    }),
-  })
+  await db()
+    .from('issues')
+    .update({ is_blocked: true, blocked_by: 'system:loop_breaker', updated_at: now })
+    .eq('id', issueId)
 
   // Post to Discord #alerts — agent pauses are otherwise silent
   postDiscordAlert(
@@ -163,20 +128,16 @@ async function pauseAgent(agentId: string, issueId: string, issueTitle?: string)
   )
 
   // Create inbox request for human review (no timeout — human must un-pause)
-  await fetch(`${dbRestBase()}/rest/v1/inbox`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-    body: JSON.stringify({
-      agent: agentId,
-      type: 'loop_breaker_pause',
-      context: {
-        reason: `${MAX_CONSECUTIVE_FAILURES} consecutive spawn failures`,
-        last_issue_id: issueId,
-        last_issue_title: issueTitle ?? null,
-        paused_at: now,
-        action_required: `Review agent '${agentId}' failures and un-pause via: PATCH /api/agent-pause body={"agent":"${agentId}","paused":false}`,
-      },
-      status: 'pending',
-    }),
+  await db().from('inbox').insert({
+    agent: agentId,
+    type: 'loop_breaker_pause',
+    context: {
+      reason: `${MAX_CONSECUTIVE_FAILURES} consecutive spawn failures`,
+      last_issue_id: issueId,
+      last_issue_title: issueTitle ?? null,
+      paused_at: now,
+      action_required: `Review agent '${agentId}' failures and un-pause via: PATCH /api/agent-pause body={"agent":"${agentId}","paused":false}`,
+    },
+    status: 'pending',
   })
 }

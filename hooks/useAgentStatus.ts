@@ -4,14 +4,14 @@
 
 import { useEffect } from 'react';
 import { SUPA_AGENTS } from '@/components/office/officeConstants';
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser';
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser';
 import type { AgentRunInfo, AgentRunStatus } from '@/components/office/officeConstants';
 
 export type { AgentRunInfo, AgentRunStatus };
 
 export async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
-    `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
+    dbUrl(`agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`),
     { headers: dbRestHeaders() }
   );
   if (!res.ok) return {};

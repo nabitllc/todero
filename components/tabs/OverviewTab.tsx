@@ -8,7 +8,7 @@ import ActiveAgentsCard from '@/components/ActiveAgentsCard'
 import ActivityFeed from '@/components/ActivityFeed'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { readApiError, useApiData, type ApiError } from '@/hooks/useApiData'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 
 // TOD-654 follow-up: the Overview is the app's front door, and every panel on it
 // used to parse every response body without checking `res.ok`. A 403/500 body parses
@@ -39,14 +39,13 @@ interface SprintRow { sprint_number?: number | string; start_date?: string; end_
 type Fetched<T> = { ok: true; data: T } | { ok: false; error: ApiError }
 
 /**
- * Short, readable label for the banner. Local routes keep their path; the
- * Supabase REST URLs collapse to `supabase/rest/v1/<table>` because their
- * querystrings run to hundreds of characters.
+ * Short, readable label for the banner: the path without its querystring,
+ * which on the database proxy runs to hundreds of characters.
  */
 function endpointLabel(url: string): string {
   const path = url.split('?')[0]
   if (path.startsWith('/')) return path
-  try { return `supabase${new URL(path).pathname}` } catch { return path }
+  try { return new URL(path).pathname } catch { return path }
 }
 
 /** fetch + parse that hands back the failure instead of an empty array. */
@@ -110,7 +109,7 @@ function NeedsAttentionBlock() {
   const [reloadKey, reload] = useReload()
   useEffect(() => {
     let cancelled = false
-    fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?assignee=eq.main&status=in.(open,backlog)&priority=in.(critical,high)&select=task_key,title,project,priority,blocked_by,description&order=priority.asc&limit=5`, {
+    fetchJson<IssueRow[]>(dbUrl(`issues?assignee=eq.main&status=in.(open,backlog)&priority=in.(critical,high)&select=task_key,title,project,priority,blocked_by,description&order=priority.asc&limit=5`), {
       headers: SUPA_HEADERS,
     }).then(res => {
       if (cancelled) return
@@ -165,7 +164,7 @@ function DoneYesterdayWins() {
     const now = new Date()
     const yStart = new Date(now); yStart.setDate(now.getDate()-1); yStart.setHours(0,0,0,0)
     const yEnd = new Date(now); yEnd.setHours(0,0,0,0)
-    fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`, {
+    fetchJson<IssueRow[]>(dbUrl(`issues?status=in.(completed,released,closed)&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`), {
       headers: SUPA_HEADERS,
     }).then(res => {
       if (cancelled) return
@@ -213,10 +212,10 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
     let cancelled = false
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
     Promise.all([
-      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`, { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(dbUrl(`issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`), { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(dbUrl(`issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`), { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(dbUrl(`issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`), { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(dbUrl(`issues?parent_id=not.is.null&select=parent_id&limit=1000`), { headers: SUPA_HEADERS }),
     ]).then(([p0, blocked, features, children]) => {
       if (cancelled) return
       // Any leg refusing means the three counts below would be fiction.
@@ -283,9 +282,9 @@ function StandupCard() {
     let cancelled = false
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
     Promise.all([
-      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`, { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`, { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(dbUrl(`issues?status=in.(completed,released,closed)&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`), { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(dbUrl(`issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`), { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(dbUrl(`issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`), { headers: SUPA_HEADERS }),
     ]).then(([shipped, inFlight, blockers]) => {
       if (cancelled) return
       // "Nothing shipped" / "No blockers" must never stand in for a refusal.
@@ -358,7 +357,7 @@ function SprintProgressCard() {
     const headers = SUPA_HEADERS
     ;(async () => {
       // Fetch active sprint dynamically
-      const sprints = await fetchJson<SprintRow[]>(`${dbRestBase()}/rest/v1/sprints?status=eq.active&select=sprint_number,start_date,end_date&limit=1`, { headers })
+      const sprints = await fetchJson<SprintRow[]>(dbUrl(`sprints?status=eq.active&select=sprint_number,start_date,end_date&limit=1`), { headers })
       if (cancelled) return
       if (!sprints.ok) { setError(sprints.error); setSprintData(null); return }
       setError(null)
@@ -369,7 +368,7 @@ function SprintProgressCard() {
       setSprintDate(activeDate)
 
       // Fetch issues for active sprint
-      const issues = await fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?sprint=eq.${activeDate}&select=id,status`, { headers })
+      const issues = await fetchJson<IssueRow[]>(dbUrl(`issues?sprint=eq.${activeDate}&select=id,status`), { headers })
       if (cancelled) return
       if (!issues.ok) { setError(issues.error); setSprintData(null); return }
       const rows = rowsOf(issues)
@@ -384,11 +383,11 @@ function SprintProgressCard() {
       // Prior sprint, for the velocity badge only. Best-effort on purpose: if it
       // fails the badge is omitted, which claims nothing — unlike the counts
       // above, which would be a lie if they were shown over a refused request.
-      const priorSprints = await fetchJson<SprintRow[]>(`${dbRestBase()}/rest/v1/sprints?status=eq.closed&select=sprint_number,start_date&order=created_at.desc&limit=1`, { headers })
+      const priorSprints = await fetchJson<SprintRow[]>(dbUrl(`sprints?status=eq.closed&select=sprint_number,start_date&order=created_at.desc&limit=1`), { headers })
       if (cancelled || !priorSprints.ok) return
       const priorDate = Array.isArray(priorSprints.data) ? priorSprints.data[0]?.start_date : undefined
       if (!priorDate) return
-      const priorIssues = await fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?sprint=eq.${priorDate}&select=id,status`, { headers })
+      const priorIssues = await fetchJson<IssueRow[]>(dbUrl(`issues?sprint=eq.${priorDate}&select=id,status`), { headers })
       if (cancelled || !priorIssues.ok) return
       const priorRows = rowsOf(priorIssues)
       setPriorData({ total: priorRows.length, done: priorRows.filter(i => isDone(i.status)).length })
@@ -493,7 +492,7 @@ function ProjectBreakdownBars({ project }: { project: string }) {
   const [reloadKey, reload] = useReload()
   useEffect(() => {
     let cancelled = false
-    fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`, {
+    fetchJson<IssueRow[]>(dbUrl(`issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`), {
       headers: SUPA_HEADERS,
     }).then(res => {
       if (cancelled) return

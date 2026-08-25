@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import AgentOffice from '@/components/AgentOffice'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 
 function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}> }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
@@ -13,7 +13,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
 
   useEffect(() => {
     const fetchRuns = () => {
-      const url = `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`
+      const url = dbUrl(`agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
       fetchJson<any[]>(url, { headers: dbRestHeaders() }).then(res => {
         // TOD-654: a refused query keeps the banner up instead of showing

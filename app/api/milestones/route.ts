@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server'
-import { dbRestBase } from '@/lib/db/rest'
-
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+import { db, dbMissingEnv } from '@/lib/db'
 
 export async function GET() {
-  const res = await fetch(`${dbRestBase()}/rest/v1/milestones?order=project,name&select=*`, {
-    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` },
-    next: { revalidate: 60 }
-  })
-  const data = await res.json()
-  return NextResponse.json(data)
+  const missing = dbMissingEnv()
+  if (missing.length > 0) {
+    return NextResponse.json(
+      { error: `Database is not configured. Missing: ${missing.join(', ')}.`, missingEnv: missing },
+      { status: 503 },
+    )
+  }
+
+  const { data, error } = await db()
+    .from('milestones')
+    .select('*')
+    .order('project')
+    .order('name')
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+  return NextResponse.json(data ?? [])
 }

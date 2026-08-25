@@ -38,7 +38,7 @@ import SearchOverlay from '@/components/SearchOverlay'
 import TopBar from '@/components/TopBar'
 import HubSwitcher from '@/components/HubSwitcher'
 import InboxDrawer from '@/components/InboxDrawer'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 
 const LUCIDE_ICONS: Record<string, any> = {
@@ -272,7 +272,7 @@ export default function Home() {
   useEffect(() => {
     const prevRunsRef: { current: Record<string,string> } = { current: {} }
     const fetchRuns = () => {
-      const runsUrl = `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`
+      const runsUrl = dbUrl(`agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
       fetchJson<any[]>(runsUrl, { headers: dbRestHeaders() }).then(res => {
         if (!res.ok) { addGlobalToast(formatApiError(res.error, 'agent runs unavailable'), TOAST_COLORS.error); return }
@@ -293,7 +293,7 @@ export default function Home() {
       })
     }
     const fetchAgentIssues = () => {
-      const countsUrl = `${dbRestBase()}/rest/v1/issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&select=assignee&limit=500`
+      const countsUrl = dbUrl(`issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&select=assignee&limit=500`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
       fetchJson<any[]>(countsUrl, { headers: dbRestHeaders() }).then(res => {
         // A failed poll leaves the previous counts alone rather than zeroing them.
@@ -310,7 +310,7 @@ export default function Home() {
 
   // Calendar issues
   useEffect(() => {
-    const calUrl = `${dbRestBase()}/rest/v1/issues?due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`
+    const calUrl = dbUrl(`issues?due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
     fetchJson<any[]>(calUrl, { headers: dbRestHeaders() }).then(res => {
       if (!res.ok) { setCalendarError(res.error); setCalendarIssues(null); return }
@@ -323,7 +323,7 @@ export default function Home() {
   useEffect(() => {
     const since = new Date(Date.now() - 7 * 86400000).toISOString()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
-    fetchJson<any[]>(`${dbRestBase()}/rest/v1/issues?updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`, {
+    fetchJson<any[]>(dbUrl(`issues?updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`), {
       headers: dbRestHeaders()
     }).then(res => {
       if (!res.ok) { setActivityError(res.error); setIssueActivity(null); return }
@@ -529,7 +529,7 @@ export default function Home() {
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} activityError={activityError} onRetryActivity={() => setActivityReload(n => n + 1)} statusError={statusError} onRetryStatus={loadStatus} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
           {tab === 'team' && <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
-          {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} />}
+          {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} error={memError} onRetry={refetchMem} openMem={openMem} setOpenMem={setOpenMem} />}
           {tab === 'board' && <BoardTab featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} projectFilter={selectedBusiness} />}

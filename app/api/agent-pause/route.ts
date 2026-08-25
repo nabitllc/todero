@@ -6,13 +6,21 @@
 //   paused=true:  manually pause an agent (e.g. for maintenance)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { dbRestBase } from '@/lib/db/rest'
+import { db } from '@/lib/db'
 
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-const HEADERS = {
-  'apikey': SUPA_KEY,
-  'Authorization': `Bearer ${SUPA_KEY}`,
-  'Content-Type': 'application/json',
+/** One `agent_memory` key/value row. */
+type MemoryRow = { value: Record<string, unknown> }
+
+/** Read a single agent_memory key, or `{}` when it is absent or unreadable. */
+async function readMemory(agentId: string, key: string): Promise<Record<string, unknown>> {
+  const { data, error } = await db()
+    .from('agent_memory')
+    .select('value')
+    .eq('agent_id', agentId)
+    .eq('key', key)
+    .limit(1)
+  if (error) return {}
+  return ((data ?? []) as MemoryRow[])[0]?.value ?? {}
 }
 
 /** GET /api/agent-pause?agent=<agentId> — returns pause state for the agent */
@@ -22,16 +30,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing ?agent= parameter' }, { status: 400 })
   }
 
-  const [pauseRes, breakerRes] = await Promise.all([
-    fetch(`${dbRestBase()}/rest/v1/agent_memory?agent_id=eq.${agentId}&key=eq.is_paused&limit=1`, { headers: HEADERS }),
-    fetch(`${dbRestBase()}/rest/v1/agent_memory?agent_id=eq.${agentId}&key=eq.loop_breaker&limit=1`, { headers: HEADERS }),
+  const [pauseState, breakerState] = await Promise.all([
+    readMemory(agentId, 'is_paused'),
+    readMemory(agentId, 'loop_breaker'),
   ])
-
-  const pauseData = pauseRes.ok ? await pauseRes.json() as Array<{ value: Record<string, unknown> }> : []
-  const breakerData = breakerRes.ok ? await breakerRes.json() as Array<{ value: Record<string, unknown> }> : []
-
-  const pauseState = pauseData[0]?.value ?? {}
-  const breakerState = breakerData[0]?.value ?? {}
 
   return NextResponse.json({
     agent: agentId,
@@ -63,34 +65,26 @@ export async function PATCH(req: NextRequest) {
   const now = new Date().toISOString()
 
   // Update is_paused record
-  await fetch(`${dbRestBase()}/rest/v1/agent_memory`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      agent_id: agentId,
-      key: 'is_paused',
-      value: {
-        paused,
-        paused_at: paused ? now : null,
-        reason: paused ? (body.reason ?? 'manual pause') : null,
-        cleared_at: paused ? null : now,
-        cleared_by: paused ? null : (body.cleared_by ?? 'human'),
-      },
-      updated_at: now,
-    }),
+  await db().from('agent_memory').upsert({
+    agent_id: agentId,
+    key: 'is_paused',
+    value: {
+      paused,
+      paused_at: paused ? now : null,
+      reason: paused ? (body.reason ?? 'manual pause') : null,
+      cleared_at: paused ? null : now,
+      cleared_by: paused ? null : (body.cleared_by ?? 'human'),
+    },
+    updated_at: now,
   })
 
   // When un-pausing: also reset consecutive_failures counter
   if (!paused) {
-    await fetch(`${dbRestBase()}/rest/v1/agent_memory`, {
-      method: 'POST',
-      headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({
-        agent_id: agentId,
-        key: 'loop_breaker',
-        value: { consecutive_failures: 0, last_failure_at: now },
-        updated_at: now,
-      }),
+    await db().from('agent_memory').upsert({
+      agent_id: agentId,
+      key: 'loop_breaker',
+      value: { consecutive_failures: 0, last_failure_at: now },
+      updated_at: now,
     })
   }
 

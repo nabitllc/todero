@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { readApiError, type ApiError } from '@/hooks/useApiData'
-import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 
 
 const STALE_MINUTES = 60   // >60m without activity = stale (amber warning)
@@ -117,7 +117,7 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
       const [agentsRes, issuesRes] = await Promise.all([
         fetch('/api/agents'),
         fetch(
-          `${dbRestBase()}/rest/v1/issues?status=eq.in_progress&select=task_key,title,status,assignee,worked_by&limit=30`,
+          dbUrl(`issues?status=eq.in_progress&select=task_key,title,status,assignee,worked_by&limit=30`),
           { headers: dbRestHeaders() }
         ),
       ])
@@ -145,7 +145,7 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
         return
       }
       if (!issuesRes.ok) {
-        setError(await readApiError(issuesRes, 'supabase/rest/v1/issues'))
+        setError(await readApiError(issuesRes, '/api/db/issues'))
         setAgents([])
         return
       }
