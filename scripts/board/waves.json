@@ -1,108 +1,145 @@
 {
-  "note": "Wave records for the flight board. Each wave appends one entry. Tokens are measured from the workflow journals; cost is an estimated upper bound (see method on the board).",
-  "harnessHistory": [
-    { "label": "W2 start", "score": null },
-    { "label": "W2 end", "score": 8.7 },
-    { "label": "W3 start", "score": 6.2 },
-    { "label": "now", "score": 9.3 }
-  ],
-  "waves": [
-    {
-      "n": 0,
-      "name": "Cold start",
-      "chip": "done",
-      "when": "24 Aug · 20:13 → 20:18",
-      "minutes": 5,
-      "agents": 0,
-      "tokens": 0,
-      "cost": 0,
-      "lede": "Booted the app, authenticated, and probed all 61 reachable GET routes to establish an honest baseline before any agent touched the code.",
-      "before": [
-        "No running instance and no evidence",
-        "Feature status unknown — claimed versus real"
-      ],
-      "after": [
-        "Dev server live, owner session established",
-        "4 hard 500s and 4 blocking 403s located",
-        "Local Ollama confirmed: 3 coder models, tool-capable"
-      ]
-    },
-    {
-      "n": 1,
-      "name": "Recon & baseline",
-      "chip": "done",
-      "when": "24 Aug · 20:20 → 20:56",
-      "minutes": 36,
-      "agents": 12,
-      "tokens": 1399931,
-      "cost": 10.4,
-      "lede": "Three recon agents swept the field for what the best mission controls actually do. Eight auditors then graded every Todero surface against those bars — fresh context each, looking at the running app, none allowed to read a builder's summary.",
-      "before": [
-        "Baseline defects known, but no scores",
-        "No agreed benchmark to beat"
-      ],
-      "after": [
-        "Benchmark set from 3 live web sweeps",
-        "9 channels scored: <b>1.0 / 10</b> against a 9",
-        "10 pieces selected, each with a runnable acceptance test",
-        "Two security findings escalated to the owner"
-      ]
-    },
-    {
-      "n": 2,
-      "name": "Foundations",
-      "chip": "done",
-      "when": "24 Aug · 21:05 → 23:45",
-      "minutes": 160,
-      "agents": 50,
-      "tokens": 6260000,
-      "cost": 46.3,
-      "lede": "Ten pieces across three concurrent lanes, each looping builder → blind critic → builder. This wave used prose acceptance criteria judged entirely by frontier critics — expensive, and it let a regression sit undetected for an hour.",
-      "before": [
-        "<code>owner</code> → /api/issues: <b>403</b>. Anonymous: <b>200</b>",
-        "<code>service_role</code> JWT in 7 client components",
-        "macOS paths compiled into 12 files",
-        "/api/agents 500 · 0 runtimes available"
-      ],
-      "after": [
-        "Anonymous → <b>401</b>. Owner → <b>200</b>",
-        "JWT gone from every client component",
-        "Zero macOS paths in app/ or lib/",
-        "Ollama reachable through the runtime seam",
-        "21 verdicts, <b>2 passed</b> — pieces entered at 0–1 and were still rejected at 4–7"
-      ]
-    },
-    {
-      "n": 3,
-      "name": "Truth",
-      "chip": "running",
-      "when": "25 Aug · 00:05 →",
-      "minutes": null,
-      "agents": 51,
-      "tokens": 4620000,
-      "cost": 20.5,
-      "lede": "Nothing in the product may assert something untrue. Eight pieces, and a changed method: a deterministic harness now gates every piece, and a frontier critic only runs once the script is green. Checks are written by the orchestrator, never by the builder being graded.",
-      "before": [
-        "Harness <b>18/29</b> — 4 critical failures",
-        "Issue list silently capped at 1,000 of 3,071 rows",
-        "Six Infra lights green because <code>'ok'</code> is a literal",
-        "Office fabricated meetings from a 5-second guess",
-        "Tabs rendered <code>0</code> over a 403"
-      ],
-      "after": [
-        "Harness <b>27/29 · 9.3/10</b>, zero critical",
-        "True total reported: <b>3,071</b> with a has_more flag",
-        "Status reports <code>unknown</code> and <code>checkedAt</code>",
-        "Fabricated meetings and canned minutes deleted",
-        "No component parses a body without checking <code>res.ok</code>"
-      ]
-    }
-  ],
-  "planned": [
-    { "n": 4, "name": "Runs anywhere, runs an agent", "detail": "SQLite behind the db seam · boot-time migrations · agent registration and heartbeat · the Hermes memory loop · supervisor-enforced ceilings · one real task on local qwen, end to end." },
-    { "n": 5, "name": "Brain2 alignment", "detail": "Agent roster from vault manifests · model tier by cost-of-being-wrong · one severity vocabulary · skill proposals into _pending/." },
-    { "n": 6, "name": "Operator surface", "detail": "20 tabs to 7 · deep links · the pixel-agents event source and speech bubbles · mobile at 375px · contrast." },
-    { "n": 7, "name": "Neon", "detail": "Repository layer, ~24 typed modules. Gated on the seam, error surfacing, and a green coherence pass." },
-    { "n": 8, "name": "Judgment", "detail": "Fresh blind re-score of all 13 channels. Loop back into whichever scored lowest." }
-  ]
+ "note": "Wave records for the flight board. Each wave appends one entry. Tokens are measured from the workflow journals; cost is an estimated upper bound (see method on the board).",
+ "harnessHistory": [
+  {
+   "label": "W2 start",
+   "score": null
+  },
+  {
+   "label": "W2 end",
+   "score": 8.7
+  },
+  {
+   "label": "W3 start",
+   "score": 6.2
+  },
+  {
+   "label": "now",
+   "score": 9.3
+  },
+  {
+   "label": "ship gate",
+   "score": 10
+  }
+ ],
+ "waves": [
+  {
+   "n": 0,
+   "name": "Cold start",
+   "chip": "done",
+   "when": "24 Aug · 20:13 → 20:18",
+   "minutes": 5,
+   "agents": 0,
+   "tokens": 0,
+   "cost": 0,
+   "lede": "Booted the app, authenticated, and probed all 61 reachable GET routes to establish an honest baseline before any agent touched the code.",
+   "before": [
+    "No running instance and no evidence",
+    "Feature status unknown — claimed versus real"
+   ],
+   "after": [
+    "Dev server live, owner session established",
+    "4 hard 500s and 4 blocking 403s located",
+    "Local Ollama confirmed: 3 coder models, tool-capable"
+   ]
+  },
+  {
+   "n": 1,
+   "name": "Recon & baseline",
+   "chip": "done",
+   "when": "24 Aug · 20:20 → 20:56",
+   "minutes": 36,
+   "agents": 12,
+   "tokens": 1399931,
+   "cost": 10.4,
+   "lede": "Three recon agents swept the field for what the best mission controls actually do. Eight auditors then graded every Todero surface against those bars — fresh context each, looking at the running app, none allowed to read a builder's summary.",
+   "before": [
+    "Baseline defects known, but no scores",
+    "No agreed benchmark to beat"
+   ],
+   "after": [
+    "Benchmark set from 3 live web sweeps",
+    "9 channels scored: <b>1.0 / 10</b> against a 9",
+    "10 pieces selected, each with a runnable acceptance test",
+    "Two security findings escalated to the owner"
+   ]
+  },
+  {
+   "n": 2,
+   "name": "Foundations",
+   "chip": "done",
+   "when": "24 Aug · 21:05 → 23:45",
+   "minutes": 160,
+   "agents": 50,
+   "tokens": 6260000,
+   "cost": 46.3,
+   "lede": "Ten pieces across three concurrent lanes, each looping builder → blind critic → builder. This wave used prose acceptance criteria judged entirely by frontier critics — expensive, and it let a regression sit undetected for an hour.",
+   "before": [
+    "<code>owner</code> → /api/issues: <b>403</b>. Anonymous: <b>200</b>",
+    "<code>service_role</code> JWT in 7 client components",
+    "macOS paths compiled into 12 files",
+    "/api/agents 500 · 0 runtimes available"
+   ],
+   "after": [
+    "Anonymous → <b>401</b>. Owner → <b>200</b>",
+    "JWT gone from every client component",
+    "Zero macOS paths in app/ or lib/",
+    "Ollama reachable through the runtime seam",
+    "21 verdicts, <b>2 passed</b> — pieces entered at 0–1 and were still rejected at 4–7"
+   ]
+  },
+  {
+   "n": 3,
+   "name": "Truth",
+   "chip": "running",
+   "when": "25 Aug · 00:05 →",
+   "minutes": 135,
+   "agents": 69,
+   "tokens": 6250000,
+   "cost": 27.7,
+   "lede": "Nothing in the product may assert something untrue. Eight pieces, and a changed method: a deterministic harness now gates every piece, and a frontier critic only runs once the script is green. Checks are written by the orchestrator, never by the builder being graded.",
+   "before": [
+    "Harness <b>18/29</b> — 4 critical failures",
+    "Issue list silently capped at 1,000 of 3,071 rows",
+    "Six Infra lights green because <code>'ok'</code> is a literal",
+    "Office fabricated meetings from a 5-second guess",
+    "Tabs rendered <code>0</code> over a 403"
+   ],
+   "after": [
+    "Harness <b>29/29 · 10/10</b>, zero critical",
+    "<b>Ship gate PASSED</b> — chat streams from local qwen on Windows",
+    "True total reported: <b>3,071</b> with a has_more flag",
+    "Status reports <code>unknown</code> and <code>checkedAt</code>; fabricated meetings deleted",
+    "No component parses a body without checking <code>res.ok</code>",
+    "But <b>0 of 21 critic verdicts passed</b> — the script is green, the judgement is not"
+   ]
+  }
+ ],
+ "planned": [
+  {
+   "n": 4,
+   "name": "Runs anywhere, runs an agent",
+   "detail": "SQLite behind the db seam · boot-time migrations · agent registration and heartbeat · the Hermes memory loop · supervisor-enforced ceilings · one real task on local qwen, end to end."
+  },
+  {
+   "n": 5,
+   "name": "Brain2 alignment",
+   "detail": "Agent roster from vault manifests · model tier by cost-of-being-wrong · one severity vocabulary · skill proposals into _pending/."
+  },
+  {
+   "n": 6,
+   "name": "Operator surface",
+   "detail": "20 tabs to 7 · deep links · the pixel-agents event source and speech bubbles · mobile at 375px · contrast."
+  },
+  {
+   "n": 7,
+   "name": "Neon",
+   "detail": "Repository layer, ~24 typed modules. Gated on the seam, error surfacing, and a green coherence pass."
+  },
+  {
+   "n": 8,
+   "name": "Judgment",
+   "detail": "Fresh blind re-score of all 13 channels. Loop back into whichever scored lowest."
+  }
+ ]
 }
