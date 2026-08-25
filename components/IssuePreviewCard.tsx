@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { Plus, X, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { TypeBadge, PriorityBadge } from '@/components/ui'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 
 interface IssueDraft { title: string; type: string; priority: string; assignee: string; acceptance_criteria: string }
 interface Props { draft: IssueDraft; project?: string | null }
@@ -10,21 +12,29 @@ interface Props { draft: IssueDraft; project?: string | null }
 export default function IssuePreviewCard({ draft, project }: Props) {
   const [state, setState] = useState<'idle' | 'creating' | 'done' | 'dismissed'>('idle')
   const [taskKey, setTaskKey] = useState('')
+  const [error, setError] = useState<ApiError | null>(null)
 
   if (state === 'dismissed') return null
 
   const create = async () => {
     setState('creating')
-    try {
-      const res = await fetch('/api/issues', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...draft, project: project || 'Todero', sprint: new Date().toISOString().split('T')[0] })
-      })
-      const data = await res.json()
-      setTaskKey(data.task_key || '?')
+    setError(null)
+    const r = await fetchJson<{ task_key?: string }>('/api/issues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...draft, project: project || 'Todero', sprint: new Date().toISOString().split('T')[0] })
+    })
+    // The green "Created" state must only ever follow a 2xx that actually
+    // carried a task_key back — never a fetch failure or a body missing the
+    // field, which used to fall through to a fabricated "?" and still show
+    // success. See ui-error-surfacing-complete round 3.
+    if (r.ok && r.data?.task_key) {
+      setTaskKey(r.data.task_key)
       setState('done')
-    } catch { setState('idle') }
+    } else {
+      setError(r.ok ? { status: r.status, endpoint: '/api/issues', message: 'response had no task_key' } : r.error)
+      setState('idle')
+    }
   }
 
   return (
@@ -48,6 +58,7 @@ export default function IssuePreviewCard({ draft, project }: Props) {
               <X size={14}/>
             </button>
           </div>
+          {error && <ApiErrorBanner error={error} onRetry={create} className="mb-2" />}
           <Button
             variant="secondary"
             size="sm"

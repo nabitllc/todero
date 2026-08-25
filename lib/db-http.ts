@@ -70,9 +70,15 @@ export function isMissingTableError(error: DbError | null | undefined): boolean 
 }
 
 /**
- * A 503 naming the missing table and the fix — never the vendor's raw
+ * A named error for the missing table and the fix — never the vendor's raw
  * "schema cache" string. Call this instead of echoing `error.message` once
  * `isMissingTableError(error)` is true.
+ *
+ * Status 424 (Failed Dependency), not 5xx: the server itself is fine — the
+ * request failed because a dependency it relies on (the table) is absent.
+ * Deliberately distinct from `dbUnavailableResponse()`'s 503, which means
+ * "the database is not configured at all" (missing credentials) rather than
+ * "configured, reachable, schema incomplete".
  */
 export function missingTableResponse(table: string): NextResponse {
   return NextResponse.json(
@@ -81,6 +87,6 @@ export function missingTableResponse(table: string): NextResponse {
       table,
       fix: 'npm run db:migrate',
     },
-    { status: 503 },
+    { status: 424 },
   )
 }

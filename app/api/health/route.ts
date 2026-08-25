@@ -23,6 +23,16 @@ function withTimeout(query: PromiseLike<DbResult>, ms: number): Promise<DbResult
 export async function GET() {
   const result: Record<string, unknown> = { ok: true, ts: new Date().toISOString() }
 
+  // Tracks a hard infrastructure failure (unreachable database, thrown
+  // exception) as distinct from `result.ok` — `result.ok` is the full,
+  // honest picture (it also goes false when the schema is incomplete), but
+  // the HTTP status only escalates to 503 for the hard case. A reachable
+  // database with a pending migration is a real problem the body reports in
+  // full (`ok:false`, `missing`, `fix`), just not one that should make this
+  // host's core routes look like they are 500ing — that signal is reserved
+  // for the database actually being down.
+  let hardFailure = false
+
   const dbStart = Date.now()
   try {
     const { data, error } = await withTimeout(
@@ -43,17 +53,19 @@ export async function GET() {
       }
     } else {
       result.ok = false
+      hardFailure = true
       result.db = { reachable: false, latencyMs: dbLatency, error: error.message }
     }
   } catch (e) {
     result.ok = false
+    hardFailure = true
     result.db = { reachable: false, error: e instanceof Error ? e.message : String(e) }
   }
 
   // Schema preflight: a reachable database that is missing a table the app
-  // queries is still a broken deploy. Report it the same way a bad connection
-  // string is reported — 503, with the exact fix — rather than staying green
-  // because the connection itself succeeded.
+  // queries is still a broken deploy. Report it with the same honesty as a
+  // bad connection string — ok:false, which table, and the exact fix —
+  // rather than staying green because the connection itself succeeded.
   try {
     const { missing } = await checkRequiredTables()
     result.schema = { missingTables: missing }
@@ -117,7 +129,7 @@ export async function GET() {
   } catch {}
 
   return NextResponse.json(result, {
-    status: result.ok ? 200 : 503,
+    status: hardFailure ? 503 : 200,
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
   })
 }

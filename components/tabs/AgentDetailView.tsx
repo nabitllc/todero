@@ -9,7 +9,8 @@ import {
   Edit3, Save, Pause, Plus, Heart
 } from 'lucide-react'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
-import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import { fetchJson, useApiData, type ApiError } from '@/hooks/useApiData'
+import { dbUrl } from '@/lib/db/browser'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Agent {
@@ -44,6 +45,20 @@ interface AgentFiles {
   soul: string
   heartbeat: string
   agents: string
+}
+
+// agent_runs row shape (see migrations/017_agent_runs_cost.sql + app/api/run-agent/route.ts
+// insert). No `type` column exists yet to distinguish heartbeat from task runs — every row
+// here is a task run until that lands.
+interface AgentRun {
+  id: string
+  agent_id: string
+  task_id?: string | null
+  task_title?: string | null
+  status?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  type?: string | null
 }
 
 interface AgentDetailViewProps {
@@ -464,24 +479,18 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
 // ── Tab: Runs ─────────────────────────────────────────────────────────────────
 function RunsTab({ agent }: { agent: Agent }) {
   const [subTab, setSubTab] = useState<'task' | 'heartbeat'>('task')
-  const [runs, setRuns] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch(`/api/agents/${agent.id}/runs`)
-      .then(r => {
-        if (!r.ok) throw new Error('No runs')
-        return r.json()
-      })
-      .then(data => setRuns(Array.isArray(data) ? data : []))
-      .catch(() => setRuns([]))
-      .finally(() => setLoading(false))
-  }, [agent.id])
+  // Real agent_runs rows for this agent, through the same session-gated db proxy
+  // OfficeCanvas/useAgentStatus already use — not a bespoke /api/agents/:id/runs
+  // endpoint that never existed. A failed load leaves `runs` null so the empty
+  // state below can never paint over a 403/500/network error.
+  const { data: runs, error, loading, refetch } = useApiData<AgentRun[]>(
+    dbUrl(`agent_runs?agent_id=eq.${encodeURIComponent(agent.id)}&order=started_at.desc&limit=50`)
+  )
 
   const lastActiveStr = relTime(agent.lastUpdatedAt)
   const hasActivity = agent.lastUpdatedAt && agent.lastUpdatedAt > 0
 
-  const filteredRuns = runs.filter(r => subTab === 'heartbeat' ? r.type === 'heartbeat' : r.type !== 'heartbeat')
+  const filteredRuns = (runs ?? []).filter(r => subTab === 'heartbeat' ? r.type === 'heartbeat' : r.type !== 'heartbeat')
 
   return (
     <div className="space-y-4">
@@ -529,20 +538,22 @@ function RunsTab({ agent }: { agent: Agent }) {
       )}
 
       {/* Runs list */}
-      {loading ? (
+      {error ? (
+        <ApiErrorBanner error={error} onRetry={refetch} />
+      ) : loading ? (
         <p className="text-white/20 text-xs">Loading…</p>
       ) : filteredRuns.length > 0 ? (
         <div className="space-y-2">
-          {filteredRuns.map((run: any, i: number) => (
+          {filteredRuns.map((run, i: number) => (
             <div key={run.id ?? i} className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
               <PlayCircle size={12} className="text-white/30" />
               <div className="flex-1 min-w-0">
-                <p className="text-white/70 text-xs truncate">{run.title ?? run.task ?? `Run #${i + 1}`}</p>
-                <p className="text-white/30 text-[10px]">{run.created_at ? relTime(new Date(run.created_at).getTime()) : '—'}</p>
+                <p className="text-white/70 text-xs truncate">{run.task_title ?? `Run #${i + 1}`}</p>
+                <p className="text-white/30 text-[10px]">{run.started_at ? relTime(new Date(run.started_at).getTime()) : '—'}</p>
               </div>
               <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${
-                run.status === 'success' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                : run.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                run.status === 'done' || run.status === 'success' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                : run.status === 'error' || run.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30'
                 : 'bg-white/5 text-white/40 border-white/10'
               }`}>{run.status ?? 'unknown'}</span>
             </div>

@@ -35,7 +35,10 @@ export async function checkRequiredTables(): Promise<{ missing: RequiredTable[] 
   await Promise.all(
     REQUIRED_TABLES.map(async table => {
       try {
-        const { error } = await db().from(table).select('*', { head: true, count: 'exact' }).limit(1)
+        // Deliberately NOT `head: true` — a HEAD response has no body, so
+        // PostgREST's error JSON (the "schema cache" wording we detect on)
+        // never arrives and a missing table would silently look fine.
+        const { error } = await db().from(table).select('id').limit(1)
         if (error && isMissingTableError(error)) missing.push(table)
       } catch {
         // A DbConfigurationError or thrown transport error here means we
