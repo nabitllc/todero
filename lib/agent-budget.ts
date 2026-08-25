@@ -24,6 +24,7 @@
 // number pretending to be telemetry.
 
 import { db, DB_ERROR, type DbError } from '@/lib/db'
+import { readHeartbeat } from '@/lib/agent-heartbeats'
 
 // Same test as lib/db-http.ts's isMissingTableError, duplicated rather than
 // imported: that file also exports Next route helpers built on `NextResponse`,
