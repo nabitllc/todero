@@ -117,12 +117,28 @@ function parsePredicate(term: string): DbPredicate {
   if (!IDENTIFIER.test(column)) {
     throw new DbQueryParseError(`Invalid filter column "${column}".`)
   }
-  const op = toComparison(term.slice(firstDot + 1, secondDot), column)
-  const raw = term.slice(secondDot + 1)
+  // `blocked_by.not.is.null` — the negation sits between column and operator,
+  // so the operator is the segment AFTER it and the value starts one dot later.
+  let opStart = firstDot + 1
+  let opEnd = secondDot
+  let negated = false
+  if (term.slice(opStart, opEnd) === 'not') {
+    const thirdDot = term.indexOf('.', opEnd + 1)
+    if (thirdDot < 0) {
+      throw new DbQueryParseError(
+        `"${column}.not." needs an operator and a value, got "${term}".`,
+      )
+    }
+    negated = true
+    opStart = opEnd + 1
+    opEnd = thirdDot
+  }
+  const op = toComparison(term.slice(opStart, opEnd), column)
+  const raw = term.slice(opEnd + 1)
 
-  if (op === 'is') return { column, op, value: parseIsValue(raw) }
-  if (op === 'in') return { column, op, value: parseValueList(raw) }
-  return { column, op, value: unquote(raw) }
+  if (op === 'is') return { column, op, value: parseIsValue(raw), negated }
+  if (op === 'in') return { column, op, value: parseValueList(raw), negated }
+  return { column, op, value: unquote(raw), negated }
 }
 
 /** `a.eq.1,b.eq.2` → the predicate list `or()` takes. */

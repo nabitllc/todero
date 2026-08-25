@@ -66,14 +66,16 @@ function quoteValue(value: unknown): string {
 }
 
 /** One `DbPredicate` as this vendor's `column.op.value` text. */
-function predicateText({ column, op, value }: DbPredicate): string {
+function predicateText({ column, op, value, negated }: DbPredicate): string {
   const operator = OPERATOR_TEXT[op] ?? op
-  if (op === 'is') return `${column}.is.${value === null ? 'null' : String(value)}`
+  // This grammar spells negation as a `not.` prefix between column and operator.
+  const not = negated ? 'not.' : ''
+  if (op === 'is') return `${column}.${not}is.${value === null ? 'null' : String(value)}`
   if (op === 'in') {
     const list = Array.isArray(value) ? value : [value]
-    return `${column}.in.(${list.map(quoteValue).join(',')})`
+    return `${column}.${not}in.(${list.map(quoteValue).join(',')})`
   }
-  return `${column}.${operator}.${quoteValue(value)}`
+  return `${column}.${not}${operator}.${quoteValue(value)}`
 }
 
 /** The value half of `not()` / `filter()`, which take operator and value apart. */

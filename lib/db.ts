@@ -148,6 +148,19 @@ export interface DbPredicate {
   column: string
   op: DbComparison
   value: unknown
+  /**
+   * Negates this one comparison — `NOT (column op value)`.
+   *
+   * A conjunctive filter could always express negation, because `not()` is a
+   * builder method and each AND-ed part carries its own flag. A DISJUNCTIVE one
+   * could not: `or()` takes predicates as data, and the data had nowhere to put
+   * it. So `blocked_by=not.is.null` parsed fine as a top-level filter and threw
+   * inside an `or(...)`, which is the shape "show me anything blocked OR
+   * overdue" actually takes. The previous provider hid this by forwarding the
+   * whole `or=` string to the server as text; parsing it locally is what made
+   * the gap visible.
+   */
+  negated?: boolean
 }
 
 /**

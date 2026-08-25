@@ -206,7 +206,12 @@ function whereSql(parts: readonly WherePart[], params: Params, dialect: SqlDiale
   const rendered = parts.map(part => {
     if (part.kind === 'or') {
       if (part.predicates.length === 0) return 'FALSE'
-      return `(${part.predicates.map(p => predicateSql(p, params, dialect)).join(' OR ')})`
+      return `(${part.predicates
+        .map(p => {
+          const sql = predicateSql(p, params, dialect)
+          return p.negated ? `NOT (${sql})` : sql
+        })
+        .join(' OR ')})`
     }
     const sql = predicateSql(part.predicate, params, dialect)
     return part.negated ? `NOT (${sql})` : sql
