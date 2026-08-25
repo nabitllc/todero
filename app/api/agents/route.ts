@@ -15,6 +15,8 @@ import { internalHeaders } from '@/lib/internal-auth'
 import { getCeilingStatus, type CeilingName } from '@/lib/agent-budget'
 import { LLM_PROVIDER_ID } from '@/lib/llm-provider'
 import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+import { getQueueConfig } from '@/lib/agent-queue'
+import { ensureVaultDispatchConfigs } from '@/lib/agent-manifests'
 
 /**
  * Whether THIS host's configured LLM endpoint is a local one (Ollama, LM
@@ -137,6 +139,19 @@ type AgentDto = {
     localModel: string | null
     description: string
   } | null
+  /**
+   * registry-reaches-dispatch piece: whether `getQueueConfig(id)` — the exact
+   * function POST /api/run-agent calls before dispatching — resolves a
+   * config for this agent right now. Computed server-side, after
+   * `ensureVaultDispatchConfigs()` has registered every vault manifest's
+   * derived config, so this is never stale the way a client-side
+   * `a.vault && !getQueueConfig(a.id)` check would be: that check ran
+   * against the BROWSER's own copy of lib/agent-queue.ts, which has no way
+   * to see a config this route registered server-side. ChatTab.tsx and
+   * IssuesTab.tsx read this field instead of recomputing the check
+   * themselves — see their updated comments.
+   */
+  dispatchable: boolean
 }
 
 /** Live run state: issue/run history from the database, plus recorded heartbeats. */
@@ -367,6 +382,7 @@ function buildAgents(
         const v = vaultById.get(id)
         return v ? vaultInfoFor(v) : null
       })(),
+      dispatchable: getQueueConfig(id) !== undefined,
     }
   })
 }
@@ -453,6 +469,7 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
       const v = vaultById.get(reg.id)
       return v ? vaultInfoFor(v) : null
     })(),
+    dispatchable: getQueueConfig(reg.id) !== undefined,
   }
 }
 
@@ -460,8 +477,11 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
  * A synthesized row for a Brain2 vault agent with no AGENTS.md row and no
  * self-registration — the concrete union this piece exists to add: an agent
  * the vault names, and nothing else on this host does, still shows up. Reuses
- * `state.heartbeats` for liveness the same way every other row does (it will
- * simply never have one, since nothing dispatches a vault-only agent yet),
+ * `state.heartbeats` for liveness the same way every other row does (it may
+ * still have none — a vault agent that has never been dispatched has no
+ * heartbeat to read, same as any other agent with no run history — but see
+ * `dispatchable` below: registry-reaches-dispatch made dispatch itself
+ * possible, which is a separate fact from whether a run has happened yet),
  * so it is not held to a different truth standard than a roster row.
  *
  * `model`/`modelShort` are resolved through the same `resolveVaultBadge()`
@@ -525,6 +545,13 @@ function buildVaultOnlyAgent(
     rosterWarning,
     rosterPath,
     vault,
+    // registry-reaches-dispatch piece: this used to be unconditionally
+    // false ("nothing dispatches a vault-only agent yet" — see the comment
+    // above this function). ensureVaultDispatchConfigs(), called before this
+    // function runs, has registered a config for every agent the vault
+    // named, so this now reads the same true/false POST /api/run-agent
+    // would give this exact id.
+    dispatchable: getQueueConfig(agent.id) !== undefined,
   }
 }
 
@@ -554,6 +581,15 @@ export async function GET() {
     vaultRoster = { agents: [], path: null, warning: e instanceof Error ? e.message : String(e) }
   }
   const vaultById = new Map(vaultRoster.agents.map((a) => [a.id, a]))
+
+  // registry-reaches-dispatch piece: registers a dispatchable config for
+  // every vault agent into lib/agent-queue.ts's runtime cache — the same
+  // scan `vaultRoster` above already did, run again here (cheap: ~13 small
+  // files) so the *dispatch* half of the vault registry is populated from
+  // the exact code path POST /api/run-agent also calls, not duplicated ad
+  // hoc. Never throws (see that function's own comment); its `dispatchable`
+  // per-row field below reads true iff a real spawn would find a config too.
+  await ensureVaultDispatchConfigs()
 
   // Independent of the roster and of Supabase — fetched once and reused by
   // every response branch below, success or failure alike.

@@ -70,9 +70,12 @@ export async function POST(req: NextRequest) {
     const paused = Boolean(body.paused)
     const db = createAdminClient()
 
-    // Write is_paused flag to each individual agent's memory row
-    // so /api/run-agent can check it before spawning
-    await Promise.allSettled(
+    // Write is_paused flag to each individual agent's memory row so
+    // /api/run-agent can check it before spawning. allSettled (not all) so
+    // one agent's write failure doesn't abort the rest — but the failures
+    // are collected and reported, not discarded, so `ok:true` never claims
+    // every agent was actually paused when some upserts errored.
+    const perAgentResults = await Promise.allSettled(
       HEARTBEAT_AGENTS.map(agentId =>
         db.from('agent_memory').upsert(
           { agent_id: agentId, key: 'is_paused', value: paused ? 'true' : 'false' },
@@ -80,6 +83,17 @@ export async function POST(req: NextRequest) {
         )
       )
     )
+    const failedAgents: string[] = []
+    perAgentResults.forEach((result, i) => {
+      const agentId = HEARTBEAT_AGENTS[i]
+      if (result.status === 'rejected') {
+        failedAgents.push(agentId)
+        console.error(`[hub-pause] agent_memory write failed for ${agentId}:`, result.reason)
+      } else if (result.value?.error) {
+        failedAgents.push(agentId)
+        console.error(`[hub-pause] agent_memory write failed for ${agentId}:`, result.value.error)
+      }
+    })
 
     // Write hub-level pause state for UI display
     const value: PauseValue = {
@@ -89,12 +103,21 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
       paused_agents: paused ? HEARTBEAT_AGENTS : [],
     }
-    await db.from('agent_memory').upsert(
+    const { error: hubStateError } = await db.from('agent_memory').upsert(
       { agent_id: AGENT_ID, key: KEY, value },
       { onConflict: 'agent_id,key' }
     )
+    if (hubStateError) {
+      return dbQueryErrorResponse(hubStateError, 'agent_memory')
+    }
 
-    return NextResponse.json({ ok: true, paused })
+    return NextResponse.json({
+      ok: failedAgents.length === 0,
+      paused,
+      ...(failedAgents.length > 0
+        ? { error: `hub-level pause state saved, but per-agent write failed for: ${failedAgents.join(', ')}` }
+        : {}),
+    })
   } catch (e: unknown) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }

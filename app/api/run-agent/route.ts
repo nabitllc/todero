@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getQueueConfig, getAllQueueAgentIds } from '@/lib/agent-queue'
+import { ensureVaultDispatchConfigs } from '@/lib/agent-manifests'
 import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { isAgentPaused } from '@/lib/loop-breaker'
@@ -329,6 +330,16 @@ export async function POST(req: NextRequest) {
   if (await isHubPaused()) {
     return NextResponse.json({ error: 'Agents are paused', paused: true }, { status: 503 })
   }
+
+  // registry-reaches-dispatch piece: registers a dispatchable config for
+  // every current Brain2 vault agent into lib/agent-queue.ts's runtime cache
+  // BEFORE the getQueueConfig() lookup below — a vault agent dispatched in a
+  // freshly started process (no prior GET /api/agents in this process) must
+  // still resolve, not answer "Unknown agent" because nothing happened to
+  // warm the cache yet. Never throws; degrades to whatever was last
+  // persisted (or nothing) when the vault itself is unreachable from here —
+  // see lib/agent-manifests.ts.
+  await ensureVaultDispatchConfigs()
 
   const body = await req.json().catch(() => ({}))
   const agentId = req.nextUrl.searchParams.get('agent') ?? (body as Record<string, string>).agent_id
@@ -879,7 +890,19 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
   // agent-queue.ts. Only lib/runtimes/openai-api.ts reads it
   // (AgentSpawnOptions.modelOverride); other adapters ignore it. Absent =
   // unchanged behavior — config.model still resolves as before.
-  const modelOverride = req.nextUrl.searchParams.get('model') ?? undefined
+  //
+  // registry-reaches-dispatch piece: the caller resolving that id by hand
+  // was the gap — nothing ever passed it automatically, so a local-eligible
+  // vault agent's fallback_local was documented here but never actually
+  // reached a spawn without someone manually adding ?model=. config.
+  // localFallbackModel (lib/agent-manifests.ts's manifestToQueueConfig(),
+  // set only when the manifest carries local_eligible:true) is now the
+  // default when the caller did not ask for a specific model. mapModel()
+  // still checks it against the endpoint's own live model roster before
+  // trusting it, so this can never dispatch a model the configured endpoint
+  // has not actually pulled — it only removes the requirement that a human
+  // type the id in by hand every time.
+  const modelOverride = req.nextUrl.searchParams.get('model') ?? config.localFallbackModel ?? undefined
 
   const spawnResult = await runtime.spawn({
     agentId,
@@ -1019,6 +1042,13 @@ export async function GET(req: NextRequest) {
     const perm = await checkRoutePermission(callerRole, 'GET', '/api/run-agent')
     if (!perm.allowed) return NextResponse.json(perm.body, { status: perm.status })
   }
+
+  // registry-reaches-dispatch piece: see the identical call + comment in
+  // POST above — this GET path resolves configs via the same
+  // getQueueConfig()/getAllQueueAgentIds() and must see the same vault
+  // agents, whether that is `?info=1` on one agent or the full lane listing
+  // below.
+  await ensureVaultDispatchConfigs()
 
   const agentId = req.nextUrl.searchParams.get('agent')
   const infoMode = req.nextUrl.searchParams.get('info') === '1'

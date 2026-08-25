@@ -8,7 +8,6 @@ import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, formatApiError, type ApiError } from '@/hooks/useApiData'
 import { useAgentRoster } from '@/hooks/useAgentRoster'
 import { agentDisplay } from '@/lib/agents-config'
-import { getQueueConfig } from '@/lib/agent-queue'
 
 // Chat types
 /** `persistError` is set when the message is on screen but is NOT in the
@@ -377,10 +376,12 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     (id: string) => rosterById[id]?.emoji ?? agentDisplay(id).emoji,
     [rosterById],
   )
-  // A vault-only agent (`a.vault !== null` — named by Global_Agents/<id>/
-  // manifest.json, not by AGENTS.md or a live registration) has no entry in
-  // lib/agent-queue.ts's AGENT_QUEUE_CONFIGS: nothing picks up work assigned
-  // to it. Chatting with it still works (this picker only chooses who the
+  // registry-reaches-dispatch piece: `a.dispatchable` is computed server-side
+  // (app/api/agents/route.ts) from the same getQueueConfig() POST
+  // /api/run-agent itself calls — including the config a Brain2 vault
+  // manifest now derives (lib/agent-manifests.ts), which this file's own
+  // client-bundle copy of getQueueConfig() has no way to see. Chatting with
+  // a non-dispatchable agent still works (this picker only chooses who the
   // LLM impersonates), so it stays selectable — but the label says so, the
   // same way the Issues assignee dropdown does, instead of implying a queue
   // that does not exist for this id.
@@ -388,7 +389,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     () => rosterAgents.map(a => ({
       id: a.id,
       label: `${a.emoji} ${a.name}`,
-      desc: a.vault && !getQueueConfig(a.id) ? `${a.role} · not dispatchable` : a.role,
+      desc: !a.dispatchable ? `${a.role} · not dispatchable` : a.role,
     })),
     [rosterAgents],
   )

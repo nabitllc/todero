@@ -20,14 +20,29 @@ async function readMemoryValue<T>(agentId: string, key: string): Promise<T | nul
   return ((data ?? []) as Array<{ value: T }>)[0]?.value ?? null
 }
 
-/** Write one `agent_memory` value, replacing whatever was there. */
+/**
+ * Write one `agent_memory` value, replacing whatever was there.
+ *
+ * onConflict is load-bearing, not decoration: agent_memory's real uniqueness
+ * is UNIQUE(agent_id, key) (it predates the migrations directory — see
+ * migrations/016_agent_documents.sql's note), not its `id` primary key.
+ * Omitting onConflict makes the seam default to the primary key, which is
+ * never present in this payload, so every call INSERTs a fresh row instead
+ * of updating the existing one — silently, no error. Throws on a real write
+ * failure rather than swallowing it, so callers that track state this
+ * function is supposed to persist (is_paused, loop_breaker) never proceed
+ * believing a write landed when it didn't.
+ */
 async function writeMemoryValue(agentId: string, key: string, value: unknown): Promise<void> {
-  await db().from('agent_memory').upsert({
+  const { error } = await db().from('agent_memory').upsert({
     agent_id: agentId,
     key,
     value,
     updated_at: new Date().toISOString(),
-  })
+  }, { onConflict: 'agent_id,key' })
+  if (error) {
+    throw new Error(`[loop-breaker] agent_memory write failed for ${agentId}/${key}: ${error.message}`)
+  }
 }
 
 function postDiscordAlert(content: string) {

@@ -42,6 +42,17 @@ export interface RosterAgent {
   floor: boolean
   /** Brain2 vault manifest data for this id, or null when the vault does not name it. */
   vault: VaultBadgeInfo | null
+  /**
+   * registry-reaches-dispatch piece: whether POST /api/run-agent?agent=<id>
+   * would find a config for this id right now — computed server-side (see
+   * app/api/agents/route.ts's AgentDto.dispatchable), never recomputed from
+   * a client-side import of lib/agent-queue.ts. That file's getQueueConfig()
+   * only knows Todero's own hardcoded lanes in the BROWSER's copy of the
+   * module; it has no way to see a config the server registered from a
+   * Brain2 vault manifest. A picker that wants to say "not dispatchable"
+   * must read this field, not call getQueueConfig() itself.
+   */
+  dispatchable: boolean
 }
 
 interface AgentsEnvelope {

@@ -2,12 +2,28 @@
 // All access goes through the database seam in `lib/db.ts`.
 import { db } from '@/lib/db'
 
-export async function rememberFact(agentId: string, key: string, value: unknown) {
-  await db()
+/**
+ * Throws on a failed write rather than swallowing it — a caller storing a
+ * fact has to know whether it actually landed.
+ *
+ * onConflict is load-bearing: agent_memory's real uniqueness is
+ * UNIQUE(agent_id, key) (it predates the migrations directory — see
+ * migrations/016_agent_documents.sql's note), not its `id` primary key. The
+ * old "no explicit conflict target" comment here was wrong about what the
+ * seam falls back to: the table's primary key, `id`, which this payload
+ * never supplies — so every call INSERTed a fresh row instead of updating
+ * the existing one, silently, with no error.
+ */
+export async function rememberFact(agentId: string, key: string, value: unknown): Promise<void> {
+  const { error } = await db()
     .from('agent_memory')
-    // No explicit conflict target: the seam falls back to the table's primary
-    // key, which is what this call site has always relied on.
-    .upsert({ agent_id: agentId, key, value, updated_at: new Date().toISOString() })
+    .upsert(
+      { agent_id: agentId, key, value, updated_at: new Date().toISOString() },
+      { onConflict: 'agent_id,key' },
+    )
+  if (error) {
+    throw new Error(`[agent-memory] rememberFact(${agentId}, ${key}) failed: ${error.message}`)
+  }
 }
 
 export async function recallFact(agentId: string, key: string): Promise<unknown | null> {

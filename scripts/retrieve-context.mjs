@@ -78,6 +78,17 @@ if (!agentId || !taskKey) {
           `[retrieve-context] ${agentId}/${taskKey}: ${result.recordsUsed}/${result.recordsFound} record(s) ` +
             `injected via ${result.engine} search, ~${result.budgetTokens} token budget`,
         )
+      } else if (result.engine === 'keyword-overlap' && result.possiblyIncompleteScan) {
+        // Not the same claim as the branch below: this engine has no index,
+        // so "no matches" only means none turned up inside the most recent
+        // `scannedWindowRows` records it was able to look at — an older,
+        // genuinely relevant record may sit past that window and this run
+        // never saw it. Reporting a bounded scan as a completed search is the
+        // exact defect this piece exists to close.
+        console.error(
+          `[retrieve-context] ${agentId}/${taskKey}: no relevant records found in the ${result.scannedWindowRows} ` +
+            `most recent run records (${result.engine} search, bounded — older records were not scanned and may contain a match)`,
+        )
       } else {
         console.error(`[retrieve-context] ${agentId}/${taskKey}: no relevant past run records found (${result.engine} search)`)
       }

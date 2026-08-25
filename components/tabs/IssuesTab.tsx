@@ -7,7 +7,6 @@ import { List } from 'lucide-react'
 import { useApiList } from '@/hooks/useApiData'
 import { useAgentRoster } from '@/hooks/useAgentRoster'
 import { agentDisplay } from '@/lib/agents-config'
-import { getQueueConfig } from '@/lib/agent-queue'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
@@ -285,17 +284,20 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                         <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Assignee</span>
                         <Select value={editFields.assignee??''} onChange={e => setEditFields(f=>({...f,assignee:e.target.value}))} className="text-xs rounded-lg px-2 py-1.5">
                           <option value="" className="bg-[#0f0f0f] text-white">Unassigned</option>
-                          {/* A vault-only agent (a.vault !== null — named by
-                              Global_Agents/<id>/manifest.json, not AGENTS.md
-                              or a live registration) has no entry in
-                              lib/agent-queue.ts's AGENT_QUEUE_CONFIGS: nothing
-                              picks up an issue assigned to it. It stays
-                              selectable — assigning is not itself an error —
-                              but the option says so instead of implying a
+                          {/* registry-reaches-dispatch piece: a.dispatchable
+                              is computed server-side (app/api/agents/route.ts)
+                              from the same getQueueConfig() POST
+                              /api/run-agent itself calls, including a config
+                              derived from a Brain2 vault manifest
+                              (lib/agent-manifests.ts) — this file's own
+                              client-bundle copy of getQueueConfig() cannot
+                              see that. Assigning to a non-dispatchable agent
+                              still works (assigning is not itself an error)
+                              — the option just says so instead of implying a
                               queue lane that does not exist for this id. */}
                           {rosterAgents.map(a => (
                             <option key={a.id} value={a.id} className="bg-[#0f0f0f] text-white">
-                              {a.name}{a.vault && !getQueueConfig(a.id) ? ' (not dispatchable)' : ''}
+                              {a.name}{!a.dispatchable ? ' (not dispatchable)' : ''}
                             </option>
                           ))}
                           {/* An assignee already on the issue that this host's roster does not

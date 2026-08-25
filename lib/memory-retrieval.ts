@@ -115,7 +115,21 @@ interface EngineSearchResult {
   availability: RetrievalAvailability
   /** Present only when availability is 'unavailable' — why the store could not be searched. */
   unavailableReason?: string
+  /** Present only on the portable (keyword-overlap) engine — how many of the most recent rows it was able to look at. FTS5 has an index and is never window-bounded, so this stays undefined on that path. */
+  scannedWindowRows?: number
+  /** True when the scan returned exactly `scannedWindowRows` rows — the store may hold older records this scan never reached. False (not merely absent) when the store held fewer rows than the window, i.e. the scan genuinely saw everything. */
+  possiblyIncompleteScan?: boolean
 }
+
+/**
+ * How many of an agent's most recent run records the portable (postgres/
+ * supabase) keyword-overlap fallback looks at per search. FTS5 has a real
+ * index and needs no such cap; this engine has none, so it is bounded to
+ * keep one search from scanning an agent's entire history. The bound is a
+ * real limitation — see `possiblyIncompleteScan` — never a completed search
+ * dressed up as one.
+ */
+export const PORTABLE_SCAN_WINDOW_ROWS = 200
 
 /** True when the active database provider is the sqlite adapter — the only one this repo can run real FTS5 search against directly. */
 export function isSqliteProvider(): boolean {
@@ -324,12 +338,21 @@ async function searchPortable(agentId: string, query: string, limit: number, exa
     .select('id,task_key,task_title,attempted,rejection_reason,reviewer_notes,created_at')
     .eq('agent_id', agentId)
     .order('created_at', { ascending: false })
-    .limit(200)
+    .limit(PORTABLE_SCAN_WINDOW_ROWS)
   // A query error (missing table, connection failure, ...) means the store
   // itself could not be searched — 'unavailable', not a clean empty result.
   // `data === null` with no error is a real "the table exists, zero rows".
   if (error) return { records: [], availability: 'unavailable', unavailableReason: error.message }
   if (!data) return { records: [], availability: 'available' }
+  // This engine has no index to search — it can only ever look at the most
+  // recent PORTABLE_SCAN_WINDOW_ROWS records. When the query returned exactly
+  // that many, an older, possibly-more-relevant record may sit just past the
+  // window edge and this scan never saw it at all. That must never read back
+  // as "the store was searched and nothing relevant exists" — see the
+  // scannedWindowRows / possiblyIncompleteScan plumbing below, which callers
+  // (buildRetrievedContext, scripts/retrieve-context.mjs) surface honestly
+  // instead of reporting a bounded scan as a completed search.
+  const possiblyIncompleteScan = data.length >= PORTABLE_SCAN_WINDOW_ROWS
 
   const scored = (data as RawRunRecordRow[])
     .map(r => {
@@ -367,6 +390,8 @@ async function searchPortable(agentId: string, query: string, limit: number, exa
       rank: isExact ? -1_000 : -score,
     })),
     availability: 'available',
+    scannedWindowRows: PORTABLE_SCAN_WINDOW_ROWS,
+    possiblyIncompleteScan,
   }
 }
 
@@ -376,6 +401,10 @@ export interface SearchResult {
   availability: RetrievalAvailability
   /** Present only when availability is 'unavailable'. */
   unavailableReason?: string
+  /** Present only when `engine === 'keyword-overlap'` — see `EngineSearchResult.scannedWindowRows`. */
+  scannedWindowRows?: number
+  /** Present only when `engine === 'keyword-overlap'` — see `EngineSearchResult.possiblyIncompleteScan`. */
+  possiblyIncompleteScan?: boolean
 }
 
 /**
@@ -399,6 +428,8 @@ export async function searchRunRecords(
     engine: isSqliteProvider() ? 'fts5' : 'keyword-overlap',
     availability: result.availability,
     unavailableReason: result.unavailableReason,
+    scannedWindowRows: result.scannedWindowRows,
+    possiblyIncompleteScan: result.possiblyIncompleteScan,
   }
 }
 
@@ -422,6 +453,10 @@ export interface RetrievalResult {
   availability: RetrievalAvailability
   /** Present only when availability is 'unavailable'. */
   unavailableReason?: string
+  /** Present only when `engine === 'keyword-overlap'` — how many of the most recent rows this scan looked at. */
+  scannedWindowRows?: number
+  /** Present only when `engine === 'keyword-overlap'` — true when the scan hit its window and older records may hold a match this search never saw. A caller must not report `text === ''` as "no relevant records exist" when this is true; it only means none were found INSIDE the scanned window. */
+  possiblyIncompleteScan?: boolean
 }
 
 /**
@@ -455,7 +490,8 @@ export async function buildRetrievedContext(
   // so a genuine retry of the same ticket still finds its own history by
   // exact task_key match, not by the prefix coincidentally matching every
   // other record this project has ever written.
-  const { records, engine, availability, unavailableReason } = await searchRunRecords(agentId, query, limit, taskKey)
+  const { records, engine, availability, unavailableReason, scannedWindowRows, possiblyIncompleteScan } =
+    await searchRunRecords(agentId, query, limit, taskKey)
 
   const blocks: string[] = []
   let usedTokens = 0
@@ -479,9 +515,22 @@ export async function buildRetrievedContext(
     usedTokens += blockTokens
   }
 
+  // The keyword-overlap engine has no index — it can only ever have scanned
+  // the most recent `scannedWindowRows` records. When that scan hit its
+  // window, this is a fact the injected block itself must carry, not just
+  // something a caller can infer from a separate field: whoever reads the
+  // spawn prompt sees only `text`, and "no relevant past experience" printed
+  // as fact when the search never reached row 201 is exactly the defect this
+  // piece exists to close. Real ranking (FTS5) is never window-bounded, so
+  // this caveat is specific to the portable fallback.
+  const boundedScanNote =
+    engine === 'keyword-overlap' && possiblyIncompleteScan
+      ? ` — bounded scan of the ${scannedWindowRows} most recent records; an older match may exist beyond that window`
+      : ''
+
   const text =
     blocks.length > 0
-      ? `# RELEVANT PAST EXPERIENCE (${engine} search, ${blocks.length}/${records.length} match(es) fit, ~${usedTokens}/${budgetTokens} tokens)\n\n${blocks.join('\n\n')}`
+      ? `# RELEVANT PAST EXPERIENCE (${engine} search${boundedScanNote}, ${blocks.length}/${records.length} match(es) fit, ~${usedTokens}/${budgetTokens} tokens)\n\n${blocks.join('\n\n')}`
       : ''
 
   return {
@@ -492,5 +541,7 @@ export async function buildRetrievedContext(
     engine,
     availability,
     unavailableReason,
+    scannedWindowRows,
+    possiblyIncompleteScan,
   }
 }

@@ -2051,7 +2051,8 @@ export async function PATCH(req: NextRequest) {
     // TOD-766: loop breaker — track consecutive failures at the agent level
     const failingAgent = (before?.assignee ?? data.assignee) as string | undefined
     if (failingAgent) {
-      recordAgentFailure(failingAgent, id as string, (before?.title ?? data.title) as string | undefined).catch(() => {})
+      recordAgentFailure(failingAgent, id as string, (before?.title ?? data.title) as string | undefined)
+        .catch(err => console.error(`[issues] recordAgentFailure(${failingAgent}) failed:`, err))
     }
   }
 
@@ -2060,7 +2061,8 @@ export async function PATCH(req: NextRequest) {
   if (isNewPass && data) {
     const passingAgent = (before?.assignee ?? data.assignee) as string | undefined
     if (passingAgent) {
-      resetAgentFailures(passingAgent).catch(() => {})
+      resetAgentFailures(passingAgent)
+        .catch(err => console.error(`[issues] resetAgentFailures(${passingAgent}) failed:`, err))
     }
   }
 

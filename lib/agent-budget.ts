@@ -588,12 +588,21 @@ async function recordCeilingEvent(
     console.warn(`[agent-budget] inbox write failed: ${err instanceof Error ? err.message : String(err)}`)
   }
   try {
-    await db().from('agent_memory').upsert({
+    // onConflict is load-bearing: agent_memory's real uniqueness is
+    // UNIQUE(agent_id, key), not its `id` primary key (see the identical
+    // note in lib/loop-breaker.ts's writeMemoryValue). Without it the seam
+    // defaults to `id`, which this payload never supplies, so the row never
+    // actually merges — it silently INSERTs a duplicate every call, with no
+    // thrown error to catch here.
+    const { error } = await db().from('agent_memory').upsert({
       agent_id: agentId,
       key: 'ceiling_stop',
       value: { ceiling, reason, detail, task_key: taskKey, at: now },
       updated_at: now,
-    })
+    }, { onConflict: 'agent_id,key' })
+    if (error) {
+      console.warn(`[agent-budget] agent_memory write failed: ${error.message}`)
+    }
   } catch (err) {
     console.warn(`[agent-budget] agent_memory write failed: ${err instanceof Error ? err.message : String(err)}`)
   }
