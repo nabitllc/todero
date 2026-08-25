@@ -4,6 +4,7 @@ monitor-pr-merge.py — Poll GitHub for merged PRs → transition linked issues 
 Replaces n8n workflow huC16MvkjX5FiI3f
 Runs every 5 minutes via launchd.
 """
+import os
 import json, os, subprocess, urllib.request, pathlib
 from datetime import datetime, timezone
 
@@ -12,7 +13,7 @@ GH_TOKEN = "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"
 DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 DEPLOY_CHANNEL = "1487584904135970816"  # #deployments
 MC_API = "http://localhost:3000/api/issues"
-SUPA_URL = "https://twthgapiouiqhavrcnry.supabase.co"
+SUPA_URL = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
 SUPA_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 REPOS = ["nabitllc/todero", "nabitllc/vespera"]
 STATE_FILE = pathlib.Path(__file__).parent / "state-pr-merge.json"

@@ -6,8 +6,8 @@
 // and /api/cron/watchdog pull real backlog tasks, mark them in_progress, and
 // spawn `claude --permission-mode bypassPermissions` with a detached watcher
 // that re-POSTs /api/run-agent when the child exits — a self-sustaining loop.
-// On this host that only ever failed because /bin/bash is absent, and the
-// portable-spawn work is actively removing that accidental protection.
+// On this host that only ever failed because no POSIX shell is present, and
+// the portable-spawn work is actively removing that accidental protection.
 //
 // Default is OFF. Opt in explicitly with TODERO_DISPATCH_ENABLED=1.
 

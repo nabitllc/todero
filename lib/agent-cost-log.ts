@@ -1,8 +1,8 @@
 // TOD-939: Best-effort cost logging for agent completions
 // Never blocks route — all errors are swallowed with console.warn
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 
+import { dbRestBase } from '@/lib/db/rest'
 interface CostEntry {
   project: string
   agent: string
@@ -24,7 +24,7 @@ export async function logAgentCost(entry: CostEntry): Promise<boolean> {
   }
 
   try {
-    const res = await fetch(`${SUPA_URL}/rest/v1/agent_cost_log`, {
+    const res = await fetch(`${dbRestBase()}/rest/v1/agent_cost_log`, {
       method: 'POST',
       headers: {
         'apikey': supaKey,

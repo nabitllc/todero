@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 import { encrypt } from '@/lib/encryption'
 
 const VALID_TYPES = ['github', 'openai', 'anthropic', 'openrouter', 'webhook'] as const
 type ConnectionType = typeof VALID_TYPES[number]
 
 function supabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  return db()
 }
 
 // ── GET /api/connections ──────────────────────────────────────────────────────

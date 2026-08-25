@@ -184,7 +184,7 @@ class SessionManager:
     def _build_context(self) -> str:
         """Load workspace context from Supabase agent_documents + agent_memory_files."""
         import urllib.request
-        SUPA_URL = "https://twthgapiouiqhavrcnry.supabase.co"
+        SUPA_URL = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
         env = pathlib.Path(WORKSPACE).parent / ".env.local"
         supa_key = ""
         for line in env.read_text().splitlines():

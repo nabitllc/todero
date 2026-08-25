@@ -16,15 +16,16 @@ import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { isAgentPaused } from '@/lib/loop-breaker'
 import { exec } from 'child_process'
-import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
+import { getDefaultRuntime, getRuntimeByName, inspectRuntime, listRuntimes } from '@/lib/runtimes'
+import { isAlive } from '@/lib/runtimes/detached-spawn'
 import { recordSpawn } from '@/lib/runtimes/token-ledger'
 import { logAgentCost } from '@/lib/agent-cost-log'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 import { CONFIG_DIR, LOG_DIR, TODERO_DIR as TODERO_ROOT, resolveBinary } from '@/lib/paths'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { dbRestBase } from '@/lib/db/rest'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 // Lazy-init: avoids crashing at build time when env vars aren't set (CI).
 let _supaKey: string | null = null
 function getSupaKey(): string {
@@ -70,7 +71,7 @@ async function loadContextFromDB(agentId: string): Promise<string> {
 
   // Fetch global + per-agent documents + shared skill docs
   const docsRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
+    `${dbRestBase()}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
     { headers: supaHeaders }
   )
   const docs = await docsRes.json() as Array<{ agent_id: string; doc_type: string; slug: string; content: string }>
@@ -80,7 +81,7 @@ async function loadContextFromDB(agentId: string): Promise<string> {
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
   const memRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&select=memory_type,date_key,content&order=updated_at.desc&limit=20`,
+    `${dbRestBase()}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&select=memory_type,date_key,content&order=updated_at.desc&limit=20`,
     { headers: supaHeaders }
   )
   const memRows = await memRes.json() as Array<{ memory_type: string; date_key: string | null; content: string }>
@@ -137,7 +138,7 @@ async function loadContextFromDB(agentId: string): Promise<string> {
 // Rationale: /api/cron/queue-refill and /api/cron/watchdog pull real backlog
 // tasks and spawn `claude --permission-mode bypassPermissions`, with a watcher
 // that self-kicks this endpoint when the child exits. On this host that only
-// failed because /bin/bash is absent — a protection we are actively removing.
+// failed because no POSIX shell is present — a protection we are actively removing.
 function dispatchDisabled(): boolean {
   return process.env.TODERO_DISPATCH_ENABLED !== '1'
 }
@@ -147,7 +148,69 @@ const DISPATCH_BLOCKED_BODY = {
   hint: 'Set TODERO_DISPATCH_ENABLED=1 to allow Todero to spawn agents. Intentionally off while Todero is under reconstruction.',
 }
 
+/**
+ * POST /api/run-agent?dryRun=1 — answer "would a dispatch work on this host?"
+ * without dispatching. Resolves the runtime that would be chosen, resolves its
+ * binary on PATH, and creates the log file under LOG_DIR so the caller can see
+ * the exact path an agent's output would land in.
+ *
+ * Deliberately runs BEFORE the dispatch guard: the guard exists to stop Todero
+ * spawning agents, and this branch spawns nothing. It is also the only way to
+ * verify the portable-spawn plumbing on a host where dispatch is (correctly)
+ * turned off. `binResolved: null` means a real dispatch here would return
+ * ok:false — that is the answer, not a failure to answer.
+ */
+async function dryRunReport(req: NextRequest): Promise<NextResponse> {
+  try {
+    const requested = req.nextUrl.searchParams.get('runtime')
+    const info = await inspectRuntime(requested)
+
+    mkdirSync(LOG_DIR, { recursive: true })
+    // Slugged: the agent name reaches a filename, and `?agent=../../x` must not
+    // be able to steer where that file lands.
+    const agentId = (req.nextUrl.searchParams.get('agent') ?? 'dry-run')
+      .replace(/[^a-zA-Z0-9_-]/g, '-')
+      .slice(0, 40) || 'dry-run'
+    const logFile = join(LOG_DIR, `dryrun-${agentId}-${Date.now()}.log`)
+    writeFileSync(
+      logFile,
+      `[dry-run] ${new Date().toISOString()} agent=${agentId} runtime=${info.runtime}
+` +
+      `[dry-run] bin=${info.bin} resolved=${info.binResolved ?? 'NOT FOUND ON PATH'}
+`
+    )
+
+    return NextResponse.json({
+      dryRun: true,
+      runtime: info.runtime,
+      bin: info.bin,
+      binResolved: info.binResolved,
+      runtimeAvailable: info.available,
+      logDir: LOG_DIR,
+      logFile,
+      dispatchEnabled: !dispatchDisabled(),
+      wouldSpawn: info.binResolved !== null,
+      ...(info.binResolved === null
+        ? { warning: `a real dispatch would fail: '${info.bin}' is not on PATH on this host` }
+        : {}),
+    })
+  } catch (err) {
+    return NextResponse.json(
+      {
+        dryRun: true,
+        error: `dry-run resolution failed: ${err instanceof Error ? err.message : String(err)}`,
+      },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(req: NextRequest) {
+  // Dry run first: it resolves and reports, it never spawns.
+  if (req.nextUrl.searchParams.get('dryRun') === '1') {
+    return dryRunReport(req)
+  }
+
   if (dispatchDisabled()) {
     return NextResponse.json(DISPATCH_BLOCKED_BODY, { status: 503 })
   }
@@ -202,10 +265,10 @@ export async function POST(req: NextRequest) {
   // is_blocked=false excluded from WIP: a blocked in-progress issue must not hold the WIP slot.
   const wipExtraFilter = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
   const wipUrl = isReviewer
-    ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&is_blocked=eq.false&select=id`
+    ? `${dbRestBase()}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&is_blocked=eq.false&select=id`
     : config.skipAssigneeFilter
-      ? `${SUPA_URL}/rest/v1/issues?is_blocked=eq.true&started_at=not.is.null&select=id`
-      : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&is_blocked=eq.false${wipExtraFilter}&select=id`
+      ? `${dbRestBase()}/rest/v1/issues?is_blocked=eq.true&started_at=not.is.null&select=id`
+      : `${dbRestBase()}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&is_blocked=eq.false${wipExtraFilter}&select=id`
   const wipRes = await fetch(wipUrl, { headers: getHeaders() })
   const wipIssues = await wipRes.json() as Array<{ id: string }>
   if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
@@ -239,7 +302,7 @@ export async function POST(req: NextRequest) {
   // main (skipAssigneeFilter) uses extraFilters=is_blocked=eq.true — omit the false filter so they don't conflict.
   const blockedFilter = config.skipAssigneeFilter ? '' : 'is_blocked=eq.false'
   const baseFilters = [assigneeFilter, statusFilter, dorFilter, blockedFilter].filter(Boolean).join('&')
-  const url = `${SUPA_URL}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  const url = `${dbRestBase()}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
   const res = await fetch(url, { headers: getHeaders() })
   const tasks = await res.json() as Array<{
@@ -268,7 +331,7 @@ export async function POST(req: NextRequest) {
 
     if (blockedByIds.length > 0) {
       const blockerRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
+        `${dbRestBase()}/rest/v1/issues?or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
         { headers: getHeaders() }
       )
       const blockers = await blockerRes.json() as Array<{ id: string; task_key: string | null; status: string }>
@@ -304,7 +367,7 @@ export async function POST(req: NextRequest) {
   // readyTasks contains no siblings of locked parent (fallback to global queue to avoid starve).
   {
     const inProgressRes = await fetch(
-      `${SUPA_URL}/rest/v1/issues?status=eq.in_progress&assignee=eq.${agentId}&parent_id=not.is.null&select=parent_id`,
+      `${dbRestBase()}/rest/v1/issues?status=eq.in_progress&assignee=eq.${agentId}&parent_id=not.is.null&select=parent_id`,
       { headers: getHeaders() }
     )
     const inProgressTasks = await inProgressRes.json() as Array<{ parent_id: string | null }>
@@ -329,7 +392,7 @@ export async function POST(req: NextRequest) {
   const parentStatuses: Record<string, string> = {}
   if (parentIds.length > 0) {
     const parentRes = await fetch(
-      `${SUPA_URL}/rest/v1/issues?id=in.(${parentIds.join(',')})&select=id,status`,
+      `${dbRestBase()}/rest/v1/issues?id=in.(${parentIds.join(',')})&select=id,status`,
       { headers: getHeaders() }
     )
     const parents = await parentRes.json() as Array<{ id: string; status: string }>
@@ -386,7 +449,7 @@ export async function POST(req: NextRequest) {
   let inboxResponseBlock = ''
   try {
     const inboxRes = await fetch(
-      `${SUPA_URL}/rest/v1/inbox?issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
+      `${dbRestBase()}/rest/v1/inbox?issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
       { headers: getHeaders() }
     )
     const inboxRows = await inboxRes.json() as Array<{
@@ -421,14 +484,14 @@ ${responseFields}
   if (config.workingStatus && config.pickupStatus !== config.workingStatus) {
     claimFields.status = config.workingStatus
   }
-  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+  await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
     method: 'PATCH',
     headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
     body: JSON.stringify(claimFields),
   })
 
   // ── Step 7: Log agent_run ──
-  const agentRunRes = await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
+  const agentRunRes = await fetch(`${dbRestBase()}/rest/v1/agent_runs`, {
     method: 'POST',
     headers: { ...getHeaders(), 'Prefer': 'return=representation' },
     body: JSON.stringify({
@@ -450,7 +513,7 @@ ${responseFields}
   if (!branch && task.task_key && ['builder', 'ops'].includes(agentId)) {
     const prefix = task.type === 'ops' ? 'infra' : 'feat'
     branch = `${prefix}/${(task.task_key as string).toLowerCase()}`
-    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+    await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
       method: 'PATCH', headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
       body: JSON.stringify({ feature_branch: branch })
     })
@@ -698,13 +761,13 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
   // cleared it (up to 45 min). Now we immediately undo the claim so the next
   // kick can retry without waiting.
   if (!spawnResult.ok) {
-    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+    await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
       method: 'PATCH',
       headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
       body: JSON.stringify({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() }),
     })
     if (agentRunId) {
-      await fetch(`${SUPA_URL}/rest/v1/agent_runs?id=eq.${agentRunId}`, {
+      await fetch(`${dbRestBase()}/rest/v1/agent_runs?id=eq.${agentRunId}`, {
         method: 'PATCH',
         headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({ status: 'error', error: spawnResult.error, finished_at: new Date().toISOString() }),
@@ -719,7 +782,10 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     // NOT fired on spawn failure (would mask the dead process from the watchdog).
     void (async () => {
       await new Promise(resolve => setTimeout(resolve, 60_000))
-      await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
+      // Only vouch for a process that is still there. Writing this blind is
+      // what let a child that died at second 3 look alive to the watchdog.
+      if (spawnResult.pid && !isAlive(spawnResult.pid)) return
+      await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${task.id}`, {
         method: 'PATCH',
         headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
         body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
@@ -838,8 +904,8 @@ export async function GET(req: NextRequest) {
       const reviewStatusFieldGet = id === 'tester' ? 'tester_status' : 'designer_status'
       const wipExtraFilterGet = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
       const wipUrlGet = isReviewerGet
-        ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusFieldGet}=in.(running,in_progress)&is_blocked=eq.false&select=id`
-        : `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`
+        ? `${dbRestBase()}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusFieldGet}=in.(running,in_progress)&is_blocked=eq.false&select=id`
+        : `${dbRestBase()}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`
       const wipRes = await fetch(wipUrlGet, { headers: getHeaders() })
       const wipIssues = await wipRes.json() as Array<{ id: string }>
 
@@ -850,7 +916,7 @@ export async function GET(req: NextRequest) {
         ? `status=eq.${config.pickupStatus}&${reviewStatusFieldGet}=eq.pending`
         : `assignee=eq.${id}&status=eq.${config.pickupStatus}`
       const eligibleRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?${eligibleFilter}&${dorFilter}${extraFilter}&select=id&limit=100`,
+        `${dbRestBase()}/rest/v1/issues?${eligibleFilter}&${dorFilter}${extraFilter}&select=id&limit=100`,
         { headers: getHeaders() }
       )
       const eligible = await eligibleRes.json() as Array<{ id: string }>

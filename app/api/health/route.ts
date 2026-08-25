@@ -4,8 +4,8 @@
 import { NextResponse } from 'next/server'
 import { listRuntimes } from '@/lib/runtimes'
 import { listWorktrees } from '@/lib/runtimes/worktree'
+import { dbRestBase } from '@/lib/db/rest'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
 export async function GET() {
@@ -14,7 +14,7 @@ export async function GET() {
   const dbStart = Date.now()
   try {
     const res = await fetch(
-      `${SUPA_URL}/rest/v1/issues?status=neq.closed&select=status&limit=500`,
+      `${dbRestBase()}/rest/v1/issues?status=neq.closed&select=status&limit=500`,
       { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }, signal: AbortSignal.timeout(5000) }
     )
     const dbLatency = Date.now() - dbStart
@@ -43,7 +43,7 @@ export async function GET() {
   // Phase 2.4: Read heartbeat state from Supabase agent_memory_files
   try {
     const hbRes = await fetch(
-      `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&memory_type=eq.heartbeat_state&select=content&limit=1`,
+      `${dbRestBase()}/rest/v1/agent_memory_files?agent_id=eq.global&memory_type=eq.heartbeat_state&select=content&limit=1`,
       { headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }, signal: AbortSignal.timeout(3000) }
     )
     if (hbRes.ok) {

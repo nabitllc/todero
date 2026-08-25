@@ -14,8 +14,8 @@ fi
 echo $$ > "$LOOP_LOCK"
 trap "rm -f $LOOP_LOCK" EXIT
 
-SK="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
-SUPA="https://twthgapiouiqhavrcnry.supabase.co"
+SK="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is not set - see .env.local.template}"
+SUPA="${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is not set - see .env.local.template}"
 MC_DIR="/Users/kemuniagent/todero"
 WORKSPACE="/Users/kemuniagent/todero/config"
 

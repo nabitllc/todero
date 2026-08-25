@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { promisify } from 'util'
 import fs from 'fs'
+import { dbRestBase } from '@/lib/db/rest'
 
 const promisifyExec = promisify
 
-const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const OPENROUTER_KEY = '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'
 
@@ -38,7 +38,7 @@ export async function GET() {
 
   const [supabaseDb, openrouter, cfKaos, discordBot] = await Promise.allSettled([
     // 1. Supabase DB size via REST RPC
-    fetch(`${SUPABASE_URL}/rest/v1/rpc/pg_database_size_bytes`, {
+    fetch(`${dbRestBase()}/rest/v1/rpc/pg_database_size_bytes`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_KEY,

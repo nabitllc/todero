@@ -7,7 +7,7 @@
 // De-duplicates: skips if a pending budget_warning already exists from last 24h.
 
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db, dbMissingEnv } from '@/lib/db'
 
 const MONTHLY_BUDGET_USD = 200
 const WARN_THRESHOLD = 0.20 // warn when <20% remaining
@@ -18,13 +18,11 @@ function parseBudgetFromPlan(plan: string): number {
 }
 
 export async function GET() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-  if (!supabaseUrl || !supabaseKey) {
+  const missing = dbMissingEnv()
+  if (missing.length > 0) {
     return NextResponse.json(
-      { error: 'Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY' },
-      { status: 500 }
+      { error: `Database is not configured. Missing: ${missing.join(', ')}` },
+      { status: 503 }
     )
   }
 
@@ -99,7 +97,7 @@ export async function GET() {
   }
 
   // 4. Check for existing pending budget_warning within last 24 hours (de-dup)
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  const supabase = db()
 
   const { data: existing } = await supabase
     .from('inbox')

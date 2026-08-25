@@ -51,10 +51,12 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       .then(d => setPaused(d.is_paused === true))
       .catch(() => {})
 
+    // Envelope-or-array: /api/agents returns { agents, configured, error }.
     fetch('/api/agents')
       .then(r => r.json())
-      .then((agents: any[]) => {
-        const found = Array.isArray(agents) ? agents.find(a => a.id === agentId) : null
+      .then((body: any) => {
+        const agents: any[] = Array.isArray(body) ? body : Array.isArray(body?.agents) ? body.agents : []
+        const found = agents.find(a => a.id === agentId)
         if (found?.lastUpdatedAt) setLastRun(found.lastUpdatedAt)
       })
       .catch(() => {})

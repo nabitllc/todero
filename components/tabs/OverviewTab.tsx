@@ -6,19 +6,127 @@ import { Bar, SH } from '@/lib/mc-atoms'
 import { deriveIssueStatusCategory } from '@/lib/status-category'
 import ActiveAgentsCard from '@/components/ActiveAgentsCard'
 import ActivityFeed from '@/components/ActivityFeed'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { readApiError, useApiData, type ApiError } from '@/hooks/useApiData'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+
+// TOD-654 follow-up: the Overview is the app's front door, and every panel on it
+// used to `.then(r => r.json())` without checking `res.ok`. A 403/500 body parses
+// into an object, `Array.isArray(...)` says false, and the panel quietly rendered
+// "P0 Bugs 0" / "Nothing shipped" / "No blockers" over a refused request. Every
+// fetch below now goes through `fetchJson`, which keeps the failure, and every
+// panel renders the failure *in place of* its empty state — never alongside it.
+
+const SUPA_HEADERS = dbRestHeaders()
+
+/** Loose projection of the issue rows the Overview panels select. */
+interface IssueRow {
+  id?: string
+  task_key?: string
+  title?: string
+  project?: string
+  assignee?: string
+  priority?: string
+  status?: string
+  type?: string
+  blocked_by?: string | null
+  parent_id?: string | null
+  resolution_type?: string | null
+}
+
+interface SprintRow { sprint_number?: number | string; start_date?: string; end_date?: string }
+
+type Fetched<T> = { ok: true; data: T } | { ok: false; error: ApiError }
+
+/**
+ * Short, readable label for the banner. Local routes keep their path; the
+ * Supabase REST URLs collapse to `supabase/rest/v1/<table>` because their
+ * querystrings run to hundreds of characters.
+ */
+function endpointLabel(url: string): string {
+  const path = url.split('?')[0]
+  if (path.startsWith('/')) return path
+  try { return `supabase${new URL(path).pathname}` } catch { return path }
+}
+
+/** fetch + parse that hands back the failure instead of an empty array. */
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<Fetched<T>> {
+  const endpoint = endpointLabel(url)
+  try {
+    const res = await fetch(url, init)
+    if (!res.ok) return { ok: false, error: await readApiError(res, endpoint) }
+    return { ok: true, data: (await res.json()) as T }
+  } catch (e) {
+    return {
+      ok: false,
+      error: { status: 0, endpoint, message: e instanceof Error ? e.message : 'could not reach the server' },
+    }
+  }
+}
+
+/** First failure in a Promise.all group, or null when every leg succeeded. */
+function firstError(results: Fetched<unknown>[]): ApiError | null {
+  const failed = results.find(r => !r.ok)
+  return failed && !failed.ok ? failed.error : null
+}
+
+/** The three statuses the board treats as finished. */
+const isDone = (status?: string) => ['completed', 'released', 'closed'].includes(status ?? '')
+
+/** Rows out of a successful fetch; `[]` only ever means "the server said none". */
+function rowsOf(res: Fetched<IssueRow[]>): IssueRow[] {
+  return res.ok && Array.isArray(res.data) ? res.data : []
+}
+
+/** Bump the returned counter to re-run a panel's load effect. */
+function useReload(): [number, () => void] {
+  const [n, setN] = useState(0)
+  return [n, useCallback(() => setN(v => v + 1), [])]
+}
+
+/** The card chrome every Overview panel shares. */
+function PanelCard({ icon, title, badge, children }: {
+  icon: string
+  title: string
+  badge?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-sm">{icon}</span>
+        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">{title}</span>
+        {badge}
+      </div>
+      {children}
+    </div>
+  )
+}
 
 // INF-77: Needs-attention block (high/critical open issues)
 function NeedsAttentionBlock() {
-  const [items, setItems] = React.useState<any[]>([])
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    fetch(`${SUPA}/rest/v1/issues?assignee=eq.main&status=in.(open,backlog)&priority=in.(critical,high)&select=task_key,title,project,priority,blocked_by,description&order=priority.asc&limit=5`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then(data => {
-      if (Array.isArray(data)) setItems(data)
-    }).catch(() => {})
-  }, [])
+  const [items, setItems] = useState<IssueRow[]>([])
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?assignee=eq.main&status=in.(open,backlog)&priority=in.(critical,high)&select=task_key,title,project,priority,blocked_by,description&order=priority.asc&limit=5`, {
+      headers: SUPA_HEADERS,
+    }).then(res => {
+      if (cancelled) return
+      setError(res.ok ? null : res.error)
+      setItems(rowsOf(res))
+    })
+    return () => { cancelled = true }
+  }, [reloadKey])
+  // A refused load is louder than a quiet block, not quieter than one.
+  if (error) {
+    return (
+      <PanelCard icon="🚨" title="Needs Your Attention">
+        <ApiErrorBanner error={error} onRetry={reload} />
+      </PanelCard>
+    )
+  }
   if (items.length === 0) return null
   return (
     <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
@@ -28,7 +136,7 @@ function NeedsAttentionBlock() {
         <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/30 text-red-400 font-medium">{items.length}</span>
       </div>
       <div className="space-y-2">
-        {items.slice(0, 3).map((t: any, i: number) => (
+        {items.slice(0, 3).map((t, i) => (
           <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-white/10 bg-[#080808]">
             <span className="text-red-400 text-xs mt-0.5">{t.priority === 'critical' ? '🔴' : '🟠'}</span>
             <div className="min-w-0 flex-1">
@@ -49,19 +157,30 @@ function NeedsAttentionBlock() {
 
 // INF-76: Done-yesterday wins callout
 function DoneYesterdayWins() {
-  const [wins, setWins] = React.useState<any[]>([])
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
+  const [wins, setWins] = useState<IssueRow[]>([])
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
+  useEffect(() => {
+    let cancelled = false
     const now = new Date()
     const yStart = new Date(now); yStart.setDate(now.getDate()-1); yStart.setHours(0,0,0,0)
     const yEnd = new Date(now); yEnd.setHours(0,0,0,0)
-    fetch(`${SUPA}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then(data => {
-      if (Array.isArray(data) && data.length > 0) setWins(data)
-    }).catch(() => {})
-  }, [])
+    fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`, {
+      headers: SUPA_HEADERS,
+    }).then(res => {
+      if (cancelled) return
+      setError(res.ok ? null : res.error)
+      setWins(rowsOf(res))
+    })
+    return () => { cancelled = true }
+  }, [reloadKey])
+  if (error) {
+    return (
+      <PanelCard icon="🏆" title="Yesterday's Wins">
+        <ApiErrorBanner error={error} onRetry={reload} />
+      </PanelCard>
+    )
+  }
   if (wins.length === 0) return null
   const ASSIGNEE_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤' }
   return (
@@ -87,34 +206,37 @@ function DoneYesterdayWins() {
 
 // MC-119: Risk Radar card
 function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
-  const [risks, setRisks] = React.useState<{p0Bugs: any[]; blocked: any[]; noChildren: any[]}>({ p0Bugs: [], blocked: [], noChildren: [] })
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+  const [risks, setRisks] = useState<{p0Bugs: IssueRow[]; blocked: IssueRow[]; noChildren: IssueRow[]}>({ p0Bugs: [], blocked: [], noChildren: [] })
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
+  useEffect(() => {
+    let cancelled = false
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
     Promise.all([
-      fetch(`${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: h }).then(r => r.json()),
+      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`, { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: SUPA_HEADERS }),
     ]).then(([p0, blocked, features, children]) => {
-      const parentIds = new Set((Array.isArray(children) ? children : []).map((c: any) => c.parent_id))
-      const noChildren = (Array.isArray(features) ? features : []).filter((f: any) => !parentIds.has(f.id))
-      setRisks({ p0Bugs: Array.isArray(p0) ? p0 : [], blocked: Array.isArray(blocked) ? blocked : [], noChildren })
-    }).catch(() => {})
-  }, [])
+      if (cancelled) return
+      // Any leg refusing means the three counts below would be fiction.
+      const failure = firstError([p0, blocked, features, children])
+      setError(failure)
+      if (failure) { setRisks({ p0Bugs: [], blocked: [], noChildren: [] }); return }
+      const parentIds = new Set(rowsOf(children).map(c => c.parent_id))
+      const noChildren = rowsOf(features).filter(f => !parentIds.has(f.id ?? null))
+      setRisks({ p0Bugs: rowsOf(p0), blocked: rowsOf(blocked), noChildren })
+    })
+    return () => { cancelled = true }
+  }, [reloadKey])
   const signals = [
     { label: 'P0 Bugs (>24h)', count: risks.p0Bugs.length, items: risks.p0Bugs, icon: '\u{1F534}' },
     { label: 'Blocked Issues', count: risks.blocked.length, items: risks.blocked, icon: '\u{1F6AB}' },
     { label: 'Features (0 children)', count: risks.noChildren.length, items: risks.noChildren, icon: '\u26A0\uFE0F' },
   ]
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">{'\u{1F6E1}\uFE0F'}</span>
-        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Risk Radar</span>
-      </div>
+    <PanelCard icon={'\u{1F6E1}\uFE0F'} title="Risk Radar">
+      {error ? <ApiErrorBanner error={error} onRetry={reload} /> : (
       <div className="space-y-2.5">
         {signals.map(s => {
           const badgeClass = s.count === 0
@@ -134,7 +256,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
               </div>
               {s.count > 0 && (
                 <div className="mt-2 space-y-1">
-                  {s.items.slice(0, 3).map((item: any, i: number) => (
+                  {s.items.slice(0, 3).map((item, i) => (
                     <div key={item.task_key || i} className="flex items-center gap-2 text-[10px]">
                       {item.task_key && <span className="font-mono text-white/50">{item.task_key}</span>}
                       <span className="text-white/40 truncate">{item.title}</span>
@@ -147,41 +269,44 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
           )
         })}
       </div>
-    </div>
+      )}
+    </PanelCard>
   )
 }
 
 // MC-120: Today's Standup card
 function StandupCard() {
-  const [data, setData] = React.useState<{shipped: any[]; inFlight: any[]; blockers: any[]}>({ shipped: [], inFlight: [], blockers: [] })
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+  const [data, setData] = useState<{shipped: IssueRow[]; inFlight: IssueRow[]; blockers: IssueRow[]}>({ shipped: [], inFlight: [], blockers: [] })
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
+  useEffect(() => {
+    let cancelled = false
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
     Promise.all([
-      fetch(`${SUPA}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`, { headers: h }).then(r => r.json()),
+      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`, { headers: SUPA_HEADERS }),
+      fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`, { headers: SUPA_HEADERS }),
     ]).then(([shipped, inFlight, blockers]) => {
+      if (cancelled) return
+      // "Nothing shipped" / "No blockers" must never stand in for a refusal.
+      const failure = firstError([shipped, inFlight, blockers])
+      setError(failure)
       setData({
-        shipped: Array.isArray(shipped) ? shipped : [],
-        inFlight: Array.isArray(inFlight) ? inFlight : [],
-        blockers: Array.isArray(blockers) ? blockers : [],
+        shipped: rowsOf(shipped),
+        inFlight: rowsOf(inFlight),
+        blockers: rowsOf(blockers),
       })
-    }).catch(() => {})
-  }, [])
+    })
+    return () => { cancelled = true }
+  }, [reloadKey])
   const sections = [
     { label: 'Shipped Yesterday', icon: '\u2705', items: data.shipped, emptyMsg: 'Nothing shipped', colorClass: 'text-green-400' },
     { label: 'Ongoing Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', colorClass: 'text-blue-400' },
     { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', colorClass: 'text-red-400' },
   ]
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">{'\u{1F4CB}'}</span>
-        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Today&apos;s Standup</span>
-      </div>
+    <PanelCard icon={'\u{1F4CB}'} title="Today's Standup">
+      {error ? <ApiErrorBanner error={error} onRetry={reload} /> : (
       <div className="space-y-3">
         {sections.map(s => (
           <div key={s.label}>
@@ -194,7 +319,7 @@ function StandupCard() {
               <p className="text-[10px] text-white/20 italic pl-5">{s.emptyMsg}</p>
             ) : (
               <div className="space-y-1 pl-5">
-                {s.items.slice(0, 5).map((item: any, i: number) => (
+                {s.items.slice(0, 5).map((item, i) => (
                   <div key={item.task_key || i} className="flex items-center gap-2 text-xs">
                     {item.task_key && <span className="text-[9px] font-mono text-white/50 shrink-0">{item.task_key}</span>}
                     <span className="text-white/40 truncate">{item.title}</span>
@@ -205,7 +330,8 @@ function StandupCard() {
           </div>
         ))}
       </div>
-    </div>
+      )}
+    </PanelCard>
   )
 }
 
@@ -224,54 +350,51 @@ function SprintProgressCard() {
   const [sprintLabel, setSprintLabel] = useState('')
   const [sprintDate, setSprintDate] = useState('')
   const [countdown, setCountdown] = useState('')
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
 
   useEffect(() => {
-    const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const headers = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
+    let cancelled = false
+    const headers = SUPA_HEADERS
+    ;(async () => {
+      // Fetch active sprint dynamically
+      const sprints = await fetchJson<SprintRow[]>(`${dbRestBase()}/rest/v1/sprints?status=eq.active&select=sprint_number,start_date,end_date&limit=1`, { headers })
+      if (cancelled) return
+      if (!sprints.ok) { setError(sprints.error); setSprintData(null); return }
+      setError(null)
+      const active = Array.isArray(sprints.data) ? sprints.data[0] : undefined
+      if (!active) return
+      const activeDate = active.start_date ?? ''
+      setSprintLabel(`Sprint ${active.sprint_number ?? '?'}`)
+      setSprintDate(activeDate)
 
-    // Fetch active sprint dynamically
-    fetch(`${SUPA_URL}/rest/v1/sprints?status=eq.active&select=sprint_number,start_date,end_date&limit=1`, { headers })
-      .then(r => r.json())
-      .then(sprints => {
-        if (!Array.isArray(sprints) || sprints.length === 0) return
-        const active = sprints[0]
-        const num = active.sprint_number ?? '?'
-        const activeDate = active.start_date
-        setSprintLabel(`Sprint ${num}`)
-        setSprintDate(activeDate)
+      // Fetch issues for active sprint
+      const issues = await fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?sprint=eq.${activeDate}&select=id,status`, { headers })
+      if (cancelled) return
+      if (!issues.ok) { setError(issues.error); setSprintData(null); return }
+      const rows = rowsOf(issues)
+      setSprintData({ total: rows.length, done: rows.filter(i => isDone(i.status)).length })
+      const counts: Record<string,number> = {Planned:0,Ongoing:0,SignOff:0,Done:0}
+      for (const issue of rows) {
+        const cat = deriveIssueStatusCategory(issue.status)
+        if (cat) counts[cat] = (counts[cat] ?? 0) + 1
+      }
+      setCats(counts)
 
-        // Fetch issues for active sprint
-        fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.${activeDate}&select=id,status`, { headers })
-          .then(r => r.json())
-          .then(data => {
-            if (Array.isArray(data)) {
-              setSprintData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
-              const counts: Record<string,number> = {Planned:0,Ongoing:0,SignOff:0,Done:0}
-              for (const issue of data) {
-                const cat = deriveIssueStatusCategory(issue.status)
-                if (cat) counts[cat] = (counts[cat] ?? 0) + 1
-              }
-              setCats(counts)
-            }
-          }).catch(() => {})
-
-        // Fetch prior sprint for velocity comparison
-        fetch(`${SUPA_URL}/rest/v1/sprints?status=eq.closed&select=sprint_number,start_date&order=created_at.desc&limit=1`, { headers })
-          .then(r => r.json())
-          .then(priorSprints => {
-            if (!Array.isArray(priorSprints) || priorSprints.length === 0) return
-            const priorDate = priorSprints[0].start_date
-            fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.${priorDate}&select=id,status`, { headers })
-              .then(r => r.json())
-              .then(data => {
-                if (Array.isArray(data)) {
-                  setPriorData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
-                }
-              }).catch(() => {})
-          }).catch(() => {})
-      }).catch(() => {})
-  }, [])
+      // Prior sprint, for the velocity badge only. Best-effort on purpose: if it
+      // fails the badge is omitted, which claims nothing — unlike the counts
+      // above, which would be a lie if they were shown over a refused request.
+      const priorSprints = await fetchJson<SprintRow[]>(`${dbRestBase()}/rest/v1/sprints?status=eq.closed&select=sprint_number,start_date&order=created_at.desc&limit=1`, { headers })
+      if (cancelled || !priorSprints.ok) return
+      const priorDate = Array.isArray(priorSprints.data) ? priorSprints.data[0]?.start_date : undefined
+      if (!priorDate) return
+      const priorIssues = await fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?sprint=eq.${priorDate}&select=id,status`, { headers })
+      if (cancelled || !priorIssues.ok) return
+      const priorRows = rowsOf(priorIssues)
+      setPriorData({ total: priorRows.length, done: priorRows.filter(i => isDone(i.status)).length })
+    })()
+    return () => { cancelled = true }
+  }, [reloadKey])
 
   useEffect(() => {
     const update = () => {
@@ -301,6 +424,13 @@ function SprintProgressCard() {
     return () => clearInterval(t)
   }, [])
 
+  if (error) {
+    return (
+      <PanelCard icon="🏃" title={sprintLabel || 'Sprint'}>
+        <ApiErrorBanner error={error} onRetry={reload} />
+      </PanelCard>
+    )
+  }
   if (!sprintData || sprintData.total === 0) return null
   const pct = Math.round((sprintData.done / sprintData.total) * 100)
   const velocityDelta = priorData && priorData.done > 0
@@ -359,20 +489,33 @@ function SprintProgressCard() {
 // MC-111: Project Breakdown Bars (epic/feature/issue)
 function ProjectBreakdownBars({ project }: { project: string }) {
   const [data, setData] = useState<{epics:{done:number;total:number};features:{done:number;total:number};issues:{done:number;total:number}}|null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
   useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    fetch(`${SUPA}/rest/v1/issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then((rows: any[]) => {
-      if (!Array.isArray(rows)) return
+    let cancelled = false
+    fetchJson<IssueRow[]>(`${dbRestBase()}/rest/v1/issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`, {
+      headers: SUPA_HEADERS,
+    }).then(res => {
+      if (cancelled) return
+      if (!res.ok) { setError(res.error); setData(null); return }
+      setError(null)
+      const rows = rowsOf(res)
       const count = (type: string) => {
         const matching = rows.filter(r => r.type === type)
-        return { done: matching.filter(r => ['completed', 'released', 'closed'].includes(r.status)).length, total: matching.length }
+        return { done: matching.filter(r => isDone(r.status)).length, total: matching.length }
       }
-      setData({ epics: count('epic'), features: count('feature'), issues: { done: rows.filter(r => !['epic','feature'].includes(r.type) && ['completed', 'released', 'closed'].includes(r.status)).length, total: rows.filter(r => !['epic','feature'].includes(r.type)).length } })
-    }).catch(() => {})
-  }, [project])
+      const leaves = rows.filter(r => !['epic','feature'].includes(r.type ?? ''))
+      setData({ epics: count('epic'), features: count('feature'), issues: { done: leaves.filter(r => isDone(r.status)).length, total: leaves.length } })
+    })
+    return () => { cancelled = true }
+  }, [project, reloadKey])
+  if (error) {
+    return (
+      <div className="mt-2 pt-2 border-t border-white/10">
+        <ApiErrorBanner error={error} onRetry={reload} />
+      </div>
+    )
+  }
   if (!data) return null
   const rows = [
     { label: 'Epics', ...data.epics, colorClass: 'bg-purple-500' },
@@ -391,6 +534,48 @@ function ProjectBreakdownBars({ project }: { project: string }) {
         </div>
       ))}
     </div>
+  )
+}
+
+interface LiveStatusPayload { openrouter?: { remaining?: number } }
+
+/**
+ * INF-66: Subscriptions & Balances. The OpenRouter figure used to fall back to a
+ * hardcoded `$9.57` whenever /api/status was unavailable, so a refused status
+ * call rendered as a confident balance. The panel now polls the endpoint itself:
+ * on a non-ok response it shows the failure instead of the tiles, and when the
+ * balance is genuinely absent it says so rather than inventing one.
+ */
+function SubscriptionsPanel({ liveStatus }: { liveStatus: LiveStatusPayload | null }) {
+  const { data, error, refetch } = useApiData<LiveStatusPayload>('/api/status')
+  const remaining = liveStatus?.openrouter?.remaining ?? data?.openrouter?.remaining
+  const tiles = [
+    { name: 'Claude Pro', note: '$20/mo · Active', color: '#a855f7', icon: '🧠' },
+    { name: 'Vercel Pro', note: '$20/mo · Renews Apr 24', color: '#ffffff', icon: '▲' },
+    {
+      name: 'OpenRouter',
+      note: typeof remaining === 'number' ? `$${remaining.toFixed(2)} remaining` : 'balance unknown',
+      color: typeof remaining !== 'number' ? '#71717a' : remaining < 2 ? '#ef4444' : '#10b981',
+      icon: '🔀',
+    },
+    { name: 'Brave Search', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
+  ]
+  return (
+    <PanelCard icon="💳" title="Subscriptions & Balances">
+      {error ? <ApiErrorBanner error={error} onRetry={refetch} /> : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {tiles.map(s => (
+            <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5 bg-[#080808]">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-xs">{s.icon}</span>
+                <span className="text-white text-[11px] font-medium">{s.name}</span>
+              </div>
+              <p className="text-[10px]" style={{color: s.color}}>{s.note}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </PanelCard>
   )
 }
 
@@ -520,28 +705,7 @@ export default function OverviewTab({
               <DoneYesterdayWins />
 
               {/* ── Subscriptions & Balances (INF-66) ── */}
-              <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-sm">💳</span>
-                  <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Subscriptions & Balances</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { name: 'Claude Pro', type: 'subscription', note: '$20/mo · Active', color: '#a855f7', icon: '🧠' },
-                    { name: 'Vercel Pro', type: 'subscription', note: '$20/mo · Renews Apr 24', color: '#ffffff', icon: '▲' },
-                    { name: 'OpenRouter', type: 'balance', note: `$${(liveStatus?.openrouter?.remaining ?? 9.57).toFixed(2)} remaining`, color: liveStatus?.openrouter?.remaining < 2 ? '#ef4444' : '#10b981', icon: '🔀' },
-                    { name: 'Brave Search', type: 'subscription', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
-                  ].map(s => (
-                    <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5 bg-[#080808]">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-xs">{s.icon}</span>
-                        <span className="text-white text-[11px] font-medium">{s.name}</span>
-                      </div>
-                      <p className="text-[10px]" style={{color: s.color}}>{s.note}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <SubscriptionsPanel liveStatus={liveStatus ?? null} />
 
               {/* ── Project Health Card ── */}
               {(()=>{

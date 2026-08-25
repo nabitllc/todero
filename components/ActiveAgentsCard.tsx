@@ -4,9 +4,10 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { readApiError, type ApiError } from '@/hooks/useApiData'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
-const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 
 const STALE_MINUTES = 60   // >60m without activity = stale (amber warning)
 const STUCK_MINUTES = 120  // >120m without activity = stuck (red, will be auto-recovered)
@@ -106,6 +107,9 @@ const Countdown = React.memo(function Countdown({ targetTs }: { targetTs: number
 export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTask?: Record<string, string> }) {
   const [agents, setAgents] = useState<AgentRow[]>([])
   const [loading, setLoading] = useState(true)
+  // TOD-654: "No active agents right now." was rendered over a refused /api/agents
+  // just as readily as over a genuinely idle fleet. Keep the failure and show it.
+  const [error, setError] = useState<ApiError | null>(null)
 
   const fetchData = async () => {
     try {
@@ -113,13 +117,40 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
       const [agentsRes, issuesRes] = await Promise.all([
         fetch('/api/agents'),
         fetch(
-          `${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,status,assignee,worked_by&limit=30`,
-          { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
+          `${dbRestBase()}/rest/v1/issues?status=eq.in_progress&select=task_key,title,status,assignee,worked_by&limit=30`,
+          { headers: dbRestHeaders() }
         ),
       ])
 
-      const agentsData: any[] = agentsRes.ok ? await agentsRes.json() : []
-      const issuesData: any[] = issuesRes.ok ? await issuesRes.json() : []
+      // /api/agents answers with an envelope { agents, configured, error } and
+      // uses 503 on an unconfigured host — the roster still ships in the body,
+      // so parse it regardless of status rather than silently showing nothing.
+      const agentsBody = await agentsRes.json().catch(() => null)
+      const agentsData: any[] = Array.isArray(agentsBody)
+        ? agentsBody
+        : Array.isArray(agentsBody?.agents) ? agentsBody.agents : []
+
+      // A non-ok response that still carried a roster (the 503 unconfigured-host
+      // envelope) is renderable. A non-ok response with no roster is not — that
+      // is a refusal, and it must not come out looking like an idle fleet.
+      if (!agentsRes.ok && agentsData.length === 0) {
+        setError({
+          status: agentsRes.status,
+          endpoint: '/api/agents',
+          message: typeof agentsBody?.error === 'string' ? agentsBody.error
+            : typeof agentsBody?.message === 'string' ? agentsBody.message
+            : agentsRes.statusText || 'request failed',
+        })
+        setAgents([])
+        return
+      }
+      if (!issuesRes.ok) {
+        setError(await readApiError(issuesRes, 'supabase/rest/v1/issues'))
+        setAgents([])
+        return
+      }
+      setError(null)
+      const issuesData: any[] = await issuesRes.json()
 
       // Build lookup: assignee → active issue
       const issueByAssignee: Record<string, { key: string; title: string; status: string }> = {}
@@ -165,8 +196,13 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
         })
 
       setAgents(rows)
-    } catch {
-      // fail silently
+    } catch (e) {
+      setError({
+        status: 0,
+        endpoint: '/api/agents',
+        message: e instanceof Error ? e.message : 'could not reach the server',
+      })
+      setAgents([])
     } finally {
       setLoading(false)
     }
@@ -201,7 +237,9 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
         <span className="text-[10px] text-white/20">↻ 30s</span>
       </div>
 
-      {agents.length === 0 ? (
+      {error ? (
+        <ApiErrorBanner error={error} onRetry={() => { setLoading(true); fetchData() }} />
+      ) : agents.length === 0 ? (
         <div className="text-white/20 text-xs py-2">No active agents right now.</div>
       ) : (
         <div className="space-y-1">

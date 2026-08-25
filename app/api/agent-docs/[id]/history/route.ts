@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 
 // Opt out of static prerender — route reads DB at request time. (TOD-2296)
 export const dynamic = 'force-dynamic'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 function getSupabase() {
-  return createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '')
+  return db()
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {

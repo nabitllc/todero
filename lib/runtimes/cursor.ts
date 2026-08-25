@@ -24,7 +24,7 @@ import { resolveBinary } from '../paths'
 
 // Bare name: resolved through PATH at spawn time. CURSOR_BIN overrides with an
 // explicit path (the Homebrew prefix it used to assume exists on one OS only).
-const CURSOR_BIN = process.env.CURSOR_BIN ?? 'cursor-agent'
+export const CURSOR_BIN = process.env.CURSOR_BIN ?? 'cursor-agent'
 
 function mapModel(alias: 'opus' | 'sonnet' | 'haiku' | undefined): string {
   // Cursor accepts provider-qualified model strings. Map our aliases to the
@@ -94,7 +94,7 @@ export const cursorRuntime: AgentRuntime = {
     if (opts.bypassPermissions !== false) argv.push('--force')
     argv.push('--model', model, '--print')
 
-    const result = spawnDetached(CURSOR_BIN, argv, opts.logFile, {
+    const result = await spawnDetached(CURSOR_BIN, argv, opts.logFile, {
       cwd: effectiveWorkingDir,
       env: process.env,
       stdinFile: promptFile,

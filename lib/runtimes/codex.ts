@@ -22,7 +22,7 @@ import { resolveBinary } from '../paths'
 
 // Bare name: resolved through PATH at spawn time, so an npm -g install, a
 // Homebrew install and a Windows shim all work. CODEX_BIN overrides.
-const CODEX_BIN = process.env.CODEX_BIN ?? 'codex'
+export const CODEX_BIN = process.env.CODEX_BIN ?? 'codex'
 
 // Codex has no exact sonnet/opus/haiku alias. Map to OpenAI models:
 // - sonnet → o4-mini (fast, balanced)
@@ -97,7 +97,7 @@ export const codexRuntime: AgentRuntime = {
     if (opts.bypassPermissions !== false) argv.push('--full-auto')
     argv.push('--model', model)
 
-    const result = spawnDetached(CODEX_BIN, argv, opts.logFile, {
+    const result = await spawnDetached(CODEX_BIN, argv, opts.logFile, {
       cwd: effectiveWorkingDir,
       env: process.env,
       stdinFile: promptFile,

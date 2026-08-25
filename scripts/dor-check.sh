@@ -3,7 +3,7 @@
 # Finds builder-assigned issues missing required DoR fields and alerts Discord
 set -euo pipefail
 
-SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
+SUPA_URL="${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is not set - see .env.local.template}"
 SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}"
 DISCORD_CHANNEL="${DISCORD_ALERTS_CHANNEL:-1487584901678104698}"
 

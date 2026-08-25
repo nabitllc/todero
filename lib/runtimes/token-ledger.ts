@@ -3,7 +3,7 @@
 // no-ops if the table is missing (warns once then suppresses). Runtime-agnostic:
 // Claude Code, Codex, Cursor, OpenAI API adapters all write to the same table.
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+import { dbRestBase } from '@/lib/db/rest'
 const SUPA_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 
@@ -34,7 +34,7 @@ export function recordSpawn(entry: TokenLedgerEntry): void {
         metadata: entry.metadata ?? null,
         status: 'spawned',
       }
-      const res = await fetch(`${SUPA_URL}/rest/v1/token_ledger`, {
+      const res = await fetch(`${dbRestBase()}/rest/v1/token_ledger`, {
         method: 'POST',
         headers: {
           'apikey': SUPA_KEY,
@@ -91,7 +91,7 @@ export function recordCompletion(entry: CompletionEntry): void {
   void (async () => {
     try {
       // Find the token_ledger row for this log file
-      const findUrl = `${SUPA_URL}/rest/v1/token_ledger?log_file=eq.${encodeURIComponent(entry.logFile)}&select=id&order=spawned_at.desc&limit=1`
+      const findUrl = `${dbRestBase()}/rest/v1/token_ledger?log_file=eq.${encodeURIComponent(entry.logFile)}&select=id&order=spawned_at.desc&limit=1`
       const findRes = await fetch(findUrl, {
         headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` },
       })
@@ -117,7 +117,7 @@ export function recordCompletion(entry: CompletionEntry): void {
         }
       }
 
-      await fetch(`${SUPA_URL}/rest/v1/token_ledger?id=eq.${row.id}`, {
+      await fetch(`${dbRestBase()}/rest/v1/token_ledger?id=eq.${row.id}`, {
         method: 'PATCH',
         headers: {
           'apikey': SUPA_KEY,

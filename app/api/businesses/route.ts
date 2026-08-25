@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
 
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(
-      'https://twthgapiouiqhavrcnry.supabase.co',
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    _supabase = db()
   }
   return _supabase
 }

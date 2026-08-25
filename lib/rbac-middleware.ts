@@ -7,7 +7,7 @@
 //   // ... continue with handler
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 import type { Role, Permission } from './rbac-types'
 
 const KNOWN_ROLES: readonly Role[] = ['owner', 'member', 'viewer', 'god', 'admin', 'tron', 'defaultbot']
@@ -27,10 +27,7 @@ const GOD_MANAGE_PERMISSIONS = new Set<Permission>([
 ])
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-  )
+  return db()
 }
 
 /**

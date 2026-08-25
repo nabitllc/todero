@@ -3,17 +3,16 @@
 // Handles Supabase agent_runs polling and board task polling.
 
 import { useEffect } from 'react';
-import {
-  SUPA_URL, SUPA_KEY, SUPA_AGENTS,
-} from '@/components/office/officeConstants';
+import { SUPA_AGENTS } from '@/components/office/officeConstants';
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser';
 import type { AgentRunInfo, AgentRunStatus } from '@/components/office/officeConstants';
 
 export type { AgentRunInfo, AgentRunStatus };
 
 export async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
-    { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
+    `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
+    { headers: dbRestHeaders() }
   );
   if (!res.ok) return {};
   const rows: any[] = await res.json();

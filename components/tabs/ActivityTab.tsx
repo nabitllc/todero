@@ -3,18 +3,17 @@ import React, { useState } from 'react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
 import { Button, EmptyState, Badge, PriorityBadge } from '@/components/ui'
 import { Radio } from 'lucide-react'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
 function AttentionAndShipped({ agents }: { agents: any[] }) {
   const [data, setData] = React.useState<{attention:any[];shipped:any[]}>({attention:[],shipped:[]})
   React.useEffect(() => {
-    const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    fetch(`${SUPA_URL}/rest/v1/issues?status=in.(code_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`, {headers: h as any})
+    const h = dbRestHeaders()
+    fetch(`${dbRestBase()}/rest/v1/issues?status=in.(code_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`, {headers: h as any})
       .then(r => r.json()).then(d => {
         if (Array.isArray(d)) setData(prev => ({...prev, attention: d}))
       }).catch(() => {})
-    fetch(`${SUPA_URL}/rest/v1/issues?status=in.(completed,released,closed)&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`, {headers: h as any})
+    fetch(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`, {headers: h as any})
       .then(r => r.json()).then(d => {
         const today = new Date(); today.setHours(0,0,0,0)
         if (Array.isArray(d)) setData(prev => ({...prev, shipped: d.filter((i: any) => new Date(i.updated_at) >= today)}))

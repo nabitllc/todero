@@ -1,17 +1,16 @@
 'use client'
 import React, { useState, useEffect } from 'react'
 import AgentOffice from '@/components/AgentOffice'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
 function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}> }) {
   const [runs, setRuns] = useState<any[]>([])
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
-    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const fetchRuns = () => {
-      fetch(`${SUPA}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`, {
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
+      fetch(`${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`, {
+        headers: dbRestHeaders()
       }).then(r => r.json()).then(data => {
         if (Array.isArray(data)) setRuns(data)
       }).catch(() => {})

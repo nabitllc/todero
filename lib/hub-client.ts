@@ -1,6 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 
@@ -65,7 +64,7 @@ class HubScopedBuilder {
  * Hub-scoped client. Exposes `from()` which auto-injects `business_id` for
  * hub-scoped tables (select filter, insert/upsert row data, update/delete filter).
  *
- * Also exposes `.client` (raw SupabaseClient) and `.businessId` for callers that
+ * Also exposes `.client` (raw DbAdapter) and `.businessId` for callers that
  * need explicit control or use non-proxied operations.
  *
  * Example (new API — preferred):
@@ -78,11 +77,11 @@ class HubScopedBuilder {
  */
 export class HubClient {
   /** Raw Supabase admin client — use for non-hub-scoped tables or explicit control. */
-  readonly client: SupabaseClient
+  readonly client: DbAdapter
   /** Hub business ID — injected automatically by .from() for hub-scoped tables. */
   readonly businessId: string
 
-  constructor(client: SupabaseClient, businessId: string) {
+  constructor(client: DbAdapter, businessId: string) {
     this.client = client
     this.businessId = businessId
   }
@@ -100,8 +99,8 @@ export class HubClient {
 }
 
 /** Shared admin client for aggregate (cross-hub) queries. */
-export function createAdminClient(): SupabaseClient {
-  return createClient(SUPA_URL, SUPA_KEY)
+export function createAdminClient(): DbAdapter {
+  return db()
 }
 
 /** Returns a hub-scoped client for the given business ID. */

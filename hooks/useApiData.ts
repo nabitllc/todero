@@ -1,57 +1,23 @@
 'use client'
 // Shared fetch hook — TOD-654 follow-up.
 //
-// The repo-wide anti-pattern this replaces:
-//   fetch(url).then(r => r.json()).then(d => setItems(Array.isArray(d) ? d : d?.data ?? []))
-// A 403/500 body is an object, so `d?.data ?? []` silently produced an empty
-// array and the tab rendered "No issues found" over a permission error. Every
-// tab that loads data must be able to tell "nothing there" apart from
-// "the server refused". This hook makes that distinction structural: on a
-// non-ok response `data` stays null and `error` is populated.
+// The repo-wide anti-pattern this replaces parsed every response body without
+// checking `res.ok`, then coerced the result with `?? []`. A 403/500 body is an
+// object, so the coercion silently produced an empty array and the tab rendered
+// "No issues found" over a permission error. Every tab that loads data must be
+// able to tell "nothing there" apart from "the server refused". This hook makes
+// that distinction structural: on a non-ok response `data` stays null and
+// `error` is populated.
+//
+// The error shape, wording and body-reading live in lib/fetch-json.ts so that
+// imperative call sites and server routes share them; they are re-exported here
+// because most consumers are React components that already import this module.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { fetchJson, type ApiError } from '@/lib/fetch-json'
 
-export interface ApiError {
-  /** HTTP status, or 0 when the request never reached the server. */
-  status: number
-  /** The path that was requested, shown verbatim to the operator. */
-  endpoint: string
-  /** Server-supplied message (`error` / `message` field, else raw body text). */
-  message: string
-  /** Machine-readable code when the server sent one (e.g. PERMISSION_DENIED). */
-  code?: string
-}
-
-/**
- * The one sentence every tab shows when a load fails. Kept in one place so the
- * wording — and therefore what an auditor can grep for — is identical
- * everywhere: `data unavailable — 403 from /api/issues: <server message>`.
- */
-export function formatApiError(err: ApiError): string {
-  const status = err.status > 0 ? String(err.status) : 'network error'
-  return `data unavailable — ${status} from ${err.endpoint}: ${err.message}`
-}
-
-/** Pull the most useful message out of an error response body. */
-export async function readApiError(res: Response, endpoint: string): Promise<ApiError> {
-  let message = res.statusText || 'request failed'
-  let code: string | undefined
-  try {
-    const text = await res.text()
-    if (text) {
-      try {
-        const body = JSON.parse(text) as { error?: string; message?: string; code?: string }
-        message = body?.error ?? body?.message ?? text.slice(0, 300)
-        code = body?.code
-      } catch {
-        message = text.slice(0, 300)
-      }
-    }
-  } catch {
-    /* body already consumed or unreadable — keep the statusText */
-  }
-  return { status: res.status, endpoint, message, code }
-}
+export { fetchJson, fetchJsonOrNull, formatApiError, readApiError } from '@/lib/fetch-json'
+export type { ApiError, JsonResult } from '@/lib/fetch-json'
 
 export interface ApiDataState<T> {
   /** Parsed payload, or null while loading and whenever the load failed. */
@@ -86,31 +52,17 @@ export function useApiData<T>(endpoint: string | null, init?: RequestInit): ApiD
     let cancelled = false
     setLoading(true)
     ;(async () => {
-      try {
-        const res = await fetch(endpoint, { ...initRef.current, signal: ctrl.signal })
-        if (cancelled) return
-        setStatus(res.status)
-        if (!res.ok) {
-          setError(await readApiError(res, endpoint))
-          setData(null)
-          return
-        }
-        const parsed = (await res.json()) as T
-        if (cancelled) return
-        setData(parsed)
+      const r = await fetchJson<T>(endpoint, { ...initRef.current, signal: ctrl.signal })
+      if (cancelled || ctrl.signal.aborted) return
+      setStatus(r.status === 0 ? 0 : r.status)
+      if (r.ok) {
+        setData(r.data)
         setError(null)
-      } catch (e) {
-        if (cancelled || ctrl.signal.aborted) return
-        setStatus(0)
+      } else {
         setData(null)
-        setError({
-          status: 0,
-          endpoint,
-          message: e instanceof Error ? e.message : 'could not reach the server',
-        })
-      } finally {
-        if (!cancelled) setLoading(false)
+        setError(r.error)
       }
+      setLoading(false)
     })()
     return () => { cancelled = true; ctrl.abort() }
   }, [endpoint, nonce])

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, X } from 'lucide-react'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
 interface SearchOverlayProps {
   open: boolean
@@ -15,8 +16,6 @@ interface SearchResult {
   status: string
 }
 
-const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
 
 export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverlayProps) {
   const [query, setQuery] = useState('')
@@ -42,8 +41,8 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
       try {
         const encoded = encodeURIComponent('%' + query + '%')
         const res = await fetch(
-          SUPA + '/rest/v1/issues?or=(title.ilike.' + encoded + ',task_key.ilike.' + encoded + ')&order=updated_at.desc&limit=15&select=task_key,title,status',
-          { headers: { apikey: KEY, Authorization: 'Bearer ' + KEY } }
+          dbRestBase() + '/rest/v1/issues?or=(title.ilike.' + encoded + ',task_key.ilike.' + encoded + ')&order=updated_at.desc&limit=15&select=task_key,title,status',
+          { headers: dbRestHeaders() }
         )
         const data = await res.json()
         if (Array.isArray(data)) setResults(data)

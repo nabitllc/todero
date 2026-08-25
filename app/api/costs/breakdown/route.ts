@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { assertDbConfigured, db } from '@/lib/db'
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('costs/breakdown: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars')
-  return createClient(url, key)
+  // db() throws a DbConfigurationError naming the exact missing variables.
+  assertDbConfigured()
+  return db()
 }
 
 export interface CostBreakdownRow {

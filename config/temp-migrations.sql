@@ -1,6 +1,6 @@
 -- Run this in Supabase SQL Editor
--- Project: Kaos Ops (twthgapiouiqhavrcnry)
--- URL: https://supabase.com/dashboard/project/twthgapiouiqhavrcnry/editor
+-- Project: Kaos Ops (project ref: see NEXT_PUBLIC_SUPABASE_URL)
+-- URL: https://supabase.com/dashboard/project/<your-project-ref>/editor
 
 -- 1. New columns on tasks
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS resolution_type text 

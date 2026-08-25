@@ -109,7 +109,7 @@ After any layout-touching commit, run smoke test before marking `in_review`.
 
 ```
 # .env.local (not committed)
-NEXT_PUBLIC_SUPABASE_URL=https://twthgapiouiqhavrcnry.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 ```

@@ -2,10 +2,9 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { getPipelineStage, isBlocked, nextPRWindow, type PipelineStage, STAGE_COLORS } from '@/lib/pipeline'
 import { EmptyState, Button } from '@/components/ui'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-const HEADERS = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': 'application/json' }
+const HEADERS = { ...dbRestHeaders(), 'Content-Type': 'application/json' }
 
 const STAGES: PipelineStage[] = ["Backlog", "Definition", "Building", "Testing", "UX Review", "PR Queue", "Merged"]
 
@@ -74,7 +73,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
     // Optimistic update
     setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: newStatus } : i))
     try {
-      await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${issueId}`, {
+      await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${issueId}`, {
         method: 'PATCH',
         headers: HEADERS,
         body: JSON.stringify({ status: newStatus }),
@@ -108,8 +107,8 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       // Fetch active issues + recently finished issues under the canonical lifecycle
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const [activeRes, finishedRes] = await Promise.all([
-        fetch(`${SUPA_URL}/rest/v1/issues?status=not.in.(closed,completed,released)&select=*&limit=100`, { headers: HEADERS }),
-        fetch(`${SUPA_URL}/rest/v1/issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`, { headers: HEADERS }),
+        fetch(`${dbRestBase()}/rest/v1/issues?status=not.in.(closed,completed,released)&select=*&limit=100`, { headers: HEADERS }),
+        fetch(`${dbRestBase()}/rest/v1/issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`, { headers: HEADERS }),
       ])
       const active = await activeRes.json()
       const finished = await finishedRes.json()

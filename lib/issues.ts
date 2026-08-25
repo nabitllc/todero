@@ -1,5 +1,5 @@
 // Shared task update helper — used by all agent run endpoints
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+import { dbRestBase } from '@/lib/db/rest'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'code_review' | 'approved' | 'released' | 'completed' | 'closed'
@@ -72,7 +72,7 @@ export interface Task {
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${taskId}`, {
+  await fetch(`${dbRestBase()}/rest/v1/issues?id=eq.${taskId}`, {
     method: 'PATCH',
     headers: {
       'apikey': SUPA_KEY,
@@ -91,7 +91,7 @@ export async function logAgentRun(agentId: string, taskId: string | null, taskTi
   if (output) body.output = output.slice(-2000)
   if (error) body.error = error
 
-  const res = await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
+  const res = await fetch(`${dbRestBase()}/rest/v1/agent_runs`, {
     method: 'POST',
     headers: {
       'apikey': SUPA_KEY,

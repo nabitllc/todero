@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Bell, Bot, ArrowRightLeft, Rocket, X, CheckCheck } from 'lucide-react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
 interface Notification {
   id: string
@@ -15,9 +16,6 @@ interface Notification {
   read: boolean
   dbId?: string // notifications table id for mark-read
 }
-
-const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
-const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 function timeAgo(date: Date): string {
   const mins = Math.round((Date.now() - date.getTime()) / 60000)
@@ -36,13 +34,13 @@ export default function NotificationBell() {
 
   const fetchNotifications = useCallback(async () => {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-    const headers = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+    const headers = dbRestHeaders()
     const items: Notification[] = []
 
     // 1. Notifications table (status_change events from issue PATCH)
     try {
       const res = await fetch(
-        `${SUPA}/rest/v1/notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`,
+        `${dbRestBase()}/rest/v1/notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`,
         { headers }
       )
       const rows = await res.json()
@@ -68,7 +66,7 @@ export default function NotificationBell() {
     // 2. Agent completions + errors from agent_runs
     try {
       const res = await fetch(
-        `${SUPA}/rest/v1/agent_runs?select=id,agent_id,task_title,status,started_at,finished_at&status=in.(completed,done,error)&finished_at=gte.${since}&order=finished_at.desc&limit=20`,
+        `${dbRestBase()}/rest/v1/agent_runs?select=id,agent_id,task_title,status,started_at,finished_at&status=in.(completed,done,error)&finished_at=gte.${since}&order=finished_at.desc&limit=20`,
         { headers }
       )
       const rows = await res.json()

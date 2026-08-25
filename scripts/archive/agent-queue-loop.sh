@@ -20,8 +20,8 @@ LOCK="/tmp/${AGENT_ID}-queue-instance.lock"
 MC_API="${MC_API_URL:-http://localhost:3000/api}"
 INTERNAL_SECRET="${INTERNAL_SECRET:-kaos-internal-2026}"
 
-SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
-SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q}"
+SUPA_URL="${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is not set - see .env.local.template}"
+SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is not set - see .env.local.template}"
 
 MC_DIR="/Users/kemuniagent/mission-control"
 VES_DIR="/var/folders/r0/hww7pxv12txb9sfmlmmw76xw0000gn/T/tmp.8qWeSvST6Z"

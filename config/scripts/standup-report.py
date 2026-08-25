@@ -33,7 +33,7 @@ except ImportError:
     except ImportError:
         ET = None
 
-SUPA_URL = "https://twthgapiouiqhavrcnry.supabase.co"
+SUPA_URL = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
 SUPA_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 MC_API = "http://localhost:3000/api/issues"
 DISCORD_TOKEN = os.environ.get(

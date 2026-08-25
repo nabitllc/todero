@@ -33,7 +33,7 @@ describe('spawnDetached', () => {
   it('runs a child with no shell and streams stdout+stderr into the log file', async () => {
     const logFile = join(dir, 'run.log')
 
-    const result = spawnDetached(
+    const result = await spawnDetached(
       process.execPath,
       ['-e', 'process.stdout.write("STDOUT-OK\\n"); process.stderr.write("STDERR-OK\\n")'],
       logFile
@@ -56,7 +56,7 @@ describe('spawnDetached', () => {
     // Every character here used to break the hand-escaped shell string.
     const hostile = `it's "quoted" $(echo pwned) \`backtick\` & | ;`
 
-    const result = spawnDetached(
+    const result = await spawnDetached(
       process.execPath,
       ['-e', 'process.stdout.write(process.argv[1])', hostile],
       logFile
@@ -76,7 +76,7 @@ describe('spawnDetached', () => {
     const prompt = 'x'.repeat(40_000)
     writeFileSync(promptFile, prompt, 'utf8')
 
-    const result = spawnDetached(
+    const result = await spawnDetached(
       process.execPath,
       ['-e', 'let b="";process.stdin.on("data",c=>b+=c).on("end",()=>process.stdout.write("STDIN-BYTES="+b.length))'],
       logFile,
@@ -90,22 +90,45 @@ describe('spawnDetached', () => {
     expect(read).toBe(true)
   })
 
-  it('reports a missing binary in the log instead of crashing the server', async () => {
+  it('returns ok:false for a binary that is not installed', async () => {
     const logFile = join(dir, 'missing.log')
 
-    const result = spawnDetached('todero-definitely-not-a-real-binary', ['--version'], logFile)
+    const result = await spawnDetached('todero-definitely-not-a-real-binary', ['--version'], logFile)
 
-    // The failure may surface synchronously or via the async 'error' event —
-    // either way it must be recorded, and must never throw.
-    const recorded = await until(
-      () => existsSync(logFile) && readFileSync(logFile, 'utf8').includes('[spawn-failure]')
-    )
-    expect(result.ok === false || recorded).toBe(true)
+    // The regression this locks down: this used to return ok:true with no pid,
+    // so every caller's `if (!result.ok)` branch was dead code and a missing
+    // CLI read as a successful dispatch.
+    expect(result.ok).toBe(false)
+    expect(result.pid).toBeUndefined()
+    expect(result.error).toContain('todero-definitely-not-a-real-binary')
+    expect(readFileSync(logFile, 'utf8')).toContain('[spawn-failure]')
+  })
+
+  it('returns ok:false for a path that exists but is not executable', async () => {
+    const logFile = join(dir, 'notexec.log')
+    const notABinary = join(dir, 'not-a-binary.txt')
+    writeFileSync(notABinary, 'this is not an executable', 'utf8')
+
+    const result = await spawnDetached(notABinary, [], logFile)
+
+    expect(result.ok).toBe(false)
+    expect(result.pid).toBeUndefined()
+    expect(result.error).toBeTruthy()
+  })
+
+  it('never reports ok:true without a pid', async () => {
+    const logFile = join(dir, 'pid.log')
+    const good = await spawnDetached(process.execPath, ['-e', '0'], logFile)
+    const bad = await spawnDetached('todero-definitely-not-a-real-binary', [], join(dir, 'pid2.log'))
+
+    for (const r of [good, bad]) {
+      expect(r.ok && r.pid === undefined).toBe(false)
+    }
   })
 
   it('watchChildExit fires once the child is gone', async () => {
     const logFile = join(dir, 'watch.log')
-    const result = spawnDetached(process.execPath, ['-e', 'process.exit(0)'], logFile)
+    const result = await spawnDetached(process.execPath, ['-e', 'process.exit(0)'], logFile)
     expect(result.ok).toBe(true)
 
     let exited = false

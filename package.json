@@ -6,7 +6,8 @@
   "scripts": {
     "ensure-deps": "node -e \"if (!require('fs').existsSync('node_modules/next') || !require('fs').existsSync('node_modules/typescript')) { console.log('[ensure-deps] node_modules missing, installing...'); require('child_process').execSync('npm install --include=dev', {stdio:'inherit'}) }\"",
     "predev": "npm run ensure-deps",
-    "prebuild": "npm run ensure-deps",
+    "check:secrets": "node scripts/check-no-secrets.js",
+    "prebuild": "npm run ensure-deps && npm run check:secrets",
     "prestart": "npm run ensure-deps",
     "dev": "next dev",
     "build": "next build",

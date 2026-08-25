@@ -9,6 +9,9 @@ import { firstExistingPath, isDarwin, isWindows } from '@/lib/paths'
 const OPENROUTER_KEY = process.env.OPENROUTER_KEY || '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'
 const N8N_KEY = process.env.N8N_API_KEY || ''
 
+const NO_KEY_ERROR =
+  'SUPABASE_SERVICE_ROLE_KEY is not set — agent activity and usage unavailable'
+
 /**
  * Where the Vercel CLI keeps its auth token. The CLI uses xdg-app-paths, so the
  * directory differs per OS - there is no single literal to read. VERCEL_TOKEN
@@ -129,7 +132,11 @@ export async function GET() {
   result.heartbeats = []
 
   // ── Agent activity from agent_runs ──
+  // A host with no Supabase key cannot know any of this. Saying so beats
+  // rendering an empty activity feed that reads as "nothing happened today".
+  let activityError: string | null = process.env.SUPABASE_SERVICE_ROLE_KEY ? null : NO_KEY_ERROR
   try {
+    if (activityError) throw new Error(activityError)
     const db = createAdminClient()
     const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
     const { data: runs } = await db
@@ -185,12 +192,20 @@ export async function GET() {
     const todayTokens = (costRows ?? []).reduce((s, r) => s + (r.tokens_used ?? 0), 0)
     result.usage = { totalCost: 0, totalTokens: 0, byModel: {}, todayCost: +todayCost.toFixed(4), todayTokens }
     result.claude = { plan: 'Max', lastChecked: new Date().toISOString(), totalTokens: todayTokens, todayCost }
-  } catch {
+  } catch (e) {
+    // Never swallow the reason — an unreachable database is not "no activity".
+    activityError = e instanceof Error ? e.message : String(e)
     result.recentActivity = []
     result.agentCurrentTask = {}
     result.usage = null
     result.claude = null
   }
 
-  return NextResponse.json(result)
+  result.configured = activityError === null
+  result.error = activityError
+
+  return NextResponse.json(result, {
+    status: activityError ? 503 : 200,
+    headers: { 'Cache-Control': 'no-store' },
+  })
 }

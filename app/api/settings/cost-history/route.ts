@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 import type { CostSnapshot } from '@/lib/issues'
 
-const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 // INF-204: Cost trend sparkline — return 7-day cost history from agent_memory
 export async function GET() {
   try {
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+    const supabase = db()
 
     // Read stored daily cost snapshots from agent_memory
     const { data } = await supabase

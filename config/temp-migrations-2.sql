@@ -1,5 +1,5 @@
 -- Run in Supabase SQL Editor → kaos-ops project
--- https://supabase.com/dashboard/project/twthgapiouiqhavrcnry/editor
+-- https://supabase.com/dashboard/project/<your-project-ref>/editor
 
 -- 1. Features table
 CREATE TABLE IF NOT EXISTS features (

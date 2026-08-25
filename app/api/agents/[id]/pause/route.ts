@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 
-const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 
 // POST /api/agents/[id]/pause — toggle pause state
@@ -14,7 +13,7 @@ export async function POST(
     const body = await req.json()
     const paused = !!body.paused
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+    const supabase = db()
     const value = JSON.stringify({ paused, updated_at: new Date().toISOString() })
 
     const { error } = await supabase
@@ -38,7 +37,7 @@ export async function GET(
 ) {
   try {
     const { id } = params
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+    const supabase = db()
 
     const { data } = await supabase
       .from('agent_memory')

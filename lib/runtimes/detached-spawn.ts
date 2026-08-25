@@ -19,6 +19,7 @@
 // SERVER ONLY: imports node builtins.
 
 import { spawn } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import { appendFileSync, closeSync, mkdirSync, openSync } from 'fs'
 import { dirname } from 'path'
 import { resolveBinary } from '../paths'
@@ -56,31 +57,32 @@ export function appendLog(logFile: string, line: string): void {
   }
 }
 
+/** How long to wait for the OS to confirm the child actually started. */
+const SPAWN_CONFIRM_MS = 750
+
 /**
  * Launch `bin argv…` fully detached, with stdout+stderr appended to `logFile`.
  *
  * No shell is involved: `argv` entries are passed to the OS verbatim, so
  * prompts containing quotes, `$(`, backticks or newlines need no escaping.
  *
- * Returns as soon as the process is launched — this is fire-and-forget. A
- * binary that cannot be executed surfaces asynchronously, so an `error`
- * listener is always attached and writes `[spawn-failure]` into the log.
+ * The child is fire-and-forget, but the *launch* is not: this resolves only
+ * once the OS has confirmed the process exists (`'spawn'`) or refused to
+ * create it (`'error'` — ENOENT for a missing binary, EACCES for a
+ * non-executable one). A binary that is not installed therefore returns
+ * `ok:false` to the caller instead of a cheerful `ok:true` with no pid and an
+ * ENOENT buried in a log file nobody reads. That distinction is the whole
+ * point: on a fresh clone `claude`/`codex`/`cursor` are normally absent, and
+ * the caller has to be told so it can leave the issue alone.
  */
-export function spawnDetached(
+export async function spawnDetached(
   bin: string,
   argv: string[],
   logFile: string,
   options: DetachedSpawnOptions = {}
-): DetachedSpawnResult {
+): Promise<DetachedSpawnResult> {
   const command = `${bin} ${argv.join(' ')}`
   const shortCommand = command.length > 240 ? `${command.slice(0, 240)}…` : command
-
-  // Resolve bare names (`claude`, `codex`) through PATH ourselves. With
-  // shell:false Windows will not find `claude.cmd` from the name alone.
-  let resolvedBin = bin
-  if (!bin.includes('/') && !bin.includes('\\')) {
-    resolvedBin = resolveBinary(bin) ?? bin
-  }
 
   let outFd: number | undefined
   let errFd: number | undefined
@@ -102,8 +104,29 @@ export function spawnDetached(
     }
   }
 
+  // ── Hard-resolve the binary BEFORE spawning ─────────────────────────────
+  // A bare name (`claude`) is looked up on PATH the way a shell would; an
+  // explicit path is existence-checked. Either way a miss is a synchronous,
+  // reported failure — never an async 'error' event the caller cannot see.
+  // With shell:false, Windows also cannot find `claude.cmd` from the bare
+  // name alone, so this resolution is load-bearing, not just a nicety.
+  const resolvedBin = resolveBinary(bin)
+  if (!resolvedBin) {
+    closeFd(inFd)
+    closeFd(outFd)
+    closeFd(errFd)
+    appendLog(logFile, `[spawn-failure] ${new Date().toISOString()} binary not found on PATH: ${bin}`)
+    return {
+      ok: false,
+      logFile,
+      command: shortCommand,
+      error: `binary '${bin}' not found on PATH — install it or set the runtime's *_BIN env var`,
+    }
+  }
+
+  let child: ChildProcess
   try {
-    const child = spawn(resolvedBin, argv, {
+    child = spawn(resolvedBin, argv, {
       cwd: options.cwd,
       env: options.env ?? process.env,
       detached: true,
@@ -113,22 +136,6 @@ export function spawnDetached(
       // needs shell:false + an absolute path, which resolveBinary gave us.
       shell: false,
     })
-
-    // ENOENT / EACCES arrive as an async 'error' event. Without a listener
-    // Node rethrows it as an uncaught exception and takes the server down.
-    child.once('error', (err) => {
-      appendLog(logFile, `[spawn-failure] ${new Date().toISOString()} ${errText(err)} (bin=${resolvedBin})`)
-    })
-
-    // Node must hold no reference to the child: that is what let a Next.js
-    // restart kill in-flight agents before this file existed.
-    child.unref()
-
-    closeFd(inFd)
-    closeFd(outFd)
-    closeFd(errFd)
-
-    return { ok: true, pid: child.pid, logFile, command: shortCommand }
   } catch (err) {
     closeFd(inFd)
     closeFd(outFd)
@@ -136,6 +143,59 @@ export function spawnDetached(
     appendLog(logFile, `[spawn-failure] ${new Date().toISOString()} ${errText(err)} (bin=${resolvedBin})`)
     return { ok: false, logFile, command: shortCommand, error: errText(err) }
   }
+
+  // The fds were duplicated into the child by spawn(); the parent's copies are
+  // dead weight from here on.
+  closeFd(inFd)
+  closeFd(outFd)
+  closeFd(errFd)
+
+  // Permanent listener. Two jobs: record a *late* failure in the log, and stop
+  // an unhandled 'error' from taking the whole Next.js server down.
+  child.on('error', (err) => {
+    appendLog(logFile, `[spawn-failure] ${new Date().toISOString()} ${errText(err)} (bin=${resolvedBin})`)
+  })
+
+  // Node must hold no reference to the child: that is what let a Next.js
+  // restart kill in-flight agents before this file existed.
+  child.unref()
+
+  // ── Wait for the OS verdict ─────────────────────────────────────────────
+  const verdict = await new Promise<{ ok: true } | { ok: false; error: string }>((resolve) => {
+    let settled = false
+    const settle = (v: { ok: true } | { ok: false; error: string }) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(v)
+    }
+    // Safety net only. 'spawn'/'error' fire on the next tick in practice; if
+    // neither arrives we fall through to the pid check below rather than
+    // hanging the HTTP handler.
+    const timer = setTimeout(() => settle({ ok: true }), SPAWN_CONFIRM_MS)
+    timer.unref()
+    child.once('spawn', () => settle({ ok: true }))
+    child.once('error', (err: NodeJS.ErrnoException) => settle({ ok: false, error: errText(err) }))
+  })
+
+  if (!verdict.ok) {
+    return { ok: false, pid: undefined, logFile, command: shortCommand, error: verdict.error }
+  }
+
+  // Belt and braces: ok:true without a pid is meaningless to every caller
+  // (watchChildExit no-ops, the UI shows "spawned" with nothing to watch), so
+  // it is reported as the failure it is.
+  if (child.pid === undefined) {
+    appendLog(logFile, `[spawn-failure] ${new Date().toISOString()} child reported no pid (bin=${resolvedBin})`)
+    return {
+      ok: false,
+      logFile,
+      command: shortCommand,
+      error: `spawn of '${bin}' produced no pid`,
+    }
+  }
+
+  return { ok: true, pid: child.pid, logFile, command: shortCommand }
 }
 
 /**

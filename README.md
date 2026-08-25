@@ -92,7 +92,7 @@ runs). Per-issue PRs are never created.
 
 ```bash
 # .env.local (not committed)
-NEXT_PUBLIC_SUPABASE_URL=https://twthgapiouiqhavrcnry.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 MC_PASSWORD=kaos2026
@@ -108,7 +108,7 @@ CURSOR_BIN=/opt/homebrew/bin/cursor-agent
 `migrations/` holds SQL files. Supabase's REST API does not expose ad-hoc SQL,
 so each migration must be applied manually:
 
-1. Open [Supabase Dashboard → SQL Editor](https://supabase.com/dashboard/project/twthgapiouiqhavrcnry/sql)
+1. Open [Supabase Dashboard → SQL Editor](https://supabase.com/dashboard/project/<your-project-ref>/sql)
 2. Paste the contents of the migration file
 3. Click **Run**
 

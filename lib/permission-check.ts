@@ -1,10 +1,12 @@
 // lib/permission-check.ts
 // TOD-1498: Testable permission middleware helper
 // TOD-1048: resolveCallerRole — extract role from cookie or identity header
-// Queries role_permissions table and enforces route-level access rules for all 5 roles.
+// Enforces route-level access rules for all roles against the static ROLE_PERMISSIONS
+// matrix, with the role_permissions table as an optional additional grant.
 
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 import type { NextRequest } from 'next/server'
+import { hasPermission } from './rbac-types'
 import type { Role, Permission } from './rbac-types'
 
 const KNOWN_ROLES: Role[] = ['owner', 'member', 'viewer', 'god', 'admin', 'tron', 'defaultbot']
@@ -77,10 +79,7 @@ export function getRequiredPermission(method: string, pathname: string): Permiss
 }
 
 function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
-  )
+  return db()
 }
 
 /**
@@ -106,20 +105,28 @@ export async function checkRoutePermission(
 
   const required = getRequiredPermission(method, pathname)
 
-  const supabase = getSupabase()
-  const { data } = await supabase
-    .from('role_permissions')
-    .select('permission')
-    .eq('role', role)
-    .eq('permission', required)
-    .maybeSingle()
+  // ROLE_PERMISSIONS in rbac-types.ts is the source of truth. It is the same
+  // data the role_permissions migration seeds, and unlike the table it exists
+  // on a host that has never run that migration. Checking it first is what
+  // stops a fresh install from answering 403 to its own owner.
+  if (hasPermission(role, required)) return { allowed: true }
 
-  if (!data) {
-    return deny(
-      `Forbidden: role '${role}' lacks permission '${required}'`,
-      'PERMISSION_DENIED',
-    )
+  // The table can still GRANT beyond the static matrix (per-workspace tweaks),
+  // but it is never the only gate: an absent table denies nothing on its own.
+  try {
+    const { data } = await getSupabase()
+      .from('role_permissions')
+      .select('permission')
+      .eq('role', role)
+      .eq('permission', required)
+      .maybeSingle()
+    if (data) return { allowed: true }
+  } catch {
+    // Table missing or database unreachable — the static matrix already decided.
   }
 
-  return { allowed: true }
+  return deny(
+    `Forbidden: role '${role}' lacks permission '${required}'`,
+    'PERMISSION_DENIED',
+  )
 }

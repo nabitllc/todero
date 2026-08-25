@@ -24,7 +24,7 @@ import { resolveBinary } from '../paths'
 // Bare name by default: resolved through PATH at spawn time (`where`/`which`),
 // so a `claude` installed by npm -g, Homebrew, or the official installer all
 // work without an env var. CLAUDE_BIN still overrides with an explicit path.
-const CLAUDE_BIN = process.env.CLAUDE_BIN ?? 'claude'
+export const CLAUDE_BIN = process.env.CLAUDE_BIN ?? 'claude'
 const WORKTREE_TEARDOWN_MINUTES = 60
 
 export const claudeCodeRuntime: AgentRuntime = {
@@ -128,7 +128,7 @@ export const claudeCodeRuntime: AgentRuntime = {
     // ~32k characters and Todero prompts routinely exceed that. `claude --print`
     // with no positional prompt reads stdin, which is also why no escaping of
     // quotes/backticks/$( is needed anywhere in this file any more.
-    const result = spawnDetached(CLAUDE_BIN, argv, opts.logFile, {
+    const result = await spawnDetached(CLAUDE_BIN, argv, opts.logFile, {
       cwd: effectiveWorkingDir,
       env: process.env,
       stdinFile: promptFile,

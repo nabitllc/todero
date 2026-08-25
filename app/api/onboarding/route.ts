@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
 
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+/**
+ * Who owns a workspace created by the onboarding wizard.
+ * Used to be the author's own address, hardcoded — which made every install of
+ * Todero create businesses owned by someone the operator has never met.
+ */
+const WORKSPACE_OWNER = process.env.TODERO_OWNER_EMAIL ?? 'owner@localhost'
+
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(
-      'https://twthgapiouiqhavrcnry.supabase.co',
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    _supabase = db()
   }
   return _supabase
 }
@@ -20,7 +24,7 @@ export async function POST(req: Request) {
 
   // Create business
   const { data: business, error: bErr } = await supabase
-    .from('businesses').insert({ name, type, owner: 'michael@nabit.app', status: 'active' }).select().single()
+    .from('businesses').insert({ name, type, owner: WORKSPACE_OWNER, status: 'active' }).select().single()
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 })
 
   // Create first sprint

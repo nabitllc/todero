@@ -315,13 +315,13 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
 
   /** Turn a failed response (or a thrown fetch) into the shared error sentence. */
-  const describeFailure = async (resOrErr: Response | unknown, endpoint: string): Promise<string> => {
-    if (resOrErr instanceof Response) return formatApiError(await readApiError(resOrErr, endpoint))
+  const describeFailure = async (resOrErr: Response | unknown, endpoint: string, label = 'change rejected'): Promise<string> => {
+    if (resOrErr instanceof Response) return formatApiError(await readApiError(resOrErr, endpoint), label)
     return formatApiError({
       status: 0,
       endpoint,
       message: resOrErr instanceof Error ? resOrErr.message : 'could not reach the server',
-    })
+    }, label)
   }
 
   const createTask = async (t: Partial<Task>): Promise<boolean> => {
@@ -607,6 +607,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             {/* Off-board status chips: backlog, future sprints, closed — counts only.
                 Click to filter the board to that scope. */}
             {(() => {
+              // A failed load has no counts to report — showing "Backlog 0" over
+              // a 403 is the exact lie this component is being fixed for.
+              if (loadError) return null
               const scopedTasks = tasks.filter(t => !EXCLUDED_BOARD_TYPES.includes(t.type ?? ''))
               const refinedCount = scopedTasks.filter(t => t.status === 'refined').length
               const backlogCount = scopedTasks.filter(t => t.status === 'backlog').length
@@ -725,7 +728,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Feature-grouped swimlane — each feature is a collapsible 3-column kanban */}
-      {groupByFeature && (() => {
+      {!loadError && groupByFeature && (() => {
         // TOD-XXX (Q4): pull features from the FULL tasks array (not filtered)
         // so parent lookups don't fail when a parent feature isn't in the current
         // status-filtered view. Previously caused "Unknown Feature" groups.
@@ -830,7 +833,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Sprint-grouped swimlane — active + future + "No Sprint" lane at end */}
-      {groupBySprint && (() => {
+      {!loadError && groupBySprint && (() => {
         const NO_SPRINT_KEY = '__no_sprint__'
         const sprintGroups: Record<string, typeof filtered> = {}
         for (const t of filtered) {
@@ -914,7 +917,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Business-grouped view */}
-      {groupByBusiness && (() => {
+      {!loadError && groupByBusiness && (() => {
         const BIZ_PROJECTS: Record<string, {label: string; emoji: string; projects: string[]}> = {
           'Vespera':          { label: 'Vespera',          emoji: '🖤', projects: ['Vespera'] },
           'Kemuni':           { label: 'Kemuni',           emoji: '🚀', projects: ['Kemuni'] },
@@ -1035,7 +1038,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Mobile column tabs */}
-      {swimlane === 'together' && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
+      {!loadError && swimlane === 'together' && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
         {BOARD_COLUMNS.map(col=>(
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
             className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-white/10 text-white':'text-white/50 hover:text-white/70')}
@@ -1046,7 +1049,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       </div>}
 
       {/* Columns — 3-col layout fills viewport (TOD-XXX Board simplification) */}
-      {swimlane === 'together' && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
+      {!loadError && swimlane === 'together' && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => col.statuses.includes(t.status))
           return (

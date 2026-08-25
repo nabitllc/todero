@@ -168,13 +168,3 @@ export function processListCommand(): { command: string; args: string[] } {
   }
   return { command: 'ps', args: ['-eo', 'pid,etime,command'] }
 }
-
-/**
- * Absolute path to a POSIX shell, or null on a host that has none (Windows).
- * Callers that still build shell scripts must check this instead of assuming a
- * fixed location - that assumption is why every dispatch died on Windows.
- */
-export function resolvePosixShell(): string | null {
-  if (isWindows) return null
-  return resolveBinary(process.env.TODERO_SHELL ?? 'bash')
-}

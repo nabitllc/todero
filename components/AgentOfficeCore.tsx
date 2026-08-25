@@ -1,9 +1,8 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
 // ─── Supabase agent_runs ──────────────────────────────────────────────────────
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q';
 const SUPA_AGENTS = ['main','scout','ops','kemuni-sme','vespera-sme','builder','tester','deployer'] as const;
 
 type AgentRunStatus = 'working' | 'idle' | 'never';
@@ -11,8 +10,8 @@ interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: s
 
 async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   const res = await fetch(
-    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
-    { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
+    `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
+    { headers: dbRestHeaders() }
   );
   if (!res.ok) return {};
   const rows: any[] = await res.json();

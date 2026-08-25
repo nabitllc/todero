@@ -50,13 +50,14 @@ mockDelete.mockReturnValue(filterBuilder)
 mockUpsert.mockReturnValue(filterBuilder)
 mockFrom.mockReturnValue(queryBuilder)
 
-jest.mock('@supabase/supabase-js', () => ({
-  createClient: jest.fn(() => ({
+// hub-client now goes through the vendor-neutral seam, so that is what the
+// test stubs — no vendor SDK involved.
+jest.mock('@/lib/db', () => ({
+  db: jest.fn(() => ({
+    provider: 'test',
+    missingEnv: () => [],
     from: mockFrom,
     rpc: jest.fn(),
-    auth: {},
-    storage: {},
-    functions: {},
   })),
 }))
 

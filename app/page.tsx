@@ -18,7 +18,7 @@ import AgentsTab from '@/components/tabs/AgentsTab'
 import CrewTab from '@/components/tabs/CrewTab'
 import CalendarTab from '@/components/tabs/CalendarTab'
 import OfficeTab from '@/components/tabs/OfficeTab'
-import MemoryTab from '@/components/tabs/MemoryTab'
+import MemoryTab, { type MemFile } from '@/components/tabs/MemoryTab'
 import BoardTab from '@/components/tabs/BoardTab'
 import FeaturesTab from '@/components/tabs/FeaturesTab'
 import PipelineTab from '@/components/tabs/PipelineTab'
@@ -38,6 +38,8 @@ import SearchOverlay from '@/components/SearchOverlay'
 import TopBar from '@/components/TopBar'
 import HubSwitcher from '@/components/HubSwitcher'
 import InboxDrawer from '@/components/InboxDrawer'
+import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -107,13 +109,26 @@ function buildPath(business: string | null, tab: string): string {
   return tab === 'overview' ? '/' : `/${tab}`
 }
 
+/**
+ * Pull the row array out of an API response that is either a bare array
+ * (legacy) or an honest envelope — `{ agents, configured, error }` /
+ * `{ automations, configured, error }`. Those routes answer 503 when the host
+ * is not configured but still ship the rows they do know about, so read the
+ * body regardless of HTTP status instead of dropping it. Null = nothing usable.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- payload is untyped JSON from fetch
+function rowsFrom(payload: any, key: 'agents' | 'automations'): any[] | null {
+  if (Array.isArray(payload)) return payload
+  if (payload && Array.isArray(payload[key])) return payload[key]
+  return null
+}
+
 export default function Home() {
   // MC-hydration: start with SSR-safe default; apply URL/localStorage after mount to avoid hydration mismatch
   const [tab, setTab] = useState<Tab>('overview')
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currentIdentity, setCurrentIdentity] = useState<string | null>(null)
   const [clock, setClock] = useState('')
-  const [memFiles, setMemFiles] = useState<any[]>([])
   const [openMem, setOpenMem] = useState<string | null>(null)
   const [feedIdx, setFeedIdx] = useState(0)
   const [tick, setTick] = useState(0)
@@ -123,6 +138,14 @@ export default function Home() {
   const [inboxPendingCount, setInboxPendingCount] = useState(0)
   const [liveStatus, setLiveStatus] = useState<any>(null)
   const [statusAt, setStatusAt] = useState<number>(0)
+  // TOD-654: every loader below records *why* it failed instead of leaving
+  // its state empty. The tab that renders the data renders the banner.
+  const [statusError, setStatusError] = useState<ApiError | null>(null)
+  const [agentsError, setAgentsError] = useState<ApiError | null>(null)
+  const [cronsError, setCronsError] = useState<ApiError | null>(null)
+  const [projectsError, setProjectsError] = useState<ApiError | null>(null)
+  const [activityError, setActivityError] = useState<ApiError | null>(null)
+  const [calendarError, setCalendarError] = useState<ApiError | null>(null)
   const [agoSec, setAgoSec] = useState<number>(0)
   const [liveAgents, setLiveAgents] = useState<typeof ALL_AGENTS | null>(null)
   const [liveCrons, setLiveCrons] = useState<typeof CRONS | null>(null)
@@ -134,15 +157,54 @@ export default function Home() {
     setGlobalToasts(t => { const next = [...t, {id,text,color}]; return next.length > 4 ? next.slice(-4) : next })
     setTimeout(() => setGlobalToasts(t => t.filter(x => x.id !== id)), 4000)
   }, [])
+  // ---------------------------------------------------------------------------
+  // Loaders. TOD-654: none of these may fall through to an empty collection on a
+  // non-ok response. `null` means "not loaded / refused"; `[]` means "the server
+  // said there is nothing". The tabs branch on that difference.
+  // ---------------------------------------------------------------------------
+  const loadStatus = useCallback(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- /api/status is a wide untyped health payload
+    const r = await fetchJson<any>('/api/status')
+    if (!r.ok) { setStatusError(r.error); setLiveStatus(null); return }
+    setStatusError(null); setLiveStatus(r.data); setStatusAt(Date.now())
+  }, [])
+
+  const loadAgents = useCallback(async () => {
+    // /api/agents answers 503 with the rows it does know about when the host is
+    // not configured, so read the body on 503 but surface the reason too.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- envelope or bare array
+    const r = await fetchJson<any>('/api/agents')
+    const rows = rowsFrom(r.ok ? r.data : null, 'agents')
+    if (rows) setLiveAgents(rows)
+    setAgentsError(r.ok ? null : r.error)
+  }, [])
+
+  const loadCrons = useCallback(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- envelope or bare array
+    const r = await fetchJson<any>('/api/automations')
+    const rows = rowsFrom(r.ok ? r.data : null, 'automations')
+    if (rows) setLiveCrons(rows)
+    setCronsError(r.ok ? null : r.error)
+  }, [])
+
+  const loadProjects = useCallback(async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
+    const r = await fetchJson<any[]>('/api/projects')
+    if (!r.ok) { setProjectsError(r.error); setProjects(null); return }
+    setProjectsError(null)
+    if (Array.isArray(r.data)) setProjects(r.data)
+  }, [])
+
+  // Memory files. `memPayload` stays null on 403/500, so MemoryTab can never
+  // print "0 entries" or "No memory files yet." over a refused request.
+  const { data: memPayload, error: memError, refetch: refetchMem } =
+    useApiData<{ files?: MemFile[] }>('/api/memory')
+  const memFiles: MemFile[] | null = memError ? null : memPayload ? memPayload.files ?? [] : null
+
   const [syncing, setSyncing] = useState(false)
   const globalSync = async () => {
     setSyncing(true)
-    await Promise.all([
-      fetch('/api/status').then(r => r.json()).then(d => { setLiveStatus(d); setStatusAt(Date.now()) }).catch(() => {}),
-      fetch('/api/agents').then(r => r.json()).then(d => { if (Array.isArray(d)) setLiveAgents(d) }).catch(() => {}),
-      fetch('/api/automations').then(r => r.json()).then(d => { if (Array.isArray(d)) setLiveCrons(d) }).catch(() => {}),
-      fetch('/api/projects').then(r => r.json()).then(d => { if (Array.isArray(d) && d.length > 0) setProjects(d) }).catch(() => {}),
-    ])
+    await Promise.all([loadStatus(), loadAgents(), loadCrons(), loadProjects()])
     setStatusCountdown(30)
     setSyncing(false)
   }
@@ -156,9 +218,11 @@ export default function Home() {
   // MC-hydration: start undefined; apply from URL params after mount
   const [boardFeatureFilter, setBoardFeatureFilter] = useState<string | undefined>(undefined)
   const [boardFeatureFilterName, setBoardFeatureFilterName] = useState<string | undefined>(undefined)
-  const [issueActivity, setIssueActivity] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
+  const [issueActivity, setIssueActivity] = useState<any[] | null>(null)
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week')
-  const [calendarIssues, setCalendarIssues] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
+  const [calendarIssues, setCalendarIssues] = useState<any[] | null>(null)
   const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:string}>>({})
   const [agentIssueCounts, setAgentIssueCounts] = useState<Record<string, number>>({})
 
@@ -196,21 +260,22 @@ export default function Home() {
 
   // Auto-trigger onboarding wizard when no businesses exist (workspace not yet onboarded)
   useEffect(() => {
-    fetch('/api/businesses')
-      .then(r => r.json())
-      .then((d: unknown) => { if (Array.isArray(d) && d.length === 0) setShowOnboarding(true) })
-      .catch(() => {})
+    // Only a confirmed-empty 200 means "not onboarded yet"; a 403/500 must
+    // never auto-open the wizard as though the workspace were blank.
+    fetchJson<unknown>('/api/businesses').then(r => {
+      if (r.ok && Array.isArray(r.data) && r.data.length === 0) setShowOnboarding(true)
+    })
   }, [])
 
   // Agent runs + issue counts polling
   useEffect(() => {
-    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const prevRunsRef: { current: Record<string,string> } = { current: {} }
     const fetchRuns = () => {
-      fetch(`${SUPA}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`, {
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-      }).then(r => r.json()).then((rows: any[]) => {
+      const runsUrl = `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at&order=started_at.desc&limit=50`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+      fetchJson<any[]>(runsUrl, { headers: dbRestHeaders() }).then(res => {
+        if (!res.ok) { addGlobalToast(formatApiError(res.error, 'agent runs unavailable'), TOAST_COLORS.error); return }
+        const rows = res.data
         if (!Array.isArray(rows)) return
         const byAgent: Record<string, {taskTitle:string; startedAt:string|null; status:string}> = {}
         for (const r of rows) { if (!byAgent[r.agent_id]) byAgent[r.agent_id] = { taskTitle: (r.task_title || '').slice(0, 40), startedAt: r.started_at, status: r.status } }
@@ -224,17 +289,18 @@ export default function Home() {
           prevRunsRef.current[agentId] = info.status
         }
         setAgentRunsData(byAgent)
-      }).catch(() => {})
+      })
     }
     const fetchAgentIssues = () => {
-      fetch(`${SUPA}/rest/v1/issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&select=assignee&limit=500`, {
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-      }).then(r => r.json()).then((rows: any[]) => {
-        if (!Array.isArray(rows)) return
+      const countsUrl = `${dbRestBase()}/rest/v1/issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&select=assignee&limit=500`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+      fetchJson<any[]>(countsUrl, { headers: dbRestHeaders() }).then(res => {
+        // A failed poll leaves the previous counts alone rather than zeroing them.
+        if (!res.ok || !Array.isArray(res.data)) return
         const counts: Record<string, number> = {}
-        for (const r of rows) { if (r.assignee) counts[r.assignee] = (counts[r.assignee] || 0) + 1 }
+        for (const r of res.data) { if (r.assignee) counts[r.assignee] = (counts[r.assignee] || 0) + 1 }
         setAgentIssueCounts(counts)
-      }).catch(() => {})
+      })
     }
     fetchRuns(); fetchAgentIssues()
     const iv = setInterval(() => { fetchRuns(); fetchAgentIssues() }, 30000)
@@ -243,29 +309,33 @@ export default function Home() {
 
   // Calendar issues
   useEffect(() => {
-    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    fetch(`${SUPA}/rest/v1/issues?due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then(data => { if (Array.isArray(data)) setCalendarIssues(data) }).catch(() => {})
+    const calUrl = `${dbRestBase()}/rest/v1/issues?due_date=not.is.null&select=id,task_key,title,due_date,project,status&limit=200`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+    fetchJson<any[]>(calUrl, { headers: dbRestHeaders() }).then(res => {
+      if (!res.ok) { setCalendarError(res.error); setCalendarIssues(null); return }
+      setCalendarError(null)
+      setCalendarIssues(Array.isArray(res.data) ? res.data : [])
+    })
   }, [])
 
   // Issue activity feed
   useEffect(() => {
-    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const since = new Date(Date.now() - 7 * 86400000).toISOString()
-    fetch(`${SUPA}/rest/v1/issues?updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then(data => {
-      if (!Array.isArray(data)) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+    fetchJson<any[]>(`${dbRestBase()}/rest/v1/issues?updated_at=gte.${since}&order=updated_at.desc&limit=200&select=task_key,title,status,assignee,updated_at,resolution_type,sprint,type`, {
+      headers: dbRestHeaders()
+    }).then(res => {
+      if (!res.ok) { setActivityError(res.error); setIssueActivity(null); return }
+      setActivityError(null)
+      const data = res.data
+      if (!Array.isArray(data)) { setIssueActivity([]); return }
       setIssueActivity(data.map((i: any) => {
         const agoMin = Math.round((Date.now() - new Date(i.updated_at).getTime()) / 60000)
         const ai = AGENT_DISPLAY[i.assignee] || null
         return { type:'issue', emoji: ['completed','closed','released'].includes(i.status)?'✅':i.status==='in_progress'?'🔧':['code_review','product_review','approved'].includes(i.status)?'👁':'📋', agentId: i.assignee||'system', agentName: ai?.name||i.assignee||'System', channel: i.task_key, action:'issue', desc: `${i.title} → ${(i.status||'').replace(/_/g,' ')}${i.resolution_type?` (${i.resolution_type.replace(/_/g,' ')})`:''}`, ago: agoMin, date: agoMin<60?'Today':agoMin<1440?'Yesterday':'Earlier' }
       }))
-    }).catch(() => {})
-  }, [tab])
+    })
+  }, [tab, activityReload])
 
   // Cmd+K search
   useEffect(() => {
@@ -282,10 +352,10 @@ export default function Home() {
   // Inbox pending count polling
   useEffect(() => {
     const fetch_ = () => {
-      fetch('/api/inbox?status=pending')
-        .then(r => r.json())
-        .then(d => { if (Array.isArray(d)) setInboxPendingCount(d.length) })
-        .catch(() => {})
+      // A failed poll must not zero the badge — leave the last known count.
+      fetchJson<unknown>('/api/inbox?status=pending').then(r => {
+        if (r.ok && Array.isArray(r.data)) setInboxPendingCount(r.data.length)
+      })
     }
     fetch_()
     const iv = setInterval(fetch_, 30000)
@@ -320,23 +390,23 @@ export default function Home() {
     window.addEventListener('mc-chat-unread', h); return () => window.removeEventListener('mc-chat-unread', h)
   }, [])
 
+  const [activityReload, setActivityReload] = useState(0)
   const [statusCountdown, setStatusCountdown] = useState(30)
-  const fetchStatus = () => { fetch('/api/status').then(r => r.json()).then(d => { setLiveStatus(d); setStatusAt(Date.now()) }).catch(() => {}) }
-  const fetchAgentsAndCrons = () => {
-    fetch('/api/agents').then(r => r.json()).then(d => { if (Array.isArray(d)) setLiveAgents(d) }).catch(() => {})
-    fetch('/api/automations').then(r => r.json()).then(d => { if (Array.isArray(d)) setLiveCrons(d) }).catch(() => {})
-  }
+  const fetchStatus = loadStatus
+  const fetchAgentsAndCrons = useCallback(() => { loadAgents(); loadCrons() }, [loadAgents, loadCrons])
   useEffect(() => { fetchStatus(); const t = setInterval(() => { fetchStatus(); setStatusCountdown(30) }, 30000); const cd = setInterval(() => setStatusCountdown(s => Math.max(0, s - 1)), 1000); return () => { clearInterval(t); clearInterval(cd) } }, [])
   useEffect(() => { fetchAgentsAndCrons(); const t = setInterval(() => { fetchAgentsAndCrons() }, 60000); return () => clearInterval(t) }, [])
-  useEffect(() => { if (tab !== 'office') return; const iv = setInterval(async () => { const res = await fetch('/api/agents'); if (res.ok) { const d = await res.json(); if (Array.isArray(d)) setLiveAgents(d) } }, 30000); return () => clearInterval(iv) }, [tab])
+  useEffect(() => { if (tab !== 'office') return; const iv = setInterval(() => { loadAgents() }, 30000); return () => clearInterval(iv) }, [tab, loadAgents])
   useEffect(() => { if (!statusAt) return; const t = setInterval(() => setAgoSec(Math.floor((Date.now() - statusAt) / 1000)), 1000); return () => clearInterval(t) }, [statusAt])
   useEffect(() => { const t = setInterval(() => setClock(new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'America/New_York'}) + ' ET'), 1000); return () => clearInterval(t) }, [])
-  useEffect(() => { fetch('/api/projects').then(r => r.json()).then(d => { if (Array.isArray(d) && d.length > 0) setProjects(d) }).catch(() => {}) }, [])
-  useEffect(() => { fetch('/api/memory').then(r => r.json()).then(d => setMemFiles(d.files || [])) }, [])
+  useEffect(() => { loadProjects() }, [loadProjects])
   useEffect(() => { const t = setInterval(() => setFeedIdx(i => (i + 1) % LIVE_FEED.length), 4000); return () => clearInterval(t) }, [])
   useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 3000); return () => clearInterval(t) }, [])
 
-  const sprintProjects = projects ?? DEFAULT_SPRINT_PROJECTS
+  // Only fall back to the bundled sample projects when the request succeeded
+  // and genuinely returned nothing; a refused request keeps `null` so the
+  // consuming tab can show the reason instead of demo data.
+  const sprintProjects = projectsError ? [] : (projects ?? DEFAULT_SPRINT_PROJECTS)
   const nextRuns = getNextRuns(CRONS)
   const agentCurrentTask: Record<string,string> = liveStatus?.agentCurrentTask ?? {}
   const act = (id: string) => { if (agentCurrentTask[id]) return agentCurrentTask[id]; const a = ACTIVITIES[id] || ['Idle']; return a[tick % a.length] }
@@ -457,19 +527,19 @@ export default function Home() {
 
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
-          {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
-          {tab === 'team' && <CrewTab userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
-          {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} />}
+          {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} activityError={activityError} onRetryActivity={() => setActivityReload(n => n + 1)} statusError={statusError} onRetryStatus={loadStatus} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
+          {tab === 'team' && <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
+          {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
-          {tab === 'memory' && <MemoryTab memFiles={memFiles} openMem={openMem} setOpenMem={setOpenMem} />}
+          {tab === 'memory' && <MemoryTab memFiles={memFiles} error={memError} onRetry={refetchMem} openMem={openMem} setOpenMem={setOpenMem} />}
           {tab === 'board' && <BoardTab featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} projectFilter={selectedBusiness} />}
           {tab === 'features' && <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); navigate('board') }} projectFilter={selectedBusiness} />}
           {tab === 'pipeline' && <PipelineTab projectFilter={selectedBusiness} />}
           {tab === 'issues' && <IssuesTab projectFilter={selectedBusiness} />}
           {tab === 'projects' && <ProjectsTab projectFilter={selectedBusiness} />}
-          {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} />}
+          {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} cronsError={cronsError} />}
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
-          {tab === 'infra' && <InfraTab liveStatus={liveStatus} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
+          {tab === 'infra' && <InfraTab liveStatus={liveStatus} statusError={statusError} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
           {tab === 'product-board' && <ProductBoardTab projectFilter={selectedBusiness} />}
           {tab === 'settings' && <SettingsTab />}
           {tab === 'epic-map' && <EpicMapTab />}

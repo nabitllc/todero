@@ -413,7 +413,7 @@ export const openaiApiRuntime: AgentRuntime = {
     // Next.js server is itself a node process, so the binary is guaranteed to
     // exist and to be the version the runner was written against. A host with
     // no POSIX shell (every Windows box) is no longer a blocker.
-    const result = spawnDetached(process.execPath, [runnerFile], opts.logFile, {
+    const result = await spawnDetached(process.execPath, [runnerFile], opts.logFile, {
       cwd: opts.workingDir,
       env: {
         ...process.env,

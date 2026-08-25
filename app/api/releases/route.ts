@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 
 const RELEASE_CHANNEL = '1492003782605930560' // #release-notes
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN!
 
 function supabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  return db()
 }
 
 function bumpVersion(current: string, hasFeature: boolean, hasBreaking: boolean): string {

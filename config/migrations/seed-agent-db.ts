@@ -9,7 +9,7 @@ import path from 'path'
 // path aliases.
 import { CONFIG_DIR, TODERO_DIR } from '../../lib/paths'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
 const CONFIG = CONFIG_DIR
 const TODERO = TODERO_DIR

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
 import { exec as execAsync } from 'child_process'
 import { createAdminClient, getHubClient } from '@/lib/hub-client'
 import {
@@ -321,13 +321,10 @@ function notifyWatchers(issue: {
 // set (CI builds import every route for page-data collection). Throws at first
 // request instead of at module load, so `next build` can complete without the
 // env var. (TOD-2296 — same pattern as app/api/run-agent/route.ts.)
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(
-      'https://twthgapiouiqhavrcnry.supabase.co',
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    _supabase = db()
   }
   return _supabase
 }

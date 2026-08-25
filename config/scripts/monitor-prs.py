@@ -4,13 +4,14 @@ monitor-prs.py — Poll GitHub for new PRs → post to Discord #pr-reviews
 Replaces n8n workflow dDcSY7ZWV04AgHmW
 Runs every 5 minutes via launchd.
 """
+import os
 import json, os, urllib.request, pathlib
 from datetime import datetime, timezone, timedelta
 
 GH_TOKEN = "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"
 DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 PR_CHANNEL = "1487826368170299592"  # #pr-reviews
-SUPA_URL = "https://twthgapiouiqhavrcnry.supabase.co"
+SUPA_URL = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
 SUPA_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 REPOS = ["nabitllc/vespera", "nabitllc/todero"]
 STATE_FILE = pathlib.Path(__file__).parent / "state-prs.json"

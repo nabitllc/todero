@@ -14,13 +14,10 @@
 //   prs_closed_unmerged     = omitted from v1 (requires GitHub API round-trip; branch-janitor already reports)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 
 function supabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  return db()
 }
 
 type Window = '7d' | '30d'
