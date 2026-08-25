@@ -9,6 +9,11 @@
 //   · scripts/board/channels.json         → judged channel scores and goals
 //
 //   node scripts/board/build-board.mjs [--out <path>]
+//
+// CANONICAL OUTPUT — there is exactly ONE flight board. It lives at one artifact
+// URL and is republished in place; --out only chooses where the generated HTML is
+// staged before publishing. Never publish a second board file under a new name:
+// a second URL means two boards disagreeing about the same program.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'

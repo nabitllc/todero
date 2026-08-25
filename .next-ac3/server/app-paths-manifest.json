@@ -1,7 +1,5 @@
 {
-  "/api/db/[...path]/route": "app/api/db/[...path]/route.js",
+  "/login/page": "app/login/page.js",
   "/page": "app/page.js",
-  "/api/activity-feed/route": "app/api/activity-feed/route.js",
-  "/api/issues/route": "app/api/issues/route.js",
-  "/login/page": "app/login/page.js"
+  "/api/db/[...path]/route": "app/api/db/[...path]/route.js"
 }
