@@ -85,12 +85,34 @@ export const TRUTH_CHECKS = [
     id: 'issues-paginated', piece: 'issues-pagination', critical: true,
     desc: 'the issue list reports a true total, not a silent 1000-row truncation',
     async run() {
-      const r = await http('/api/issues?limit=1', { cookie: OWNER })
-      if (r.status !== 200) return no(`status ${r.status}`)
-      let j; try { j = JSON.parse(r.body) } catch { return no('unparseable') }
+      // This check used to assert `total > 1000`. That was a PROXY, and it only
+      // held because the database happened to carry 3,071 issues: the moment
+      // history was archived and the board scoped to one empty project, the
+      // proxy reported a product regression where there was none.
+      //
+      // The property actually worth guarding is not "the number is big" but
+      // "the number is TRUE" — the reported total equals the rows the API will
+      // actually hand over. That is testable at any dataset size, and it still
+      // catches a silent 1000-row cap on a large one, which is the bug this
+      // check was written for.
+      const head = await http('/api/issues?limit=1&include_archived=1', { cookie: OWNER })
+      if (head.status !== 200) return no(`status ${head.status}`)
+      let j; try { j = JSON.parse(head.body) } catch { return no('unparseable') }
       const total = j?.total ?? j?.meta?.total
       if (typeof total !== 'number') return no('no numeric total field — every count built on this is unverifiable')
-      return total > 1000 ? ok(`total=${total} (exceeds the old 1000 cap)`) : no(`total=${total} — still capped or undercounting`)
+
+      const all = await http('/api/issues?limit=0&include_archived=1', { cookie: OWNER })
+      if (all.status !== 200) return no(`full-list status ${all.status}`)
+      let rows; try { const a = JSON.parse(all.body); rows = a?.data ?? a } catch { return no('unparseable full list') }
+      if (!Array.isArray(rows)) return no('full list is not an array')
+
+      if (rows.length !== total) {
+        return no(`reported total=${total} but the API returned ${rows.length} rows — the count and the data disagree`)
+      }
+      if (rows.length === 1000) {
+        return no('exactly 1000 rows returned — indistinguishable from the old silent cap')
+      }
+      return ok(`total=${total} matches ${rows.length} rows actually returned`)
     },
   },
   {

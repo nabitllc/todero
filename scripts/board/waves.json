@@ -165,14 +165,56 @@
     "<b>8 named commits to 8 autosaves</b>, was 6 to 34 — the history now carries failed rounds too",
     "evidence-based-verification failed at 5 but shipped a 598-line correlation checker that first rebuilt the very bug it was meant to catch, then removed every path where co-occurrence could pass for correlation"
    ]
+  },
+  {
+   "n": 5.5,
+   "name": "Local cutover",
+   "chip": "done",
+   "when": "25 Aug · 15:30 → 16:05",
+   "minutes": 35,
+   "agents": 0,
+   "tokens": 0,
+   "cost": 0.0,
+   "lede": "Michael asked whether Todero could stop using the hosted database and run local until the Neon move. It can, and doing it now beats waiting — but only after the history was exported, because switching first would have meant starting from an empty database with the record still stranded upstream.",
+   "before": [
+    "The leaked <code>service_role</code> key was still the app&rsquo;s live credential",
+    "<code>PATCH /api/workspace-settings</code> wrote to a <code>workspaces</code> table the hosted database <b>does not have</b> — a guaranteed 500, never noticed",
+    "<code>SELECT_COLS</code> in <code>/api/issues</code> is a hardcoded 40-column allowlist, so <code>archived_at</code> was invisible to every default read",
+    "The board showed 3,078 issues across six projects when one project was selected"
+   ],
+   "after": [
+    "<b>141,534 rows across 27 tables</b> exported before anything moved — the export Michael set as the precondition for deletion",
+    "Local carries <b>41 tables to the hosted 27</b>: workspaces, hubs, connections, agent_registrations and 11 more exist only locally. Moving local is not a downgrade",
+    "The leaked key is <b>inert for the app today</b>, not at the Neon cutover",
+    "Archived rows hidden in the query layer, not at call sites — default read <b>0</b>, <code>?include_archived=1</code> returns the archived total exactly",
+    "<b>57 of 58 API routes</b> now go through the db seam; the last vendor client is gone"
+   ]
+  },
+  {
+   "n": 6,
+   "name": "Operator surface",
+   "chip": "in flight",
+   "when": "25 Aug · 16:05 → running",
+   "minutes": 0,
+   "agents": 1,
+   "tokens": 0,
+   "cost": 0.0,
+   "lede": "Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” So this wave is scored against <code>design/Nav.dc.html</code> and its six sibling artboards — a spec that is a file, not a description — and it loops until critics agree the running app matches it.",
+   "before": [
+    "Twenty nav entries plus a divider, appended one at a time from the OpenClaw lineage — never designed",
+    "<code>projectFilter={selectedBusiness}</code> — what every tab receives as its project filter is the <b>business</b>, so selecting one project selects everything",
+    "Sprint cards for Vespera and Kemuni rendered from <b>hardcoded constants</b>, not queries — no filter could ever remove them",
+    "Chat is a destination you navigate away to, losing the screen you were asking about"
+   ],
+   "after": [
+    "Six destinations — Now, Work, Fleet, Runs, Memory, Settings — plus Chat as a ⌘J overlay",
+    "Nothing deleted: all twenty tab ids must still resolve, as a tab, a filter or a redirect",
+    "Two tabs split deliberately: Calendar (due dates to Work, job timing to Settings) and Infra (signal to Now, detail to Settings)",
+    "Limiglow has zero issues and that is correct — every empty state must name it and read as “nothing yet”, never as breakage"
+   ]
   }
  ],
  "planned": [
-  {
-   "n": 6,
-   "name": "Operator surface + the vault",
-   "detail": "20 tabs to six · Chat becomes a ⌘J overlay · Infra splits — signal on Now, detail in Settings · deep links so no screen is unreachable · the pixel-agents event source and speech bubbles · mobile at 375px and contrast · AND the credential vault made real, which gates Wave 7."
-  },
   {
    "n": 7,
    "name": "First managed project — Amazoniico/Limiglow",
