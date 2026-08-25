@@ -70,7 +70,7 @@ for (const agentId of agents) {
   }
 
   for (const hit of summary.hits) {
-    log(`${agentId}: pattern "${hit.word}" appeared ${hit.count} time(s)`)
+    log(`${agentId}: pattern "${hit.phrase}" appeared ${hit.count} time(s)`)
   }
   if (summary.promotedToHot.length > 0) {
     log(`${agentId}: promoted to HOT tier: ${summary.promotedToHot.join(', ')}`)
