@@ -105,12 +105,22 @@ const SELF_PATH = 'scripts/no-unscoped-issues.mjs'
  * Keep this list exact — a whole-directory exemption (e.g. "components/tabs")
  * would silently swallow a brand-new violation in a brand-new tab file too.
  */
-const PRE_EXISTING_DEBT = new Set([
-  'components/ActiveAgentsCard.tsx',
-  'components/SearchOverlay.tsx',
-  'components/tabs/ActivityTab.tsx',
-  'components/tabs/OverviewTab.tsx',
-  'components/tabs/PipelineTab.tsx',
+// Each entry pins the EXACT number of violations that existed when the debt was
+// recorded. This is deliberately a count and not a bare filename: a set of file
+// names exempts a file, so a file on the list could grow from one violation to
+// twenty and the guard would still pass — which is what the previous version of
+// this comment promised it would not do, while the code did exactly that. A
+// guard whose comment describes enforcement it does not perform is the same
+// defect this whole wave has been removing, so the number is the enforcement.
+//
+// The list may only ever shrink, in both dimensions: fewer files, or a smaller
+// count for a file. Both directions are checked below.
+const PRE_EXISTING_DEBT = new Map([
+  ['components/ActiveAgentsCard.tsx', 1],
+  ['components/SearchOverlay.tsx', 1],
+  ['components/tabs/ActivityTab.tsx', 2],
+  ['components/tabs/OverviewTab.tsx', 11],
+  ['components/tabs/PipelineTab.tsx', 3],
 ])
 
 function scanFiles() {
@@ -126,7 +136,7 @@ function scanFiles() {
 }
 
 const hits = []
-const debtSeen = new Set()
+const debtCounts = new Map()
 
 for (const file of scanFiles()) {
   const abs = join(REPO_ROOT, file)
@@ -139,7 +149,7 @@ for (const file of scanFiles()) {
     if (hasProjectClause && hasArchivedClause) return // scoped correctly, inline
     const hit = { file, lineNo: i + 1, text: line.trim() }
     if (PRE_EXISTING_DEBT.has(file)) {
-      debtSeen.add(file)
+      debtCounts.set(file, (debtCounts.get(file) ?? 0) + 1)
     } else {
       hits.push(hit)
     }
@@ -156,21 +166,33 @@ if (hits.length > 0) {
   process.exit(1)
 }
 
-// A debt file that no longer contains ANY violation has been fixed — the
-// entry is now dead weight that would silently exempt a brand-new violation
-// introduced later in the same file. Force it out of the list instead of
-// letting it rot.
-const staleDebtEntries = [...PRE_EXISTING_DEBT].filter((f) => !debtSeen.has(f))
-if (staleDebtEntries.length > 0) {
-  console.error('FAIL: PRE_EXISTING_DEBT lists file(s) with no remaining violation — remove them from the exemption list:')
+// Debt may shrink, never grow. Three ways this fails, all of them the same
+// principle — the exemption covers what was already there, and nothing more:
+//   grew   — a new unscoped query added to a file that already had some
+//   stale  — the file is clean now, so the entry would silently exempt a
+//            brand-new violation introduced later
+//   shrank — genuinely fixed, but the pinned number is now a lie; lower it
+const debtProblems = []
+for (const [file, allowed] of PRE_EXISTING_DEBT) {
+  const found = debtCounts.get(file) ?? 0
+  if (found > allowed) {
+    debtProblems.push(`  ${file}: ${found} violations, but only ${allowed} exempted — the new one(s) must be scoped`)
+  } else if (found === 0) {
+    debtProblems.push(`  ${file}: no violations left — remove it from PRE_EXISTING_DEBT`)
+  } else if (found < allowed) {
+    debtProblems.push(`  ${file}: down to ${found} from ${allowed} — lower the pinned count to ${found}`)
+  }
+}
+if (debtProblems.length > 0) {
+  console.error('FAIL: PRE_EXISTING_DEBT is out of date. It may only ever shrink.')
   console.error('')
-  for (const f of staleDebtEntries) console.error(`  ${f}`)
+  for (const line of debtProblems) console.error(line)
   console.error('')
   process.exit(1)
 }
 
 console.log('PASS: no unscoped dbUrl(\'issues?...\') literal outside PRE_EXISTING_DEBT under app/ or components/')
-if (debtSeen.size > 0) {
-  console.log(`  (${debtSeen.size} pre-existing debt file(s) still exempted — see PRE_EXISTING_DEBT in this script)`)
+if (debtCounts.size > 0) {
+  console.log(`  (${debtCounts.size} pre-existing debt file(s) still exempted — see PRE_EXISTING_DEBT in this script)`)
 }
 process.exit(0)
