@@ -20,6 +20,7 @@ import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 import { resolveBinary } from '../paths'
+import { finalizeRun } from './token-ledger'
 
 // Bare name by default: resolved through PATH at spawn time (`where`/`which`),
 // so a `claude` installed by npm -g, Homebrew, or the official installer all
@@ -128,6 +129,7 @@ export const claudeCodeRuntime: AgentRuntime = {
     // ~32k characters and Todero prompts routinely exceed that. `claude --print`
     // with no positional prompt reads stdin, which is also why no escaping of
     // quotes/backticks/$( is needed anywhere in this file any more.
+    const spawnStartedAt = Date.now()
     const result = await spawnDetached(CLAUDE_BIN, argv, opts.logFile, {
       cwd: effectiveWorkingDir,
       env: process.env,
@@ -154,6 +156,20 @@ export const claudeCodeRuntime: AgentRuntime = {
     // poll the pid and log [spawn-exit] when it is gone.
     watchChildExit(result.pid, opts.logFile, () => {
       appendLog(opts.logFile, `[spawn-exit] agent=${opts.agentId} task=${opts.taskId ?? 'none'}`)
+      // TOD-2381: close the token_ledger row (and any dangling agent_runs row
+      // for this task) the moment the OS confirms the process is gone. This is
+      // the only place in the codebase a spawned run's exit is actually
+      // observed — everywhere else only knows it was launched. `status:
+      // 'completed'` here means "the process exited", not "the task
+      // succeeded": watchChildExit polls pid liveness, it does not see the
+      // real exit code, so this is honestly the coarsest signal available
+      // without a bigger rewrite of spawnDetached's child.on('exit') plumbing.
+      finalizeRun({
+        logFile: opts.logFile,
+        status: 'completed',
+        durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
+        taskId: opts.taskId ?? null,
+      })
     }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
 
     // Schedule worktree teardown after the timeout window

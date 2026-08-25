@@ -16,12 +16,55 @@
 // Agents are expected to POST about every 30s while working. /api/agents reads
 // the recorded rows and reports `live` under 60s, `stale` under 10 min, `idle`
 // beyond that, and `never` for an agent with no row at all.
+//
+// The GET direction also carries `pending_tasks`: a firewalled agent that
+// cannot hold an SSE connection open still gets its work by polling the same
+// URL it already pings for liveness (the same design point builderz-labs/
+// mission-control's `GET /api/agents/{id}/heartbeat` makes). It is issues
+// assigned to this agent id (assignee OR worked_by) sitting in a status the
+// agent should act on — 'open' (claimed, not started) or 'in_progress'
+// (already working it, e.g. after a restart) — ordered the same way
+// lib/agent-queue.ts sorts its own queues (`priority.asc`).
 
 import { NextRequest, NextResponse } from 'next/server'
-import { dbStatusMessage, isDbConfigured } from '@/lib/db'
+import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { classifyLiveness, readHeartbeat, recordHeartbeat } from '@/lib/agent-heartbeats'
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const
+
+/** Statuses this endpoint considers "this agent has work waiting". */
+const PENDING_STATUSES = ['open', 'in_progress'] as const
+
+type PendingTask = {
+  task_key: string | null
+  title: string
+  status: string
+  priority: string | null
+}
+
+/**
+ * Issues assigned to `agentId` in a pending status. Never throws: a query
+ * failure here must not fail the heartbeat POST/GET itself, so it degrades to
+ * an empty list plus `null` rather than propagating.
+ */
+async function fetchPendingTasks(agentId: string): Promise<PendingTask[] | null> {
+  try {
+    const { data, error } = await db()
+      .from('issues')
+      .select('task_key,title,status,priority')
+      .or([
+        { column: 'assignee', op: 'eq', value: agentId },
+        { column: 'worked_by', op: 'eq', value: agentId },
+      ])
+      .in('status', [...PENDING_STATUSES])
+      .order('priority', { ascending: true })
+      .limit(10)
+    if (error) return null
+    return Array.isArray(data) ? (data as PendingTask[]) : []
+  } catch {
+    return null
+  }
+}
 
 /** 503 naming the variables the active adapter wants but cannot find. */
 function unconfigured(): NextResponse {
@@ -97,9 +140,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 
   const result = await readHeartbeat(agentId)
+  const pendingTasks = await fetchPendingTasks(agentId)
 
   // "Never checked in" is a real, nameable answer — not an empty 200 that the
-  // caller has to guess at, and not a bare 404 with nothing in the body.
+  // caller has to guess at, and not a bare 404 with nothing in the body. Work
+  // may still be waiting for an agent that has never checked in (e.g. it was
+  // just assigned before its first connect), so pending_tasks is populated
+  // here too rather than only on the 200 path.
   if (!result.data) {
     return NextResponse.json(
       {
@@ -108,6 +155,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         liveness: 'never',
         store: result.store,
         warning: result.warning,
+        pending_tasks: pendingTasks ?? [],
+        total_items: pendingTasks?.length ?? 0,
       },
       { status: 404, headers: NO_STORE },
     )
@@ -124,6 +173,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       liveness: classifyLiveness(result.data.lastSeen),
       store: result.store,
       warning: result.warning,
+      // Polling surface for a firewalled agent that cannot hold an SSE stream
+      // open: GET this same URL and act on what comes back instead.
+      pending_tasks: pendingTasks ?? [],
+      total_items: pendingTasks?.length ?? 0,
+      status: pendingTasks && pendingTasks.length > 0 ? 'WORK_ITEMS_FOUND' : 'NO_WORK',
     },
     { headers: NO_STORE },
   )

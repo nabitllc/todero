@@ -79,6 +79,21 @@ export const LOG_DIR: string =
 export const WORKTREE_ROOT: string =
   process.env.AGENT_WORKTREE_ROOT ?? path.join(os.tmpdir(), 'todero-worktrees')
 
+/**
+ * The Mich-Brain2 vault (docs/brain2-integration.md). READ-ONLY to Todero
+ * except `_pending/`, which is the vault's designated AI outbox — the only
+ * path Todero may ever create files under.
+ *
+ * Default matches the contract documented in docs/brain2-integration.md.
+ * That default is one operator's path, same as the legacy `~/todero` fallback
+ * above — override with TODERO_VAULT_DIR on any other host. Callers must
+ * treat an absent vault as a normal, handled case (existsSync check, a
+ * visible notice naming the path looked at), never a crash: the vault is
+ * optional infrastructure, not a hard dependency of Todero booting or running.
+ */
+export const VAULT_DIR: string =
+  process.env.TODERO_VAULT_DIR ?? 'C:\\Development\\Mich-Brain2'
+
 const binaryCache = new Map<string, string | null>()
 
 /**

@@ -8,7 +8,7 @@ SUPA_URL="${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is not set - see 
 SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is not set - see .env.local.template}"
 MC_API="${MC_API_URL:-http://localhost:3000/api}"
 
-REPO_DIR="/Users/kemuniagent/mission-control"
+REPO_DIR="${TODERO_DIR:-$HOME/mission-control}"
 DESIGN_SYSTEM="$REPO_DIR/docs/design-system.md"
 
 # Fetch open UX review issues

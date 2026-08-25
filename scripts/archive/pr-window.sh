@@ -40,7 +40,7 @@ for BRANCH in $BRANCHES; do
     REPO_DIR="/var/folders/r0/hww7pxv12txb9sfmlmmw76xw0000gn/T/tmp.8qWeSvST6Z"
     REPO_SLUG="nabitllc/vespera"
   else
-    REPO_DIR="/Users/kemuniagent/mission-control"
+    REPO_DIR="${TODERO_DIR:-$HOME/mission-control}"
     REPO_SLUG="nabitllc/mission-control"
   fi
 

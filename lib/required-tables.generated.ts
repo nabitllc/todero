@@ -9,12 +9,14 @@
 /** Every table the running app queries directly, derived mechanically. */
 export const GENERATED_REQUIRED_TABLES = [
   'activity_events',
+  'agent_budgets',
   'agent_cost_log',
   'agent_document_history',
   'agent_documents',
   'agent_heartbeats',
   'agent_memory',
   'agent_memory_files',
+  'agent_run_records',
   'agent_runs',
   'agents',
   'businesses',

@@ -84,9 +84,30 @@ export interface CompletionEntry {
   outputTokens?: number
   costUsd?: number
   error?: string
+  /**
+   * When the caller knows which issue this run belonged to, also closes any
+   * still-`running` `agent_runs` row for it. Normal completions already close
+   * that row when the issue's status changes (app/api/issues/route.ts, "Close
+   * agent_runs on status change"); this is the safety net for a process that
+   * exited WITHOUT ever moving the issue — otherwise that row (and the
+   * per-agent concurrency ceiling reading it) would think the agent was still
+   * running forever.
+   */
+  taskId?: string | null
 }
 
-export function recordCompletion(entry: CompletionEntry): void {
+/**
+ * TOD-2381 (agent-budget-stop): the ledger's closing function.
+ *
+ * Before this piece, this function existed under the name `recordCompletion`
+ * and NOTHING called it — every one of 66,879 `token_ledger` rows sat at
+ * `status='spawned'` forever, `cost_usd` always NULL, so a budget reading this
+ * table saw zero spend on any agent no matter how much ran. It is now wired
+ * into the real run lifecycle from `lib/runtimes/claude-code.ts`'s
+ * process-exit watcher (`watchChildExit`'s `onExit` callback) — every spawn
+ * this repo launches closes its own row when the process actually exits.
+ */
+export function finalizeRun(entry: CompletionEntry): void {
   void (async () => {
     try {
       // Find the token_ledger row for this log file
@@ -118,8 +139,19 @@ export function recordCompletion(entry: CompletionEntry): void {
       }
 
       await db().from('token_ledger').update(updatePayload).eq('id', row.id)
+
+      if (entry.taskId) {
+        await db()
+          .from('agent_runs')
+          .update({ status: entry.status, finished_at: new Date().toISOString() })
+          .eq('task_id', entry.taskId)
+          .eq('status', 'running')
+      }
     } catch (err) {
-      console.warn(`[token-ledger:recordCompletion] ${err instanceof Error ? err.message : String(err)}`)
+      console.warn(`[token-ledger:finalizeRun] ${err instanceof Error ? err.message : String(err)}`)
     }
   })()
 }
+
+/** @deprecated use {@link finalizeRun} — kept only so any stale caller still compiles. */
+export const recordCompletion = finalizeRun

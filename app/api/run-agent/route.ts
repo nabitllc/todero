@@ -15,6 +15,7 @@ import { getQueueConfig, getAllQueueAgentIds } from '@/lib/agent-queue'
 import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { isAgentPaused } from '@/lib/loop-breaker'
+import { checkDispatchCeilings } from '@/lib/agent-budget'
 import { exec } from 'child_process'
 import { getDefaultRuntime, getRuntimeByName, inspectRuntime, listRuntimes } from '@/lib/runtimes'
 import { isAlive } from '@/lib/runtimes/detached-spawn'
@@ -262,6 +263,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: `Agent '${agentId}' is paused by loop breaker. Check inbox for review request.`, paused: true, loop_breaker: true },
       { status: 503 }
+    )
+  }
+
+  // TOD-2381 (agent-budget-stop): ceilings checked OUTSIDE the agent, before a
+  // run starts. Concurrency / run-count / dollar-spend are all read from
+  // agent_runs and token_ledger rows the server itself wrote — never an
+  // estimate, never something the agent is asked to report about itself.
+  const ceiling = await checkDispatchCeilings(agentId)
+  if (!ceiling.allowed) {
+    return NextResponse.json(
+      {
+        error: `Agent '${agentId}' is over its ${ceiling.ceiling} ceiling: ${ceiling.reason}`,
+        ceiling: ceiling.ceiling,
+        reason: ceiling.reason,
+        detail: ceiling.detail,
+        overBudget: true,
+      },
+      { status: 429 }
     )
   }
 
@@ -776,6 +795,17 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
         .eq('id', agentRunId)
     }
   } else {
+    // TOD-2381: persist the OS pid onto the agent_runs row so a heartbeat-time
+    // ceiling stop (wall clock / no progress) can send it a real signal
+    // instead of only disowning the row in the database.
+    if (agentRunId && spawnResult.pid) {
+      void (async () => {
+        try {
+          const { error } = await db().from('agent_runs').update({ pid: spawnResult.pid }).eq('id', agentRunId)
+          if (error) console.warn(`[run-agent] pid persist failed: ${error.message}`)
+        } catch { /* best-effort */ }
+      })()
+    }
     // ── Spawn-confirmation heartbeat — only on successful spawn ──
     // Fires 60s after spawn. If the process dies immediately (context failure,
     // missing binary, worktree error), it never writes its own heartbeat, so this

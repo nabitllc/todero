@@ -10,7 +10,7 @@ set -euo pipefail
 
 MC_API="${MC_API_URL:-http://localhost:3000/api}"
 TODAY=$(date +%Y-%m-%d)
-LOCAL_FILE="/Users/kemuniagent/todero/config/memory/${TODAY}.md"
+LOCAL_FILE="${TODERO_DIR:-$HOME/todero}/config/memory/${TODAY}.md"
 
 if [ -f "$LOCAL_FILE" ]; then
   CONTENT=$(cat "$LOCAL_FILE")

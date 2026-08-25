@@ -16,8 +16,8 @@ trap "rm -f $LOOP_LOCK" EXIT
 
 SK="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is not set - see .env.local.template}"
 SUPA="${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is not set - see .env.local.template}"
-MC_DIR="/Users/kemuniagent/todero"
-WORKSPACE="/Users/kemuniagent/todero/config"
+MC_DIR="${TODERO_DIR:-$HOME/todero}"
+WORKSPACE="${TODERO_DIR:-$HOME/todero}/config"
 
 log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOG"; }
 

@@ -20,7 +20,7 @@ API="http://localhost:3000/api/issues"
 RUN_API="http://localhost:3000/api/run-agent"
 NOTIFY_API="http://localhost:3000/api/notify"
 AGENTS_API="http://localhost:3000/api/agents"
-TODERO_DIR="/Users/kemuniagent/todero"
+TODERO_DIR="${TODERO_DIR:-$HOME/todero}"
 STATE=/tmp/pipeline-watchdog.state.json
 
 # Thresholds (seconds)

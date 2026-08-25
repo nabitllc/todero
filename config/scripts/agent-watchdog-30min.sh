@@ -123,8 +123,8 @@ echo "[discord] http=$CODE"
 if [ "$RUNS" -ge "$MAX_RUNS" ]; then
   echo "[done] reached MAX_RUNS, unloading LaunchAgent"
   rm -f "$STATE"
-  launchctl unload /Users/kemuniagent/Library/LaunchAgents/work.nabit.agent-watchdog-30min.plist 2>&1 || true
-  rm -f /Users/kemuniagent/Library/LaunchAgents/work.nabit.agent-watchdog-30min.plist
+  launchctl unload ${HOME}/Library/LaunchAgents/work.nabit.agent-watchdog-30min.plist 2>&1 || true
+  rm -f ${HOME}/Library/LaunchAgents/work.nabit.agent-watchdog-30min.plist
 fi
 
 echo "[$(date '+%T')] done"

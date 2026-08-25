@@ -43,7 +43,7 @@ echo "$ISSUES" | jq -c '.[]' | while read -r ISSUE; do
   if [ "$PROJECT" = "Vespera" ]; then
     REPO_DIR="/var/folders/r0/hww7pxv12txb9sfmlmmw76xw0000gn/T/tmp.8qWeSvST6Z"
   else
-    REPO_DIR="/Users/kemuniagent/mission-control"
+    REPO_DIR="${TODERO_DIR:-$HOME/mission-control}"
   fi
 
   # INF-183: For P0/P1, include git diff in tester prompt for code review

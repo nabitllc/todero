@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 import { recordHeartbeat } from '@/lib/agent-heartbeats'
+import { checkInFlightCeilings } from '@/lib/agent-budget'
 
 export async function PATCH(req: NextRequest) {
   // The database is either configured or it is not — say which, in the body.
@@ -40,7 +41,7 @@ export async function PATCH(req: NextRequest) {
   // ~5 min while working; before this, none of that traffic reached the agent
   // roster, which is why /api/agents could only ever guess who was running.
   const WORKING_STATUSES = ['in_progress', 'code_review', 'refined', 'approved', 'released']
-  const ownerLookup = db.from('issues').select('task_key, status, assignee, worked_by')
+  const ownerLookup = db.from('issues').select('id, task_key, status, assignee, worked_by, updated_at')
   const { data: ownerRows } = await (issue_id
     ? ownerLookup.eq('id', issue_id)
     : ownerLookup.eq('task_key', task_key as string)
@@ -85,5 +86,24 @@ export async function PATCH(req: NextRequest) {
     agentBeat = { agent_id: owner, store: recorded.store, warning: recorded.warning }
   }
 
-  return NextResponse.json({ ok: true, heartbeat_at: now, agent: agentBeat })
+  // TOD-2381 (agent-budget-stop): the SAME beat is the supervisor's only
+  // chance to check the ceilings on a run already in flight — wall clock and
+  // no-progress. This is enforcement, not the agent reporting on itself: the
+  // check reads agent_runs.started_at and the issue's own updated_at, and if
+  // either ceiling is breached it stops the run right here (agent_runs marked
+  // stopped, issue blocked for triage, pid sent SIGTERM best-effort, inbox
+  // entry written) before this response goes back to the caller.
+  let ceilingStop: { stopped: boolean; ceiling?: string; reason?: string } | null = null
+  if (owner && ownerRow?.id) {
+    const result = await checkInFlightCeilings(owner, {
+      id: ownerRow.id as string,
+      task_key: (ownerRow.task_key as string | null) ?? null,
+      updated_at: ownerRow.updated_at as string,
+    })
+    if (!result.allowed) {
+      ceilingStop = { stopped: true, ceiling: result.ceiling, reason: result.reason }
+    }
+  }
+
+  return NextResponse.json({ ok: true, heartbeat_at: now, agent: agentBeat, ceilingStop })
 }

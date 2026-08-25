@@ -8,8 +8,8 @@
 
 set -euo pipefail
 
-TODERO_DIR="/Users/kemuniagent/todero"
-CONFIG_DIR="/Users/kemuniagent/todero/config"
+TODERO_DIR="${TODERO_DIR:-$HOME/todero}"
+CONFIG_DIR="${TODERO_DIR:-$HOME/todero}/config"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
 
