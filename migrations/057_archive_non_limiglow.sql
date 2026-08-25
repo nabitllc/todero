@@ -32,5 +32,9 @@ UPDATE issues
 UPDATE projects
    SET archived_at = NOW(),
        archived_reason = 'Superseded by Limiglow as the single working project.'
- WHERE id IS DISTINCT FROM 'Limiglow'
+ -- Matched on NAME, not id — same reason as 056: `projects.id` is a UUID in
+ -- the schema this repo builds, so comparing it to a project NAME threw
+ -- `invalid input syntax for type uuid: "Limiglow"` and stopped the run at 50
+ -- of 51 against a fresh database.
+ WHERE name IS DISTINCT FROM 'Limiglow'
    AND archived_at IS NULL;

@@ -724,10 +724,23 @@ export default function Home() {
     pushURL(name, destination, view, projectStays ? selectedProject : null)
   }, [selectedBusiness, selectedProject, destination, view, pushURL])
 
-  // cards-and-identity piece (Wave 6, build instruction 2): the left rail and
-  // the sidebar's project switcher both call this — one project-selection
-  // entry point, same shape as selectBusiness above. Deliberately never
-  // accepts null: "no destination renders until a project is selected" (the
+  // cards-and-identity piece (Wave 6) — CORRECTED after the owner's own
+  // words on the running app: "Left pane has 'Workspace'... Todero 'Hub'
+  // should be similar to Slack 'Workspace'... For now, we only have one Hub
+  // (Limiglow)." A Hub is the top-level scope (Slack-workspace equivalent,
+  // future multi-user/RBAC) — NOT a per-project switcher living alongside a
+  // separate business concept. There is exactly one hub-selection entry
+  // point (this function); the left rail (BusinessRail.tsx) and the
+  // sidebar's header switcher (PrimaryNav) are its two on-screen affordances,
+  // not two independent switchers.
+  //
+  // Today the hub and the project are the same row (Limiglow) because the
+  // account has exactly one of each and no membership/RBAC model exists yet
+  // — "build no membership or role UI now" — so this reuses the same
+  // `selectedProject` state and scope-is-a-boundary plumbing the rest of the
+  // app already gates every destination on, rather than inventing a second,
+  // parallel scope variable this early. Deliberately never accepts null: "no
+  // destination renders until a project is selected" (the
   // ProjectScopeProvider gate below) means offering an unscoped state here
   // would strand the operator on that gate forever, since the auto-derivation
   // effect only fills a null scope once, on cold load.
@@ -739,19 +752,25 @@ export default function Home() {
   return (
     <div className="min-h-screen flex bg-neutral-950">
       {/*
-        cards-and-identity piece (Wave 6, build instruction 2): this file
-        (BusinessRail.tsx) used to be exactly what its name says — a rail of
-        BUSINESS avatars ("T" for Todero). The owner's own words: "Left pane
-        is meant to be for each project... first character of the project
-        name, in this case the L." It now lists PROJECTS (real /api/projects
-        rows), one avatar each; the filename survives unchanged so the other
-        agent working this repo concurrently sees no churn on a file it also
-        touches indirectly (the DO-NOT-BREAK layout comment above references
-        it by name). Businesses are no longer rail furniture — "there is one
-        business and it earns no screen furniture" — the onManage callback
-        below routes the rail's "+" to Settings → Projects instead of opening
-        a business-onboarding wizard, since a project rail adding a BUSINESS
-        would be the same mismatch this rewrite exists to fix.
+        cards-and-identity piece (Wave 6) — CORRECTED: this rail is the HUB
+        switcher (Slack-workspace equivalent), and it stays here permanently
+        — it does NOT move into Settings. The owner's words: "the rail is the
+        hub switcher... stays permanently." The first pass read "Business" ->
+        "no screen furniture" and moved business-switching to Settings; that
+        was wrong. What WAS wrong before is unchanged by this correction: the
+        rail used to show "T" (the `businesses` row is literally named
+        "Todero"), and the owner's ask — "first character of the project
+        name, in this case the L" — reads correctly once "Limiglow" (today's
+        one project row) is understood as the HUB, not as a project living
+        inside a Todero business. So the data source stays /api/projects (the
+        thing that actually resolves to "Limiglow" today); only the
+        vocabulary around it changed, everywhere, to Hub. The filename
+        (BusinessRail.tsx) is unchanged on purpose — this piece's DO-NOT-BREAK
+        layout comment above references it by name, and it is the file this
+        piece owns; a rename is a bigger diff than the correction asked for.
+        "+" still opens Settings → Projects (the nearest real admin surface
+        for a second hub, since Settings does not have its own Hubs view
+        yet) rather than the business-onboarding wizard.
       */}
       <BusinessRail selected={selectedProject} onSelect={selectProject} onManage={() => goTo('settings', 'projects')} refreshKey={businessRailRefresh} />
       {showOnboarding && <OnboardingWizard onComplete={(name) => { selectBusiness(name); setShowOnboarding(false); setBusinessRailRefresh(k => k + 1) }} onClose={() => setShowOnboarding(false)} />}
@@ -772,9 +791,9 @@ export default function Home() {
           model: Array.isArray(liveStatus.ollama.models) && liveStatus.ollama.models[0] ? liveStatus.ollama.models[0] : null,
         } : null}
         clock={clock}
-        project={selectedProject}
-        projects={Array.isArray(projects) ? projects.map((p: any) => ({ id: p.id, name: p.name })) : null}
-        onSelectProject={selectProject}
+        hub={selectedProject}
+        hubs={Array.isArray(projects) ? projects.map((p: any) => ({ id: p.id, name: p.name })) : null}
+        onSelectHub={selectProject}
       />
 
       {/* MOBILE BOTTOM NAV — six destinations, no "more" menu (they all fit) */}
@@ -800,17 +819,19 @@ export default function Home() {
           breadcrumb bar that used to live here is deleted, not reworded. Its
           two jobs are now each owned by exactly one place: the Todero
           wordmark lives in TopBar (top-left, unchanged by this piece), and
-          the project name + switcher live in PrimaryNav's header, above
-          "PRIMARY" (see the `project`/`projects`/`onSelectProject` props
-          passed to it above). "Business" and "Project" were developer words
-          on screen, and the line beneath them ("Scoped to X. Some panels
-          still read across projects — that is being fixed.") was stale
+          the HUB name + switcher live in PrimaryNav's header, above
+          "PRIMARY" (see the `hub`/`hubs`/`onSelectHub` props passed to it
+          above — owner correction: this is a Hub, the Slack-workspace
+          equivalent, not a "project" switcher living beside a separate
+          business concept). "Business" and "Project" were developer words on
+          screen, and the line beneath them ("Scoped to X. Some panels still
+          read across projects — that is being fixed.") was stale
           orchestration scaffolding asserting an invariant the UI itself does
           not enforce — see the piece doc and this file's own scope-gate
           comment below for where that enforcement actually lives now.
         */}
 
-        <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
+        <main className="flex-1 px-4 md:px-6 pt-4 pb-20 lg:pb-4 overflow-x-hidden">
           {/*
             scope-is-a-boundary (build instruction 1, acceptance item 3): this
             is the code path that makes "a destination cannot be rendered

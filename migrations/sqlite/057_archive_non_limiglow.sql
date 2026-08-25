@@ -27,5 +27,6 @@ UPDATE issues
 UPDATE projects
    SET archived_at = datetime('now'),
        archived_reason = 'Superseded by Limiglow as the single working project.'
- WHERE id <> 'Limiglow'
+ -- Matched on NAME, not id — see the Postgres copy of this migration.
+ WHERE name <> 'Limiglow'
    AND archived_at IS NULL;

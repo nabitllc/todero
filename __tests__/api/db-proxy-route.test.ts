@@ -55,7 +55,15 @@ const route = require('@/app/api/db/[...path]/route') as typeof import('@/app/ap
 type NextRequestInit = ConstructorParameters<typeof NextRequest>[1]
 
 function request(url: string, init: NextRequestInit = {}): NextRequest {
-  const req = new NextRequest(`http://localhost:3000${url}`, init)
+  // These call the route handler DIRECTLY, so middleware never runs and no
+  // project scope is ever stamped. The proxy now refuses an unscoped `issues`
+  // read rather than widening it, so a scope-blind caller has to say it is
+  // scope-blind — exactly as the acceptance scripts now do. `all_projects` is
+  // consumed before filters are parsed, so the seam-call assertions below are
+  // unaffected by it.
+  const needsOptOut = url.includes('issues') && !url.includes('all_projects')
+  const withOptOut = needsOptOut ? url + (url.includes('?') ? '&' : '?') + 'all_projects=1' : url
+  const req = new NextRequest(`http://localhost:3000${withOptOut}`, init)
   req.cookies.set('mc-auth', process.env.MC_PASSWORD ?? 'kaos2026')
   req.cookies.set('mc-role', 'owner')
   return req

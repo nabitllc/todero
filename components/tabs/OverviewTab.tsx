@@ -104,12 +104,17 @@ function PendingRows({ rows = 2 }: { rows?: number }) {
  */
 function formatRemaining(ms: number): string {
   if (ms <= 0) return 'ended'
+  // Round to a single whole-minute integer FIRST, then derive h/m from THAT
+  // integer via floor/mod. Rounding the leftover minutes independently of
+  // the floored hour (e.g. h = floor(ms/3600000), m = round(remainder/60000))
+  // can round 59.97 minutes up to a literal "60m" instead of carrying into
+  // the next hour — a smaller instance of the same rounding-vs-truncation
+  // class of bug this function exists to avoid.
   const totalMinutes = Math.round(ms / 60000)
   if (totalMinutes < 60) return `${totalMinutes}m`
-  const totalHours = ms / 3600000
-  if (totalHours < 48) {
-    const h = Math.floor(ms / 3600000)
-    const m = Math.round((ms % 3600000) / 60000)
+  if (totalMinutes < 48 * 60) {
+    const h = Math.floor(totalMinutes / 60)
+    const m = totalMinutes % 60
     return m > 0 ? `${h}h ${m}m` : `${h}h`
   }
   return `${Math.floor(ms / 86400000)}d`
@@ -284,17 +289,31 @@ function RunningNowCard({
   )
 }
 
-// ─── Bolt status — the 24h equivalent of a sprint (build instruction 4) ─────
+// ─── Bolt status — the 24h agent-activity reporting window ──────────────────
+//
+// OWNER CORRECTION: bolts and sprints are both real and both stay. The
+// owner's own words: "Bolts tell the summary of what agents have done in
+// 24h. Sprints are meant for humans. I remember creating '24H sprints', it
+// is what exists just with a different name so it is easier to
+// differentiate them." So a bolt is not a renamed sprint concept — it is a
+// SPRINTS-table row whose window happens to be ~24h (what he already built
+// as "24h sprints"), opened automatically at a set cadence, reporting on
+// agent activity. A sprints-table row with a real multi-day/two-week window
+// is the human planning horizon and keeps its existing meaning — this card
+// renders that honestly as a Sprint, never relabeled into a bolt it isn't.
 //
 // Reads the same `sprints` table the old Sprint Countdowns card did (column
 // names unchanged — this is a display/units change, not a migration). What
 // changed: units are derived from the ACTUAL remaining milliseconds, never
 // from a fixed day-granularity formula, so a 24h window renders in hours
 // however short it gets — never "0 days left" while hours remain, which is
-// the exact fabrication TOD-2401 deleted. A row whose window really does
-// span two weeks renders honestly as a Sprint, not relabeled into a bolt it
-// isn't (build instruction 4: "render it honestly rather than pretending it
-// is a bolt").
+// the exact fabrication TOD-2401 deleted.
+//
+// Not built here (out of this card's scope, and not asked for by the
+// acceptance criteria): a manual "start a bolt when the automatic cadence is
+// paused" control. The toolbar's "Start builder run" button above is a
+// different thing entirely — see its own comment — and must not be read as
+// that control.
 
 function BoltStatusCard({ projectFilter }: { projectFilter: string | null }) {
   const [rows, setRows] = useState<SprintRow[] | null>(null)
@@ -466,45 +485,51 @@ export default function OverviewTab({
   onNavigate: (tab: string) => void
   projectFilter: string | null
 }) {
-  const [boltRunning, setBoltRunning] = useState(false)
-  const [boltToast, setBoltToast] = useState<{ text: string; ok: boolean } | null>(null)
+  const [builderRunning, setBuilderRunning] = useState(false)
+  const [builderToast, setBuilderToast] = useState<{ text: string; ok: boolean } | null>(null)
 
-  // Endpoint name (/api/run-sprint) is legacy — app/api/** is out of this
-  // piece's file ownership (another agent is verifying it concurrently) — but
-  // what it starts is described honestly to the operator as a bolt.
-  const handleRunBolt = async () => {
-    setBoltRunning(true)
-    setBoltToast(null)
+  // OWNER CORRECTION: this used to be relabeled "Run Bolt". It is neither a
+  // bolt control nor a sprint control — the owner's own words: "the 'Start'
+  // is not meant for bolts but something different, like a specific
+  // goal/feature/etc. So the 'Start' runs for X amount of time and it can
+  // take less or more than 1 bolt." What POST /api/run-sprint actually does
+  // (read, not assumed — app/api/** is out of this piece's ownership, another
+  // agent is verifying it concurrently) is dispatch the builder agent onto
+  // its next queued task via /api/run-agent?agent=builder: a goal/
+  // feature-scoped run of whatever length that task takes. Labeled for that.
+  const handleRunBuilder = async () => {
+    setBuilderRunning(true)
+    setBuilderToast(null)
     try {
       const res = await fetch('/api/run-sprint', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       const data = await res.json()
       if (res.ok && data.ok) {
-        setBoltToast({ text: `Bolt started: ${data.task ?? data.message ?? 'Builder is working'}`, ok: true })
+        setBuilderToast({ text: `Builder started: ${data.task ?? data.message ?? 'working a queued task'}`, ok: true })
       } else {
-        setBoltToast({ text: data.message ?? 'Bolt trigger failed', ok: false })
+        setBuilderToast({ text: data.message ?? 'Builder trigger failed', ok: false })
       }
     } catch {
-      setBoltToast({ text: 'Could not reach the bolt API', ok: false })
+      setBuilderToast({ text: 'Could not reach the builder API', ok: false })
     } finally {
-      setBoltRunning(false)
-      setTimeout(() => setBoltToast(null), 5000)
+      setBuilderRunning(false)
+      setTimeout(() => setBuilderToast(null), 5000)
     }
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex justify-end gap-2">
         <button
-          onClick={handleRunBolt}
-          disabled={boltRunning}
+          onClick={handleRunBuilder}
+          disabled={builderRunning}
           className="text-[10px] px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 hover:border-emerald-400/50 bg-emerald-500/5 transition-all flex items-center gap-1.5 disabled:opacity-50 font-medium"
         >
-          {boltRunning ? (
+          {builderRunning ? (
             <span className="w-3 h-3 border border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin inline-block" />
           ) : (
             <span>▶</span>
           )}
-          {boltRunning ? 'Starting…' : 'Run Bolt'}
+          {builderRunning ? 'Starting…' : 'Start builder run'}
         </button>
         <button
           onClick={globalSync}
@@ -519,9 +544,9 @@ export default function OverviewTab({
           {syncing ? 'Syncing…' : 'Sync'}
         </button>
       </div>
-      {boltToast && (
-        <div className={`rounded-xl border px-4 py-3 text-xs font-medium ${boltToast.ok ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' : 'border-red-500/30 bg-red-500/5 text-red-400'}`}>
-          {boltToast.text}
+      {builderToast && (
+        <div className={`rounded-xl border px-4 py-3 text-xs font-medium ${builderToast.ok ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' : 'border-red-500/30 bg-red-500/5 text-red-400'}`}>
+          {builderToast.text}
         </div>
       )}
 

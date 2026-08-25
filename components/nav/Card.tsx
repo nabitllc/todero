@@ -99,7 +99,7 @@ export default function Card({ id, title, metric, source, action, empty, childre
 
   return (
     <section className="rounded-2xl border border-white/10 bg-[#0f0f0f] overflow-hidden">
-      <div className="flex items-center gap-3 px-4 md:px-5 py-3.5">
+      <div className="flex items-center gap-3 px-4 md:px-5 py-3">
         <button
           onClick={toggle}
           aria-expanded={!collapsed}
@@ -127,9 +127,9 @@ export default function Card({ id, title, metric, source, action, empty, childre
         )}
       </div>
       {!collapsed && (
-        <div id={bodyId} className="px-4 md:px-5 pb-4 md:pb-5">
+        <div id={bodyId} className="px-4 md:px-5 pb-3.5 md:pb-4">
           {source && (
-            <p className="font-mono text-[10px] leading-relaxed text-white/35 mb-3 break-all">{source}</p>
+            <p className="font-mono text-[10px] leading-snug text-white/35 mb-2.5 break-all">{source}</p>
           )}
           {isEmpty ? <p className="text-white/45 text-xs">{empty!.message}</p> : children}
         </div>

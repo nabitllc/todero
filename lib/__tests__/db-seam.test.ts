@@ -266,11 +266,17 @@ describe('session actor', () => {
 /** Migrations that stand on their own — enough schema for the whole query set. */
 const MIGRATION_SEED: ReadonlyArray<{ file: string; upTo?: string }> = [
   { file: '016_agent_documents.sql' },
-  { file: '035_connections_table.sql' },
+  // 045, not 035. The wrong number sat here since the seam was written, and
+  // because a missing file throws inside the fixture rather than at import
+  // time, it did not read as "this file is misconfigured" — it read as
+  // fifteen postgres assertions failing. That is a third of the guarantee
+  // this suite exists to make: it claims one identical query set runs through
+  // ALL THREE adapters, and one of the three had never run.
+  { file: '045_connections_table.sql' },
   // Only the part before this marker. The rest of 021 alters `issues`, whose
   // base DDL predates this migrations directory (it was created in the hosted
   // vendor's dashboard) and so cannot be replayed from the repo.
-  { file: '021_issue_sequences.sql', upTo: '-- 3. UNIQUE constraint' },
+  { file: '044_issue_sequences.sql', upTo: '-- 3. UNIQUE constraint' },
 ]
 
 async function seededPostgres(): Promise<PGlite> {

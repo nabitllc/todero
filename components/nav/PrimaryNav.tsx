@@ -8,8 +8,8 @@
 // the builder report for why this piece keeps the existing `lg:` breakpoint
 // pair instead of CLAUDE.md's literal `md:flex` text.
 
-import React from 'react'
-import { Home, Kanban, Users2, ListTree, Brain, Settings as SettingsIcon, MessageSquare } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Home, Kanban, Users2, ListTree, Brain, Settings as SettingsIcon, MessageSquare, ChevronDown } from 'lucide-react'
 import type { DestinationId } from './config'
 import { DESTINATIONS } from './config'
 
@@ -33,6 +33,8 @@ export interface NavBadges {
   memoryFiles: number | null
 }
 
+interface HubRow { id: string; name: string }
+
 interface Props {
   destination: DestinationId
   onSelectDestination: (id: DestinationId) => void
@@ -41,6 +43,20 @@ interface Props {
   /** Real /api/status ollama block — never a fabricated "Dispatch on/off" pill. */
   ollama: { running: boolean; model: string | null } | null
   clock?: string
+  /**
+   * cards-and-identity piece (Wave 6, owner correction): the current HUB —
+   * Slack-workspace equivalent, per the owner's own words ("Left pane has
+   * 'Workspace'... Todero 'Hub' should be similar to Slack 'Workspace'").
+   * Real name (e.g. "Limiglow"), or null before the app has resolved one.
+   * This is the SAME scope value the rest of the app calls `selectedProject`
+   * — there is exactly one hub-selection entry point (app/page.tsx's
+   * `selectProject`), and this header and the rail (BusinessRail.tsx) are
+   * its two on-screen affordances, not two independent switchers.
+   */
+  hub: string | null
+  /** Real hub rows this account can switch between. null = not loaded yet. Today this is always length 1 (Limiglow) — multi-hub membership is explicitly post-MVP; this list is what makes "a second hub would simply appear" true without new UI later. */
+  hubs: HubRow[] | null
+  onSelectHub: (name: string) => void
 }
 
 function badgeFor(destId: DestinationId, badges: NavBadges): { text: string; tone: 'amber' | 'dim' } | null {
@@ -52,17 +68,62 @@ function badgeFor(destId: DestinationId, badges: NavBadges): { text: string; ton
   return null
 }
 
-export default function PrimaryNav({ destination, onSelectDestination, onOpenChat, badges, ollama, clock }: Props) {
+export default function PrimaryNav({ destination, onSelectDestination, onOpenChat, badges, ollama, clock, hub, hubs, onSelectHub }: Props) {
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const switcherRef = useRef<HTMLDivElement>(null)
+  const canSwitch = !!hubs && hubs.length > 1
+
+  useEffect(() => {
+    if (!switcherOpen) return
+    const onClick = (e: MouseEvent) => {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) setSwitcherOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [switcherOpen])
+
   return (
     <aside className="w-52 shrink-0 hidden lg:flex flex-col border-r border-white/[0.07] sticky top-0 h-screen bg-[#080808]">
-      <div className="h-12 flex items-center border-b border-white/[0.07] shrink-0 px-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white shrink-0">T</div>
-          <div className="min-w-0">
-            <p className="text-white text-xs font-semibold leading-tight tracking-wide">Todero</p>
-            <p className="text-white/60 text-xs leading-tight">Mission Control</p>
+      {/*
+        cards-and-identity piece (Wave 6, owner correction): this used to be
+        a second, redundant "Todero" wordmark — TopBar (out of this piece's
+        ownership) already carries that brand, top-left, and never changes.
+        This slot is the HUB — the current workspace ("Limiglow"), with a
+        switcher when the account belongs to more than one. Todero the tool
+        is not a hub and does not belong here.
+      */}
+      <div ref={switcherRef} className="h-12 flex items-center border-b border-white/[0.07] shrink-0 px-3 relative">
+        <button
+          onClick={() => canSwitch && setSwitcherOpen(o => !o)}
+          aria-haspopup="listbox"
+          aria-expanded={switcherOpen}
+          aria-label={hub ? `Hub: ${hub}${canSwitch ? ' — switch hub' : ''}` : 'Hub — resolving'}
+          className={`flex items-center gap-2.5 min-w-0 w-full text-left ${canSwitch ? 'cursor-pointer' : 'cursor-default'}`}
+        >
+          <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white shrink-0">
+            {hub ? hub.charAt(0).toUpperCase() : '—'}
           </div>
-        </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-white text-xs font-semibold leading-tight tracking-wide truncate">{hub ?? 'Resolving hub…'}</p>
+            <p className="text-white/60 text-xs leading-tight">Hub</p>
+          </div>
+          {canSwitch && <ChevronDown size={14} className="text-white/40 shrink-0" />}
+        </button>
+        {switcherOpen && hubs && (
+          <div role="listbox" aria-label="Switch hub" className="absolute left-2 right-2 top-full mt-1 z-30 rounded-lg border border-white/10 bg-[#0f0f0f] shadow-xl overflow-hidden">
+            {hubs.map(h => (
+              <button
+                key={h.id}
+                role="option"
+                aria-selected={h.name === hub}
+                onClick={() => { onSelectHub(h.name); setSwitcherOpen(false) }}
+                className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors ${h.name === hub ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/[0.06] hover:text-white'}`}
+              >
+                {h.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">

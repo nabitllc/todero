@@ -52,11 +52,18 @@ function makeRequest(
   pathname: string,
   method: string,
   roleCookie?: string,
+  /**
+   * Send a valid session cookie too. Without one the request is
+   * UNAUTHENTICATED, and the middleware now answers 401 before it ever reaches
+   * the role check — see the AC-7 block below for why that distinction matters.
+   */
+  authenticated = false,
 ): NextRequest {
   const headers: Record<string, string> = {}
-  if (roleCookie !== undefined) {
-    headers['cookie'] = `mc-role=${roleCookie}`
-  }
+  const cookies: string[] = []
+  if (authenticated) cookies.push('mc-auth=kaos2026')
+  if (roleCookie !== undefined) cookies.push(`mc-role=${roleCookie}`)
+  if (cookies.length > 0) headers['cookie'] = cookies.join('; ')
   return new NextRequest(`http://localhost${pathname}`, { method, headers })
 }
 
@@ -323,51 +330,67 @@ describe('DefaultBot role (AC-6)', () => {
 // roles:admin (e.g. POST /api/roles) must return 403.
 
 describe('Missing/invalid role header (AC-7)', () => {
-  it('DENY: POST /api/roles with no mc-role cookie returns 403', async () => {
+  // These two used to send NO session cookie at all and expect 403, which
+  // encoded a weaker contract than the one that now holds: the middleware
+  // gates /api/* on a session BEFORE any role logic runs, because a missing
+  // cookie used to be treated as "a server-side call, pass through" — the hole
+  // that let an unauthenticated caller read every endpoint.
+  //
+  // 401 and 403 are not interchangeable. 401 means "you presented no
+  // credentials"; 403 means "you are authenticated and still not allowed".
+  // Both cases are now asserted separately, which is strictly more coverage
+  // than the single 403 they replaced.
+  it('DENY: POST /api/roles with NO session returns 401, before any role check', async () => {
     const req = makeRequest('/api/roles', 'POST')
+    const res = await middleware(req)
+    expect(res.status).toBe(401)
+  })
+
+  it('DENY: authenticated but with no mc-role cookie returns 403', async () => {
+    const req = makeRequest('/api/roles', 'POST', undefined, true)
     const res = await middleware(req)
     expect(res.status).toBe(403)
   })
 
-  it('DENY: POST /api/roles with an unrecognised role cookie returns 403', async () => {
-    const req = makeRequest('/api/roles', 'POST', 'hacker')
+  it('DENY: authenticated with an unrecognised role cookie returns 403', async () => {
+    const req = makeRequest('/api/roles', 'POST', 'hacker', true)
     const res = await middleware(req)
     expect(res.status).toBe(403)
   })
 
   it('DENY: POST /api/roles with role=viewer (no roles:admin) returns 403', async () => {
-    const req = makeRequest('/api/roles', 'POST', 'viewer')
+    const req = makeRequest('/api/roles', 'POST', 'viewer', true)
     const res = await middleware(req)
     expect(res.status).toBe(403)
   })
 
   it('DENY: POST /api/roles with role=tron (no roles:admin) returns 403', async () => {
-    const req = makeRequest('/api/roles', 'POST', 'tron')
+    const req = makeRequest('/api/roles', 'POST', 'tron', true)
     const res = await middleware(req)
     expect(res.status).toBe(403)
   })
 
   it('DENY: POST /api/roles with role=defaultbot (no roles:admin) returns 403', async () => {
-    const req = makeRequest('/api/roles', 'POST', 'defaultbot')
+    const req = makeRequest('/api/roles', 'POST', 'defaultbot', true)
     const res = await middleware(req)
     expect(res.status).toBe(403)
   })
 
   it('ALLOW: POST /api/roles with role=owner passes through', async () => {
-    const req = makeRequest('/api/roles', 'POST', 'owner')
+    const req = makeRequest('/api/roles', 'POST', 'owner', true)
     const res = await middleware(req)
     // owner has roles:admin — should pass the middleware (not 403)
     expect(res.status).not.toBe(403)
   })
 
   it('ALLOW: POST /api/roles with role=god passes through (god has roles:admin)', async () => {
-    const req = makeRequest('/api/roles', 'POST', 'god')
+    const req = makeRequest('/api/roles', 'POST', 'god', true)
     const res = await middleware(req)
     expect(res.status).not.toBe(403)
   })
 
   it('DENY: POST /api/issues with role=viewer returns 403', async () => {
-    const req = makeRequest('/api/issues', 'POST', 'viewer')
+    const req = makeRequest('/api/issues', 'POST', 'viewer', true)
     const res = await middleware(req)
     expect(res.status).toBe(403)
   })

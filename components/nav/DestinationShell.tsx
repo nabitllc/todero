@@ -50,7 +50,7 @@ export default function DestinationShell({
   const showEmptyNote = !!projectName && projectIssueTotal === 0
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-white text-lg font-semibold">{destination.label}</h1>
         <span className="text-white/75 text-xs italic">&ldquo;{destination.question}&rdquo;</span>
@@ -93,7 +93,7 @@ export default function DestinationShell({
       )}
 
       {showEmptyNote && (
-        <div className="flex items-start gap-2.5 bg-blue-500/[0.06] border border-blue-500/20 rounded-lg px-3.5 py-2.5">
+        <div className="flex items-start gap-2.5 bg-blue-500/[0.06] border border-blue-500/20 rounded-lg px-3.5 py-2">
           <span className="text-blue-400 text-sm leading-none mt-0.5">i</span>
           <p className="text-xs leading-relaxed text-white/75">
             {/*

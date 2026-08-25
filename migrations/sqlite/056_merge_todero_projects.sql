@@ -24,4 +24,17 @@ UPDATE issues
  WHERE project IN ('Mission Control', 'MC', 'mission-control', 'Infrastructure');
 
 -- The duplicate project row goes too; 'Todero' (key TOD) survives.
-DELETE FROM projects WHERE id = 'Mission Control';
+--
+-- Matched on NAME, not id. This said `WHERE id = 'Mission Control'`, which only
+-- ever worked against the hosted database, where `projects.id` had drifted to a
+-- free-text primary key. The schema this repo actually builds declares
+-- `id UUID PRIMARY KEY DEFAULT gen_random_uuid()` (000_baseline_schema.sql:58),
+-- so against a FRESH database the comparison threw
+-- `invalid input syntax for type uuid: "Mission Control"` and the whole
+-- migration run stopped at 49 of 51.
+--
+-- That is the precise failure a stranger cloning the repo and running
+-- `npm run db:migrate` would hit, and running anywhere from a clean clone is
+-- the point of this rebuild. A migration that only applies to one drifted
+-- production database is not a migration.
+DELETE FROM projects WHERE name = 'Mission Control';

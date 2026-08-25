@@ -136,9 +136,13 @@ function parsePredicate(term: string): DbPredicate {
   const op = toComparison(term.slice(opStart, opEnd), column)
   const raw = term.slice(opEnd + 1)
 
-  if (op === 'is') return { column, op, value: parseIsValue(raw), negated }
-  if (op === 'in') return { column, op, value: parseValueList(raw), negated }
-  return { column, op, value: unquote(raw), negated }
+  // `negated` is optional and is emitted ONLY when true. Setting it to false on
+  // every predicate would change the shape of every unnegated one — the seam
+  // passes these as data and callers compare them structurally.
+  const flag = negated ? { negated: true } : {}
+  if (op === 'is') return { column, op, value: parseIsValue(raw), ...flag }
+  if (op === 'in') return { column, op, value: parseValueList(raw), ...flag }
+  return { column, op, value: unquote(raw), ...flag }
 }
 
 /** `a.eq.1,b.eq.2` → the predicate list `or()` takes. */
