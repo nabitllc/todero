@@ -214,6 +214,13 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
   const [entries, setEntries] = useState<InboxEntry[] | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [actionError, setActionError] = useState<ApiError | null>(null)
+  // A `_warning` on a 2xx (e.g. response_data fell back to context.resolution
+  // because the dedicated column is missing) is not a failed request — the
+  // decision AND its effect both landed. Routing it into ApiErrorBanner made
+  // a successful approval render "data unavailable", which is a lie in the
+  // other direction. Track it separately, keyed to the entry it came from, so
+  // it renders as a neutral note under that specific resolved card instead.
+  const [actionWarning, setActionWarning] = useState<{ entryId: string; message: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ entry: InboxEntry; action: 'approved' | 'denied' | 'explained' } | null>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -266,15 +273,9 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
       body: JSON.stringify({ id: entry.id, status: action, resolved_by: 'michael', response_data: responseData }),
     })
     setModal(null)
-    if (!r.ok) { setActionError(r.error); return }
-    // A 2xx can still carry a `_warning` (e.g. response_data fell back to
-    // context.resolution because the dedicated column is missing) — show it
-    // instead of letting a partial write look like a clean success.
-    setActionError(
-      r.data._warning
-        ? { status: r.status, endpoint: '/api/inbox', message: r.data._warning }
-        : null,
-    )
+    if (!r.ok) { setActionError(r.error); setActionWarning(null); return }
+    setActionError(null)
+    setActionWarning(r.data._warning ? { entryId: entry.id, message: r.data._warning } : null)
     fetchEntries()
   }
 
@@ -370,7 +371,12 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
                   <p className="text-white/40 text-[11px] truncate">
                     {typeof entry.context === 'object' && entry.context
                       ? ((entry.context as Record<string, unknown>).summary as string) ??
-                        Object.entries(entry.context).filter(([k]) => k !== 'fields').map(([k, v]) => `${k}: ${v}`).join(' · ').slice(0, 120)
+                        // 'resolution' is the read-modify-write blob PATCH /api/inbox
+                        // merges into context when response_data has no column
+                        // (see resolutionLine below, which renders it properly) —
+                        // without this exclusion it prints here too, as the
+                        // useless "resolution: [object Object]".
+                        Object.entries(entry.context).filter(([k]) => k !== 'fields' && k !== 'resolution').map(([k, v]) => `${k}: ${v}`).join(' · ').slice(0, 120)
                       : String(entry.context ?? '—')}
                   </p>
                 </div>
@@ -384,6 +390,16 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
 
               {view === 'historic' && resolutionLine(entry) && (
                 <p className="text-white/40 text-[11px] mb-2">{resolutionLine(entry)}</p>
+              )}
+
+              {/* A 2xx `_warning` (write partially degraded, not failed) shown
+                  as a neutral note on the card it came from — not the red
+                  ApiErrorBanner, which would claim "data unavailable" about a
+                  decision that actually landed. */}
+              {actionWarning && actionWarning.entryId === entry.id && (
+                <p className="text-amber-400/80 text-[11px] mb-2" role="status">
+                  {actionWarning.message}
+                </p>
               )}
 
               <div className="flex items-center justify-between gap-2">
