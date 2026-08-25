@@ -49,3 +49,6 @@ scripts/acceptance/.gate.lock
 
 # Stray crash-log fragments from harness runs
 output.txt
+
+# Database exports — history, not source. Keep out of git.
+exports/

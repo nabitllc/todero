@@ -6,10 +6,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/hub-client'
+import { db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 import { withPermission } from '@/lib/with-permission'
 
-// Workspace field shape stored in Supabase
+// Workspace field shape as stored. Reached through the db seam, so this route
+// works on whichever provider TODERO_DB_PROVIDER selects — the table is created
+// by migration 043 and exists locally; the hosted database never received it,
+// which is why this route could only ever 500 there.
 interface Workspace {
   id: string
   name: string
@@ -26,6 +30,9 @@ const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 export const PATCH = withPermission(
   'settings:write',
   async (req: NextRequest): Promise<NextResponse> => {
+    const dbGate = dbUnavailableResponse()
+    if (dbGate) return dbGate
+
     let body: Record<string, unknown>
     try {
       body = await req.json()
@@ -84,10 +91,10 @@ export const PATCH = withPermission(
       )
     }
 
-    const supabase = createAdminClient()
+    const conn = db()
 
     // Fetch the current (single) workspace record
-    const { data: rows, error: fetchErr } = await supabase
+    const { data: rows, error: fetchErr } = await conn
       .from('workspaces')
       .select('*')
       .order('created_at', { ascending: true })
@@ -103,7 +110,7 @@ export const PATCH = withPermission(
     // If no workspace exists yet, seed one so we have an ID to update
     let workspace: Workspace
     if (!rows || rows.length === 0) {
-      const { data: newRow, error: insertErr } = await supabase
+      const { data: newRow, error: insertErr } = await conn
         .from('workspaces')
         .insert({ name: 'Todero', slug: 'todero' })
         .select()
@@ -122,7 +129,7 @@ export const PATCH = withPermission(
 
     // Slug uniqueness check — only needed when slug is changing
     if (slug !== undefined && (slug as string) !== workspace.slug) {
-      const { data: conflict, error: slugErr } = await supabase
+      const { data: conflict, error: slugErr } = await conn
         .from('workspaces')
         .select('id')
         .eq('slug', slug as string)
@@ -156,7 +163,7 @@ export const PATCH = withPermission(
     if (logo_url !== undefined) patch.logo_url = logo_url as string | null
     if (billing_contact !== undefined) patch.billing_contact = billing_contact as string | null
 
-    const { data: updated, error: updateErr } = await supabase
+    const { data: updated, error: updateErr } = await conn
       .from('workspaces')
       .update(patch)
       .eq('id', workspace.id)
