@@ -155,9 +155,30 @@ function rowToVaultAgent(row: AgentManifestRow): VaultAgent {
  * server fault, so it is logged and swallowed here rather than thrown —
  * `ensureVaultDispatchConfigs()` below still returns real dispatch configs
  * from the live scan either way; only the durability half is degraded.
+ *
+ * Round 2 (critic finding): this used to return a bare `boolean`, and the
+ * caller threw away exactly the detail an operator needs — "did it fail, and
+ * why" — because `ensureVaultDispatchConfigs()` forced `warning` to `null`
+ * whenever the live scan produced agents, which is the ONLY case this
+ * function ever runs in. That made the persistence half of this piece fail
+ * on every single request, silently, since the day it shipped: PostgREST
+ * 404 PGRST205 (table missing on the configured backend) was swallowed by
+ * `console.warn` and never reached an HTTP response or the UI. Returning the
+ * reason — same message shape `app/api/inbox/route.ts`'s `_warning` field
+ * already uses for a missing column — is what lets the caller surface it.
  */
-async function persistManifests(agents: VaultAgent[]): Promise<boolean> {
-  if (agents.length === 0 || !isDbConfigured()) return false
+async function persistManifests(
+  agents: VaultAgent[],
+): Promise<{ persisted: boolean; warning: string | null }> {
+  if (agents.length === 0) return { persisted: false, warning: null }
+  if (!isDbConfigured()) {
+    return {
+      persisted: false,
+      warning:
+        'vault manifests not persisted — no database configured on this host; ' +
+        'dispatch configs are in-process only and will not survive a restart',
+    }
+  }
   try {
     const rows = agents.map((a) => ({
       agent_id: a.id,
@@ -176,12 +197,32 @@ async function persistManifests(agents: VaultAgent[]): Promise<boolean> {
     const { error } = await db().from('agent_manifests').upsert(rows, { onConflict: 'agent_id' })
     if (error) {
       console.warn(`[agent-manifests] persist skipped — ${TABLE}: ${error.message}`)
-      return false
+      // PGRST205 (Supabase/PostgREST) and 42P01 (raw Postgres/sqlite) are
+      // both "the table itself does not exist" — the one case worth naming
+      // the fix for. Everything else (a bad column, a constraint violation)
+      // still surfaces, just with the driver's own message.
+      const missingTable =
+        /PGRST205|42P01|could not find the table|no such table/i.test(error.message)
+      const detail = missingTable
+        ? `${TABLE} table missing on this database (run: npm run db:migrate) — ${error.message}`
+        : error.message
+      return {
+        persisted: false,
+        warning:
+          `vault manifests not persisted — ${detail}; ` +
+          'dispatch configs are in-process only and will not survive a restart',
+      }
     }
-    return true
+    return { persisted: true, warning: null }
   } catch (e) {
-    console.warn(`[agent-manifests] persist failed: ${e instanceof Error ? e.message : String(e)}`)
-    return false
+    const message = e instanceof Error ? e.message : String(e)
+    console.warn(`[agent-manifests] persist failed: ${message}`)
+    return {
+      persisted: false,
+      warning:
+        `vault manifests not persisted — ${message}; ` +
+        'dispatch configs are in-process only and will not survive a restart',
+    }
   }
 }
 
@@ -209,9 +250,18 @@ export interface VaultDispatchSync {
   source: 'vault-fs' | 'db' | 'none'
   /** Whether this call wrote (or refreshed) agent_manifests. */
   persisted: boolean
-  /** Operator-facing reason nothing came from the vault, naming the path
-   *  searched — same convention as lib/vault-agents.ts's own warning field.
-   *  Null whenever `agentIds` is non-empty. */
+  /**
+   * Operator-facing reason something is wrong, or null when nothing is.
+   * Two distinct cases share this one field, never both at once:
+   *   - the live vault produced no agents: why (naming the path searched —
+   *     same convention as lib/vault-agents.ts's own warning field), even
+   *     though `agentIds` may still be non-empty from a previous DB sync.
+   *   - the live vault DID produce agents but the write to `agent_manifests`
+   *     failed: why the row did not land (missing table, unconfigured
+   *     database, a driver error) — round 2: this used to be forced to
+   *     `null` in exactly this case, which hid a 404-on-every-request from
+   *     both the API envelope and the UI.
+   */
   warning: string | null
 }
 
@@ -237,9 +287,16 @@ export async function ensureVaultDispatchConfigs(): Promise<VaultDispatchSync> {
   let agents = live.agents
   let source: VaultDispatchSync['source'] = 'vault-fs'
   let persisted = false
+  // Round 2: no longer forced to `null` whenever the live scan produced
+  // agents — that was precisely the branch that hid a 404 on every request.
+  // `persistManifests()` now names the failure; this is that name, or null
+  // when the write actually landed.
+  let persistWarning: string | null = null
 
   if (agents.length > 0) {
-    persisted = await persistManifests(agents)
+    const result = await persistManifests(agents)
+    persisted = result.persisted
+    persistWarning = result.warning
   } else {
     const fromDb = await loadPersistedManifests()
     if (fromDb.length > 0) {
@@ -258,6 +315,6 @@ export async function ensureVaultDispatchConfigs(): Promise<VaultDispatchSync> {
     agentIds: Object.keys(configs),
     source,
     persisted,
-    warning: agents.length === 0 ? live.warning : null,
+    warning: agents.length === 0 ? live.warning : persistWarning,
   }
 }

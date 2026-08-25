@@ -339,7 +339,16 @@ export async function POST(req: NextRequest) {
   // warm the cache yet. Never throws; degrades to whatever was last
   // persisted (or nothing) when the vault itself is unreachable from here —
   // see lib/agent-manifests.ts.
-  await ensureVaultDispatchConfigs()
+  //
+  // Round 2: the result used to be discarded here too, so a persistence
+  // 404 was invisible on the dispatch path as well as the roster path. This
+  // route has no roster envelope to carry it in (a spawn returns a run, not
+  // a roster), so a failed persist is logged server-side instead — visible
+  // to whoever runs this host, same as any other boot-time degradation.
+  const vaultSync = await ensureVaultDispatchConfigs()
+  if (vaultSync.warning) {
+    console.warn(`[run-agent] ${vaultSync.warning}`)
+  }
 
   const body = await req.json().catch(() => ({}))
   const agentId = req.nextUrl.searchParams.get('agent') ?? (body as Record<string, string>).agent_id
@@ -1048,7 +1057,11 @@ export async function GET(req: NextRequest) {
   // getQueueConfig()/getAllQueueAgentIds() and must see the same vault
   // agents, whether that is `?info=1` on one agent or the full lane listing
   // below.
-  await ensureVaultDispatchConfigs()
+  //
+  // Round 2: no longer discarded — `vaultSync.warning` is threaded into both
+  // response branches below so a persistence failure is visible on this
+  // route too, not just GET /api/agents.
+  const vaultSync = await ensureVaultDispatchConfigs()
 
   const agentId = req.nextUrl.searchParams.get('agent')
   const infoMode = req.nextUrl.searchParams.get('info') === '1'
@@ -1104,6 +1117,7 @@ export async function GET(req: NextRequest) {
       modelAlias,
       chainLength,
       dispatchEnabled: !dispatchDisabled(),
+      vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },
     })
   }
 
@@ -1145,5 +1159,9 @@ export async function GET(req: NextRequest) {
     })
   )
 
-  return NextResponse.json({ lanes, timestamp: new Date().toISOString() })
+  return NextResponse.json({
+    lanes,
+    timestamp: new Date().toISOString(),
+    vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },
+  })
 }

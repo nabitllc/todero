@@ -64,6 +64,8 @@ interface AgentsEnvelope {
   vaultPath: string | null
   /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
   vaultWarning: string | null
+  /** registry-reaches-dispatch piece, round 2: the dispatch-side persist result. See RosterMeta's docstring. */
+  vaultSync?: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null } | null
   /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
   localProviderConfigured: boolean
 }
@@ -80,6 +82,8 @@ export interface AgentRosterState {
   vaultPath: string | null
   /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
   vaultWarning: string | null
+  /** registry-reaches-dispatch piece, round 2: the dispatch-side persist result. See RosterMeta's docstring. */
+  vaultSync: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null } | null
   /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
   localProviderConfigured: boolean
   /** Non-null when the request itself failed. `agents` is empty in that case. */
@@ -118,15 +122,16 @@ export function useAgentRoster(): AgentRosterState {
   const rosterPath = data?.rosterPath ?? null
   const vaultPath = data?.vaultPath ?? null
   const vaultWarning = data?.vaultWarning ?? null
+  const vaultSync = data?.vaultSync ?? null
   const localProviderConfigured = data?.localProviderConfigured ?? false
 
   const meta = useMemo<RosterMeta>(
-    () => ({ source: rosterSource, warning: rosterWarning, path: rosterPath, vaultPath, vaultWarning, localProviderConfigured }),
-    [rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, localProviderConfigured],
+    () => ({ source: rosterSource, warning: rosterWarning, path: rosterPath, vaultPath, vaultWarning, vaultSync, localProviderConfigured }),
+    [rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, vaultSync, localProviderConfigured],
   )
 
   return {
-    agents, rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, localProviderConfigured,
+    agents, rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, vaultSync, localProviderConfigured,
     error, loading, refetch, byId, meta,
   }
 }

@@ -193,6 +193,20 @@ type AgentsResponse = {
   /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
   vaultWarning: string | null
   /**
+   * registry-reaches-dispatch piece, round 2: the result of the
+   * `ensureVaultDispatchConfigs()` call this route makes before building the
+   * roster — `source`/`persisted`/`warning` exactly as that function
+   * returns them. Distinct from `vaultWarning` above: `vaultWarning`
+   * describes the ROSTER half (did the vault contribute display rows?);
+   * `vaultSync.warning` describes the DISPATCH half (did the manifests that
+   * scan found actually get written to `agent_manifests`, so a vault agent
+   * survives a restart?). The two can disagree — a host can have a perfectly
+   * good roster (`vaultWarning: null`) while every write to the database
+   * 404s (`vaultSync.warning` names it) — which is exactly the defect this
+   * field exists to stop hiding.
+   */
+  vaultSync: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null }
+  /**
    * Whether this host's configured LLM endpoint is local (Ollama/LM Studio)
    * rather than a cloud vendor — see `LOCAL_LLM_PROVIDER_IDS` above. The one
    * input `resolveVaultBadge()` (lib/vault-badge.ts) needs beyond a row's own
@@ -589,7 +603,13 @@ export async function GET() {
   // the exact code path POST /api/run-agent also calls, not duplicated ad
   // hoc. Never throws (see that function's own comment); its `dispatchable`
   // per-row field below reads true iff a real spawn would find a config too.
-  await ensureVaultDispatchConfigs()
+  //
+  // Round 2 (critic finding): the result used to be discarded here, which is
+  // how a persistence failure (agent_manifests missing on the configured
+  // backend) stayed invisible — GET /api/agents kept answering 200 with
+  // vaultWarning:null over a write that 404s every time. `vaultSync` below
+  // is that result, carried into the envelope so the roster header can say so.
+  const vaultSync = await ensureVaultDispatchConfigs()
 
   // Independent of the roster and of Supabase — fetched once and reused by
   // every response branch below, success or failure alike.
@@ -669,6 +689,7 @@ export async function GET() {
       heartbeatWarning,
       vaultPath: vaultRoster.path,
       vaultWarning: vaultRoster.warning,
+      vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },
       localProviderConfigured,
     }
     return NextResponse.json(body, { status, headers: NO_STORE })

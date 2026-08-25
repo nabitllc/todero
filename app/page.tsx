@@ -217,6 +217,15 @@ export default function Home() {
       // vault can both be true of the same response.
       vaultPath: typeof env.vaultPath === 'string' ? env.vaultPath : null,
       vaultWarning: typeof env.vaultWarning === 'string' ? env.vaultWarning : null,
+      // registry-reaches-dispatch piece, round 2: the dispatch-side sync
+      // result — did the vault manifests this roster shows actually get
+      // written to agent_manifests. Envelope may predate this field (older
+      // cached response, or a test double), so every sub-field is guarded.
+      vaultSync: env.vaultSync && typeof env.vaultSync === 'object' ? {
+        source: typeof env.vaultSync.source === 'string' ? env.vaultSync.source : 'none',
+        persisted: env.vaultSync.persisted === true,
+        warning: typeof env.vaultSync.warning === 'string' ? env.vaultSync.warning : null,
+      } : null,
       localProviderConfigured: env.localProviderConfigured === true,
     } : null)
     if (res.ok) {

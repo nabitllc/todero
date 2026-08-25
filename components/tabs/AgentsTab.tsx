@@ -81,6 +81,14 @@ export type RosterMeta = {
   path: string | null
   vaultPath: string | null
   vaultWarning: string | null
+  /**
+   * registry-reaches-dispatch piece, round 2: whether the vault manifests
+   * this roster displays were actually written to `agent_manifests` — the
+   * DISPATCH half, distinct from `vaultWarning` (the ROSTER half). A host
+   * can show a perfectly good roster while every persist 404s; this is how
+   * that stops being invisible. Optional so older envelopes still compile.
+   */
+  vaultSync?: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null } | null
   /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
   localProviderConfigured: boolean
 }
@@ -126,6 +134,13 @@ export default function AgentsTab({
   // vault, not about any one agent row.
   const vaultPath: string | null = rosterMeta?.vaultPath ?? null
   const vaultWarning: string | null = rosterMeta?.vaultWarning ?? null
+  // registry-reaches-dispatch piece, round 2: the DISPATCH half of the vault
+  // sync — did the manifests this roster displays actually get WRITTEN to
+  // agent_manifests, or does every persist 404 while the roster still looks
+  // fine? Rendered inline in the header below, the same way AgentDetailView
+  // surfaces a per-agent `overCeiling.reason` inline rather than in a
+  // separate banner — this is an envelope-level fact, not a per-row one.
+  const vaultSyncWarning: string | null = rosterMeta?.vaultSync?.warning ?? null
   const localProviderConfigured: boolean = rosterMeta?.localProviderConfigured ?? false
 
   // TOD (agent-roster-truth): `liveAgents === null` means /api/agents has not
@@ -155,7 +170,31 @@ export default function AgentsTab({
 
   return (
             <div className="space-y-6">
-              <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/>
+                <span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span>
+                {/* registry-reaches-dispatch piece, round 2: the write half
+                    of the vault sync, inline next to the roster count it
+                    sits beside — a roster can render fine (rows above are
+                    real) while every one of those manifests fails to
+                    persist, and that must be visible in the same glance as
+                    "N agents", not buried in a server log nobody watching
+                    this tab will ever open. */}
+                {vaultSyncWarning && (
+                  <span
+                    className="text-amber-300/90 text-[10px] font-medium"
+                    title={vaultSyncWarning}
+                  >
+                    · vault sync: not persisted
+                  </span>
+                )}
+              </div>
+              {vaultSyncWarning && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                  <span className="text-amber-300 text-[11px] font-medium shrink-0">Vault manifests not persisted</span>
+                  <span className="text-white/60 text-[10px] leading-relaxed break-all">{vaultSyncWarning}</span>
+                </div>
+              )}
               {rosterSource === 'none' && rosterWarning && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
                   <span className="text-amber-300 text-[11px] font-medium shrink-0">Roster unavailable</span>
