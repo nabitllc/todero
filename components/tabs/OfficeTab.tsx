@@ -5,6 +5,7 @@ import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import AgentOffice from '@/components/AgentOffice'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import { runLiveness } from '@/hooks/useAgentStatus'
+import { formatElapsed } from '@/components/office/officeDrawing'
 
 function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}> }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
@@ -47,10 +48,9 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
   const completedRuns = endedRuns.slice(0, 10)
   const failedRuns = runs.filter(r => r.status === 'error')
 
-  const fmtRuntime = (startedAt: string) => {
-    const mins = Math.round((Date.now() - new Date(startedAt).getTime()) / 60000)
-    return mins < 1 ? '<1m' : mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`
-  }
+  // Same formula the office canvas renders under a working agent
+  // (officeDrawing.ts formatElapsed) — one source of truth for elapsed time.
+  const fmtRuntime = (startedAt: string) => formatElapsed(startedAt) || '<1m'
 
   return (
     <div className={`absolute top-3 right-3 z-10 rounded-xl border border-white/10/60 shadow-2xl transition-all ${collapsed ? 'w-10' : 'w-72'}`}

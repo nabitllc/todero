@@ -80,7 +80,7 @@ export async function GET(req: Request) {
         .eq('project', project)
         .eq('type', issueType)
         .eq('status', 'open')
-        .not('assignee', 'in', '(michael,main)')
+        .not('assignee', 'in', ['michael', 'main'])
 
       if (countErr) {
         console.warn(`[queue-refill] count error ${project}/${issueType}:`, countErr.message)
@@ -102,7 +102,7 @@ export async function GET(req: Request) {
         .eq('type', issueType)
         .eq('status', 'refined')
         .is('started_at', null)          // skip issues PO is actively refining
-        .not('assignee', 'in', '(michael,main)')
+        .not('assignee', 'in', ['michael', 'main'])
         .limit(50)
 
       if (candErr || !candidates?.length) continue
@@ -174,7 +174,7 @@ export async function GET(req: Request) {
     .from('issues')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'open')
-    .not('assignee', 'in', '(michael,main)')
+    .not('assignee', 'in', ['michael', 'main'])
 
   if ((totalOpen ?? 0) === 0 && promoted.length === 0) {
     try {

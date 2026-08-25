@@ -12,7 +12,7 @@
 // TODO(db-seam): once every tab reads from a purpose-built API route, delete
 // this file together with `lib/db/browser.ts` and the proxy route.
 
-import type { DbOrderOptions, DbQueryBuilder } from '../db'
+import type { DbComparison, DbOrderOptions, DbPredicate, DbQueryBuilder } from '../db'
 
 /** Query-string keys that shape the query rather than filter it. */
 const SHAPING_KEYS = new Set(['select', 'order', 'limit', 'offset', 'or', 'on_conflict', 'columns'])
@@ -77,6 +77,65 @@ function parseIsValue(raw: string): boolean | null {
 }
 
 /**
+ * Wire operator name → the seam's comparison vocabulary.
+ *
+ * This map is the entire translation. Everything downstream of it is data:
+ * `{ column, op, value }`, never a string of grammar.
+ */
+const COMPARISONS: Record<string, DbComparison> = {
+  eq: 'eq',
+  neq: 'neq',
+  gt: 'gt',
+  gte: 'gte',
+  lt: 'lt',
+  lte: 'lte',
+  like: 'like',
+  ilike: 'ilike',
+  is: 'is',
+  in: 'in',
+  cs: 'contains',
+}
+
+function toComparison(op: string, column: string): DbComparison {
+  const comparison = COMPARISONS[op]
+  if (!comparison) {
+    throw new DbQueryParseError(`Unsupported filter operator "${op}" on column "${column}".`)
+  }
+  return comparison
+}
+
+/** `status.eq.open` / `agent_id.in.(a,b)` → one `DbPredicate`. */
+function parsePredicate(term: string): DbPredicate {
+  const firstDot = term.indexOf('.')
+  const secondDot = term.indexOf('.', firstDot + 1)
+  if (firstDot < 1 || secondDot < 0) {
+    throw new DbQueryParseError(
+      `Each "or" term must look like <column>.<operator>.<value>, got "${term}".`,
+    )
+  }
+  const column = term.slice(0, firstDot)
+  if (!IDENTIFIER.test(column)) {
+    throw new DbQueryParseError(`Invalid filter column "${column}".`)
+  }
+  const op = toComparison(term.slice(firstDot + 1, secondDot), column)
+  const raw = term.slice(secondDot + 1)
+
+  if (op === 'is') return { column, op, value: parseIsValue(raw) }
+  if (op === 'in') return { column, op, value: parseValueList(raw) }
+  return { column, op, value: unquote(raw) }
+}
+
+/** `a.eq.1,b.eq.2` → the predicate list `or()` takes. */
+export function parseOrPredicates(raw: string): DbPredicate[] {
+  const inner = raw.startsWith('(') && raw.endsWith(')') ? raw.slice(1, -1) : raw
+  const terms = splitTopLevel(inner)
+  if (terms.length === 0) {
+    throw new DbQueryParseError('"or" needs at least one term.')
+  }
+  return terms.map(parsePredicate)
+}
+
+/**
  * Apply one `column=operator.value` pair.
  *
  * Scalar values stay strings on purpose: the seam serialises them back into the
@@ -101,12 +160,11 @@ function applyFilter(builder: DbQueryBuilder, column: string, raw: string): DbQu
   const value = rest.slice(dot + 1)
 
   if (negated) {
-    // The seam's `not()` takes the operator and the value it negates. `in` and
-    // `is` keep their own literal shape here — they are the operand, not a list
-    // the negation needs to understand.
+    // The seam's `not()` takes a comparison and a value, both as data — an `in`
+    // negation hands over the actual array, not a parenthesised string.
     if (op === 'is') return builder.not(column, 'is', parseIsValue(value))
-    if (op === 'in') return builder.not(column, 'in', `(${parseValueList(value).join(',')})`)
-    return builder.not(column, op, unquote(value))
+    if (op === 'in') return builder.not(column, 'in', parseValueList(value))
+    return builder.not(column, toComparison(op, column), unquote(value))
   }
 
   switch (op) {
@@ -194,10 +252,7 @@ export function applyFilters(builder: DbQueryBuilder, params: URLSearchParams): 
     b = applyFilter(b, key, value)
   }
   const or = params.get('or')
-  if (or) {
-    const inner = or.startsWith('(') && or.endsWith(')') ? or.slice(1, -1) : or
-    b = b.or(inner)
-  }
+  if (or) b = b.or(parseOrPredicates(or))
   return b
 }
 

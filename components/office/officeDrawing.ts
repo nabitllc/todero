@@ -22,6 +22,18 @@ export function fmt(n:number){ return n<10?"0"+n:""+n; }
 export function nowts(){ const d=new Date(); return `${fmt(d.getHours())}:${fmt(d.getMinutes())}:${fmt(d.getSeconds())}`; }
 export function clamp(v:number,lo:number,hi:number){ return Math.max(lo,Math.min(hi,v)); }
 
+// The one quantity actually observed for a working agent: elapsed wall-clock
+// time since agent_runs.started_at. Same formula OfficeTab.tsx renders in the
+// roster (fmtRuntime) — kept here as the single source so the canvas and the
+// tab can never disagree. There is no real completion fraction anywhere in
+// agent_runs, so this is intentionally text, not a bar: a bar implies a
+// measured percent-done that nothing computes.
+export function formatElapsed(startedAt: string | null | undefined): string | null {
+  if(!startedAt) return null;
+  const mins=Math.max(0,Math.round((Date.now()-new Date(startedAt).getTime())/60000));
+  return mins<1?"<1m":mins<60?`${mins}m`:`${Math.floor(mins/60)}h ${mins%60}m`;
+}
+
 export function mkBurst(x:number,y:number,color:string){
   return Array.from({length:12},(_,i)=>{
     const a=(i/12)*Math.PI*2, spd=2.5+Math.random()*3;
@@ -376,11 +388,11 @@ export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:a
   ctx.globalAlpha=1;ctx.restore();
 }
 
-export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0){
+export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0,startedAt:string|null=null){
   const visible=ag.active||BENCH_POS[ag.id];
   if(!visible) return;
   ctx.save();applyCamera(ctx,cam);
-  const {px,py,color,name,state,task,progress,facing,mood,active}=ag;
+  const {px,py,color,name,state,task,facing,mood,active}=ag;
   const isOrch=ag.id===ORCHESTRATOR_ID;
   const sz=isOrch?T*0.78:T*0.58, hs=sz/2;
   const moodN=(mood||88)/100;
@@ -485,9 +497,18 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     ctx.fillStyle="#0b0b1ff0";ctx.strokeStyle=color+"88";ctx.lineWidth=T*0.016;
     ctx.beginPath();ctx.roundRect(px-tlW/2,tlY,tlW,tlH,T*0.04);ctx.fill();ctx.stroke();
     ctx.fillStyle=color;ctx.fillText(short,px,tlY+tlH*0.73);
-    const bW=Math.max(tlW,nlW),bH=T*0.055,bY=nlY+nlH+T*0.025;
-    ctx.fillStyle="#151528";ctx.fillRect(px-bW/2,bY,bW,bH);
-    ctx.fillStyle=color;ctx.fillRect(px-bW/2,bY,bW*(progress/100),bH);
+    // Elapsed time since the run actually started (agent_runs.started_at) —
+    // the one quantity observed. No fabricated completion percentage: there
+    // is no field anywhere that measures how much of the task is done.
+    const elapsed=formatElapsed(startedAt);
+    if(elapsed){
+      const ePx=Math.max(9,Math.round(T*0.115));
+      ctx.font=`${ePx}px 'IBM Plex Mono',monospace`;
+      const eW=Math.max(tlW,nlW),eH=ePx*1.5,eY=nlY+nlH+T*0.025;
+      ctx.fillStyle="#151528";ctx.fillRect(px-eW/2,eY,eW,eH);
+      ctx.fillStyle=color+"dd";ctx.textAlign="center";
+      ctx.fillText(`⏱ ${elapsed}`,px,eY+eH*0.75);
+    }
   }
   // Idle timer display
   if(state==="idle"&&active&&ag.lastStateChange){

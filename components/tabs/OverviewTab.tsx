@@ -83,6 +83,34 @@ function useReload(): [number, () => void] {
   return [n, useCallback(() => setN(v => v + 1), [])]
 }
 
+/**
+ * A value nobody has answered yet: an em-dash and a pulsing bar.
+ *
+ * Deliberately not `0`. A zero is a claim — "we asked and there are none" —
+ * and rendering it before the request resolves (or forever, when the app
+ * bundle never booted and no request was made at all) is the exact lie this
+ * piece exists to remove.
+ */
+function Pending({ w = 'w-6' }: { w?: string }) {
+  return (
+    <span data-testid="pending-value" aria-label="not loaded yet" className="inline-flex items-center gap-1.5 align-middle">
+      <span className="text-white/40 tabular-nums">&mdash;</span>
+      <span className={`${w} h-1.5 rounded-full bg-white/10 animate-pulse`} />
+    </span>
+  )
+}
+
+/** Skeleton stand-in for a list whose rows have not come back yet. */
+function PendingRows({ rows = 2 }: { rows?: number }) {
+  return (
+    <div data-testid="pending-rows" aria-label="not loaded yet" className="space-y-1.5">
+      {Array.from({ length: rows }).map((_, i) => (
+        <span key={i} className="block h-2.5 rounded bg-white/10 animate-pulse" style={{ width: `${80 - i * 22}%` }} />
+      ))}
+    </div>
+  )
+}
+
 /** The card chrome every Overview panel shares. */
 function PanelCard({ icon, title, badge, children }: {
   icon: string
@@ -203,9 +231,14 @@ function DoneYesterdayWins() {
   )
 }
 
+interface RiskSignals { p0Bugs: IssueRow[]; blocked: IssueRow[]; noChildren: IssueRow[] }
+
 // MC-119: Risk Radar card
 function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
-  const [risks, setRisks] = useState<{p0Bugs: IssueRow[]; blocked: IssueRow[]; noChildren: IssueRow[]}>({ p0Bugs: [], blocked: [], noChildren: [] })
+  // null until every leg of the load has returned ok. An empty-array seed
+  // rendered three green "0" badges on first paint — and permanently whenever
+  // the bundle failed to boot, because then the effect below never ran.
+  const [risks, setRisks] = useState<RiskSignals | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [reloadKey, reload] = useReload()
   useEffect(() => {
@@ -220,7 +253,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
       if (cancelled) return
       // Any leg refusing means the counts below would be fiction.
       const failure = firstError([p0, blocked, features])
-      if (failure) { setError(failure); setRisks({ p0Bugs: [], blocked: [], noChildren: [] }); return }
+      if (failure) { setError(failure); setRisks(null); return }
 
       const featureIds = rowsOf(features).map(f => f.id).filter((id): id is string => !!id)
       // Scoped to the (small) set of open features rather than pulling every
@@ -233,7 +266,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
         : await fetchJson<IssueRow[]>(dbUrl(`issues?parent_id=in.(${featureIds.join(',')})&select=parent_id&limit=1000`), { headers: SUPA_HEADERS })
       if (cancelled) return
       const childrenFailure = firstError([children])
-      if (childrenFailure) { setError(childrenFailure); setRisks({ p0Bugs: [], blocked: [], noChildren: [] }); return }
+      if (childrenFailure) { setError(childrenFailure); setRisks(null); return }
       setError(null)
       const parentIds = new Set(rowsOf(children).map(c => c.parent_id))
       const noChildren = rowsOf(features).filter(f => !parentIds.has(f.id ?? null))
@@ -241,32 +274,38 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
     })()
     return () => { cancelled = true }
   }, [reloadKey])
-  const signals = [
-    { label: 'P0 Bugs (>24h)', count: risks.p0Bugs.length, items: risks.p0Bugs, icon: '\u{1F534}' },
-    { label: 'Blocked Issues', count: risks.blocked.length, items: risks.blocked, icon: '\u{1F6AB}' },
-    { label: 'Features (0 children)', count: risks.noChildren.length, items: risks.noChildren, icon: '\u26A0\uFE0F' },
+  // `items: null` = not answered. Every counter below is derived from it, so
+  // there is no path that can turn "unknown" back into a number.
+  const signals: { label: string; items: IssueRow[] | null; icon: string }[] = [
+    { label: 'P0 Bugs (>24h)', items: risks?.p0Bugs ?? null, icon: '\u{1F534}' },
+    { label: 'Blocked Issues', items: risks?.blocked ?? null, icon: '\u{1F6AB}' },
+    { label: 'Features with no children', items: risks?.noChildren ?? null, icon: '\u26A0\uFE0F' },
   ]
   return (
     <PanelCard icon={'\u{1F6E1}\uFE0F'} title="Risk Radar">
       {error ? <ApiErrorBanner error={error} onRetry={reload} /> : (
       <div className="space-y-2.5">
         {signals.map(s => {
-          const badgeClass = s.count === 0
-            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-            : s.count <= 3
-              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-              : 'bg-red-500/10 text-red-400 border border-red-500/20'
+          const count = s.items === null ? null : s.items.length
+          const badgeClass = count === null
+            ? 'bg-white/5 text-white/40 border border-white/10 cursor-default'
+            : count === 0
+              ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+              : count <= 3
+                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                : 'bg-red-500/10 text-red-400 border border-red-500/20'
           return (
             <div key={s.label} className="rounded-xl border border-white/10 px-3 py-2.5 bg-[#080808]">
               <div className="flex items-center gap-2">
                 <span className="text-xs">{s.icon}</span>
                 <span className="text-white/40 text-xs flex-1">{s.label}</span>
-                <button onClick={() => onNavigate('board')}
+                <button onClick={() => onNavigate('board')} disabled={count === null}
                   className={`text-xs font-bold px-2 py-0.5 rounded-full transition-colors hover:opacity-80 ${badgeClass}`}>
-                  {s.count}
+                  {count === null ? <Pending w="w-5" /> : count}
                 </button>
               </div>
-              {s.count > 0 && (
+              {count === null && <div className="mt-2"><PendingRows rows={2} /></div>}
+              {s.items !== null && count !== null && count > 0 && (
                 <div className="mt-2 space-y-1">
                   {s.items.slice(0, 3).map((item, i) => (
                     <div key={item.task_key || i} className="flex items-center gap-2 text-[10px]">
@@ -274,7 +313,7 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
                       <span className="text-white/40 truncate">{item.title}</span>
                     </div>
                   ))}
-                  {s.count > 3 && <span className="text-[9px] text-white/30">+{s.count - 3} more</span>}
+                  {count > 3 && <span className="text-[9px] text-white/30">+{count - 3} more</span>}
                 </div>
               )}
             </div>
@@ -286,9 +325,15 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
   )
 }
 
+interface StandupData { shipped: IssueRow[]; inFlight: IssueRow[]; blockers: IssueRow[] }
+
 // MC-120: Today's Standup card
 function StandupCard() {
-  const [data, setData] = useState<{shipped: IssueRow[]; inFlight: IssueRow[]; blockers: IssueRow[]}>({ shipped: [], inFlight: [], blockers: [] })
+  // null = unanswered. Seeding empty arrays made the front page open on
+  // "Shipped Yesterday (0) Nothing shipped / Ongoing Today (0) Nothing in
+  // progress / Blockers (0) No blockers" — three confident answers to
+  // questions nothing had asked yet.
+  const [data, setData] = useState<StandupData | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [reloadKey, reload] = useReload()
   useEffect(() => {
@@ -303,6 +348,7 @@ function StandupCard() {
       // "Nothing shipped" / "No blockers" must never stand in for a refusal.
       const failure = firstError([shipped, inFlight, blockers])
       setError(failure)
+      if (failure) { setData(null); return }
       setData({
         shipped: rowsOf(shipped),
         inFlight: rowsOf(inFlight),
@@ -311,10 +357,12 @@ function StandupCard() {
     })
     return () => { cancelled = true }
   }, [reloadKey])
-  const sections = [
-    { label: 'Shipped Yesterday', icon: '\u2705', items: data.shipped, emptyMsg: 'Nothing shipped', colorClass: 'text-green-400' },
-    { label: 'Ongoing Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', colorClass: 'text-blue-400' },
-    { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', colorClass: 'text-red-400' },
+  // `items: null` until the three queries all return ok; the empty-state
+  // sentence below is only reachable from a real, successful empty answer.
+  const sections: { label: string; icon: string; items: IssueRow[] | null; emptyMsg: string; colorClass: string }[] = [
+    { label: 'Shipped Yesterday', icon: '\u2705', items: data?.shipped ?? null, emptyMsg: 'Nothing shipped', colorClass: 'text-green-400' },
+    { label: 'Ongoing Today', icon: '\u{1F527}', items: data?.inFlight ?? null, emptyMsg: 'Nothing in progress', colorClass: 'text-blue-400' },
+    { label: 'Blockers', icon: '\u{1F6AB}', items: data?.blockers ?? null, emptyMsg: 'No blockers', colorClass: 'text-red-400' },
   ]
   return (
     <PanelCard icon={'\u{1F4CB}'} title="Today's Standup">
@@ -325,9 +373,11 @@ function StandupCard() {
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-xs">{s.icon}</span>
               <span className={`text-[10px] font-semibold uppercase tracking-wider ${s.colorClass}`}>{s.label}</span>
-              <span className="text-[9px] text-white/30">({s.items.length})</span>
+              <span className="text-[9px] text-white/30">({s.items === null ? '\u2014' : s.items.length})</span>
             </div>
-            {s.items.length === 0 ? (
+            {s.items === null ? (
+              <div className="pl-5"><PendingRows rows={2} /></div>
+            ) : s.items.length === 0 ? (
               <p className="text-[10px] text-white/20 italic pl-5">{s.emptyMsg}</p>
             ) : (
               <div className="space-y-1 pl-5">
@@ -553,6 +603,38 @@ function ProjectBreakdownBars({ project }: { project: string }) {
   )
 }
 
+// Per-Project Progress Reports card iterates these four fixed names — see
+// PROGRESS_PROJECTS below.
+const PROGRESS_PROJECTS = ['Vespera', 'Kemuni', 'Infrastructure', 'Todero'] as const
+
+/**
+ * TOD-2368 round 3: the Per-Project Progress card used to read `proj.taskCounts`,
+ * a field `/api/projects` never sends (that endpoint returns bare project rows —
+ * no deadline, no color, no counts). Every card therefore rendered a permanent
+ * "not measured" state. This fetches each project's real issue total with one
+ * cheap head-style call — `?limit=1` still returns the exact PostgREST count via
+ * `total` without shipping row data — so the figure is real the moment it
+ * resolves, and stays null (rendered as "not measured") only while in flight or
+ * on failure.
+ */
+function useProjectIssueTotals(names: readonly string[]): Record<string, number | null> {
+  const [totals, setTotals] = useState<Record<string, number | null>>({})
+  const key = names.join(',')
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(names.map(async name => {
+      const res = await fetchJson<{ total: number }>(`/api/issues?project=${encodeURIComponent(name)}&limit=1`)
+      return [name, res.ok && typeof res.data.total === 'number' ? res.data.total : null] as const
+    })).then(entries => { if (!cancelled) setTotals(Object.fromEntries(entries)) })
+    return () => { cancelled = true }
+    // `key` is the stable, primitive form of `names` (a literal constant array
+    // at every call site) — depending on it instead of the array avoids
+    // re-fetching every render on a fresh array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  return totals
+}
+
 interface LiveStatusPayload { openrouter?: { remaining?: number } }
 
 /**
@@ -600,18 +682,31 @@ export default function OverviewTab({
   syncing,
   liveStatus,
   sprintProjects,
+  projectsError,
+  onRetryProjects,
   onNavigate,
   projectFilter,
 }: {
   globalSync: () => Promise<void>
   syncing: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped /api/status payload
   liveStatus: any
-  sprintProjects: any[]
+  /**
+   * null = /api/projects has not answered yet, or refused. Never a stand-in
+   * list: the progress cards below read done/total straight off these rows, so
+   * a placeholder here surfaces as "Vespera 0% done 0/0" on the front page.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
+  sprintProjects: any[] | null
+  /** Why /api/projects failed, if it did — shown in place of the cards. */
+  projectsError?: ApiError | null
+  onRetryProjects?: () => void
   onNavigate: (tab: string) => void
   projectFilter?: string | null
 }) {
   const [sprintRunning, setSprintRunning] = useState(false)
   const [sprintToast, setSprintToast] = useState<{text: string; ok: boolean} | null>(null)
+  const projectIssueTotals = useProjectIssueTotals(PROGRESS_PROJECTS)
 
   const handleRunSprint = async () => {
     setSprintRunning(true)
@@ -725,8 +820,24 @@ export default function OverviewTab({
 
               {/* ── Project Health Card ── */}
               {(()=>{
-                const allProjects = sprintProjects.filter(p => p.taskCounts && p.taskCounts.total > 0)
-                const sorted = [...allProjects].sort((a,b) => (a.taskProgress ?? 0) - (b.taskProgress ?? 0))
+                if (projectsError) {
+                  return (
+                    <PanelCard icon="📊" title="Project Health">
+                      <ApiErrorBanner error={projectsError} onRetry={onRetryProjects} />
+                    </PanelCard>
+                  )
+                }
+                if (sprintProjects === null) {
+                  return (
+                    <PanelCard icon="📊" title="Project Health">
+                      <PendingRows rows={3} />
+                    </PanelCard>
+                  )
+                }
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
+                const allProjects = sprintProjects.filter((p: any) => p.taskCounts && p.taskCounts.total > 0)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
+                const sorted = [...allProjects].sort((a: any, b: any) => (a.taskProgress ?? 0) - (b.taskProgress ?? 0))
                 if (!sorted.length) return null
                 return (
                   <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
@@ -738,7 +849,8 @@ export default function OverviewTab({
                       <span className="text-white/20 text-[10px]">sorted by progress ↑</span>
                     </div>
                     <div className="space-y-3.5">
-                      {sorted.map(proj => {
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows */}
+                      {sorted.map((proj: any) => {
                         const tc = proj.taskCounts!
                         const pct = proj.taskProgress ?? 0
                         const isLow = pct < 30
@@ -787,40 +899,74 @@ export default function OverviewTab({
                   <span className="text-sm">📋</span>
                   <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Project Progress</span>
                 </div>
+                {projectsError ? (
+                  <ApiErrorBanner error={projectsError} onRetry={onRetryProjects} />
+                ) : sprintProjects === null ? (
+                  /* Unanswered: an em-dash per figure and a skeleton bar. The
+                     previous seed printed a full, confident "0% done · 0/0 ·
+                     0 blockers" card for every project before the first fetch,
+                     and left it there for good when the bundle never booted. */
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                    {(['Vespera','Kemuni','Infrastructure','Todero'] as const).map(projName => (
+                      <div key={projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-white text-xs font-semibold truncate">{projName}</span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mb-2">
+                          <span className="text-2xl font-bold tabular-nums text-white/30">&mdash;</span>
+                          <span className="text-white/30 text-[10px]">done</span>
+                          <span className="ml-auto"><Pending w="w-8" /></span>
+                        </div>
+                        <div className="w-full rounded-full h-1.5 mb-3 overflow-hidden" style={{ background: '#1a1a1a' }}>
+                          <div className="h-1.5 w-1/3 rounded-full bg-white/10 animate-pulse" />
+                        </div>
+                        <PendingRows rows={3} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                   {(['Vespera','Kemuni','Infrastructure','Todero'] as const).map(projName => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
                     const proj = sprintProjects.find((p: any) => p.supabaseProject === projName || p.name?.includes(projName))
                     if (!proj) return null
-                    const tc = (proj as any).taskCounts ?? { total: 0, done: 0, inProgress: 0, open: 0 }
-                    const pct = tc.total > 0 ? Math.round((tc.done / tc.total) * 100) : 0
-                    const dl = new Date((proj as any).deadline)
-                    const left = daysUntil(dl)
-                    const blockers = (proj as any).blockerCount ?? 0
-                    const lastPR = (proj as any).lastPRDate
+                    // Real count from useProjectIssueTotals's per-project head-style
+                    // call, never the fabricated `proj.taskCounts` (a field
+                    // /api/projects never sends). Null means "not measured yet / the
+                    // fetch failed", rendered as an em-dash, never as 0.
+                    const total: number | null = projectIssueTotals[projName] ?? null
+                    // /api/projects carries no `deadline` field on real rows — guard
+                    // against Invalid Date/NaN instead of printing "NaNd left".
+                    const dlRaw = proj.deadline
+                    const dl = dlRaw ? new Date(dlRaw) : null
+                    const left = dl && !isNaN(dl.getTime()) ? daysUntil(dl) : null
+                    const blockers: number | null = typeof proj.blockerCount === 'number' ? proj.blockerCount : null
+                    const lastPR = proj.lastPRDate
                     const lastPRLabel = lastPR
                       ? new Date(lastPR).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                       : '—'
-                    const pColor = (proj as any).color ?? '#6b7280'
+                    const pColor = proj.color ?? '#6b7280'
                     return (
                       <div key={projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
                         <div className="flex items-center gap-2 mb-3">
-                          <span className="text-lg">{(proj as any).emoji}</span>
+                          <span className="text-lg">{proj.emoji}</span>
                           <span className="text-white text-xs font-semibold truncate">{projName}</span>
                         </div>
-                        {/* % done */}
-                        <div className="flex items-baseline gap-1 mb-2">
-                          <span className="text-2xl font-bold tabular-nums" style={{ color: pColor }}>{pct}%</span>
-                          <span className="text-white/30 text-[10px]">done</span>
-                          <span className="ml-auto text-white/50 text-[10px] tabular-nums">{tc.done}/{tc.total}</span>
-                        </div>
-                        <div className="w-full rounded-full h-1.5 mb-3" style={{ background: '#1a1a1a' }}>
-                          <div className="h-1.5 rounded-full transition-all" style={{ width: pct + '%', background: pColor }} />
+                        {/* Total issues \u2014 a real count, not a % computed from data
+                            this call doesn't have. The done/in-progress/open
+                            breakdown is genuinely measured just below, by
+                            ProjectBreakdownBars, which fetches every row. */}
+                        <div className="flex items-baseline gap-1 mb-3">
+                          <span className="text-2xl font-bold tabular-nums" style={{ color: total === null ? '#71717a' : pColor }}>
+                            {total === null ? <Pending w="w-8" /> : total}
+                          </span>
+                          <span className="text-white/30 text-[10px]">total issues</span>
                         </div>
                         {/* Stats grid */}
                         <div className="grid grid-cols-2 gap-2 text-[10px]">
                           <div>
                             <span className="text-white/30 block">Deadline</span>
-                            <span className="text-white/70 font-medium">{left}d left</span>
+                            <span className="text-white/70 font-medium">{left === null ? 'not measured' : `${left}d left`}</span>
                           </div>
                           <div>
                             <span className="text-white/30 block">Last PR</span>
@@ -828,48 +974,73 @@ export default function OverviewTab({
                           </div>
                           <div>
                             <span className="text-white/30 block">Blockers</span>
-                            <span className={blockers > 0 ? 'text-red-400 font-medium' : 'text-white/50'}>{blockers}</span>
+                            <span className={blockers !== null && blockers > 0 ? 'text-red-400 font-medium' : 'text-white/50'}>
+                              {blockers === null ? '\u2014' : blockers}
+                            </span>
                           </div>
                           <div>
-                            <span className="text-white/30 block">In Progress</span>
-                            <span className="text-blue-400 font-medium">{tc.inProgress}</span>
+                            <span className="text-white/30 block">Breakdown</span>
+                            <span className="text-white/50">below \u2193</span>
                           </div>
                         </div>
-                        {/* MC-111: Epic/Feature/Issue breakdown */}
+                        {/* MC-111: Epic/Feature/Issue breakdown \u2014 genuinely measured */}
                         <ProjectBreakdownBars project={projName} />
                       </div>
                     )
                   })}
                 </div>
+                )}
               </div>
 
               {/* Sprint Progress Card (MC-102) */}
               <SprintProgressCard />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sprintProjects.map(proj=>{
-                  const dl=new Date(proj.deadline), st=new Date(proj.startDate)
-                  const left=daysUntil(dl), elap=daysSince(st), pct=miniPct(elap,proj.totalDays)
-                  const dlLabel=dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})
-                  const isUrgent = left<=2 && proj.color!=='#ffffff'
+                {/* /api/projects sends bare project rows — id, name, description,
+                    owner, status, business_id — none of the deadline/color/
+                    taskCounts fields this card was built against. Every value
+                    below is guarded so a real project (no deadline data) renders
+                    "not measured" rather than the NaN/Invalid Date that used to
+                    print, and a "Mission Control" or "Todero" row that has no
+                    sprint countdown to show says so instead of feigning one. */}
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows */}
+                {(sprintProjects ?? []).map((proj: any)=>{
+                  const dlRaw = proj.deadline, stRaw = proj.startDate
+                  const dl = dlRaw ? new Date(dlRaw) : null
+                  const st = stRaw ? new Date(stRaw) : null
+                  const left = dl && !isNaN(dl.getTime()) ? daysUntil(dl) : null
+                  const elap = st && !isNaN(st.getTime()) ? daysSince(st) : null
+                  const pct = elap !== null && typeof proj.totalDays === 'number' && proj.totalDays > 0
+                    ? miniPct(elap, proj.totalDays) : null
+                  const dlLabel = dl && !isNaN(dl.getTime())
+                    ? dl.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : null
+                  const cardColor = proj.color ?? '#6b7280'
+                  const cardBorder = proj.borderColor ?? 'border-white/10'
+                  const cardBg = proj.bg ?? '#0f0f0f'
+                  const cardDesc = proj.desc ?? proj.description ?? ''
+                  const isUrgent = left !== null && left<=2 && cardColor!=='#ffffff'
                   return (
-                    <div key={proj.id} className={`rounded-2xl p-4 md:p-5 border ${proj.borderColor} card-glow`} style={{background:proj.bg}}>
+                    <div key={proj.id} className={`rounded-2xl p-4 md:p-5 border ${cardBorder} card-glow`} style={{background:cardBg}}>
                       <div className="flex justify-between items-start mb-4">
                         <div className="min-w-0 flex-1 mr-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{color:proj.color==='#ffffff'?'#71717a':proj.color+'b3'}}>{proj.name}</p>
-                          <p className="text-white text-xs sm:text-sm font-medium truncate">{proj.desc}</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{color:cardColor==='#ffffff'?'#71717a':cardColor+'b3'}}>{proj.name}</p>
+                          <p className="text-white text-xs sm:text-sm font-medium truncate">{cardDesc}</p>
                         </div>
                         <span className="text-xl">{proj.emoji}</span>
                       </div>
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-3">
-                        <span className={`text-3xl md:text-4xl font-bold tabular-nums ${isUrgent ? 'text-red-400' : 'text-white'}`}>{left}</span>
-                        <span className="text-white/50 text-sm"> Days</span>
-                        <span className="ml-auto text-white/30 text-xs">Day {elap}/{proj.totalDays}</span>
+                        <span className={`text-3xl md:text-4xl font-bold tabular-nums ${isUrgent ? 'text-red-400' : left === null ? 'text-white/30' : 'text-white'}`}>
+                          {left === null ? '—' : left}
+                        </span>
+                        <span className="text-white/50 text-sm">{left === null ? 'not measured' : ' Days'}</span>
+                        {proj.totalDays != null && (
+                          <span className="ml-auto text-white/30 text-xs">Day {elap ?? '—'}/{proj.totalDays}</span>
+                        )}
                       </div>
-                      <Bar v={pct} color={proj.color} bg={proj.color==='#ffffff'?'#1e1e1e':'#1a0a2a'} />
+                      {pct !== null && <Bar v={pct} color={cardColor} bg={cardColor==='#ffffff'?'#1e1e1e':'#1a0a2a'} />}
                       <div className="flex flex-col sm:flex-row justify-between mt-1.5 gap-0.5">
-                        <span className="text-white/30 text-[10px]">{pct}% elapsed</span>
-                        <span className="text-white/30 text-[10px]">{dlLabel}</span>
+                        <span className="text-white/30 text-[10px]">{pct === null ? 'no sprint window set' : `${pct}% elapsed`}</span>
+                        {dlLabel && <span className="text-white/30 text-[10px]">{dlLabel}</span>}
                       </div>
                       {proj.taskCounts && proj.taskCounts.total > 0 && (
                         <div className="mt-3 pt-3 border-t border-white/10">

@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
         .select('id, sprint, status, project')
         .eq('business_id', hubId)
         .in('project', projectNames)
-        .not('status', 'in', '("backlog","closed","completed")')
+        .not('status', 'in', ['backlog', 'closed', 'completed'])
 
       const toAssign = (issues ?? []).filter((iss) => {
         return !iss.sprint || iss.sprint < startDate

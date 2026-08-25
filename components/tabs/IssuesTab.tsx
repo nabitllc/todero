@@ -36,7 +36,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
     params.set('limit', '0')
     return `/api/issues?${params.toString()}`
   }, [projectFilter])
-  const { items, error: fetchError, loading, refetch, setItems } = useApiList<Issue>(endpoint)
+  const { items, total, error: fetchError, loading, refetch, setItems } = useApiList<Issue>(endpoint)
   const issues = items ?? []
   // Optimistic updates always run after a successful load, so treating a null
   // (never-loaded) list as empty here is safe and keeps call sites simple.
@@ -156,7 +156,15 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
           <p className="text-xs text-white/40 mt-0.5">
             {fetchError
               ? 'data unavailable'
-              : `${filtered.length} issues${selected.size > 0 ? ` · ${selected.size} selected` : ''}`}
+              // total comes from the server's {data,total,has_more} envelope — the
+              // true row count, not issues.length (this endpoint is called with
+              // limit=0, which batches through every matching row, but total is
+              // still the authoritative source rather than re-deriving it).
+              : `${(() => {
+                  const trueTotal = total ?? issues.length
+                  const base = search ? `Showing ${filtered.length} of ${trueTotal}` : `${trueTotal}`
+                  return `${base} issue${trueTotal !== 1 ? 's' : ''}`
+                })()}${selected.size > 0 ? ` · ${selected.size} selected` : ''}`}
           </p>
         </div>
         <div className="relative max-w-xs flex-1">

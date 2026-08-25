@@ -73,18 +73,32 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
   })
   const filtered = allFiltered.slice(0, limit)
   const hasMore = allFiltered.length > limit
+  // /api/issues?limit=0 batches through every matching row server-side (see
+  // route.ts), so once the request lands `issues` holds every feature that
+  // matches the current filters — allFiltered.length is a true count, not a
+  // page size. rawTotal (the envelope's server-side total) counts every issue
+  // *type* for the project, so it is intentionally not used as "total
+  // features": it would overcount past what a feature filter should show.
+  const totalFeatures = allFiltered.length
 
   const toggleProj = (v: string) => { setLimit(100); setProjFilters(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]) }
   const toggleStatus = (v: string) => { setLimit(100); setStatusFilters(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]) }
   const hasAnyFilter = projFilters.length > 0 || statusFilters.length > 0
   const clearAll = () => { setProjFilters([]); setStatusFilters([]); setLimit(100) }
 
-  // Group by project
+  // Group by project — counts must come from the full (unsliced) filtered
+  // set so a group header reads e.g. "TODERO (517)" and not "TODERO (54)",
+  // where 54 was only how many of that project's features fit in the current page.
   const grouped: Record<string, typeof filtered> = {}
+  const trueGroupCounts: Record<string, number> = {}
   for (const f of filtered) {
     const p = f.project || 'Unknown'
     if (!grouped[p]) grouped[p] = []
     grouped[p].push(f)
+  }
+  for (const f of allFiltered) {
+    const p = f.project || 'Unknown'
+    trueGroupCounts[p] = (trueGroupCounts[p] ?? 0) + 1
   }
 
   const childrenOf = (fid: string) => issues.filter(i => i.parent_id === fid)
@@ -117,7 +131,11 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-base font-medium text-white">Features</h2>
-          <p className="text-xs text-white/40 mt-0.5">{filtered.length} feature{filtered.length !== 1 ? 's' : ''} across projects</p>
+          <p className="text-xs text-white/40 mt-0.5">
+            {filtered.length === totalFeatures
+              ? `${totalFeatures} feature${totalFeatures !== 1 ? 's' : ''} across projects`
+              : `Showing ${filtered.length} of ${totalFeatures} features`}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <FeaturesMultiSelect label="Project" options={PROJECTS} selected={projFilters} onToggle={toggleProj} />
@@ -163,7 +181,7 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
         <div key={project} className="space-y-2">
           <h3 className="text-xs font-semibold tracking-widest text-white/40 uppercase flex items-center gap-2">
             <span>{project}</span>
-            <span className="text-white/25">({feats.length})</span>
+            <span className="text-white/25">({trueGroupCounts[project] ?? feats.length})</span>
             <div className="flex-1 h-px bg-white/10" />
           </h3>
           <div className="space-y-2">

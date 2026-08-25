@@ -59,12 +59,19 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
     return next;
   });
 
+  // LEADERBOARD's 'session' tab is really tasksCompleted, which is rehydrated
+  // from localStorage on every load (officeDrawing.ts initAgents) — it does
+  // NOT reset when the browser session does. Label it for what it is: an
+  // all-time count kept in this browser, not "this session". The 24h/7d
+  // tabs are the honest ones — backed by a real /api/status query.
+  const lbTfLabel = (tf: 'session' | '24h' | '7d') => tf === 'session' ? 'ALL TIME (LOCAL)' : tf.toUpperCase();
+  const lbCountLabel = (tf: 'session' | '24h' | '7d') => tf === 'session' ? 'all time (local)' : tf === '24h' ? 'today' : 'this week';
+
   const [showConfig, setShowConfig] = useState(false);
   const [configAgent, setConfigAgent] = useState<any>(null);
   const [configEdits, setConfigEdits] = useState<any>({});
   const [showSettings, setShowSettings] = useState(false);
   const [lbTimeframe, setLbTimeframe] = useState<'session' | '24h' | '7d'>('session');
-  const [panelTimeframe, setPanelTimeframe] = useState<'session' | '24h' | '7d'>('session');
   const [sessionLog, setSessionLog] = useState<any[]>([]);
   // TOD-654: why the session-log fetch failed, shown next to the button.
   const [logError, setLogError] = useState<string | null>(null);
@@ -305,52 +312,36 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {/* Expandable panels — all in one scrollable container */}
         <div className={`flex-1 min-h-0 overflow-y-auto ${sidebarCollapsed ? 'hidden' : 'block'}`}>
 
-          {/* ▼ ACTIVITY FEED — always expanded */}
+          {/* ▼ ACTIVITY FEED — always expanded. feed is an in-memory array
+              that starts empty on every page load — there is no 24h/7d
+              window to filter by, so no timeframe tabs are offered here
+              (contrast LEADERBOARD below, whose 24h/7d tabs are backed by a
+              real /api/status query). */}
           <div>
             <div onClick={() => togglePanel("feed")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
               <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("feed") ? "▼" : "▶"} ACTIVITY FEED</span>
-              <span className="text-[9px] text-white/30">{feed.length}</span>
+              <span className="text-[9px] text-white/30">{feed.length} this session</span>
             </div>
             {openPanels.has("feed") && (
-              <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div ref={feedRef} className="max-h-[200px] overflow-y-auto py-1">
-                  {feed.slice(-80).filter((e: any) => {
-                    if (panelTimeframe === 'session') return true;
-                    return true;
-                  }).slice(-20).map((e: any) => <div key={e.id} className="px-3 py-0.5 flex gap-1 items-start">
-                    <span className="text-white/30 text-[9px] flex-shrink-0 mt-0.5">{e.ts}</span>
-                    <span className="text-[11px] leading-normal" style={{ color: e.color }}>{e.text}</span>
-                  </div>)}
-                  {feed.length === 0 && <div className="text-white/30 text-[10px] text-center py-3">No agent events observed yet</div>}
-                </div>
-              </>
+              <div ref={feedRef} className="max-h-[200px] overflow-y-auto py-1">
+                {feed.slice(-20).map((e: any) => <div key={e.id} className="px-3 py-0.5 flex gap-1 items-start">
+                  <span className="text-white/30 text-[9px] flex-shrink-0 mt-0.5">{e.ts}</span>
+                  <span className="text-[11px] leading-normal" style={{ color: e.color }}>{e.text}</span>
+                </div>)}
+                {feed.length === 0 && <div className="text-white/30 text-[10px] text-center py-3">No agent events observed yet</div>}
+              </div>
             )}
           </div>
 
-          {/* ▶ COMPLETED TASKS */}
+          {/* ▶ COMPLETED TASKS — same in-memory, session-only array as the
+              feed above; no timeframe tabs for the same reason. */}
           <div>
             <div onClick={() => togglePanel("flow")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
               <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("flow") ? "▼" : "▶"} COMPLETED TASKS</span>
-              <span className={`text-[9px] ${waterfall.length > 0 ? 'text-[#00ff88]' : 'text-white/30'}`}>{waterfall.length}</span>
+              <span className={`text-[9px] ${waterfall.length > 0 ? 'text-[#00ff88]' : 'text-white/30'}`}>{waterfall.length} this session</span>
             </div>
             {openPanels.has("flow") && (
               <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
                 <div className="max-h-[200px] overflow-y-auto">
                   {waterfall.length === 0 && <div className="px-3 py-3 text-white/30 text-[11px] text-center leading-relaxed">Completions appear when agents finish work.</div>}
                   {waterfall.map((wf: any) => {
@@ -376,7 +367,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
           <div>
             <div onClick={() => togglePanel("board")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
               <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("board") ? "▼" : "▶"} LEADERBOARD</span>
-              <span className="text-[9px] text-white/30 uppercase">{lbTimeframe}</span>
+              <span className="text-[9px] text-white/30 uppercase">{lbTfLabel(lbTimeframe)}</span>
             </div>
             {openPanels.has("board") && (
               <div>
@@ -385,7 +376,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   {(['session', '24h', '7d'] as const).map(tf => (
                     <button key={tf} onClick={(e) => { e.stopPropagation(); setLbTimeframe(tf); }}
                       className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30 ${lbTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
+                      {lbTfLabel(tf)}
                     </button>
                   ))}
                 </div>
@@ -411,7 +402,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                         <span className="text-[11px]">{a.emoji}</span>
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-semibold" style={{ color: a.color }}>{a.name}</div>
-                          <div className="text-[10px] text-[#00ff88]">{a.displayCount} {lbTimeframe === 'session' ? 'this session' : lbTimeframe === '24h' ? 'today' : 'this week'}</div>
+                          <div className="text-[10px] text-[#00ff88]">{a.displayCount} {lbCountLabel(lbTimeframe)}</div>
                         </div>
                       </div>
                     ));

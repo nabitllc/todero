@@ -30,7 +30,7 @@ const PROJECT_META: Record<string, { description: string; emoji: string }> = {
 const KNOWN_PROJECTS = Object.keys(PROJECT_PREFIX)
 
 export default function ProjectsTab({ projectFilter }: { projectFilter?: string | null }) {
-  const { items, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0')
+  const { items, total, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0')
 
   // Counts are only meaningful once the issue list actually arrived — on a
   // failed load we render the banner instead of a table full of zeroes.
@@ -49,6 +49,30 @@ export default function ProjectsTab({ projectFilter }: { projectFilter?: string 
       openCount: open,
     }
   })
+
+  // The DB carries more distinct `project` values than KNOWN_PROJECTS (the 5
+  // names in PROJECT_PREFIX) — issues under those other values used to be
+  // silently dropped from this table with nothing to say so. Roll them into
+  // one honest "Other" row instead of pretending they don't exist.
+  if (items !== null && !projectFilter) {
+    const other = issues.filter(i => !i.project || !KNOWN_PROJECTS.includes(i.project))
+    if (other.length > 0) {
+      const open = other.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
+      rows.push({
+        name: 'Other',
+        key: '—',
+        description: `Issues with a project not in ${KNOWN_PROJECTS.join(', ')}`,
+        emoji: '❓',
+        issueCount: other.length,
+        openCount: open,
+      })
+    }
+  }
+
+  // True total across every row shown, cross-checked against the server's
+  // count so a stale KNOWN_PROJECTS list can never silently under-report.
+  const shownTotal = rows.reduce((sum, r) => sum + r.issueCount, 0)
+  const trueTotal = items !== null ? (total ?? issues.length) : null
 
   if (loading) {
     return (
@@ -83,7 +107,10 @@ export default function ProjectsTab({ projectFilter }: { projectFilter?: string 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-white font-semibold text-base">Projects</h2>
-        <span className="text-white/30 text-xs">{rows.length} project{rows.length !== 1 ? 's' : ''}</span>
+        <span className="text-white/30 text-xs">
+          {rows.length} project{rows.length !== 1 ? 's' : ''}
+          {trueTotal !== null && ` · ${shownTotal} of ${trueTotal} issues`}
+        </span>
       </div>
 
       <div className="rounded-lg border border-white/10 overflow-hidden">

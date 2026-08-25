@@ -75,6 +75,14 @@ export function useApiData<T>(endpoint: string | null, init?: RequestInit): ApiD
 export interface ApiListState<T> {
   /** null means "not loaded / failed" — never confuse it with an empty list. */
   items: T[] | null
+  /**
+   * True count of rows matching the query, from the `{data,total,has_more}`
+   * envelope. Null on the bare-array shape or before load/on failure — NEVER
+   * defaulted to `items.length`, which is only the size of the current page.
+   */
+  total: number | null
+  /** Whether more rows exist past the current page. Same null rules as `total`. */
+  hasMore: boolean | null
   error: ApiError | null
   status: number | null
   loading: boolean
@@ -84,29 +92,43 @@ export interface ApiListState<T> {
 
 /**
  * List flavour of {@link useApiData}. Unwraps both response shapes the MC API
- * uses (a bare array, or `{ data: [...] }`) but only ever on a 2xx — a failed
- * load leaves `items` null so callers cannot accidentally render an empty state.
+ * uses (a bare array, or `{ data, total, has_more }`) but only ever on a 2xx —
+ * a failed load leaves `items` null so callers cannot accidentally render an
+ * empty state. `total`/`hasMore` surface the server's true count so a UI can
+ * stop computing "how many are there" from the length of a possibly-truncated
+ * page — see TOD-2368-round-3.
  */
 export function useApiList<T>(endpoint: string | null, init?: RequestInit): ApiListState<T> {
   // The payload shape is one of two known variants, hence the union rather than any.
   const { data, error, status, loading, refetch, setData } =
-    useApiData<T[] | { data?: T[] }>(endpoint, init)
+    useApiData<T[] | { data?: T[]; total?: number; has_more?: boolean }>(endpoint, init)
 
   const items: T[] | null =
     data === null ? null : Array.isArray(data) ? data : data?.data ?? []
+
+  const total: number | null =
+    data !== null && !Array.isArray(data) && typeof data.total === 'number' ? data.total : null
+
+  const hasMore: boolean | null =
+    data !== null && !Array.isArray(data) && typeof data.has_more === 'boolean' ? data.has_more : null
 
   const setItems = useCallback<React.Dispatch<React.SetStateAction<T[] | null>>>(
     update => {
       setData(prev => {
         const current: T[] | null =
           prev === null ? null : Array.isArray(prev) ? prev : prev?.data ?? []
-        return typeof update === 'function'
+        const next = typeof update === 'function'
           ? (update as (p: T[] | null) => T[] | null)(current)
           : update
+        // Preserve the envelope's total/has_more across an optimistic local
+        // edit (e.g. a PATCH result spliced into the list) — only the row
+        // data changed, not the server's count.
+        if (prev !== null && !Array.isArray(prev)) return { ...prev, data: next ?? undefined }
+        return next
       })
     },
     [setData],
   )
 
-  return { items, error, status, loading, refetch, setItems }
+  return { items, total, hasMore, error, status, loading, refetch, setItems }
 }

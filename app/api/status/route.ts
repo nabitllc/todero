@@ -153,7 +153,11 @@ export async function GET() {
     checkSupabase(),
   ])
 
-  const result: any = { gateway: { running: true } }
+  // TOD: kill-fake-infra-greens — there used to be a hardcoded
+  // `gateway: { running: true }` here. Nothing on this host probes a
+  // "gateway", so there is no reading to report; the key is gone rather
+  // than asserting a state nobody measured.
+  const result: any = {}
 
   // ── OpenRouter ──
   if (openrouter.status === 'fulfilled' && openrouter.value?.data) {

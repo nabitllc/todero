@@ -475,16 +475,6 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         particles.forEach((p:any)=>{p.age++;p.x+=p.vx*0.93;p.y+=p.vy*0.93;p.vy+=0.07;});
         for(let i=particles.length-1;i>=0;i--)if(particles[i].age>=particles[i].maxAge)particles.splice(i,1);
 
-        // ── Real-data only: no random simulation ──
-        // Progress ticks for agents that are working (driven by real data via polling)
-        if(simTick%90===0){
-          agents.filter((a:any)=>a.active&&a.state==="working").forEach((ag:any)=>{
-            // Slowly increment progress for visual feedback while agent works
-            // Real task completion comes from polling — this just animates the bar
-            if(ag.progress<95) ag.progress=Math.min(95,ag.progress+0.5);
-          });
-        }
-
         if(simTick%300===0){
           const board=agents.filter((a:any)=>a.active).map((a:any)=>({
             id:a.id,name:a.name,emoji:a.emoji,color:a.color,tasksCompleted:a.tasksCompleted,mood:Math.round(a.mood||88),
@@ -555,7 +545,7 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         ctx.restore();
       }
       drawParticles(ctx,particles,cam);
-      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0));
+      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0,liveRunsRef.current[ag.id]?.startedAt||null));
 
       // MC-45: Draw temporary subagent sprites near KAOS
       const orchAg = drawAgentsArr.find((a:any) => a.id === ORCHESTRATOR_ID)

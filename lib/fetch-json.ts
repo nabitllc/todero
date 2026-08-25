@@ -31,6 +31,26 @@ export function formatApiError(err: ApiError, label = 'data unavailable'): strin
   return `${label} — ${status} from ${err.endpoint}: ${err.message}`
 }
 
+/**
+ * One readable line out of a non-JSON error body.
+ *
+ * A JSON endpoint answering with HTML means the request never reached a
+ * handler — a dev-server error page, a proxy, a wrong path. Pasting the
+ * document into a red bar ("data unavailable — 404 from /api/tasks:
+ * <!DOCTYPE html><html lang=…") tells the operator nothing and pushes the
+ * status code off screen, so say what actually happened instead.
+ */
+function readableBody(text: string, status: number): string {
+  const trimmed = text.trim()
+  if (!trimmed) return ''
+  if (!/^<(!doctype|html|\?xml)/i.test(trimmed)) return trimmed.replace(/\s+/g, ' ').slice(0, 300)
+  const title = /<title[^>]*>([^<]{1,120})<\/title>/i.exec(trimmed)?.[1]?.trim()
+  const suffix = title ? ` — page title: ${title}` : ''
+  return status === 404
+    ? `no such endpoint; the server returned an HTML page${suffix}`
+    : `the server returned an HTML error page instead of JSON${suffix}`
+}
+
 /** Pull the most useful message out of an error response body. */
 export async function readApiError(res: Response, endpoint: string): Promise<ApiError> {
   let message = res.statusText || 'request failed'
@@ -40,10 +60,10 @@ export async function readApiError(res: Response, endpoint: string): Promise<Api
     if (text) {
       try {
         const body = JSON.parse(text) as { error?: string; message?: string; code?: string }
-        message = body?.error ?? body?.message ?? text.slice(0, 300)
+        message = body?.error ?? body?.message ?? readableBody(text, res.status)
         code = body?.code
       } catch {
-        message = text.slice(0, 300)
+        message = readableBody(text, res.status) || message
       }
     }
   } catch {

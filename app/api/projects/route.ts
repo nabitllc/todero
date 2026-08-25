@@ -1,5 +1,17 @@
 import { NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
+import type { DbJoin } from '@/lib/db'
+
+/**
+ * Each project carries the name of the business it belongs to. Declared as a
+ * join on the seam rather than as an embedded-resource select string, so the
+ * query means the same thing to every adapter: `{ ..., businesses: { name } }`.
+ */
+const BUSINESS_NAME: DbJoin = {
+  table: 'businesses',
+  columns: ['name'],
+  localColumn: 'business_id',
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
@@ -7,14 +19,21 @@ export async function GET(req: Request) {
 
   if (business_id) {
     const hub = getHubClient(business_id)
-    const { data, error } = await hub.client.from('projects').select('*, businesses(name)').eq('business_id', hub.businessId).order('name')
+    const { data, error } = await hub.client.from('projects')
+      .select('*')
+      .join(BUSINESS_NAME)
+      .eq('business_id', hub.businessId)
+      .order('name')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
 
   // AGGREGATE QUERY: intentionally cross-hub, no business_id scope
   const db = createAdminClient()
-  const { data, error } = await db.from('projects').select('*, businesses(name)').order('name')
+  const { data, error } = await db.from('projects')
+    .select('*')
+    .join(BUSINESS_NAME)
+    .order('name')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }

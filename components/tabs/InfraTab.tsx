@@ -151,12 +151,13 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
             const cbProviders = Object.entries(cbState)
             const cbTripped = cbProviders.some(([, p]) => p.tripped)
 
-            // TOD: kill-fake-infra-greens \u2014 every tile below reads its status and
+            // TOD: kill-fake-infra-greens — every tile below reads its status and
             // note straight off ls.services, which /api/status populates from a
             // real probe run in that same request (or 'unknown' when no probe
             // exists / no credential is configured on this host). No literal
-            // 'ok' is assigned in this file \u2014 the server did the measuring.
-            interface ServiceReading { status: 'ok' | 'degraded' | 'down' | 'unknown'; note: string; checkedAt: string }
+            // 'ok' is assigned in this file — the server did the measuring.
+            type ServiceState = 'ok' | 'degraded' | 'down' | 'unknown'
+            interface ServiceReading { status: ServiceState; note: string; checkedAt: string }
             const services: Record<string, ServiceReading> = ls?.services ?? {}
             const SERVICE_TILES: Array<{ key: string; name: string }> = [
               { key: 'claude',      name: 'Claude Max' },
@@ -176,8 +177,20 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                 name,
                 note: svc?.note ?? 'not checked this request',
                 status: svc?.status ?? 'unknown',
+                checkedAt: svc?.checkedAt ?? null,
               }
             })
+
+            // TOD: kill-fake-infra-greens — how long ago each tile's own probe ran,
+            // not one shared "Updated Ns ago" for all ten. Falls back to the shared
+            // clock only when a tile has no checkedAt at all.
+            function tileAgo(checkedAt: string | null): string {
+              if (!checkedAt) return `${agoSec}s ago`
+              const s = Math.max(0, Math.round((Date.now() - new Date(checkedAt).getTime()) / 1000))
+              if (s < 60) return `${s}s ago`
+              if (s < 3600) return `${Math.round(s / 60)}m ago`
+              return `${Math.round(s / 3600)}h ago`
+            }
 
             return (
             <div className="space-y-5">
@@ -188,12 +201,12 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
               {cbError && <ApiErrorBanner error={cbError} onRetry={fetchCb} />}
               {costHistoryError && <ApiErrorBanner error={costHistoryError} onRetry={() => setReload(n => n + 1)} />}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <SH icon="\ud83d\udd0c">Services</SH>
+                <SH icon="🔌">Services</SH>
                 <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap">
                   {ls && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/20 text-[10px]">Updated {agoSec}s ago</span></>}
                   {!ls && statusError && <span className="text-red-400 text-[10px]">data unavailable</span>}
-                  {!ls && !statusError && <span className="text-yellow-600 text-[10px]">Loading\u2026</span>}
-                  <span className="text-white/20 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">\u21bb {statusCountdown}s</span>
+                  {!ls && !statusError && <span className="text-yellow-600 text-[10px]">Loading…</span>}
+                  <span className="text-white/20 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">↻ {statusCountdown}s</span>
                   <Button variant="secondary" size="sm" onClick={()=>{onRefresh()}}>Refresh</Button>
                 </div>
               </div>
@@ -204,14 +217,15 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                     <div>
                       <p className="text-white text-sm font-medium">{svc.name}</p>
                       <p className="text-white/30 text-xs mt-0.5">{svc.note}</p>
+                      <p className="text-white/20 text-[10px] mt-0.5">checked {tileAgo(svc.checkedAt)}</p>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <SH icon="\ud83d\udcac">Heartbeat Schedule</SH>
+              <SH icon="📬">Heartbeat Schedule</SH>
               <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
-                {/* TOD: kill-fake-infra-greens \u2014 this used to fall back to five
+                {/* TOD: kill-fake-infra-greens — this used to fall back to five
                     invented rows (a fake "every 4h" for an agent that may not
                     exist on this host) whenever the live list was empty. An
                     empty state beats a guess. */}
@@ -228,7 +242,7 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                 ))}
               </div>
 
-              <SH icon="\ud83d\udcca">Token Usage</SH>
+              <SH icon="📊">Token Usage</SH>
               <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
                 <div className="flex items-end justify-between mb-4">
                   <div className="flex items-baseline gap-4 md:gap-6 flex-wrap">
@@ -241,10 +255,14 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                     </div>
                     <div>
                       <p className="text-white/50 text-[10px] mb-1 uppercase tracking-wider">All-time</p>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-2xl font-bold text-white">${usageCost.toFixed(2)}</span>
-                        <span className="text-white/30 text-xs">{(usageTokens/1000).toFixed(0)}k tok</span>
-                      </div>
+                      {ls?.usage ? (
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-bold text-white">${usageCost.toFixed(2)}</span>
+                          <span className="text-white/30 text-xs">{(usageTokens/1000).toFixed(0)}k tok</span>
+                        </div>
+                      ) : (
+                        <p className="text-white/30 text-xs">not tracked on this host</p>
+                      )}
                     </div>
                   </div>
                   {ls && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg" title="Live"/>}
@@ -273,7 +291,7 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                 </div>
               </div>
 
-              <SH icon="\ud83d\ude80">Deploy History</SH>
+              <SH icon="🚀">Deploy History</SH>
               <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
                 {deploysError && <div className="px-5 py-4"><ApiErrorBanner error={deploysError} onRetry={() => setReload(n => n + 1)} /></div>}
                 {!deploysError && deploys === null && <div className="px-5 py-4 text-white/30 text-xs">Loading deploys…</div>}
@@ -306,13 +324,13 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                 })}
               </div>
 
-              <SH icon="\u2705">Cluster Health (/api/health)</SH>
+              <SH icon="✅">Cluster Health (/api/health)</SH>
               <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
-                {/* TOD: kill-fake-infra-greens \u2014 /api/health runs its own probe
+                {/* TOD: kill-fake-infra-greens — /api/health runs its own probe
                     (a live query against the issues table, on a hard timeout)
                     independent of everything above. Nothing renders here that
                     health didn't just say. */}
-                {!health && !healthUnreachable && <p className="text-white/30 text-xs">Checking\u2026</p>}
+                {!health && !healthUnreachable && <p className="text-white/30 text-xs">Checking…</p>}
                 {healthUnreachable && <ApiErrorBanner error={{ status: 0, endpoint: '/api/health', message: healthUnreachable }} onRetry={fetchHealth} />}
                 {health && (
                   <div className="space-y-3">
@@ -347,22 +365,22 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                 )}
               </div>
 
-              <SH icon="\ud83d\udda5">Host</SH>
+              <SH icon="🖥">Host</SH>
               <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
-                {/* TOD: kill-fake-infra-greens \u2014 this card used to hardcode
-                    "Mac mini \u00b7 Apple Silicon" on every host, Windows included.
+                {/* TOD: kill-fake-infra-greens — this card used to hardcode
+                    "Mac mini · Apple Silicon" on every host, Windows included.
                     It now reads whatever machine /api/status is actually
                     running on. */}
                 <div className="flex items-start gap-4">
-                  <span className="text-3xl">{"\ud83d\udda5\ufe0f"}</span>
+                  <span className="text-3xl">{"🖥️"}</span>
                   <div>
                     {ls?.system ? (
                       <>
-                        <p className="text-white font-medium text-sm">{ls.system.hostname} \u00b7 {ls.system.platform} \u00b7 {ls.system.arch} \u00b7 {ls.system.totalMemGB}GB</p>
-                        <p className="text-white/50 text-xs mt-0.5">Todero native stack \u00b7 Node {ls.system.nodeVersion} \u00b7 up {Math.round((ls.system.uptimeSec ?? 0) / 60)}m</p>
+                        <p className="text-white font-medium text-sm">{ls.system.hostname} · {ls.system.platform} · {ls.system.arch} · {ls.system.totalMemGB}GB</p>
+                        <p className="text-white/50 text-xs mt-0.5">Todero native stack · Node {ls.system.nodeVersion} · up {Math.round((ls.system.uptimeSec ?? 0) / 60)}m</p>
                       </>
                     ) : (
-                      <p className="text-white/30 text-xs">Host details unavailable \u2014 {statusError ? 'no successful /api/status response yet' : 'loading\u2026'}</p>
+                      <p className="text-white/30 text-xs">Host details unavailable — {statusError ? 'no successful /api/status response yet' : 'loading…'}</p>
                     )}
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {['Todero :3000', 'Ollama :11434'].map(l=><Chip key={l} label={l}/>)}
@@ -376,13 +394,15 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
               <div className="rounded-2xl border border-white/10 p-3 sm:p-4" style={{background: cbTripped ? 'rgba(239,68,68,0.1)' : '#0f0f0f'}}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${cbTripped ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
-                    <span className="text-xs font-medium text-white">{cbTripped ? 'TRIPPED — agents paused' : 'Healthy'}</span>
+                    <span className={`w-2 h-2 rounded-full ${cbTripped ? 'bg-red-500 animate-pulse' : cbProviders.length === 0 ? 'bg-white/20' : 'bg-emerald-500'}`} />
+                    <span className="text-xs font-medium text-white">
+                      {cbTripped ? 'TRIPPED — agents paused' : cbProviders.length === 0 ? 'No provider has reported' : 'Healthy'}
+                    </span>
                   </div>
                   <button onClick={fetchCb} className="text-white/30 hover:text-white/60 text-xs transition-colors">↻ refresh</button>
                 </div>
                 {cbProviders.length === 0 ? (
-                  <p className="text-white/30 text-xs">No failures recorded.</p>
+                  <p className="text-white/30 text-xs">No provider has reported to the circuit breaker yet on this host — that is not the same as "no failures".</p>
                 ) : (
                   <div className="space-y-2">
                     {cbProviders.map(([provider, ps]) => (
@@ -414,9 +434,9 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                 )}
               </div>
 
-              <SH icon="\ud83d\udcb3">OpenRouter Balance</SH>
+              <SH icon="💳">OpenRouter Balance</SH>
               <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
-                {/* TOD: kill-fake-infra-greens \u2014 this card used to show
+                {/* TOD: kill-fake-infra-greens — this card used to show
                     "$9.57 / $10.00" on a host with no OpenRouter key at all.
                     It now only shows numbers /api/status actually fetched. */}
                 {orConnected ? (
@@ -429,14 +449,14 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                           <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
                         </div>
                       </div>
-                      <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used \u00b7 resets monthly</p>
+                      <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used · resets monthly</p>
                     </div>
                     <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />
                   </>
                 ) : (
                   <div className="flex items-center gap-2">
                     <Dot status="unknown" />
-                    <p className="text-white/30 text-xs">Not connected \u2014 no OPENROUTER_API_KEY configured on this host.</p>
+                    <p className="text-white/30 text-xs">Not connected — no OPENROUTER_API_KEY configured on this host.</p>
                   </div>
                 )}
               </div>

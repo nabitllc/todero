@@ -807,11 +807,38 @@ export async function GET(req: NextRequest) {
 
   const search = url.searchParams.get('search')
   // TOD-1999: default limit=50 keeps no-param responses under 200KB.
-  // Pass ?limit=0 for unbounded (agent/script callers). ?page=N for offset.
+  // Pass ?limit=0 for unbounded (agent/script callers, batched below the
+  // PostgREST row cap). ?page=N for offset. MAX_LIMIT bounds any *positive*
+  // limit so one request can't ask Postgres for an unreasonable page size —
+  // it deliberately does not apply to the limit=0 sentinel, which has
+  // different semantics ("every row, fetched in MAX_LIMIT-sized batches")
+  // and is relied on by FeaturesTab/IssuesTab/ProjectsTab/EpicMapTab/etc to
+  // get a true, untruncated count.
+  const MAX_LIMIT = 1000
   const limitParam = url.searchParams.get('limit')
-  const limit = limitParam !== null ? parseInt(limitParam, 10) : 50
+  let limit = 50
+  if (limitParam !== null) {
+    const trimmed = limitParam.trim()
+    if (!/^\d+$/.test(trimmed)) {
+      return NextResponse.json(
+        { error: `Invalid limit "${limitParam}" — must be a non-negative integer (0 = unbounded, max ${MAX_LIMIT}).` },
+        { status: 400 },
+      )
+    }
+    limit = Math.min(parseInt(trimmed, 10), MAX_LIMIT)
+  }
   const pageParam = url.searchParams.get('page')
-  const page = Math.max(1, parseInt(pageParam || '1', 10))
+  let page = 1
+  if (pageParam !== null) {
+    const trimmed = pageParam.trim()
+    if (!/^\d+$/.test(trimmed) || parseInt(trimmed, 10) < 1) {
+      return NextResponse.json(
+        { error: `Invalid page "${pageParam}" — must be a positive integer.` },
+        { status: 400 },
+      )
+    }
+    page = parseInt(trimmed, 10)
+  }
   const offset = limit > 0 ? (page - 1) * limit : 0
   const projectParam = url.searchParams.get('project')
   const businessIdParam = url.searchParams.get('business_id')
@@ -867,10 +894,22 @@ export async function GET(req: NextRequest) {
   let total = 0
 
   if (limit > 0) {
-    const { data: page, error, count } = await buildQuery().range(offset, offset + limit - 1)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    data = page ?? []
-    total = count ?? 0
+    // A head-only count first: PostgREST answers `.range(offset, ...)` with a
+    // raw "Requested range not satisfiable" error once offset is past the end
+    // of the result set (e.g. paging past the last page, or a stale ?page=
+    // after rows were deleted). Knowing total up front lets an out-of-range
+    // offset return an honest empty page instead of leaking that error.
+    const { count: headCount, error: headError } = await buildQuery().range(0, 0)
+    if (headError) return NextResponse.json({ error: headError.message }, { status: 500 })
+    total = headCount ?? 0
+    if (total === 0 || offset >= total) {
+      data = []
+    } else {
+      const { data: page, error, count } = await buildQuery().range(offset, offset + limit - 1)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      data = page ?? []
+      total = count ?? total
+    }
   } else {
     // ?limit=0 means "every matching row" (agent/script callers). PostgREST's
     // per-request row cap means that has to be assembled from multiple
@@ -1066,7 +1105,7 @@ export async function POST(req: NextRequest) {
       .from('issues')
       .select('id, task_key, status')
       .eq('title', title)
-      .not('status', 'in', '("completed","closed","cancelled")')
+      .not('status', 'in', ['completed', 'closed', 'cancelled'])
       .maybeSingle()
     if (existingByTitle) {
       return NextResponse.json(
@@ -1080,7 +1119,7 @@ export async function POST(req: NextRequest) {
         .select('id, task_key, status')
         .eq('parent_id', parent_id)
         .eq('type', 'review')
-        .not('status', 'in', '("completed","closed","cancelled")')
+        .not('status', 'in', ['completed', 'closed', 'cancelled'])
         .maybeSingle()
       if (existingByParent) {
         return NextResponse.json(
@@ -1102,7 +1141,7 @@ export async function POST(req: NextRequest) {
       .from('issues')
       .select('id', { count: 'exact', head: true })
       .eq('parent_id', parent_id)
-      .not('status', 'in', '("closed","wrapped","completed")')
+      .not('status', 'in', ['closed', 'wrapped', 'completed'])
     if ((childCount ?? 0) >= 20) {
       return NextResponse.json(
         { error: `Child task cap reached: parent already has ${childCount} open child tasks (max 20). Close or complete existing tasks before adding more.` },
@@ -1116,7 +1155,7 @@ export async function POST(req: NextRequest) {
         .from('issues')
         .select('id, task_key, title, status')
         .eq('parent_id', parent_id)
-        .not('status', 'in', '("closed","wrapped","completed")')
+        .not('status', 'in', ['closed', 'wrapped', 'completed'])
       const prefix = title.slice(0, 50).toLowerCase()
       const nearDupe = (siblings ?? []).find(
         s => s.title && s.title.slice(0, 50).toLowerCase() === prefix
