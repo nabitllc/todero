@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- upstream third-party payloads are untyped JSON; readers below null-check every field
-import { fetchJsonOrThrow } from '@/lib/fetch-json'
 import { promisify } from 'util'
 import fs from 'fs'
 import { db, isDbConfigured } from '@/lib/db'
 import { dbUnavailableResponse } from '@/lib/db-http'
+import { LLM_BASE_URL, fetchLiveModels } from '@/lib/llm-provider'
 
 const promisifyExec = promisify
-
-/** Configuration, not a constant. An absent key simply means "no balance shown". */
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY ?? ''
 
 let cache: { data: any; ts: number } | null = null
 const CACHE_TTL = 30_000
@@ -88,19 +85,16 @@ export async function GET() {
     return NextResponse.json(cache.data)
   }
 
-  const [supabaseDb, openrouter, cfKaos, discordBot, claudeUsage] = await Promise.allSettled([
+  const [supabaseDb, localLlmProbe, cfKaos, discordBot, claudeUsage] = await Promise.allSettled([
     // 1. Database size, through the seam's stored-procedure call.
     // TOD-654: an upstream failure resolves to null rather than an error body,
     // which the readers below would otherwise treat as a real number.
     dbSizeBytes(),
 
-    // 2. OpenRouter balance — skipped when no key is configured.
-    OPENROUTER_KEY
-      ? fetchJsonOrThrow<any>('https://openrouter.ai/api/v1/auth/key', {
-          headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-          cache: 'no-store',
-        })
-      : Promise.resolve(null),
+    // 2. Local LLM — a live GET against ${LLM_BASE_URL}/models, made fresh for
+    // this request. No vendor key, no hardcoded roster: the model ids shown
+    // are whatever the server actually reports right now.
+    fetchLiveModels(),
 
     // 3. Cloudflare tunnel - kaos.nabit.work
     fetch('https://kaos.nabit.work', {
@@ -127,18 +121,22 @@ export async function GET() {
     supabase.dbBytes = supabaseDb.value
   }
 
-  // --- OpenRouter ---
-  let openrouterResult: any = { balance: null, limit: null, used: null, isFreeTier: false, lastChecked: now }
-  if (openrouter.status === 'fulfilled' && openrouter.value?.data) {
-    const d = openrouter.value.data
-    openrouterResult = {
-      balance: d.limit != null && d.usage != null ? +(d.limit - d.usage).toFixed(2) : null,
-      limit: d.limit ?? null,
-      used: d.usage ? +d.usage.toFixed(2) : null,
-      isFreeTier: d.is_free_tier ?? false,
-      lastChecked: now,
-    }
-  }
+  // --- Local LLM ---
+  // Owner directive: no OpenRouter, no cloud LLM. This is a live probe run for
+  // this request — baseUrl and models come straight off the response, and a
+  // failed probe names the URL and the exact reason rather than showing a
+  // fabricated plan/balance for a vendor Todero doesn't use.
+  const localLlmResult = localLlmProbe.status === 'fulfilled' && localLlmProbe.value.ok
+    ? { baseUrl: LLM_BASE_URL, models: localLlmProbe.value.models.map(m => m.id), ok: true, error: null, lastChecked: now }
+    : {
+        baseUrl: LLM_BASE_URL,
+        models: [],
+        ok: false,
+        error: localLlmProbe.status === 'fulfilled'
+          ? `unreachable — ${LLM_BASE_URL} — ${localLlmProbe.value.error}`
+          : `unreachable — ${LLM_BASE_URL} — ${localLlmProbe.reason instanceof Error ? localLlmProbe.reason.message : String(localLlmProbe.reason)}`,
+        lastChecked: now,
+      }
 
   // --- Cloudflare tunnels ---
   const cloudflare = {

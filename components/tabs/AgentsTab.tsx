@@ -4,6 +4,8 @@ import { Chip, Dot, SH } from '@/lib/mc-atoms'
 import { Button, EmptyState as EmptyStateUI } from '@/components/ui'
 import { Users } from 'lucide-react'
 import AgentDetailView from '@/components/tabs/AgentDetailView'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
 
 function formatAgo(ms: number): string {
   const sec = Math.floor(ms / 1000)
@@ -39,7 +41,7 @@ export default function AgentsTab({
   agentRunsData,
   liveAgents,
   rosterMeta,
-  act,
+  agentsError,
   agentModal,
   setAgentModal,
   projectFilter,
@@ -50,7 +52,9 @@ export default function AgentsTab({
   liveAgents: any[] | null
   /** Envelope metadata from /api/agents. Optional so older call sites still compile. */
   rosterMeta?: RosterMeta | null
-  act: (id: string) => string
+  /** Why /api/agents failed, if it did. Distinguishes "still loading" from
+   *  "the fetch failed" — both used to render the same "Loading…" spinner. */
+  agentsError?: ApiError | null
   agentModal: any
   setAgentModal: (a: any) => void
   projectFilter?: string | null
@@ -62,14 +66,24 @@ export default function AgentsTab({
   const rosterWarning: string | null = rosterMeta?.warning ?? liveAgents?.[0]?.rosterWarning ?? null
   const rosterPath: string | null = rosterMeta?.path ?? liveAgents?.[0]?.rosterPath ?? null
 
-  // TOD (agent-roster-truth): `liveAgents === null` means /api/agents has
-  // never answered successfully — that state is rendered by the ApiErrorBanner
-  // CrewTab already shows above this component, or as a loading state, never
-  // as a fabricated agent list. Only a *successful* response with zero rows
-  // (liveAgents !== null && displayAgents.length === 0) is a genuinely empty
-  // roster, and that gets its own honest message naming where the roster was
-  // searched.
+  // TOD (agent-roster-truth): `liveAgents === null` means /api/agents has not
+  // yet produced any rows to show — never a fabricated agent list. That still
+  // covers two genuinely different states, which is why the page.tsx loader
+  // now reads the /api/agents body regardless of HTTP status: a roster fetch
+  // that returns rows (even inside a 503, e.g. "database not configured")
+  // populates `liveAgents` and never reaches this branch at all. Only a
+  // request that produced no body — a network error, or JSON that failed to
+  // parse — leaves `liveAgents` null, and that is when `agentsError` is set.
+  // A "still loading" spinner and a "the fetch failed" state read identically
+  // to an operator unless they are told apart.
   if (liveAgents === null) {
+    if (agentsError) {
+      return (
+        <div className="space-y-6">
+          <ApiErrorBanner error={agentsError} />
+        </div>
+      )
+    }
     return (
       <div className="space-y-6">
         <EmptyStateUI icon={Users} title="Loading agent roster…" description="Waiting on /api/agents." />
@@ -127,7 +141,11 @@ export default function AgentsTab({
                       )}
                       {ls0.dot === 'green' && <p className="text-emerald-400/80 text-[10px] font-mono mt-0.5 truncate max-w-[200px]">↳ {ls0.label}</p>}
                       {ls0.dot === 'amber' && <p className="text-amber-400/70 text-[10px] font-mono mt-0.5">{ls0.label}</p>}
-                      {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">Idle · last active {lastActiveLabel(displayAgents[0].id, agentRunsData)}</p>}
+                      {/* The grey state used to be hard-coded to "Idle", which
+                          claimed a running agent had gone quiet even when the
+                          server had never received a single heartbeat from it.
+                          `ls0.label` carries what the server actually knows. */}
+                      {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">{ls0.label} · last run {lastActiveLabel(displayAgents[0].id, agentRunsData)}</p>}
                     </div>
                   </div>
                   <p className="text-white/50 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>

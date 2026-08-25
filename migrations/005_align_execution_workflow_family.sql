@@ -1,6 +1,16 @@
 -- Align task/bug/ops execution workflow family with agreed 2026-04-04 orchestration.
 -- Safe to run after workflow_transitions exists.
 -- Research intentionally stays separate.
+--
+-- NOTE (schema-migrations piece): `validators` is JSONB. The original file
+-- wrote plain `ARRAY[...]` (a text[] literal) into it, which only worked
+-- historically because this file already ran against production before this
+-- repo had a migrations/000_baseline_schema.sql to replay from zero.
+-- Wrapped every such assignment in `to_jsonb(...)` — same array of strings,
+-- correctly typed — so a fresh clone applying migrations in order doesn't
+-- fail on `column "validators" is of type jsonb but expression is of type
+-- text[]`. Already-applied production is untouched: schema_migrations
+-- records this file as applied there, so it never re-runs.
 
 -- Queue-family rules reflected here:
 -- - owner + reviewer required before backlog/defined -> open
@@ -14,7 +24,7 @@
 
 -- TASK ----------------------------------------------------------------------
 UPDATE workflow_transitions
-SET validators = ARRAY['acceptance_criteria','sprint','priority','assignee','parent_id','reviewer','owner','severity'],
+SET validators = to_jsonb(ARRAY['acceptance_criteria','sprint','priority','assignee','parent_id','reviewer','owner','severity']),
     post_functions = '[{"action":"set_assignee","params":{"source":"owner"}}]'::jsonb
 WHERE issue_type = 'task' AND from_status = 'backlog' AND to_status = 'open';
 
@@ -26,7 +36,7 @@ SET post_functions = '[
 WHERE issue_type = 'task' AND from_status = 'in_progress' AND to_status = 'code_review';
 
 UPDATE workflow_transitions
-SET validators = ARRAY['implementation_notes'],
+SET validators = to_jsonb(ARRAY['implementation_notes']),
     post_functions = '[{"action":"set_assignee","params":{"source":"po"}}]'::jsonb
 WHERE issue_type = 'task' AND from_status = 'in_progress' AND to_status = 'product_review';
 
@@ -36,7 +46,7 @@ WHERE issue_type = 'task' AND from_status = 'in_progress' AND to_status = 'backl
 
 UPDATE workflow_transitions
 SET condition_role = 'tester_or_designer',
-    validators = ARRAY['dual_review_passed'],
+    validators = to_jsonb(ARRAY['dual_review_passed']),
     post_functions = '[
       {"action":"set_assignee","params":{"source":"deployer"}},
       {"action":"notify_discord","params":{"channel":"1487584901678104698"}}
@@ -57,7 +67,7 @@ WHERE issue_type = 'task' AND to_status = 'closed';
 
 -- BUG -----------------------------------------------------------------------
 UPDATE workflow_transitions
-SET validators = ARRAY['acceptance_criteria','sprint','priority','severity','assignee','parent_id','reviewer','owner','environment'],
+SET validators = to_jsonb(ARRAY['acceptance_criteria','sprint','priority','severity','assignee','parent_id','reviewer','owner','environment']),
     post_functions = '[{"action":"set_assignee","params":{"source":"owner"}}]'::jsonb
 WHERE issue_type = 'bug' AND from_status = 'backlog' AND to_status = 'open';
 
@@ -69,7 +79,7 @@ SET post_functions = '[
 WHERE issue_type = 'bug' AND from_status = 'in_progress' AND to_status = 'code_review';
 
 UPDATE workflow_transitions
-SET validators = ARRAY['implementation_notes'],
+SET validators = to_jsonb(ARRAY['implementation_notes']),
     post_functions = '[{"action":"set_assignee","params":{"source":"po"}}]'::jsonb
 WHERE issue_type = 'bug' AND from_status = 'in_progress' AND to_status = 'product_review';
 
@@ -79,7 +89,7 @@ WHERE issue_type = 'bug' AND from_status = 'in_progress' AND to_status = 'backlo
 
 UPDATE workflow_transitions
 SET condition_role = 'tester_or_designer',
-    validators = ARRAY['dual_review_passed'],
+    validators = to_jsonb(ARRAY['dual_review_passed']),
     post_functions = '[
       {"action":"set_assignee","params":{"source":"deployer"}},
       {"action":"notify_discord","params":{"channel":"1487584901678104698"}}
@@ -100,13 +110,13 @@ WHERE issue_type = 'bug' AND to_status = 'closed';
 
 -- OPS -----------------------------------------------------------------------
 UPDATE workflow_transitions
-SET validators = ARRAY['sprint','assignee','reviewer','owner','priority','severity'],
+SET validators = to_jsonb(ARRAY['sprint','assignee','reviewer','owner','priority','severity']),
     post_functions = '[{"action":"set_assignee","params":{"source":"owner"}}]'::jsonb
 WHERE issue_type = 'ops' AND from_status = 'backlog' AND to_status = 'open';
 
 UPDATE workflow_transitions
 SET condition_role = 'assignee',
-    validators = ARRAY['implementation_notes'],
+    validators = to_jsonb(ARRAY['implementation_notes']),
     post_functions = '[
       {"action":"set_assignee","params":{"source":"reviewer"}},
       {"action":"activate_code_review_agents","params":{}}
@@ -114,7 +124,7 @@ SET condition_role = 'assignee',
 WHERE issue_type = 'ops' AND from_status = 'in_progress' AND to_status = 'code_review';
 
 UPDATE workflow_transitions
-SET validators = ARRAY['implementation_notes'],
+SET validators = to_jsonb(ARRAY['implementation_notes']),
     post_functions = '[{"action":"set_assignee","params":{"source":"po"}}]'::jsonb
 WHERE issue_type = 'ops' AND from_status = 'in_progress' AND to_status = 'product_review';
 
@@ -124,7 +134,7 @@ WHERE issue_type = 'ops' AND from_status = 'in_progress' AND to_status = 'backlo
 
 UPDATE workflow_transitions
 SET condition_role = 'tester_or_designer',
-    validators = ARRAY['dual_review_passed'],
+    validators = to_jsonb(ARRAY['dual_review_passed']),
     post_functions = '[{"action":"set_assignee","params":{"source":"deployer"}}]'::jsonb
 WHERE issue_type = 'ops' AND from_status = 'code_review' AND to_status = 'approved';
 
@@ -133,7 +143,7 @@ SET post_functions = '[{"action":"set_assignee","params":{"source":"auditor"}}]'
 WHERE issue_type = 'ops' AND from_status = 'approved' AND to_status = 'released';
 
 UPDATE workflow_transitions
-SET validators = ARRAY['reviewer_notes'],
+SET validators = to_jsonb(ARRAY['reviewer_notes']),
     post_functions = '[
       {"action":"set_assignee","params":{"source":"auditor"}},
       {"action":"notify_discord","params":{"channel":"1487584901678104698"}}

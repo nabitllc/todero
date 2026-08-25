@@ -30,6 +30,13 @@ interface Agent {
   lastUpdatedAt?: number
   currentTask?: string | null
   type?: 'consultant' | 'permanent'
+  // Liveness as /api/agents reports it — derived from heartbeats the server
+  // actually received, never inferred. Optional so call sites that hold a
+  // partial agent object (search results, office sprites) still compile; a
+  // missing value renders as "liveness unknown", not as "Idle".
+  liveness?: 'live' | 'stale' | 'idle' | 'never'
+  lastSeenAt?: number | null
+  livenessSource?: 'heartbeat' | 'none'
 }
 
 interface Issue {
@@ -106,6 +113,27 @@ function relTime(ms: number | undefined | null): string {
   return `${Math.round(diff / 1440)}d ago`
 }
 
+/**
+ * The one place liveness turns into words. Every state names what the SERVER
+ * knows, so no reading is ever invented:
+ *   live   — a heartbeat arrived in the last minute
+ *   stale  — one arrived recently but the agent has missed its last beats
+ *   idle   — it checked in at some point, but not for over ten minutes
+ *   never  — no heartbeat has EVER been received for this agent
+ * The old view showed "Idle" for all four, which made a roster that has never
+ * reported anything look identical to one whose agents had just gone quiet.
+ */
+function livenessLabel(agent: Agent): { text: string; live: boolean; tone: string } {
+  const seen = relTime(agent.lastSeenAt ?? null)
+  switch (agent.liveness) {
+    case 'live':  return { text: `Running — heartbeat ${seen}`, live: true,  tone: 'text-emerald-400' }
+    case 'stale': return { text: `Stale — last heartbeat ${seen}`, live: false, tone: 'text-amber-400' }
+    case 'idle':  return { text: `Idle — last heartbeat ${seen}`, live: false, tone: 'text-white/40' }
+    case 'never': return { text: 'Never checked in', live: false, tone: 'text-white/40' }
+    default:      return { text: 'Liveness unknown — no heartbeat data', live: false, tone: 'text-white/40' }
+  }
+}
+
 // ── Markdown renderer (simple) ────────────────────────────────────────────────
 function SimpleMarkdown({ content }: { content: string }) {
   if (!content) return <p className="text-white/30 text-sm italic">No content available.</p>
@@ -156,7 +184,11 @@ function DashboardTab({ agent }: { agent: Agent }) {
   const open       = loaded.filter(i => i.status === 'open').length
   const active     = loaded.filter(i => ['in_progress','code_review','open'].includes(i.status))
 
-  const isRunning = agent.status === 'running'
+  // `agent.status` is one of active/scheduled/idle — it was never 'running',
+  // so this indicator was hard-wired off. Liveness now comes from the same
+  // heartbeat field /api/agents computes it from.
+  const live = livenessLabel(agent)
+  const isRunning = live.live
 
   return (
     <div className="space-y-5">
@@ -171,8 +203,8 @@ function DashboardTab({ agent }: { agent: Agent }) {
         <span className={`inline-block w-2 h-2 rounded-full ${
           isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-white/20'
         }`} />
-        <span className={`text-xs font-medium ${isRunning ? 'text-emerald-400' : 'text-white/40'}`}>
-          {isRunning ? `Running — ${relTime(agent.lastUpdatedAt)}` : 'Idle'}
+        <span className={`text-xs font-medium ${live.tone}`}>
+          {live.text}
         </span>
       </div>
 
@@ -672,14 +704,21 @@ function BudgetTab({ agent }: { agent: Agent }) {
 export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps) {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [isEditing, setIsEditing] = useState(false)
+  // Result of the header's two write actions. A refused write shows the
+  // server's real status and message in the same ApiErrorBanner every loader
+  // in this file uses — never an alert() that says the action succeeded
+  // because the promise happened to resolve.
+  const [actionError, setActionError] = useState<ApiError | null>(null)
+  const [actionNote, setActionNote] = useState<string | null>(null)
 
   // Reset edit mode on tab switch
   useEffect(() => {
     setIsEditing(false)
   }, [activeTab])
 
-  function handleAssignTask() {
-    fetch('/api/issues', {
+  async function handleAssignTask() {
+    setActionError(null); setActionNote(null)
+    const r = await fetchJson<{ task_key?: string }>('/api/issues', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -692,17 +731,25 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
         acceptance_criteria: 'Define acceptance criteria',
       }),
     })
-      .then(r => {
-        if (!r.ok) throw new Error('Failed')
-        alert('Task assigned to ' + agent.name)
-      })
-      .catch(() => alert('Failed to create task'))
+    if (!r.ok) { setActionError(r.error); return }
+    setActionNote(`Task ${r.data?.task_key ?? ''} assigned to ${agent.name}`.replace('  ', ' '))
   }
 
-  function handleRunHeartbeat() {
-    fetch(`/api/agents/${agent.id}/heartbeat`, { method: 'POST' })
-      .then(() => alert('Heartbeat triggered'))
-      .catch(() => alert('Failed to trigger heartbeat'))
+  async function handleRunHeartbeat() {
+    setActionError(null); setActionNote(null)
+    // POST /api/agents/<id>/heartbeat records a check-in; the response carries
+    // the timestamp and the liveness the server derived from it, so the button
+    // reports what was actually written instead of asserting success.
+    const r = await fetchJson<{ last_seen?: string; liveness?: string; warning?: string | null }>(
+      `/api/agents/${agent.id}/heartbeat`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) },
+    )
+    if (!r.ok) { setActionError(r.error); return }
+    const when = r.data?.last_seen ? new Date(r.data.last_seen).toLocaleTimeString() : 'now'
+    setActionNote(
+      `Heartbeat recorded at ${when} — ${agent.name} is ${r.data?.liveness ?? 'live'}` +
+      (r.data?.warning ? ` (${r.data.warning})` : ''),
+    )
   }
 
   return (
@@ -751,6 +798,18 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
             </Button>
           </div>
         </div>
+
+        {/* Outcome of the header actions — stated, never assumed. */}
+        {(actionError || actionNote) && (
+          <div className="px-5 pt-3 shrink-0">
+            {actionError && <ApiErrorBanner error={actionError} />}
+            {actionNote && (
+              <p className="text-emerald-400/80 text-[11px] rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                {actionNote}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Tab bar */}
         <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-white/10 overflow-x-auto shrink-0 no-scrollbar">

@@ -370,7 +370,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     { cmd: '/compact', icon: '📦', desc: 'Ask AI to summarize conversation so far' },
     { cmd: '/pin',     icon: '📌', desc: 'Toggle pin on current conversation' },
     { cmd: '/export',  icon: '↓',  desc: 'Export this conversation as Markdown' },
-    { cmd: '/imagine', icon: '🎨', desc: 'Generate an image: /imagine a purple cat in space' },
     { cmd: '/tasks',   icon: '📋', desc: 'Show open tasks for current sprint' },
     { cmd: '/deploy',  icon: '🚀', desc: 'Trigger a deploy or show deploy status' },
     { cmd: '/agents',  icon: '👥', desc: 'List active agents and their status' },
@@ -704,37 +703,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       await togglePin(activeConv.id, !activeConv.pinned)
     } else if (cmd === '/export') {
       exportChat(activeConv)
-    } else if (cmd === '/imagine') {
-      const prompt = inputVal.replace('/imagine', '').trim()
-      if (!prompt) {
-        const hint: ChatMessage = { id: 'hint-'+Date.now(), role:'assistant', content:'Usage: `/imagine <description>` — e.g. `/imagine a purple cat floating in space`', ts: Date.now() }
-        setChats(prev => prev.map(c => c.id === activeConv?.id ? { ...c, messages: [...c.messages, hint] } : c))
-        return
-      }
-      setLoading(true)
-      const userMsg: ChatMessage = { id: 'img-user-'+Date.now(), role:'user', content:`🎨 /imagine ${prompt}`, ts: Date.now() }
-      const placeholderId = 'img-'+Date.now()
-      const placeholder: ChatMessage = { id: placeholderId, role:'assistant', content:'⏳ Generating image…', ts: Date.now() }
-      setChats(prev => prev.map(c => c.id === activeConv?.id ? { ...c, messages: [...c.messages, userMsg, placeholder] } : c))
-      try {
-        const r = await fetch('/api/imagine', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt }) })
-        const d = await r.json()
-        if (d.url) {
-          setChats(prev => prev.map(c => c.id === activeConv?.id ? {
-            ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: `![generated](${d.url})`, image_url: d.url } : m)
-          } : c))
-        } else {
-          setChats(prev => prev.map(c => c.id === activeConv?.id ? {
-            ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: `❌ Image gen failed: ${d.error||'unknown error'}` } : m)
-          } : c))
-        }
-      } catch(e) {
-        setChats(prev => prev.map(c => c.id === activeConv?.id ? {
-          ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: '❌ Network error generating image' } : m)
-        } : c))
-      } finally {
-        setLoading(false)
-      }
     } else if (cmd === '/tasks') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
       const r = await fetchJson<any>('/api/issues?limit=0')
@@ -1145,12 +1113,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const handleSend = async () => {
     if (!inputVal.trim() || !activeConv) return
 
-    // Handle /imagine typed manually
-    if (inputVal.trim().startsWith('/imagine ')) {
-      await executeSlashCommand('/imagine')
-      return
-    }
-
     // Handle slash commands — match exact OR first filtered result from palette
     if (inputVal.startsWith('/')) {
       const typed = inputVal.trim().split(' ')[0]
@@ -1160,12 +1122,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       const filtered = SLASH_COMMANDS.filter(c => c.cmd.startsWith(typed))
       if (filtered.length >= 1 && showSlashPalette) {
         const chosen = filtered[slashPaletteIdx] || filtered[0]
-        if (chosen.cmd === '/imagine') {
-          setInputVal('/imagine ')
-          setShowSlashPalette(false)
-          setTimeout(() => textareaRef.current?.focus(), 0)
-          return
-        }
         await executeSlashCommand(chosen.cmd)
         return
       }
@@ -2373,16 +2329,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   {slashFilter.map((c, i) => (
                     <button
                       key={c.cmd}
-                      onClick={() => {
-                        // For /imagine: insert command into input so user can type their prompt, don't execute
-                        if (c.cmd === '/imagine') {
-                          setInputVal('/imagine ')
-                          setShowSlashPalette(false)
-                          setTimeout(() => textareaRef.current?.focus(), 0)
-                        } else {
-                          executeSlashCommand(c.cmd)
-                        }
-                      }}
+                      onClick={() => executeSlashCommand(c.cmd)}
                       className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-white/10/50 last:border-0 transition-colors ' +
                         (i === slashPaletteIdx ? 'bg-white/10 text-white' : 'text-white/40 hover:bg-[#0f0f0f]')}>
                       <span className="text-base shrink-0">{c.icon}</span>
@@ -2612,13 +2559,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                         e.preventDefault()
                         const chosen = visible[slashPaletteIdx]
                         if (chosen) {
-                          if (chosen.cmd === '/imagine') {
-                            setInputVal('/imagine ')
-                            setShowSlashPalette(false)
-                            setTimeout(() => textareaRef.current?.focus(), 0)
-                          } else {
-                            executeSlashCommand(chosen.cmd)
-                          }
+                          executeSlashCommand(chosen.cmd)
                         }
                         return
                       }

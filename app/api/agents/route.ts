@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { dbQueryErrorResponse } from '@/lib/db-http'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
-import { processListCommand } from '@/lib/paths'
 import { AGENT_META, loadAgentRoster, type ParsedAgent } from '@/lib/agent-roster'
-
-const execFileAsync = promisify(execFile)
-
+import {
+  classifyLiveness,
+  readHeartbeats,
+  type Heartbeat,
+  type HeartbeatStore,
+  type Liveness,
+} from '@/lib/agent-heartbeats'
+import { internalHeaders } from '@/lib/internal-auth'
 
 /**
  * Asked of the seam, never of the environment. This route used to read the
@@ -30,6 +32,18 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const
  */
 type RosterSource = 'agents-md' | 'none'
 
+/**
+ * Where "is this agent running?" was answered from.
+ *   'heartbeat' — the server has a heartbeat store it could read
+ *   'none'      — it could not read one, so no liveness claim is made at all
+ *
+ * There is deliberately no third value. This route used to infer liveness by
+ * grepping the local process table for prompt text, which could only ever see
+ * agents on this one host and answered "not running" for everything else — a
+ * guess wearing the same UI as a fact.
+ */
+type LivenessSource = 'heartbeat' | 'none'
+
 /** One agent row as the dashboard renders it. */
 type AgentDto = {
   id: string
@@ -40,6 +54,12 @@ type AgentDto = {
   active: boolean
   status: 'active' | 'scheduled' | 'idle'
   isRunning: boolean
+  /** Epoch ms of this agent's last heartbeat, or null if it never sent one. */
+  lastSeenAt: number | null
+  /** live / stale / idle / never — see lib/agent-heartbeats.ts. */
+  liveness: Liveness
+  /** How that was determined. 'none' means the claim could not be made. */
+  livenessSource: LivenessSource
   nextRunTs: number | null
   modelShort: string
   queue_filter: string[]
@@ -58,11 +78,14 @@ type AgentDto = {
   rosterPath: string | null
 }
 
-/** Live run state: from Supabase (issues/runs) plus the local process table. */
+/** Live run state: issue/run history from the database, plus recorded heartbeats. */
 type RunState = {
   agentIssue: Record<string, { key: string; title: string; status: string; startedAt: number | null }>
   agentLastActive: Record<string, number>
-  runningAgents: Set<string>
+  /** Latest check-in per agent id. Absent id = that agent never checked in. */
+  heartbeats: Map<string, Heartbeat>
+  /** 'none' when the heartbeat store could not be read at all. */
+  livenessSource: LivenessSource
 }
 
 /**
@@ -78,99 +101,16 @@ type AgentsResponse = {
   rosterPath: string | null
   configured: boolean
   error: string | null
+  /** How liveness was determined for every row. See `LivenessSource`. */
+  livenessSource: LivenessSource
+  /** Which table served the heartbeats, or null when none could be read. */
+  heartbeatStore: HeartbeatStore | null
+  /** Why liveness is degraded or unavailable, when it is. */
+  heartbeatWarning: string | null
 }
 
 function emptyRunState(): RunState {
-  return { agentIssue: {}, agentLastActive: {}, runningAgents: new Set() }
-}
-
-/**
- * Every running process's command line. `ps aux | grep ...` is a POSIX-only
- * pipeline, so the command comes from lib/paths; a host where the lookup fails
- * simply reports no running agents rather than breaking the endpoint.
- */
-async function listProcessCommandLines(): Promise<string[]> {
-  const { command, args } = processListCommand()
-  try {
-    const { stdout } = await execFileAsync(command, args, {
-      timeout: 5000,
-      maxBuffer: 8 * 1024 * 1024,
-      windowsHide: true,
-    })
-    return stdout.split(/\r?\n/).filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
-/**
- * The process table is the slow part of this endpoint: on Windows the listing
- * shells out to PowerShell, which costs ~0.75s of interpreter startup on its
- * own and dominated the response time. The scan is cached for PROC_SCAN_TTL_MS
- * and refreshed in the background, so a poll inside the window answers from
- * memory instead of paying for a fresh interpreter. One in-flight scan is
- * shared by every concurrent request rather than spawning a shell per caller.
- *
- * The TTL is well under the UI's 30s refresh, so what is served is at worst a
- * few seconds stale — never the previous poll's state.
- */
-const PROC_SCAN_TTL_MS = 5000
-let procScanAt = 0
-let procScanValue: Set<string> | null = null
-let procScanInFlight: Promise<Set<string>> | null = null
-
-function scanRunningAgents(): Promise<Set<string>> {
-  if (procScanInFlight) return procScanInFlight
-  procScanInFlight = detectRunningAgents()
-    .then(result => {
-      procScanValue = result
-      procScanAt = Date.now()
-      return result
-    })
-    .finally(() => { procScanInFlight = null })
-  return procScanInFlight
-}
-
-/**
- * Cached view of which agents have a live CLI session. Returns the cached set
- * immediately when it is fresh; kicks off a refresh and returns the stale set
- * when it is not; only blocks on the very first call of a process's life.
- */
-async function runningAgentsCached(): Promise<Set<string>> {
-  const fresh = procScanValue !== null && Date.now() - procScanAt < PROC_SCAN_TTL_MS
-  if (fresh) return procScanValue as Set<string>
-  if (procScanValue !== null) {
-    // Stale-while-revalidate: never make an operator wait on a shell spawn for
-    // a signal that only changes when an agent starts or stops.
-    void scanRunningAgents()
-    return procScanValue
-  }
-  return scanRunningAgents()
-}
-
-/**
- * Which agents have a spawned CLI session right now. Purely local — needs no
- * database — so it stays truthful even on a host with no Supabase key.
- */
-async function detectRunningAgents(): Promise<Set<string>> {
-  const runningAgents = new Set<string>()
-  const processLines = await listProcessCommandLines()
-  for (const line of processLines) {
-    const lower = line.toLowerCase()
-    // Skip everything that is not a spawned CLI agent — the desktop app and
-    // its installer helpers used to be filtered out by chained greps.
-    if (!lower.includes('claude')) continue
-    if (lower.includes('claude.app') || lower.includes('disclaimer') || lower.includes('shipit')) continue
-    // Only match lines that contain explicit agent identifiers (from spawn commands)
-    if (lower.includes('you are builder') || lower.includes('agent builder')) runningAgents.add('builder')
-    else if (lower.includes('you are tester') || lower.includes('agent tester')) runningAgents.add('tester')
-    else if (lower.includes('you are ops') || lower.includes('agent ops')) runningAgents.add('ops')
-    else if (lower.includes('you are scout') || lower.includes('agent scout')) runningAgents.add('scout')
-    else if (lower.includes('you are deployer') || lower.includes('agent deployer')) runningAgents.add('deployer')
-    else if (lower.includes('you are designer') || lower.includes('agent designer')) runningAgents.add('designer')
-    else if (lower.includes('you are po') || lower.includes('agent po')) runningAgents.add('po')
-  }
-  return runningAgents
+  return { agentIssue: {}, agentLastActive: {}, heartbeats: new Map(), livenessSource: 'none' }
 }
 
 /**
@@ -182,6 +122,56 @@ async function detectRunningAgents(): Promise<Set<string>> {
  * A badge that contradicts the roster it was derived from is worse than no
  * badge, so an unrecognised model now shortens its own name instead.
  */
+/**
+ * `status: 'scheduled'` and `nextRunTs` used to be computed by assuming
+ * `ops` fires at :00/:30 of every hour — a rule invented in this file, never
+ * read from anything a scheduler on the host actually promised. On a host
+ * where `ops` was idle it rendered a live ticking countdown on the Overview
+ * to a run nothing had scheduled, in the same class as the ALL_AGENTS
+ * fallback this route was already rewritten to stop doing.
+ *
+ * /api/automations is the one place this codebase has already earned the
+ * right to say "a job is really scheduled": it only sets `scheduled: true`
+ * when it proved a scheduler is live on this host (Vercel's own cron runner
+ * when `process.env.VERCEL` is set, or `launchctl list` reporting a
+ * LaunchAgent label loaded) and only sets `nextRunAtMs` when it parsed a
+ * real cron/schedule expression. This calls that route in-process — with the
+ * same internal-call secret every other server-to-server call in this
+ * codebase presents (lib/internal-auth.ts) — and keeps only the jobs whose
+ * `name` equals an agent id, which is the only association between an
+ * automation entry and an agent id this route can trust; nothing here is
+ * pattern-matched or guessed. Any failure to reach /api/automations (secret
+ * unconfigured, network error, bad JSON) leaves the map empty rather than
+ * inventing a fallback schedule — every agent then reports `idle` with
+ * `nextRunTs: null`, which is the truthful answer when nothing could be
+ * verified.
+ */
+async function fetchVerifiedAgentSchedule(): Promise<Map<string, number>> {
+  const schedule = new Map<string, number>()
+  try {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const res = await fetch(`${appUrl}/api/automations`, {
+      headers: internalHeaders(),
+      cache: 'no-store',
+    })
+    if (!res.ok) return schedule
+    const body = await res.json()
+    const items: unknown[] = Array.isArray(body?.automations) ? body.automations : []
+    for (const item of items) {
+      if (typeof item !== 'object' || item === null) continue
+      const row = item as { name?: unknown; scheduled?: unknown; nextRunAtMs?: unknown }
+      if (row.scheduled !== true) continue
+      if (typeof row.nextRunAtMs !== 'number') continue
+      if (typeof row.name !== 'string' || !row.name) continue
+      schedule.set(row.name, row.nextRunAtMs)
+    }
+  } catch {
+    // /api/automations unreachable or unparseable: no schedule is knowable
+    // this cycle, which is exactly what an empty map already expresses.
+  }
+  return schedule
+}
+
 function shortModelLabel(model: string): string {
   const m = model.trim()
   if (!m) return ''
@@ -209,6 +199,7 @@ function buildAgents(
   rosterWarning: string | null,
   rosterPath: string | null,
   state: RunState,
+  schedule: Map<string, number>,
 ): AgentDto[] {
   const now = Date.now()
 
@@ -220,21 +211,27 @@ function buildAgents(
     const lastTs = state.agentLastActive[id] ?? 0
     const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
 
-    const isRunning = state.runningAgents.has(id)
-    const hasInProgressIssue = !!issue && issue.status === 'in_progress'
-    const isActive = isRunning || hasInProgressIssue
-    const isScheduled = id === 'ops' && !isActive
+    // Liveness comes from the heartbeat this agent sent, and from nothing else.
+    // An assigned in_progress issue used to be enough to render an agent as
+    // "active", which is a claim about a process — a ticket sitting in a column
+    // is not evidence that anything is running. `currentTask` below still
+    // reports the issue; it just no longer masquerades as liveness.
+    const beat = state.heartbeats.get(id) ?? null
+    const lastSeenAt = beat?.lastSeen ?? null
+    const liveness: Liveness =
+      state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
+    const isRunning = liveness === 'live'
+    const isActive = isRunning
 
-    // Compute next scheduled run based on fixed 30-min intervals anchored to the hour
-    // Ops heartbeat fires at :00 and :30 of every hour (fixed schedule, not relative)
-    let nextRunTs: number | null = null
-    if (isScheduled) {
-      const d = new Date(now)
-      const min = d.getMinutes()
-      const nextMin = min < 30 ? 30 : 60
-      const msUntilNext = (nextMin - min) * 60 * 1000 - d.getSeconds() * 1000 - d.getMilliseconds()
-      nextRunTs = now + msUntilNext
-    }
+    // Real only: a value here means /api/automations proved a scheduler on
+    // this host is live for a job named exactly this agent's id AND parsed a
+    // real nextRunAtMs from that job's schedule expression. No host on this
+    // team currently runs a scheduler by that convention, so this is `null`
+    // on every machine that hasn't wired one up — which is the truth, not a
+    // gap to paper over with a guessed cadence.
+    const verifiedNextRunTs = schedule.get(id) ?? null
+    const isScheduled = !isActive && verifiedNextRunTs !== null
+    const nextRunTs = isScheduled ? verifiedNextRunTs : null
 
     const model = parsed.model || meta?.model || ''
     const role = parsed.role || meta?.role || ''
@@ -248,6 +245,9 @@ function buildAgents(
       active: isActive,
       status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
       isRunning,
+      lastSeenAt,
+      liveness,
+      livenessSource: state.livenessSource,
       nextRunTs,
       modelShort: shortModelLabel(model),
       queue_filter: meta?.queue_filter ?? [],
@@ -283,34 +283,47 @@ export async function GET() {
   const rosterWarning = roster.warning
   const rosterPath = roster.path
 
-  const respond = (state: RunState, configured: boolean, error: string | null, status = 200) => {
+  // Independent of the roster and of Supabase — fetched once and reused by
+  // every response branch below, success or failure alike.
+  const schedule = await fetchVerifiedAgentSchedule()
+
+  const respond = (
+    state: RunState,
+    configured: boolean,
+    error: string | null,
+    status = 200,
+    heartbeatStore: HeartbeatStore | null = null,
+    heartbeatWarning: string | null = null,
+  ) => {
     const body: AgentsResponse = {
-      agents: buildAgents(parsedAgents, rosterSource, rosterWarning, rosterPath, state),
+      agents: buildAgents(parsedAgents, rosterSource, rosterWarning, rosterPath, state, schedule),
       rosterSource,
       rosterWarning,
       rosterPath,
       configured,
       error,
+      livenessSource: state.livenessSource,
+      heartbeatStore,
+      heartbeatWarning,
     }
     return NextResponse.json(body, { status, headers: NO_STORE })
   }
 
-  // Unconfigured host: the roster is still real and process detection is still
-  // local, so return both — with 503 and the reason, never a bare empty 200.
+  // Unconfigured host: the roster is still real, so return it — with 503 and
+  // the reason, never a bare empty 200. Liveness lives in the database, so
+  // without one there is no liveness to report and `livenessSource` stays
+  // 'none': every agent reads "never checked in", not "Idle".
   if (!isDbConfigured()) {
-    const state = emptyRunState()
-    state.runningAgents = await runningAgentsCached()
-    return respond(state, false, NO_KEY_ERROR(), 503)
+    return respond(emptyRunState(), false, NO_KEY_ERROR(), 503)
   }
 
   try {
     const supabase = db()
     const state = emptyRunState()
 
-    // The process scan and the two queries are independent, so they run
-    // together. Awaiting them in sequence added the shell-spawn cost on top of
-    // the round trips instead of hiding it behind them.
-    const [{ data: activeIssues }, { data: recentRuns }, runningAgents] = await Promise.all([
+    // The heartbeat read and the two queries are independent, so they run
+    // together rather than stacking their round trips.
+    const [{ data: activeIssues }, { data: recentRuns }, beats] = await Promise.all([
       // 1. Issues that are actively being worked on (in_progress, code_review)
       supabase
         .from('issues')
@@ -324,11 +337,12 @@ export async function GET() {
         .select('agent_id, started_at, completed_at, status')
         .order('started_at', { ascending: false })
         .limit(50),
-      // 3. Running claude CLI agent processes (real-time, local, cached).
-      //    Only spawned agent sessions match, NOT the main Claude Desktop session.
-      runningAgentsCached(),
+      // 3. Recorded heartbeats — the only source of "is this agent running?".
+      //    Works for agents on any host, not just this one.
+      readHeartbeats(),
     ])
-    state.runningAgents = runningAgents
+    state.heartbeats = beats.data
+    state.livenessSource = beats.store === null ? 'none' : 'heartbeat'
 
     // Build lookup: agent → most recent activity timestamp
     for (const run of recentRuns ?? []) {
@@ -366,7 +380,7 @@ export async function GET() {
       }
     }
 
-    return respond(state, true, null)
+    return respond(state, true, null, 200, beats.store, beats.warning)
   } catch (e) {
     // Never swallow. A host that cannot reach its database answers 503 with the
     // reason, and still shows the roster it does know about.

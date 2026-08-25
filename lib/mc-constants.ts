@@ -20,14 +20,12 @@ export const AGENT_DISPLAY: Record<string,{name:string;emoji:string;role:string;
   tester:        {name:'Tester',      emoji:'🧪', role:'QA Agent',          color:'#ef4444', desc:'Automated testing, bug detection, regression checks.', capabilities:['Testing','QA','Bug Detection']},
 }
 
-export const LIVE_FEED = [
-  { agentId:'main',    action:'memory',   desc:'Distilled session into MEMORY.md',      ago:2  },
-  { agentId:'builder', action:'code',     desc:'Scaffolded Mission Control sidebar',    ago:5  },
-  { agentId:'main',    action:'cron',     desc:'Morning brief sent to Telegram',        ago:60 },
-  { agentId:'scout',   action:'research', desc:'Queued: goth scene scan for 8am',       ago:15 },
-  { agentId:'main',    action:'delegate', desc:'Assigned Vespera auth to Builder',      ago:45 },
-  { agentId:'builder', action:'code',     desc:'Vespera: Next.js layout scaffolded',    ago:120},
-]
+// TOD (agent-roster-truth, round 2): LIVE_FEED — a hardcoded scripted feed
+// ("Distilled session into MEMORY.md", ago:2) that rotated on a 4s interval
+// forever, regardless of whether anything real had happened — was deleted
+// along with the `feedIdx` interval in app/page.tsx that drove it. Real
+// activity comes from /api/activity-feed and /api/agents; nothing here
+// stands in for it.
 
 export const ACTION_COLORS: Record<string,string> = {
   memory:'#6b7280', code:'#3b82f6', cron:'#10b981',
@@ -61,11 +59,14 @@ export const DEFAULT_SPRINT_PROJECTS = [
   {id:'vespera',name:'Vespera',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-31',totalDays:9,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
 ]
 
-export const ACTIVITIES: Record<string,string[]> = {
-  main:    ['Reviewing sprint goals...','Planning delegations...','Updating MEMORY.md...','Checking crons...'],
-  builder: ['Idle — awaiting task','Ready to build...','Standing by...'],
-  scout:   ['Scheduled for 8:00 AM','Queued research tasks...','Idle'],
-}
+// TOD (agent-roster-truth, round 2): ACTIVITIES — a hardcoded per-agent list
+// of scripted status lines ("Reviewing sprint goals...", "Standing by...")
+// that page.tsx's `act()` helper cycled through on a 3s tick as if it were
+// live activity, whether or not the agent existed or had ever run. Deleted
+// along with `act()` and the `tick` interval that drove it, and the `act`
+// prop threaded through CrewTab -> AgentsTab (never actually called there).
+// `agentCurrentTask` (from /api/status, itself sourced from real issue rows)
+// is the only "what is this agent doing" signal this app shows now.
 
 // Toast color tokens
 export const TOAST_COLORS = { started: '#60a5fa', done: '#34d399', error: '#f87171', default: '#00ff88' }

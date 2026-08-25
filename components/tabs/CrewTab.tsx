@@ -212,7 +212,6 @@ export default function CrewTab({
   agentRunsData,
   liveAgents,
   rosterMeta,
-  act,
   agentModal,
   setAgentModal,
   projectFilter,
@@ -227,7 +226,6 @@ export default function CrewTab({
   liveAgents: any[] | null
   /** Roster provenance from the /api/agents envelope — survives an empty roster. */
   rosterMeta?: RosterMeta | null
-  act: (id: string) => string
   agentModal: any
   setAgentModal: (a: any) => void
   projectFilter?: string | null
@@ -387,7 +385,7 @@ export default function CrewTab({
           agentRunsData={agentRunsData}
           liveAgents={liveAgents}
           rosterMeta={rosterMeta}
-          act={act}
+          agentsError={agentsError}
           agentModal={agentModal}
           setAgentModal={setAgentModal}
           projectFilter={projectFilter}

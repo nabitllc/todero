@@ -4,8 +4,9 @@ import { listQuickActions, upsertQuickAction } from '@/lib/quick-actions'
 import { dbQueryErrorResponse } from '@/lib/db-http'
 
 export async function GET() {
-  const actions = await listQuickActions()
-  return NextResponse.json(actions)
+  const { data, error } = await listQuickActions()
+  if (error) return dbQueryErrorResponse(error, 'quick_actions')
+  return NextResponse.json(data)
 }
 
 export async function POST(req: NextRequest) {

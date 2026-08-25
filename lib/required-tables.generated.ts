@@ -12,6 +12,7 @@ export const GENERATED_REQUIRED_TABLES = [
   'agent_cost_log',
   'agent_document_history',
   'agent_documents',
+  'agent_heartbeats',
   'agent_memory',
   'agent_memory_files',
   'agent_runs',

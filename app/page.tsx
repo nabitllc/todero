@@ -8,7 +8,7 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
 import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings } from 'lucide-react'
-import { AGENT_DISPLAY, LIVE_FEED, PROJECT_COLORS, TYPE_COLORS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
+import { AGENT_DISPLAY, PROJECT_COLORS, TYPE_COLORS, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
 import { Dot } from '@/lib/mc-atoms'
 import BusinessRail from '@/components/BusinessRail'
 import OnboardingWizard from '@/components/OnboardingWizard'
@@ -130,8 +130,6 @@ export default function Home() {
   const [currentIdentity, setCurrentIdentity] = useState<string | null>(null)
   const [clock, setClock] = useState('')
   const [openMem, setOpenMem] = useState<string | null>(null)
-  const [feedIdx, setFeedIdx] = useState(0)
-  const [tick, setTick] = useState(0)
   const [showMobileMore, setShowMobileMore] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
@@ -179,23 +177,47 @@ export default function Home() {
   }, [])
 
   const loadAgents = useCallback(async () => {
-    // /api/agents answers 503 with the rows it does know about when the host is
-    // not configured, so read the body on 503 but surface the reason too.
+    // /api/agents answers 503 with the roster rows it does know about when
+    // the host is not configured — the roster is real even when Supabase run
+    // state isn't. `fetchJson` deliberately discards the body on any non-2xx
+    // status (see lib/fetch-json.ts), which is right for callers that only
+    // want a clean payload, but wrong here: it turned an honest 503-with-rows
+    // into an infinite "Loading agent roster…" because `rows` stayed null
+    // forever. Read the body ourselves, independent of the status, so a
+    // failed roster fetch still shows the 16 real rows under the error
+    // banner instead of hiding them behind a spinner that never resolves.
+    let res: Response
+    try {
+      res = await fetch('/api/agents')
+    } catch (e) {
+      setAgentsError({
+        status: 0,
+        endpoint: '/api/agents',
+        message: e instanceof Error ? e.message : 'could not reach the server',
+      })
+      return
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- envelope or bare array
-    const r = await fetchJson<any>('/api/agents')
-    const rows = rowsFrom(r.ok ? r.data : null, 'agents')
+    let body: any = null
+    try { body = await res.json() } catch { /* non-JSON body: rows/env stay null below */ }
+    const rows = rowsFrom(body, 'agents')
     if (rows) setLiveAgents(rows)
     // The roster warning lives on the ENVELOPE, not the rows. Reading it off
     // row[0] — which the tabs used to do — lost it in the one case it matters:
     // an empty roster has no row 0, so "no AGENTS.md at <path>" silently became
     // a generic "no agents configured" with nothing to act on.
-    const env = r.ok && r.data && typeof r.data === 'object' && !Array.isArray(r.data) ? r.data : null
+    const env = body && typeof body === 'object' && !Array.isArray(body) ? body : null
     setRosterMeta(env ? {
       source: typeof env.rosterSource === 'string' ? env.rosterSource : 'none',
       warning: typeof env.rosterWarning === 'string' ? env.rosterWarning : null,
       path: typeof env.rosterPath === 'string' ? env.rosterPath : null,
     } : null)
-    setAgentsError(r.ok ? null : r.error)
+    if (res.ok) {
+      setAgentsError(null)
+    } else {
+      const message = typeof env?.error === 'string' ? env.error : (res.statusText || 'request failed')
+      setAgentsError({ status: res.status, endpoint: '/api/agents', message })
+    }
   }, [])
 
   const loadCrons = useCallback(async () => {
@@ -425,8 +447,6 @@ export default function Home() {
   useEffect(() => { if (!statusAt) return; const t = setInterval(() => setAgoSec(Math.floor((Date.now() - statusAt) / 1000)), 1000); return () => clearInterval(t) }, [statusAt])
   useEffect(() => { const t = setInterval(() => setClock(new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'America/New_York'}) + ' ET'), 1000); return () => clearInterval(t) }, [])
   useEffect(() => { loadProjects() }, [loadProjects])
-  useEffect(() => { const t = setInterval(() => setFeedIdx(i => (i + 1) % LIVE_FEED.length), 4000); return () => clearInterval(t) }, [])
-  useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 3000); return () => clearInterval(t) }, [])
 
   // null means "/api/projects has not answered yet, or refused" — it is never
   // stood in for. The bundled DEFAULT_SPRINT_PROJECTS carry no taskCounts, so
@@ -437,12 +457,24 @@ export default function Home() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
   const sprintProjects: any[] | null = projectsError ? null : projects
   const agentCurrentTask: Record<string,string> = liveStatus?.agentCurrentTask ?? {}
-  const act = (id: string) => { if (agentCurrentTask[id]) return agentCurrentTask[id]; const a = ACTIVITIES[id] || ['Idle']; return a[tick % a.length] }
   const agentLiveStatus = (agentId: string): {dot:'green'|'amber'|'grey'; label:string} => {
-    const ar = agentRunsData[agentId]
-    if (ar?.startedAt) { const mins = Math.round((Date.now() - new Date(ar.startedAt).getTime()) / 60000); if (ar.status === 'running' || mins < 5) return { dot: 'green', label: ar.taskTitle || 'Working...' } }
-    if ((agentIssueCounts[agentId] ?? 0) > 0) return { dot: 'amber', label: `${agentIssueCounts[agentId]} open issue${agentIssueCounts[agentId] > 1 ? 's' : ''}` }
-    return { dot: 'grey', label: 'Idle' }
+    // Liveness is the heartbeat the server actually received (/api/agents ->
+    // lib/agent-heartbeats.ts), never an inference from a run row or a ticket.
+    // The grey state used to read "Idle" for every agent, which is a claim
+    // about a running agent that went quiet — an agent that has NEVER reported
+    // anything now says exactly that instead.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent DTO row
+    const row = (liveAgents ?? []).find((a: any) => a.id === agentId)
+    const seen: number | null = typeof row?.lastSeenAt === 'number' ? row.lastSeenAt : null
+    const seenAgo = seen ? `${Math.max(0, Math.round((Date.now() - seen) / 60000))}m ago` : 'never'
+    const open = agentIssueCounts[agentId] ?? 0
+    const openSuffix = open > 0 ? ` · ${open} open issue${open > 1 ? 's' : ''}` : ''
+    if (row?.liveness === 'live') {
+      return { dot: 'green', label: row.currentTask || agentRunsData[agentId]?.taskTitle || 'Heartbeat just now' }
+    }
+    if (row?.liveness === 'stale') return { dot: 'amber', label: `Stale — last heartbeat ${seenAgo}${openSuffix}` }
+    if (row?.liveness === 'idle')  return { dot: 'grey',  label: `Idle — last heartbeat ${seenAgo}${openSuffix}` }
+    return { dot: 'grey', label: `Never checked in${openSuffix}` }
   }
   // TOD (agent-roster-truth): never fall back to a hardcoded agent list — a
   // roster fetch that failed or hasn't loaded yet must render its own error
@@ -574,7 +606,7 @@ export default function Home() {
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} projectsError={projectsError} onRetryProjects={loadProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} activityError={activityError} onRetryActivity={() => setActivityReload(n => n + 1)} statusError={statusError} onRetryStatus={loadStatus} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
-          {tab === 'team' && <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} rosterMeta={rosterMeta} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
+          {tab === 'team' && <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} rosterMeta={rosterMeta} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
           {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} cronsMeta={cronsMeta} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} error={memError} onRetry={refetchMem} openMem={openMem} setOpenMem={setOpenMem} />}

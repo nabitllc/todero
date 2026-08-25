@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
+import { recordHeartbeat } from '@/lib/agent-heartbeats'
 
 export async function PATCH(req: NextRequest) {
   // The database is either configured or it is not — say which, in the body.
@@ -33,6 +34,18 @@ export async function PATCH(req: NextRequest) {
 
   const db = createAdminClient()
   const now = new Date().toISOString()
+
+  // Who owns this issue — so the same beat that keeps the watchdog quiet also
+  // counts as this AGENT's liveness. Agents already call this endpoint every
+  // ~5 min while working; before this, none of that traffic reached the agent
+  // roster, which is why /api/agents could only ever guess who was running.
+  const ownerLookup = db.from('issues').select('task_key, assignee, worked_by')
+  const { data: ownerRows } = await (issue_id
+    ? ownerLookup.eq('id', issue_id)
+    : ownerLookup.eq('task_key', task_key as string)
+  ).limit(1)
+  const ownerRow = Array.isArray(ownerRows) ? ownerRows[0] : null
+  const owner: string | null = ownerRow?.worked_by || ownerRow?.assignee || null
 
   let query = db.from('issues').update({ heartbeat_at: now })
 
@@ -54,5 +67,17 @@ export async function PATCH(req: NextRequest) {
     return dbQueryErrorResponse(error, 'issues')
   }
 
-  return NextResponse.json({ ok: true, heartbeat_at: now })
+  // Same beat, second reader: the agent roster. A failure here does not fail
+  // the request — the issue heartbeat, which the watchdog depends on, is
+  // already written — but it is reported so a degraded store is never silent.
+  let agentBeat: { agent_id: string; store: string | null; warning: string | null } | null = null
+  if (owner) {
+    const recorded = await recordHeartbeat({
+      agentId: owner,
+      task: ownerRow?.task_key ?? task_key ?? null,
+    })
+    agentBeat = { agent_id: owner, store: recorded.store, warning: recorded.warning }
+  }
+
+  return NextResponse.json({ ok: true, heartbeat_at: now, agent: agentBeat })
 }

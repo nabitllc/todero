@@ -240,10 +240,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS workflow_transitions_type_from_to
 
 -- ── role_permissions ─────────────────────────────────────────────────────────
 -- Join-table shape from lib/rbac-types.ts RolePermission: { role, permission }.
+-- Carries a surrogate `id` (never read by app code) so lib/required-tables.ts's
+-- generic health probe — `SELECT id FROM <table> LIMIT 1`, run identically
+-- against every required table — has a column to select on this one too,
+-- instead of needing a special case for the one join table without one.
 CREATE TABLE IF NOT EXISTS role_permissions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role        TEXT NOT NULL,
   permission  TEXT NOT NULL,
-  PRIMARY KEY (role, permission)
+  UNIQUE (role, permission)
 );
 
 -- ── quick_actions ────────────────────────────────────────────────────────────

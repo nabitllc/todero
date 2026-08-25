@@ -31,7 +31,15 @@
 import { db, isDbConfigured, type DbError } from '@/lib/db'
 import { isMissingTableError } from '@/lib/db-http'
 
-/** Dedicated heartbeat table. Created by migrations/037_agent_heartbeats.sql. */
+/**
+ * Dedicated heartbeat table. Created by migrations/037_agent_heartbeats.sql.
+ *
+ * The `.from()` calls below spell the name out as a literal rather than using
+ * this constant on purpose: scripts/generate-required-tables.mjs derives
+ * `lib/required-tables.generated.ts` by scanning for `.from('<table>')`, so a
+ * table referenced only through a constant would silently drop out of
+ * /api/health's schema check. This constant is for the messages.
+ */
 export const HEARTBEAT_TABLE = 'agent_heartbeats'
 
 /** Pre-migration home for the same data. See STORAGE above. */
@@ -172,7 +180,7 @@ export async function recordHeartbeat(input: HeartbeatInput): Promise<HeartbeatR
     task: input.task ?? null,
   }
 
-  const primary = await db().from(HEARTBEAT_TABLE).upsert(heartbeatToRow(beat), { onConflict: 'agent_id' })
+  const primary = await db().from('agent_heartbeats').upsert(heartbeatToRow(beat), { onConflict: 'agent_id' })
   if (!primary.error) return { data: beat, store: HEARTBEAT_TABLE, warning: null, error: null }
   if (!isMissingTableError(primary.error)) {
     return { data: null, store: null, warning: primary.error.message, error: primary.error }
@@ -182,7 +190,7 @@ export async function recordHeartbeat(input: HeartbeatInput): Promise<HeartbeatR
   // inside the JSON payload.
   const { agent_id: _agentId, ...payload } = heartbeatToRow(beat)
   const fallback = await db()
-    .from(HEARTBEAT_FALLBACK_TABLE)
+    .from('agent_memory')
     .upsert(
       { agent_id: beat.agentId, key: HEARTBEAT_FALLBACK_KEY, value: JSON.stringify(payload) },
       { onConflict: 'agent_id,key' },
@@ -221,7 +229,7 @@ export async function readHeartbeats(): Promise<HeartbeatResult<Map<string, Hear
   }
 
   try {
-    const primary = await db().from(HEARTBEAT_TABLE).select('agent_id,last_seen,pid,host,task')
+    const primary = await db().from('agent_heartbeats').select('agent_id,last_seen,pid,host,task')
     if (!primary.error) {
       return { data: indexBeats(primary.data, rowToHeartbeat), store: HEARTBEAT_TABLE, warning: null, error: null }
     }
@@ -230,7 +238,7 @@ export async function readHeartbeats(): Promise<HeartbeatResult<Map<string, Hear
     }
 
     const fallback = await db()
-      .from(HEARTBEAT_FALLBACK_TABLE)
+      .from('agent_memory')
       .select('agent_id,value')
       .eq('key', HEARTBEAT_FALLBACK_KEY)
     if (fallback.error) {

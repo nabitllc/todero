@@ -9,7 +9,6 @@ import { createAdminClient } from '@/lib/hub-client'
 import { dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { firstExistingPath, isDarwin, isWindows } from '@/lib/paths'
 
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || ''
 const N8N_KEY = process.env.N8N_API_KEY || ''
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
 const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || ''
@@ -117,16 +116,7 @@ function getVercelToken(): string | null {
 
 export async function GET() {
   const vercelToken = getVercelToken()
-  const [openrouter, ollama, n8n, vercel, telegramReading, discordReading, githubReading, supabaseReading] = await Promise.allSettled([
-    // OpenRouter
-    // TOD-654: fetchJsonOrThrow rejects on a non-ok upstream, so the
-    // `status === 'fulfilled'` checks below cannot mistake a 401 error body
-    // for a real reading.
-    fetchJsonOrThrow<any>('https://openrouter.ai/api/v1/auth/key', {
-      headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-      cache: 'no-store',
-    }),
-
+  const [ollama, n8n, vercel, telegramReading, discordReading, githubReading, supabaseReading] = await Promise.allSettled([
     // Ollama
     fetchJsonOrThrow<any>('http://localhost:11434/api/tags', { cache: 'no-store' }),
 
@@ -158,25 +148,6 @@ export async function GET() {
   // "gateway", so there is no reading to report; the key is gone rather
   // than asserting a state nobody measured.
   const result: any = {}
-
-  // ── OpenRouter ──
-  if (openrouter.status === 'fulfilled' && openrouter.value?.data) {
-    const d = openrouter.value.data
-    // TOD: kill-fake-infra-greens — OpenRouter returns limit:null for any
-    // pay-as-you-go key (the common case). `?? 10` invented a fabricated
-    // $10.00 ceiling for exactly that key, which is how this route used to
-    // manufacture "$9.57 / $10.00" out of thin air. A missing limit means
-    // no limit is set, not "$10", so it stays null all the way to the UI.
-    const limit: number | null = typeof d.limit === 'number' ? d.limit : null
-    const used = d.usage ?? 0
-    result.openrouter = {
-      used: +used.toFixed(3),
-      limit,
-      remaining: limit === null ? null : +(limit - used).toFixed(3),
-    }
-  } else {
-    result.openrouter = null
-  }
 
   // ── Ollama ──
   if (ollama.status === 'fulfilled' && ollama.value?.models) {
@@ -226,17 +197,6 @@ export async function GET() {
     // never in an env var this server process can read — so this tile is
     // always 'unknown' here, honestly, not a guess dressed as 'ok'.
     claude: reading('unknown', 'Claude session state is local to the CLI and not exposed to this server'),
-
-    openrouter: !OPENROUTER_KEY
-      ? reading('unknown', 'no OPENROUTER_API_KEY configured on this host')
-      : result.openrouter
-        ? reading(
-            'ok',
-            result.openrouter.limit === null
-              ? `$${result.openrouter.used.toFixed(2)} used · no credit limit set on this key`
-              : `$${result.openrouter.remaining.toFixed(2)} of $${result.openrouter.limit.toFixed(2)} remaining`
-          )
-        : reading('down', 'key configured but the balance check failed'),
 
     telegram: telegramReading.status === 'fulfilled' ? telegramReading.value : reading('unknown', 'probe did not run'),
     discord: discordReading.status === 'fulfilled' ? discordReading.value : reading('unknown', 'probe did not run'),

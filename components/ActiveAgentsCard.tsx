@@ -17,7 +17,7 @@ interface AgentRow {
   name: string
   emoji: string
   status: 'active' | 'idle' | 'scheduled' | string
-  isRunning: boolean       // true if agent process detected via ps
+  isRunning: boolean       // true when a heartbeat arrived in the last 60s (see lib/agent-heartbeats.ts)
   ago: number | null      // minutes since last activity
   nextRunTs: number | null  // epoch ms for next scheduled run
   workStartedAt: number | null  // epoch ms when agent started on current issue
@@ -171,12 +171,22 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
           return a.status === 'active' || a.status === 'scheduled'
         })
         .map((a: any) => {
-          const display = AGENT_DISPLAY[a.id] ?? { name: a.name ?? a.id, emoji: '🤖' }
+          // TOD (agent-roster-truth): /api/agents derives name/emoji from the
+          // AGENTS.md roster it actually read (falling back to AGENT_META only
+          // for agents that roster names but doesn't style). AGENT_DISPLAY is
+          // a separate, older 7-agent map that used to be checked FIRST, so an
+          // operator's roster override — a renamed agent, a different emoji —
+          // was silently discarded for any id AGENT_DISPLAY happened to also
+          // know about. The live row now wins; AGENT_DISPLAY is only a last
+          // resort for a caller that never threaded name/emoji through, same
+          // as ActivityTab.tsx already does.
+          const name = a.name || AGENT_DISPLAY[a.id]?.name || a.id
+          const emoji = a.emoji || AGENT_DISPLAY[a.id]?.emoji || '🤖'
           const issue = issueByAssignee[a.id] ?? null
           return {
             id: a.id,
-            name: display.name ?? a.id,
-            emoji: display.emoji ?? '🤖',
+            name,
+            emoji,
             status: a.status,
             isRunning: !!a.isRunning,
             ago: a.ago,
@@ -251,7 +261,7 @@ export default function ActiveAgentsCard({ agentCurrentTask }: { agentCurrentTas
             return (
               <div key={agent.id}
                 className="flex items-center gap-2 rounded-md px-2.5 py-1.5 bg-white/[0.03] border border-white/[0.06]">
-                {/* Status dot — pulses when agent process is actually running */}
+                {/* Status dot — pulses while the agent is heartbeating */}
                 <span
                   className={`block w-2 h-2 rounded-full shrink-0${agent.isRunning ? ' animate-pulse' : ''}`}
                   style={{ background: dot.color, boxShadow: agent.status === 'active' ? `0 0 6px ${dot.color}66` : undefined }}
