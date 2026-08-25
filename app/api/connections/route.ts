@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { encrypt } from '@/lib/encryption'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, isMissingTableError, missingTableResponse } from '@/lib/db-http'
+
+const TABLE = 'connections'
 
 const VALID_TYPES = ['github', 'openai', 'anthropic', 'openrouter', 'webhook'] as const
 type ConnectionType = typeof VALID_TYPES[number]
@@ -30,6 +32,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query.order('created_at', { ascending: false })
   if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
@@ -83,6 +86,7 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
@@ -106,6 +110,7 @@ export async function DELETE(req: NextRequest) {
   const { error } = await sb.from('connections').delete().eq('id', id)
 
   if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 

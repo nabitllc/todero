@@ -50,6 +50,23 @@ export async function GET() {
     result.db = { reachable: false, error: e instanceof Error ? e.message : String(e) }
   }
 
+  // Schema preflight: a reachable database that is missing a table the app
+  // queries is still a broken deploy. Report it the same way a bad connection
+  // string is reported — 503, with the exact fix — rather than staying green
+  // because the connection itself succeeded.
+  try {
+    const { missing } = await checkRequiredTables()
+    result.schema = { missingTables: missing }
+    if (missing.length > 0) {
+      result.ok = false
+      result.missing = missing
+      result.fix = 'npm run db:migrate'
+    }
+  } catch (e) {
+    result.ok = false
+    result.schema = { error: e instanceof Error ? e.message : String(e) }
+  }
+
   try { result.runtimes = await listRuntimes() } catch { result.runtimes = [] }
 
   // Phase 2.4: Read heartbeat state from agent_memory_files

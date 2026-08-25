@@ -1,7 +1,9 @@
 // INF-210: Deploy history log — API routes
 import { NextRequest, NextResponse } from 'next/server'
 import { listDeploys, insertDeploy, updateDeploy } from '@/lib/deploy-history'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, isMissingTableError, missingTableResponse } from '@/lib/db-http'
+
+const TABLE = 'deploy_history'
 
 export async function GET(req: NextRequest) {
   // Name the missing credential in the body rather than letting a
@@ -12,7 +14,10 @@ export async function GET(req: NextRequest) {
   const project = req.nextUrl.searchParams.get('project') ?? undefined
   const limit = Number(req.nextUrl.searchParams.get('limit')) || 50
   const { data, error } = await listDeploys({ project, limit })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json(data)
 }
 
@@ -40,7 +45,10 @@ export async function POST(req: NextRequest) {
     error_message: error_message ?? null,
     finished_at: finished_at ?? null,
   })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json(data)
 }
 
@@ -54,6 +62,9 @@ export async function PATCH(req: NextRequest) {
   const { id, ...fields } = body
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { data, error } = await updateDeploy(id, fields)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json(data)
 }

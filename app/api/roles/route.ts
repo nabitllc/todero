@@ -8,7 +8,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { hasPermission } from '@/lib/rbac-types'
 import type { Role } from '@/lib/rbac-types'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, isMissingTableError, missingTableResponse } from '@/lib/db-http'
+
+const TABLE = 'workspace_members'
 
 function getSupabase() {
   return createAdminClient()
@@ -44,6 +46,7 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: true })
 
   if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
@@ -89,6 +92,7 @@ export async function POST(req: NextRequest) {
     if (error.code === '23505') {
       return NextResponse.json({ error: `Member '${identity}' already exists. Use PATCH to change their role.` }, { status: 409 })
     }
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
@@ -133,6 +137,7 @@ export async function PATCH(req: NextRequest) {
     .single()
 
   if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
   if (!data) {
@@ -173,6 +178,7 @@ export async function DELETE(req: NextRequest) {
     .single()
 
   if (error) {
+    if (isMissingTableError(error)) return missingTableResponse(TABLE)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
   if (!data) {
