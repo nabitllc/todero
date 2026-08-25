@@ -36,6 +36,35 @@ import { prepareWorktree, teardownWorktree } from '@/lib/runtimes/worktree'
 
 jest.setTimeout(180_000)
 
+/**
+ * This suite needs a real host: a reachable LLM endpoint, a writable log
+ * directory, and a git checkout that can carry a worktree. CI has none of
+ * those — no .env.local, no Ollama, a shallow clone — so both live tests
+ * failed there and reported it as a product defect. They are not: they are a
+ * measurement that could not be taken.
+ *
+ * That distinction is the one this whole rebuild keeps insisting on, and the
+ * acceptance harness already makes it (an unreachable server yields SKIP, not
+ * FAIL). This suite now makes it too, and says WHICH precondition is missing
+ * rather than skipping silently — a suite that quietly skips everywhere is
+ * indistinguishable from one that passes everywhere.
+ */
+function missingPrecondition(): string | null {
+  if (process.env.TODERO_LIVE_SPAWN === '1') return null // opt in explicitly
+  if (process.env.CI) return 'CI: no local LLM endpoint and no .env.local'
+  if (!process.env.LLM_BASE_URL) return 'LLM_BASE_URL is not set (no .env.local?)'
+  if (!existsSync(join(TODERO_DIR, '.git'))) return `${TODERO_DIR} is not a git checkout`
+  return null
+}
+
+const skipReason = missingPrecondition()
+const liveDescribe = skipReason ? describe.skip : describe
+if (skipReason) {
+  // Printed once, so a green run cannot be mistaken for a run that proved
+  // anything about live dispatch.
+  console.warn(`spawn-live: SKIPPED — ${skipReason}. Set TODERO_LIVE_SPAWN=1 to force.`)
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('paths resolve to this host, not a Mac home directory', () => {
@@ -50,7 +79,7 @@ describe('paths resolve to this host, not a Mac home directory', () => {
   })
 })
 
-describe('prepareWorktree runs git without a shell', () => {
+liveDescribe('prepareWorktree runs git without a shell', () => {
   it('creates a real worktree from this repo and tears it down', () => {
     const result = prepareWorktree({
       agentId: 'spawn-live-test',
@@ -68,7 +97,7 @@ describe('prepareWorktree runs git without a shell', () => {
   })
 })
 
-describe('openai-api spawn launches a detached child that writes its log', () => {
+liveDescribe('openai-api spawn launches a detached child that writes its log', () => {
   it('names a log file that exists on disk and grows', async () => {
     const provider = resolveProvider()
     const logFile = join(LOG_DIR, `spawn-live-${Date.now()}.log`)
