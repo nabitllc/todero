@@ -67,6 +67,7 @@ export async function GET(req: Request) {
   const fallbackCutoff  = new Date(now - FALLBACK_MS).toISOString()
 
   const cleared: Array<{ key: string; resetStatus: string }> = []
+  const failed: Array<{ key: string; reason: string }> = []
 
   // Status-aware reset: preserve earned status rather than always reverting to open.
   //   approved    → approved     (passed code review; deployer re-picks)
@@ -99,7 +100,7 @@ export async function GET(req: Request) {
 
   for (const issue of deadHeartbeat ?? []) {
     const { resetStatus, extra } = watchdogReset(issue.status)
-    await db.from('issues').update({
+    const { error: updErr } = await db.from('issues').update({
       status: resetStatus,
       started_at: null,
       heartbeat_at: null,
@@ -107,6 +108,11 @@ export async function GET(req: Request) {
       transitioned_by: 'cron-watchdog',
       ...extra,
     }).eq('id', issue.id)
+    if (updErr) {
+      failed.push({ key: issue.task_key, reason: updErr.message })
+      console.error(`[watchdog] FAILED dead-heartbeat reset for ${issue.task_key}: ${updErr.message}`)
+      continue
+    }
     cleared.push({ key: issue.task_key, resetStatus })
     console.log(`[watchdog] dead heartbeat → ${resetStatus}: ${issue.task_key} (${issue.assignee}, last hb ${issue.heartbeat_at})`)
   }
@@ -127,13 +133,18 @@ export async function GET(req: Request) {
 
   for (const issue of staleNoCommit ?? []) {
     const { resetStatus, extra } = watchdogReset(issue.status)
-    await db.from('issues').update({
+    const { error: updErr } = await db.from('issues').update({
       status: resetStatus,
       started_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
       ...extra,
     }).eq('id', issue.id)
+    if (updErr) {
+      failed.push({ key: issue.task_key, reason: updErr.message })
+      console.error(`[watchdog] FAILED stale-no-commit reset for ${issue.task_key}: ${updErr.message}`)
+      continue
+    }
     cleared.push({ key: issue.task_key, resetStatus })
     console.log(`[watchdog] stale no-commit → ${resetStatus}: ${issue.task_key} (${issue.assignee}, started ${issue.started_at})`)
   }
@@ -154,13 +165,18 @@ export async function GET(req: Request) {
 
   for (const issue of staleWithCommit ?? []) {
     const { resetStatus, extra } = watchdogReset(issue.status)
-    await db.from('issues').update({
+    const { error: updErr } = await db.from('issues').update({
       status: resetStatus,
       started_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
       ...extra,
     }).eq('id', issue.id)
+    if (updErr) {
+      failed.push({ key: issue.task_key, reason: updErr.message })
+      console.error(`[watchdog] FAILED stale-with-commit reset for ${issue.task_key}: ${updErr.message}`)
+      continue
+    }
     cleared.push({ key: issue.task_key, resetStatus })
     console.log(`[watchdog] stale with-commit → ${resetStatus}: ${issue.task_key} (${issue.assignee}, commit ${issue.commit_sha?.slice(0,8)}, started ${issue.started_at})`)
   }
@@ -179,13 +195,18 @@ export async function GET(req: Request) {
   if (ghostErr) return NextResponse.json({ error: ghostErr.message }, { status: 500 })
 
   for (const issue of ghostClaims ?? []) {
-    await db.from('issues').update({
+    const { error: updErr } = await db.from('issues').update({
       status: 'open',
       started_at: null,
       heartbeat_at: null,
       worked_by: null,
       transitioned_by: 'cron-watchdog',
     }).eq('id', issue.id)
+    if (updErr) {
+      failed.push({ key: issue.task_key, reason: updErr.message })
+      console.error(`[watchdog] FAILED ghost-claim reset for ${issue.task_key}: ${updErr.message}`)
+      continue
+    }
     cleared.push({ key: issue.task_key, resetStatus: 'open' })
     console.log(`[watchdog] ghost claim → open: ${issue.task_key} (${issue.assignee}, updated ${issue.updated_at})`)
   }
@@ -219,11 +240,16 @@ export async function GET(req: Request) {
     const resolvedBlockers = new Set((blockingIssues ?? []).map(i => i.id))
     for (const issue of staleBlocked) {
       if (resolvedBlockers.has(issue.blocked_by as string)) {
-        await db.from('issues').update({
+        const { error: updErr } = await db.from('issues').update({
           is_blocked: false,
           blocked_by: null,
           updated_at: new Date().toISOString(),
         }).eq('id', issue.id)
+        if (updErr) {
+          failed.push({ key: issue.task_key, reason: updErr.message })
+          console.error(`[watchdog] FAILED stale-block clear for ${issue.task_key}: ${updErr.message}`)
+          continue
+        }
         unblockedKeys.push(issue.task_key)
         console.log(`[watchdog] stale-block cleared: ${issue.task_key} (blocker ${issue.blocked_by} is resolved)`)
       }
@@ -239,10 +265,15 @@ export async function GET(req: Request) {
     .in('status', ['open', 'refined', 'backlog', 'in_progress', 'code_review'])
 
   for (const issue of zombieBlocked ?? []) {
-    await db.from('issues').update({
+    const { error: updErr } = await db.from('issues').update({
       is_blocked: false,
       updated_at: new Date().toISOString(),
     }).eq('id', issue.id)
+    if (updErr) {
+      failed.push({ key: issue.task_key, reason: updErr.message })
+      console.error(`[watchdog] FAILED zombie-block clear for ${issue.task_key}: ${updErr.message}`)
+      continue
+    }
     unblockedKeys.push(issue.task_key)
     console.log(`[watchdog] zombie-block cleared: ${issue.task_key} (is_blocked=true but no blocked_by)`)
   }
@@ -298,7 +329,9 @@ export async function GET(req: Request) {
   // TOD-758: Discord alert for stale/stuck auto-recoveries.
   // Group by actual reset status so the message accurately reflects where each
   // issue landed (status-aware reset: refined→backlog, approved→approved, etc.).
-  if (cleared.length > 0) {
+  // Must never assert N recovered when some of the writes it just ran failed —
+  // say what actually happened, cleared AND failed.
+  if (cleared.length > 0 || failed.length > 0) {
     const byStatus: Record<string, string[]> = {}
     for (const { key, resetStatus } of cleared) {
       ;(byStatus[resetStatus] ||= []).push(key)
@@ -307,21 +340,25 @@ export async function GET(req: Request) {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([status, keys]) => `→ **${status}** (${keys.length}): ${keys.join(', ')}`)
       .join('\n')
+    const failedLines = failed.length > 0
+      ? `\n**FAILED to reset** (${failed.length}): ${failed.map(f => `${f.key} (${f.reason})`).join(', ')}`
+      : ''
     fetch(`${appUrl}/api/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: `⚠️ **Stale agent auto-recovery** — ${cleared.length} issue(s) reset:\n${groups}`,
+        text: `⚠️ **Stale agent auto-recovery** — ${cleared.length} reset, ${failed.length} failed:\n${groups}${failedLines}`,
         channels: ['discord-alerts'],
       }),
     }).catch(() => {/* non-critical */})
   }
 
   return NextResponse.json({
-    ok: true,
+    ok: failed.length === 0,
     ts: new Date().toISOString(),
     cleared: cleared.map(c => c.key),
     clearedDetail: cleared,
+    failed,
     kicked,
     unblocked: unblockedKeys,
   })
