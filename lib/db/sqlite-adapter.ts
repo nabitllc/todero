@@ -37,6 +37,7 @@ import type {
   DbResult,
   DbRow,
 } from '../db'
+import { DbConfigurationError } from './errors'
 import { SqlQueryBuilder, type SqlExecutor, type SqlFlavour } from './pg-adapter'
 
 /** Where the database file lives when `TODERO_SQLITE_PATH` does not say. */
@@ -86,9 +87,26 @@ export function sqliteMissingEnv(): string[] {
 
 function open(): SqliteDatabase {
   if (handle) return handle
+  const file = sqlitePath()
+
+  // Deliberately refuse to CREATE the file. `new DatabaseSync(path)` on a
+  // missing path happily makes an empty database, and every query after that
+  // fails with "no such table: issues" — a message that describes the symptom
+  // and hides the cause. Creating the schema is `npm run db:migrate`'s job;
+  // saying so here is what turns a confusing 500 into a 503 naming the command.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { existsSync } = require('fs') as typeof import('fs')
+  if (!existsSync(file)) {
+    throw new DbConfigurationError(
+      `The local database file does not exist yet: ${file}. ` +
+        `Run \`npm run db:migrate\` (or \`npm run setup\`) to create it. ` +
+        `Point TODERO_SQLITE_PATH somewhere else to use a different file.`,
+    )
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
-  const db = new DatabaseSync(sqlitePath()) as unknown as SqliteDatabase
+  const db = new DatabaseSync(file) as unknown as SqliteDatabase
   // Referential integrity is off by default in SQLite; the baseline declares
   // real foreign keys, so turn it on and behave like the Postgres install.
   db.exec('PRAGMA foreign_keys = ON')
@@ -319,6 +337,9 @@ export const sqliteAdapterFactory: DbAdapterFactory = {
         try {
           return await callRpc(fn, params)
         } catch (cause) {
+          // "the database is not set up" is a configuration failure, not a bad
+          // query — it must reach lib/db-http.ts as a 503 naming the fix.
+          if (cause instanceof DbConfigurationError) throw cause
           return { data: null, error: toDbError(cause), count: null, status: 400 }
         }
       },

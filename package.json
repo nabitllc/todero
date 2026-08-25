@@ -18,7 +18,10 @@
     "start": "next start",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "prepare": "node scripts/install-hooks.mjs",
-    "guard:no-silent-empty": "bash scripts/no-silent-empty.sh"
+    "guard:no-silent-empty": "node scripts/no-silent-empty.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
   },
   "keywords": [],
   "author": "",

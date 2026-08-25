@@ -45,6 +45,12 @@ import { fileURLToPath } from 'node:url'
 
 import { importTs } from './lib/ts-import.mjs'
 import { databaseStatus } from './lib/env-report.mjs'
+import { requireNodeVersion } from './lib/node-version.mjs'
+
+// The sqlite path below reaches for `node:sqlite`, which exists only from Node
+// 22.5. Fail here with the version numbers rather than there with a builtin
+// module the reader has never heard of.
+requireNodeVersion()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(__dirname, '..')

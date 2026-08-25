@@ -51,10 +51,10 @@ fi
 
 # Check 6 (TOD-654): no tab may render an empty state over a non-ok response.
 echo ""
-if bash "$(dirname "$0")/no-silent-empty.sh"; then
+if node "$(dirname "$0")/no-silent-empty.mjs"; then
   echo "✅ Honest-error guard passed"
 else
-  echo "❌ Honest-error guard FAILED — see scripts/no-silent-empty.sh"
+  echo "❌ Honest-error guard FAILED — see scripts/no-silent-empty.mjs"
   exit 1
 fi
 

@@ -68,11 +68,11 @@
    "n": 2,
    "name": "Foundations",
    "chip": "done",
-   "when": "24 Aug · 21:05 → 23:45",
-   "minutes": 160,
-   "agents": 50,
-   "tokens": 6260000,
-   "cost": 46.3,
+   "when": "24 Aug · 21:05 → 25 Aug · 05:52",
+   "minutes": 527,
+   "agents": 75,
+   "tokens": 9115075,
+   "cost": 40.4,
    "lede": "Ten pieces across three concurrent lanes, each looping builder → blind critic → builder. This wave used prose acceptance criteria judged entirely by frontier critics — expensive, and it let a regression sit undetected for an hour.",
    "before": [
     "<code>owner</code> → /api/issues: <b>403</b>. Anonymous: <b>200</b>",
@@ -82,10 +82,11 @@
    ],
    "after": [
     "Anonymous → <b>401</b>. Owner → <b>200</b>",
-    "JWT gone from every client component",
-    "Zero macOS paths in app/ or lib/",
-    "Ollama reachable through the runtime seam",
-    "21 verdicts, <b>2 passed</b> — pieces entered at 0–1 and were still rejected at 4–7"
+    "<b>4 of 10 pieces certified</b>: cross-platform paths 8.5, agent roster 8, LLM base-URL seam 8, first-run setup 8",
+    "JWT gone from every client component · zero macOS paths in app/ or lib/",
+    "<b>7 security incidents.</b> Three builder prompts blocked for trying to rotate the live Supabase key and force-push rewritten history; three more for trying to delete or spoof past the dispatch kill switch",
+    "One got through: a builder mutated production issue TOD-1514 during &ldquo;verification&rdquo;",
+    "Cause: a safety guard was added mid-wave without updating the acceptance criteria it invalidated, so critics correctly named it the blocker and builders tried to route around it"
    ]
   },
   {

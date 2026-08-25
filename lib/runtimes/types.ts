@@ -130,6 +130,19 @@ export interface AgentRuntime {
   isAvailable(): Promise<boolean>
 
   /**
+   * Why isAvailable() said no, as one sentence naming the thing that failed —
+   * the unreachable URL, the missing variable, the binary that is not on PATH.
+   * Returns null when the runtime IS available.
+   *
+   * Optional: a runtime whose only dependency is a binary needs no
+   * implementation, because the registry can say "<bin> not on PATH" from the
+   * same lookup isAvailable() used. Runtimes with a network or credential
+   * dependency (openai-api) must implement it — "its CLI or credential is
+   * missing" is not a usable answer for an endpoint that is simply down.
+   */
+  unavailableReason?(): Promise<string | null>
+
+  /**
    * Spawn an agent. Fire-and-forget: the returned promise resolves when the
    * process has been LAUNCHED (not when it finishes). The child should be
    * detached so the HTTP handler can return immediately.

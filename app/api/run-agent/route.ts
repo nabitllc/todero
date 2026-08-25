@@ -185,6 +185,8 @@ async function dryRunReport(req: NextRequest): Promise<NextResponse> {
       `[dry-run] ${new Date().toISOString()} agent=${agentId} runtime=${info.runtime}
 ` +
       `[dry-run] bin=${info.bin} resolved=${info.binResolved ?? 'NOT FOUND ON PATH'}
+` +
+      `[dry-run] available=${info.available}${info.unavailableReason ? ` reason=${info.unavailableReason}` : ''}
 `
     )
 
@@ -194,12 +196,17 @@ async function dryRunReport(req: NextRequest): Promise<NextResponse> {
       bin: info.bin,
       binResolved: info.binResolved,
       runtimeAvailable: info.available,
+      unavailableReason: info.unavailableReason,
       logDir: LOG_DIR,
       logFile,
       dispatchEnabled: !dispatchDisabled(),
-      wouldSpawn: info.binResolved !== null,
-      ...(info.binResolved === null
-        ? { warning: `a real dispatch would fail: '${info.bin}' is not on PATH on this host` }
+      // `openai-api` launches the Node binary this server already runs under,
+      // so `binResolved` is never null for it — a configured-but-dead LLM
+      // endpoint used to sail through this branch as wouldSpawn:true. The
+      // runtime's own availability probe is the sensor that knows.
+      wouldSpawn: info.available && info.binResolved !== null,
+      ...(info.unavailableReason
+        ? { warning: `a real dispatch would fail: ${info.unavailableReason}` }
         : {}),
     })
   } catch (err) {

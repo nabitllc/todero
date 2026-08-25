@@ -12,8 +12,8 @@
 // same modules the server uses are the ones that said yes.
 //
 // Exit code: 0 when this host can run Todero, 1 when a required variable is
-// missing or no agent runtime is available — so it is usable as a CI gate,
-// not just as something to read.
+// missing, the database has not been created, or no agent runtime is
+// available — so it is usable as a CI gate, not just as something to read.
 //
 // Usage:  npm run doctor
 
@@ -113,11 +113,19 @@ async function reportRuntimes(paths, llm) {
     if (runtime.available) availableCount++
     const where = inspection.binResolved ?? `${inspection.bin} not on PATH`
     row(runtime.name, `${runtime.available ? 'available  ' : 'unavailable'}  ${where}`)
+    // The registry now answers "why not" for itself, so print its answer
+    // rather than a second guess made here — unless the bin column already
+    // said the same sentence, which it does for the CLI adapters.
+    if (!runtime.available && runtime.unavailableReason && runtime.unavailableReason !== where) {
+      note(runtime.unavailableReason)
+    }
 
-    // `openai-api` reports availability from configuration alone — it has no
-    // binary to look for, so a configured-but-dead endpoint still says
-    // "available" and every dispatch through it fails at spawn time. Doctor
-    // exists to catch exactly that kind of green, so say it out loud.
+    // Cross-check between two independent sensors: doctor's own live call to
+    // the endpoint (reportLlm) and the runtime registry's probe. `openai-api`
+    // has no binary to look for, so a configured-but-dead endpoint reporting
+    // "available" is exactly the fake green doctor exists to catch. The
+    // registry now probes too and should never disagree — if it ever does,
+    // one of the two is lying and that is worth failing over.
     if (runtime.name === 'openai-api' && runtime.available && llm && !llm.ok) {
       note(`but ${llm.baseUrl} does not answer — dispatch through it will fail`)
       problems.push(
@@ -168,6 +176,11 @@ async function reportEnv(placeholders) {
   row('db provider', report.provider)
   if (report.dbDetail) row('db location', report.dbDetail)
   if (report.dbError) note(report.dbError)
+  // A provider with nothing behind it is not a configured host, even though it
+  // needs no variables — every query would 503 until the schema exists.
+  if (report.dbDetail && report.dbDetail.includes('not created yet')) {
+    problems.push('the local database has not been created — run `npm run db:migrate`')
+  }
 
   console.log(`  missing required env vars: ${report.missing.length}`)
   for (const name of report.missing) note(`- ${name}`)
@@ -209,7 +222,9 @@ if (problems.length === 0) {
 }
 console.log('')
 
-// A missing required variable or a total absence of runtimes means Todero
-// cannot do its job here. Everything else is reported but does not fail the
-// command — a missing Discord token is news, not a broken install.
-process.exitCode = env.missing.length > 0 || availableRuntimes === 0 ? 1 : 0
+// A missing required variable, a database that does not exist yet, or a total
+// absence of runtimes means Todero cannot do its job here. Everything else is
+// reported but does not fail the command — a missing Discord token is news,
+// not a broken install.
+const dbNotCreated = Boolean(env.dbDetail && env.dbDetail.includes('not created yet'))
+process.exitCode = env.missing.length > 0 || dbNotCreated || availableRuntimes === 0 ? 1 : 0

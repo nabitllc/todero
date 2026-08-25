@@ -41,6 +41,11 @@ function generateTaskTitle(mission: string): string {
 const PRIMARY_ADAPTERS = [
   { id: 'claude-code', label: 'Claude Code', desc: 'Local Claude agent', recommended: true },
   { id: 'codex', label: 'Codex', desc: 'Local Codex agent', recommended: true },
+  // The one adapter that needs no vendor CLI installed — it talks to whatever
+  // LLM_BASE_URL points at (Ollama, LM Studio, a hosted gateway). It was
+  // missing from this list, so a first-run operator on a machine with no CLI
+  // had no selectable runtime at all even though Todero could dispatch.
+  { id: 'openai-api', label: 'OpenAI API', desc: 'Any OpenAI-compatible endpoint (LLM_BASE_URL)', recommended: true },
 ]
 const MORE_ADAPTERS = [
   { id: 'gemini-cli', label: 'Gemini CLI', desc: 'Google Gemini local agent' },
@@ -62,7 +67,13 @@ const MORE_ADAPTERS = [
 interface LiveModel { id: string }
 
 /** One row of /api/run-agent/runtimes — the live runtime registry. */
-interface RuntimeInfo { name: string; displayName: string; available: boolean }
+interface RuntimeInfo {
+  name: string
+  displayName: string
+  available: boolean
+  /** Endpoint-specific cause from the registry — null when available. */
+  unavailableReason?: string | null
+}
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 const TABS = [
@@ -185,7 +196,15 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
       }
       if (!entry.available) {
         setTestStatus('fail')
-        setTestDetail(`${entry.displayName} is registered but not available here — its CLI or credential is missing.`)
+        // The registry now says WHY — the unreachable URL, the missing
+        // variable, the binary that is not on PATH. "its CLI or credential is
+        // missing" was a guess, and it was the wrong guess for the most common
+        // first-run failure: an LLM endpoint that nothing is listening on.
+        setTestDetail(
+          entry.unavailableReason
+            ? `${entry.displayName} is registered but not available here — ${entry.unavailableReason}`
+            : `${entry.displayName} is registered but not available here, and reported no reason.`,
+        )
         return
       }
       setTestStatus('ok')

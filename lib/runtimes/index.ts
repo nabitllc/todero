@@ -98,6 +98,28 @@ export interface RuntimeInspection {
   /** Absolute path the bin resolves to on this host, or null when absent. */
   binResolved: string | null
   available: boolean
+  /** One sentence naming what is missing, or null when available. */
+  unavailableReason: string | null
+}
+
+/**
+ * Why a runtime is unavailable, in words a stranger can act on.
+ *
+ * A runtime that owns a real sensor answers for itself (openai-api probes its
+ * endpoint and can say "http://localhost:11434/v1 does not answer"). For the
+ * CLI adapters the registry already knows the whole story: the binary the
+ * adapter would launch is not on PATH. Returns null when it is available, so
+ * this doubles as the availability check every caller needs anyway.
+ */
+async function unavailableReasonFor(runtime: AgentRuntime): Promise<string | null> {
+  if (await runtime.isAvailable()) return null
+  const custom = runtime.unavailableReason ? await runtime.unavailableReason() : null
+  if (custom) return custom
+  const bin = RUNTIME_BIN_SPEC[runtime.name] ?? runtime.name
+  if (resolveBinary(bin) === null) return `${bin} not on PATH`
+  // Available:false with no explanation is itself a defect — say that rather
+  // than inventing a cause the adapter never reported.
+  return `${runtime.name} reported unavailable and gave no reason`
 }
 
 /**
@@ -109,11 +131,13 @@ export async function inspectRuntime(name?: string | null): Promise<RuntimeInspe
   const entry = name ? REGISTRY.find(r => r.runtime.name === name) : undefined
   const runtime = entry ? entry.runtime : await selectRuntime()
   const bin = RUNTIME_BIN_SPEC[runtime.name] ?? runtime.name
+  const unavailableReason = await unavailableReasonFor(runtime)
   return {
     runtime: runtime.name,
     bin,
     binResolved: resolveBinary(bin),
-    available: await runtime.isAvailable(),
+    available: unavailableReason === null,
+    unavailableReason,
   }
 }
 
@@ -121,15 +145,31 @@ export async function inspectRuntime(name?: string | null): Promise<RuntimeInspe
  * List all registered runtimes with their availability state.
  * Used by a future /api/runtimes endpoint + smoke tests.
  */
-export async function listRuntimes(): Promise<Array<{ name: string; displayName: string; priority: number; available: boolean; supportsSessions: boolean; supportsTools: boolean }>> {
-  type RuntimeListEntry = { name: string; displayName: string; priority: number; available: boolean; supportsSessions: boolean; supportsTools: boolean }
+export interface RuntimeListEntry {
+  name: string
+  displayName: string
+  priority: number
+  available: boolean
+  /**
+   * Why `available` is false, in one actionable sentence — null when it is
+   * true. Callers render this instead of guessing at a cause: an endpoint that
+   * is down and a CLI that was never installed are not the same problem.
+   */
+  unavailableReason: string | null
+  supportsSessions: boolean
+  supportsTools: boolean
+}
+
+export async function listRuntimes(): Promise<RuntimeListEntry[]> {
   const results: RuntimeListEntry[] = []
   for (const entry of REGISTRY) {
+    const unavailableReason = await unavailableReasonFor(entry.runtime)
     results.push({
       name: entry.runtime.name,
       displayName: entry.runtime.displayName,
       priority: entry.priority,
-      available: await entry.runtime.isAvailable(),
+      available: unavailableReason === null,
+      unavailableReason,
       supportsSessions: entry.runtime.supportsSessions,
       supportsTools: entry.runtime.supportsTools,
     })

@@ -16,7 +16,8 @@ import { writeFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
-import { fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
+import { LLM_BASE_URL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
+import type { LiveModelsResult } from '@/lib/llm-provider'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,108 @@ export function resolveProvider(): ProviderConfig {
 
   const apiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? (isLocal ? 'local' : '')
   return { baseUrl, apiKey, isLocal }
+}
+
+// ---------------------------------------------------------------------------
+// Availability — a probe, not a guess
+// ---------------------------------------------------------------------------
+//
+// isAvailable() used to be `isLocal || apiKey.length > 0`: any URL whose host
+// was localhost reported the runtime ready, whether or not anything was
+// listening on it. That is a sensorless guard — /api/run-agent/runtimes went
+// green, the first-run wizard printed "OpenAI API is available on this host",
+// and every dispatch then failed at spawn time. scripts/doctor.mjs already did
+// the real probe and printed the contradiction out loud; this makes the
+// registry itself ask the same question.
+//
+// The question is answered by the endpoint: GET ${baseUrl}/models must succeed
+// AND report at least one model id. A configured endpoint that will not answer,
+// answers non-2xx (a bad or missing credential on a hosted gateway), or serves
+// an empty roster is unavailable, by name.
+
+/** Short on purpose — this runs inline in request handlers. */
+const PROBE_TIMEOUT_MS = 1500
+/** listRuntimes() is polled by the wizard and /api/health; don't re-probe per request. */
+const PROBE_TTL_MS = 30_000
+
+export type ProviderProbe = { ok: true } | { ok: false; reason: string }
+
+let probeCache: { key: string; at: number; result: ProviderProbe } | null = null
+
+/**
+ * `fetchLiveModels()` reads its own module-level LLM_BASE_URL. That is the same
+ * URL in every normal setup, but resolveProvider() also accepts OPENAI_BASE_URL,
+ * so the two can diverge — and probing a URL the adapter would not dispatch to
+ * is the exact class of lie this function exists to remove. Use the shared
+ * helper when they agree, and probe the resolved URL directly when they do not.
+ */
+async function fetchModelsFrom(provider: ProviderConfig): Promise<LiveModelsResult> {
+  if (provider.baseUrl === LLM_BASE_URL) return fetchLiveModels(PROBE_TIMEOUT_MS)
+  let res: Response
+  try {
+    res = await fetch(`${provider.baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${provider.apiKey}` },
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    })
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: `${provider.baseUrl} is unreachable — ${detail}` }
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return {
+      ok: false,
+      error: `${provider.baseUrl}/models responded ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`,
+    }
+  }
+  const body = await res.json().catch(() => null)
+  return { ok: true, models: Array.isArray(body?.data) ? body.data : [] }
+}
+
+/**
+ * Ask the configured endpoint whether it is there. Memoized for PROBE_TTL_MS
+ * per base URL so the registry can be listed on every request without turning
+ * into a health-check flood.
+ */
+export async function probeProvider(): Promise<ProviderProbe> {
+  let provider: ProviderConfig
+  try {
+    provider = resolveProvider()
+  } catch (err) {
+    // No endpoint configured at all. The message already names the variable.
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+  }
+
+  const now = Date.now()
+  if (probeCache && probeCache.key === provider.baseUrl && now - probeCache.at < PROBE_TTL_MS) {
+    return probeCache.result
+  }
+
+  const live = await fetchModelsFrom(provider)
+  let result: ProviderProbe
+  if (!live.ok) {
+    result = {
+      ok: false,
+      reason: `${provider.baseUrl} does not answer — dispatch through it will fail: ${live.error}`,
+    }
+  } else if (live.models.length === 0) {
+    result = {
+      ok: false,
+      reason:
+        `${provider.baseUrl} answers but serves no models — dispatch through it will fail. ` +
+        'Pull one first (e.g. `ollama pull qwen2.5-coder:7b`).',
+    }
+  } else {
+    result = { ok: true }
+  }
+
+  probeCache = { key: provider.baseUrl, at: now, result }
+  return result
+}
+
+/** Test/CLI seam: drop the memo so the next probe hits the endpoint again. */
+export function resetProviderProbeCache(): void {
+  probeCache = null
 }
 
 // ---------------------------------------------------------------------------
@@ -403,17 +506,12 @@ export const openaiApiRuntime: AgentRuntime = {
   supportsTools: true,
 
   async isAvailable(): Promise<boolean> {
-    // A local OpenAI-compatible server (Ollama, LM Studio) needs no credential;
-    // a hosted one does. Either way this runtime has no binary dependency.
-    // No endpoint configured at all means unavailable — spawn() is the one
-    // that reports WHICH variable is missing, since only it has somewhere to
-    // put the message.
-    try {
-      const { apiKey, isLocal } = resolveProvider()
-      return isLocal || apiKey.length > 0
-    } catch {
-      return false
-    }
+    return (await probeProvider()).ok
+  },
+
+  async unavailableReason(): Promise<string | null> {
+    const probe = await probeProvider()
+    return probe.ok ? null : probe.reason
   },
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult> {

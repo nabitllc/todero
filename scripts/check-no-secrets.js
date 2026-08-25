@@ -58,9 +58,24 @@ const PATTERNS = [
     fix: 'read the key from the environment, via lib/db.ts.',
   },
   {
-    needle: 'service' + '_role',
+    // Scoped two ways, because the unscoped substring version failed the build
+    // on prose. It matched `<code>service_role</code> JWT in 7 client
+    // components` in scripts/board/waves.json — a changelog entry describing a
+    // fix — so `npm run build` could not succeed on a clean clone.
+    //
+    //   1. only file types that can carry a credential (source, SQL, env), so
+    //      documentation, fixtures and board data are out of reach;
+    //   2. only where the token is being *used* — assigned, set as a JSON/YAML
+    //      key, glued to a JWT, or embedded in a project URL — not merely named.
+    //
+    // Prose still names it freely; `service_role: "eyJ…"` still fails.
+    // POSIX ERE (git grep -E): a character class, not \s, which git's engine
+    // does not honour outside -P.
+    needle: 'service' + '_role["\'[:space:]]*[:=]|service' + '_role.*eyJ|supabase\\.co.*service' + '_role',
+    label: 'service' + '_role',
+    regex: true,
     why: 'full-privilege key name in a value or URL',
-    paths: SECRET_EXCLUDES,
+    paths: ['*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs', '*.cjs', '*.sql', '.env*', '**/.env*', ...SECRET_EXCLUDES],
     fix: 'read the key from the environment, via lib/db.ts.',
   },
   {
@@ -100,10 +115,12 @@ const PATTERNS = [
 
 let failed = false
 
-for (const { needle, why, paths, fix } of PATTERNS) {
+for (const { needle, label, regex, why, paths, fix } of PATTERNS) {
   // --untracked so a brand-new file cannot smuggle a match past the guard;
   // .gitignore still applies, so node_modules/ and .next/ stay out.
-  const res = spawnSync('git', ['grep', '-n', '-I', '-F', '--untracked', needle, '--', ...paths], {
+  // -F for a literal needle, -E when the rule needs context around the token.
+  const matcher = regex ? '-E' : '-F'
+  const res = spawnSync('git', ['grep', '-n', '-I', matcher, '--untracked', needle, '--', ...paths], {
     cwd: REPO,
     encoding: 'utf8',
   })
@@ -115,7 +132,7 @@ for (const { needle, why, paths, fix } of PATTERNS) {
   const hits = (res.stdout || '').trim()
   if (hits) {
     failed = true
-    console.error(`FAIL: "${needle}" (${why}) found in tracked source:`)
+    console.error(`FAIL: "${label || needle}" (${why}) found in tracked source:`)
     for (const line of hits.split('\n')) console.error('  ' + line.slice(0, 160))
     console.error(`  Fix: ${fix}`)
     console.error('')

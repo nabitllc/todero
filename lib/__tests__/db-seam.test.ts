@@ -241,11 +241,15 @@ describe('session actor', () => {
   })
 })
 
-// ─── One query set, two providers ────────────────────────────────────────────
+// ─── One query set, three providers ──────────────────────────────────────────
 //
-// A seam is only worth having if a SECOND adapter can satisfy it without
+// A seam is only worth having if another adapter can satisfy it without
 // re-implementing the first one's wire format. This suite is the proof: one
-// list of `DbQueryBuilder` calls, run through both registered providers.
+// list of `DbQueryBuilder` calls, run through every registered provider.
+//
+//   sqlite   — `lib/db/sqlite-adapter.ts`, on a real file created from
+//              `migrations/sqlite/000_baseline.sql` — the same file
+//              `npm run setup` writes on a clone with no account anywhere.
 //
 //   postgres — `lib/db/pg-adapter.ts`. Compiles every call to a parameterised
 //              SQL statement and runs it on a real Postgres (PGlite, in-process)
@@ -256,7 +260,7 @@ describe('session actor', () => {
 //              `lib/db/query-params.ts`. So both legs read and write real rows
 //              in a real database — neither leg is a fixture.
 //
-// A method only one of them can express fails this suite. That is the guard
+// A method only some of them can express fails this suite. That is the guard
 // against `DbQueryBuilder` quietly re-growing one vendor's query dialect.
 
 /** Migrations that stand on their own — enough schema for the whole query set. */

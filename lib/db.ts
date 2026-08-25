@@ -20,7 +20,11 @@
 //   `TODERO_DB_PROVIDER` selects it at runtime.
 //
 // THE CONTRACT IS PROVEN, NOT ASSERTED
-//   Two adapters implement it today and neither one is privileged:
+//   Three adapters implement it today and none of them is privileged:
+//     provider `sqlite` — `lib/db/sqlite-adapter.ts`. One file on disk through
+//       Node's own `node:sqlite`, needing no server, no connection string and
+//       no account. It is what a checkout with no credentials resolves to, so
+//       `git clone && npm run setup && npm run dev` ends at a working board.
 //     provider `postgres` — `lib/db/pg-adapter.ts`. A plain node-postgres
 //       driver against `DATABASE_URL`. Every call below compiles to a
 //       parameterised SQL statement; there is no HTTP and no query grammar
@@ -28,8 +32,8 @@
 //       uses as-is — the connection string changes, the code does not.
 //     the hosted default — registered in `lib/db/adapters.ts`. Translates the
 //       same calls onto a vendor SDK, and is the only place that grammar lives.
-//   `lib/__tests__/db-seam.test.ts` runs one identical query set through BOTH
-//   via `describe.each`, so a method that only one of them can express fails
+//   `lib/__tests__/db-seam.test.ts` runs one identical query set through ALL
+//   THREE via `describe.each`, so a method only some of them can express fails
 //   the suite. That is the guard against this interface quietly re-growing a
 //   vendor dialect.
 //
