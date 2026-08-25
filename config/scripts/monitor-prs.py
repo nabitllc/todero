@@ -4,13 +4,15 @@ monitor-prs.py — Poll GitHub for new PRs → post to Discord #pr-reviews
 Replaces n8n workflow dDcSY7ZWV04AgHmW
 Runs every 5 minutes via launchd.
 """
-import json, urllib.request, pathlib
+import os
+import json, os, urllib.request, pathlib
 from datetime import datetime, timezone, timedelta
 
 GH_TOKEN = "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"
 DISCORD_BOT = "MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk"
 PR_CHANNEL = "1487826368170299592"  # #pr-reviews
-MC_API = "http://localhost:3000/api/issues"
+SUPA_URL = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
+SUPA_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 REPOS = ["nabitllc/vespera", "nabitllc/todero"]
 STATE_FILE = pathlib.Path(__file__).parent / "state-prs.json"
 
@@ -50,14 +52,17 @@ def main():
     seen = {k: v for k, v in seen.items()
             if (now - datetime.fromisoformat(v)).days < 30}
 
-    # Fetch MC issues for linking
+    # Fetch only issues with pr_url set — targeted Supabase query, no full table scan
     issues_by_pr = {}
-    try:
-        with urllib.request.urlopen(MC_API, timeout=15) as r:
-            for i in json.loads(r.read()):
-                if i.get("pr_url"):
+    if SUPA_KEY:
+        try:
+            req = urllib.request.Request(
+                f"{SUPA_URL}/rest/v1/issues?pr_url=not.is.null&select=id,task_key,title,type,status,pr_url&limit=200",
+                headers={"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                for i in json.loads(r.read()):
                     issues_by_pr.setdefault(i["pr_url"].lower(), []).append(i)
-    except: pass
+        except Exception as e: print(f"[supa] {e}")
 
     for repo in REPOS:
         try:

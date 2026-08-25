@@ -1,0 +1,60 @@
+{
+ "note": "Design decisions, all accepted 25 Aug and scheduled into the wave plan. Kept on the board so the reasoning and the tradeoff stay visible — a decision whose cost is forgotten gets re-litigated.",
+ "decisions": [
+  {
+   "id": "infra-placement",
+   "title": "Infra",
+   "status": "accepted",
+   "question": "Own destination, folded into Settings, or something else?",
+   "recommendation": "Split it. The <b>signal</b> — is anything degraded right now — becomes a permanent one-line strip on Now. The <b>detail</b> — service list, deploy history, breaker controls, host facts — lives in Settings.",
+   "why": "Infra is checked reactively, when something already feels wrong. A tab makes you go look; a strip answers \"is anything wrong\" without the trip, and only earns your attention when the answer is yes. Folding the whole thing into Settings, which is what the canvas currently shows, buries the half you would actually use.",
+   "tradeoff": "If you find yourself opening Infra several times a day rather than reacting to it, the strip is too thin and it deserves its own destination. You use it more than I do — this is the call I am least sure of.",
+   "changes": "Wave 6 — Now gains the status strip; Settings gains the Infra detail section.",
+   "pattern": "Same split-not-move applied to Calendar (due dates → Work, job timing → Settings) and Activity (feed → Now, drill-down → Runs)."
+  },
+  {
+   "id": "chat-surface",
+   "title": "Chat",
+   "status": "accepted",
+   "question": "A destination you navigate to, or an overlay you open over whatever you are looking at?",
+   "recommendation": "Make it an <b>overlay</b>, opened from anywhere with a keyboard shortcut and a persistent affordance, carrying the current screen as context. It leaves the tab list.",
+   "why": "You ask about the thing you are looking at. As a tab, asking means leaving that thing — you lose the issue, the run, the agent you were mid-thought on, and have to describe it from memory instead of pointing at it. An overlay keeps the context and can pass it to the model automatically.",
+   "tradeoff": "Chat has real furniture — conversation history, fork, export, slash commands, an agent selector. Some of that is awkward in an overlay and wants a full screen. Mitigation: the overlay expands to full screen on demand, so the history lives somewhere without costing a permanent nav slot.",
+   "changes": "Wave 6 — Chat leaves the nav and becomes a ⌘J overlay. Nav lands at six. Revisit after Michael uses it.",
+   "pattern": "This revises the design canvas, which currently draws Chat as the sixth tab."
+  },
+  {
+   "id": "credential-custody",
+   "title": "Credential custody",
+   "status": "accepted",
+   "question": "Which credentials may Todero hold, and which stay with Michael?",
+   "recommendation": "<b>Todero never holds the credential that could revoke its own credentials.</b> It gets delegated, scoped, revocable tokens only — never the account that issued them. Wompi, the domain registrar, and every root/owner account stay with Michael.",
+   "why": "Custody follows blast radius and reversibility. A leaked read token is an inconvenience; a leaked payment credential moves money and cannot be undone. And the rule has a practical test: for every credential Todero holds, Michael must be able to kill it from somewhere Todero cannot reach.",
+   "tradeoff": "More setup — sub-accounts, a sending subdomain, scoped tokens — instead of pasting one key per service. That friction is the feature.",
+   "changes": "Wave 6 — the vault becomes real (CONNECTIONS_ENCRYPTION_KEY set, encryption actually called, per-credential revocation) as a PREREQUISITE for Wave 7.",
+   "pattern": "Todero&rsquo;s own record on secrets is poor: a service_role key sat in 70 commits, and .env.local holds 16 plaintext keys today. lib/encryption.ts implements AES-256-GCM but CONNECTIONS_ENCRYPTION_KEY is not set and only one route ever calls it."
+  },
+  {
+   "id": "ads-agent-spend",
+   "title": "The ads agent",
+   "status": "accepted",
+   "question": "Can an agent manage ad campaigns and budget autonomously?",
+   "recommendation": "<b>No — it proposes, you approve, then it executes under a cap it cannot raise.</b> The spend limit lives on the ad platform sub-account, set by you, where Todero has no permission to change it.",
+   "why": "Ad spend is irreversible, outward-facing, and optimises for a business outcome a model will Goodhart — chasing clicks that do not convert. This is the same draft-approve-send shape as WhatsApp, and it is what finally makes Todero&rsquo;s supervisor ceilings load-bearing: for ad dollars, not tokens.",
+   "tradeoff": "Slower than letting it run. You are in the loop on every campaign and budget change.",
+   "changes": "Wave 7 — propose→approve→execute is built before any ad account is connected.",
+   "pattern": "Same custody rule: Todero holds the sub-account token, never the Meta/Google Business root that issued it."
+  },
+  {
+   "id": "first-sale-sequencing",
+   "title": "What to do first for Amazoniico",
+   "status": "accepted",
+   "question": "Point agents at the website, or somewhere else?",
+   "recommendation": "<b>Neither, first.</b> Confirm Wompi with one real test transaction, and get Lina posting. Those two are hours of work and they tell you whether you have a sellable store and any traffic. Then build the order-to-fulfilment pipeline.",
+   "why": "Of the five blockers you listed, only one is mainly code. A swarm of agents on the front-end produces a beautiful storefront and no revenue if payment is unverified and nobody is visiting. The fulfilment pipeline — order in, pack-and-ship instructions out to the employee in Colombia — is the highest-value thing Todero can build, and it is genuinely &lsquo;manage the project&rsquo; rather than &lsquo;build the project&rsquo;.",
+   "tradeoff": "The website stays imperfect while you validate payment and traffic. That is the right order anyway.",
+   "changes": "Wave 7 opens with the fulfilment pipeline. Storefront last. Wompi test and Lina are Michael&rsquo;s, not Todero&rsquo;s.",
+   "pattern": "The two prerequisites are yours to do, not Todero&rsquo;s — a test transaction and a conversation with Lina Menesses."
+  }
+ ]
+}

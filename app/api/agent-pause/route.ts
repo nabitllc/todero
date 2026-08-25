@@ -6,32 +6,41 @@
 //   paused=true:  manually pause an agent (e.g. for maintenance)
 
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-const HEADERS = {
-  'apikey': SUPA_KEY,
-  'Authorization': `Bearer ${SUPA_KEY}`,
-  'Content-Type': 'application/json',
+/** One `agent_memory` key/value row. */
+type MemoryRow = { value: Record<string, unknown> }
+
+/** Read a single agent_memory key, or `{}` when it is absent or unreadable. */
+async function readMemory(agentId: string, key: string): Promise<Record<string, unknown>> {
+  const { data, error } = await db()
+    .from('agent_memory')
+    .select('value')
+    .eq('agent_id', agentId)
+    .eq('key', key)
+    .limit(1)
+  if (error) return {}
+  return ((data ?? []) as MemoryRow[])[0]?.value ?? {}
 }
 
 /** GET /api/agent-pause?agent=<agentId> — returns pause state for the agent */
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const agentId = req.nextUrl.searchParams.get('agent')
   if (!agentId) {
     return NextResponse.json({ error: 'Missing ?agent= parameter' }, { status: 400 })
   }
 
-  const [pauseRes, breakerRes] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/agent_memory?agent_id=eq.${agentId}&key=eq.is_paused&limit=1`, { headers: HEADERS }),
-    fetch(`${SUPA_URL}/rest/v1/agent_memory?agent_id=eq.${agentId}&key=eq.loop_breaker&limit=1`, { headers: HEADERS }),
+  const [pauseState, breakerState] = await Promise.all([
+    readMemory(agentId, 'is_paused'),
+    readMemory(agentId, 'loop_breaker'),
   ])
-
-  const pauseData = pauseRes.ok ? await pauseRes.json() as Array<{ value: Record<string, unknown> }> : []
-  const breakerData = breakerRes.ok ? await breakerRes.json() as Array<{ value: Record<string, unknown> }> : []
-
-  const pauseState = pauseData[0]?.value ?? {}
-  const breakerState = breakerData[0]?.value ?? {}
 
   return NextResponse.json({
     agent: agentId,
@@ -49,6 +58,12 @@ export async function GET(req: NextRequest) {
  *  Pausing  (paused=true):  manually sets is_paused flag (for maintenance use)
  */
 export async function PATCH(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
   const agentId = body.agent as string | undefined
   const paused = body.paused as boolean | undefined
@@ -62,45 +77,102 @@ export async function PATCH(req: NextRequest) {
 
   const now = new Date().toISOString()
 
-  // Update is_paused record
-  await fetch(`${SUPA_URL}/rest/v1/agent_memory`, {
-    method: 'POST',
-    headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      agent_id: agentId,
-      key: 'is_paused',
-      value: {
-        paused,
-        paused_at: paused ? now : null,
-        reason: paused ? (body.reason ?? 'manual pause') : null,
-        cleared_at: paused ? null : now,
-        cleared_by: paused ? null : (body.cleared_by ?? 'human'),
-      },
-      updated_at: now,
-    }),
-  })
+  // Read the pause record BEFORE overwriting it — when un-pausing, this is
+  // the only place `last_issue_id` (the issue the loop breaker blocked when
+  // it paused this agent — see lib/loop-breaker.ts pauseAgent()) is still
+  // reachable, since the write below replaces the value that carries it.
+  const priorPauseState = !paused ? await readMemory(agentId, 'is_paused') : null
 
-  // When un-pausing: also reset consecutive_failures counter
+  // Update is_paused record. onConflict is load-bearing, not decoration:
+  // agent_memory's real uniqueness is UNIQUE(agent_id, key) (it predates the
+  // migrations directory — see migrations/016_agent_documents.sql's note),
+  // not its `id` primary key. Omitting onConflict makes the seam default to
+  // the primary key, which is never present in this payload, so every call
+  // INSERTs a fresh row instead of updating the existing one — silently, no
+  // error — and readers get whichever row happens to sort first.
+  const { error: pauseError } = await db().from('agent_memory').upsert({
+    agent_id: agentId,
+    key: 'is_paused',
+    value: {
+      paused,
+      paused_at: paused ? now : null,
+      reason: paused ? (body.reason ?? 'manual pause') : null,
+      cleared_at: paused ? null : now,
+      cleared_by: paused ? null : (body.cleared_by ?? 'human'),
+    },
+    updated_at: now,
+  }, { onConflict: 'agent_id,key' })
+  if (pauseError) return dbQueryErrorResponse(pauseError, 'agent_memory')
+
+  // When un-pausing: also reset consecutive_failures counter, and clear the
+  // issue block the loop breaker set (lib/loop-breaker.ts pauseAgent() does
+  // BOTH agent_memory.is_paused=true AND issues.is_blocked=true /
+  // blocked_by='system:loop_breaker' when it trips — see the identical
+  // reasoning in app/api/inbox/route.ts's loop_breaker_pause effect handler,
+  // which this mirrors for the direct un-pause toggle in AgentDetailView).
+  // Un-pausing without clearing the block reports full recovery while the
+  // agent still cannot be dispatched, which is the exact defect this route
+  // exists to not repeat.
+  let breakerResetError: string | null = null
+  let issueUnblocked = false
+  let stillBlockedBy: string | null = null
+  let blockedIssueLabel: string | null = null
+
   if (!paused) {
-    await fetch(`${SUPA_URL}/rest/v1/agent_memory`, {
-      method: 'POST',
-      headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({
-        agent_id: agentId,
-        key: 'loop_breaker',
-        value: { consecutive_failures: 0, last_failure_at: now },
-        updated_at: now,
-      }),
-    })
+    const { error } = await db().from('agent_memory').upsert({
+      agent_id: agentId,
+      key: 'loop_breaker',
+      value: { consecutive_failures: 0, last_failure_at: now },
+      updated_at: now,
+    }, { onConflict: 'agent_id,key' })
+    if (error) breakerResetError = error.message
+
+    const lastIssueId = typeof priorPauseState?.last_issue_id === 'string' ? priorPauseState.last_issue_id : null
+    if (lastIssueId) {
+      const { data: issueRows, error: findError } = await db().from('issues')
+        .select('id, task_key, blocked_by')
+        .eq('id', lastIssueId)
+        .limit(1)
+      const issue = !findError
+        ? (issueRows as Array<{ id: string; task_key: string | null; blocked_by: string | null }> | null)?.[0]
+        : undefined
+      if (issue) {
+        blockedIssueLabel = issue.task_key ?? issue.id
+        if (issue.blocked_by === 'system:loop_breaker') {
+          const { error: clearError } = await db().from('issues')
+            .update({ is_blocked: false, blocked_by: null, updated_at: now })
+            .eq('id', lastIssueId)
+            .eq('blocked_by', 'system:loop_breaker')
+          if (!clearError) {
+            issueUnblocked = true
+          } else {
+            stillBlockedBy = `system:loop_breaker (clear failed: ${clearError.message})`
+          }
+        } else if (issue.blocked_by) {
+          // Some other system (e.g. a ceiling stop) blocked the same issue
+          // after the loop breaker did — never clear a block this route
+          // doesn't own. Report it honestly instead of a blanket "recovered".
+          stillBlockedBy = issue.blocked_by
+        }
+      }
+    }
   }
 
+  const message = paused
+    ? `Agent '${agentId}' has been manually paused.`
+    : stillBlockedBy
+      ? `Agent '${agentId}' un-paused, but issue ${blockedIssueLabel ?? ''} is still blocked by ${stillBlockedBy} — not re-dispatchable.`
+      : issueUnblocked
+        ? `Agent '${agentId}' has been un-paused. Consecutive failure counter reset; issue ${blockedIssueLabel} unblocked and re-dispatchable.`
+        : `Agent '${agentId}' has been un-paused. Consecutive failure counter reset.`
+
   return NextResponse.json({
-    ok: true,
+    ok: !breakerResetError,
     agent: agentId,
     is_paused: paused,
     updated_at: now,
-    message: paused
-      ? `Agent '${agentId}' has been manually paused.`
-      : `Agent '${agentId}' has been un-paused. Consecutive failure counter reset.`,
+    message,
+    ...(breakerResetError ? { error: `failure counter reset failed: ${breakerResetError}` } : {}),
+    ...(!paused ? { issue_unblocked: issueUnblocked, still_blocked_by: stillBlockedBy } : {}),
   })
 }

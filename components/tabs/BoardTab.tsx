@@ -6,6 +6,8 @@ import { Kanban, Search, X, ClipboardList, Bug, Wrench, SearchIcon, Lock } from 
 import { Chip } from '@/lib/mc-atoms'
 import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
 import { KanbanCard } from '@/components/KanbanCard'
+import { readApiError, formatApiError } from '@/hooks/useApiData'
+import { sessionOperator } from '@/lib/operator-identity'
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -194,9 +196,9 @@ const PRIORITY_COLORS: Record<string,string> = {
   critical:'#ef4444', high:'#f97316', medium:'#3f3f46', low:'#27272a',
 }
 
-const PROJECT_COLORS: Record<string,string> = {
-  Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280',
-}
+// TOD (no-invented-projects): PROJECT_COLORS — a three-name table
+// (Kemuni/Vespera/Ops) — was dead code, unused anywhere in this file.
+// Deleted rather than kept as an unused invented-name list.
 
 const TYPE_COLORS: Record<string,string> = {
   feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b',
@@ -206,6 +208,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [tasks, setTasks]         = useState<Task[]>([])
   const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState<string|null>(null)
+  // Write failures (create / update / delete / drag) surface here instead of
+  // being swallowed by a bare `if (res.ok)`.
+  const [actionError, setActionError] = useState<string|null>(null)
   const [dragId, setDragId]       = useState<string|null>(null)
   const [editTask, setEditTask]   = useState<Task|null>(null)
   const [newTask, setNewTask]     = useState<Partial<Task>|null>(null)
@@ -243,6 +248,27 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const groupByBusiness = swimlane === 'business'
   const groupBySprint = swimlane === 'sprint'
   const [collapsedBiz, setCollapsedBiz] = useState<Record<string,boolean>>(() => { try { return JSON.parse(localStorage.getItem('board-biz-collapsed') ?? '{}') } catch { return {} } })
+  // Business swimlane: which business each project belongs to. This used to
+  // be BIZ_PROJECTS, a hand-written table of five business/project names —
+  // an operator with one real project (Limiglow) saw four empty business
+  // groups next to it. Now sourced from GET /api/projects, whose `businesses`
+  // join names the real owner of each project row. `null` = not answered yet.
+  const [projectToBusiness, setProjectToBusiness] = useState<Record<string, string> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/projects').then(async res => {
+      if (cancelled) return
+      if (!res.ok) { setProjectToBusiness({}); return }
+      const rows = await res.json()
+      if (cancelled || !Array.isArray(rows)) { setProjectToBusiness({}); return }
+      const map: Record<string, string> = {}
+      for (const row of rows) {
+        if (row?.name) map[row.name] = row?.businesses?.name || 'Unassigned'
+      }
+      setProjectToBusiness(map)
+    }).catch(() => { if (!cancelled) setProjectToBusiness({}) })
+    return () => { cancelled = true }
+  }, [])
 
   // Persist multiselect filters to localStorage
   useEffect(() => {
@@ -286,12 +312,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         const d = await res.json()
         setTasks(Array.isArray(d) ? d : d?.data ?? [])
       } else {
-        let msg = `Failed to load issues (HTTP ${res.status})`
-        try { const e = await res.json(); if (e?.error) msg = e.error } catch {}
-        setLoadError(msg)
+        setTasks([])
+        setLoadError(formatApiError(await readApiError(res, '/api/issues')))
       }
     } catch (e: any) {
-      setLoadError(e?.message ?? 'Network error — could not reach /api/issues')
+      setTasks([])
+      setLoadError(formatApiError({ status: 0, endpoint: '/api/issues', message: e?.message ?? 'could not reach the server' }))
     } finally {
       setLoading(false)
     }
@@ -301,49 +327,114 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   // Auto-refresh removed — use the ↻ button to refresh manually (saves ~1.9 GB/day egress)
 
-  const createTask = async (t: Partial<Task>) => {
-    const res = await fetch('/api/issues', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
-    if (res.ok) { const d = await res.json(); setTasks(prev => [d, ...prev]); setNewTask(null) }
+  // Toast helper — one place so every write failure reads the same.
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const raiseActionError = useCallback((msg: string) => {
+    setActionError(msg)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setActionError(null), 8000)
+  }, [])
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
+
+  /** Turn a failed response (or a thrown fetch) into the shared error sentence. */
+  const describeFailure = async (resOrErr: Response | unknown, endpoint: string, label = 'change rejected'): Promise<string> => {
+    if (resOrErr instanceof Response) return formatApiError(await readApiError(resOrErr, endpoint), label)
+    return formatApiError({
+      status: 0,
+      endpoint,
+      message: resOrErr instanceof Error ? resOrErr.message : 'could not reach the server',
+    }, label)
   }
 
-  const updateTask = async (id: string, fields: Partial<Task>) => {
-    const res = await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, ...fields}) })
-    if (res.ok) { const d = await res.json(); setTasks(prev => prev.map(t => t.id===id ? d : t)); setEditTask(null) }
+  const createTask = async (t: Partial<Task>): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/issues', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
+      if (!res.ok) { raiseActionError(await describeFailure(res, '/api/issues')); return false }
+      const d = await res.json(); setTasks(prev => [d, ...prev]); setNewTask(null); return true
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues')); return false
+    }
   }
 
-  const deleteTask = async (id: string) => {
-    const res = await fetch(`/api/issues?id=${id}`, { method:'DELETE' })
-    if (res.ok) { setTasks(prev => prev.filter(t => t.id!==id)); setConfirmDelete(null); setEditTask(null) }
+  const updateTask = async (id: string, fields: Partial<Task>): Promise<boolean> => {
+    try {
+      // The workflow engine attributes every status change to a named actor and
+      // rejects the transition when it has none. Board edits are made by the
+      // signed-in human, so name them — read from the session, never hardcoded,
+      // so a viewer sends nothing and is still refused by the server.
+      const actor = sessionOperator()
+      const res = await fetch('/api/issues', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...fields, ...(actor ? { transitioned_by: actor } : {}) }),
+      })
+      if (!res.ok) { raiseActionError(await describeFailure(res, '/api/issues')); return false }
+      const d = await res.json(); setTasks(prev => prev.map(t => t.id===id ? d : t)); setEditTask(null); return true
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues')); return false
+    }
+  }
+
+  const deleteTask = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/issues?id=${id}`, { method:'DELETE' })
+      if (!res.ok) { raiseActionError(await describeFailure(res, '/api/issues')); return false }
+      setTasks(prev => prev.filter(t => t.id!==id)); setConfirmDelete(null); setEditTask(null); return true
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues')); return false
+    }
   }
 
   const closeTask = async (id: string) => {
+    const previous = tasks.find(t => t.id === id)
     setTasks(prev => prev.map(t => t.id===id ? {...t, status:'closed'} : t))
     setClosedConfirm(id)
     setTimeout(() => setClosedConfirm(prev => prev===id ? null : prev), 2000)
-    await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
+    try {
+      const actor = sessionOperator()
+      const res = await fetch('/api/issues', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'closed', ...(actor ? { transitioned_by: actor } : {}) }),
+      })
+      if (!res.ok) {
+        raiseActionError(await describeFailure(res, '/api/issues'))
+        setClosedConfirm(prev => prev===id ? null : prev)
+        if (previous) setTasks(prev => prev.map(t => t.id===id ? previous : t))
+      }
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues'))
+      setClosedConfirm(prev => prev===id ? null : prev)
+      if (previous) setTasks(prev => prev.map(t => t.id===id ? previous : t))
+    }
   }
 
-  const handleDrop = (colId: string) => {
+  const handleDrop = async (colId: string) => {
     if (!dragId) return
+    const id = dragId
     const col = BOARD_COLUMNS.find(c => c.id === colId)
     const status = col?.statuses[0] ?? colId
-    updateTask(dragId, { status })
-    setTasks(prev => prev.map(t => t.id===dragId ? {...t, status} : t))
+    // Snapshot before the optimistic move so a rejected PATCH can snap the
+    // card back to the column it came from instead of leaving a lie on screen.
+    const previous = tasks.find(t => t.id === id)
     setDragId(null)
+    setTasks(prev => prev.map(t => t.id===id ? {...t, status} : t))
+    const ok = await updateTask(id, { status })
+    if (!ok && previous) setTasks(prev => prev.map(t => t.id===id ? previous : t))
   }
 
-  const handleResolutionSelect = (resolutionType: string) => {
+  const handleResolutionSelect = async (resolutionType: string) => {
     if (!resolutionPending) return
     const { taskId, source, editFields } = resolutionPending
-    if (source === 'edit' && editFields) {
-      updateTask(taskId, { ...editFields, status: 'completed', resolution_type: resolutionType })
-      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...editFields, status: 'completed', resolution_type: resolutionType } : t))
-    } else {
-      updateTask(taskId, { status: 'completed', resolution_type: resolutionType })
-      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, status: 'completed', resolution_type: resolutionType } : t))
-    }
+    const previous = tasks.find(t => t.id === taskId)
+    const patch: Partial<Task> = source === 'edit' && editFields
+      ? { ...editFields, status: 'completed', resolution_type: resolutionType }
+      : { status: 'completed', resolution_type: resolutionType }
+    setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...patch } : t))
     setResolutionPending(null)
     setEditTask(null)
+    const ok = await updateTask(taskId, patch)
+    if (!ok && previous) setTasks(prev => prev.map(t => t.id===taskId ? previous : t))
   }
 
   // ESC key closes detail panel
@@ -552,6 +643,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
             {/* Off-board status chips: backlog, future sprints, closed — counts only.
                 Click to filter the board to that scope. */}
             {(() => {
+              // A failed load has no counts to report — showing "Backlog 0" over
+              // a 403 is the exact lie this component is being fixed for.
+              if (loadError) return null
               const scopedTasks = tasks.filter(t => !EXCLUDED_BOARD_TYPES.includes(t.type ?? ''))
               const refinedCount = scopedTasks.filter(t => t.status === 'refined').length
               const backlogCount = scopedTasks.filter(t => t.status === 'backlog').length
@@ -612,6 +706,22 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         )}
       </div>
 
+      {/* Write-failure toast — a rejected PATCH/POST/DELETE must be visible.
+          Sits above the mobile bottom nav (which owns `fixed bottom-0`). */}
+      {actionError && (
+        <div
+          role="alert"
+          data-testid="board-action-toast"
+          className="fixed bottom-20 lg:bottom-4 right-4 z-[60] max-w-sm rounded-xl border border-red-500/40 bg-[#1a0f0f] px-4 py-3 shadow-xl flex items-start gap-3"
+        >
+          <span aria-hidden="true" className="text-red-400 text-sm shrink-0 leading-5">⚠️</span>
+          <p className="flex-1 min-w-0 text-red-400 text-xs break-words leading-5">{actionError}</p>
+          <button onClick={() => setActionError(null)} aria-label="Dismiss error" className="shrink-0 text-red-400/60 hover:text-red-400">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* TOD-654: Truthful error state — never silently show empty board on fetch failure */}
       {loadError && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/8 px-4 py-3 flex items-start gap-3">
@@ -654,7 +764,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Feature-grouped swimlane — each feature is a collapsible 3-column kanban */}
-      {groupByFeature && (() => {
+      {!loadError && groupByFeature && (() => {
         // TOD-XXX (Q4): pull features from the FULL tasks array (not filtered)
         // so parent lookups don't fail when a parent feature isn't in the current
         // status-filtered view. Previously caused "Unknown Feature" groups.
@@ -759,7 +869,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Sprint-grouped swimlane — active + future + "No Sprint" lane at end */}
-      {groupBySprint && (() => {
+      {!loadError && groupBySprint && (() => {
         const NO_SPRINT_KEY = '__no_sprint__'
         const sprintGroups: Record<string, typeof filtered> = {}
         for (const t of filtered) {
@@ -843,34 +953,29 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Business-grouped view */}
-      {groupByBusiness && (() => {
-        const BIZ_PROJECTS: Record<string, {label: string; emoji: string; projects: string[]}> = {
-          'Vespera':          { label: 'Vespera',          emoji: '🖤', projects: ['Vespera'] },
-          'Kemuni':           { label: 'Kemuni',           emoji: '🚀', projects: ['Kemuni'] },
-          'Mission Control':  { label: 'Mission Control',  emoji: '🧠', projects: ['Mission Control'] },
-          'Todero':          { label: 'Todero',          emoji: '🧠', projects: ['Todero'] },
-          'Infrastructure':   { label: 'Infrastructure',   emoji: '⚙️', projects: ['Infrastructure', 'KAOS'] },
-        }
-        const bizOrder = ['Vespera', 'Kemuni', 'Mission Control', 'Todero', 'Infrastructure']
-        // Reverse map: project → business
-        const projToBiz: Record<string, string> = {}
-        for (const [biz, info] of Object.entries(BIZ_PROJECTS)) {
-          for (const p of info.projects) projToBiz[p] = biz
-        }
-        // Group tasks by business → project
+      {!loadError && groupByBusiness && (() => {
+        // Group tasks by business → project using the real project→business
+        // map from /api/projects (projectToBusiness, declared above). While
+        // that map hasn't answered yet every task falls into one honest
+        // "Loading businesses…" bucket rather than a guessed grouping.
         const bizGroups: Record<string, Record<string, typeof filtered>> = {}
         for (const t of filtered) {
-          const biz = projToBiz[t.project ?? ''] ?? 'Other'
+          const biz = projectToBusiness === null
+            ? 'Loading businesses…'
+            : (projectToBusiness[t.project ?? ''] ?? 'Unassigned')
           const proj = t.project ?? 'Unassigned'
           if (!bizGroups[biz]) bizGroups[biz] = {}
           if (!bizGroups[biz][proj]) bizGroups[biz][proj] = []
           bizGroups[biz][proj].push(t)
         }
-        const allKeys = [...bizOrder.filter(k => bizGroups[k]), ...Object.keys(bizGroups).filter(k => !bizOrder.includes(k) && bizGroups[k])]
+        const allKeys = Object.keys(bizGroups).sort()
         return (
           <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
             {allKeys.map(bizKey => {
-              const biz = BIZ_PROJECTS[bizKey] || { label: bizKey, emoji: '📁', projects: [] }
+              // No hand-written emoji table keyed by business name: every
+              // group gets the same neutral icon, since /api/projects's
+              // `businesses` join sends no emoji field on the row.
+              const biz = { label: bizKey, emoji: '🏢' }
               const bizProjectGroups = bizGroups[bizKey] || {}
               const allBizTasks = Object.values(bizProjectGroups).flat()
               const isCollapsed = collapsedBiz[bizKey] ?? true
@@ -964,7 +1069,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       })()}
 
       {/* Mobile column tabs */}
-      {swimlane === 'together' && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
+      {!loadError && swimlane === 'together' && <div className="flex md:hidden gap-1 overflow-x-auto pb-1">
         {BOARD_COLUMNS.map(col=>(
           <button key={col.id} onClick={()=>setMobileCol(col.id)}
             className={'text-xs px-3 py-1.5 rounded-lg shrink-0 transition-colors '+(mobileCol===col.id?'bg-white/10 text-white':'text-white/50 hover:text-white/70')}
@@ -975,7 +1080,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
       </div>}
 
       {/* Columns — 3-col layout fills viewport (TOD-XXX Board simplification) */}
-      {swimlane === 'together' && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
+      {!loadError && swimlane === 'together' && <div className="flex-1 flex gap-3 overflow-x-auto pb-2 min-h-0">
         {BOARD_COLUMNS.map(col => {
           const colTasks = filtered.filter(t => col.statuses.includes(t.status))
           return (
@@ -1065,7 +1170,11 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </Select>
               </FormGroup>
               <FormGroup label="Project">
-                <Input placeholder="e.g. Kemuni" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} />
+                {/* Free-text on purpose (an issue can name a project ahead of
+                    its /api/projects row existing), but the placeholder must
+                    not suggest a specific project — that used to be
+                    "e.g. Kemuni", a name this installation may not have. */}
+                <Input placeholder="Project name" value={newTask.project??''} onChange={e=>setNewTask({...newTask,project:e.target.value})} />
               </FormGroup>
               <FormGroup label="Assignee">
                 <Select value={newTask.assignee??''} onChange={e=>{

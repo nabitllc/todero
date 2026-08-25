@@ -1,5 +1,9 @@
 node_modules/
-.next/
+# Any Next build output, whatever distDir a verification build chose.
+# A glob, not a list: agents pick their own dir names to avoid clobbering the
+# dev server, and .next-ac3 (123MB) got committed because the ignore named only
+# the one dir this session happened to use.
+.next*/
 .env*.local
 .vercel
 *.log
@@ -31,3 +35,20 @@ coverage/
 .idea/
 *.swp
 *.swo
+
+# Stray local service-health snapshots from redirected script output
+st.json
+scripts/acceptance/.gate.lock
+
+# Local SQLite database — the zero-account default provider (lib/db/sqlite-adapter.ts)
+# and its write-ahead-log sidecars. This is machine-local data, never shared state.
+/db.sqlite
+/db.sqlite-wal
+/db.sqlite-shm
+.next-critic/
+
+# Stray crash-log fragments from harness runs
+output.txt
+
+# Database exports — history, not source. Keep out of git.
+exports/

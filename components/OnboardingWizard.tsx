@@ -1,9 +1,10 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, ArrowRight, ArrowLeft, Sparkles, Check, ChevronDown, ChevronUp, Building2, Bot, ClipboardList, Rocket } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { Input, Textarea, Select } from '@/components/ui'
 import { FormGroup } from '@/components/ui'
+import { fetchJson, formatApiError, type ApiError } from '@/hooks/useApiData'
 
 // ── Name generators ──────────────────────────────────────────────────────────
 const GENERATED_NAMES = [
@@ -40,6 +41,11 @@ function generateTaskTitle(mission: string): string {
 const PRIMARY_ADAPTERS = [
   { id: 'claude-code', label: 'Claude Code', desc: 'Local Claude agent', recommended: true },
   { id: 'codex', label: 'Codex', desc: 'Local Codex agent', recommended: true },
+  // The one adapter that needs no vendor CLI installed — it talks to whatever
+  // LLM_BASE_URL points at (Ollama, LM Studio, a hosted gateway). It was
+  // missing from this list, so a first-run operator on a machine with no CLI
+  // had no selectable runtime at all even though Todero could dispatch.
+  { id: 'openai-api', label: 'OpenAI API', desc: 'Any OpenAI-compatible endpoint (LLM_BASE_URL)', recommended: true },
 ]
 const MORE_ADAPTERS = [
   { id: 'gemini-cli', label: 'Gemini CLI', desc: 'Google Gemini local agent' },
@@ -49,14 +55,25 @@ const MORE_ADAPTERS = [
   { id: 'native-stack', label: 'Native Stack', desc: 'Local claude CLI via run-agent' },
 ]
 
-const MODELS = [
-  { label: 'Default', value: 'default' },
-  { label: 'Claude Sonnet (Anthropic)', value: 'anthropic/claude-sonnet-4-6' },
-  { label: 'Claude Haiku (Anthropic)', value: 'anthropic/claude-haiku-4-5' },
-  { label: 'GPT-4o (OpenAI)', value: 'openai/gpt-4o' },
-  { label: 'Gemini Pro (Google)', value: 'google/gemini-pro' },
-  { label: 'Local (Ollama)', value: 'ollama/local' },
-]
+// The model list is deliberately NOT hardcoded here. This wizard is the first
+// model picker a stranger on a fresh clone sees, and it used to offer four
+// cloud vendors plus a made-up `ollama/local` id — none of them reachable from
+// the endpoint Todero is actually configured against. It now reads the exact
+// same live seam the Chat tab does (`GET /api/chat/models`, a same-origin proxy
+// of `${LLM_BASE_URL}/models` — see lib/llm-provider.ts), so the only things
+// offerable are the models this host can actually answer with. If that endpoint
+// is down the picker is replaced by a named error, never an empty select and
+// never a cloud option.
+interface LiveModel { id: string }
+
+/** One row of /api/run-agent/runtimes — the live runtime registry. */
+interface RuntimeInfo {
+  name: string
+  displayName: string
+  available: boolean
+  /** Endpoint-specific cause from the registry — null when available. */
+  unavailableReason?: string | null
+}
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 const TABS = [
@@ -109,9 +126,38 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
   // Step 2
   const [agentName, setAgentName] = useState('Builder')
   const [adapter, setAdapter] = useState('claude-code')
-  const [model, setModel] = useState('default')
+  // Empty until the live roster answers — there is no vendor default to fall
+  // back on, and an id the operator cannot reach must never be pre-selected.
+  const [model, setModel] = useState('')
+  const [liveModels, setLiveModels] = useState<LiveModel[]>([])
+  const [modelsError, setModelsError] = useState<ApiError | null>(null)
+  const [modelsLoading, setModelsLoading] = useState(true)
   const [showMore, setShowMore] = useState(false)
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok'>('idle')
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testDetail, setTestDetail] = useState('')
+
+  // Live model roster — same seam as ChatTab. A failed load surfaces as a
+  // visible error naming the URL that failed, not an empty dropdown.
+  const loadLiveModels = useCallback(() => {
+    setModelsLoading(true)
+    fetchJson<{ base_url: string; default_model: string | null; models: LiveModel[] }>('/api/chat/models')
+      .then(res => {
+        if (!res.ok) {
+          setModelsError(res.error)
+          setLiveModels([])
+          setModel('')
+          setModelsLoading(false)
+          return
+        }
+        setModelsError(null)
+        const models = res.data.models || []
+        setLiveModels(models)
+        // Seed the selection from what the endpoint itself calls its default.
+        setModel(res.data.default_model || models[0]?.id || '')
+        setModelsLoading(false)
+      })
+  }, [])
+  useEffect(() => { loadLiveModels() }, [loadLiveModels])
 
   // Step 3
   const [taskTitle, setTaskTitle] = useState('')
@@ -123,10 +169,50 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
 
   const selectedAdapter = [...PRIMARY_ADAPTERS, ...MORE_ADAPTERS].find(a => a.id === adapter)
 
-  const runTest = () => {
+  // A real check, not a timer. This used to be `setTimeout(() => 'ok', 1500)`
+  // under a label promising "a live probe" — it reported the environment ready
+  // for adapters that are not installed and for adapters Todero cannot dispatch
+  // to at all. It now reads the runtime registry's live availability
+  // (/api/run-agent/runtimes → lib/runtimes/index.ts::listRuntimes, which calls
+  // each runtime's isAvailable()) and says exactly what it found.
+  const runTest = useCallback(() => {
     setTestStatus('testing')
-    setTimeout(() => setTestStatus('ok'), 1500)
-  }
+    setTestDetail('')
+    fetchJson<{ runtimes: RuntimeInfo[] }>('/api/run-agent/runtimes').then(res => {
+      if (!res.ok) {
+        setTestStatus('fail')
+        setTestDetail(formatApiError(res.error, 'runtime check failed'))
+        return
+      }
+      const registered = res.data.runtimes || []
+      const entry = registered.find(r => r.name === adapter)
+      if (!entry) {
+        setTestStatus('fail')
+        setTestDetail(
+          `"${adapter}" is not a runtime Todero can dispatch to on this host. ` +
+          `Registered: ${registered.map(r => r.name).join(', ') || 'none'}.`,
+        )
+        return
+      }
+      if (!entry.available) {
+        setTestStatus('fail')
+        // The registry now says WHY — the unreachable URL, the missing
+        // variable, the binary that is not on PATH. "its CLI or credential is
+        // missing" was a guess, and it was the wrong guess for the most common
+        // first-run failure: an LLM endpoint that nothing is listening on.
+        setTestDetail(
+          entry.unavailableReason
+            ? `${entry.displayName} is registered but not available here — ${entry.unavailableReason}`
+            : `${entry.displayName} is registered but not available here, and reported no reason.`,
+        )
+        return
+      }
+      setTestStatus('ok')
+      setTestDetail(`${entry.displayName} is available on this host.`)
+    })
+  }, [adapter])
+  // Any answer stops applying the moment the adapter changes.
+  useEffect(() => { setTestStatus('idle'); setTestDetail('') }, [adapter])
 
   const submit = async () => {
     setLoading(true)
@@ -140,7 +226,10 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
           type: 'saas',
           vision: mission,
           agentName,
-          model: model === 'default' ? 'anthropic/claude-sonnet-4-6' : model,
+          // Whatever the live roster gave us, verbatim. It used to become
+          // `anthropic/claude-sonnet-4-6` whenever the picker said "Default",
+          // writing a model this install cannot reach into the agents table.
+          model,
           apiKey: '',
           taskTitle,
           taskDescription: taskDesc,
@@ -157,7 +246,7 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
 
   const canNext = [
     companyName.trim().length > 0,   // step 1
-    agentName.trim().length > 0,     // step 2
+    agentName.trim().length > 0 && model.length > 0,  // step 2 — a model the live roster actually reported
     taskTitle.trim().length > 0,     // step 3
     true,                            // step 4
   ][step - 1]
@@ -315,24 +404,44 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                 )}
               </div>
 
-              {/* Model */}
+              {/* Model — live roster from ${LLM_BASE_URL}/models via
+                  /api/chat/models. Same affordance as the Chat tab: on failure
+                  the select is REPLACED by a red pill carrying the server's own
+                  message (which leads with the URL that failed) plus a retry,
+                  rather than a disabled empty select or a cloud option nobody
+                  on this host can reach. */}
               <FormGroup label="Model">
-                <Select
-                  value={model}
-                  onChange={e => setModel(e.target.value)}
-                  className="rounded-xl"
-                >
-                  {MODELS.map(m => (
-                    <option key={m.value} value={m.value} className="bg-[#1a1a1a] text-white">{m.label}</option>
-                  ))}
-                </Select>
+                {modelsError ? (
+                  <button
+                    type="button"
+                    onClick={loadLiveModels}
+                    title={`${formatApiError(modelsError, 'model list unavailable')} — click to retry`}
+                    className="flex w-full items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-left text-xs text-red-400">
+                    <span aria-hidden="true">⚠️</span>
+                    <span className="flex-1 break-words">{modelsError.message}</span>
+                    <span className="shrink-0 underline">retry</span>
+                  </button>
+                ) : (
+                  <Select
+                    value={model}
+                    onChange={e => setModel(e.target.value)}
+                    disabled={modelsLoading}
+                    className="rounded-xl"
+                  >
+                    {modelsLoading && <option value="" className="bg-[#1a1a1a] text-white">Loading models…</option>}
+                    {liveModels.map(m => (
+                      <option key={m.id} value={m.id} className="bg-[#1a1a1a] text-white">{m.id}</option>
+                    ))}
+                  </Select>
+                )}
               </FormGroup>
 
               {/* Environment check */}
               <div className="rounded-xl border border-white/10 bg-[#0f0f0f] p-4 space-y-2">
                 <p className="text-white/50 text-xs font-medium">Adapter environment check</p>
                 <p className="text-white/30 text-xs leading-relaxed">
-                  Runs a live probe that asks the adapter CLI to respond with hello.
+                  Asks the server which runtimes it can actually dispatch to right now,
+                  and whether {selectedAdapter?.label ?? adapter} is one of them.
                 </p>
                 <Button
                   variant="secondary"
@@ -344,11 +453,18 @@ export default function OnboardingWizard({ onClose, onComplete }: Props) {
                   {testStatus === 'ok' ? (
                     <><Check size={12} className="text-green-400"/> Environment ready</>
                   ) : testStatus === 'testing' ? (
-                    'Testing...'
+                    'Checking...'
+                  ) : testStatus === 'fail' ? (
+                    'Check again'
                   ) : (
                     'Test now'
                   )}
                 </Button>
+                {testDetail && (
+                  <p className={`text-xs leading-relaxed break-words ${testStatus === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                    {testStatus === 'ok' ? '✓ ' : '⚠️ '}{testDetail}
+                  </p>
+                )}
               </div>
             </div>
           )}

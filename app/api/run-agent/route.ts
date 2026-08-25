@@ -12,68 +12,145 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getQueueConfig, getAllQueueAgentIds } from '@/lib/agent-queue'
+import { ensureVaultDispatchConfigs } from '@/lib/agent-manifests'
 import { satisfiesIssueDependency } from '@/lib/issue-lifecycle'
 import { isHubPaused } from '@/lib/hub-pause'
 import { isAgentPaused } from '@/lib/loop-breaker'
+import { checkDispatchCeilings } from '@/lib/agent-budget'
 import { exec } from 'child_process'
-import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtimes'
+import { getDefaultRuntime, getRuntimeByName, inspectRuntime } from '@/lib/runtimes'
+import { probeRuntimes, resolveDispatchModel } from '@/lib/resolve-dispatch-model'
+import { isAlive } from '@/lib/runtimes/detached-spawn'
 import { recordSpawn } from '@/lib/runtimes/token-ledger'
 import { logAgentCost } from '@/lib/agent-cost-log'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
+import { CONFIG_DIR, LOG_DIR, TODERO_DIR as TODERO_ROOT, resolveBinary } from '@/lib/paths'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { join } from 'path'
+import { db } from '@/lib/db'
+import { applyFilters, applyShaping, readQueryShape } from '@/lib/db/query-params'
+import { dbUnavailableResponse } from '@/lib/db-http'
+import {
+  buildRetrievedContext,
+  RetrievalBudgetExceededError,
+  estimateTokens,
+  getContextBudgetTokens,
+} from '@/lib/memory-retrieval'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-// Lazy-init: avoids crashing at build time when env vars aren't set (CI).
-let _supaKey: string | null = null
-function getSupaKey(): string {
-  if (!_supaKey) {
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY env var is required (TOD-767)')
-    _supaKey = key
+/**
+ * Run one of the queue's filter strings through the database seam.
+ *
+ * `lib/agent-queue.ts` stores each lane's filters as query fragments
+ * (`type=in.(task,bug)&project=eq.Todero`, `sortOrder: 'priority.asc'`). They
+ * are translated into `DbQueryBuilder` calls here rather than pasted onto a
+ * vendor URL, so this route sits behind `lib/db.ts` like everything else and a
+ * different adapter needs no HTTP API of its own.
+ *
+ * Returns `[]` and warns on a query error — the callers below all treat a
+ * non-array as "nothing eligible", which is the behaviour this preserves.
+ */
+async function selectRows<T>(table: string, query: string): Promise<T[]> {
+  const params = new URLSearchParams(query)
+  const { select } = readQueryShape(params)
+  let builder = db().from(table).select(select)
+  builder = applyFilters(builder, params)
+  builder = applyShaping(builder, params)
+  const { data, error } = await builder
+  if (error) {
+    console.warn(`[run-agent] ${table} query failed: ${error.message}`)
+    return []
   }
-  return _supaKey
+  return (data ?? []) as T[]
 }
-function getHeaders() { const k = getSupaKey(); return { 'apikey': k, 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' } }
 
-const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
-const WORKSPACE = '/Users/kemuniagent/todero/config'
-const TODERO_DIR = '/Users/kemuniagent/todero'
+// Machine-portable paths. These used to name one developer's Mac home
+// directory, so every dispatch on any other host died before the first HTTP
+// call: the spawn cwd did not exist and the log path was unwritable.
+//   TODERO_DIR         repo root used as the agent working dir
+//   TODERO_CONFIG_DIR  agent config/memory dir
+//   TODERO_LOG_DIR     where per-run agent logs land (under os.tmpdir())
+//   CLAUDE_BIN         claude CLI path or name (resolved on PATH)
+const TODERO_DIR = TODERO_ROOT
+const WORKSPACE = CONFIG_DIR
+const CLAUDE_BIN = resolveBinary(process.env.CLAUDE_BIN ?? 'claude') ?? 'claude'
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
 const MAX_REJECTION_CYCLES = 3
 
-const MAX_CONTEXT_BYTES = 30_000
+// In-memory context cache keyed by agentId — TTL 30 minutes.
+// Agent memory/context changes at most daily; short TTL was causing unnecessary DB reads.
+// This ONLY caches the identity half of the context (SOUL/handbook/skills/daily
+// notes) — agent-level, not task-level. A per-agent cache can never be
+// task-relevant, so the task-specific retrieval half (below) is never cached
+// here; it is already a small, budgeted, ranked query per spawn, not the
+// wholesale dump the cache originally existed to avoid re-querying.
+const CONTEXT_CACHE_TTL_MS = 30 * 60 * 1000
 
-// In-memory context cache keyed by agentId — TTL 5 minutes
-// Prevents redundant Supabase reads when watchdog kicks same agent repeatedly
-const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000
-const contextCache = new Map<string, { context: string; expiresAt: number }>()
+/** One identity section (SOUL/skill/daily-note) dropped for budget overflow — see `loadIdentityContext`. */
+interface DroppedIdentitySection {
+  label: string
+  estTokens: number
+}
 
-async function loadContextFromDB(agentId: string): Promise<string> {
-  const cached = contextCache.get(agentId)
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.context
-  }
-  const supaHeaders = {
-    'apikey': getSupaKey(),
-    'Authorization': `Bearer ${getSupaKey()}`,
-    'Content-Type': 'application/json',
-  }
+const contextCache = new Map<string, { context: string; droppedSections: DroppedIdentitySection[]; expiresAt: number }>()
 
+/**
+ * Budget for the identity half of the spawn context (SOUL, per-agent SOUL,
+ * AGENTS handbook, skill docs, recent daily notes) assembled below. Derived
+ * from the retrieval budget (`getContextBudgetTokens()`) rather than an
+ * unrelated magic number, so the one env knob
+ * (`TODERO_MEMORY_RETRIEVAL_BUDGET_TOKENS`) scales both halves of the spawn
+ * context together. The multiplier lands close to the old
+ * `MAX_CONTEXT_BYTES = 30_000` (~7,500 tokens) this replaces: identity docs
+ * are static guidance read once per spawn, not per-task retrieval, so they
+ * get a larger allowance than the ~1,300-token retrieval budget.
+ */
+const IDENTITY_CONTEXT_BUDGET_MULTIPLIER = 6
+function getIdentityContextBudgetTokens(): number {
+  return getContextBudgetTokens() * IDENTITY_CONTEXT_BUDGET_MULTIPLIER
+}
+
+/**
+ * Fetches the agent-level (not task-level) half of the spawn context: SOUL,
+ * per-agent SOUL, the AGENTS handbook, skill docs, and today/yesterday's
+ * daily notes. Cached per agent for 30 minutes by `loadContextFromDB` below.
+ *
+ * memory-loop-retrieval round 2: this used to also pull self_improving /
+ * long_term / corrections WHOLESALE (limit=20, unranked) and then silently
+ * drop whole sections off the end with `while (...) sections.pop()` once the
+ * combined text passed a fixed byte cap — exactly the "uncapped, unranked
+ * injection that buries the record that mattered" bug this piece exists to
+ * fix, just relocated to a query with no task key to rank against. That tier
+ * now lives in `buildRetrievedContext()` (`loadContextFromDB` below), ranked
+ * against the actual task. What remains here is genuinely task-independent
+ * identity material, so it keeps its own (larger) budget and is selected by
+ * the same whole-section discipline `lib/memory-retrieval.ts` already
+ * applies to ranked records: never chop a section, never silently drop the
+ * first (most important) one.
+ */
+/** Return value of `loadIdentityContext` — text plus which sections (if any) did not fit the budget. */
+interface IdentityContextResult {
+  text: string
+  droppedSections: DroppedIdentitySection[]
+}
+
+async function loadIdentityContext(agentId: string): Promise<IdentityContextResult> {
   // Fetch global + per-agent documents + shared skill docs
-  const docsRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_documents?or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
-    { headers: supaHeaders }
+  const docs = await selectRows<{ agent_id: string; doc_type: string; slug: string; content: string }>(
+    'agent_documents',
+    `or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
   )
-  const docs = await docsRes.json() as Array<{ agent_id: string; doc_type: string; slug: string; content: string }>
 
-  // Fetch memory: today + yesterday daily notes + long_term + self_improving + corrections
-  // Bug fix: table was renamed agent_memory → agent_memory_files (agent_memory is the key-value store)
+  // Fetch memory: today + yesterday daily notes only. long_term / self_improving
+  // / corrections moved to buildRetrievedContext() — ranked against the task,
+  // not dumped here. Bug fix (kept from the prior round): table was renamed
+  // agent_memory → agent_memory_files (agent_memory is the key-value store).
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-  const memRes = await fetch(
-    `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&select=memory_type,date_key,content&order=updated_at.desc&limit=20`,
-    { headers: supaHeaders }
+  const agentMemoryScope = `or=(agent_id.eq.global,agent_id.eq.${agentId})`
+  const dailyRows = await selectRows<{ memory_type: string; date_key: string | null; content: string; updated_at?: string }>(
+    'agent_memory_files',
+    `${agentMemoryScope}&memory_type=eq.daily&date_key=in.(${today},${yesterday})&select=memory_type,date_key,content,updated_at&order=updated_at.desc&limit=20`,
   )
-  const memRows = await memRes.json() as Array<{ memory_type: string; date_key: string | null; content: string }>
 
   const sections: string[] = []
 
@@ -95,31 +172,219 @@ async function loadContextFromDB(agentId: string): Promise<string> {
     sections.push(`# SKILL: ${skill.slug}\n\n${skill.content}`)
   }
 
-  // Memory: self_improving first (HOT), then long_term, then daily (newest first)
-  const siMem = memRows.find(m => m.memory_type === 'self_improving')
-  if (siMem) sections.push(`# SELF-IMPROVING MEMORY\n\n${siMem.content}`)
-
-  const ltMem = memRows.find(m => m.memory_type === 'long_term')
-  if (ltMem) sections.push(`# LONG-TERM MEMORY\n\n${ltMem.content}`)
-
-  const dailyMem = memRows.filter(m => m.memory_type === 'daily').sort((a, b) => (b.date_key ?? '').localeCompare(a.date_key ?? ''))
+  // Daily notes, newest first
+  const dailyMem = dailyRows
+    .filter(m => m.memory_type === 'daily')
+    .sort((a, b) => (b.date_key ?? '').localeCompare(a.date_key ?? ''))
   for (const m of dailyMem) {
     sections.push(`# DAILY MEMORY (${m.date_key})\n\n${m.content}`)
   }
 
-  // Hard context limit: drop from the end (oldest memory) until under MAX_CONTEXT_BYTES
-  let combined = sections.join('\n\n---\n\n')
-  while (combined.length > MAX_CONTEXT_BYTES && sections.length > 1) {
-    sections.pop()
-    combined = sections.join('\n\n---\n\n')
+  // Whole-section budget selection — the same discipline
+  // lib/memory-retrieval.ts applies to ranked records: estimate tokens per
+  // section, keep adding whole sections while under budget, and — mirroring
+  // buildRetrievedContext's "a single oversized LOWER-ranked record must not
+  // exclude smaller records that still fit" — CONTINUE scanning past an
+  // oversized section rather than stopping selection outright, so one big
+  // skill doc mid-list does not silently exclude every smaller section after
+  // it. The one section that may never be silently dropped is the first
+  // non-empty one — an agent's own identity (global SOUL, or whatever
+  // section landed first) — mirroring "the top-ranked record" in
+  // buildRetrievedContext: if it alone exceeds the budget, that is
+  // RetrievalBudgetExceededError, raised rather than truncated. This
+  // replaces the old `while (...) sections.pop()` loop, which silently
+  // dropped whichever section happened to land last, regardless of whether
+  // that was the important one.
+  //
+  // Every section that does not fit is recorded (label + est. tokens), not
+  // just discarded: the caller surfaces the list both as a visible note in
+  // the returned prompt text and as a console.warn, so truncation here is
+  // never invisible the way it was before this fix — matching the contract
+  // buildRetrievedContext already honors via possiblyIncompleteScan.
+  const budgetTokens = getIdentityContextBudgetTokens()
+  const selected: string[] = []
+  const dropped: DroppedIdentitySection[] = []
+  let usedTokens = 0
+  for (const section of sections) {
+    const sectionTokens = estimateTokens(section)
+    const label = section.split('\n', 1)[0].replace(/^#\s*/, '')
+    if (selected.length === 0 && sectionTokens > budgetTokens) {
+      throw new RetrievalBudgetExceededError(agentId, '(identity-context)', label, sectionTokens, budgetTokens)
+    }
+    if (usedTokens + sectionTokens > budgetTokens) {
+      dropped.push({ label, estTokens: sectionTokens })
+      continue
+    }
+    selected.push(section)
+    usedTokens += sectionTokens
   }
 
-  // Cache the result
-  contextCache.set(agentId, { context: combined, expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS })
-  return combined
+  let text = selected.join('\n\n---\n\n')
+
+  if (dropped.length > 0) {
+    const droppedTokensTotal = dropped.reduce((sum, d) => sum + d.estTokens, 0)
+    const shownLabels = dropped.slice(0, 3).map(d => d.label)
+    const labelList = dropped.length > shownLabels.length ? `${shownLabels.join(', ')}, …` : shownLabels.join(', ')
+    const note =
+      `_(identity context truncated to fit the ${budgetTokens}-token budget: ` +
+      `${dropped.length} of ${sections.length} sections omitted (~${droppedTokensTotal} est. tokens) — ${labelList})_`
+    text = text ? `${text}\n\n---\n\n${note}` : note
+
+    console.warn(
+      `[run-agent] identity context for ${agentId} truncated to fit the ${budgetTokens}-token budget: ` +
+      `${dropped.length}/${sections.length} sections omitted (~${droppedTokensTotal} est. tokens) — ` +
+      dropped.map(d => `${d.label} (~${d.estTokens} est. tokens)`).join(', '),
+    )
+  }
+
+  return { text, droppedSections: dropped }
+}
+
+/**
+ * Full spawn context: the cached, agent-level identity half plus a fresh,
+ * task-ranked retrieval half. `taskKey`/`taskTitle` identify the task being
+ * spawned for — retrieval ranks this agent's past run records against THAT,
+ * not against nothing, and is never served from `contextCache` (see the
+ * comment on that Map).
+ */
+/**
+ * Full result of `loadContextFromDB` — the assembled prompt text plus both
+ * halves' honesty signals, mirroring `RetrievalResult.possiblyIncompleteScan`:
+ * a caller (or a future caller) can inspect `identityDroppedSections` /
+ * `retrieval` without having to re-parse the visible note out of `text`.
+ */
+interface LoadedAgentContext {
+  text: string
+  identityDroppedSections: DroppedIdentitySection[]
+  retrieval: Awaited<ReturnType<typeof buildRetrievedContext>>
+}
+
+async function loadContextFromDB(agentId: string, taskKey: string, taskTitle: string): Promise<LoadedAgentContext> {
+  const cached = contextCache.get(agentId)
+  let identity: IdentityContextResult
+  if (cached && cached.expiresAt > Date.now()) {
+    identity = { text: cached.context, droppedSections: cached.droppedSections }
+  } else {
+    identity = await loadIdentityContext(agentId)
+    contextCache.set(agentId, {
+      context: identity.text,
+      droppedSections: identity.droppedSections,
+      expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS,
+    })
+  }
+
+  const retrieved = await buildRetrievedContext(agentId, taskKey, taskTitle)
+  if (retrieved.availability === 'unavailable') {
+    console.warn(
+      `[run-agent] retrieval unavailable for ${agentId}/${taskKey} (${retrieved.engine}): ${retrieved.unavailableReason ?? 'unknown reason'} — proceeding with identity context only, not a clean "nothing relevant" result`,
+    )
+  }
+
+  return {
+    text: [identity.text, retrieved.text].filter(Boolean).join('\n\n---\n\n'),
+    identityDroppedSections: identity.droppedSections,
+    retrieval: retrieved,
+  }
+}
+
+
+// ── SAFETY GUARD (owner directive, 2026-08-24) ───────────────────────────────
+// Todero must not autonomously dispatch agents while it is itself being rebuilt.
+// Claude builds Todero; Todero does not build Todero. This guard is ON by
+// default and must be explicitly opted out of via TODERO_DISPATCH_ENABLED=1.
+// Rationale: /api/cron/queue-refill and /api/cron/watchdog pull real backlog
+// tasks and spawn `claude --permission-mode bypassPermissions`, with a watcher
+// that self-kicks this endpoint when the child exits. On this host that only
+// failed because no POSIX shell is present — a protection we are actively removing.
+function dispatchDisabled(): boolean {
+  return process.env.TODERO_DISPATCH_ENABLED !== '1'
+}
+const DISPATCH_BLOCKED_BODY = {
+  error: 'Agent dispatch is disabled on this instance.',
+  code: 'DISPATCH_DISABLED',
+  hint: 'Set TODERO_DISPATCH_ENABLED=1 to allow Todero to spawn agents. Intentionally off while Todero is under reconstruction.',
+}
+
+/**
+ * POST /api/run-agent?dryRun=1 — answer "would a dispatch work on this host?"
+ * without dispatching. Resolves the runtime that would be chosen, resolves its
+ * binary on PATH, and creates the log file under LOG_DIR so the caller can see
+ * the exact path an agent's output would land in.
+ *
+ * Deliberately runs BEFORE the dispatch guard: the guard exists to stop Todero
+ * spawning agents, and this branch spawns nothing. It is also the only way to
+ * verify the portable-spawn plumbing on a host where dispatch is (correctly)
+ * turned off. `binResolved: null` means a real dispatch here would return
+ * ok:false — that is the answer, not a failure to answer.
+ */
+async function dryRunReport(req: NextRequest): Promise<NextResponse> {
+  try {
+    const requested = req.nextUrl.searchParams.get('runtime')
+    const info = await inspectRuntime(requested)
+
+    mkdirSync(LOG_DIR, { recursive: true })
+    // Slugged: the agent name reaches a filename, and `?agent=../../x` must not
+    // be able to steer where that file lands.
+    const agentId = (req.nextUrl.searchParams.get('agent') ?? 'dry-run')
+      .replace(/[^a-zA-Z0-9_-]/g, '-')
+      .slice(0, 40) || 'dry-run'
+    const logFile = join(LOG_DIR, `dryrun-${agentId}-${Date.now()}.log`)
+    writeFileSync(
+      logFile,
+      `[dry-run] ${new Date().toISOString()} agent=${agentId} runtime=${info.runtime}
+` +
+      `[dry-run] bin=${info.bin} resolved=${info.binResolved ?? 'NOT FOUND ON PATH'}
+` +
+      `[dry-run] available=${info.available}${info.unavailableReason ? ` reason=${info.unavailableReason}` : ''}
+`
+    )
+
+    return NextResponse.json({
+      dryRun: true,
+      runtime: info.runtime,
+      bin: info.bin,
+      binResolved: info.binResolved,
+      runtimeAvailable: info.available,
+      unavailableReason: info.unavailableReason,
+      logDir: LOG_DIR,
+      logFile,
+      dispatchEnabled: !dispatchDisabled(),
+      // `openai-api` launches the Node binary this server already runs under,
+      // so `binResolved` is never null for it — a configured-but-dead LLM
+      // endpoint used to sail through this branch as wouldSpawn:true. The
+      // runtime's own availability probe is the sensor that knows.
+      wouldSpawn: info.available && info.binResolved !== null,
+      ...(info.unavailableReason
+        ? { warning: `a real dispatch would fail: ${info.unavailableReason}` }
+        : {}),
+    })
+  } catch (err) {
+    return NextResponse.json(
+      {
+        dryRun: true,
+        error: `dry-run resolution failed: ${err instanceof Error ? err.message : String(err)}`,
+      },
+      { status: 500 }
+    )
+  }
 }
 
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
+  // Dry run first: it resolves and reports, it never spawns.
+  if (req.nextUrl.searchParams.get('dryRun') === '1') {
+    return dryRunReport(req)
+  }
+
+  if (dispatchDisabled()) {
+    return NextResponse.json(DISPATCH_BLOCKED_BODY, { status: 503 })
+  }
+
   const REQUIRED_PERMISSION = 'agents:spawn' as const
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
@@ -130,6 +395,25 @@ export async function POST(req: NextRequest) {
   // Hub pause guard — reject new agent activations when paused
   if (await isHubPaused()) {
     return NextResponse.json({ error: 'Agents are paused', paused: true }, { status: 503 })
+  }
+
+  // registry-reaches-dispatch piece: registers a dispatchable config for
+  // every current Brain2 vault agent into lib/agent-queue.ts's runtime cache
+  // BEFORE the getQueueConfig() lookup below — a vault agent dispatched in a
+  // freshly started process (no prior GET /api/agents in this process) must
+  // still resolve, not answer "Unknown agent" because nothing happened to
+  // warm the cache yet. Never throws; degrades to whatever was last
+  // persisted (or nothing) when the vault itself is unreachable from here —
+  // see lib/agent-manifests.ts.
+  //
+  // Round 2: the result used to be discarded here too, so a persistence
+  // 404 was invisible on the dispatch path as well as the roster path. This
+  // route has no roster envelope to carry it in (a spawn returns a run, not
+  // a roster), so a failed persist is logged server-side instead — visible
+  // to whoever runs this host, same as any other boot-time degradation.
+  const vaultSync = await ensureVaultDispatchConfigs()
+  if (vaultSync.warning) {
+    console.warn(`[run-agent] ${vaultSync.warning}`)
   }
 
   const body = await req.json().catch(() => ({}))
@@ -146,6 +430,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: `Agent '${agentId}' is paused by loop breaker. Check inbox for review request.`, paused: true, loop_breaker: true },
       { status: 503 }
+    )
+  }
+
+  // TOD-2381 (agent-budget-stop): ceilings checked OUTSIDE the agent, before a
+  // run starts. Concurrency / run-count / dollar-spend are all read from
+  // agent_runs and token_ledger rows the server itself wrote — never an
+  // estimate, never something the agent is asked to report about itself.
+  const ceiling = await checkDispatchCeilings(agentId)
+  if (!ceiling.allowed) {
+    return NextResponse.json(
+      {
+        error: `Agent '${agentId}' is over its ${ceiling.ceiling} ceiling: ${ceiling.reason}`,
+        ceiling: ceiling.ceiling,
+        reason: ceiling.reason,
+        detail: ceiling.detail,
+        overBudget: true,
+      },
+      { status: 429 }
     )
   }
 
@@ -169,14 +471,13 @@ export async function POST(req: NextRequest) {
   // For skipAssigneeFilter agents (main), count all is_blocked issues with started_at set.
   // is_blocked=false excluded from WIP: a blocked in-progress issue must not hold the WIP slot.
   const wipExtraFilter = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
-  const wipUrl = isReviewer
-    ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&is_blocked=eq.false&select=id`
+  const wipQuery = isReviewer
+    ? `status=eq.${config.workingStatus}&${reviewStatusField}=in.(running,in_progress)&is_blocked=eq.false&select=id`
     : config.skipAssigneeFilter
-      ? `${SUPA_URL}/rest/v1/issues?is_blocked=eq.true&started_at=not.is.null&select=id`
-      : `${SUPA_URL}/rest/v1/issues?assignee=eq.${agentId}&status=eq.${config.workingStatus}&is_blocked=eq.false${wipExtraFilter}&select=id`
-  const wipRes = await fetch(wipUrl, { headers: getHeaders() })
-  const wipIssues = await wipRes.json() as Array<{ id: string }>
-  if (Array.isArray(wipIssues) && wipIssues.length >= config.wipLimit) {
+      ? `is_blocked=eq.true&started_at=not.is.null&select=id`
+      : `assignee=eq.${agentId}&status=eq.${config.workingStatus}&is_blocked=eq.false${wipExtraFilter}&select=id`
+  const wipIssues = await selectRows<{ id: string }>('issues', wipQuery)
+  if (wipIssues.length >= config.wipLimit) {
     return NextResponse.json({
       agent: agentId,
       message: `WIP limit reached: ${wipIssues.length}/${config.wipLimit} ${config.workingStatus}. Finish current work first.`,
@@ -207,10 +508,9 @@ export async function POST(req: NextRequest) {
   // main (skipAssigneeFilter) uses extraFilters=is_blocked=eq.true — omit the false filter so they don't conflict.
   const blockedFilter = config.skipAssigneeFilter ? '' : 'is_blocked=eq.false'
   const baseFilters = [assigneeFilter, statusFilter, dorFilter, blockedFilter].filter(Boolean).join('&')
-  const url = `${SUPA_URL}/rest/v1/issues?${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
+  const query = `${baseFilters}${extraFilter}&select=id,title,description,priority,due_date,created_at,project,acceptance_criteria,task_key,feature_branch,blocked_by,is_blocked,rejection_count,type,status,parent_id,tester_notes,designer_notes,tester_status,designer_status,owner,deployer_notes&order=${config.sortOrder}&limit=${config.fetchLimit}`
 
-  const res = await fetch(url, { headers: getHeaders() })
-  const tasks = await res.json() as Array<{
+  const tasks = await selectRows<{
     id: string; title: string; description: string; priority: string;
     due_date: string | null; created_at: string; project: string; acceptance_criteria: string | null;
     task_key: string | null; feature_branch: string | null;
@@ -219,9 +519,9 @@ export async function POST(req: NextRequest) {
     tester_notes: string | null; designer_notes: string | null;
     tester_status: string | null; designer_status: string | null;
     owner: string | null; deployer_notes: string | null;
-  }>
+  }>('issues', query)
 
-  if (!Array.isArray(tasks) || tasks.length === 0) {
+  if (tasks.length === 0) {
     return NextResponse.json({
       agent: agentId,
       message: `No eligible issues for ${agentId} (status=${allPickupStatuses.join('|')}, DoR fields: ${config.dorFields.join(', ')})`,
@@ -235,16 +535,13 @@ export async function POST(req: NextRequest) {
     let blockerStatuses: Record<string, string> = {}
 
     if (blockedByIds.length > 0) {
-      const blockerRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
-        { headers: getHeaders() }
+      const blockers = await selectRows<{ id: string; task_key: string | null; status: string }>(
+        'issues',
+        `or=(id.in.(${blockedByIds.join(',')}),task_key.in.(${blockedByIds.join(',')}))&select=id,task_key,status`,
       )
-      const blockers = await blockerRes.json() as Array<{ id: string; task_key: string | null; status: string }>
-      if (Array.isArray(blockers)) {
-        for (const b of blockers) {
-          blockerStatuses[b.id] = b.status
-          if (b.task_key) blockerStatuses[b.task_key] = b.status
-        }
+      for (const b of blockers) {
+        blockerStatuses[b.id] = b.status
+        if (b.task_key) blockerStatuses[b.task_key] = b.status
       }
     }
 
@@ -265,17 +562,41 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // ── Step 3.5: Feature-lock (TOD-2344) — stick to one feature until siblings reviewed ──
+  // If this agent has any in-progress task with a parent_id, restrict the next pick to
+  // siblings of that parent. Produces coherent feature batches and reduces context switching.
+  // Lock auto-releases when no in-progress task for this agent has a parent_id, or when
+  // readyTasks contains no siblings of locked parent (fallback to global queue to avoid starve).
+  {
+    const inProgressTasks = await selectRows<{ parent_id: string | null }>(
+      'issues',
+      `status=eq.in_progress&assignee=eq.${agentId}&parent_id=not.is.null&select=parent_id`,
+    )
+    if (inProgressTasks.length > 0) {
+      const lockedParents = new Set(inProgressTasks.map(t => t.parent_id).filter(Boolean) as string[])
+      if (lockedParents.size > 0) {
+        const filtered = readyTasks.filter(t => t.parent_id && lockedParents.has(t.parent_id))
+        const parentList = Array.from(lockedParents).join(',')
+        if (filtered.length > 0) {
+          console.log(`[feature-lock] ${agentId} locked to parent(s) ${parentList} — ${filtered.length} sibling(s) remaining (was ${readyTasks.length} eligible)`)
+          readyTasks = filtered
+        } else {
+          console.log(`[feature-lock] ${agentId} parent(s) ${parentList} have no eligible siblings — releasing lock`)
+        }
+      }
+    }
+  }
+
   // ── Step 4: Priority sort — parent underway first, then priority → due_date → created_at ──
   // Fetch parent statuses so issues under an active feature (status=underway) jump the queue.
   const parentIds = Array.from(new Set(readyTasks.map(t => t.parent_id).filter(Boolean))) as string[]
   const parentStatuses: Record<string, string> = {}
   if (parentIds.length > 0) {
-    const parentRes = await fetch(
-      `${SUPA_URL}/rest/v1/issues?id=in.(${parentIds.join(',')})&select=id,status`,
-      { headers: getHeaders() }
+    const parents = await selectRows<{ id: string; status: string }>(
+      'issues',
+      `id=in.(${parentIds.join(',')})&select=id,status`,
     )
-    const parents = await parentRes.json() as Array<{ id: string; status: string }>
-    if (Array.isArray(parents)) {
+    {
       for (const p of parents) parentStatuses[p.id] = p.status
     }
   }
@@ -325,24 +646,42 @@ export async function POST(req: NextRequest) {
 
   // ── Step 4b: Query inbox for resolved entry linked to this task ──
   // AC (TOD-1069): inject <inbox-response> block if a resolved inbox entry exists for this issue.
+  //
+  // Round-3 fix: dropped the `response_data=not.is.null` filter. On a database
+  // still missing migration 022's response_data column, PATCH /api/inbox
+  // (app/api/inbox/route.ts) degrades to writing the same outcome into
+  // `context.resolution.effect` instead — a row resolved that way would never
+  // match `response_data=not.is.null` and this block would silently never
+  // fire, which is exactly the two-halves-disagreeing bug this fixes. Fetch a
+  // few candidates by recency instead and read whichever place the payload
+  // actually landed.
   let inboxResponseBlock = ''
   try {
-    const inboxRes = await fetch(
-      `${SUPA_URL}/rest/v1/inbox?issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
-      { headers: getHeaders() }
+    const inboxRows = await selectRows<{
+      type: string; status: string; response_data: Record<string, unknown> | null
+      resolved_by: string | null; context: Record<string, unknown> | null
+    }>(
+      'inbox',
+      `issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&order=resolved_at.desc&limit=5&select=type,status,response_data,resolved_by,context`,
     )
-    const inboxRows = await inboxRes.json() as Array<{
-      type: string; status: string; response_data: Record<string, unknown>; resolved_by: string | null
-    }>
-    if (Array.isArray(inboxRows) && inboxRows.length > 0) {
-      const entry = inboxRows[0]
-      const responseFields = Object.entries(entry.response_data ?? {})
+    const contextResolutionOf = (row: { context: Record<string, unknown> | null }) =>
+      (row.context && typeof row.context === 'object' && !Array.isArray(row.context))
+        ? (row.context as Record<string, unknown>).resolution as Record<string, unknown> | undefined
+        : undefined
+    const entry = inboxRows.find(r => {
+      const res = contextResolutionOf(r)
+      return r.response_data != null || res?.effect != null || res?.data != null
+    })
+    if (entry) {
+      const res = contextResolutionOf(entry)
+      const payload = (entry.response_data ?? res?.effect ?? res?.data ?? {}) as Record<string, unknown>
+      const responseFields = Object.entries(payload)
         .map(([k, v]) => `  <${k}>${JSON.stringify(v)}</${k}>`)
         .join('\n')
       inboxResponseBlock = `\n<inbox-response>
   <request_type>${entry.type}</request_type>
   <resolution_status>${entry.status}</resolution_status>
-  <resolved_by>${entry.resolved_by ?? 'unknown'}</resolved_by>
+  <resolved_by>${entry.resolved_by ?? (res?.by as string | undefined) ?? 'unknown'}</resolved_by>
   <response_data>
 ${responseFields}
   </response_data>
@@ -363,25 +702,31 @@ ${responseFields}
   if (config.workingStatus && config.pickupStatus !== config.workingStatus) {
     claimFields.status = config.workingStatus
   }
-  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-    method: 'PATCH',
-    headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-    body: JSON.stringify(claimFields),
-  })
+  const { error: claimError } = await db().from('issues').update(claimFields).eq('id', task.id)
+  if (claimError) {
+    // A failed claim must abort dispatch, not proceed — spawning the agent
+    // after this write silently failed means an agent_runs row and a spawned
+    // process both reference an issue the DB never actually marked in_progress:
+    // the WIP count and any other reader of `started_at`/`status` disagree
+    // with what's about to run.
+    console.error(`[run-agent] claim failed for ${task.task_key ?? task.id}: ${claimError.message}`)
+    return NextResponse.json(
+      { error: `Failed to claim issue ${task.task_key ?? task.id}: ${claimError.message}`, agent: agentId },
+      { status: 500 }
+    )
+  }
 
   // ── Step 7: Log agent_run ──
-  const agentRunRes = await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
-    method: 'POST',
-    headers: { ...getHeaders(), 'Prefer': 'return=representation' },
-    body: JSON.stringify({
+  const { data: agentRunRows } = await db()
+    .from('agent_runs')
+    .insert({
       agent_id: agentId,
       task_id: task.id,
       task_title: task.title,
       status: 'running',
-    }),
-  })
-  const agentRunRows = await agentRunRes.json().catch(() => [])
-  const agentRunId: string | undefined = Array.isArray(agentRunRows) ? agentRunRows[0]?.id : undefined
+    })
+    .select('id')
+  const agentRunId: string | undefined = (agentRunRows as Array<{ id: string }> | null)?.[0]?.id
 
   // ── Step 8: Auto-set feature branch for code-producing agents ──
   // Branch-prefix routing (P3 / Gap #3): type=ops issues land on
@@ -392,16 +737,17 @@ ${responseFields}
   if (!branch && task.task_key && ['builder', 'ops'].includes(agentId)) {
     const prefix = task.type === 'ops' ? 'infra' : 'feat'
     branch = `${prefix}/${(task.task_key as string).toLowerCase()}`
-    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH', headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ feature_branch: branch })
-    })
+    await db().from('issues').update({ feature_branch: branch }).eq('id', task.id)
   }
 
   // ── Step 9: Spawn Claude Code agent in background ──
   // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
-  const dbContext = await loadContextFromDB(agentId)
-  const context = `# WORKSPACE IDENTITY\n\n${dbContext}`
+  // memory-loop-retrieval round 2: this is the ONLY code path that actually
+  // spawns an agent, so it must be the one that carries the task key/title
+  // through to retrieval — without them, loadContextFromDB cannot rank
+  // anything and retrieval degrades to "nothing to search for".
+  const loadedContext = await loadContextFromDB(agentId, task.task_key ?? task.id, task.title ?? '')
+  const context = `# WORKSPACE IDENTITY\n\n${loadedContext.text}`
 
   // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)
   if (context.length > 25_000) {
@@ -595,7 +941,10 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     selfChain,
   ].join('\n')
 
-  const logFile = `/tmp/agent-${agentId}-${Date.now()}.log`
+  // Log dir is created lazily so an unwritable temp surfaces here rather than
+  // as a spawn ENOENT. The location comes from lib/paths so every writer agrees.
+  mkdirSync(LOG_DIR, { recursive: true })
+  const logFile = join(LOG_DIR, `agent-${agentId}-${Date.now()}.log`)
 
   // TOD-793: Dispatch via the runtime adapter registry.
   // Runtime selection priority:
@@ -621,11 +970,33 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     runtime = await getDefaultRuntime()
   }
 
+  // run-agent-locally piece: an explicit ?model= override — a concrete model
+  // id (typically a vault agent's `model.fallback_local` from
+  // Global_Agents/<id>/manifest.json, e.g. "qwen2.5-coder:14b") the caller
+  // already resolved, rather than the per-agent Claude alias in
+  // agent-queue.ts. Only lib/runtimes/openai-api.ts reads it
+  // (AgentSpawnOptions.modelOverride); other adapters ignore it. Absent =
+  // unchanged behavior — config.model still resolves as before.
+  //
+  // registry-reaches-dispatch piece: the caller resolving that id by hand
+  // was the gap — nothing ever passed it automatically, so a local-eligible
+  // vault agent's fallback_local was documented here but never actually
+  // reached a spawn without someone manually adding ?model=. config.
+  // localFallbackModel (lib/agent-manifests.ts's manifestToQueueConfig(),
+  // set only when the manifest carries local_eligible:true) is now the
+  // default when the caller did not ask for a specific model. mapModel()
+  // still checks it against the endpoint's own live model roster before
+  // trusting it, so this can never dispatch a model the configured endpoint
+  // has not actually pulled — it only removes the requirement that a human
+  // type the id in by hand every time.
+  const modelOverride = req.nextUrl.searchParams.get('model') ?? config.localFallbackModel ?? undefined
+
   const spawnResult = await runtime.spawn({
     agentId,
     workingDir: TODERO_DIR,
     prompt,
     model: config.model,
+    modelOverride,
     logFile,
     branch,
     taskId: task.id,
@@ -637,19 +1008,43 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
   // cleared it (up to 45 min). Now we immediately undo the claim so the next
   // kick can retry without waiting.
   if (!spawnResult.ok) {
-    await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-      method: 'PATCH',
-      headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() }),
-    })
+    await db()
+      .from('issues')
+      .update({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() })
+      .eq('id', task.id)
     if (agentRunId) {
-      await fetch(`${SUPA_URL}/rest/v1/agent_runs?id=eq.${agentRunId}`, {
-        method: 'PATCH',
-        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ status: 'error', error: spawnResult.error, finished_at: new Date().toISOString() }),
-      })
+      await db()
+        .from('agent_runs')
+        .update({ status: 'error', error: spawnResult.error, finished_at: new Date().toISOString() })
+        .eq('id', agentRunId)
     }
   } else {
+    // TOD-2381: persist the OS pid onto the agent_runs row so a heartbeat-time
+    // ceiling stop (wall clock / no progress) can send it a real signal
+    // instead of only disowning the row in the database.
+    if (agentRunId && spawnResult.pid) {
+      void (async () => {
+        try {
+          const { error } = await db().from('agent_runs').update({ pid: spawnResult.pid }).eq('id', agentRunId)
+          if (error) console.warn(`[run-agent] pid persist failed: ${error.message}`)
+        } catch { /* best-effort */ }
+      })()
+    }
+    // run-agent-locally piece: persist the log file path so GET
+    // /api/run-agent/trace can find it later — before this, a run's trace
+    // (or its plain claude-code transcript) was only ever locatable by
+    // already knowing the temp filename from this one HTTP response.
+    // migrations/046_agent_runs_log_file.sql; best-effort like the pid
+    // persist above — a database that has not run that migration yet just
+    // never gets this column filled in, not an error.
+    if (agentRunId && spawnResult.logFile) {
+      void (async () => {
+        try {
+          const { error } = await db().from('agent_runs').update({ log_file: spawnResult.logFile }).eq('id', agentRunId)
+          if (error) console.warn(`[run-agent] log_file persist failed: ${error.message}`)
+        } catch { /* best-effort */ }
+      })()
+    }
     // ── Spawn-confirmation heartbeat — only on successful spawn ──
     // Fires 60s after spawn. If the process dies immediately (context failure,
     // missing binary, worktree error), it never writes its own heartbeat, so this
@@ -658,11 +1053,10 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     // NOT fired on spawn failure (would mask the dead process from the watchdog).
     void (async () => {
       await new Promise(resolve => setTimeout(resolve, 60_000))
-      await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${task.id}`, {
-        method: 'PATCH',
-        headers: { ...getHeaders(), 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ heartbeat_at: new Date().toISOString() }),
-      })
+      // Only vouch for a process that is still there. Writing this blind is
+      // what let a child that died at second 3 look alive to the watchdog.
+      if (spawnResult.pid && !isAlive(spawnResult.pid)) return
+      await db().from('issues').update({ heartbeat_at: new Date().toISOString() }).eq('id', task.id)
     })()
   }
 
@@ -688,6 +1082,16 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     date: new Date().toISOString().slice(0, 10),
   }).catch(() => { /* best-effort */ })
 
+  // Only name a log that is really on disk. Returning a path the adapter never
+  // opened is what let a failed dispatch read as a successful one.
+  const spawnLogFile = spawnResult.logFile ?? logFile
+  const logFileExists = (() => {
+    try { return existsSync(spawnLogFile) } catch { return false }
+  })()
+
+  // A dispatch that never started is a server-side failure, not a 200. The
+  // caller (and the queue kicker) must be able to tell those apart by status
+  // code alone.
   return NextResponse.json({
     ok: spawnResult.ok,
     agent: agentId,
@@ -701,16 +1105,24 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
       branch,
     },
     spawned: spawnResult.ok,
+    pid: spawnResult.pid ?? null,
     spawnError: spawnResult.error,
-    logFile,
+    command: spawnResult.command,
+    ...(logFileExists ? { logFile: spawnLogFile } : { logFile: null, logFileMissing: spawnLogFile }),
     wip: (wipIssues?.length ?? 0) + 1,
     wipLimit: config.wipLimit,
     remaining: readyTasks.length - 1,
-  })
+  }, { status: spawnResult.ok ? 200 : 500 })
 }
 
 // GET /api/run-agent — status/heartbeat for all queue lanes
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const REQUIRED_PERMISSION = 'agents:read' as const
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
@@ -718,10 +1130,30 @@ export async function GET(req: NextRequest) {
     if (!perm.allowed) return NextResponse.json(perm.body, { status: perm.status })
   }
 
+  // registry-reaches-dispatch piece: see the identical call + comment in
+  // POST above — this GET path resolves configs via the same
+  // getQueueConfig()/getAllQueueAgentIds() and must see the same vault
+  // agents, whether that is `?info=1` on one agent or the full lane listing
+  // below.
+  //
+  // Round 2: no longer discarded — `vaultSync.warning` is threaded into both
+  // response branches below so a persistence failure is visible on this
+  // route too, not just GET /api/agents.
+  const vaultSync = await ensureVaultDispatchConfigs()
+
   const agentId = req.nextUrl.searchParams.get('agent')
   const infoMode = req.nextUrl.searchParams.get('info') === '1'
 
-  // GET /api/run-agent?agent=X&info=1 — resolve runtime config without spawning
+  // GET /api/run-agent?agent=X&info=1 — resolve runtime config without spawning.
+  //
+  // run-agent-locally piece / round-3 fix: this used to call
+  // getDefaultRuntime()/getRuntimeByName(), both of which call
+  // assertDispatchEnabled() and THROW when TODERO_DISPATCH_ENABLED!=1 — i.e.
+  // this read-only "what would happen" endpoint 500'd (empty body, uncaught
+  // DispatchDisabledError) on every instance in the guard's own default
+  // state. Use inspectRuntime() instead — the same guard-free resolver the
+  // ?dryRun=1 branch above already uses for exactly this reason (see its
+  // comment: "Deliberately runs BEFORE the dispatch guard").
   if (infoMode) {
     if (!agentId) {
       return NextResponse.json({ error: '?agent=X is required when ?info=1' }, { status: 400 })
@@ -730,27 +1162,27 @@ export async function GET(req: NextRequest) {
     if (!config) {
       return NextResponse.json({ error: `Unknown agent: ${agentId}` }, { status: 400 })
     }
-    const chainLength = config.modelChain?.length ?? 0
-    let resolvedRuntime: string
-    let modelAlias: string
-    if (config.modelChain && config.modelChain.length > 0) {
-      const defaultRuntime = await getDefaultRuntime()
-      resolvedRuntime = defaultRuntime.name
-      modelAlias = config.model
-      for (const binding of config.modelChain) {
-        const r = await getRuntimeByName(binding.runtime)
-        if (r) {
-          resolvedRuntime = r.name
-          modelAlias = binding.alias
-          break
-        }
-      }
-    } else {
-      const defaultRuntime = await getDefaultRuntime()
-      resolvedRuntime = defaultRuntime.name
-      modelAlias = config.model
-    }
-    return NextResponse.json({ agent: agentId, resolvedRuntime, modelAlias, chainLength })
+
+    // agent-config-panel-truth piece (round 3): the chain walk + mapModel
+    // resolution now lives in lib/resolve-dispatch-model.ts — the same
+    // function GET /api/agents calls to resolve every row's `model`/
+    // `modelShort`, so this endpoint and that one can never disagree about
+    // "what would actually run" again.
+    const runtimeByName = await probeRuntimes()
+    const resolved = await resolveDispatchModel(config, runtimeByName)
+
+    return NextResponse.json({
+      agent: agentId,
+      resolvedRuntime: resolved.resolvedRuntime,
+      modelAlias: resolved.modelAlias,
+      resolvedModelId: resolved.resolvedModelId,
+      resolvedModelError: resolved.resolvedModelError,
+      alternatives: resolved.alternatives,
+      chainLength: resolved.chainLength,
+      label: resolved.label,
+      dispatchEnabled: !dispatchDisabled(),
+      vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },
+    })
   }
 
   const agentIds = agentId ? [agentId] : getAllQueueAgentIds()
@@ -764,11 +1196,10 @@ export async function GET(req: NextRequest) {
       const isReviewerGet = id === 'tester' || id === 'designer'
       const reviewStatusFieldGet = id === 'tester' ? 'tester_status' : 'designer_status'
       const wipExtraFilterGet = config.wipExtraFilter ? `&${config.wipExtraFilter}` : ''
-      const wipUrlGet = isReviewerGet
-        ? `${SUPA_URL}/rest/v1/issues?status=eq.${config.workingStatus}&${reviewStatusFieldGet}=in.(running,in_progress)&is_blocked=eq.false&select=id`
-        : `${SUPA_URL}/rest/v1/issues?assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`
-      const wipRes = await fetch(wipUrlGet, { headers: getHeaders() })
-      const wipIssues = await wipRes.json() as Array<{ id: string }>
+      const wipQueryGet = isReviewerGet
+        ? `status=eq.${config.workingStatus}&${reviewStatusFieldGet}=in.(running,in_progress)&is_blocked=eq.false&select=id`
+        : `assignee=eq.${id}&status=eq.${config.workingStatus}${wipExtraFilterGet}&select=id`
+      const wipIssues = await selectRows<{ id: string }>('issues', wipQueryGet)
 
       // Count eligible — reviewers filter by pending review status, not assignee
       const dorFilter = config.dorFields.map(f => `${f}=not.is.null`).join('&')
@@ -776,22 +1207,25 @@ export async function GET(req: NextRequest) {
       const eligibleFilter = isReviewerGet
         ? `status=eq.${config.pickupStatus}&${reviewStatusFieldGet}=eq.pending`
         : `assignee=eq.${id}&status=eq.${config.pickupStatus}`
-      const eligibleRes = await fetch(
-        `${SUPA_URL}/rest/v1/issues?${eligibleFilter}&${dorFilter}${extraFilter}&select=id&limit=100`,
-        { headers: getHeaders() }
+      const eligible = await selectRows<{ id: string }>(
+        'issues',
+        `${eligibleFilter}&${dorFilter}${extraFilter}&select=id&limit=100`,
       )
-      const eligible = await eligibleRes.json() as Array<{ id: string }>
 
       return {
         agent: id,
-        wip: Array.isArray(wipIssues) ? wipIssues.length : 0,
+        wip: wipIssues.length,
         wipLimit: config.wipLimit,
-        eligible: Array.isArray(eligible) ? eligible.length : 0,
+        eligible: eligible.length,
         pickupStatus: config.pickupStatus,
         workingStatus: config.workingStatus,
       }
     })
   )
 
-  return NextResponse.json({ lanes, timestamp: new Date().toISOString() })
+  return NextResponse.json({
+    lanes,
+    timestamp: new Date().toISOString(),
+    vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },
+  })
 }

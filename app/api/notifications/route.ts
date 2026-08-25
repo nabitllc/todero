@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(
-      'https://twthgapiouiqhavrcnry.supabase.co',
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    _supabase = db()
   }
   return _supabase
 }
 
 // GET /api/notifications — list recent notifications (newest first)
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const url = new URL(req.url)
   const unreadOnly = url.searchParams.get('unread') === 'true'
   const limit = Math.min(Number(url.searchParams.get('limit') ?? '50'), 100)
@@ -27,12 +31,18 @@ export async function GET(req: NextRequest) {
   if (unreadOnly) query = query.eq('read', false)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'notifications')
   return NextResponse.json(data)
 }
 
 // POST /api/notifications — create a notification
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json()
   const { type, title, body: notifBody, issue_key, issue_id, actor } = body
 
@@ -46,12 +56,18 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'notifications')
   return NextResponse.json(data, { status: 201 })
 }
 
 // PATCH /api/notifications — mark notifications as read
 export async function PATCH(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json()
   const { ids, mark_all_read } = body
 
@@ -60,7 +76,7 @@ export async function PATCH(req: NextRequest) {
       .from('notifications')
       .update({ read: true })
       .eq('read', false)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'notifications')
     return NextResponse.json({ ok: true })
   }
 
@@ -73,6 +89,6 @@ export async function PATCH(req: NextRequest) {
     .update({ read: true })
     .in('id', ids)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'notifications')
   return NextResponse.json({ ok: true })
 }

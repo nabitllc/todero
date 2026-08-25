@@ -4,6 +4,8 @@ import { Dot, Chip, Bar, SH } from '@/lib/mc-atoms'
 import type { CostSnapshot } from '@/lib/issues'
 import { Button, EmptyState } from '@/components/ui'
 import { Server, Rocket } from 'lucide-react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 
 interface DeployRecord {
   id: string
@@ -30,37 +32,52 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 // INF-204: Sparkline SVG component for 7-day cost trend
+// TOD: kill-fake-infra-greens — a day with no stored snapshot is `cost: null`,
+// not 0. Plotting null as 0 would draw a real-looking flat line through days
+// nothing measured, so the polyline breaks into separate segments around
+// gaps instead of running through them.
 function CostSparkline({ data }: { data: CostSnapshot[] }) {
-  if (!data || data.length < 2) return null
-  const costs = data.map(d => d.cost)
-  const max = Math.max(...costs, 0.01)
+  if (!data) return null
+  const known = data.filter((d): d is CostSnapshot & { cost: number } => d.cost !== null)
+  if (known.length < 2) return null
+  const max = Math.max(...known.map(d => d.cost), 0.01)
   const w = 180
   const h = 40
   const pad = 2
-  const points = costs.map((c, i) => {
-    const x = pad + (i / (costs.length - 1)) * (w - pad * 2)
-    const y = h - pad - (c / max) * (h - pad * 2)
-    return `${x},${y}`
+  // Build one or more polyline segments, breaking at each null.
+  const segments: string[][] = []
+  let current: string[] = []
+  data.forEach((d, i) => {
+    if (d.cost === null) {
+      if (current.length) segments.push(current)
+      current = []
+      return
+    }
+    const x = pad + (i / (data.length - 1)) * (w - pad * 2)
+    const y = h - pad - (d.cost / max) * (h - pad * 2)
+    current.push(`${x},${y}`)
   })
-  const lastCost = costs[costs.length - 1]
-  const prevCost = costs[costs.length - 2]
-  const trend = lastCost > prevCost ? '#ef4444' : lastCost < prevCost ? '#22c55e' : '#666'
+  if (current.length) segments.push(current)
+  const lastKnown = known[known.length - 1].cost
+  const prevKnown = known[known.length - 2].cost
+  const trend = lastKnown > prevKnown ? '#ef4444' : lastKnown < prevKnown ? '#22c55e' : '#666'
+  const lastPt = segments[segments.length - 1]?.[segments[segments.length - 1].length - 1]?.split(',')
   return (
     <div className="flex items-center gap-2">
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
-        <polyline
-          points={points.join(' ')}
-          fill="none"
-          stroke={trend}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Dot on last point */}
-        {(() => {
-          const lastPt = points[points.length - 1].split(',')
-          return <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill={trend} />
-        })()}
+        {segments.map((seg, i) => (
+          <polyline
+            key={i}
+            points={seg.join(' ')}
+            fill="none"
+            stroke={trend}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+        {/* Dot on last known point */}
+        {lastPt && <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill={trend} />}
       </svg>
       <div className="text-[9px] text-white/30">
         {data.map(d => d.date.slice(5)).join(' · ')}
@@ -69,39 +86,36 @@ function CostSparkline({ data }: { data: CostSnapshot[] }) {
   )
 }
 
-export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefresh }: {
+export default function InfraTab({ liveStatus, statusError, agoSec, statusCountdown, onRefresh }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- /api/status is a wide untyped health payload
   liveStatus: any
+  /** Why /api/status failed, if it did. TOD-654: shown, never papered over. */
+  statusError?: ApiError | null
   agoSec: number
   statusCountdown: number
   onRefresh: () => void
 }) {
-            const [deploys, setDeploys] = useState<DeployRecord[]>([])
-            const [deploysLoaded, setDeploysLoaded] = useState(false)
+            const [deploys, setDeploys] = useState<DeployRecord[] | null>(null)
+            const [deploysError, setDeploysError] = useState<ApiError | null>(null)
             // INF-204: 7-day cost history for sparkline
             const [costHistory, setCostHistory] = useState<CostSnapshot[]>([])
+            const [costHistoryError, setCostHistoryError] = useState<ApiError | null>(null)
+            const [reload, setReload] = useState(0)
 
             useEffect(() => {
-              fetch('/api/deploy-history?limit=20')
-                .then(r => r.json())
-                .then(d => { if (Array.isArray(d)) setDeploys(d); setDeploysLoaded(true) })
-                .catch(() => setDeploysLoaded(true))
+              fetchJson<DeployRecord[]>('/api/deploy-history?limit=20').then(r => {
+                if (!r.ok) { setDeploysError(r.error); setDeploys(null); return }
+                setDeploysError(null)
+                setDeploys(Array.isArray(r.data) ? r.data : [])
+              })
               // INF-204: fetch cost history
-              fetch('/api/settings/cost-history')
-                .then(r => r.json())
-                .then(d => { if (Array.isArray(d)) setCostHistory(d) })
-                .catch(() => {})
-            }, [])
+              fetchJson<CostSnapshot[]>('/api/settings/cost-history').then(r => {
+                if (!r.ok) { setCostHistoryError(r.error); setCostHistory([]); return }
+                setCostHistoryError(null)
+                if (Array.isArray(r.data)) setCostHistory(r.data)
+              })
+            }, [reload])
             const ls = liveStatus
-            const orRemaining = ls?.openrouter?.remaining ?? 9.57
-            const orLimit = ls?.openrouter?.limit ?? 10
-            const orUsed = ls?.openrouter?.used ?? 0.43
-            const orPct = orLimit > 0 ? Math.min(100, Math.round((orUsed / orLimit) * 100)) : 0
-            const ollamaOk = ls?.ollama?.running ?? true
-            const ollamaModels = ls?.ollama?.models ?? ['gemma3:4b']
-            const vercelStatus = ls?.vercel?.lastDeploy?.status?.toUpperCase() ?? 'READY'
-            const vercelSt = vercelStatus === 'READY' ? 'ok' : vercelStatus === 'ERROR' ? 'warn' : vercelStatus === 'BUILDING' ? 'scheduled' : 'ok'
-            const tgOk = ls?.channels?.telegram ?? true
-            const dsOk = ls?.channels?.discord ?? true
             const usageCost = ls?.usage?.totalCost ?? 0
             const usageTokens = ls?.usage?.totalTokens ?? 0
             const usageByModel: Record<string,number> = ls?.usage?.byModel ?? {}
@@ -109,63 +123,119 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
             const todayTokens = ls?.usage?.todayTokens ?? 0
             const heartbeats: any[] = ls?.heartbeats ?? []
 
+            // TOD: kill-fake-infra-greens — /api/health, the one honest probe in
+            // the cluster, was wired to zero screens before this. Its own 503
+            // is meaningful data (which check failed), not just a fetch error —
+            // so this reads it directly instead of through the "non-2xx = error"
+            // fetchJson path other cards use.
+            const [health, setHealth] = useState<Record<string, any> | null>(null)
+            const [healthUnreachable, setHealthUnreachable] = useState<string | null>(null)
+            const fetchHealth = useCallback(() => {
+              fetch('/api/health', { cache: 'no-store' })
+                .then(async r => {
+                  const body = await r.json().catch(() => null)
+                  if (!body) { setHealthUnreachable(`HTTP ${r.status} — no parseable body`); setHealth(null); return }
+                  setHealthUnreachable(null)
+                  setHealth(body)
+                })
+                .catch(e => { setHealthUnreachable(e instanceof Error ? e.message : 'could not reach /api/health'); setHealth(null) })
+            }, [])
+            useEffect(() => { fetchHealth() }, [fetchHealth])
+
             // TOD-768: circuit breaker state
             const [cbState, setCbState] = useState<Record<string, {tripped: boolean; consecutive_failures: number; last_error?: string; tripped_at?: string}>>({})
+            const [cbError, setCbError] = useState<ApiError | null>(null)
             const fetchCb = useCallback(() => {
-              fetch('/api/circuit-breaker')
-                .then(r => r.ok ? r.json() : null)
-                .then(d => { if (d?.providers) setCbState(d.providers) })
-                .catch(() => {})
+              fetchJson<{ providers?: Record<string, {tripped: boolean; consecutive_failures: number; last_error?: string; tripped_at?: string}> }>('/api/circuit-breaker')
+                .then(r => {
+                  if (!r.ok) { setCbError(r.error); setCbState({}); return }
+                  setCbError(null)
+                  if (r.data?.providers) setCbState(r.data.providers)
+                })
             }, [])
             useEffect(() => { fetchCb() }, [fetchCb])
             const cbProviders = Object.entries(cbState)
             const cbTripped = cbProviders.some(([, p]) => p.tripped)
 
-            const liveInfra = [
-              { name:'Claude Max',   note:'OAuth \u00b7 sonnet-4-6 + haiku-4-5', status:'ok' },
-              { name:'OpenRouter',   note:`$${orRemaining.toFixed(2)} / $${orLimit.toFixed(2)} remaining`, status: orRemaining < 1 ? 'warn' : 'ok' },
-              { name:'Telegram',     note: tgOk ? '@KemuniClaw1Bot \u00b7 connected' : 'Disconnected', status: tgOk ? 'ok' : 'warn' },
-              { name:'Discord',      note: dsOk ? 'Kemuni Server \u00b7 connected' : 'Disconnected', status: dsOk ? 'ok' : 'warn' },
-              { name:'Ollama',       note: ollamaOk ? ollamaModels.join(', ') : 'Offline', status: ollamaOk ? 'ok' : 'warn' },
-              { name:'Vercel',       note: ls?.vercel ? `${vercelStatus}${ls.vercel.lastDeploy?.branch?' \u00b7 '+ls.vercel.lastDeploy.branch:''}${ls.vercel.lastDeploy?.commitSha?' \u00b7 '+ls.vercel.lastDeploy.commitSha.slice(0,7):''}${ls.vercel.lastDeploy?.createdAt?' \u00b7 '+new Date(ls.vercel.lastDeploy.createdAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):''}` : 'Unknown', status: vercelSt },
-              { name:'Supabase',     note:'Kemuni Agent HQ \u00b7 Vespera + Agent Brain', status:'ok' },
-              { name:'GitHub',       note:'nabitllc org \u00b7 kemuniagent@gmail.com',    status:'ok' },
-              { name:'Brave Search', note:'API \u00b7 renews Apr 21',                     status:'ok' },
-              { name:'Cloudflare',   note:'Tunnel active \u00b7 trycloudflare.com',       status:'ok' },
+            // TOD: kill-fake-infra-greens — every tile below reads its status and
+            // note straight off ls.services, which /api/status populates from a
+            // real probe run in that same request (or 'unknown' when no probe
+            // exists / no credential is configured on this host). No literal
+            // 'ok' is assigned in this file — the server did the measuring.
+            type ServiceState = 'ok' | 'degraded' | 'down' | 'unknown'
+            interface ServiceReading { status: ServiceState; note: string; checkedAt: string }
+            const services: Record<string, ServiceReading> = ls?.services ?? {}
+            const SERVICE_TILES: Array<{ key: string; name: string }> = [
+              { key: 'claude',      name: 'Claude Max' },
+              { key: 'telegram',    name: 'Telegram' },
+              { key: 'discord',     name: 'Discord' },
+              { key: 'ollama',      name: 'Ollama' },
+              { key: 'vercel',      name: 'Vercel' },
+              { key: 'supabase',    name: 'Supabase' },
+              { key: 'github',      name: 'GitHub' },
+              { key: 'braveSearch', name: 'Brave Search' },
+              { key: 'cloudflare',  name: 'Cloudflare' },
             ]
+            const liveInfra = SERVICE_TILES.map(({ key, name }) => {
+              const svc = services[key]
+              return {
+                name,
+                note: svc?.note ?? 'not checked this request',
+                status: svc?.status ?? 'unknown',
+                checkedAt: svc?.checkedAt ?? null,
+              }
+            })
+
+            // TOD: kill-fake-infra-greens — how long ago each tile's own probe ran,
+            // not one shared "Updated Ns ago" for all ten. Falls back to the shared
+            // clock only when a tile has no checkedAt at all.
+            function tileAgo(checkedAt: string | null): string {
+              if (!checkedAt) return `${agoSec}s ago`
+              const s = Math.max(0, Math.round((Date.now() - new Date(checkedAt).getTime()) / 1000))
+              if (s < 60) return `${s}s ago`
+              if (s < 3600) return `${Math.round(s / 60)}m ago`
+              return `${Math.round(s / 3600)}h ago`
+            }
 
             return (
             <div className="space-y-5">
+              {/* TOD-654: /api/status refused => say so. The service tiles below
+                  are derived from that payload, so they would otherwise render
+                  their hardcoded fallbacks as if they were live readings. */}
+              {statusError && <ApiErrorBanner error={statusError} onRetry={onRefresh} />}
+              {cbError && <ApiErrorBanner error={cbError} onRetry={fetchCb} />}
+              {costHistoryError && <ApiErrorBanner error={costHistoryError} onRetry={() => setReload(n => n + 1)} />}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <SH icon="\ud83d\udd0c">Services</SH>
+                <SH icon="🔌">Services</SH>
                 <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap">
                   {ls && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/20 text-[10px]">Updated {agoSec}s ago</span></>}
-                  {!ls && <span className="text-yellow-600 text-[10px]">Loading\u2026</span>}
-                  <span className="text-white/20 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">\u21bb {statusCountdown}s</span>
+                  {!ls && statusError && <span className="text-red-400 text-[10px]">data unavailable</span>}
+                  {!ls && !statusError && <span className="text-yellow-600 text-[10px]">Loading…</span>}
+                  <span className="text-white/20 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">↻ {statusCountdown}s</span>
                   <Button variant="secondary" size="sm" onClick={()=>{onRefresh()}}>Refresh</Button>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {liveInfra.map(svc=>(
+                {(ls ? liveInfra : []).map(svc=>(
                   <div key={svc.name} className="rounded-xl p-3 md:p-4 border border-white/10 flex items-start gap-3 card-glow" style={{background:'#0f0f0f'}}>
                     <Dot status={svc.status} />
                     <div>
                       <p className="text-white text-sm font-medium">{svc.name}</p>
                       <p className="text-white/30 text-xs mt-0.5">{svc.note}</p>
+                      <p className="text-white/20 text-[10px] mt-0.5">checked {tileAgo(svc.checkedAt)}</p>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <SH icon="\ud83d\udcac">Heartbeat Schedule</SH>
+              <SH icon="📬">Heartbeat Schedule</SH>
               <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
-                {(heartbeats.length > 0 ? heartbeats : [
-                  {agentId:'main', enabled:true, every:'4h'},
-                  {agentId:'scout', enabled:false, every:'disabled'},
-                  {agentId:'ops', enabled:false, every:'disabled'},
-                  {agentId:'kemuni-sme', enabled:false, every:'disabled'},
-                  {agentId:'vespera-sme', enabled:false, every:'disabled'},
-                ]).map((hb:any, i:number, arr:any[])=>(
+                {/* TOD: kill-fake-infra-greens — this used to fall back to five
+                    invented rows (a fake "every 4h" for an agent that may not
+                    exist on this host) whenever the live list was empty. An
+                    empty state beats a guess. */}
+                {heartbeats.length === 0 && <EmptyState icon={Server} title="No heartbeat schedule reported" className="py-6" />}
+                {heartbeats.map((hb:any, i:number, arr:any[])=>(
                   <div key={hb.agentId} className={'flex items-center gap-3 md:gap-4 px-4 md:px-5 py-3 '+(i<arr.length-1?'border-b border-white/10':'')}>
                     <Dot status={hb.enabled ? 'active' : 'planned'} />
                     <span className="font-mono text-xs text-white shrink-0">{hb.agentId}</span>
@@ -177,7 +247,7 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                 ))}
               </div>
 
-              <SH icon="\ud83d\udcca">Token Usage</SH>
+              <SH icon="📊">Token Usage</SH>
               <div className="rounded-2xl border border-white/10 p-4 md:p-5" style={{background:'#0f0f0f'}}>
                 <div className="flex items-end justify-between mb-4">
                   <div className="flex items-baseline gap-4 md:gap-6 flex-wrap">
@@ -190,20 +260,35 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                     </div>
                     <div>
                       <p className="text-white/50 text-[10px] mb-1 uppercase tracking-wider">All-time</p>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-2xl font-bold text-white">${usageCost.toFixed(2)}</span>
-                        <span className="text-white/30 text-xs">{(usageTokens/1000).toFixed(0)}k tok</span>
-                      </div>
+                      {ls?.usage ? (
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-bold text-white">${usageCost.toFixed(2)}</span>
+                          <span className="text-white/30 text-xs">{(usageTokens/1000).toFixed(0)}k tok</span>
+                        </div>
+                      ) : (
+                        <p className="text-white/30 text-xs">not tracked on this host</p>
+                      )}
                     </div>
                   </div>
                   {ls && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg" title="Live"/>}
                 </div>
-                {/* INF-204: 7-day cost trend sparkline */}
-                {costHistory.length > 0 && (
+                {/* INF-204: 7-day cost trend sparkline.
+                    TOD: kill-fake-infra-greens — a chart needs at least two
+                    measured days to draw a trend; anything less is not a
+                    trend, it's a guess dressed as one, so it falls through
+                    to the EmptyState below instead of rendering a
+                    real-looking flat line. */}
+                {costHistory.filter(d => d.cost !== null).length >= 2 ? (
                   <div className="mb-4 p-3 rounded-xl border border-white/5" style={{ background: '#0a0a0a' }}>
                     <p className="text-white/30 text-[9px] uppercase tracking-widest mb-2">7-Day Cost Trend</p>
                     <CostSparkline data={costHistory} />
                   </div>
+                ) : (
+                  !costHistoryError && costHistory.length > 0 && (
+                    <div className="mb-4">
+                      <EmptyState icon={Server} title="No cost snapshots recorded on this host" className="py-4" />
+                    </div>
+                  )
                 )}
                 <div className="space-y-2">
                   {Object.entries(usageByModel).sort((a,b)=>b[1]-a[1]).map(([model, cost])=>{
@@ -218,20 +303,21 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                       </div>
                     )
                   })}
-                  {Object.keys(usageByModel).length === 0 && <EmptyState icon={Server} title="No session data yet" className="py-4" />}
+                  {!statusError && Object.keys(usageByModel).length === 0 && <EmptyState icon={Server} title="No session data yet" className="py-4" />}
                 </div>
               </div>
 
-              <SH icon="\ud83d\ude80">Deploy History</SH>
+              <SH icon="🚀">Deploy History</SH>
               <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
-                {!deploysLoaded && <div className="px-5 py-4 text-white/30 text-xs">Loading deploys…</div>}
-                {deploysLoaded && deploys.length === 0 && <EmptyState icon={Rocket} title="No deploys recorded yet" className="py-6" />}
-                {deploys.map((d, i) => {
+                {deploysError && <div className="px-5 py-4"><ApiErrorBanner error={deploysError} onRetry={() => setReload(n => n + 1)} /></div>}
+                {!deploysError && deploys === null && <div className="px-5 py-4 text-white/30 text-xs">Loading deploys…</div>}
+                {!deploysError && deploys?.length === 0 && <EmptyState icon={Rocket} title="No deploys recorded yet" className="py-6" />}
+                {(deploys ?? []).map((d, i) => {
                   const ago = Math.round((Date.now() - new Date(d.created_at).getTime()) / 60000)
                   const agoLabel = ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.round(ago/60)}h ago` : `${Math.round(ago/1440)}d ago`
                   const dur = d.duration_ms ? `${(d.duration_ms/1000).toFixed(1)}s` : null
                   return (
-                    <div key={d.id} className={'flex items-center gap-3 px-4 md:px-5 py-3 ' + (i < deploys.length - 1 ? 'border-b border-white/10' : '')}>
+                    <div key={d.id} className={'flex items-center gap-3 px-4 md:px-5 py-3 ' + (i < (deploys?.length ?? 0) - 1 ? 'border-b border-white/10' : '')}>
                       <Dot status={d.status === 'ready' ? 'ok' : d.status === 'error' ? 'warn' : d.status === 'building' ? 'scheduled' : 'planned'} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -254,15 +340,83 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                 })}
               </div>
 
-              <SH icon="\ud83d\udda5">Hardware</SH>
+              <SH icon="✅">Cluster Health (/api/health)</SH>
               <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
+                {/* TOD: kill-fake-infra-greens — /api/health runs its own probe
+                    (a live query against the issues table, on a hard timeout)
+                    independent of everything above. Nothing renders here that
+                    health didn't just say. */}
+                {!health && !healthUnreachable && <p className="text-white/30 text-xs">Checking…</p>}
+                {healthUnreachable && <ApiErrorBanner error={{ status: 0, endpoint: '/api/health', message: healthUnreachable }} onRetry={fetchHealth} />}
+                {health && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Dot status={health.ok ? 'ok' : 'down'} />
+                      <span className="text-white text-sm font-medium">{health.ok ? 'Healthy' : 'Unhealthy'}</span>
+                      <span className="text-white/20 text-[10px] ml-auto">checked {health.ts ? new Date(health.ts).toLocaleTimeString() : 'just now'}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={health.db?.reachable ? 'ok' : 'down'} sm />
+                        <span className="text-white/60">Database</span>
+                        <span className="text-white/30 ml-auto">{health.db?.reachable ? `${health.db.latencyMs ?? '?'}ms` : (health.db?.error ?? 'unreachable')}</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={Array.isArray(health.missing) && health.missing.length > 0 ? 'degraded' : 'ok'} sm />
+                        <span className="text-white/60">Schema</span>
+                        <span className="text-white/30 ml-auto">
+                          {Array.isArray(health.missing) && health.missing.length > 0
+                            ? `${health.missing.length} table(s) missing`
+                            : 'up to date'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={Array.isArray(health.runtimes) && health.runtimes.length > 0 ? 'ok' : 'unknown'} sm />
+                        <span className="text-white/60">Runtimes</span>
+                        <span className="text-white/30 ml-auto">{Array.isArray(health.runtimes) ? health.runtimes.length : 0} registered</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={health.worktrees?.count > 0 ? 'ok' : 'unknown'} sm />
+                        <span className="text-white/60">Worktrees</span>
+                        <span className="text-white/30 ml-auto">{health.worktrees?.count ?? 0} active</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={health.lastHeartbeat ? 'ok' : 'unknown'} sm />
+                        <span className="text-white/60">Last heartbeat</span>
+                        <span className="text-white/30 ml-auto truncate max-w-[10rem]">{health.lastHeartbeat?.timestamp ?? health.lastHeartbeat?.time ?? 'none recorded'}</span>
+                      </div>
+                    </div>
+                    {Array.isArray(health.missing) && health.missing.length > 0 && (
+                      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
+                        <p className="text-amber-300/80">
+                          Missing table{health.missing.length > 1 ? 's' : ''}: {health.missing.join(', ')}
+                        </p>
+                        <p className="text-white/40 mt-1 font-mono">{health.fix ?? 'npm run db:migrate'}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <SH icon="🖥">Host</SH>
+              <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
+                {/* TOD: kill-fake-infra-greens — this card used to hardcode
+                    "Mac mini · Apple Silicon" on every host, Windows included.
+                    It now reads whatever machine /api/status is actually
+                    running on. */}
                 <div className="flex items-start gap-4">
-                  <span className="text-3xl">{"\ud83d\udda5\ufe0f"}</span>
+                  <span className="text-3xl">{"🖥️"}</span>
                   <div>
-                    <p className="text-white font-medium text-sm">Mac mini \u00b7 Apple Silicon \u00b7 8GB \u00b7 arm64</p>
-                    <p className="text-white/50 text-xs mt-0.5">Todero native stack \u00b7 macOS 26.3.1 \u00b7 Node 22.22.1</p>
+                    {ls?.system ? (
+                      <>
+                        <p className="text-white font-medium text-sm">{ls.system.hostname} · {ls.system.platform} · {ls.system.arch} · {ls.system.totalMemGB}GB</p>
+                        <p className="text-white/50 text-xs mt-0.5">Todero native stack · Node {ls.system.nodeVersion} · up {Math.round((ls.system.uptimeSec ?? 0) / 60)}m</p>
+                      </>
+                    ) : (
+                      <p className="text-white/30 text-xs">Host details unavailable — {statusError ? 'no successful /api/status response yet' : 'loading…'}</p>
+                    )}
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {['Todero :3000','Ollama :11434','Cloudflare Tunnel'].map(l=><Chip key={l} label={l}/>)}
+                      {['Todero :3000', 'Ollama :11434'].map(l=><Chip key={l} label={l}/>)}
                     </div>
                   </div>
                 </div>
@@ -273,13 +427,15 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
               <div className="rounded-2xl border border-white/10 p-3 sm:p-4" style={{background: cbTripped ? 'rgba(239,68,68,0.1)' : '#0f0f0f'}}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${cbTripped ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
-                    <span className="text-xs font-medium text-white">{cbTripped ? 'TRIPPED — agents paused' : 'Healthy'}</span>
+                    <span className={`w-2 h-2 rounded-full ${cbTripped ? 'bg-red-500 animate-pulse' : cbProviders.length === 0 ? 'bg-white/20' : 'bg-emerald-500'}`} />
+                    <span className="text-xs font-medium text-white">
+                      {cbTripped ? 'TRIPPED — agents paused' : cbProviders.length === 0 ? 'No provider has reported' : 'Healthy'}
+                    </span>
                   </div>
                   <button onClick={fetchCb} className="text-white/30 hover:text-white/60 text-xs transition-colors">↻ refresh</button>
                 </div>
                 {cbProviders.length === 0 ? (
-                  <p className="text-white/30 text-xs">No failures recorded.</p>
+                  <p className="text-white/30 text-xs">No provider has reported to the circuit breaker yet on this host — that is not the same as "no failures".</p>
                 ) : (
                   <div className="space-y-2">
                     {cbProviders.map(([provider, ps]) => (
@@ -309,22 +465,6 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                     ))}
                   </div>
                 )}
-              </div>
-
-              <SH icon="\ud83d\udcb3">OpenRouter Balance</SH>
-              <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
-                <div className="flex items-end justify-between mb-3">
-                  <div>
-                    <p className="text-white/50 text-xs mb-1">Monthly credit</p>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-bold text-white">${orRemaining.toFixed(2)}</span>
-                      <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used \u00b7 resets monthly</p>
-                </div>
-                <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />
-                <p className="text-white/20 text-xs mt-2">Daily billing report via n8n \u2192 Telegram</p>
               </div>
             </div>
             )

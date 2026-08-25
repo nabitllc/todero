@@ -11,5 +11,5 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_notifications_read_created ON notifications (read, created_at DESC);
-CREATE INDEX idx_notifications_created ON notifications (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_read_created ON notifications (read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications (created_at DESC);

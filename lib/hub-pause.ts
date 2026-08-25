@@ -1,14 +1,13 @@
 // TOD-632: Shared hub pause state reader
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
 
-const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 
-// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// Lazy-init: avoids crashing at build time when the database credentials aren't
 // set (CI). First call throws if still missing. (TOD-2296)
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    _supabase = db()
   }
   return _supabase
 }

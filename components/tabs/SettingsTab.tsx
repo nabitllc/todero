@@ -1,18 +1,32 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, readApiError, type ApiError } from '@/hooks/useApiData'
 import { RefreshCw } from 'lucide-react'
 import { StatusDot } from '@/components/ui/StatusDot'
-import { THEMES, THEME_IDS } from '@/lib/theme'
-import type { ThemeId } from '@/lib/theme'
+// TOD: kill-fake-infra-greens — imports the client-safe constants module, not
+// lib/theme.ts, which pulls in lib/db.ts's postgres adapter (Node-only `pg`,
+// needs `fs`) and broke the client bundle for every route on this host.
+import { THEMES, THEME_IDS } from '@/lib/theme-constants'
+import type { ThemeId } from '@/lib/theme-constants'
 import CostBreakdownTable from '@/components/CostBreakdownTable'
 
 interface UsageData {
   supabase: { dbBytes: number | null; dbLimitBytes: number; plan: string; lastChecked: string }
-  openrouter: { balance: number | null; limit: number | null; used: number | null; isFreeTier: boolean; lastChecked: string }
+  // Owner directive: no hosted LLM gateway, no cloud LLM. This is a live read of
+  // ${LLM_BASE_URL}/models made fresh for the request — baseUrl/models come
+  // straight off that response, never a hardcoded roster or a fabricated plan.
+  localLlm: { baseUrl: string; models: string[]; ok: boolean; error: string | null; lastChecked: string }
   cloudflare: { kaos: { up: boolean; lastChecked: string } }
   discord: { connected: boolean; lastChecked: string }
-  claude: { totalTokens: number; todayCost: number; plan: string; lastChecked: string }
-  vercel: { plan: string; seats: number; renewsAt: string; lastChecked: string }
+  // TOD: kill-fake-infra-greens — no `plan`: this server cannot read the
+  // Claude CLI's local OAuth session, so there is nothing to assert. Token
+  // totals are null, not zero, when the sum never ran.
+  claude: { totalTokens: number | null; totalCost: number | null; todayCost: number | null; lastChecked: string }
+  // TOD: kill-fake-infra-greens — Vercel billing has no probe on this host;
+  // null means "not tracked", not "inactive". See services.vercel in
+  // /api/status for the real deployment-API reading.
+  vercel: null
 }
 
 function formatBytes(bytes: number): string {
@@ -83,6 +97,8 @@ function ServiceCard({ emoji, name, plan, status, statusLabel, children, lastChe
 
 export default function SettingsTab() {
   const [data, setData] = useState<UsageData | null>(null)
+  // TOD-654: the reason the usage load failed, verbatim from the server.
+  const [usageError, setUsageError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [currentTheme, setCurrentTheme] = useState<ThemeId>('dark')
@@ -90,10 +106,24 @@ export default function SettingsTab() {
 
   const fetchUsage = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
+    const endpoint = '/api/settings/usage'
     try {
-      const res = await fetch('/api/settings/usage')
-      if (res.ok) setData(await res.json())
-    } catch { /* ignore */ }
+      const res = await fetch(endpoint)
+      if (res.ok) {
+        setData(await res.json())
+        setUsageError(null)
+      } else {
+        setUsageError(await readApiError(res, endpoint))
+        setData(null)
+      }
+    } catch (e) {
+      setUsageError({
+        status: 0,
+        endpoint,
+        message: e instanceof Error ? e.message : 'could not reach the server',
+      })
+      setData(null)
+    }
     setLoading(false)
     setRefreshing(false)
   }, [])
@@ -105,7 +135,9 @@ export default function SettingsTab() {
   }, [fetchUsage])
 
   useEffect(() => {
-    fetch('/api/theme').then(r => r.json()).then(d => { if (d.themeId) setCurrentTheme(d.themeId) }).catch(() => {})
+    fetchJson<{ themeId?: string }>('/api/theme').then(r => {
+      if (r.ok && r.data?.themeId) setCurrentTheme(r.data.themeId as ThemeId)
+    })
   }, [])
 
   if (loading) {
@@ -119,9 +151,17 @@ export default function SettingsTab() {
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <div className="text-white/40 text-sm">Failed to load usage data</div>
-        <button onClick={() => { setLoading(true); fetchUsage() }}
-          className="text-xs text-white/50 hover:text-white transition-colors">Retry</button>
+        {usageError ? (
+          <div className="w-full max-w-xl px-4">
+            <ApiErrorBanner error={usageError} onRetry={() => { setLoading(true); fetchUsage() }} />
+          </div>
+        ) : (
+          <>
+            <div className="text-white/40 text-sm">Failed to load usage data</div>
+            <button onClick={() => { setLoading(true); fetchUsage() }}
+              className="text-xs text-white/50 hover:text-white transition-colors">Retry</button>
+          </>
+        )}
       </div>
     )
   }
@@ -204,37 +244,49 @@ export default function SettingsTab() {
           )}
         </ServiceCard>
 
-        {/* Claude */}
-        <ServiceCard emoji="🧠" name="Claude" plan={data.claude.plan}
-          status="active" statusLabel="Active"
+        {/* Claude — TOD: kill-fake-infra-greens: no plan tier is asserted (this
+            server cannot see the CLI's local OAuth session), and status
+            reflects whether any usage was actually summed this request. */}
+        <ServiceCard emoji="🧠" name="Claude" plan="Session state is local to the CLI — not visible to this server"
+          status={data.claude.totalTokens != null ? 'active' : 'idle'}
+          statusLabel={data.claude.totalTokens != null ? 'Tracked' : 'Not tracked'}
           lastChecked={data.claude.lastChecked}>
-          <div className="text-xs text-white/60">{formatTokens(data.claude.totalTokens)} tokens tracked</div>
-          {data.claude.todayCost > 0 && <div className="text-xs text-white/40 mt-0.5">Today: ${data.claude.todayCost.toFixed(2)}</div>}
+          {data.claude.totalTokens != null ? (
+            <>
+              <div className="text-xs text-white/60">{formatTokens(data.claude.totalTokens)} tokens tracked</div>
+              {(data.claude.todayCost ?? 0) > 0 && <div className="text-xs text-white/40 mt-0.5">Today: ${(data.claude.todayCost ?? 0).toFixed(2)}</div>}
+            </>
+          ) : (
+            <div className="text-xs text-white/30">No agent_runs data on this host</div>
+          )}
           <a href="https://claude.ai/settings" target="_blank" rel="noopener noreferrer"
             className="text-[10px] text-blue-400/70 hover:text-blue-400 mt-1 inline-block">claude.ai/settings</a>
         </ServiceCard>
 
-        {/* OpenRouter */}
-        <ServiceCard emoji="🌐" name="OpenRouter"
-          plan={data.openrouter.isFreeTier ? 'Free Tier' : 'Pay-as-you-go'}
-          status={data.openrouter.balance != null ? (data.openrouter.balance <= 1 ? 'warning' : 'active') : 'idle'}
-          statusLabel={data.openrouter.balance != null ? `$${data.openrouter.balance.toFixed(2)} remaining` : 'Unknown'}
-          lastChecked={data.openrouter.lastChecked}>
-          {data.openrouter.balance != null && data.openrouter.limit != null ? (
-            <>
-              <div className="text-xs text-white/60">${data.openrouter.used?.toFixed(2) ?? '0'} used / ${data.openrouter.limit.toFixed(2)} limit</div>
-              <UsageBar value={data.openrouter.used ?? 0} max={data.openrouter.limit} label="Credits" />
-            </>
+        {/* Local LLM — owner directive: no hosted LLM gateway, no cloud LLM. Every
+            field below is a live read of ${LLM_BASE_URL}/models made for
+            this request. On failure there is nothing measured to caption or
+            timestamp — no plan string, no "checked Ns ago" — just the URL
+            and the reason it didn't answer. */}
+        <ServiceCard emoji="🖥️" name="Local LLM"
+          plan={data.localLlm.ok ? data.localLlm.baseUrl : ''}
+          status={data.localLlm.ok ? 'active' : 'error'}
+          statusLabel={data.localLlm.ok ? `${data.localLlm.models.length} model${data.localLlm.models.length === 1 ? '' : 's'}` : 'Unreachable'}
+          lastChecked={data.localLlm.ok ? data.localLlm.lastChecked : undefined}>
+          {data.localLlm.ok ? (
+            <div className="text-xs text-white/60">{data.localLlm.models.length > 0 ? data.localLlm.models.join(', ') : 'reachable but no models pulled'}</div>
           ) : (
-            <div className="text-xs text-white/60">{data.openrouter.balance != null ? `$${data.openrouter.balance.toFixed(2)} remaining` : 'Balance unavailable'}</div>
+            <div className="text-xs text-red-400/80">{data.localLlm.error}</div>
           )}
         </ServiceCard>
 
-        {/* Vercel */}
-        <ServiceCard emoji="▲" name="Vercel" plan={data.vercel.plan}
-          status="active" statusLabel="Active"
-          lastChecked={data.vercel.lastChecked}>
-          <div className="text-xs text-white/60">{data.vercel.seats} seat · Renews {data.vercel.renewsAt}</div>
+        {/* Vercel — TOD: kill-fake-infra-greens: this route has no Vercel
+            billing probe, so nothing here is asserted as active. See the
+            Vercel tile on the Infra tab for the real deployment-API reading. */}
+        <ServiceCard emoji="▲" name="Vercel" plan="No billing probe on this host"
+          status="idle" statusLabel="Not tracked here"
+          lastChecked={undefined}>
+          <div className="text-xs text-white/30">See the Vercel tile on the Infra tab for the live deployment check.</div>
           <a href="https://vercel.com/account" target="_blank" rel="noopener noreferrer"
             className="text-[10px] text-blue-400/70 hover:text-blue-400 mt-1 inline-block">vercel.com/account</a>
         </ServiceCard>

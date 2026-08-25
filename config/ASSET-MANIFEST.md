@@ -103,7 +103,7 @@ Then commit it to kaos-config so Vespera context is preserved.
 ### Supabase (cloud, not local — never at risk)
 | Project | URL |
 |---|---|
-| Todero/Mission Control | https://twthgapiouiqhavrcnry.supabase.co |
+| Todero/Mission Control | ${NEXT_PUBLIC_SUPABASE_URL} |
 | Vespera | https://pxuyvmijevxnlxyobajh.supabase.co |
 
 ### Credentials (already in scripts — keep a copy in password manager)

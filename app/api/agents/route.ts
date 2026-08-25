@@ -1,124 +1,784 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { exec } from 'child_process'
-import { promisify } from 'util'
-import { readFileSync } from 'fs'
-import { join } from 'path'
+import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
+import { dbQueryErrorResponse } from '@/lib/db-http'
+import { AGENT_META, loadAgentRoster, type ParsedAgent } from '@/lib/agent-roster'
+import { loadVaultAgentRoster, localRoutingFor, type VaultAgent } from '@/lib/vault-agents'
+import {
+  classifyLiveness,
+  readHeartbeats,
+  type Heartbeat,
+  type HeartbeatStore,
+  type Liveness,
+} from '@/lib/agent-heartbeats'
+import { readRegistrations, type AgentRegistration } from '@/lib/agent-registrations'
+import { internalHeaders } from '@/lib/internal-auth'
+import { getCeilingStatus, type CeilingName } from '@/lib/agent-budget'
+import { fetchLiveModels } from '@/lib/llm-provider'
+import { probeRuntimes, resolveDispatchModel } from '@/lib/resolve-dispatch-model'
+import { getQueueConfig } from '@/lib/agent-queue'
+import { ensureVaultDispatchConfigs } from '@/lib/agent-manifests'
 
-const execAsync = promisify(exec)
+/**
+ * Asked of the seam, never of the environment. This route used to read the
+ * credential itself, which made the database client throw "key is required" on
+ * every host but the author's — and the GET handler swallowed that into an
+ * empty 200. A machine that was never configured then looked identical to a
+ * machine with no agents. `dbStatusMessage()` says which one it is, naming the
+ * variables the active adapter actually wants.
+ */
+const NO_KEY_ERROR = () => `${dbStatusMessage()} — agent run state unavailable`
 
-const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const NO_STORE = { 'Cache-Control': 'no-store' } as const
 
-// Maps agent IDs to UI display metadata — emoji, color, capabilities, floor, queue_filter
-// model and role are sourced from AGENTS.md; values here serve as fallback only
-const AGENT_META: Record<string, { name: string; emoji: string; role: string; color: string; capabilities: string[]; floor: boolean; model: string; queue_filter: string[] }> = {
-  'main':        { name: 'KAOS',        emoji: '🧠', role: 'Chief Orchestrator',   color: '#6b7280', capabilities: ['Orchestration', 'Memory', 'Strategy', 'Comms', 'Delegation'], floor: true,  model: 'claude-sonnet-4-6', queue_filter: [] },
-  'scout':       { name: 'Scout',       emoji: '🔍', role: 'Research Agent',        color: '#a855f7', capabilities: ['Web Research', 'Summarization', 'Trends'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: ['open'] },
-  'ops':         { name: 'Ingo',        emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true,                  model: 'claude-haiku-4-5',  queue_filter: ['open'] },
-  'kemuni-sme':  { name: 'Kemuni SME',  emoji: '🚀', role: 'Kemuni Product Expert', color: '#3b82f6', capabilities: ['Product Strategy', 'Kemuni', 'PropTech'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: [] },
-  'vespera-sme': { name: 'Vespera SME', emoji: '🖤', role: 'Vespera Product Expert', color: '#ec4899', capabilities: ['Product Strategy', 'Vespera', 'Community'], floor: true,                model: 'claude-sonnet-4-6', queue_filter: [] },
-  'builder':     { name: 'Builder',     emoji: '🔨', role: 'Coding Agent',           color: '#f59e0b', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true,     model: 'claude-sonnet-4-6', queue_filter: ['open'] },
-  'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true,     model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
-  'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true,                model: 'claude-haiku-4-5',  queue_filter: ['approved'] },
-  'ux':          { name: 'UX Designer',     emoji: '🎨', role: 'UX & Design Agent',       color: '#ec4899', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false, model: 'claude-sonnet-4-6', queue_filter: [] },
-  'designer':    { name: 'Designer',        emoji: '🖌️', role: 'Design Review Agent',     color: '#d946ef', capabilities: ['Design System', 'UI Review', 'Visual QA', 'Accessibility'], floor: false, model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
-  'po':          { name: 'Product Owner',   emoji: '📋', role: 'Product Owner',            color: '#f59e0b', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false,  model: 'claude-sonnet-4-6', queue_filter: ['defined'] },
-  'growth':      { name: 'Growth',          emoji: '📈', role: 'Growth Strategist',        color: '#10b981', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false,           model: 'claude-sonnet-4-6', queue_filter: [] },
-  'security':    { name: 'Security',        emoji: '🔐', role: 'Security Auditor',         color: '#ef4444', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false,   model: 'claude-sonnet-4-6', queue_filter: [] },
-  'community':   { name: 'Community Mgr',   emoji: '🖤', role: 'Community Manager',        color: '#a78bfa', capabilities: ['Social Content', 'Brand Voice', 'Colombia Goth'], floor: false,      model: 'claude-sonnet-4-6', queue_filter: [] },
-  'content':     { name: 'Content Creator', emoji: '✍️', role: 'Content Creator',          color: '#60a5fa', capabilities: ['Blog', 'SEO', 'Email', 'Help Docs'], floor: false,                  model: 'claude-sonnet-4-6', queue_filter: [] },
-  'auditor':     { name: 'Auditor',     emoji: '🔎', role: 'System Truth Enforcer',  color: '#ef4444', capabilities: ['Drift Detection', 'Config Audit', 'Task Hygiene'], floor: true,            model: 'claude-sonnet-4-6', queue_filter: ['released'] },
-}
+/**
+ * Where the roster came from. There is no 'builtin' any more: this route used
+ * to union AGENTS.md with the 16-entry AGENT_META registry and, on a host with
+ * no roster file at all, serve AGENT_META *as* the roster. Both made the API
+ * report agents that no file on the host declares. AGENT_META is now strictly
+ * display metadata for agents the roster names.
+ *
+ * Widened from the original 'agents-md' | 'none' now that `agent_registrations`
+ * is a second, independent source of "who exists": an agent that self-
+ * registered through POST /api/connect but is not named in any AGENTS.md
+ * (or vice versa) is real and must be reported, not silently dropped because
+ * it does not match the one source this type used to allow for.
+ *
+ * Widened again (docs/brain2-integration.md) for a third source: the Brain2
+ * vault's `Global_Agents/<id>/manifest.json` registry (lib/vault-agents.ts).
+ * A vault agent is only added as its own row when no roster or registration
+ * row already claims its id — see `respond()` — so this never double-counts
+ * an agent that happens to exist in two sources.
+ *   'agents-md'  — every agent came from the roster file only
+ *   'registered' — every agent came from agent_registrations only
+ *   'vault'      — every agent came from the Brain2 vault only
+ *   'both'       — rows came from more than one source
+ *   'none'       — no source had anything
+ */
+type RosterSource = 'agents-md' | 'registered' | 'vault' | 'both' | 'none'
 
-interface ParsedAgent {
+/**
+ * Where "is this agent running?" was answered from.
+ *   'heartbeat' — the server has a heartbeat store it could read
+ *   'none'      — it could not read one, so no liveness claim is made at all
+ *
+ * There is deliberately no third value. This route used to infer liveness by
+ * grepping the local process table for prompt text, which could only ever see
+ * agents on this one host and answered "not running" for everything else — a
+ * guess wearing the same UI as a fact.
+ */
+type LivenessSource = 'heartbeat' | 'none'
+
+/** One agent row as the dashboard renders it. */
+type AgentDto = {
   id: string
   name: string
+  emoji: string
   role: string
   model: string
+  active: boolean
+  status: 'active' | 'scheduled' | 'idle'
+  isRunning: boolean
+  /** Epoch ms of this agent's last heartbeat, or null if it never sent one. */
+  lastSeenAt: number | null
+  /** live / stale / idle / never — see lib/agent-heartbeats.ts. */
+  liveness: Liveness
+  /** How that was determined. 'none' means the claim could not be made. */
+  livenessSource: LivenessSource
+  nextRunTs: number | null
+  modelShort: string
+  queue_filter: string[]
+  color: string
+  desc: string
+  capabilities: string[]
+  floor: boolean
+  workspace: string | null
+  sessions: number
+  ago: number | null
+  lastUpdatedAt: number
+  currentTask: string | null
+  workStartedAt: number | null
+  rosterSource: RosterSource
+  rosterWarning: string | null
+  rosterPath: string | null
+  /**
+   * TOD-2381 (agent-budget-stop): the same over-ceiling verdict
+   * `checkDispatchCeilings` would give this agent right now, read-only
+   * (`getCeilingStatus` — never writes an inbox/agent_memory row for a mere
+   * roster poll). Null when the agent is within every ceiling. Piece brief
+   * #3: "An agent that is over budget is marked as such in the roster with
+   * the reason visible" — this is that field.
+   */
+  overCeiling?: { ceiling: CeilingName; reason: string } | null
+  /**
+   * Brain2 vault manifest data for this agent's id, when
+   * `Global_Agents/<id>/manifest.json` exists — null for every agent the
+   * vault does not name (including when the vault itself is absent). This is
+   * the "tier drives model selection, local_eligible drives whether a run may
+   * be routed to Ollama, fallback_local names the model" mapping from the
+   * piece brief, exposed for any caller (dispatch, UI) that wants it — this
+   * route only reports it, it does not itself route a run anywhere.
+   */
+  vault: {
+    tier: string
+    claudeCodeAlias: string
+    preferred: string
+    fallbackLocal: string
+    localEligible: boolean
+    /** Resolved from `localEligible`/`fallbackLocal` — null unless a local run is actually allowed. */
+    localModel: string | null
+    description: string
+  } | null
+  /**
+   * registry-reaches-dispatch piece: whether `getQueueConfig(id)` — the exact
+   * function POST /api/run-agent calls before dispatching — resolves a
+   * config for this agent right now. Computed server-side, after
+   * `ensureVaultDispatchConfigs()` has registered every vault manifest's
+   * derived config, so this is never stale the way a client-side
+   * `a.vault && !getQueueConfig(a.id)` check would be: that check ran
+   * against the BROWSER's own copy of lib/agent-queue.ts, which has no way
+   * to see a config this route registered server-side. ChatTab.tsx and
+   * IssuesTab.tsx read this field instead of recomputing the check
+   * themselves — see their updated comments.
+   */
+  dispatchable: boolean
 }
 
-// Parse the Agent Roster table from kaos-config/AGENTS.md at request time.
-// This is the authoritative source for id, name, role, and model.
-const AGENTS_MD_PATH = join(process.env.HOME ?? '/Users/kemuniagent', 'kaos-config', 'AGENTS.md')
+/** Live run state: issue/run history from the database, plus recorded heartbeats. */
+type RunState = {
+  agentIssue: Record<string, { key: string; title: string; status: string; startedAt: number | null }>
+  agentLastActive: Record<string, number>
+  /** Latest check-in per agent id. Absent id = that agent never checked in. */
+  heartbeats: Map<string, Heartbeat>
+  /** 'none' when the heartbeat store could not be read at all. */
+  livenessSource: LivenessSource
+}
 
-function parseAgentsFromMd(): ParsedAgent[] {
-  const content = readFileSync(AGENTS_MD_PATH, 'utf-8')
-  const lines = content.split('\n')
-  const headerIdx = lines.findIndex(l => /\|\s*Agent\s*\|\s*Model\s*\|\s*Notes\s*\|/i.test(l))
-  if (headerIdx === -1) throw new Error('Agent Roster table not found in AGENTS.md')
-  const agents: ParsedAgent[] = []
-  // Skip header + separator
-  for (let i = headerIdx + 2; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line.startsWith('|')) break
-    const cols = line.split('|').map(c => c.trim()).filter(Boolean)
-    if (cols.length < 3) continue
-    const [agentCol, modelCol, notesCol] = cols
-    // "main (KAOS)" → id="main", name="KAOS"; "builder" → id="builder", name="Builder"
-    const parenMatch = agentCol.match(/^(.+?)\s*\((.+?)\)$/)
-    const id = parenMatch ? parenMatch[1].trim().toLowerCase() : agentCol.toLowerCase()
-    const name = parenMatch ? parenMatch[2].trim() : agentCol.charAt(0).toUpperCase() + agentCol.slice(1)
-    agents.push({ id, name, role: notesCol, model: modelCol })
+/**
+ * Every GET response has this shape — success and failure alike — so the Team
+ * tab can tell "this host is not configured" apart from "this host has no
+ * agents" instead of both collapsing into an empty array.
+ */
+type AgentsResponse = {
+  agents: AgentDto[]
+  rosterSource: RosterSource
+  rosterWarning: string | null
+  /** The AGENTS.md actually read, so an empty roster can name the file it wanted. */
+  rosterPath: string | null
+  configured: boolean
+  error: string | null
+  /** How liveness was determined for every row. See `LivenessSource`. */
+  livenessSource: LivenessSource
+  /** Which table served the heartbeats, or null when none could be read. */
+  heartbeatStore: HeartbeatStore | null
+  /** Why liveness is degraded or unavailable, when it is. */
+  heartbeatWarning: string | null
+  /**
+   * The Brain2 vault's Global_Agents/ directory actually scanned, or null
+   * when the vault (or that directory) was not found on this host — see
+   * lib/vault-agents.ts. Envelope-level, same pattern as rosterPath, so an
+   * empty vault contribution can still name the path it looked in.
+   */
+  vaultPath: string | null
+  /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
+  vaultWarning: string | null
+  /**
+   * registry-reaches-dispatch piece, round 2: the result of the
+   * `ensureVaultDispatchConfigs()` call this route makes before building the
+   * roster — `source`/`persisted`/`warning` exactly as that function
+   * returns them. Distinct from `vaultWarning` above: `vaultWarning`
+   * describes the ROSTER half (did the vault contribute display rows?);
+   * `vaultSync.warning` describes the DISPATCH half (did the manifests that
+   * scan found actually get written to `agent_manifests`, so a vault agent
+   * survives a restart?). The two can disagree — a host can have a perfectly
+   * good roster (`vaultWarning: null`) while every write to the database
+   * 404s (`vaultSync.warning` names it) — which is exactly the defect this
+   * field exists to stop hiding.
+   */
+  vaultSync: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null }
+}
+
+function emptyRunState(): RunState {
+  return { agentIssue: {}, agentLastActive: {}, heartbeats: new Map(), livenessSource: 'none' }
+}
+
+/**
+ * A short badge for the model column.
+ *
+ * This used to be `model.includes('haiku') ? 'Haiku 4.5' : 'Sonnet 4.6'`, which
+ * labelled every non-Haiku agent "Sonnet 4.6" — including Scout, whose roster
+ * entry says Gemma 3 4B on Ollama, and any local model an operator configures.
+ * A badge that contradicts the roster it was derived from is worse than no
+ * badge, so an unrecognised model now shortens its own name instead.
+ */
+/**
+ * `status: 'scheduled'` and `nextRunTs` used to be computed by assuming
+ * `ops` fires at :00/:30 of every hour — a rule invented in this file, never
+ * read from anything a scheduler on the host actually promised. On a host
+ * where `ops` was idle it rendered a live ticking countdown on the Overview
+ * to a run nothing had scheduled — the same class of invented state this
+ * route was already rewritten to stop returning for the roster itself.
+ *
+ * /api/automations is the one place this codebase has already earned the
+ * right to say "a job is really scheduled": it only sets `scheduled: true`
+ * when it proved a scheduler is live on this host (Vercel's own cron runner
+ * when `process.env.VERCEL` is set, or `launchctl list` reporting a
+ * LaunchAgent label loaded) and only sets `nextRunAtMs` when it parsed a
+ * real cron/schedule expression. This calls that route in-process — with the
+ * same internal-call secret every other server-to-server call in this
+ * codebase presents (lib/internal-auth.ts) — and keeps only the jobs whose
+ * `name` equals an agent id, which is the only association between an
+ * automation entry and an agent id this route can trust; nothing here is
+ * pattern-matched or guessed. Any failure to reach /api/automations (secret
+ * unconfigured, network error, bad JSON) leaves the map empty rather than
+ * inventing a fallback schedule — every agent then reports `idle` with
+ * `nextRunTs: null`, which is the truthful answer when nothing could be
+ * verified.
+ */
+async function fetchVerifiedAgentSchedule(): Promise<Map<string, number>> {
+  const schedule = new Map<string, number>()
+  try {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const res = await fetch(`${appUrl}/api/automations`, {
+      headers: internalHeaders(),
+      cache: 'no-store',
+    })
+    if (!res.ok) return schedule
+    const body = await res.json()
+    const items: unknown[] = Array.isArray(body?.automations) ? body.automations : []
+    for (const item of items) {
+      if (typeof item !== 'object' || item === null) continue
+      const row = item as { name?: unknown; scheduled?: unknown; nextRunAtMs?: unknown }
+      if (row.scheduled !== true) continue
+      if (typeof row.nextRunAtMs !== 'number') continue
+      if (typeof row.name !== 'string' || !row.name) continue
+      schedule.set(row.name, row.nextRunAtMs)
+    }
+  } catch {
+    // /api/automations unreachable or unparseable: no schedule is knowable
+    // this cycle, which is exactly what an empty map already expresses.
   }
-  if (agents.length === 0) throw new Error('No agents parsed from AGENTS.md roster table')
-  return agents
+  return schedule
+}
+
+/** Build one row's `vault` field from its Global_Agents manifest, when it has one. */
+function vaultInfoFor(agent: VaultAgent): AgentDto['vault'] {
+  const routing = localRoutingFor(agent)
+  return {
+    tier: agent.model.tier,
+    claudeCodeAlias: agent.model.claude_code_alias,
+    preferred: agent.model.preferred,
+    fallbackLocal: agent.model.fallback_local,
+    localEligible: agent.local_eligible,
+    localModel: routing.model,
+    description: agent.description,
+  }
+}
+
+function shortModelLabel(model: string): string {
+  const m = model.trim()
+  if (!m) return ''
+  const lower = m.toLowerCase()
+  if (lower.includes('haiku')) return 'Haiku 4.5'
+  if (lower.includes('sonnet')) return 'Sonnet 4.6'
+  if (lower.includes('opus')) return 'Opus'
+  // e.g. "Gemma 3 4B (Ollama)" -> "Gemma 3 4B", "qwen2.5-coder:14b" -> as-is.
+  const withoutParens = m.replace(/\s*\(.*\)\s*$/, '').trim()
+  return withoutParens.length > 18 ? `${withoutParens.slice(0, 17)}…` : withoutParens
+}
+
+/**
+ * Merge the roster with whatever run state was collectable.
+ *   - AGENTS.md is the ONLY source of who exists: one row in, one row out
+ *   - AGENT_META supplies presentation only (emoji/color/capabilities/floor/
+ *     queue_filter), and falls back to neutral defaults for an agent it has
+ *     never heard of, so a roster can add an agent without a code change
+ * Run state may be empty (unconfigured host); the roster is still real, so the
+ * operator sees who exists next to the reason their state is not live.
+ */
+function buildAgents(
+  parsedAgents: ParsedAgent[],
+  rosterSource: RosterSource,
+  rosterWarning: string | null,
+  rosterPath: string | null,
+  state: RunState,
+  schedule: Map<string, number>,
+  vaultById: Map<string, VaultAgent>,
+): AgentDto[] {
+  const now = Date.now()
+
+  return parsedAgents.map((parsed): AgentDto => {
+    const id = parsed.id
+    const meta = AGENT_META[id]
+
+    const issue = state.agentIssue[id]
+    const lastTs = state.agentLastActive[id] ?? 0
+    const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
+
+    // Liveness comes from the heartbeat this agent sent, and from nothing else.
+    // An assigned in_progress issue used to be enough to render an agent as
+    // "active", which is a claim about a process — a ticket sitting in a column
+    // is not evidence that anything is running. `currentTask` below still
+    // reports the issue; it just no longer masquerades as liveness.
+    const beat = state.heartbeats.get(id) ?? null
+    const lastSeenAt = beat?.lastSeen ?? null
+    const liveness: Liveness =
+      state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
+    const isRunning = liveness === 'live'
+    const isActive = isRunning
+
+    // Real only: a value here means /api/automations proved a scheduler on
+    // this host is live for a job named exactly this agent's id AND parsed a
+    // real nextRunAtMs from that job's schedule expression. No host on this
+    // team currently runs a scheduler by that convention, so this is `null`
+    // on every machine that hasn't wired one up — which is the truth, not a
+    // gap to paper over with a guessed cadence.
+    const verifiedNextRunTs = schedule.get(id) ?? null
+    const isScheduled = !isActive && verifiedNextRunTs !== null
+    const nextRunTs = isScheduled ? verifiedNextRunTs : null
+
+    const role = parsed.role || meta?.role || ''
+
+    return {
+      id,
+      name: parsed.name || meta?.name || id,
+      emoji: meta?.emoji ?? '🤖',
+      role,
+      // Round 3: no longer `parsed.model || meta?.model` — AGENTS.md text and
+      // AGENT_META's static display strings are exactly the "manifest field"
+      // this piece forbids (Scout's own roster/meta text read "Gemma 3 4B
+      // (Ollama)" while this host's dispatcher actually resolves it to
+      // claude-code/sonnet). GET()'s post-processing pass overwrites this
+      // placeholder via `resolveDispatchModel()`, same as every other row.
+      model: '',
+      active: isActive,
+      status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
+      isRunning,
+      lastSeenAt,
+      liveness,
+      livenessSource: state.livenessSource,
+      nextRunTs,
+      modelShort: '',
+      queue_filter: meta?.queue_filter ?? [],
+      color: meta?.color ?? '#6b7280',
+      desc: role,
+      capabilities: meta?.capabilities ?? [],
+      floor: meta?.floor ?? false,
+      workspace: null,
+      sessions: 0,
+      ago: agoMin,
+      lastUpdatedAt: lastTs,
+      // The assigned issue if there is one, else whatever the agent named in
+      // its own last heartbeat. Both are things somebody stated; neither is
+      // inferred from a run row that was never closed.
+      currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : beat?.task ?? null,
+      workStartedAt: issue?.startedAt ?? null,
+      // Where id/name/role/model came from, so the UI never implies a roster
+      // file exists when it does not. Also on the envelope; kept per-row for
+      // components that only ever hold a single agent.
+      rosterSource,
+      rosterWarning,
+      rosterPath,
+      vault: (() => {
+        const v = vaultById.get(id)
+        return v ? vaultInfoFor(v) : null
+      })(),
+      dispatchable: getQueueConfig(id) !== undefined,
+    }
+  })
+}
+
+/**
+ * An AgentDto for a registration with no matching AGENTS.md row — the
+ * concrete thing this piece exists to make possible: an agent that only ever
+ * self-registered through POST /api/connect must be visible in the Crew tab
+ * and the Office roster, not invisible because it does not match the one
+ * source `buildAgents()` reads. Reuses the exact liveness derivation
+ * `buildAgents()` uses below, so a registration-only agent is not held to a
+ * different truth standard than a roster one.
+ *
+ * The heartbeat store is the first choice for `lastSeenAt` — it is the
+ * dedicated liveness table and the one every other row here reads — and
+ * `reg.lastSeenAt` (kept moving by recordHeartbeat() -> touchRegistration(),
+ * see lib/agent-heartbeats.ts) is the fallback for the gap right after POST
+ * /api/connect, before this agent's first explicit heartbeat has landed in
+ * that table.
+ *
+ * BUT: once `reg.status` reads 'offline' — i.e. `agent_registrations.
+ * last_seen_at` is already outside STALE_WINDOW_MS, which is exactly what a
+ * clean DELETE /api/connect backdates it to — the heartbeat store is no
+ * longer trusted on its own. DELETE /api/connect also calls clearHeartbeat()
+ * to erase that row in the same request, but the two writes are not one
+ * transaction: a host degraded to the `agent_memory` fallback for one store
+ * and not the other, or a request that failed partway, can leave a beat from
+ * moments before the disconnect still sitting there, inside LIVE_WINDOW_MS.
+ * Taking the OLDER of the two timestamps once the registration says offline
+ * means a leftover heartbeat can only ever make a disconnected agent look
+ * MORE offline, never resurrect it as live — a disconnect can never be
+ * silently undone by whichever store happened to answer first.
+ */
+function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultById: Map<string, VaultAgent>): AgentDto {
+  const now = Date.now()
+  const beat = state.heartbeats.get(reg.id) ?? null
+  const beatSeen = beat?.lastSeen ?? null
+  const regSeen = state.livenessSource === 'none' ? null : reg.lastSeenAt
+  const lastSeenAt =
+    reg.status === 'offline'
+      ? beatSeen === null
+        ? regSeen
+        : regSeen === null
+          ? beatSeen
+          : Math.min(beatSeen, regSeen)
+      : beatSeen ?? regSeen
+  const liveness: Liveness = state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
+  const isRunning = liveness === 'live'
+  const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
+  const capabilities = reg.capabilities.filter((c): c is string => typeof c === 'string')
+
+  return {
+    id: reg.id,
+    name: reg.name,
+    // Neutral display: AGENT_META has no entry for an agent no AGENTS.md
+    // names, and inventing one would be exactly the fabricated metadata this
+    // route was already rewritten once to stop doing for the roster itself.
+    emoji: '🔌',
+    role: 'self-registered',
+    // Round 3: no longer `reg.runtime` — GET()'s post-processing pass
+    // overwrites this via `resolveDispatchModel()`, same as every other row.
+    // A self-registered agent with no dispatch config (most of them today —
+    // see `dispatchable` below) renders "not resolvable", not the runtime
+    // name it declared at connect time, which is a claim about how IT
+    // identifies itself, not about what Todero's own dispatcher would do.
+    model: '',
+    active: isRunning,
+    status: isRunning ? 'active' : 'idle',
+    isRunning,
+    lastSeenAt,
+    liveness,
+    livenessSource: state.livenessSource,
+    nextRunTs: null,
+    modelShort: '',
+    queue_filter: [],
+    color: '#6b7280',
+    desc: `runtime: ${reg.runtime}`,
+    capabilities,
+    floor: false,
+    workspace: null,
+    sessions: 0,
+    ago: agoMin,
+    lastUpdatedAt: lastSeenAt ?? reg.registeredAt,
+    currentTask: beat?.task ?? null,
+    workStartedAt: null,
+    rosterSource: 'registered',
+    rosterWarning: null,
+    rosterPath: null,
+    vault: (() => {
+      const v = vaultById.get(reg.id)
+      return v ? vaultInfoFor(v) : null
+    })(),
+    dispatchable: getQueueConfig(reg.id) !== undefined,
+  }
+}
+
+/**
+ * A synthesized row for a Brain2 vault agent with no AGENTS.md row and no
+ * self-registration — the concrete union this piece exists to add: an agent
+ * the vault names, and nothing else on this host does, still shows up. Reuses
+ * `state.heartbeats` for liveness the same way every other row does (it may
+ * still have none — a vault agent that has never been dispatched has no
+ * heartbeat to read, same as any other agent with no run history — but see
+ * `dispatchable` below: registry-reaches-dispatch made dispatch itself
+ * possible, which is a separate fact from whether a run has happened yet),
+ * so it is not held to a different truth standard than a roster row.
+ *
+ * `model`/`modelShort` are resolved (by GET()'s post-processing pass, not
+ * here — see that pass's comment) through the same `resolveDispatchModel()`
+ * every model badge in the app now reads server-side, not the manifest's raw
+ * cloud `preferred` name — a vault-only row used to print `preferred`
+ * (e.g. "claude-opus-5") here while its own badge, computed independently on
+ * the client, showed the local/alias label two inches away. Any consumer
+ * that reads `.model`/`.modelShort` off this row instead of recomputing the
+ * badge itself (a config panel, a search result, an export) now gets the
+ * same label the badge shows, so the same bug cannot resurface in a fourth
+ * file the way it already had in three.
+ *
+ * Round 3: `model`/`modelShort` are no longer computed here at all — they
+ * are placeholders, overwritten by GET()'s single post-processing pass
+ * (see `resolveAllModels()` below) which resolves every row, vault-backed
+ * or not, through the same `resolveDispatchModel()` the real spawn path
+ * uses. Building them here from `resolveVaultBadge()` + an env-URL
+ * heuristic is exactly the defect this piece removes.
+ */
+function buildVaultOnlyAgent(
+  agent: VaultAgent,
+  state: RunState,
+  rosterWarning: string | null,
+  rosterPath: string | null,
+): AgentDto {
+  const now = Date.now()
+  const beat = state.heartbeats.get(agent.id) ?? null
+  const lastSeenAt = beat?.lastSeen ?? null
+  const liveness: Liveness = state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
+  const isRunning = liveness === 'live'
+  const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
+  const vault = vaultInfoFor(agent)
+
+  return {
+    id: agent.id,
+    name: agent.name,
+    // Neutral display, distinct from the registration glyph — this agent is
+    // named by the vault, not by a live connection or a Todero roster row.
+    emoji: '🗂️',
+    role: agent.model.tier ? `${agent.model.tier} tier` : '',
+    model: '',
+    active: isRunning,
+    status: isRunning ? 'active' : 'idle',
+    isRunning,
+    lastSeenAt,
+    liveness,
+    livenessSource: state.livenessSource,
+    nextRunTs: null,
+    modelShort: '',
+    queue_filter: [],
+    color: agent.model.tier === 'frontier' ? '#8b5cf6' : agent.model.tier === 'mid' ? '#3b82f6' : '#6b7280',
+    desc: agent.description,
+    capabilities: agent.tools,
+    floor: false,
+    workspace: null,
+    sessions: 0,
+    ago: agoMin,
+    lastUpdatedAt: lastSeenAt ?? 0,
+    currentTask: beat?.task ?? null,
+    workStartedAt: null,
+    rosterSource: 'vault',
+    rosterWarning,
+    rosterPath,
+    vault,
+    // registry-reaches-dispatch piece: this used to be unconditionally
+    // false ("nothing dispatches a vault-only agent yet" — see the comment
+    // above this function). ensureVaultDispatchConfigs(), called before this
+    // function runs, has registered a config for every agent the vault
+    // named, so this now reads the same true/false POST /api/run-agent
+    // would give this exact id.
+    dispatchable: getQueueConfig(agent.id) !== undefined,
+  }
 }
 
 export async function GET() {
-  // Parse AGENTS.md first — fail fast with 500 if it can't be read/parsed
-  let parsedAgents: ParsedAgent[]
+  // AGENTS.md is one of two sources of "who exists" now — see RosterSource
+  // above. It is a host artifact: a fresh clone on another machine may have
+  // none, or AGENTS_MD_PATH may point somewhere that does not exist. Neither
+  // is a server fault, so neither is a 500 — the response is a 200 carrying
+  // an empty roster and a warning naming the path, which lets the UI say
+  // "no agents configured" instead of inventing some.
+  const roster = loadAgentRoster()
+  const parsedAgents: ParsedAgent[] = roster.agents
+  const baseRosterSource: 'agents-md' | 'none' = roster.agents.length > 0 ? 'agents-md' : 'none'
+  const rosterWarning = roster.warning
+  const rosterPath = roster.path
+
+  // Brain2 vault registry (docs/brain2-integration.md) — a third, independent
+  // source of "who exists". Never throws by construction (lib/vault-agents.ts
+  // catches every fs error internally); the extra try/catch is defense in
+  // depth so a future change there still cannot 500 this route — a vault
+  // read is exactly the kind of optional-infrastructure failure this route
+  // has already promised never crashes it.
+  let vaultRoster: ReturnType<typeof loadVaultAgentRoster>
   try {
-    parsedAgents = parseAgentsFromMd()
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: `Failed to parse AGENTS.md: ${e.message}` },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
-    )
+    vaultRoster = loadVaultAgentRoster()
+  } catch (e) {
+    vaultRoster = { agents: [], path: null, warning: e instanceof Error ? e.message : String(e) }
+  }
+  const vaultById = new Map(vaultRoster.agents.map((a) => [a.id, a]))
+
+  // registry-reaches-dispatch piece: registers a dispatchable config for
+  // every vault agent into lib/agent-queue.ts's runtime cache — the same
+  // scan `vaultRoster` above already did, run again here (cheap: ~13 small
+  // files) so the *dispatch* half of the vault registry is populated from
+  // the exact code path POST /api/run-agent also calls, not duplicated ad
+  // hoc. Never throws (see that function's own comment); its `dispatchable`
+  // per-row field below reads true iff a real spawn would find a config too.
+  //
+  // Round 2 (critic finding): the result used to be discarded here, which is
+  // how a persistence failure (agent_manifests missing on the configured
+  // backend) stayed invisible — GET /api/agents kept answering 200 with
+  // vaultWarning:null over a write that 404s every time. `vaultSync` below
+  // is that result, carried into the envelope so the roster header can say so.
+  const vaultSync = await ensureVaultDispatchConfigs()
+
+  // Independent of the roster and of Supabase — fetched once and reused by
+  // every response branch below, success or failure alike.
+  const schedule = await fetchVerifiedAgentSchedule()
+
+  const respond = async (
+    state: RunState,
+    configured: boolean,
+    error: string | null,
+    status = 200,
+    heartbeatStore: HeartbeatStore | null = null,
+    heartbeatWarning: string | null = null,
+    registrations: Map<string, AgentRegistration> = new Map(),
+  ) => {
+    // Every registration that AGENTS.md does not already name — the union
+    // this piece was built for. An agent named in both sources renders once,
+    // as its roster row (display metadata from AGENT_META is real; a
+    // registration has none), so its heartbeat still drives that one row.
+    const rosterIds = new Set(parsedAgents.map((a) => a.id))
+    const registrationOnly = Array.from(registrations.values()).filter((r) => !rosterIds.has(r.id))
+
+    // Vault agents not already named by AGENTS.md or a live registration —
+    // the third leg of the same union `registrationOnly` above already does.
+    // An id present in either of the other two sources is enriched via the
+    // per-row `vault` field instead (buildAgents/buildRegistrationAgent both
+    // look it up), so it never renders twice.
+    const knownIds = new Set(rosterIds)
+    for (const id of Array.from(registrations.keys())) knownIds.add(id)
+    const vaultOnly = vaultRoster.agents.filter((v) => !knownIds.has(v.id))
+
+    const agents: AgentDto[] = [
+      ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule, vaultById),
+      ...registrationOnly.map((r) => buildRegistrationAgent(r, state, vaultById)),
+      ...vaultOnly.map((v) => buildVaultOnlyAgent(v, state, vaultRoster.warning, vaultRoster.path)),
+    ]
+
+    // agent-config-panel-truth piece (round 3): one probe of every registered
+    // runtime and one live GET against the configured LLM endpoint's
+    // /models, reused across every row below — a 42-row roster costs one
+    // probe + one live-models fetch, not 42 of each. Every row's
+    // `model`/`modelShort` is then resolved through the exact same
+    // lib/resolve-dispatch-model.ts function POST /api/run-agent's real
+    // spawn path and GET /api/run-agent?info=1's Configuration panel both
+    // use — so the Team tab card, the modal header badge, the office
+    // sidebar, and this route's own field can never show a different
+    // answer than "what would actually run" again. A row whose
+    // `getQueueConfig(id)` resolves nothing (not dispatchable — most
+    // self-registered probes today) renders "not resolvable — <reason>",
+    // never a manifest field or a self-reported runtime name.
+    const runtimeByName = await probeRuntimes()
+    const liveModels = await fetchLiveModels()
+    await Promise.all(agents.map(async (a) => {
+      const dispatchConfig = getQueueConfig(a.id)
+      if (!dispatchConfig) {
+        a.model = `not resolvable — no dispatch config is registered for "${a.id}"`
+        a.modelShort = 'not resolvable'
+        return
+      }
+      const resolved = await resolveDispatchModel(dispatchConfig, runtimeByName, liveModels)
+      a.model = resolved.label
+      a.modelShort = resolved.label.startsWith('not resolvable') ? 'not resolvable' : shortModelLabel(resolved.label)
+    }))
+
+    // TOD-2381 round 3: over-ceiling flag per agent, only when the database
+    // is actually reachable (`configured`) — an unconfigured/error path has
+    // no database to ask and every agent should just render with no flag
+    // rather than a second, unrelated error. Best-effort per agent: one
+    // ceiling check throwing must never take down the whole roster response.
+    if (configured) {
+      await Promise.all(agents.map(async (a) => {
+        try {
+          const result = await getCeilingStatus(a.id)
+          a.overCeiling = result.allowed ? null : { ceiling: result.ceiling as CeilingName, reason: result.reason ?? '' }
+        } catch {
+          a.overCeiling = null
+        }
+      }))
+    } else {
+      for (const a of agents) a.overCeiling = null
+    }
+
+    const sourcesPresent = [
+      parsedAgents.length > 0 && 'agents-md',
+      registrations.size > 0 && 'registered',
+      vaultOnly.length > 0 && 'vault',
+    ].filter((s): s is 'agents-md' | 'registered' | 'vault' => s !== false)
+    const rosterSource: RosterSource =
+      sourcesPresent.length > 1 ? 'both' : sourcesPresent.length === 1 ? sourcesPresent[0] : 'none'
+
+    const body: AgentsResponse = {
+      agents,
+      rosterSource,
+      rosterWarning,
+      rosterPath,
+      configured,
+      error,
+      livenessSource: state.livenessSource,
+      heartbeatStore,
+      heartbeatWarning,
+      vaultPath: vaultRoster.path,
+      vaultWarning: vaultRoster.warning,
+      vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },
+    }
+    return NextResponse.json(body, { status, headers: NO_STORE })
+  }
+
+  // Unconfigured host: the roster is still real, so return it — with 503 and
+  // the reason, never a bare empty 200. Liveness lives in the database, so
+  // without one there is no liveness to report and `livenessSource` stays
+  // 'none': every agent reads "never checked in", not "Idle". Registrations
+  // live in the same database, so an unconfigured host has none to union in
+  // either — `respond()`'s default empty map is correct here.
+  if (!isDbConfigured()) {
+    return respond(emptyRunState(), false, NO_KEY_ERROR(), 503)
   }
 
   try {
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-    const now = Date.now()
+    const supabase = db()
+    const state = emptyRunState()
 
-    // 1. Fetch issues that are actively being worked on (in_progress, code_review)
-    const { data: activeIssues } = await supabase
-      .from('issues')
-      .select('task_key, title, status, assignee, worked_by, updated_at, started_at')
-      .in('status', ['open', 'in_progress', 'code_review', 'product_review', 'approved'])
-      .order('updated_at', { ascending: false })
-      .limit(50)
-
-    // 2. Fetch recent agent_runs for last-activity tracking
-    const { data: recentRuns } = await supabase
-      .from('agent_runs')
-      .select('agent_id, started_at, completed_at, status')
-      .order('started_at', { ascending: false })
-      .limit(50)
+    // The heartbeat read, the registration read, and the two queries are all
+    // independent, so they run together rather than stacking their round trips.
+    const [{ data: activeIssues }, { data: recentRuns }, beats, registrations] = await Promise.all([
+      // 1. Issues that are actively being worked on (in_progress, code_review)
+      supabase
+        .from('issues')
+        .select('task_key, title, status, assignee, worked_by, updated_at, started_at')
+        .in('status', ['open', 'in_progress', 'code_review', 'product_review', 'approved'])
+        .order('updated_at', { ascending: false })
+        .limit(50),
+      // 2. Recent agent_runs for last-activity tracking
+      supabase
+        .from('agent_runs')
+        .select('agent_id, started_at, completed_at, status')
+        .order('started_at', { ascending: false })
+        .limit(50),
+      // 3. Recorded heartbeats — the only source of "is this agent running?".
+      //    Works for agents on any host, not just this one.
+      readHeartbeats(),
+      // 4. Registered agents — the roster's second source. Its own liveness
+      //    fields (last_seen_at, and the status derived from it) are kept
+      //    honest by recordHeartbeat()/rowToRegistration(). This route decides
+      //    who from here is missing from AGENTS.md and needs a row
+      //    synthesized for them — and buildRegistrationAgent() DOES recompute
+      //    that row's liveness rather than trusting either source alone: once
+      //    the registration reads 'offline' it floors `lastSeenAt` at the
+      //    OLDER of the registration's own timestamp and the heartbeat
+      //    store's, so a heartbeat left over from just before a disconnect
+      //    can never out-vote it. See that function's docstring.
+      readRegistrations(),
+    ])
+    state.heartbeats = beats.data
+    state.livenessSource = beats.store === null ? 'none' : 'heartbeat'
 
     // Build lookup: agent → most recent activity timestamp
-    const agentLastActive: Record<string, number> = {}
     for (const run of recentRuns ?? []) {
       const ts = new Date(run.completed_at ?? run.started_at).getTime()
-      if (!agentLastActive[run.agent_id] || ts > agentLastActive[run.agent_id]) {
-        agentLastActive[run.agent_id] = ts
+      if (!state.agentLastActive[run.agent_id] || ts > state.agentLastActive[run.agent_id]) {
+        state.agentLastActive[run.agent_id] = ts
       }
     }
 
     // Build lookup: agent → current issue (prefer in_progress over review statuses)
-    const agentIssue: Record<string, { key: string; title: string; status: string; startedAt: number | null }> = {}
     // Sort: in_progress first, then code_review, then product_review
     const statusPriority = (s: string) => s === 'in_progress' ? 0 : s === 'code_review' ? 1 : s === 'product_review' ? 2 : s === 'open' ? 3 : 4
     const sortedIssues = [...(activeIssues ?? [])].sort((a, b) => statusPriority(a.status) - statusPriority(b.status))
     for (const iss of sortedIssues) {
       const owner = iss.worked_by || iss.assignee
-      if (owner && !agentIssue[owner]) {
+      if (owner && !state.agentIssue[owner]) {
         // started_at: when agent started working on THIS issue (reset on assignee/status change)
         // Fall back to updated_at if started_at is null
         const startedAt = iss.started_at ? new Date(iss.started_at).getTime()
                         : iss.updated_at ? new Date(iss.updated_at).getTime()
                         : null
-        agentIssue[owner] = {
+        state.agentIssue[owner] = {
           key: iss.task_key ?? '?',
           title: iss.title ?? '',
           status: iss.status ?? '',
@@ -128,110 +788,29 @@ export async function GET() {
       // Track activity from issue updates for all issues
       if (owner) {
         const issTs = new Date(iss.updated_at).getTime()
-        if (!agentLastActive[owner] || issTs > agentLastActive[owner]) {
-          agentLastActive[owner] = issTs
+        if (!state.agentLastActive[owner] || issTs > state.agentLastActive[owner]) {
+          state.agentLastActive[owner] = issTs
         }
       }
     }
 
-    // 3. Check for running claude CLI agent processes (real-time detection)
-    // Only match spawned agent sessions, NOT the main Claude Desktop session
-    const runningAgents = new Set<string>()
-    try {
-      const { stdout } = await execAsync(
-        'ps aux | grep "[c]laude" | grep -v "Claude.app" | grep -v "disclaimer" | grep -v "ShipIt"',
-        { timeout: 3000 }
-      )
-      const lines = stdout.trim().split('\n').filter(Boolean)
-      for (const line of lines) {
-        // Only match lines that contain explicit agent identifiers (from spawn commands)
-        const lower = line.toLowerCase()
-        if (lower.includes('you are builder') || lower.includes('agent builder')) runningAgents.add('builder')
-        else if (lower.includes('you are tester') || lower.includes('agent tester')) runningAgents.add('tester')
-        else if (lower.includes('you are ops') || lower.includes('agent ops')) runningAgents.add('ops')
-        else if (lower.includes('you are scout') || lower.includes('agent scout')) runningAgents.add('scout')
-        else if (lower.includes('you are deployer') || lower.includes('agent deployer')) runningAgents.add('deployer')
-        else if (lower.includes('you are designer') || lower.includes('agent designer')) runningAgents.add('designer')
-        else if (lower.includes('you are po') || lower.includes('agent po')) runningAgents.add('po')
-      }
-    } catch { /* no agent processes running */ }
-
-    // 4. Build agent list:
-    //    - AGENTS.md roster is authoritative for id/name/role/model
-    //    - AGENT_META provides emoji/color/capabilities/floor/queue_filter overrides
-    //    - Agents in AGENT_META but not in AGENTS.md are deprecated (active=false)
-    const agentMdIds = new Set(parsedAgents.map(a => a.id))
-    const allIdSet = new Set([...parsedAgents.map(a => a.id), ...Object.keys(AGENT_META)])
-    const allIds = Array.from(allIdSet)
-
-    const agents = allIds.map(id => {
-      const parsed = parsedAgents.find(a => a.id === id)
-      const meta = AGENT_META[id]
-      const inAgentsMd = agentMdIds.has(id)
-
-      const issue = agentIssue[id]
-      const lastTs = agentLastActive[id] ?? 0
-      const agoMin = lastTs ? Math.round((now - lastTs) / 60000) : null
-
-      const isRunning = runningAgents.has(id)
-      const hasInProgressIssue = !!issue && issue.status === 'in_progress'
-      // Deprecated agents (not in AGENTS.md) are never active
-      const isActive = inAgentsMd && (isRunning || hasInProgressIssue)
-      const isScheduled = inAgentsMd && id === 'ops' && !isActive
-
-      // Compute next scheduled run based on fixed 30-min intervals anchored to the hour
-      // Ops heartbeat fires at :00 and :30 of every hour (fixed schedule, not relative)
-      let nextRunTs: number | null = null
-      if (isScheduled) {
-        const d = new Date(now)
-        const min = d.getMinutes()
-        const nextMin = min < 30 ? 30 : 60
-        const msUntilNext = (nextMin - min) * 60 * 1000 - d.getSeconds() * 1000 - d.getMilliseconds()
-        nextRunTs = now + msUntilNext
-      }
-
-      const model = parsed?.model ?? meta?.model ?? ''
-      const role = parsed?.role ?? meta?.role ?? ''
-
-      return {
-        id,
-        name: meta?.name ?? parsed?.name ?? id,
-        emoji: meta?.emoji ?? '🤖',
-        role,
-        model,
-        active: isActive,
-        status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
-        isRunning,
-        nextRunTs,
-        modelShort: model.includes('haiku') ? 'Haiku 4.5' : 'Sonnet 4.6',
-        queue_filter: meta?.queue_filter ?? [],
-        color: meta?.color ?? '#6b7280',
-        desc: role,
-        capabilities: meta?.capabilities ?? [],
-        floor: meta?.floor ?? false,
-        workspace: null,
-        sessions: 0,
-        ago: agoMin,
-        lastUpdatedAt: lastTs,
-        currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : null,
-        workStartedAt: issue?.startedAt ?? null,
-      }
-    })
-
-    return NextResponse.json(agents, { headers: { 'Cache-Control': 'no-store' } })
+    return respond(state, true, null, 200, beats.store, beats.warning, registrations.data)
   } catch (e) {
-    return NextResponse.json([], { headers: { 'Cache-Control': 'no-store' } })
+    // Never swallow. A host that cannot reach its database answers 503 with the
+    // reason, and still shows the roster it does know about.
+    return respond(emptyRunState(), false, e instanceof Error ? e.message : String(e), 503)
   }
 }
 
 // INF-237: Agent capability registry — persist capabilities to Supabase agent_memory
 export async function POST(req: NextRequest) {
+  if (!isDbConfigured()) return NextResponse.json({ error: NO_KEY_ERROR() }, { status: 503 })
   try {
     const body = await req.json()
     const { agent_id, capabilities, role, description } = body
     if (!agent_id) return NextResponse.json({ error: 'agent_id required' }, { status: 400 })
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+    const supabase = db()
     const value = JSON.stringify({
       capabilities: capabilities ?? [],
       role: role ?? null,
@@ -242,21 +821,22 @@ export async function POST(req: NextRequest) {
       { agent_id, key: 'capability_registry', value },
       { onConflict: 'agent_id,key' }
     )
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'agent_memory')
     return NextResponse.json({ ok: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
 }
 
 // INF-237: Update agent capabilities
 export async function PATCH(req: NextRequest) {
+  if (!isDbConfigured()) return NextResponse.json({ error: NO_KEY_ERROR() }, { status: 503 })
   try {
     const body = await req.json()
     const { agent_id, capabilities, role, description, floor } = body
     if (!agent_id) return NextResponse.json({ error: 'agent_id required' }, { status: 400 })
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+    const supabase = db()
 
     // Read existing
     const { data: existing } = await supabase
@@ -280,9 +860,9 @@ export async function PATCH(req: NextRequest) {
       { agent_id, key: 'capability_registry', value: JSON.stringify(merged) },
       { onConflict: 'agent_id,key' }
     )
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'agent_memory')
     return NextResponse.json({ ok: true, data: merged })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }
 }

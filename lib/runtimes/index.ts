@@ -12,11 +12,13 @@
 //   - Bump the priority if you want it tried before claude-code
 //   - Build + verify it shows up in `curl /api/run-agent/runtimes` (future endpoint)
 
-import claudeCodeRuntime from './claude-code'
-import codexRuntime from './codex'
-import cursorRuntime from './cursor'
+import claudeCodeRuntime, { CLAUDE_BIN } from './claude-code'
+import codexRuntime, { CODEX_BIN } from './codex'
+import cursorRuntime, { CURSOR_BIN } from './cursor'
 import { openaiApiRuntime } from './openai-api'
 import type { AgentRuntime, RuntimeRegistration } from './types'
+import { assertDispatchEnabled } from '../dispatch-guard'
+import { resolveBinary } from '../paths'
 
 const REGISTRY: RuntimeRegistration[] = [
   { runtime: claudeCodeRuntime, priority: 100 },
@@ -30,6 +32,7 @@ const REGISTRY: RuntimeRegistration[] = [
  * Returns null if the named runtime isn't registered or isn't available.
  */
 export async function getRuntimeByName(name: string): Promise<AgentRuntime | null> {
+  assertDispatchEnabled()
   const entry = REGISTRY.find(r => r.runtime.name === name)
   if (!entry) return null
   if (!(await entry.runtime.isAvailable())) return null
@@ -42,11 +45,21 @@ export async function getRuntimeByName(name: string): Promise<AgentRuntime | nul
  * available runtime.
  */
 export async function getDefaultRuntime(): Promise<AgentRuntime> {
+  assertDispatchEnabled()
+  return selectRuntime()
+}
+
+/**
+ * The selection itself, with no dispatch guard. Separated so read-only
+ * inspection (`inspectRuntime`, the /api/run-agent?dryRun=1 branch) can ask
+ * "which runtime would run, and is its binary present?" without being a spawn.
+ */
+async function selectRuntime(): Promise<AgentRuntime> {
   // Env override
   const envName = process.env.TODERO_RUNTIME
   if (envName) {
-    const r = await getRuntimeByName(envName)
-    if (r) return r
+    const entry = REGISTRY.find(r => r.runtime.name === envName)
+    if (entry && await entry.runtime.isAvailable()) return entry.runtime
     console.warn(`[runtimes] TODERO_RUNTIME=${envName} requested but not available; falling back`)
   }
 
@@ -58,24 +71,105 @@ export async function getDefaultRuntime(): Promise<AgentRuntime> {
     }
   }
 
-  // No runtime available — return Claude Code as a last-ditch fallback.
-  // Its spawn will fail loudly in that case, which is preferable to a silent error.
+  // No runtime available — return Claude Code as a last-ditch fallback. Its
+  // spawn now resolves the `claude` binary before launching and returns
+  // ok:false with "binary not found on PATH" when it is absent, so this
+  // fallback reports a real failure to the caller rather than a fake success.
   return claudeCodeRuntime
+}
+
+/**
+ * The executable each runtime would launch, as configured (bare name or an
+ * explicit *_BIN path). `openai-api` runs the Node binary this server is
+ * already running under, so it has no external dependency.
+ */
+const RUNTIME_BIN_SPEC: Readonly<Record<string, string>> = {
+  'claude-code': CLAUDE_BIN,
+  'codex': CODEX_BIN,
+  'cursor': CURSOR_BIN,
+  'openai-api': process.execPath,
+}
+
+export interface RuntimeInspection {
+  /** Runtime that would handle a dispatch right now. */
+  runtime: string
+  /** Executable as configured — a bare name or an explicit *_BIN path. */
+  bin: string
+  /** Absolute path the bin resolves to on this host, or null when absent. */
+  binResolved: string | null
+  available: boolean
+  /** One sentence naming what is missing, or null when available. */
+  unavailableReason: string | null
+}
+
+/**
+ * Why a runtime is unavailable, in words a stranger can act on.
+ *
+ * A runtime that owns a real sensor answers for itself (openai-api probes its
+ * endpoint and can say "http://localhost:11434/v1 does not answer"). For the
+ * CLI adapters the registry already knows the whole story: the binary the
+ * adapter would launch is not on PATH. Returns null when it is available, so
+ * this doubles as the availability check every caller needs anyway.
+ */
+async function unavailableReasonFor(runtime: AgentRuntime): Promise<string | null> {
+  if (await runtime.isAvailable()) return null
+  const custom = runtime.unavailableReason ? await runtime.unavailableReason() : null
+  if (custom) return custom
+  const bin = RUNTIME_BIN_SPEC[runtime.name] ?? runtime.name
+  if (resolveBinary(bin) === null) return `${bin} not on PATH`
+  // Available:false with no explanation is itself a defect — say that rather
+  // than inventing a cause the adapter never reported.
+  return `${runtime.name} reported unavailable and gave no reason`
+}
+
+/**
+ * Read-only answer to "what would happen if I dispatched?" — no guard, no
+ * spawn, no side effects. `binResolved: null` is the honest signal that a
+ * dispatch would fail here, and is exactly what spawnDetached() checks.
+ */
+export async function inspectRuntime(name?: string | null): Promise<RuntimeInspection> {
+  const entry = name ? REGISTRY.find(r => r.runtime.name === name) : undefined
+  const runtime = entry ? entry.runtime : await selectRuntime()
+  const bin = RUNTIME_BIN_SPEC[runtime.name] ?? runtime.name
+  const unavailableReason = await unavailableReasonFor(runtime)
+  return {
+    runtime: runtime.name,
+    bin,
+    binResolved: resolveBinary(bin),
+    available: unavailableReason === null,
+    unavailableReason,
+  }
 }
 
 /**
  * List all registered runtimes with their availability state.
  * Used by a future /api/runtimes endpoint + smoke tests.
  */
-export async function listRuntimes(): Promise<Array<{ name: string; displayName: string; priority: number; available: boolean; supportsSessions: boolean; supportsTools: boolean }>> {
-  type RuntimeListEntry = { name: string; displayName: string; priority: number; available: boolean; supportsSessions: boolean; supportsTools: boolean }
+export interface RuntimeListEntry {
+  name: string
+  displayName: string
+  priority: number
+  available: boolean
+  /**
+   * Why `available` is false, in one actionable sentence — null when it is
+   * true. Callers render this instead of guessing at a cause: an endpoint that
+   * is down and a CLI that was never installed are not the same problem.
+   */
+  unavailableReason: string | null
+  supportsSessions: boolean
+  supportsTools: boolean
+}
+
+export async function listRuntimes(): Promise<RuntimeListEntry[]> {
   const results: RuntimeListEntry[] = []
   for (const entry of REGISTRY) {
+    const unavailableReason = await unavailableReasonFor(entry.runtime)
     results.push({
       name: entry.runtime.name,
       displayName: entry.runtime.displayName,
       priority: entry.priority,
-      available: await entry.runtime.isAvailable(),
+      available: unavailableReason === null,
+      unavailableReason,
       supportsSessions: entry.runtime.supportsSessions,
       supportsTools: entry.runtime.supportsTools,
     })

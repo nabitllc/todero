@@ -2,7 +2,7 @@
 # MC-207: Clean up partial/untracked .tsx files left by Builder timeouts
 # Run after Builder sessions to remove any broken partial files.
 
-cd /Users/kemuniagent/mission-control
+cd "${TODERO_DIR:-$HOME/mission-control}"
 
 echo "[cleanup] Checking for untracked .tsx/.ts files..."
 UNTRACKED=$(git ls-files --others --exclude-standard '*.tsx' '*.ts')

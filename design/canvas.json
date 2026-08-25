@@ -1,0 +1,35 @@
+{
+  "artboards": [
+    { "file": "Nav.dc.html",    "x": 0,    "y": 0,    "w": 1180, "h": 860, "title": "Nav model — 20 tabs to 7" },
+    { "file": "Main.dc.html",   "x": 1260, "y": 0,    "w": 1280, "h": 900, "title": "Now — the home screen" },
+    { "file": "Fleet.dc.html",  "x": 2620, "y": 0,    "w": 1280, "h": 880, "title": "Fleet — live office" },
+    { "file": "Work.dc.html",   "x": 1260, "y": 980,  "w": 1280, "h": 880, "title": "Work — unified board" },
+    { "file": "Run.dc.html",    "x": 2620, "y": 980,  "w": 1280, "h": 880, "title": "Run — trace detail" },
+    { "file": "Memory.dc.html", "x": 3980, "y": 0,    "w": 1280, "h": 880, "title": "Memory — records and skills" },
+    { "file": "Mobile.dc.html", "x": 3980, "y": 980,  "w": 1280, "h": 880, "title": "Phone — 375px" }
+  ],
+  "annotations": [
+    {
+      "id": "read-me-first",
+      "x": 0,
+      "y": -190,
+      "w": 560,
+      "text": "Target state, not current state.\n\nEvery screen extends Todero's real tokens — #080808 ground, #0f0f0f surface, white/10 hairlines, Inter + JetBrains Mono, #3b82f6 accent — rather than inventing a look.\n\nThe one thing repeated everywhere is the small grey provenance line: where a number came from, or that nothing measured it. That is the honesty rule made visible."
+    },
+    {
+      "id": "nav-note",
+      "x": 0,
+      "y": 900,
+      "w": 400,
+      "text": "Start here. The nav model is the biggest unresolved design problem — 20 tabs inherited from the OpenClaw lineage, never designed as a set."
+    },
+    {
+      "id": "runs-note",
+      "x": 2620,
+      "y": 1900,
+      "w": 420,
+      "text": "Runs has no equivalent in Todero today — per-run tracing scored 0 in the audit. This is the Paperclip / LangSmith bar: drill from a cost number to the step that caused it."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

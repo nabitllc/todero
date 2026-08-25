@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
 import { exec as execAsync } from 'child_process'
 import { createAdminClient, getHubClient } from '@/lib/hub-client'
 import {
@@ -26,6 +26,9 @@ import {
 } from '@/lib/issue-routing'
 import { recordAgentFailure, resetAgentFailures } from '@/lib/loop-breaker'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
+import { resolveSessionActor } from '@/lib/session-actor'
+import { isOwnerActor } from '@/lib/operator-identity'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -43,9 +46,9 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'michael': null,
 }
 
-const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
-const WORKSPACE = '/Users/kemuniagent/todero/config'
-const TODERO_DIR = '/Users/kemuniagent/todero'
+// (No CLAUDE_BIN/WORKSPACE/TODERO_DIR constants here any more: this route stopped
+// spawning the CLI directly when activateAgentAsync moved to /api/run-agent, and
+// the leftovers pinned Todero to one Mac. Host paths live in lib/paths.ts.)
 
 function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, _issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]
@@ -166,6 +169,10 @@ const PRIORITY_EMOJI: Record<string, string> = {
 const SEVERITY_EMOJI: Record<string, string> = {
   S0: '🔴', S1: '🟠', S2: '🟡', S3: '🟢'
 }
+
+// ── GET response cache (30s TTL, keyed by query string) ───────────────────────
+const issuesCache = new Map<string, { data: unknown; ts: number }>()
+const ISSUES_CACHE_TTL = 30_000
 
 function fmtDiscordMsg(
   issue: Record<string, unknown>,
@@ -313,17 +320,14 @@ function notifyWatchers(issue: {
 }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
-// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// Lazy-init: avoids crashing at build time when the database credentials aren't
 // set (CI builds import every route for page-data collection). Throws at first
 // request instead of at module load, so `next build` can complete without the
 // env var. (TOD-2296 — same pattern as app/api/run-agent/route.ts.)
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(
-      'https://twthgapiouiqhavrcnry.supabase.co',
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    _supabase = db()
   }
   return _supabase
 }
@@ -340,21 +344,40 @@ function resolveActorType(actor: string | null | undefined): 'agent' | 'human' {
   return KNOWN_AGENT_IDS.has(actor) ? 'agent' : 'human'
 }
 
-function recordActivityEvent(
+// Round-4 fix: this used to be `void … .then(() => {})` — a fire-and-forget
+// insert whose error nobody ever read. On this install `activity_events`
+// doesn't exist (see /api/health), so EVERY call silently failed on every
+// issue operation and every caller reported success anyway. Now awaited and
+// honest: callers collect {ok, error} and surface it as `_warning` on the
+// response instead of a bare 200 that implies the event was recorded.
+async function recordActivityEvent(
   issueId: string,
   issueKey: string | null | undefined,
   eventType: string,
   actor: string | null | undefined,
   metadata: Record<string, unknown>
-) {
-  void getSupabase().from('activity_events').insert({
+): Promise<{ ok: boolean; error: string | null }> {
+  const { error } = await getSupabase().from('activity_events').insert({
     issue_id: issueId,
     issue_key: issueKey ?? null,
     event_type: eventType,
     actor: actor ?? null,
     actor_type: resolveActorType(actor),
     metadata,
-  }).then(() => {}) // fire-and-forget
+  })
+  if (error) {
+    console.warn(`[activity-event] ${eventType} on ${issueKey ?? issueId} not recorded:`, error.message)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true, error: null }
+}
+
+/** Folds a batch of recordActivityEvent() outcomes into one `_warning` string, or null if all ok. */
+function activityEventWarning(outcomes: Array<{ ok: boolean; error: string | null }>): string | null {
+  const failed = outcomes.filter(o => !o.ok)
+  if (failed.length === 0) return null
+  const uniqueErrors = Array.from(new Set(failed.map(f => f.error ?? 'unknown error')))
+  return `activity event not recorded — ${uniqueErrors.join('; ')}`
 }
 
 // ── Hierarchy validation ──────────────────────────────────────────────────────
@@ -491,7 +514,7 @@ async function validateWorkflowTransition(
 
   if (!transition) {
     // michael can override any workflow transition for maintenance/admin purposes
-    if (transitionedBy === 'michael') {
+    if (isOwnerActor(transitionedBy)) {
       return { transition: { condition_role: null, validators: [], post_functions: [] } as unknown as WorkflowTransition, error: null }
     }
     return {
@@ -508,7 +531,7 @@ async function validateWorkflowTransition(
 
   // michael is a global admin bypass — can execute any transition regardless of conditionRole.
   // DO NOT REMOVE — maintenance transitions (e.g. resetting stale claims) require this.
-  if (transitionedBy === 'michael') {
+  if (isOwnerActor(transitionedBy)) {
     return { transition: transition as WorkflowTransition, error: null }
   }
 
@@ -770,6 +793,9 @@ async function executePostFunctions(
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const REQUIRED_PERMISSION = 'issues:read' as const
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
@@ -781,7 +807,19 @@ export async function GET(req: NextRequest) {
   const taskKey = url.searchParams.get('task_key')
 
   if (taskKey) {
-    // AGGREGATE QUERY — no hub scope for task_key lookups (keys are globally unique)
+    // Task keys are globally unique, which made this look like a safe shortcut:
+    // no hub scope needed, straight to an admin client. It ran BEFORE every
+    // scope check below and returned the FULL row — description included — for
+    // any key, from any page. A row a Limiglow operator is refused on a list
+    // read was handed over in full by guessing its key.
+    //
+    // Uniqueness is why the lookup needs no filter to FIND the row. It is not a
+    // reason to let a scoped caller READ it.
+    const scope = req.headers.get('x-mc-project')
+    const crossProject = req.headers.get('x-mc-all-projects') === '1'
+    const allProjects = ['1', 'true', 'yes'].includes(
+      (url.searchParams.get('all_projects') ?? '').toLowerCase()
+    )
     const { data, error } = await createAdminClient()
       .from('issues')
       .select('*')
@@ -789,21 +827,135 @@ export async function GET(req: NextRequest) {
       .maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
+    if (scope && !crossProject && !allProjects && data.project !== scope) {
+      // 404, deliberately, not 403: a scoped caller should not be able to use
+      // this endpoint to discover which keys exist outside its own project.
+      return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
+    }
     return NextResponse.json(withIssueStatusCategory(data))
+  }
+
+  // scope-reaches-the-server: the result for an identical query string now
+  // also depends on the caller's resolved scope (see `effectiveProject`
+  // below) — the same `?limit=0` from a Limiglow-scoped tab and a Todero-
+  // scoped tab must not share a cache entry, or whichever populated it first
+  // wins for both until the 30s TTL expires.
+  const cacheKey = url.search + '|' + (req.headers.get('x-mc-project') ?? '')
+  const cached = issuesCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < ISSUES_CACHE_TTL) {
+    return NextResponse.json(cached.data)
   }
 
   const search = url.searchParams.get('search')
   // TOD-1999: default limit=50 keeps no-param responses under 200KB.
-  // Pass ?limit=0 for unbounded (agent/script callers). ?page=N for offset.
+  // Pass ?limit=0 for unbounded (agent/script callers, batched below the
+  // PostgREST row cap). ?page=N for offset. MAX_LIMIT bounds any *positive*
+  // limit so one request can't ask Postgres for an unreasonable page size —
+  // it deliberately does not apply to the limit=0 sentinel, which has
+  // different semantics ("every row, fetched in MAX_LIMIT-sized batches")
+  // and is relied on by FeaturesTab/IssuesTab/ProjectsTab/EpicMapTab/etc to
+  // get a true, untruncated count.
+  const MAX_LIMIT = 1000
   const limitParam = url.searchParams.get('limit')
-  const limit = limitParam !== null ? parseInt(limitParam, 10) : 50
+  let limit = 50
+  if (limitParam !== null) {
+    const trimmed = limitParam.trim()
+    if (!/^\d+$/.test(trimmed)) {
+      return NextResponse.json(
+        { error: `Invalid limit "${limitParam}" — must be a non-negative integer (0 = unbounded, max ${MAX_LIMIT}).` },
+        { status: 400 },
+      )
+    }
+    limit = Math.min(parseInt(trimmed, 10), MAX_LIMIT)
+  }
   const pageParam = url.searchParams.get('page')
-  const page = Math.max(1, parseInt(pageParam || '1', 10))
+  let page = 1
+  if (pageParam !== null) {
+    const trimmed = pageParam.trim()
+    if (!/^\d+$/.test(trimmed) || parseInt(trimmed, 10) < 1) {
+      return NextResponse.json(
+        { error: `Invalid page "${pageParam}" — must be a positive integer.` },
+        { status: 400 },
+      )
+    }
+    page = parseInt(trimmed, 10)
+  }
   const offset = limit > 0 ? (page - 1) * limit : 0
   const projectParam = url.searchParams.get('project')
   const businessIdParam = url.searchParams.get('business_id')
   const assigneeParam = url.searchParams.get('assignee')
   const statusParam = url.searchParams.get('status')
+
+  // ─── scope-reaches-the-server ───────────────────────────────────────────
+  //
+  // "GET /api/issues without a project should not silently mean 'all
+  // projects'." Plain "refuse when omitted" was tried first and rejected: it
+  // breaks `rbac-owner-reads` and the `issues-paginated` / no-truncation
+  // checks in scripts/acceptance/checks*.mjs, all of which call bare
+  // `GET /api/issues` with only an auth cookie — no project, no page context
+  // — and correctly expect 200. Those calls are genuinely scope-blind (a
+  // script, not a page); refusing them would be wrong, not honest.
+  //
+  // The actual bug was narrower: callers that DO have a scope (a browser tab
+  // sitting on a `/p/<slug>` page) sent no `project=` and got everything
+  // anyway, because nothing here read the ONE signal that WAS available —
+  // middleware.ts's resolved scope, stamped on `x-mc-project` (from this
+  // request's own path, or its Referer; see that file's block comment).
+  // `?project=` explicit still wins outright; a resolved scope is now used
+  // exactly as if the caller had passed it. `?all_projects=1` is the explicit
+  // opt-out for a caller that wants every project on purpose even though a
+  // scope was resolvable — read but ignored on purpose otherwise, it exists
+  // so a future caller can say "yes, all of them" instead of that being
+  // indistinguishable from "nobody thought about it".
+  //
+  // ProjectsTab (settings/projects) and the Fleet/Runs aggregates are
+  // deliberately cross-project (build instruction 4) — middleware.ts never
+  // resolves a scope for those destinations in the first place (see its
+  // `isCrossProjectDestination`), so they fall through to "no header, all
+  // projects" here without this route needing to know their names.
+  const allProjectsParam = ['1', 'true', 'yes'].includes(
+    (url.searchParams.get('all_projects') ?? '').toLowerCase()
+  )
+  const resolvedScope = req.headers.get('x-mc-project')
+  const crossProjectDestination = req.headers.get('x-mc-all-projects') === '1'
+
+  // The reasoning above was honest and still wrong in its conclusion. It
+  // declined to refuse an omitted scope because three acceptance checks call
+  // bare GET /api/issues and expect 200. But those are SCRIPTS, and a script
+  // can say what it means — they now pass all_projects=1, which is exactly the
+  // explicit opt-out this route already defined and then never required.
+  //
+  // Leaving it open meant the two halves of one seam answered the identical
+  // condition oppositely: no resolvable scope 400s on /api/db/issues and
+  // returned every project here — on the route EpicMapTab, ChatTab, IssuesTab,
+  // FeaturesTab, ProductBoardTab and ProjectsTab all read.
+  if (!resolvedScope && !allProjectsParam && !crossProjectDestination && !projectParam) {
+    return NextResponse.json(
+      {
+        error: 'unscoped_issues_read',
+        message:
+          'This issues query has no project scope. Request it from a /p/<project> screen, ' +
+          'or pass all_projects=1 to read across every project deliberately.',
+      },
+      { status: 400 },
+    )
+  }
+
+  // A resolved scope NARROWS; it is never overridden. `?project=` used to win
+  // outright, so a page scoped to Limiglow could ask for Todero's rows and get
+  // them. A mismatch is now refused rather than silently answered — answering
+  // it would make the address bar and the data disagree.
+  if (projectParam && resolvedScope && projectParam !== resolvedScope) {
+    return NextResponse.json(
+      {
+        error: 'project_outside_scope',
+        message: `This screen is scoped to "${resolvedScope}"; it cannot request "${projectParam}".`,
+      },
+      { status: 400 },
+    )
+  }
+
+  const effectiveProject = resolvedScope || projectParam || null
 
   // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
   const hub = businessIdParam ? getHubClient(businessIdParam) : null
@@ -824,55 +976,102 @@ export async function GET(req: NextRequest) {
     'deployer_status','deployer_notes',
     'worked_by','transitioned_by','acceptance_criteria',
     'business_id','resolution_type',
+    // archived_at/archived_reason are read on EVERY request, including the
+    // default one, because the archive filter below is applied here in the
+    // query layer. A caller must be able to tell an archived row from a live
+    // one; before this, the column existed in the database and was simply
+    // absent from every response, which reads as "nothing is archived".
+    'archived_at','archived_reason',
   ].join(',')
-  let query = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS, { count: 'exact' })
 
-  if (hub) {
-    query = query.eq('business_id', hub.businessId)
-  }
-
-  // Direct project filter (can combine with business_id for narrowing)
-  if (projectParam) {
-    query = query.eq('project', projectParam)
-  }
-
-  if (assigneeParam) {
-    query = query.eq('assignee', assigneeParam)
-  }
-
-  if (statusParam) {
-    query = query.eq('status', statusParam)
-  }
-
+  // Archived rows are hidden by default and reachable with ?include_archived=1.
+  //
+  // The filter belongs HERE, in the one place the issues query is built, and
+  // not at each call site: a filter scattered across callers is a filter a new
+  // caller forgets, and the failure mode is silent — history quietly reappears
+  // on a board that is supposed to show one project.
+  const includeArchived = ['1', 'true', 'yes'].includes(
+    (url.searchParams.get('include_archived') ?? '').toLowerCase()
+  )
   const parentIdParam = url.searchParams.get('parent_id')
-  if (parentIdParam) {
-    query = query.eq('parent_id', parentIdParam)
+
+  // Rebuildable per batch: PostgREST/Supabase caps a single request's rows at
+  // its own server-side max (commonly 1000) regardless of what .range() asks
+  // for, so a query object can't just be re-awaited to get "the rest" — a
+  // fresh builder has to be issued per page. Everything above ?limit=0's
+  // request just gets one page of it; ?limit=0 below pages through all of
+  // them itself instead of trusting a single response to be complete.
+  function buildQuery() {
+    let q = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS, { count: 'exact' })
+    if (!includeArchived) q = q.is('archived_at', null)
+    if (hub) q = q.eq('business_id', hub.businessId)
+    if (effectiveProject) q = q.eq('project', effectiveProject)
+    if (assigneeParam) q = q.eq('assignee', assigneeParam)
+    if (statusParam) q = q.eq('status', statusParam)
+    if (parentIdParam) q = q.eq('parent_id', parentIdParam)
+    if (search) {
+      q = q.ilike('title', `%${search}%`)
+      q = q.order('updated_at', { ascending: false })
+    } else {
+      q = q.order('created_at', { ascending: false })
+    }
+    return q
   }
 
-  if (search) {
-    query = query.ilike('title', `%${search}%`)
-    query = query.order('updated_at', { ascending: false })
-  } else {
-    query = query.order('created_at', { ascending: false })
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any[] = []
+  let total = 0
 
   if (limit > 0) {
-    query = query.range(offset, offset + limit - 1)
+    // A head-only count first: PostgREST answers `.range(offset, ...)` with a
+    // raw "Requested range not satisfiable" error once offset is past the end
+    // of the result set (e.g. paging past the last page, or a stale ?page=
+    // after rows were deleted). Knowing total up front lets an out-of-range
+    // offset return an honest empty page instead of leaking that error.
+    const { count: headCount, error: headError } = await buildQuery().range(0, 0)
+    if (headError) return NextResponse.json({ error: headError.message }, { status: 500 })
+    total = headCount ?? 0
+    if (total === 0 || offset >= total) {
+      data = []
+    } else {
+      const { data: page, error, count } = await buildQuery().range(offset, offset + limit - 1)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      data = page ?? []
+      total = count ?? total
+    }
+  } else {
+    // ?limit=0 means "every matching row" (agent/script callers). PostgREST's
+    // per-request row cap means that has to be assembled from multiple
+    // batched requests, not a single unbounded one — a single request here
+    // used to come back truncated at ~1000 rows while claiming has_more=false.
+    const BATCH = 1000
+    let from = 0
+    for (;;) {
+      const { data: batch, error, count } = await buildQuery().range(from, from + BATCH - 1)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      total = count ?? 0
+      const rows = batch ?? []
+      data = data.concat(rows)
+      from += BATCH
+      if (rows.length < BATCH || data.length >= total) break
+    }
   }
 
-  const { data, error, count } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  const total = count ?? 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resultData = withIssueStatusCategoryList(data as any[])
-  const hasMore = limit > 0 ? offset + (data?.length ?? 0) < total : false
-  const res = NextResponse.json({ data: resultData, total, page, limit, has_more: hasMore })
+  const hasMore = limit > 0 ? offset + data.length < total : false
+  const responseBody = { data: resultData, total, page, limit, has_more: hasMore }
+  issuesCache.set(cacheKey, { data: responseBody, ts: Date.now() })
+  const res = NextResponse.json(responseBody)
   res.headers.set('X-Total-Count', String(total))
   return res
 }
 
 // ── POST ──────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
     const perm = await checkRoutePermission(callerRole, 'POST', '/api/issues')
@@ -1035,7 +1234,7 @@ export async function POST(req: NextRequest) {
       .from('issues')
       .select('id, task_key, status')
       .eq('title', title)
-      .not('status', 'in', '("completed","closed","cancelled")')
+      .not('status', 'in', ['completed', 'closed', 'cancelled'])
       .maybeSingle()
     if (existingByTitle) {
       return NextResponse.json(
@@ -1049,7 +1248,7 @@ export async function POST(req: NextRequest) {
         .select('id, task_key, status')
         .eq('parent_id', parent_id)
         .eq('type', 'review')
-        .not('status', 'in', '("completed","closed","cancelled")')
+        .not('status', 'in', ['completed', 'closed', 'cancelled'])
         .maybeSingle()
       if (existingByParent) {
         return NextResponse.json(
@@ -1071,7 +1270,7 @@ export async function POST(req: NextRequest) {
       .from('issues')
       .select('id', { count: 'exact', head: true })
       .eq('parent_id', parent_id)
-      .not('status', 'in', '("closed","wrapped","completed")')
+      .not('status', 'in', ['closed', 'wrapped', 'completed'])
     if ((childCount ?? 0) >= 20) {
       return NextResponse.json(
         { error: `Child task cap reached: parent already has ${childCount} open child tasks (max 20). Close or complete existing tasks before adding more.` },
@@ -1085,7 +1284,7 @@ export async function POST(req: NextRequest) {
         .from('issues')
         .select('id, task_key, title, status')
         .eq('parent_id', parent_id)
-        .not('status', 'in', '("closed","wrapped","completed")')
+        .not('status', 'in', ['closed', 'wrapped', 'completed'])
       const prefix = title.slice(0, 50).toLowerCase()
       const nearDupe = (siblings ?? []).find(
         s => s.title && s.title.slice(0, 50).toLowerCase() === prefix
@@ -1131,15 +1330,18 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // ── TOD-818: record issue_created event ──
+  // Round-4: awaited so a failed write (e.g. activity_events missing on this
+  // install) is known before the response is built, not discarded.
+  const postActivityOutcomes: Array<{ ok: boolean; error: string | null }> = []
   if (data) {
     const actor = (body.transitioned_by ?? body.assignee ?? null) as string | null
-    recordActivityEvent(data.id, data.task_key, 'issue_created', actor, {
+    postActivityOutcomes.push(await recordActivityEvent(data.id, data.task_key, 'issue_created', actor, {
       status: data.status,
       assignee: data.assignee,
       project: data.project,
       type: data.type,
       priority: data.priority,
-    })
+    }))
   }
 
   // Post to #0-created on every new issue. DO NOT REMOVE.
@@ -1170,6 +1372,7 @@ export async function POST(req: NextRequest) {
 
   // Q4: If a child issue is created under a feature in feature_review → revert to underway.
   // Means the feature has open work remaining; PO or agent created a gap-filling child.
+  const postCascadeFailures: string[] = []
   if (data && parent_id) {
     const { data: parentFeature } = await getSupabase()
       .from('issues')
@@ -1177,29 +1380,57 @@ export async function POST(req: NextRequest) {
       .eq('id', parent_id as string)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'feature_review') {
-      await getSupabase()
+      const { error: revertError } = await getSupabase()
         .from('issues')
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', parent_id as string)
-      console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
+      if (revertError) {
+        postCascadeFailures.push(`feature ${parent_id} NOT reverted feature_review→underway: ${revertError.message}`)
+      } else {
+        console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
+      }
     }
   }
 
 
   // Warn if bug is created without environment field
   const responseData = withIssueStatusCategory(data)
+  issuesCache.clear()
+
+  const postActivityWarning = activityEventWarning(postActivityOutcomes)
+  const extraFields: Record<string, unknown> = {}
+  if (postActivityWarning) extraFields._warning = postActivityWarning
+  if (postCascadeFailures.length > 0) extraFields.cascade_failures = postCascadeFailures
+
   if ((type ?? 'task') === 'bug' && !body.environment) {
     return NextResponse.json({
       ...responseData,
-      _warning: 'Bug created without "environment" field. Set it before moving to refined (required for backlog→refined).',
+      ...extraFields,
+      _warning: [extraFields._warning, 'Bug created without "environment" field. Set it before moving to refined (required for backlog→refined).']
+        .filter(Boolean).join(' | '),
     })
   }
 
-  return NextResponse.json(responseData)
+  return NextResponse.json(
+    Object.keys(extraFields).length > 0 ? { ...responseData, ...extraFields } : responseData,
+  )
 }
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
+  // Round-4 fix: every cascade write below used to be `void (async () => {…})()`
+  // or an unchecked `.update()` — fired, never awaited, error never read. This
+  // route reported a clean 200 while, e.g., the very unblock a loop_breaker
+  // approval depends on silently failed. Every cascade site now awaits its
+  // write, checks `error`, and — on failure — pushes a human-readable line
+  // here instead of logging the success message. Surfaced as `cascade_failures`
+  // on the response so the operator sees "TOD-x was NOT unblocked" rather than
+  // inferring it from a missing side effect.
+  const cascadeFailures: string[] = []
+
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
     const perm = await checkRoutePermission(callerRole, 'PATCH', '/api/issues')
@@ -1211,7 +1442,11 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json()
   // business_id is extracted for hub-scoped query validation, not written back to the issue
   const { id: rawId, task_key, transitioned_by: _transitionedBy, business_id: scopeBusinessId, ...fields } = body
-  const transitionedBy = _transitionedBy as string | undefined
+  // The browser has no agent id to send. When the body omits one, attribute the
+  // transition to the signed-in human instead of leaving it unset — otherwise the
+  // workflow guard below rejects every Board drag the owner makes. Agent callers
+  // carry no session cookie, so they still have to send their own identity.
+  const transitionedBy = (_transitionedBy as string | undefined) ?? resolveSessionActor(req)
 
   // Hub-scoped query context: when business_id is provided, scope all lookups to that hub
   const hubScope = scopeBusinessId ? getHubClient(scopeBusinessId as string) : null
@@ -1266,16 +1501,20 @@ export async function PATCH(req: NextRequest) {
     const { data: resetData, error: resetErr } = await resetQ.select().single()
     if (resetErr) return NextResponse.json({ error: resetErr.message }, { status: 500 })
     // TOD-818: record status_changed for backlog reset
+    let resetActivityWarning: string | null = null
     if (resetData && before) {
-      recordActivityEvent(
+      const outcome = await recordActivityEvent(
         resetData.id as string,
         (resetData.task_key ?? before.task_key ?? null) as string | null,
         'status_changed',
         transitionedBy ?? null,
         { old_status: before.status, new_status: 'backlog' }
       )
+      resetActivityWarning = activityEventWarning([outcome])
     }
-    return NextResponse.json(resetData)
+    return NextResponse.json(
+      resetActivityWarning ? { ...resetData, _warning: resetActivityWarning } : resetData,
+    )
   }
 
   if (fields.status === 'in_progress') {
@@ -1602,6 +1841,7 @@ export async function PATCH(req: NextRequest) {
           .single()
         if (epicErr || !newEpic) {
           console.error(`[TOD-1203] failed to auto-create epic for feature:`, epicErr?.message)
+          cascadeFailures.push(`auto-epic for feature "${featureTitle}" NOT created: ${epicErr?.message ?? 'unknown error'}`)
         } else {
           fields.parent_id = newEpic.id
           console.log(`[TOD-1203] auto-created epic ${newEpic.task_key} as parent for feature transitioning to defined`)
@@ -1861,36 +2101,56 @@ export async function PATCH(req: NextRequest) {
 
   // ── Close agent_runs on status change ──
   // When an issue status changes, any running agent_run for this task is done.
+  // Round-4: was `void (async () => {…})()` — fired and forgotten. Now awaited
+  // and its error checked, so a failed close is reported rather than leaving a
+  // phantom "running" agent_run nobody knows failed to close.
   if (fields.status && fields.status !== before?.status && id) {
-    void (async () => {
-      await createAdminClient()
+    try {
+      const { error: closeRunError } = await createAdminClient()
         .from('agent_runs')
         .update({ status: 'completed', finished_at: new Date().toISOString() })
         .eq('task_id', id as string)
         .eq('status', 'running')
-    })()
+      if (closeRunError) {
+        cascadeFailures.push(`agent_runs for ${before?.task_key ?? id} NOT closed: ${closeRunError.message}`)
+      }
+    } catch (err) {
+      cascadeFailures.push(`agent_runs for ${before?.task_key ?? id} NOT closed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // ── Downstream unblock: clear is_blocked on issues waiting for this one ──
   // When an issue reaches a terminal/completion status, any issue with blocked_by=this.id
   // is no longer blocked. Covers: closed, released, approved, completed.
+  // Round-4: was `void (async () => {…})()` with the inner `.update()`'s error
+  // never read — the exact class of defect (agent_memory upsert whose error was
+  // discarded) the loop_breaker_pause fix in app/api/inbox/route.ts addressed,
+  // left standing here at the MC API itself.
   const UNBLOCKING_STATUSES = new Set(['closed', 'released', 'approved', 'completed'])
   if (fields.status && UNBLOCKING_STATUSES.has(fields.status as string) && id) {
-    void (async () => {
-      const { data: blockedDeps } = await createAdminClient()
+    try {
+      const { data: blockedDeps, error: findBlockedError } = await createAdminClient()
         .from('issues')
         .select('id, task_key')
         .eq('blocked_by', id as string)
         .eq('is_blocked', true)
-      if (blockedDeps && blockedDeps.length > 0) {
-        await createAdminClient()
+      if (findBlockedError) {
+        cascadeFailures.push(`downstream unblock for ${before?.task_key ?? id} NOT attempted: ${findBlockedError.message}`)
+      } else if (blockedDeps && blockedDeps.length > 0) {
+        const { error: unblockError } = await createAdminClient()
           .from('issues')
           .update({ is_blocked: false, blocked_by: null, updated_at: new Date().toISOString() })
           .eq('blocked_by', id as string)
-        const unblocked = blockedDeps.map(i => i.task_key).join(', ')
-        console.log(`[unblock-downstream] ${before?.task_key ?? id} → ${fields.status}: unblocked ${unblocked}`)
+        const affected = blockedDeps.map(i => i.task_key).join(', ')
+        if (unblockError) {
+          cascadeFailures.push(`${affected} NOT unblocked (blocked_by ${before?.task_key ?? id}): ${unblockError.message}`)
+        } else {
+          console.log(`[unblock-downstream] ${before?.task_key ?? id} → ${fields.status}: unblocked ${affected}`)
+        }
       }
-    })()
+    } catch (err) {
+      cascadeFailures.push(`downstream unblock for ${before?.task_key ?? id} failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // Auto-promote feature from defined→underway when ANY child moves to open or beyond.
@@ -1902,11 +2162,15 @@ export async function PATCH(req: NextRequest) {
       .eq('id', data.parent_id)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'defined') {
-      await getSupabase()
+      const { error: promoteError } = await getSupabase()
         .from('issues')
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', data.parent_id)
-      console.log(`[auto-promote] Feature ${parentFeature.id} promoted defined→underway (child moved to ${fields.status})`)
+      if (promoteError) {
+        cascadeFailures.push(`feature ${parentFeature.id} NOT promoted defined→underway: ${promoteError.message}`)
+      } else {
+        console.log(`[auto-promote] Feature ${parentFeature.id} promoted defined→underway (child moved to ${fields.status})`)
+      }
     }
   }
 
@@ -1927,13 +2191,17 @@ export async function PATCH(req: NextRequest) {
       const allClosed = siblings && siblings.length > 0 &&
         siblings.every(c => c.status === 'closed')
       if (allClosed) {
-        await getSupabase()
+        const { error: promoteError } = await getSupabase()
           .from('issues')
           .update({ status: 'feature_review', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
-        console.log(`[auto-promote] Feature ${parentFeature.id} promoted underway→feature_review (all children closed)`)
-        // selfChain kicks PO to confirm feature completion
-        selfChainOnStatus('feature_review')
+        if (promoteError) {
+          cascadeFailures.push(`feature ${parentFeature.id} NOT promoted underway→feature_review: ${promoteError.message}`)
+        } else {
+          console.log(`[auto-promote] Feature ${parentFeature.id} promoted underway→feature_review (all children closed)`)
+          // selfChain kicks PO to confirm feature completion
+          selfChainOnStatus('feature_review')
+        }
       }
     }
   }
@@ -1954,11 +2222,15 @@ export async function PATCH(req: NextRequest) {
       const allIdle = siblings && siblings.length > 0 &&
         siblings.every(c => ['backlog', 'refined', 'defined'].includes(c.status as string))
       if (allIdle) {
-        await getSupabase()
+        const { error: revertError } = await getSupabase()
           .from('issues')
           .update({ status: 'defined', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
-        console.log(`[auto-revert] Feature ${parentFeature.id} reverted underway→defined (all children idle)`)
+        if (revertError) {
+          cascadeFailures.push(`feature ${parentFeature.id} NOT reverted underway→defined: ${revertError.message}`)
+        } else {
+          console.log(`[auto-revert] Feature ${parentFeature.id} reverted underway→defined (all children idle)`)
+        }
       }
     }
   }
@@ -1973,7 +2245,8 @@ export async function PATCH(req: NextRequest) {
     // TOD-766: loop breaker — track consecutive failures at the agent level
     const failingAgent = (before?.assignee ?? data.assignee) as string | undefined
     if (failingAgent) {
-      recordAgentFailure(failingAgent, id as string, (before?.title ?? data.title) as string | undefined).catch(() => {})
+      recordAgentFailure(failingAgent, id as string, (before?.title ?? data.title) as string | undefined)
+        .catch(err => console.error(`[issues] recordAgentFailure(${failingAgent}) failed:`, err))
     }
   }
 
@@ -1982,7 +2255,8 @@ export async function PATCH(req: NextRequest) {
   if (isNewPass && data) {
     const passingAgent = (before?.assignee ?? data.assignee) as string | undefined
     if (passingAgent) {
-      resetAgentFailures(passingAgent).catch(() => {})
+      resetAgentFailures(passingAgent)
+        .catch(err => console.error(`[issues] resetAgentFailures(${passingAgent}) failed:`, err))
     }
   }
 
@@ -1995,12 +2269,21 @@ export async function PATCH(req: NextRequest) {
       .update({ status: parentCompletionStatus, updated_at: new Date().toISOString() })
       .eq('id', before.parent_id)
     if (hubScope) parentUpdateQ = parentUpdateQ.eq('business_id', hubScope.businessId)
-    const { data: parentData } = await parentUpdateQ.select().single()
-    if (parentData) notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
+    const { data: parentData, error: parentUpdateError } = await parentUpdateQ.select().single()
+    if (parentUpdateError) {
+      cascadeFailures.push(`parent ${before.parent_id} NOT moved to ${parentCompletionStatus}: ${parentUpdateError.message}`)
+    } else if (parentData) {
+      notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
+    }
   }
 
   if (isNewFailure && before?.assignee === 'ux' && before?.parent_id && data) {
     const uxNotes = (data.description ?? '').slice(0, 300)
+    // Round-4: give the fix task a real task_key the same way POST does, and
+    // check the insert's error instead of firing it blind — an un-checked
+    // insert here means a failed UX review silently produces no fix task at
+    // all, with nothing in the response to say so.
+    const uxFixIdentity = await prepareIssueIdentity('Mission Control')
     const uxFixTaskData = {
       title: `UX Fix: ${before.title ?? data.title}`,
       description: `UX review failed. Fix the following:\n\n${uxNotes}`,
@@ -2012,9 +2295,13 @@ export async function PATCH(req: NextRequest) {
       sprint: new Date().toISOString().split('T')[0],
       parent_id: before.parent_id,
       severity: 'S2',
+      ...uxFixIdentity,
       ...(before?.business_id ? { business_id: before.business_id } : {}),
     }
-    await createAdminClient().from('issues').insert(uxFixTaskData)
+    const { error: uxFixInsertError } = await createAdminClient().from('issues').insert(uxFixTaskData)
+    if (uxFixInsertError) {
+      cascadeFailures.push(`UX fix task for ${before?.task_key ?? data.task_key} NOT created: ${uxFixInsertError.message}`)
+    }
   }
 
   if (isCompletedIssueStatus(fields.status) && data?.parent_id) {
@@ -2038,7 +2325,10 @@ export async function PATCH(req: NextRequest) {
           .update({ status: 'wrapped', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
         if (hubScope) epicUpdateQ = epicUpdateQ.eq('business_id', hubScope.businessId)
-        await epicUpdateQ
+        const { error: epicWrapError } = await epicUpdateQ
+        if (epicWrapError) {
+          cascadeFailures.push(`epic ${data.parent_id} NOT wrapped: ${epicWrapError.message}`)
+        }
       }
     }
   }
@@ -2057,21 +2347,29 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── TOD-631: In-app notifications on status transitions ──
+  // Round-4: was fire-and-forget `.then(() => {})` — error never read.
   if (fields.status && before?.status && fields.status !== before.status && data) {
     const taskKey = data.task_key ?? before.task_key ?? ''
     const title = data.title ?? before.title ?? ''
     const actor = (fields.transitioned_by ?? data.transitioned_by ?? 'system') as string
-    getSupabase().from('notifications').insert({
+    const { error: notifError } = await getSupabase().from('notifications').insert({
       type: 'status_change',
       title: `${taskKey} → ${fields.status}`,
       body: title,
       issue_key: taskKey,
       issue_id: data.id,
       actor,
-    }).then(() => {}) // fire-and-forget
+    })
+    if (notifError) {
+      cascadeFailures.push(`in-app notification for ${taskKey} NOT recorded: ${notifError.message}`)
+    }
   }
 
   // ── TOD-818: Activity event capture ──────────────────────────────────────────
+  // Round-4: each recordActivityEvent() call is now awaited and its outcome
+  // collected; a failure surfaces as `_warning` on the response instead of
+  // being discarded by the old fire-and-forget insert.
+  const patchActivityOutcomes: Array<{ ok: boolean; error: string | null }> = []
   if (data && before) {
     const issueId = data.id as string
     const issueKey = (data.task_key ?? before.task_key ?? null) as string | null
@@ -2079,18 +2377,18 @@ export async function PATCH(req: NextRequest) {
 
     // status_changed
     if (fields.status && before.status && fields.status !== before.status) {
-      recordActivityEvent(issueId, issueKey, 'status_changed', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'status_changed', actor, {
         old_status: before.status,
         new_status: fields.status,
-      })
+      }))
     }
 
     // assignee_changed
     if (fields.assignee && before.assignee && fields.assignee !== before.assignee) {
-      recordActivityEvent(issueId, issueKey, 'assignee_changed', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'assignee_changed', actor, {
         old_assignee: before.assignee,
         new_assignee: fields.assignee,
-      })
+      }))
     }
 
     // comment_added — treat non-empty implementation_notes changes as comments
@@ -2098,9 +2396,9 @@ export async function PATCH(req: NextRequest) {
       fields.implementation_notes &&
       fields.implementation_notes !== before.implementation_notes
     ) {
-      recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
         field: 'implementation_notes',
-      })
+      }))
     }
 
     // reviewer_notes change
@@ -2108,17 +2406,29 @@ export async function PATCH(req: NextRequest) {
       fields.reviewer_notes &&
       fields.reviewer_notes !== before.reviewer_notes
     ) {
-      recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
         field: 'reviewer_notes',
-      })
+      }))
     }
   }
 
-  return NextResponse.json(data ? withIssueStatusCategory(data) : data)
+  issuesCache.clear()
+
+  const patchActivityWarning = activityEventWarning(patchActivityOutcomes)
+  if (!data) {
+    return NextResponse.json(data)
+  }
+  const patchResponse: Record<string, unknown> = withIssueStatusCategory(data)
+  if (patchActivityWarning) patchResponse._warning = patchActivityWarning
+  if (cascadeFailures.length > 0) patchResponse.cascade_failures = cascadeFailures
+  return NextResponse.json(patchResponse)
 }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { error } = await getSupabase().from('issues').delete().eq('id', id)

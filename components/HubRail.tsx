@@ -2,13 +2,14 @@
 // TOD-723: Left-rail circular hub icons with active indicator
 
 import React, { useEffect, useState } from 'react'
+import { fetchJson } from '@/hooks/useApiData'
 
 interface Business { id: string; name: string; type: string; status: string }
 
-const HUB_EMOJI: Record<string, string> = {
-  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
-  'Infrastructure': '⚙️', 'KAOS': '🤖',
-}
+// TOD (no-invented-projects): this used to be HUB_EMOJI, keyed by six
+// hardcoded business names. GET /api/businesses sends no emoji field, so
+// every hub now gets the single neutral default (🏢) that was previously
+// only the fallback for names the table didn't happen to list.
 
 interface HubRailProps {
   selected: string | null
@@ -20,12 +21,10 @@ export default function HubRail({ selected, onSelect, refreshKey }: HubRailProps
   const [businesses, setBusinesses] = useState<Business[]>([])
 
   useEffect(() => {
-    fetch('/api/businesses')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setBusinesses(data.filter((b: Business) => b.status === 'active'))
-      })
-      .catch(() => {})
+    fetchJson<Business[]>('/api/businesses').then(r => {
+      // TOD-654: never clear the rail on a refused request — keep what we had.
+      if (r.ok && Array.isArray(r.data)) setBusinesses(r.data.filter((b: Business) => b.status === 'active'))
+    })
   }, [refreshKey])
 
   return (
@@ -60,7 +59,7 @@ export default function HubRail({ selected, onSelect, refreshKey }: HubRailProps
                 : 'bg-white/[0.05] hover:bg-white/10 ring-2 ring-transparent'
             }`}
           >
-            {HUB_EMOJI[b.name] || '🏢'}
+            🏢
           </button>
         )
       })}

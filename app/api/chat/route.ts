@@ -1,34 +1,36 @@
-// Chat streaming backend — OpenRouter API (anthropic/openai models).
+// Chat streaming backend — routes through the LLM_BASE_URL seam (Ollama by
+// default on this machine). No hosted gateway, no other vendor SDK, no cloud
+// fallback: whatever answers at LLM_BASE_URL is the only place this route
+// ever sends a prompt. See lib/llm-provider.ts.
 
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
+import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
 
 export const runtime = 'nodejs'
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? ''
-const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
-
-// Map alias/agentId to OpenRouter model string
-function resolveModel(modelOverride?: string): string {
-  if (!modelOverride || modelOverride === 'default') return 'anthropic/claude-sonnet-4-5'
-  const map: Record<string, string> = {
-    sonnet: 'anthropic/claude-sonnet-4-5',
-    haiku:  'anthropic/claude-haiku-4-5',
-    opus:   'anthropic/claude-opus-4-5',
-    'gpt-4o':        'openai/gpt-4o',
-    'gpt-4o-mini':   'openai/gpt-4o-mini',
-    'claude-sonnet': 'anthropic/claude-sonnet-4-5',
-    'claude-haiku':  'anthropic/claude-haiku-4-5',
-    kaos:   'anthropic/claude-sonnet-4-5',
-  }
-  return map[modelOverride] ?? 'anthropic/claude-sonnet-4-5'
+function sseError(encoder: TextEncoder, message: string) {
+  const stream = new ReadableStream({
+    start(c) {
+      c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`))
+      c.close()
+    },
+  })
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } })
 }
 
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const encoder = new TextEncoder()
 
   const body = await req.json().catch(() => ({}))
-  const { conversationId, messages, agentId, modelOverride } = body as {
+  const { conversationId, messages, modelOverride } = body as {
     conversationId?: string
     messages?: Array<{ role: string; content: string }>
     agentId?: string
@@ -36,48 +38,61 @@ export async function POST(req: NextRequest) {
   }
 
   if (!messages?.length) {
-    const stream = new ReadableStream({
-      start(c) {
-        c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'messages array is required' })}\n\n`))
-        c.close()
-      },
-    })
-    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } })
+    return sseError(encoder, 'messages array is required')
   }
 
-  const model = resolveModel(modelOverride || agentId)
-
-  const orRes = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://kaos.nabit.work',
-      'X-Title': 'KAOS Mission Control',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-      max_tokens: 4096,
-    }),
-  })
-
-  if (!orRes.ok || !orRes.body) {
-    const errText = await orRes.text().catch(() => 'Unknown error')
-    const stream = new ReadableStream({
-      start(c) {
-        c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: `OpenRouter error: ${orRes.status} — ${errText.slice(0, 200)}` })}\n\n`))
-        c.close()
-      },
-    })
-    return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } })
+  // Model resolution has exactly one source of truth: a live GET against
+  // LLM_BASE_URL/models. There is no vendor map to fall back into — an
+  // unreachable endpoint or an unrecognized id is reported by name, never
+  // silently substituted for a different model.
+  const live = await fetchLiveModels()
+  if (!live.ok) {
+    return sseError(encoder, live.error)
+  }
+  if (live.models.length === 0) {
+    return sseError(encoder, `${LLM_BASE_URL}/models returned no models — pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)`)
   }
 
-  // Transform OpenRouter SSE → ChatTab SSE format, then save to DB
+  const requestedModel = modelOverride && modelOverride !== 'default' ? modelOverride : (LLM_DEFAULT_MODEL || live.models[0].id)
+  // `ollama/qwen2.5-coder:7b` and `qwen2.5-coder:7b` both resolve; a prefix
+  // naming a provider that is not the configured one does not.
+  const model = resolveModelId(requestedModel, live.models.map(m => m.id))
+  if (!model) {
+    return NextResponse.json(
+      { error: `unknown model "${requestedModel}" — not present in ${LLM_BASE_URL}/models`, id: requestedModel },
+      { status: 400 },
+    )
+  }
+
+  let upstream: Response
+  try {
+    upstream = await fetch(`${LLM_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LLM_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        max_tokens: 4096,
+      }),
+    })
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    return sseError(encoder, `${LLM_BASE_URL} is unreachable — ${detail}`)
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    const errText = await upstream.text().catch(() => 'Unknown error')
+    return sseError(encoder, `${LLM_BASE_URL} error: ${upstream.status} — ${errText.slice(0, 200)}`)
+  }
+
+  // Transform the upstream SSE → ChatTab SSE format, then save to DB
   const readableStream = new ReadableStream({
     async start(controller) {
-      const reader = orRes.body!.getReader()
+      const reader = upstream.body!.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
 
@@ -108,32 +123,55 @@ export async function POST(req: NextRequest) {
         return
       }
 
-      // Save assistant message to Supabase
+      // ── Persist the assistant reply ───────────────────────────────────────
+      // `chat_messages.id` is a TEXT PRIMARY KEY with no default
+      // (migrations/000_baseline_schema.sql:191), so the id has to be supplied
+      // here exactly as /api/chat/messages requires it from the client. It was
+      // omitted, and the failure was swallowed by a bare `catch {}`, so every
+      // assistant reply streamed fine and then vanished on reload with nothing
+      // said. A write that did not happen is not allowed to look like one that
+      // did: the stream still finishes (the user keeps the text on screen) but
+      // it carries a `persistError` frame naming what was lost and why, which
+      // ChatTab renders under the message.
       let savedId: string | undefined
+      let persistError: string | undefined
       if (conversationId && fullContent) {
+        const assistantId = `msg-${Date.now()}`
         try {
           const db = createAdminClient()
-          const { data } = await db
+          const { error } = await db
             .from('chat_messages')
             .insert({
+              id: assistantId,
               conversation_id: conversationId,
               role: 'assistant',
               content: fullContent,
               model,
               created_at: new Date().toISOString(),
             })
-            .select('id')
-            .single()
-          savedId = data?.id
+          if (error) {
+            persistError = `assistant reply was not saved to chat_messages: ${error.message}`
+          } else {
+            savedId = assistantId
 
-          // Update conversation updated_at
-          await db
-            .from('chat_conversations')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', conversationId)
-        } catch { /* non-fatal — message still streamed */ }
+            // Update conversation updated_at
+            const { error: convError } = await db
+              .from('chat_conversations')
+              .update({ updated_at: new Date().toISOString() })
+              .eq('id', conversationId)
+            if (convError) {
+              persistError = `assistant reply was saved, but chat_conversations.updated_at was not: ${convError.message}`
+            }
+          }
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err)
+          persistError = `assistant reply was not saved to chat_messages: ${detail}`
+        }
       }
 
+      if (persistError) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ persistError })}\n\n`))
+      }
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, id: savedId })}\n\n`))
       controller.close()
     },

@@ -1,6 +1,6 @@
 // TOD-1214: Feature Request Modal — POST to /api/issues with success/error state
 'use client'
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { X, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { FormGroup } from '@/components/ui/FormGroup'
@@ -24,7 +24,26 @@ export default function FeatureRequestModal({ onClose }: FeatureRequestModalProp
   const [created, setCreated] = useState<CreatedIssue | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // The project was hardcoded to 'Todero'. That name is not in the projects
+  // table any more, so every feature request created here wrote a row under a
+  // project that does not exist — a fabrication with a database row behind it,
+  // which is worse than one on screen. The project comes from the table now,
+  // and if the table has none, the form refuses rather than inventing one.
+  const [projects, setProjects] = useState<string[] | null>(null)
+  useEffect(() => {
+    let live = true
+    fetch('/api/projects')
+      .then(r => (r.ok ? r.json() : null))
+      .then(rows => {
+        if (!live) return
+        setProjects(Array.isArray(rows) ? rows.map((p: { name?: string; id?: string }) => p.name ?? p.id ?? '').filter(Boolean) : [])
+      })
+      .catch(() => { if (live) setProjects([]) })
+    return () => { live = false }
+  }, [])
+
   const canSubmit = title.trim().length > 0 && description.trim().length > 0 && acceptanceCriteria.trim().length > 0
+    && !!projects && projects.length > 0
 
   async function handleSubmit() {
     if (!canSubmit || submitting) return
@@ -40,7 +59,7 @@ export default function FeatureRequestModal({ onClose }: FeatureRequestModalProp
           description: description.trim(),
           acceptance_criteria: acceptanceCriteria.trim(),
           type: 'feature',
-          project: 'Todero',
+          project: projects![0],
           priority: 'medium',
           assignee: 'po',
         }),
@@ -167,6 +186,7 @@ export default function FeatureRequestModal({ onClose }: FeatureRequestModalProp
               size="sm"
               onClick={handleSubmit}
               disabled={!canSubmit}
+              title={projects && projects.length === 0 ? 'No project exists to file this against' : undefined}
               loading={submitting}
             >
               Submit request

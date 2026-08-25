@@ -46,6 +46,22 @@ CREATE TABLE IF NOT EXISTS agent_memory (
 
 -- NOTE: agent_memory table already exists with a different schema (key/value jsonb).
 -- agent_memory_files is the new table for storing agent identity/memory file contents.
--- Created separately via Supabase dashboard due to schema cache conflict.
--- SQL: CREATE TABLE IF NOT EXISTS agent_memory_files (...)
--- See seed-agent-db.ts for full schema.
+--
+-- NOTE (schema-migrations piece): this table was "created separately via
+-- Supabase dashboard due to schema cache conflict" per the comment above —
+-- exactly the class of gap this piece exists to close: a table the running
+-- app depends on (app/api/agent-memory/route.ts, app/api/memory/route.ts,
+-- app/api/health/route.ts, config/migrations/seed-agent-db.ts upsertMemory())
+-- with no CREATE TABLE anywhere in this directory. Columns and the
+-- (agent_id, memory_type, date_key) conflict target below are read from
+-- those call sites, not guessed. CREATE TABLE IF NOT EXISTS makes this a
+-- no-op against the dashboard-created production table.
+CREATE TABLE IF NOT EXISTS agent_memory_files (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_id    text NOT NULL,
+  memory_type text NOT NULL,
+  date_key    text,
+  content     text NOT NULL DEFAULT '',
+  updated_at  timestamptz DEFAULT now(),
+  UNIQUE (agent_id, memory_type, date_key)
+);

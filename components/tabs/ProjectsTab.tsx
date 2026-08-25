@@ -1,6 +1,8 @@
 'use client'
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { PROJECT_PREFIX } from '@/lib/constants'
+import { useApiList } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
   id: string
@@ -17,51 +19,86 @@ interface ProjectRow {
   openCount: number
 }
 
-const PROJECT_META: Record<string, { description: string; emoji: string }> = {
-  'Todero':          { description: 'Todero platform — MC app, agent infra, sprint tooling', emoji: '🧠' },
-  'Kemuni':          { description: 'Community & Property SaaS',                              emoji: '🚀' },
-  'Vespera':         { description: 'Colombia Goth Community',                                emoji: '🦇' },
-  'Mission Control': { description: 'Mission Control — legacy project key',                   emoji: '📡' },
-  'Infrastructure':  { description: 'Dev infrastructure, CI/CD, tooling',                     emoji: '⚙️' },
-}
-
-const KNOWN_PROJECTS = Object.keys(PROJECT_PREFIX)
+// PROJECT_META and KNOWN_PROJECTS were here: five hardcoded rows — Todero,
+// Kemuni, Vespera, Mission Control, Infrastructure — with hand-written
+// descriptions and emoji, rendered whenever no project was scoped, which is
+// the default state. Michael described the effect verbatim: "Showing a large
+// mess with things about Todero, Vespera, Kemuni (when only single project
+// selected 'Todero' was selected) showed a mess."
+//
+// They could not be filtered away because they were never queried. Projects
+// now come from the projects table, which is the only thing that knows which
+// projects exist.
 
 export default function ProjectsTab({ projectFilter }: { projectFilter?: string | null }) {
-  const [rows, setRows] = useState<ProjectRow[]>([])
-  const [loading, setLoading] = useState(true)
+  // all_projects=1 is deliberate and required: this table is the inventory of
+  // every project, so it is the one view that cannot by its own purpose be
+  // filtered to "the" project. It used to get every project by ACCIDENT —
+  // /api/issues widened whenever no scope was resolved — which is
+  // indistinguishable from nobody having thought about it. Now it asks.
+  const { items, total, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0&all_projects=1')
+  const { items: projectRows } = useApiList<{ id?: string; name?: string; description?: string }>('/api/projects')
 
-  useEffect(() => {
-    fetch('/api/issues?limit=0')
-      .then(r => r.json())
-      .then((data: any) => {
-        const issues: Issue[] = Array.isArray(data) ? data : data?.data ?? []
-        const projects = projectFilter ? [projectFilter] : KNOWN_PROJECTS
+  // Counts are only meaningful once the issue list actually arrived — on a
+  // failed load we render the banner instead of a table full of zeroes.
+  const issues = items ?? []
+  const known = (projectRows ?? []).map(p => p.name ?? p.id ?? '').filter(Boolean)
+  const describe = new Map((projectRows ?? []).map(p => [p.name ?? p.id ?? '', p.description ?? '']))
+  const projects = projectFilter ? [projectFilter] : known
+  const rows: ProjectRow[] = items === null ? [] : projects.map(name => {
+    const matching = issues.filter(i => i.project === name)
+    const open = matching.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
+    const meta = { description: describe.get(name) ?? '', emoji: '📦' }
+    return {
+      name,
+      key: PROJECT_PREFIX[name] ?? '—',
+      description: meta.description,
+      emoji: meta.emoji,
+      issueCount: matching.length,
+      openCount: open,
+    }
+  })
 
-        const built: ProjectRow[] = projects.map(name => {
-          const matching = issues.filter(i => i.project === name)
-          const open = matching.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
-          const meta = PROJECT_META[name] ?? { description: '', emoji: '📦' }
-          return {
-            name,
-            key: PROJECT_PREFIX[name] ?? '—',
-            description: meta.description,
-            emoji: meta.emoji,
-            issueCount: matching.length,
-            openCount: open,
-          }
-        })
-
-        setRows(built)
+  // The DB carries more distinct `project` values than KNOWN_PROJECTS (the 5
+  // names in PROJECT_PREFIX) — issues under those other values used to be
+  // silently dropped from this table with nothing to say so. Roll them into
+  // one honest "Other" row instead of pretending they don't exist.
+  if (items !== null && !projectFilter) {
+    const other = issues.filter(i => !i.project || !known.includes(i.project))
+    if (other.length > 0) {
+      const open = other.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
+      rows.push({
+        name: 'Other',
+        key: '—',
+        description: known.length ? `Issues with a project not in ${known.join(', ')}` : 'Issues whose project is not in the projects table',
+        emoji: '❓',
+        issueCount: other.length,
+        openCount: open,
       })
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false))
-  }, [projectFilter])
+    }
+  }
+
+  // True total across every row shown, cross-checked against the server's
+  // count so a stale KNOWN_PROJECTS list can never silently under-report.
+  const shownTotal = rows.reduce((sum, r) => sum + r.issueCount, 0)
+  const trueTotal = items !== null ? (total ?? issues.length) : null
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48 text-white/30 text-sm">
         Loading projects…
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-white font-semibold text-base">Projects</h2>
+          <span className="text-white/30 text-xs">data unavailable</span>
+        </div>
+        <ApiErrorBanner error={error} onRetry={refetch} />
       </div>
     )
   }
@@ -79,7 +116,10 @@ export default function ProjectsTab({ projectFilter }: { projectFilter?: string 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-white font-semibold text-base">Projects</h2>
-        <span className="text-white/30 text-xs">{rows.length} project{rows.length !== 1 ? 's' : ''}</span>
+        <span className="text-white/30 text-xs">
+          {rows.length} project{rows.length !== 1 ? 's' : ''}
+          {trueTotal !== null && ` · ${shownTotal} of ${trueTotal} issues`}
+        </span>
       </div>
 
       <div className="rounded-lg border border-white/10 overflow-hidden">

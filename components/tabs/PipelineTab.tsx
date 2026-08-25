@@ -2,10 +2,12 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { getPipelineStage, isBlocked, nextPRWindow, type PipelineStage, STAGE_COLORS } from '@/lib/pipeline'
 import { EmptyState, Button } from '@/components/ui'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { useAgentRoster } from '@/hooks/useAgentRoster'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-const HEADERS = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}`, 'Content-Type': 'application/json' }
+const HEADERS = { ...dbRestHeaders(), 'Content-Type': 'application/json' }
 
 const STAGES: PipelineStage[] = ["Backlog", "Definition", "Building", "Testing", "UX Review", "PR Queue", "Merged"]
 
@@ -19,12 +21,11 @@ const STAGE_HEX: Record<PipelineStage, string> = {
   Merged: '#10b981',
 }
 
-const AGENTS = [
-  { id: 'main', emoji: '🧠' },
-  { id: 'builder', emoji: '🔨' },
-  { id: 'tester', emoji: '🧪' },
-  { id: 'scout', emoji: '🔍' },
-]
+// Which agents can appear on the pipeline board is answered by the host's
+// AGENTS.md via GET /api/agents, not by a literal. The four-entry array this
+// replaces meant an issue in progress with designer, ops, po, deployer or any
+// of the other rostered agents left its stage room showing no one working it.
+type PipelineAgent = { id: string; emoji: string }
 
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
 
@@ -45,9 +46,16 @@ const COLUMN_OPTIONS: { label: string; status: string; color: string }[] = [
 ]
 
 export default function PipelineTab({ projectFilter }: { projectFilter?: string | null }) {
-  const [issues, setIssues] = useState<any[]>([])
+  const { agents: rosterAgents } = useAgentRoster()
+  // TOD-2368 round 3: null means "not loaded / load failed" — never coerced
+  // to [] on a failure, so the board and the "N items" counter cannot paint
+  // a confident empty state over a 403/500. See fetchIssues() below.
+  const [issues, setIssues] = useState<any[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string|null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
+  // True count is unknowable — the two queries below are capped at
+  // limit=100 / limit=50, so a full page means there may be more.
+  const [countCapped, setCountCapped] = useState(false)
   const [filter, setFilter] = useState<FilterMode>('both')
   const [countdown, setCountdown] = useState('')
   // Mobile long-press action sheet
@@ -72,9 +80,9 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   const moveToColumn = useCallback(async (issueId: string, newStatus: string) => {
     setActionSheetIssue(null)
     // Optimistic update
-    setIssues(prev => prev.map(i => i.id === issueId ? { ...i, status: newStatus } : i))
+    setIssues(prev => prev ? prev.map(i => i.id === issueId ? { ...i, status: newStatus } : i) : prev)
     try {
-      await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${issueId}`, {
+      await fetch(dbUrl(`issues?id=eq.${issueId}`), {
         method: 'PATCH',
         headers: HEADERS,
         body: JSON.stringify({ status: newStatus }),
@@ -104,30 +112,40 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   }, [])
 
   async function fetchIssues() {
-    try {
-      // Fetch active issues + recently finished issues under the canonical lifecycle
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-      const [activeRes, finishedRes] = await Promise.all([
-        fetch(`${SUPA_URL}/rest/v1/issues?status=not.in.(closed,completed,released)&select=*&limit=100`, { headers: HEADERS }),
-        fetch(`${SUPA_URL}/rest/v1/issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`, { headers: HEADERS }),
-      ])
-      const active = await activeRes.json()
-      const finished = await finishedRes.json()
-      const all = [...(Array.isArray(active) ? active : []), ...(Array.isArray(finished) ? finished : [])]
-      setIssues(all)
-      setError(null)
-    } catch (e) {
-      console.error('Pipeline fetch error:', e)
-      setError('Failed to load pipeline data')
-    } finally {
+    setLoading(true)
+    // Fetch active issues + recently finished issues under the canonical lifecycle
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const [activeRes, finishedRes] = await Promise.all([
+      fetchJson<any[]>(dbUrl(`issues?status=not.in.(closed,completed,released)&select=*&limit=100`), { headers: HEADERS }),
+      fetchJson<any[]>(dbUrl(`issues?status=in.(closed,completed,released)&updated_at=gte.${since}&select=*&limit=50`), { headers: HEADERS }),
+    ])
+    // Never fall through to `Array.isArray(x) ? x : []` on a failed leg — a
+    // non-ok response leaves `issues` null so the board cannot render an
+    // empty state over a permission error or a 500.
+    if (!activeRes.ok) {
+      setError(activeRes.error)
+      setIssues(null)
       setLoading(false)
+      return
     }
+    if (!finishedRes.ok) {
+      setError(finishedRes.error)
+      setIssues(null)
+      setLoading(false)
+      return
+    }
+    const active = Array.isArray(activeRes.data) ? activeRes.data : []
+    const finished = Array.isArray(finishedRes.data) ? finishedRes.data : []
+    setCountCapped(active.length >= 100 || finished.length >= 50)
+    setIssues([...active, ...finished])
+    setError(null)
+    setLoading(false)
   }
 
   // Derive children map for features
   const childrenMap = useMemo(() => {
     const map: Record<string, any[]> = {}
-    for (const issue of issues) {
+    for (const issue of issues ?? []) {
       if (issue.parent_id) {
         if (!map[issue.parent_id]) map[issue.parent_id] = []
         map[issue.parent_id].push(issue)
@@ -138,8 +156,9 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 
   // MC-178: Filter by selected business
   const filteredIssues = useMemo(() => {
-    if (!projectFilter) return issues
-    return issues.filter(i => i.project === projectFilter)
+    const base = issues ?? []
+    if (!projectFilter) return base
+    return base.filter(i => i.project === projectFilter)
   }, [issues, projectFilter])
 
   // Classify each issue into a stage
@@ -173,11 +192,11 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 
   // Find which agents are in which stage
   const agentStageMap = useMemo(() => {
-    const map: Record<PipelineStage, typeof AGENTS> = {
+    const map: Record<PipelineStage, PipelineAgent[]> = {
       Backlog: [], Definition: [], Building: [], Testing: [], "UX Review": [], "PR Queue": [], Merged: []
     }
-    for (const agent of AGENTS) {
-      const agentIssue = issues.find(i => i.assignee === agent.id && i.status === 'in_progress')
+    for (const agent of rosterAgents) {
+      const agentIssue = (issues ?? []).find(i => i.assignee === agent.id && i.status === 'in_progress')
       if (agentIssue) {
         const children = childrenMap[agentIssue.id]
         const stage = getPipelineStage(agentIssue, children)
@@ -185,7 +204,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       }
     }
     return map
-  }, [issues, childrenMap])
+  }, [issues, childrenMap, rosterAgents])
 
   const buildingWIP = stageMap.Building.features.length + stageMap.Building.issues.length
 
@@ -202,14 +221,23 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   }
   const [metricsWindow, setMetricsWindow] = useState<'7d' | '30d'>('7d')
   const [metrics, setMetrics] = useState<Metrics | null>(null)
-  useEffect(() => {
+  const [metricsError, setMetricsError] = useState<ApiError | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(true)
+  const metricsEndpoint = `/api/pipeline-metrics?window=${metricsWindow}`
+  const loadMetrics = useCallback(() => {
     let cancelled = false
-    fetch(`/api/pipeline-metrics?window=${metricsWindow}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d && !d.error) setMetrics(d) })
-      .catch(() => {})
+    setMetricsLoading(true)
+    fetchJson<Metrics>(metricsEndpoint).then(r => {
+      if (cancelled) return
+      // A failed load must not leave the strip stuck on "loading…" forever —
+      // that reads as a live metric that's merely slow, not a refused request.
+      if (r.ok) { setMetrics(r.data); setMetricsError(null) }
+      else { setMetrics(null); setMetricsError(r.error) }
+      setMetricsLoading(false)
+    })
     return () => { cancelled = true }
-  }, [metricsWindow])
+  }, [metricsEndpoint])
+  useEffect(() => loadMetrics(), [loadMetrics])
 
   if (loading) {
     return (
@@ -222,24 +250,22 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
     )
   }
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3">
-        <p className="text-red-400 text-sm">{error}</p>
-        <Button variant="secondary" size="sm" onClick={() => { setError(null); setLoading(true); fetchIssues() }}>
-          Retry
-        </Button>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-4">
+      {/* TOD-2368 round 3: the board below is gated on `issues !== null` — on
+          a failed load neither the "N items" counter nor any column's
+          "Nothing here yet" empty state can paint over the error. */}
+      {error && <ApiErrorBanner error={error} onRetry={fetchIssues} />}
+
+      {issues !== null && (
+      <>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold text-white">Pipeline</span>
-          <span className="text-white/25 text-xs">{issues.length} items</span>
+          {/* Capped at limit=100/limit=50 server-side — not a true total, so
+              say "shown" and flag when a page came back full. */}
+          <span className="text-white/25 text-xs">{issues.length}{countCapped ? '+' : ''} shown</span>
         </div>
         <div className="flex items-center gap-1 rounded-lg border border-white/10 p-0.5 bg-[#0f0f0f]">
           {(['both', 'features', 'issues'] as FilterMode[]).map(mode => (
@@ -276,7 +302,9 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
             ))}
           </div>
         </div>
-        {metrics ? (
+        {metricsError ? (
+          <ApiErrorBanner error={metricsError} onRetry={loadMetrics} className="text-[11px]" />
+        ) : metrics ? (
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-[11px]">
             {[
               { label: 'PRs merged', value: metrics.prs_merged, color: '#10b981' },
@@ -297,7 +325,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
             ))}
           </div>
         ) : (
-          <div className="text-white/30 text-[11px]">loading…</div>
+          <div className="text-white/30 text-[11px]">{metricsLoading ? 'loading…' : 'no data'}</div>
         )}
       </div>
 
@@ -334,7 +362,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                       {buildingWIP}/3 WIP
                     </span>
                   )}
-                  {stage === 'Testing' && issues.some(i => i.assignee === 'tester' && (i.status === 'code_review' || i.status === 'in_progress')) && (
+                  {stage === 'Testing' && (issues ?? []).some(i => i.assignee === 'tester' && (i.status === 'code_review' || i.status === 'in_progress')) && (
                     <span className="text-sm" title="Tester active">🧪</span>
                   )}
                   {stage === 'PR Queue' && (
@@ -361,7 +389,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                     <div className="space-y-1.5">
                       <span className="text-[9px] font-medium text-white/25 uppercase tracking-wider px-1">Issues</span>
                       {data.issues.map((i: any) => (
-                        <IssueCard key={i.id} issue={i} features={issues.filter(x => x.type === 'feature')} onLongPressStart={() => handleLongPressStart(i)} onLongPressEnd={handleLongPressEnd} />
+                        <IssueCard key={i.id} issue={i} features={(issues ?? []).filter(x => x.type === 'feature')} onLongPressStart={() => handleLongPressStart(i)} onLongPressEnd={handleLongPressEnd} />
                       ))}
                     </div>
                   )}
@@ -387,6 +415,8 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
           })}
         </div>
       </div>
+      </>
+      )}
       {/* Mobile long-press action sheet */}
       {actionSheetIssue && (
         <div

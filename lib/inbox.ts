@@ -4,21 +4,18 @@
 //   const result = await requestApproval('builder', 'deploy', { issueId: 'abc' })
 //   if (result.status === 'approved') { ... }
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { assertDbConfigured, db, type DbAdapter } from '@/lib/db'
 
-// Lazy-init: avoids crashing at build time when env vars aren't set (CI).
-// First call throws if still missing. (TOD-2296)
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!url || !key) {
-      throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars')
-    }
-    _supabase = createClient(url, key)
+// Lazy-init: avoids crashing at build time when the database is unconfigured
+// (CI). First call throws a DbConfigurationError naming the missing vars,
+// whichever adapter is active. (TOD-2296)
+let _db: DbAdapter | null = null
+function getDb(): DbAdapter {
+  if (!_db) {
+    assertDbConfigured()
+    _db = db()
   }
-  return _supabase
+  return _db
 }
 
 export type ApprovalStatus = 'approved' | 'denied' | 'timeout' | 'explained'
@@ -68,7 +65,7 @@ export async function requestApproval(
 
   const expiresAt = new Date(Date.now() + timeoutMs).toISOString()
 
-  const { data: entry, error: insertError } = await getSupabase()
+  const { data: entry, error: insertError } = await getDb()
     .from('inbox')
     .insert({ agent, type, context, expires_at: expiresAt })
     .select('id')
@@ -83,7 +80,7 @@ export async function requestApproval(
   return new Promise((resolve) => {
     const deadline = setTimeout(async () => {
       clearInterval(poller)
-      await getSupabase()
+      await getDb()
         .from('inbox')
         .update({ status: 'timeout', resolved_at: new Date().toISOString() })
         .eq('id', id)
@@ -91,7 +88,7 @@ export async function requestApproval(
     }, timeoutMs)
 
     const poller = setInterval(async () => {
-      const { data } = await getSupabase()
+      const { data } = await getDb()
         .from('inbox')
         .select('status')
         .eq('id', id)

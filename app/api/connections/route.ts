@@ -1,20 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
 import { encrypt } from '@/lib/encryption'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
-const VALID_TYPES = ['github', 'openai', 'anthropic', 'openrouter', 'webhook'] as const
+const TABLE = 'connections'
+
+const VALID_TYPES = ['github', 'openai', 'anthropic', 'webhook'] as const
 type ConnectionType = typeof VALID_TYPES[number]
 
 function supabaseAdmin() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  return db()
 }
 
 // ── GET /api/connections ──────────────────────────────────────────────────────
 // Returns all connections for a workspace. Never returns encrypted_value.
 export async function GET(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const { searchParams } = new URL(req.url)
   const workspace_id = searchParams.get('workspace_id')
 
@@ -28,9 +31,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error } = await query.order('created_at', { ascending: false })
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
 
   return NextResponse.json(data)
 }
@@ -38,6 +39,9 @@ export async function GET(req: NextRequest) {
 // ── POST /api/connections ─────────────────────────────────────────────────────
 // Creates a new connection. Encrypts value before storing.
 export async function POST(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   let body: {
     workspace_id?: string
     type?: string
@@ -78,9 +82,7 @@ export async function POST(req: NextRequest) {
     .select('id, workspace_id, type, metadata, status, created_at')
     .single()
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
 
   return NextResponse.json(data, { status: 201 })
 }
@@ -88,6 +90,9 @@ export async function POST(req: NextRequest) {
 // ── DELETE /api/connections ───────────────────────────────────────────────────
 // Removes a connection row entirely.
 export async function DELETE(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const { searchParams } = new URL(req.url)
   const id = searchParams.get('id')
 
@@ -98,9 +103,7 @@ export async function DELETE(req: NextRequest) {
   const sb = supabaseAdmin()
   const { error } = await sb.from('connections').delete().eq('id', id)
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
 
   return NextResponse.json({ ok: true })
 }

@@ -2,6 +2,7 @@
 // Uses agent_memory table so agent-kicker and run-agent can read pause state.
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 const AGENT_ID = 'system'
 const KEY = 'hub_pause'
@@ -19,6 +20,12 @@ interface PauseValue {
 
 /** GET — read current pause state */
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const db = createAdminClient()
     const { data, error } = await db
@@ -29,7 +36,7 @@ export async function GET() {
       .single()
 
     if (error && error.code !== 'PGRST116') {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbQueryErrorResponse(error, 'agent_memory')
     }
 
     const val = data?.value
@@ -52,21 +59,58 @@ export async function GET() {
  *  agent-kicker reads the run-agent response paused field, which reads from agent_memory
  */
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const body = await req.json() as { paused?: boolean; paused_by?: string }
     const paused = Boolean(body.paused)
     const db = createAdminClient()
 
-    // Write is_paused flag to each individual agent's memory row
-    // so /api/run-agent can check it before spawning
-    await Promise.allSettled(
+    // Write is_paused flag to each individual agent's memory row so
+    // /api/run-agent can check it before spawning. allSettled (not all) so
+    // one agent's write failure doesn't abort the rest — but the failures
+    // are collected and reported, not discarded, so `ok:true` never claims
+    // every agent was actually paused when some upserts errored.
+    // Same is_paused object shape lib/loop-breaker.ts and PATCH /api/agent-pause
+    // write — isAgentPaused() reads `value.paused === true`, so a bare string
+    // 'true'/'false' here would read back as never-paused (a truthy string
+    // fails object-key access, not the boolean check) while the hub-level
+    // state above claims the pause succeeded.
+    const now = new Date().toISOString()
+    const perAgentResults = await Promise.allSettled(
       HEARTBEAT_AGENTS.map(agentId =>
         db.from('agent_memory').upsert(
-          { agent_id: agentId, key: 'is_paused', value: paused ? 'true' : 'false' },
+          {
+            agent_id: agentId,
+            key: 'is_paused',
+            value: {
+              paused,
+              paused_at: paused ? now : null,
+              reason: paused ? (body.paused_by ? `hub pause by ${body.paused_by}` : 'hub pause') : null,
+              cleared_at: paused ? null : now,
+              cleared_by: paused ? null : (body.paused_by ?? 'hub'),
+            },
+            updated_at: now,
+          },
           { onConflict: 'agent_id,key' }
         )
       )
     )
+    const failedAgents: string[] = []
+    perAgentResults.forEach((result, i) => {
+      const agentId = HEARTBEAT_AGENTS[i]
+      if (result.status === 'rejected') {
+        failedAgents.push(agentId)
+        console.error(`[hub-pause] agent_memory write failed for ${agentId}:`, result.reason)
+      } else if (result.value?.error) {
+        failedAgents.push(agentId)
+        console.error(`[hub-pause] agent_memory write failed for ${agentId}:`, result.value.error)
+      }
+    })
 
     // Write hub-level pause state for UI display
     const value: PauseValue = {
@@ -76,12 +120,21 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
       paused_agents: paused ? HEARTBEAT_AGENTS : [],
     }
-    await db.from('agent_memory').upsert(
+    const { error: hubStateError } = await db.from('agent_memory').upsert(
       { agent_id: AGENT_ID, key: KEY, value },
       { onConflict: 'agent_id,key' }
     )
+    if (hubStateError) {
+      return dbQueryErrorResponse(hubStateError, 'agent_memory')
+    }
 
-    return NextResponse.json({ ok: true, paused })
+    return NextResponse.json({
+      ok: failedAgents.length === 0,
+      paused,
+      ...(failedAgents.length > 0
+        ? { error: `hub-level pause state saved, but per-agent write failed for: ${failedAgents.join(', ')}` }
+        : {}),
+    })
   } catch (e: unknown) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
   }

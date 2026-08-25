@@ -57,6 +57,35 @@ export interface AgentQueueConfig {
    * If undefined, dispatcher falls back to { runtime: <default>, alias: model }.
    */
   modelChain?: ModelBinding[]
+  /**
+   * registry-reaches-dispatch piece: a concrete model id — e.g.
+   * "qwen2.5-coder:14b" — from a Brain2 vault manifest's `model.fallback_local`,
+   * present only when that manifest also set `local_eligible: true`. POST
+   * /api/run-agent passes it as `AgentSpawnOptions.modelOverride` so a
+   * local-eligible vault agent actually runs against it instead of only
+   * being labelled local-eligible; `lib/runtimes/openai-api.ts`'s mapModel()
+   * still checks it against the endpoint's own live model roster before
+   * trusting it, so a stale manifest naming a model this host never pulled
+   * falls through to the ordinary alias resolution rather than being
+   * dispatched anyway. Undefined for every agent defined in this file.
+   */
+  localFallbackModel?: string
+  /**
+   * agent-config-panel-truth piece: the manifest's raw `model.preferred`
+   * display name (e.g. "claude-opus-5") — never dispatched to directly (it
+   * is not a runtime binding, just a human-facing label), but named here so
+   * a caller building an honest "alternatives, and why each was not
+   * selected" list can say what it is and why it never runs, instead of
+   * either hiding it or — the defect this piece exists to fix — printing it
+   * as if it were the model that would actually be used. Undefined for
+   * every agent defined in this file (Todero's own lanes have no manifest).
+   */
+  preferred?: string
+  /** 'todero' for every entry below; 'vault' for a config derived from a
+   *  Brain2 manifest by lib/agent-manifests.ts. Read by callers that need to
+   *  tell "one of our own lanes" apart from "a vault agent we made
+   *  dispatchable by giving it Todero's own default queue behaviour". */
+  source?: 'todero' | 'vault'
 }
 
 export const AGENT_QUEUE_CONFIGS: Record<string, AgentQueueConfig> = {
@@ -452,11 +481,37 @@ Self-chain: POST /api/run-agent?agent=main`,
   },
 }
 
+// ── vault-derived configs (registry-reaches-dispatch piece) ─────────────────
+//
+// This file stays free of any `fs`/`db` import on purpose — components/tabs
+// import it directly (see getQueueConfig() call sites in ChatTab.tsx and
+// IssuesTab.tsx) and a Node-only import here would break their client
+// bundle. `lib/agent-manifests.ts` (server-only) does the actual vault scan
+// + persistence and hands its results to this in-memory cache through
+// `registerManifestQueueConfigs()`; this file only ever reads/writes plain
+// data. Populated by app/api/agents/route.ts and app/api/run-agent/route.ts
+// before either one calls getQueueConfig()/getAllQueueAgentIds() — a vault
+// agent dispatched before either route has run in this process still works,
+// because `ensureVaultDispatchConfigs()` is called at the top of every
+// run-agent request too, not just opportunistically from the roster route.
+let manifestQueueConfigs: Record<string, AgentQueueConfig> = {}
+
+/** Replaces the vault-derived config cache. Server-only callers only. */
+export function registerManifestQueueConfigs(configs: Record<string, AgentQueueConfig>): void {
+  manifestQueueConfigs = configs
+}
+
+/** IDs currently backed by a vault manifest, not Todero's own hardcoded table. */
+export function getManifestQueueAgentIds(): string[] {
+  return Object.keys(manifestQueueConfigs)
+}
+
 export function getQueueConfig(agentId: string): AgentQueueConfig | undefined {
-  return AGENT_QUEUE_CONFIGS[agentId]
+  return AGENT_QUEUE_CONFIGS[agentId] ?? manifestQueueConfigs[agentId]
 }
 
 export function getAllQueueAgentIds(): string[] {
-  return Object.keys(AGENT_QUEUE_CONFIGS)
+  const ids = new Set(Object.keys(AGENT_QUEUE_CONFIGS))
+  for (const id of Object.keys(manifestQueueConfigs)) ids.add(id)
+  return Array.from(ids)
 }
-// test

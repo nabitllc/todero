@@ -1,13 +1,30 @@
 import { NextResponse } from 'next/server'
-
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+import { db, dbMissingEnv } from '@/lib/db'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 export async function GET() {
-  const res = await fetch(`${SUPA_URL}/rest/v1/milestones?order=project,name&select=*`, {
-    headers: { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` },
-    next: { revalidate: 60 }
-  })
-  const data = await res.json()
-  return NextResponse.json(data)
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
+  const missing = dbMissingEnv()
+  if (missing.length > 0) {
+    return NextResponse.json(
+      { error: `Database is not configured. Missing: ${missing.join(', ')}.`, missingEnv: missing },
+      { status: 503 },
+    )
+  }
+
+  const { data, error } = await db()
+    .from('milestones')
+    .select('*')
+    .order('project')
+    .order('name')
+
+  if (error) {
+    return dbQueryErrorResponse(error, 'milestones')
+  }
+  return NextResponse.json(data ?? [])
 }

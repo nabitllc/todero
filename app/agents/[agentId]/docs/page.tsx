@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import { useParams } from 'next/navigation'
 
 interface AgentDoc {
@@ -31,15 +33,22 @@ export default function AgentDocsPage() {
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [docsError, setDocsError] = useState<ApiError | null>(null)
 
   useEffect(() => {
-    fetch(`/api/agent-docs?agent_id=${agentId}`)
-      .then(r => r.json())
-      .then(d => setDocs(d.docs ?? []))
+    fetchJson<{ docs?: AgentDoc[] }>(`/api/agent-docs?agent_id=${agentId}`).then(r => {
+      // TOD-654: a refused doc list must not render as "no docs".
+      if (!r.ok) { setDocsError(r.error); setDocs([]); return }
+      setDocsError(null)
+      setDocs(r.data?.docs ?? [])
+    })
   }, [agentId])
 
   const selectDoc = useCallback(async (doc: AgentDoc) => {
-    const full = await fetch(`/api/agent-docs/${doc.id}`).then(r => r.json())
+    const r = await fetchJson<AgentDoc & { content: string }>(`/api/agent-docs/${doc.id}`)
+    if (!r.ok) { setDocsError(r.error); return }
+    setDocsError(null)
+    const full = r.data
     setSelected(full)
     setEditContent(full.content)
     setHistory([])
@@ -67,8 +76,10 @@ export default function AgentDocsPage() {
 
   const loadHistory = useCallback(async () => {
     if (!selected) return
-    const data = await fetch(`/api/agent-docs/${selected.id}/history`).then(r => r.json())
-    setHistory(data.history ?? [])
+    const r = await fetchJson<{ history?: HistoryEntry[] }>(`/api/agent-docs/${selected.id}/history`)
+    if (!r.ok) { setDocsError(r.error); return }
+    setDocsError(null)
+    setHistory(r.data?.history ?? [])
     setShowHistory(true)
   }, [selected])
 
@@ -100,7 +111,9 @@ export default function AgentDocsPage() {
               <div className="text-xs text-gray-600">{new Date(doc.updated_at).toLocaleDateString()}</div>
             </button>
           ))}
-          {docs.length === 0 && (
+          {/* TOD-654: never claim "no documents" over a refused request. */}
+          {docsError && <div className="p-3"><ApiErrorBanner error={docsError} /></div>}
+          {!docsError && docs.length === 0 && (
             <div className="p-4 text-gray-600 text-xs">No documents. Run seed-agent-db.ts first.</div>
           )}
         </div>

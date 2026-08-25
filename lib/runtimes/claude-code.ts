@@ -2,22 +2,31 @@
 // TOD-806 (2026-04-10): git worktree isolation.
 // TOD-XXX (2026-04-10 round 9): TRUE detach from parent Next.js process.
 //
-// Why this file has been rewritten 3 times in 24 hours:
+// Why this file has been rewritten 4 times:
 // - v1: exec() with shell-quoted prompt → shell escape broke on @/()/backticks
 // - v2: spawn() with args array → no more escaping, but children got SIGKILLed
 //   whenever Next.js restarted (parent teardown killed Node's tracked children)
-// - v3 (THIS): write prompt to a temp file, spawn a bash wrapper with
-//   `nohup bash -c '…' &` so the child is in a new session AND ignores SIGHUP.
-//   Node drops the child reference entirely. Next.js restart cannot kill it.
+// - v3: write prompt to a temp file, hand a POSIX shell `-c 'nohup … & disown'`.
+//   Survived Next.js restarts on macOS — and was a guaranteed ENOENT anywhere
+//   that shell does not exist at its assumed location, i.e. every Windows host.
+// - v4 (THIS): spawnDetached() from ./detached-spawn. Node's own
+//   detached+stdio+unref gives us everything nohup/disown/</dev/null did, on
+//   every platform, with no shell and therefore no quoting.
 
-import { spawn } from 'child_process'
-import { existsSync, writeFileSync, mkdtempSync, appendFileSync, unlinkSync, rmSync } from 'fs'
+import { existsSync, writeFileSync, mkdtempSync, unlinkSync, rmSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
+import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+import { resolveBinary } from '../paths'
+import { finalizeRun } from './token-ledger'
+import { recordRunOnExit } from '../memory-loop'
 
-const CLAUDE_BIN = process.env.CLAUDE_BIN ?? '/Users/kemuniagent/.local/bin/claude'
+// Bare name by default: resolved through PATH at spawn time (`where`/`which`),
+// so a `claude` installed by npm -g, Homebrew, or the official installer all
+// work without an env var. CLAUDE_BIN still overrides with an explicit path.
+export const CLAUDE_BIN = process.env.CLAUDE_BIN ?? 'claude'
 const WORKTREE_TEARDOWN_MINUTES = 60
 
 export const claudeCodeRuntime: AgentRuntime = {
@@ -28,7 +37,7 @@ export const claudeCodeRuntime: AgentRuntime = {
 
   async isAvailable() {
     try {
-      return existsSync(CLAUDE_BIN)
+      return resolveBinary(CLAUDE_BIN) !== null
     } catch {
       return false
     }
@@ -110,102 +119,153 @@ export const claudeCodeRuntime: AgentRuntime = {
       console.warn(`[claude-code] failed to write spawn marker to ${opts.logFile}: ${err instanceof Error ? err.message : String(err)}`)
     }
 
-    const modelFlag = opts.model ? `--model ${opts.model}` : ''
-    const permissionFlag = opts.bypassPermissions !== false ? '--permission-mode bypassPermissions' : ''
+    // Flags as argv entries — never a joined string. An empty flag would become
+    // an empty argv entry, which `claude` rejects, so build the array by push.
+    const argv: string[] = []
+    if (opts.bypassPermissions !== false) argv.push('--permission-mode', 'bypassPermissions')
+    if (opts.model) argv.push('--model', opts.model)
+    argv.push('--print')
+    // TOD-2381 (agent-budget-stop) round 3: `--output-format json` is what
+    // makes the ledger closable with real numbers. Plain `--print` writes only
+    // the model's final text to the log — nothing token-shaped for
+    // parseClaudeJsonOutput() below to read, which is why finalizeRun()'s one
+    // real call site (the [spawn-exit] handler further down) previously could
+    // never pass inputTokens/outputTokens/costUsd: there was nothing in the
+    // log to compute them from. No other consumer parses this log file as a
+    // human transcript today (grepped for readers before adding this — see
+    // this piece's PR notes), so trading raw text for one JSON object costs
+    // nothing currently reachable.
+    argv.push('--output-format', 'json')
 
-    // ── TRUE DETACH via nohup + bash wrapper ─────────────────────────
-    //
-    // This shell chain is the key to surviving Next.js restarts:
-    //   1. `cd <worktree>`      → agent runs in its isolated git worktree
-    //   2. `nohup ... &`        → child ignores SIGHUP when the parent dies
-    //   3. `</dev/null`         → no stdin connection to parent
-    //   4. `>$logFile 2>&1`     → stdout+stderr go directly to the log file
-    //                             (the file descriptor is owned by the CHILD,
-    //                             not passed from the parent, so when Node
-    //                             closes its fds the child's fd is unaffected)
-    //   5. `disown`             → shell forgets the child, no reaper
-    //
-    // The prompt is read from $promptFile via \`"$(cat $promptFile)"\` which
-    // is INSIDE the bash script — bash handles the quoting correctly for any
-    // characters in the prompt (including @, (, ), backticks, single quotes).
-    //
-    // We spawn bash with args=['-c', script]. No shell-escape issues because
-    // Node's spawn() passes args directly to execve — NOT through a shell
-    // a second time.
-    // The script does two things:
-    //   1. Launch claude detached (nohup + & + disown) — survives Next.js restart
-    //   2. Launch a SEPARATE detached bash watcher that polls the claude pid
-    //      and writes [spawn-exit] when it dies. The watcher is also nohup'd
-    //      so it outlives Next.js too. This restores the death visibility we
-    //      lost by removing child.on('exit') without reattaching Node.
-    const script = `
-set -e
-cd ${JSON.stringify(effectiveWorkingDir)}
-nohup ${CLAUDE_BIN} ${permissionFlag} ${modelFlag} --print "$(cat ${JSON.stringify(promptFile)})" >> ${JSON.stringify(opts.logFile)} 2>&1 </dev/null &
-CHILD=$!
-disown $CHILD || true
-echo "[spawn-ok] child_pid=$CHILD" >> ${JSON.stringify(opts.logFile)}
-# Detached watcher: polls the child every 5s and logs [spawn-exit] when gone.
-# Uses nohup so it outlives the Next.js parent. Max watch time: 90 min
-# (agent should be done long before that; if not, teardown timer will GC).
-nohup bash -c 'CHILD='"$CHILD"'; LOG='"${JSON.stringify(opts.logFile).replace(/'/g, "'\\''")}"'; TASK_ID='"${JSON.stringify(opts.taskId ?? '').replace(/'/g, "'\\''")}"'; SUPA_URL=https://twthgapiouiqhavrcnry.supabase.co; SUPA_KEY=${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''}; AGENT_ID='"${opts.agentId}"'; MC_URL=http://localhost:3000; for i in $(seq 1 1080); do if ! kill -0 $CHILD 2>/dev/null; then echo "[spawn-exit] $(date -u +%FT%TZ) pid=$CHILD watcher_detected=true" >> "$LOG"; if [ -n "$TASK_ID" ]; then CURRENT_STATUS=$(curl -sf "$SUPA_URL/rest/v1/issues?id=eq.$TASK_ID&select=status" -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d[0]['"'"'status'"'"'] if d else '"'"'unknown'"'"')" 2>/dev/null || echo unknown); if [ "$CURRENT_STATUS" = "in_progress" ]; then curl -s -X PATCH "$SUPA_URL/rest/v1/issues?id=eq.$TASK_ID" -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" -d '"'"'{"status":"open","started_at":null,"heartbeat_at":null,"worked_by":null}'"'"' 2>/dev/null; echo "[spawn-exit] reset to open (was in_progress) for $TASK_ID" >> "$LOG"; else curl -s -X PATCH "$SUPA_URL/rest/v1/issues?id=eq.$TASK_ID" -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" -d '"'"'{"started_at":null,"heartbeat_at":null}'"'"' 2>/dev/null; echo "[spawn-exit] cleared started_at (status=$CURRENT_STATUS) for $TASK_ID" >> "$LOG"; fi; fi; curl -s -X POST "$MC_URL/api/run-agent?agent=$AGENT_ID" >/dev/null 2>&1 || true; echo "[spawn-exit] self-kick $AGENT_ID" >> "$LOG"; exit 0; fi; sleep 5; done; echo "[spawn-watcher] 90-min timeout pid=$CHILD" >> "$LOG"; if ! kill -0 $CHILD 2>/dev/null; then echo "[spawn-exit] $(date -u +%FT%TZ) pid=$CHILD watcher_detected=true (timeout-exit)" >> "$LOG"; if [ -n "$TASK_ID" ]; then CURRENT_STATUS=$(curl -sf "$SUPA_URL/rest/v1/issues?id=eq.$TASK_ID&select=status" -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" 2>/dev/null | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); print(d[0]['"'"'status'"'"'] if d else '"'"'unknown'"'"')" 2>/dev/null || echo unknown); if [ "$CURRENT_STATUS" = "in_progress" ]; then curl -s -X PATCH "$SUPA_URL/rest/v1/issues?id=eq.$TASK_ID" -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" -d '"'"'{"status":"open","started_at":null,"heartbeat_at":null,"worked_by":null}'"'"' 2>/dev/null; echo "[spawn-exit] reset to open at 90min-timeout for $TASK_ID" >> "$LOG"; else curl -s -X PATCH "$SUPA_URL/rest/v1/issues?id=eq.$TASK_ID" -H "apikey: $SUPA_KEY" -H "Authorization: Bearer $SUPA_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" -d '"'"'{"started_at":null,"heartbeat_at":null}'"'"' 2>/dev/null; echo "[spawn-exit] cleared started_at at 90min-timeout (status=$CURRENT_STATUS) for $TASK_ID" >> "$LOG"; fi; fi; curl -s -X POST "$MC_URL/api/run-agent?agent=$AGENT_ID" >/dev/null 2>&1 || true; echo "[spawn-exit] self-kick $AGENT_ID (timeout-exit)" >> "$LOG"; else echo "[spawn-watcher] pid=$CHILD still alive at 90min for $TASK_ID — monitor-stale will handle" >> "$LOG"; fi' >/dev/null 2>&1 </dev/null &
-disown || true
-`
+    // The prompt goes in on stdin, not argv: Windows caps a command line at
+    // ~32k characters and Todero prompts routinely exceed that. `claude --print`
+    // with no positional prompt reads stdin, which is also why no escaping of
+    // quotes/backticks/$( is needed anywhere in this file any more.
+    const spawnStartedAt = Date.now()
+    const result = await spawnDetached(CLAUDE_BIN, argv, opts.logFile, {
+      cwd: effectiveWorkingDir,
+      env: process.env,
+      stdinFile: promptFile,
+    })
 
-    try {
-      const child = spawn('/bin/bash', ['-c', script], {
-        detached: true,
-        stdio: 'ignore',       // completely severed from the parent's FDs
-        env: process.env,
-      })
-      // Critical: unref so Node's event loop doesn't wait, AND we don't
-      // attach an exit handler (no child.on('exit')). Node has zero
-      // reference to the spawned claude process after this point.
-      child.unref()
-
-      // Schedule worktree teardown after the timeout window
-      if (teardownPath) {
-        const teardownMs = WORKTREE_TEARDOWN_MINUTES * 60 * 1000
-        setTimeout(() => {
-          const tr = teardownWorktree(teardownPath!)
-          if (!tr.ok) {
-            console.warn(`[claude-code] worktree teardown failed for ${teardownPath}: ${tr.error}`)
-          }
-          // Clean up the prompt temp dir too
-          if (promptFile) {
-            try {
-              const dir = promptFile.substring(0, promptFile.lastIndexOf('/'))
-              rmSync(dir, { recursive: true, force: true })
-            } catch {}
-          }
-        }, teardownMs).unref()
-      }
-
-      return {
-        ok: true,
-        command: `nohup claude ${permissionFlag} ${modelFlag} --print <${opts.prompt.length}B from ${promptFile}>`,
-        runtime: 'claude-code',
-      }
-    } catch (err: unknown) {
-      try {
-        appendFileSync(
-          opts.logFile,
-          `\n[spawn-failure] ${new Date().toISOString()} ${err instanceof Error ? err.message : String(err)}\n`
-        )
-      } catch {}
+    if (!result.ok) {
       if (promptFile) {
-        try { unlinkSync(promptFile) } catch {}
+        try { unlinkSync(promptFile) } catch { /* best effort */ }
       }
-      if (teardownPath) {
-        teardownWorktree(teardownPath)
-      }
+      if (teardownPath) teardownWorktree(teardownPath)
       return {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: result.error ?? 'spawn failed',
+        logFile: result.logFile,
+        command: result.command,
         runtime: 'claude-code',
       }
     }
+
+    appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
+
+    // Portable replacement for the 40-line `nohup bash -c 'kill -0 …'` watcher:
+    // poll the pid and log [spawn-exit] when it is gone.
+    watchChildExit(result.pid, opts.logFile, () => {
+      appendLog(opts.logFile, `[spawn-exit] agent=${opts.agentId} task=${opts.taskId ?? 'none'}`)
+      // TOD-2381: close the token_ledger row (and any dangling agent_runs row
+      // for this task) the moment the OS confirms the process is gone. This is
+      // the only place in the codebase a spawned run's exit is actually
+      // observed — everywhere else only knows it was launched. `status:
+      // 'completed'` here means "the process exited", not "the task
+      // succeeded": watchChildExit polls pid liveness, it does not see the
+      // real exit code, so this is honestly the coarsest signal available
+      // without a bigger rewrite of spawnDetached's child.on('exit') plumbing.
+      const parsed = parseClaudeJsonOutput(opts.logFile)
+      finalizeRun({
+        logFile: opts.logFile,
+        status: 'completed',
+        durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
+        taskId: opts.taskId ?? null,
+        inputTokens: parsed?.inputTokens,
+        outputTokens: parsed?.outputTokens,
+        costUsd: parsed?.costUsd,
+      })
+      // memory-loop-write (round 2): the learning loop's write half had no
+      // caller anywhere in the running product — this is that caller, one
+      // agent_run_records row per dispatched run.
+      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
+    }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
+
+    // Schedule worktree teardown after the timeout window
+    if (teardownPath) {
+      const capturedTeardownPath = teardownPath
+      const capturedPromptFile = promptFile
+      setTimeout(() => {
+        const tr = teardownWorktree(capturedTeardownPath)
+        if (!tr.ok) {
+          console.warn(`[claude-code] worktree teardown failed for ${capturedTeardownPath}: ${tr.error}`)
+        }
+        if (capturedPromptFile) {
+          try { rmSync(dirname(capturedPromptFile), { recursive: true, force: true }) } catch { /* best effort */ }
+        }
+      }, WORKTREE_TEARDOWN_MINUTES * 60 * 1000).unref()
+    }
+
+    return {
+      ok: true,
+      pid: result.pid,
+      logFile: result.logFile,
+      command: `${result.command} <${opts.prompt.length}B prompt on stdin from ${promptFile}>`,
+      runtime: 'claude-code',
+    }
   },
+}
+
+/**
+ * TOD-2381 (agent-budget-stop) round 3: the ledger's actual closing numbers.
+ *
+ * `claude --print --output-format json` writes exactly one JSON object to
+ * stdout when the process finishes — this log file's tail, after the
+ * `[spawn-start]` header lines this adapter writes before launching. Its
+ * documented shape includes `total_cost_usd` and a `usage` object with
+ * `input_tokens` / `output_tokens` (the same fields the Messages API's own
+ * `usage` object uses) plus cache token counts. This is deliberately the
+ * ONLY place in the codebase that parses this log file's content — reading
+ * it as anything other than "did the spawn produce the completion JSON we
+ * asked for" is out of scope.
+ *
+ * Best-effort: a process that never reached `--output-format json`'s
+ * completion line (crashed, killed mid-run, an older `claude` binary that
+ * does not support the flag) leaves nothing valid to parse. That degrades to
+ * exactly the pre-existing behavior — finalizeRun() still closes the row with
+ * status/duration, just without token/cost numbers — never a thrown error
+ * that could break the exit-watcher's cleanup.
+ */
+function parseClaudeJsonOutput(logFile: string): { inputTokens?: number; outputTokens?: number; costUsd?: number } | null {
+  let text: string
+  try {
+    text = readFileSync(logFile, 'utf8')
+  } catch {
+    return null
+  }
+  // The header block ends at the "---" marker this adapter itself writes
+  // (see the `[spawn-start] ---` line above); everything after it is the
+  // child process's own stdout+stderr. Falling back to the first `{` in the
+  // whole file if that marker is somehow absent, rather than giving up.
+  const markerIdx = text.indexOf('[spawn-start] ---\n')
+  const tail = markerIdx >= 0 ? text.slice(markerIdx + '[spawn-start] ---\n'.length) : text
+  const firstBrace = tail.indexOf('{')
+  const lastBrace = tail.lastIndexOf('}')
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) return null
+  try {
+    const parsed = JSON.parse(tail.slice(firstBrace, lastBrace + 1)) as {
+      total_cost_usd?: number
+      usage?: { input_tokens?: number; output_tokens?: number }
+    }
+    const result: { inputTokens?: number; outputTokens?: number; costUsd?: number } = {}
+    if (typeof parsed.usage?.input_tokens === 'number') result.inputTokens = parsed.usage.input_tokens
+    if (typeof parsed.usage?.output_tokens === 'number') result.outputTokens = parsed.usage.output_tokens
+    if (typeof parsed.total_cost_usd === 'number') result.costUsd = parsed.total_cost_usd
+    return Object.keys(result).length > 0 ? result : null
+  } catch {
+    return null
+  }
 }
 
 function extractTaskKeyFromBranch(branch: string | null | undefined): string | null {

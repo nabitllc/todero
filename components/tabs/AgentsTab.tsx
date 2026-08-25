@@ -4,6 +4,9 @@ import { Chip, Dot, SH } from '@/lib/mc-atoms'
 import { Button, EmptyState as EmptyStateUI } from '@/components/ui'
 import { Users } from 'lucide-react'
 import AgentDetailView from '@/components/tabs/AgentDetailView'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
+import type { AgentRunStatus } from '@/hooks/useAgentStatus'
 
 function formatAgo(ms: number): string {
   const sec = Math.floor(ms / 1000)
@@ -16,14 +19,76 @@ function formatAgo(ms: number): string {
   return `${d}d ${h % 24}h ago`
 }
 
-function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>): string {
+/**
+ * The model badge for one roster card. `agent.modelShort`/`agent.model` are
+ * now resolved server-side by GET /api/agents from
+ * lib/resolve-dispatch-model.ts's `resolveDispatchModel()` — the same chain
+ * walk the real spawn path runs — for EVERY row, vault-backed or not. This
+ * component just renders what the server already resolved; it no longer
+ * re-derives a label client-side (that re-derivation, via the deleted
+ * lib/vault-badge.ts's resolveVaultBadge() + an env-URL heuristic, is what
+ * put "Opus" directly above "mid tier" on six cards whose manifest
+ * `claude_code_alias` was "sonnet", and separately showed a cloud model
+ * under a badge the Configuration panel below it called "not selected").
+ * The "Brain2" chip is unrelated provenance (this id has a
+ * Global_Agents/<id>/manifest.json) and renders independent of the label.
+ */
+function AgentModelBadge({ agent }: { agent: any }) {
+  const label = agent?.modelShort || agent?.model || ''
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label && (
+        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{label}</span>
+      )}
+      {agent?.vault && (
+        <span
+          className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+          title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+        >
+          Brain2
+        </span>
+      )}
+    </span>
+  )
+}
+
+function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>): string {
   const ar = runsData[agentId]
   if (!ar?.startedAt) return 'never'
   const started = new Date(ar.startedAt).getTime()
   if (Number.isNaN(started)) return 'unknown'
   const diff = Date.now() - started
-  if (ar.status === 'running' && diff < 30 * 60_000) return 'active now'
+  if (ar.status === 'live' && diff < 30 * 60_000) return 'active now'
   return formatAgo(diff)
+}
+
+/**
+ * Roster provenance from the /api/agents envelope: which file the roster came
+ * from and, when it is empty, why. Envelope-level on purpose — an empty roster
+ * has no row to hang it on.
+ *
+ * `vaultPath`/`vaultWarning` are the same pattern for the Brain2 vault's
+ * Global_Agents/ registry (docs/brain2-integration.md) — independent of
+ * `source`/`warning`/`path`, which describe AGENTS.md only. A host can have
+ * a perfectly good AGENTS.md roster (`source: 'agents-md'`) while the vault
+ * is unreachable, and that must still surface: an absent vault is a fact
+ * about the vault, not about AGENTS.md, so it cannot be gated on
+ * `rosterSource === 'none'`.
+ */
+export type RosterMeta = {
+  source: string
+  warning: string | null
+  path: string | null
+  vaultPath: string | null
+  vaultWarning: string | null
+  /**
+   * registry-reaches-dispatch piece, round 2: whether the vault manifests
+   * this roster displays were actually written to `agent_manifests` — the
+   * DISPATCH half, distinct from `vaultWarning` (the ROSTER half). A host
+   * can show a perfectly good roster while every persist 404s; this is how
+   * that stops being invisible. Optional so older envelopes still compile.
+   */
+  vaultSync?: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null } | null
 }
 
 export default function AgentsTab({
@@ -31,24 +96,135 @@ export default function AgentsTab({
   agentLiveStatus,
   agentRunsData,
   liveAgents,
-  act,
+  rosterMeta,
+  agentsError,
   agentModal,
   setAgentModal,
   projectFilter,
+  onAgentRemoved,
 }: {
   displayAgents: any[]
   agentLiveStatus: (agentId: string) => { dot: 'green'|'amber'|'grey'; label: string }
-  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>
+  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>
   liveAgents: any[] | null
-  act: (id: string) => string
+  /** Envelope metadata from /api/agents. Optional so older call sites still compile. */
+  rosterMeta?: RosterMeta | null
+  /** Why /api/agents failed, if it did. Distinguishes "still loading" from
+   *  "the fetch failed" — both used to render the same "Loading…" spinner. */
+  agentsError?: ApiError | null
   agentModal: any
   setAgentModal: (a: any) => void
   projectFilter?: string | null
+  /** Bubbled up from AgentDetailView's "Remove" action so the roster state
+   *  held above this component drops the agent immediately, instead of
+   *  waiting for the next /api/agents poll. Optional so older call sites
+   *  still compile. */
+  onAgentRemoved?: (agentId: string) => void
 }) {
+  // Prefer the envelope; fall back to the per-row copy for any caller that has
+  // not been threaded through yet. Reading row[0] alone lost the warning in the
+  // exact case it is needed — a roster with no rows.
+  const rosterSource: string | undefined = rosterMeta?.source ?? liveAgents?.[0]?.rosterSource
+  const rosterWarning: string | null = rosterMeta?.warning ?? liveAgents?.[0]?.rosterWarning ?? null
+  const rosterPath: string | null = rosterMeta?.path ?? liveAgents?.[0]?.rosterPath ?? null
+  // Brain2 vault provenance — envelope-only (see RosterMeta's docstring): no
+  // per-row fallback exists, because a vault problem is a fact about the
+  // vault, not about any one agent row.
+  const vaultPath: string | null = rosterMeta?.vaultPath ?? null
+  const vaultWarning: string | null = rosterMeta?.vaultWarning ?? null
+  // registry-reaches-dispatch piece, round 2: the DISPATCH half of the vault
+  // sync — did the manifests this roster displays actually get WRITTEN to
+  // agent_manifests, or does every persist 404 while the roster still looks
+  // fine? Rendered inline in the header below, the same way AgentDetailView
+  // surfaces a per-agent `overCeiling.reason` inline rather than in a
+  // separate banner — this is an envelope-level fact, not a per-row one.
+  const vaultSyncWarning: string | null = rosterMeta?.vaultSync?.warning ?? null
+
+  // TOD (agent-roster-truth): `liveAgents === null` means /api/agents has not
+  // yet produced any rows to show — never a fabricated agent list. That still
+  // covers two genuinely different states, which is why the page.tsx loader
+  // now reads the /api/agents body regardless of HTTP status: a roster fetch
+  // that returns rows (even inside a 503, e.g. "database not configured")
+  // populates `liveAgents` and never reaches this branch at all. Only a
+  // request that produced no body — a network error, or JSON that failed to
+  // parse — leaves `liveAgents` null, and that is when `agentsError` is set.
+  // A "still loading" spinner and a "the fetch failed" state read identically
+  // to an operator unless they are told apart.
+  if (liveAgents === null) {
+    if (agentsError) {
+      return (
+        <div className="space-y-6">
+          <ApiErrorBanner error={agentsError} />
+        </div>
+      )
+    }
+    return (
+      <div className="space-y-6">
+        <EmptyStateUI icon={Users} title="Loading agent roster…" description="Waiting on /api/agents." />
+      </div>
+    )
+  }
+
   return (
             <div className="space-y-6">
-              {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
-              {displayAgents.length === 0 && <EmptyStateUI icon={Users} title="No agents registered yet" />}
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/>
+                <span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span>
+                {/* registry-reaches-dispatch piece, round 2: the write half
+                    of the vault sync, inline next to the roster count it
+                    sits beside — a roster can render fine (rows above are
+                    real) while every one of those manifests fails to
+                    persist, and that must be visible in the same glance as
+                    "N agents", not buried in a server log nobody watching
+                    this tab will ever open. */}
+                {vaultSyncWarning && (
+                  <span
+                    className="text-amber-300/90 text-[10px] font-medium"
+                    title={vaultSyncWarning}
+                  >
+                    · vault sync: not persisted
+                  </span>
+                )}
+              </div>
+              {vaultSyncWarning && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                  <span className="text-amber-300 text-[11px] font-medium shrink-0">Vault manifests not persisted</span>
+                  <span className="text-white/60 text-[10px] leading-relaxed break-all">{vaultSyncWarning}</span>
+                </div>
+              )}
+              {rosterSource === 'none' && rosterWarning && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                  <span className="text-amber-300 text-[11px] font-medium shrink-0">Roster unavailable</span>
+                  <span className="text-white/60 text-[10px] leading-relaxed break-all">{rosterWarning}</span>
+                </div>
+              )}
+              {/* Independent of rosterSource: a host can have a perfectly good
+                  AGENTS.md roster while the Brain2 vault is unreachable, and
+                  that must still surface — an absent vault is a fact about the
+                  vault, not about AGENTS.md. Renders whenever the vault
+                  contributed no agents or hit unreadable manifests, quoting
+                  the exact path the API searched (embedded in vaultWarning by
+                  lib/vault-agents.ts). */}
+              {vaultWarning && (
+                <div className="flex items-start gap-2 rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-2">
+                  <span className="text-purple-300 text-[11px] font-medium shrink-0">
+                    {vaultPath ? 'Brain2 registry issue' : 'Brain2 agent registry not read'}
+                  </span>
+                  <span className="text-white/60 text-[10px] leading-relaxed break-all">{vaultWarning}</span>
+                </div>
+              )}
+              {displayAgents.length === 0 && (
+                <EmptyStateUI
+                  icon={Users}
+                  title="No agents configured"
+                  description={
+                    rosterWarning
+                      ?? (rosterPath
+                        ? `The roster at ${rosterPath} declares no agents. Add rows to its Agents table.`
+                        : 'No AGENTS.md roster was found. Set AGENTS_MD_PATH to point at one.')
+                  }
+                />
+              )}
 
               {/* Lead agent card */}
               {displayAgents.length > 0 && (() => {
@@ -64,12 +240,30 @@ export default function AgentsTab({
                       <div className="flex items-center gap-2">
                         <p className="text-white font-semibold">{displayAgents[0].name}</p>
                         <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${dotColor}`} title={ls0.label} />
-                        {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgents[0].modelShort}</span>}
+                        {displayAgents[0].type === 'consultant' && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+                        )}
+                        <AgentModelBadge agent={displayAgents[0]} />
                       </div>
                       <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
+                      {/* "On duty" is a claim that this agent is running NOW. It used to
+                          come from the newest agent_runs row still marked 'running' —
+                          a record that is never cleared when a process dies, so agents
+                          wore the badge for hours after they stopped. It now follows
+                          the same heartbeat everything else does. */}
+                      {displayAgents[0].liveness === 'live' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium mt-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          On duty
+                        </span>
+                      )}
                       {ls0.dot === 'green' && <p className="text-emerald-400/80 text-[10px] font-mono mt-0.5 truncate max-w-[200px]">↳ {ls0.label}</p>}
                       {ls0.dot === 'amber' && <p className="text-amber-400/70 text-[10px] font-mono mt-0.5">{ls0.label}</p>}
-                      {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">Idle · last active {lastActiveLabel(displayAgents[0].id, agentRunsData)}</p>}
+                      {/* The grey state used to be hard-coded to "Idle", which
+                          claimed a running agent had gone quiet even when the
+                          server had never received a single heartbeat from it.
+                          `ls0.label` carries what the server actually knows. */}
+                      {ls0.dot === 'grey' && <p className="text-white/30 text-[10px] font-mono mt-0.5">{ls0.label} · last run {lastActiveLabel(displayAgents[0].id, agentRunsData)}</p>}
                     </div>
                   </div>
                   <p className="text-white/50 text-sm mb-4 leading-relaxed">{displayAgents[0].desc}</p>
@@ -108,9 +302,18 @@ export default function AgentsTab({
                         <div className="flex items-center gap-1.5">
                           <p className="text-white text-sm font-semibold truncate">{a.name}</p>
                           <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={ls.label} />
-                          {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
+                          {a.type === 'consultant' && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+                          )}
+                          <AgentModelBadge agent={a} />
                         </div>
                         <p className="text-white/50 text-xs truncate">{a.role}</p>
+                        {a.liveness === 'live' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            On duty
+                          </span>
+                        )}
                         <p className={`text-[10px] font-mono truncate ${ls.dot==='green'?'text-emerald-400/80':ls.dot==='amber'?'text-amber-400/70':'text-white/20'}`}>
                           {ls.dot === 'green' ? `↳ ${ls.label}` : ls.label}
                         </p>
@@ -144,7 +347,10 @@ export default function AgentsTab({
                           <div className="flex items-center gap-1.5">
                             <p className="text-white/40 text-sm font-semibold truncate">{a.name}</p>
                             <span className="text-[8px] px-1.5 py-0.5 rounded-full border border-white/10 text-white/50 bg-[#0f0f0f] font-semibold uppercase">Planned</span>
-                            {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
+                            {a.type === 'consultant' && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+                            )}
+                            <AgentModelBadge agent={a} />
                           </div>
                           <p className="text-white/30 text-xs truncate">{a.role}</p>
                         </div>
@@ -167,7 +373,7 @@ export default function AgentsTab({
 
               {/* Agent Detail View */}
               {agentModal && (
-                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} />
+                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} onRemoved={onAgentRemoved} />
               )}
             </div>
   )

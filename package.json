@@ -6,13 +6,23 @@
   "scripts": {
     "ensure-deps": "node -e \"if (!require('fs').existsSync('node_modules/next') || !require('fs').existsSync('node_modules/typescript')) { console.log('[ensure-deps] node_modules missing, installing...'); require('child_process').execSync('npm install --include=dev', {stdio:'inherit'}) }\"",
     "predev": "npm run ensure-deps",
-    "prebuild": "npm run ensure-deps",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "check:secrets": "node scripts/check-no-secrets.js",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "generate:required-tables": "node scripts/generate-required-tables.mjs",
+    "prebuild": "npm run ensure-deps && npm run check:secrets && npm run guard:no-silent-empty && npm run generate:required-tables",
     "prestart": "npm run ensure-deps",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "jest",
-    "prepare": "git config core.hooksPath .githooks"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "prepare": "node scripts/install-hooks.mjs",
+    "guard:no-silent-empty": "node scripts/no-silent-empty.mjs",
+    "verify:evidence": "node scripts/evidence/verify.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   },
   "keywords": [],
   "author": "",
@@ -21,8 +31,10 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.100.1",
     "autoprefixer": "^10.4.27",
+    "better-sqlite3": "^13.0.3",
     "lucide-react": "^1.7.0",
     "next": "^14.2.35",
+    "pg": "^8.23.0",
     "postcss": "^8.5.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -31,8 +43,11 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.7",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/jest": "^30.0.0",
     "@types/node": "25.5.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.2.14",
     "jest": "^30.3.0",
     "jest-environment-node": "^30.3.0",

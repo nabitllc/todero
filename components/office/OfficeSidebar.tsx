@@ -1,22 +1,19 @@
 "use client";
-import { useState, useCallback } from "react";
-import { ALL_AGENTS, ORCHESTRATOR_ID, DEPENDENCIES, AGENT_TASKS } from './officeConstants';
+import { useState, useCallback, useEffect } from "react";
+import { fetchJson, formatApiError } from '@/hooks/useApiData'
+import type { VaultBadgeInfo } from '@/lib/vault-badge'
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 export interface OfficeSidebarProps {
   // Display data
   roster: any[];
-  stats: { working: number; meeting: number; idle: number; completed: number };
+  stats: { working: number; idle: number; completed: number };
   feed: any[];
   feedRef: React.RefObject<HTMLDivElement | null>;
   detail: any;
   selectedId: string | null;
-  meetingLogs: any[];
   waterfall: any[];
   leaderboard: any[];
-  incidentLog: any[];
-  incident: any;
-  dialogue: any[];
   timeline: any[];
   realTaskCounts: Record<string, { h24: number; d7: number }>;
   boardTasks: Record<string, string>;
@@ -44,14 +41,47 @@ export interface OfficeSidebarProps {
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function OfficeSidebar(props: OfficeSidebarProps) {
   const {
-    roster, stats, feed, feedRef, detail, selectedId, meetingLogs, waterfall,
-    leaderboard, incidentLog, incident, dialogue, timeline, realTaskCounts,
+    roster, stats, feed, feedRef, detail, selectedId, waterfall,
+    leaderboard, timeline, realTaskCounts,
     boardTasks, liveRunsRef, theme, sidebarCollapsed, toggleSidebar, isMobile,
     setSelectedId, setDetail, ctxMenu, setCtxMenu, simRef, addFeed,
     volume, changeVolume,
   } = props;
 
   // ─── Local state ─────────────────────────────────────────────────────────
+  // Brain2 vault manifest data + the server-resolved model label, keyed by
+  // agent id — read from the same /api/agents rows every other model badge
+  // in the app reads. `modelById` is GET /api/agents' `model` field, which
+  // lib/resolve-dispatch-model.ts's `resolveDispatchModel()` computed
+  // server-side from the same chain walk the real spawn path runs — this
+  // used to be re-derived client-side via the deleted lib/vault-badge.ts's
+  // resolveVaultBadge() + an env-URL heuristic instead of just reading what
+  // the server already resolved. The pixel office's sprite roster is a
+  // fixed, non-vault list today, so `vaultById` (used only to gate the
+  // "Brain2" chip below) is a no-op for every id currently clickable on the
+  // canvas; it is wired up so the day a vault-only agent gets a sprite, this
+  // file does not stay the one "model badge" view that never learned about it.
+  const [vaultById, setVaultById] = useState<Record<string, VaultBadgeInfo>>({});
+  const [modelById, setModelById] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson<any>('/api/agents').then(r => {
+      if (cancelled || !r.ok) return;
+      const body = r.data;
+      const rows: any[] = Array.isArray(body?.agents) ? body.agents : [];
+      const vMap: Record<string, VaultBadgeInfo> = {};
+      const mMap: Record<string, string> = {};
+      for (const row of rows) {
+        if (!row?.id) continue;
+        if (row.vault) vMap[row.id] = row.vault;
+        if (typeof row.model === 'string' && row.model) mMap[row.id] = row.model;
+      }
+      setVaultById(vMap);
+      setModelById(mMap);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const [openPanels, setOpenPanels] = useState<Set<string>>(() => {
     try { const s = localStorage.getItem("office_panels"); return s ? new Set(JSON.parse(s)) : new Set(["feed"]); } catch { return new Set(["feed"]); }
   });
@@ -62,13 +92,22 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
     return next;
   });
 
+  // LEADERBOARD's 'session' tab is really tasksCompleted, which is rehydrated
+  // from localStorage on every load (officeDrawing.ts initAgents) — it does
+  // NOT reset when the browser session does. Label it for what it is: an
+  // all-time count kept in this browser, not "this session". The 24h/7d
+  // tabs are the honest ones — backed by a real /api/status query.
+  const lbTfLabel = (tf: 'session' | '24h' | '7d') => tf === 'session' ? 'ALL TIME (LOCAL)' : tf.toUpperCase();
+  const lbCountLabel = (tf: 'session' | '24h' | '7d') => tf === 'session' ? 'all time (local)' : tf === '24h' ? 'today' : 'this week';
+
   const [showConfig, setShowConfig] = useState(false);
   const [configAgent, setConfigAgent] = useState<any>(null);
   const [configEdits, setConfigEdits] = useState<any>({});
   const [showSettings, setShowSettings] = useState(false);
   const [lbTimeframe, setLbTimeframe] = useState<'session' | '24h' | '7d'>('session');
-  const [panelTimeframe, setPanelTimeframe] = useState<'session' | '24h' | '7d'>('session');
   const [sessionLog, setSessionLog] = useState<any[]>([]);
+  // TOD-654: why the session-log fetch failed, shown next to the button.
+  const [logError, setLogError] = useState<string | null>(null);
   const [loadingLog, setLoadingLog] = useState(false);
 
   const openConfig = (ag: any) => {
@@ -89,12 +128,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
   const ctxAction = (action: string) => {
     const ag = simRef.current?.agents?.find((a: any) => a.id === ctxMenu?.agentId);
     if (!ag) { setCtxMenu(null); return; }
-    if (action === "task" && ag.state === "idle") {
-      const tasks = AGENT_TASKS[ag.id] || [];
-      if (tasks.length) { ag.state = "working"; ag.task = tasks[Math.floor(Math.random() * tasks.length)]; ag.progress = 0; addFeed(`⚡ ${ag.name} force-assigned task`, ag.color); }
-    } else if (action === "complete" && ag.state === "working") {
-      ag.progress = 99.9;
-    } else if (action === "config") {
+    if (action === "config") {
       openConfig(ag);
     }
     setCtxMenu(null);
@@ -178,8 +212,6 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   <span className="text-[10px] font-bold" style={{ color: ag.color }}>{ag.name}</span>
                 </div>
                 {[
-                  { action: "task", label: "⚡ Assign random task", disabled: ag.state !== "idle" },
-                  { action: "complete", label: "✓ Force complete task", disabled: ag.state !== "working" },
                   { action: "config", label: "⚙ Configure agent", disabled: false },
                 ].map(item => (
                   <button key={item.action} onClick={() => ctxAction(item.action)} disabled={item.disabled}
@@ -201,7 +233,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {sidebarCollapsed && (
           <div className="flex flex-col items-center gap-0.5 py-1.5">
             {detail && <button onClick={() => toggleSidebar()} className="bg-transparent border-none text-base cursor-pointer p-1 min-w-[44px] min-h-[44px] flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-white/30 rounded-lg" style={{ color: detail.color }} title={detail.name}>{detail.emoji}</button>}
-            {[{ id: "feed", icon: "📡", label: "Feed" }, { id: "flow", icon: "✓", label: "Tasks" }, { id: "meetings", icon: "📅", label: "Meetings" }, { id: "board", icon: "🏆", label: "Leaderboard" }, { id: "incidents", icon: "🚨", label: "Incidents" }, { id: "deps", icon: "🔗", label: "Dependencies" }].map(p => (
+            {[{ id: "feed", icon: "📡", label: "Feed" }, { id: "flow", icon: "✓", label: "Tasks" }, { id: "board", icon: "🏆", label: "Leaderboard" }, { id: "deps", icon: "🔗", label: "Dependencies" }].map(p => (
               <button key={p.id} onClick={() => { if (!openPanels.has(p.id)) togglePanel(p.id); toggleSidebar(); }}
                 className={`border-none text-[13px] cursor-pointer rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-white/30 ${openPanels.has(p.id) ? 'bg-[#1a1a1a] text-[#a29bfe]' : 'bg-transparent text-white/30'}`}
                 title={p.label}>{p.icon}</button>
@@ -213,7 +245,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {!sidebarCollapsed && detail && (
           <div className="flex-shrink-0 border-b border-white/10 overflow-y-auto max-h-[45%]">
             <div className="sticky top-0 bg-[#080808] z-[1] flex items-center justify-between px-3 py-1 border-b border-white/10">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">AGENT DETAIL{detail.id === ORCHESTRATOR_ID ? " 👑" : ""}</span>
+              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">AGENT DETAIL{detail.isOrchestrator ? " 👑" : ""}</span>
               <div className="flex gap-1">
                 <button onClick={() => { setSelectedId(null); setDetail(null); }} className="bg-transparent border-none text-white/50 cursor-pointer text-xs font-[inherit] p-0 focus:outline-none focus:ring-2 focus:ring-white/30 rounded-lg">✕</button>
               </div>
@@ -242,9 +274,24 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   {liveRun.todayErrors > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-950/50 text-red-500">{liveRun.todayErrors} errors</span>}
                 </div>
               ) : null })()}
+              {/* Server-resolved model label — same GET /api/agents row every
+                  other model badge in the app reads. Only renders when the
+                  selected sprite's id has a Brain2 manifest. */}
+              {detail.id && vaultById[detail.id] && (() => {
+                return (
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#1a1a1a] text-white/70">{modelById[detail.id] ?? '—'}</span>
+                    <span
+                      className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+                      title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+                    >
+                      Brain2
+                    </span>
+                  </div>
+                )
+              })()}
               <div className="flex gap-3 mb-2">
                 <div className="text-center"><div className="text-sm font-bold" style={{ color: detail.color }}>{detail.tasksCompleted}</div><div className="text-[10px] text-white/50">TASKS</div></div>
-                <div className="text-center"><div className="text-sm text-[#FDCB6E] font-bold">{detail.meetingsAttended}</div><div className="text-[10px] text-white/50">MEETINGS</div></div>
               </div>
               {detail.taskHistory?.length > 0 && (
                 <div>
@@ -260,15 +307,23 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
               <div className="mt-1.5">
                 <button onClick={() => {
                   setLoadingLog(true);
-                  fetch(`/api/status`).then(r => r.json()).then(data => {
-                    const activity: any[] = data.recentActivity || [];
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+                  fetchJson<any>('/api/status').then(res => {
+                    if (!res.ok) { setLogError(formatApiError(res.error)); setSessionLog([]); setLoadingLog(false); return }
+                    setLogError(null);
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped activity rows
+                    const activity: any[] = res.data?.recentActivity || [];
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped activity rows
                     const agentLogs = activity.filter((a: any) => a.agentId === detail.id).slice(0, 10);
                     setSessionLog(agentLogs);
                     setLoadingLog(false);
-                  }).catch(() => { setSessionLog([]); setLoadingLog(false); });
+                  });
                 }} className="bg-[#1a1a1a] border border-white/10 rounded-lg text-[#a29bfe] px-2.5 py-1 text-[10px] cursor-pointer font-[inherit] w-full focus:outline-none focus:ring-2 focus:ring-white/30">
                   {loadingLog ? "Loading…" : "View Session Log"}
                 </button>
+                {logError && (
+                  <p className="mt-1.5 text-red-400 text-[10px] break-words">{logError}</p>
+                )}
                 {sessionLog.length > 0 && (
                   <div className="mt-1.5 max-h-[150px] overflow-y-auto bg-[#080808] border border-white/10 rounded-lg px-1.5 py-1">
                     {sessionLog.map((entry: any, i: number) => (
@@ -286,7 +341,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
             </div>
 
             {/* KAOS-specific: read-only exec terminal (MC-18) */}
-            {detail && detail.id === ORCHESTRATOR_ID && (
+            {detail && detail.isOrchestrator && (
               <div className="border-t border-white/10 px-3 py-2">
                 <div className="text-xs text-white/50 uppercase tracking-widest font-medium mb-1">EXEC OUTPUT</div>
                 <div className="bg-[#080808] border border-white/10 rounded-lg px-2 py-1.5 max-h-[180px] overflow-y-auto font-mono">
@@ -306,57 +361,41 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {/* Expandable panels — all in one scrollable container */}
         <div className={`flex-1 min-h-0 overflow-y-auto ${sidebarCollapsed ? 'hidden' : 'block'}`}>
 
-          {/* ▼ ACTIVITY FEED — always expanded */}
+          {/* ▼ ACTIVITY FEED — always expanded. feed is an in-memory array
+              that starts empty on every page load — there is no 24h/7d
+              window to filter by, so no timeframe tabs are offered here
+              (contrast LEADERBOARD below, whose 24h/7d tabs are backed by a
+              real /api/status query). */}
           <div>
             <div onClick={() => togglePanel("feed")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
               <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("feed") ? "▼" : "▶"} ACTIVITY FEED</span>
-              <span className="text-[9px] text-white/30">{feed.length}</span>
+              <span className="text-[9px] text-white/30">{feed.length} this session</span>
             </div>
             {openPanels.has("feed") && (
-              <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div ref={feedRef} className="max-h-[200px] overflow-y-auto py-1">
-                  {feed.slice(-80).filter((e: any) => {
-                    if (panelTimeframe === 'session') return true;
-                    return true;
-                  }).slice(-20).map((e: any) => <div key={e.id} className="px-3 py-0.5 flex gap-1 items-start">
-                    <span className="text-white/30 text-[9px] flex-shrink-0 mt-0.5">{e.ts}</span>
-                    <span className="text-[11px] leading-normal" style={{ color: e.color }}>{e.text}</span>
-                  </div>)}
-                </div>
-              </>
+              <div ref={feedRef} className="max-h-[200px] overflow-y-auto py-1">
+                {feed.slice(-20).map((e: any) => <div key={e.id} className="px-3 py-0.5 flex gap-1 items-start">
+                  <span className="text-white/30 text-[9px] flex-shrink-0 mt-0.5">{e.ts}</span>
+                  <span className="text-[11px] leading-normal" style={{ color: e.color }}>{e.text}</span>
+                </div>)}
+                {feed.length === 0 && <div className="text-white/30 text-[10px] text-center py-3">No agent events observed yet</div>}
+              </div>
             )}
           </div>
 
-          {/* ▶ COMPLETED TASKS */}
+          {/* ▶ COMPLETED TASKS — same in-memory, session-only array as the
+              feed above; no timeframe tabs for the same reason. */}
           <div>
             <div onClick={() => togglePanel("flow")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
               <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("flow") ? "▼" : "▶"} COMPLETED TASKS</span>
-              <span className={`text-[9px] ${waterfall.length > 0 ? 'text-[#00ff88]' : 'text-white/30'}`}>{waterfall.length}</span>
+              <span className={`text-[9px] ${waterfall.length > 0 ? 'text-[#00ff88]' : 'text-white/30'}`}>{waterfall.length} this session</span>
             </div>
             {openPanels.has("flow") && (
               <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
                 <div className="max-h-[200px] overflow-y-auto">
                   {waterfall.length === 0 && <div className="px-3 py-3 text-white/30 text-[11px] text-center leading-relaxed">Completions appear when agents finish work.</div>}
                   {waterfall.map((wf: any) => {
-                    const ag = ALL_AGENTS.find(a => a.id === wf.agentId);
+                    const ag = roster.find(a => a.id === wf.agentId);
                     if (!ag) return null;
-                    const deps = DEPENDENCIES[wf.agentId];
                     return (
                       <div key={wf.id} className="px-3 py-1 border-b border-white/10">
                         <div className="flex items-center gap-1.5 mb-0.5">
@@ -365,48 +404,9 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                           <span className="text-white/50 text-[10px]">✓ {wf.task}</span>
                           <span className="text-white/30 text-[9px] ml-auto">{wf.ts}</span>
                         </div>
-                        {deps && deps.length > 0 && (
-                          <div className="pl-4 flex items-center gap-1 flex-wrap">
-                            <span className="text-white/50 text-[9px]">triggers →</span>
-                            {deps.map(depId => { const dep = ALL_AGENTS.find(a => a.id === depId); return dep ? <span key={depId} className="text-[9px] px-1 py-px rounded" style={{ color: dep.color, background: dep.color + "15" }}>{dep.emoji} {dep.name}</span> : null; })}
-                          </div>
-                        )}
                       </div>
                     );
                   })}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* ▶ MEETINGS */}
-          <div>
-            <div onClick={() => togglePanel("meetings")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("meetings") ? "▼" : "▶"} MEETINGS</span>
-              <span className={`text-[9px] ${meetingLogs.length > 0 ? 'text-[#FDCB6E]' : 'text-white/30'}`}>{meetingLogs.length}</span>
-            </div>
-            {openPanels.has("meetings") && (
-              <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div className="max-h-[200px] overflow-y-auto">
-                  {meetingLogs.length === 0 && <div className="px-3 py-3 text-white/30 text-[11px] text-center">Transcripts appear after meetings end.</div>}
-                  {meetingLogs.map((m: any) => (
-                    <div key={m.id} className="px-3 py-2 border-b border-white/10">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[#FDCB6E] text-[11px] font-semibold">{m.topic}</span>
-                        <span className="text-white/30 text-[9px]">{m.ts}</span>
-                      </div>
-                      <div className="text-white/50 text-[10px] mb-1">{m.attendees.join(", ")}</div>
-                      <div className="text-white/70 text-[11px] leading-relaxed whitespace-pre-line">{m.summary}</div>
-                    </div>
-                  ))}
                 </div>
               </>
             )}
@@ -416,7 +416,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
           <div>
             <div onClick={() => togglePanel("board")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
               <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("board") ? "▼" : "▶"} LEADERBOARD</span>
-              <span className="text-[9px] text-white/30 uppercase">{lbTimeframe}</span>
+              <span className="text-[9px] text-white/30 uppercase">{lbTfLabel(lbTimeframe)}</span>
             </div>
             {openPanels.has("board") && (
               <div>
@@ -425,7 +425,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   {(['session', '24h', '7d'] as const).map(tf => (
                     <button key={tf} onClick={(e) => { e.stopPropagation(); setLbTimeframe(tf); }}
                       className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/30 ${lbTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
+                      {lbTfLabel(tf)}
                     </button>
                   ))}
                 </div>
@@ -437,7 +437,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                         : lbTimeframe === '24h' ? real.h24
                         : real.d7;
                       return { ...a, displayCount: count };
-                    }).sort((a, b) => b.displayCount - a.displayCount || b.efficiency - a.efficiency);
+                    }).sort((a, b) => b.displayCount - a.displayCount);
                     if (ranked.every(a => a.displayCount === 0)) return (
                       <div className="px-3 py-3 text-white/30 text-[11px] text-center">
                         {lbTimeframe === 'session' ? 'Collecting data…' : 'No activity in this window'}
@@ -451,7 +451,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                         <span className="text-[11px]">{a.emoji}</span>
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-semibold" style={{ color: a.color }}>{a.name}</div>
-                          <div className="text-[10px] text-[#00ff88]">{a.displayCount} {lbTimeframe === 'session' ? 'this session' : lbTimeframe === '24h' ? 'today' : 'this week'}</div>
+                          <div className="text-[10px] text-[#00ff88]">{a.displayCount} {lbCountLabel(lbTimeframe)}</div>
                         </div>
                       </div>
                     ));
@@ -461,74 +461,18 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
             )}
           </div>
 
-          {/* ▶ INCIDENT LOG */}
-          <div>
-            <div onClick={() => togglePanel("incidents")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("incidents") ? "▼" : "▶"} INCIDENT LOG</span>
-              <span className={`text-[9px] ${incidentLog.length > 0 ? 'text-red-500' : 'text-white/30'}`}>{incidentLog.length}</span>
-            </div>
-            {openPanels.has("incidents") && (
-              <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div className="max-h-[160px] overflow-y-auto">
-                  {incident && (
-                    <div className="px-3 py-1.5 bg-red-950/30 border-b border-red-900/30 flex items-center gap-1.5">
-                      <span className="text-[11px]">🔴</span>
-                      <div className="flex-1">
-                        <div className="text-red-500 text-[11px] font-bold">{incident.title}</div>
-                        <div className="text-red-400 text-[10px]">Active — all hands</div>
-                      </div>
-                    </div>
-                  )}
-                  {incidentLog.length === 0 && !incident && <div className="px-3 py-3 text-white/30 text-[11px] text-center">No incidents recorded.</div>}
-                  {incidentLog.map((inc: any) => (
-                    <div key={inc.id} className="px-3 py-1 border-b border-white/10 flex items-center gap-1.5">
-                      <span className="text-[10px]">✓</span>
-                      <div className="flex-1">
-                        <div className="text-white/50 text-[11px]">{inc.title}</div>
-                        <div className="text-white/30 text-[9px]">Resolved {inc.ts}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* ▶ DEPENDENCY CHAINS */}
-          <div>
-            <div onClick={() => togglePanel("deps")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("deps") ? "▼" : "▶"} DEPENDENCY CHAINS</span>
-              <span className="text-[9px] text-white/30">{Object.keys(DEPENDENCIES).length}</span>
-            </div>
-            {openPanels.has("deps") && (
-              <div className="max-h-[180px] overflow-y-auto p-3">
-                {Object.entries(DEPENDENCIES).map(([src, dsts]) => {
-                  const srcAg = roster.find(a => a.id === src);
-                  if (!srcAg) return null;
-                  return (
-                    <div key={src} className="mb-1 px-2 py-1 bg-[#1a1a1a] rounded-lg border text-[10px]" style={{ borderColor: srcAg.color + "22" }}>
-                      <span className="font-bold" style={{ color: srcAg.color }}>{srcAg.emoji} {srcAg.name}</span>
-                      <span className="text-white/50"> → </span>
-                      {dsts.map(d => { const dag = roster.find(a => a.id === d); return dag ? <span key={d} className="mr-1.5" style={{ color: dag.color }}>{dag.emoji} {dag.name}</span> : null; })}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* TOD (agent-roster-truth): the "DEPENDENCY CHAINS" panel used to
+              render a hardcoded reporting hierarchy (main → scout/kemuni-sme/
+              vespera-sme, …) for whatever ids happened to still be in the
+              roster — a static org chart presented as observed structure.
+              There is no real dependency/reporting graph in /api/agents (or
+              anywhere else) yet, so the panel is gone rather than kept
+              showing an assumed hierarchy dressed as data. */}
         </div>{/* end expandable panels */}
 
         {/* Stats bar */}
         <div className={`flex-shrink-0 border-t border-white/10 py-1.5 ${sidebarCollapsed ? 'hidden' : 'flex'}`}>
-          {[{ l: "DONE", v: stats.completed, c: "#6C5CE7" }, { l: "ACTIVE", v: stats.working, c: "#00ff88" }, { l: "MTG", v: stats.meeting, c: "#FDCB6E" }, { l: "IDLE", v: stats.idle, c: "#3a3a5e" }].map((s, i, arr) => (
+          {[{ l: "DONE", v: stats.completed, c: "#6C5CE7" }, { l: "ACTIVE", v: stats.working, c: "#00ff88" }, { l: "IDLE", v: stats.idle, c: "#3a3a5e" }].map((s, i, arr) => (
             <div key={s.l} className={`flex-1 text-center ${i < arr.length - 1 ? 'border-r border-white/10' : ''}`}>
               <div className="text-base font-bold leading-none" style={{ color: s.c }}>{s.v}</div>
               <div className="text-[10px] text-white/30 tracking-wide mt-0.5">{s.l}</div>
@@ -539,7 +483,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {/* Event timeline strip */}
         {timeline.length > 0 && (
           <div className="flex-shrink-0 border-t border-white/10 px-3 py-1">
-            <div className="h-[5px] bg-[#080808] rounded overflow-hidden relative" title="Session events: green=task, gold=meeting, red=incident">
+            <div className="h-[5px] bg-[#080808] rounded overflow-hidden relative" title="Session events: green=task started/completed">
               {timeline.map((ev: any, i: number) => (
                 <div key={i} title={`${ev.ts} — ${ev.label}`} className="absolute top-0 w-[3px] h-full rounded-sm opacity-70 -translate-x-1/2"
                   style={{

@@ -1,7 +1,8 @@
 // TOD-939: Best-effort cost logging for agent completions
 // Never blocks route — all errors are swallowed with console.warn
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+
+import { db, dbMissingEnv } from '@/lib/db'
 
 interface CostEntry {
   project: string
@@ -17,25 +18,16 @@ interface CostEntry {
  * Returns true if inserted, false if failed (never throws).
  */
 export async function logAgentCost(entry: CostEntry): Promise<boolean> {
-  const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supaKey) {
-    console.warn('[agent-cost-log] SUPABASE_SERVICE_ROLE_KEY not set — skipping cost log')
+  const missing = dbMissingEnv()
+  if (missing.length > 0) {
+    console.warn(`[agent-cost-log] database not configured (missing ${missing.join(', ')}) — skipping cost log`)
     return false
   }
 
   try {
-    const res = await fetch(`${SUPA_URL}/rest/v1/agent_cost_log`, {
-      method: 'POST',
-      headers: {
-        'apikey': supaKey,
-        'Authorization': `Bearer ${supaKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-      },
-      body: JSON.stringify(entry),
-    })
-    if (!res.ok) {
-      console.warn(`[agent-cost-log] INSERT failed: ${res.status} ${res.statusText}`)
+    const { error } = await db().from('agent_cost_log').insert({ ...entry })
+    if (error) {
+      console.warn(`[agent-cost-log] INSERT failed: ${error.message}`)
       return false
     }
     return true

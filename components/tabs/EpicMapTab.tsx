@@ -1,7 +1,9 @@
 'use client'
 // TOD-936, TOD-937: Epic Map canvas — epic blocks with feature nesting, pan/keyboard nav
 
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useRef, useState, useCallback } from 'react'
+import { useApiList } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
   id: string
@@ -34,30 +36,13 @@ function getStatusColors(status: string) {
 }
 
 export default function EpicMapTab() {
-  const [epics, setEpics] = useState<Issue[]>([])
-  const [features, setFeatures] = useState<Issue[]>([])
-  const [loading, setLoading] = useState(true)
+  const { items, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0')
+  const epics = (items ?? []).filter(i => i.type === 'epic')
+  const features = (items ?? []).filter(i => i.type === 'feature')
   const [pan, setPan] = useState({ x: 24, y: 24 })
   const dragging = useRef(false)
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/issues?limit=0')
-        if (res.ok) {
-          const d = await res.json()
-          const all: Issue[] = Array.isArray(d) ? d : d?.data ?? []
-          setEpics(all.filter(i => i.type === 'epic'))
-          setFeatures(all.filter(i => i.type === 'feature'))
-        }
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     dragging.current = true
@@ -84,6 +69,14 @@ export default function EpicMapTab() {
 
   if (loading) {
     return <div className="flex items-center justify-center h-48 text-white/30 text-sm">Loading…</div>
+  }
+
+  if (error) {
+    return (
+      <div className="p-3">
+        <ApiErrorBanner error={error} onRetry={refetch} />
+      </div>
+    )
   }
 
   if (epics.length === 0) {

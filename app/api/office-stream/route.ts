@@ -5,6 +5,7 @@ export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/hub-client';
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const AGENT_IDS = ['builder', 'po', 'tester', 'ops', 'deployer', 'auditor', 'main', 'scout'];
 
@@ -49,6 +50,12 @@ async function getAgentTaskMap(): Promise<Record<string, string>> {
 }
 
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const encoder = new TextEncoder();
   let lastStateStr = '';
   let alive = true;

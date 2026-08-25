@@ -124,5 +124,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 
 /** Check if a role has a specific permission */
 export function hasPermission(role: Role, permission: Permission): boolean {
-  return ROLE_PERMISSIONS[role].includes(permission)
+  // `role` arrives from cookies and headers, so an unrecognised value reaches
+  // here as a string that is not a key. Grant nothing rather than throwing —
+  // a TypeError inside a permission check reads as a 500, not a denial.
+  return ROLE_PERMISSIONS[role]?.includes(permission) ?? false
 }

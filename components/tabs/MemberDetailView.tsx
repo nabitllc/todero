@@ -1,5 +1,7 @@
 'use client'
 import React, { useState, useEffect, useCallback } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import { X, Clock } from 'lucide-react'
 import { Button } from '@/components/ui'
 import AssignedPanel from '@/components/tabs/AssignedPanel'
@@ -24,18 +26,25 @@ export default function MemberDetailView({ member, onClose, onNavigateToIssue }:
   const [activeTab, setActiveTab] = useState<'assigned' | 'activity'>('assigned')
   const [assignedIssues, setAssignedIssues] = useState<Issue[]>([])
   const [activityFeed, setActivityFeed] = useState<ActivityItem[]>([])
+  // TOD-654: a refused member query must not render as an empty profile.
+  const [loadError, setLoadError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(() => {
     setLoading(true)
-    fetch(`/api/members/${encodeURIComponent(member.id)}`)
-      .then(r => r.json())
-      .then(data => {
-        setAssignedIssues(Array.isArray(data.assignedIssues) ? data.assignedIssues : [])
-        setActivityFeed(Array.isArray(data.activityFeed) ? data.activityFeed : [])
+    fetchJson<{ assignedIssues?: Issue[]; activityFeed?: ActivityItem[] }>(`/api/members/${encodeURIComponent(member.id)}`)
+      .then(res => {
+        if (!res.ok) {
+          setLoadError(res.error)
+          setAssignedIssues([]); setActivityFeed([]); setLoading(false)
+          return
+        }
+        setLoadError(null)
+        const data = res.data
+        setAssignedIssues(Array.isArray(data?.assignedIssues) ? data.assignedIssues : [])
+        setActivityFeed(Array.isArray(data?.activityFeed) ? data.activityFeed : [])
+        setLoading(false)
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
   }, [member.id])
 
   useEffect(() => { load() }, [load])
@@ -77,11 +86,11 @@ export default function MemberDetailView({ member, onClose, onNavigateToIssue }:
         <div className="grid grid-cols-2 gap-3 px-5 pt-4 pb-2 shrink-0">
           <div className="bg-[#0f0f0f] border border-white/10 rounded-xl px-4 py-3">
             <p className="text-white/30 text-[10px] mb-0.5">Assigned</p>
-            <p className="text-white/70 text-lg font-bold">{loading ? '—' : assignedIssues.length}</p>
+            <p className="text-white/70 text-lg font-bold">{loading || loadError ? '—' : assignedIssues.length}</p>
           </div>
           <div className="bg-[#0f0f0f] border border-white/10 rounded-xl px-4 py-3">
             <p className="text-white/30 text-[10px] mb-0.5">Recent Activity</p>
-            <p className="text-white/70 text-lg font-bold">{loading ? '—' : activityFeed.length}</p>
+            <p className="text-white/70 text-lg font-bold">{loading || loadError ? '—' : activityFeed.length}</p>
           </div>
         </div>
 
@@ -104,10 +113,13 @@ export default function MemberDetailView({ member, onClose, onNavigateToIssue }:
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto px-5 pb-5">
-          {activeTab === 'assigned' && (
+          {/* TOD-654: a refused member query is stated, never drawn as an
+              empty profile with zero issues and no activity. */}
+          {loadError && <ApiErrorBanner error={loadError} onRetry={load} />}
+          {!loadError && activeTab === 'assigned' && (
             <AssignedPanel issues={assignedIssues} loading={loading} onNavigate={onNavigateToIssue} />
           )}
-          {activeTab === 'activity' && (
+          {!loadError && activeTab === 'activity' && (
             <ActivityPanel items={activityFeed} loading={loading} />
           )}
         </div>

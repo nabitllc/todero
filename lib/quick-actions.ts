@@ -1,60 +1,56 @@
 // INF-206: Quick-action floating button — schema, types, and data layer
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter, type DbError } from '@/lib/db'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
+// TOD: kill-fake-infra-greens — client-safe types/defaults moved to
+// lib/quick-actions-constants.ts (see that file for why); re-exported here so
+// existing server-side callers see no change. New client code should import
+// lib/quick-actions-constants directly rather than through this file.
+export type { QuickActionType, QuickAction } from '@/lib/quick-actions-constants'
+export { DEFAULT_QUICK_ACTIONS } from '@/lib/quick-actions-constants'
+import { DEFAULT_QUICK_ACTIONS, type QuickAction } from '@/lib/quick-actions-constants'
 
-// Lazy-init: avoids crashing at build time when SUPABASE_SERVICE_ROLE_KEY isn't
+// Lazy-init: avoids crashing at build time when the database credentials aren't
 // set (CI). First call throws if still missing. (TOD-2296)
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    _supabase = db()
   }
   return _supabase
 }
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
-export type QuickActionType = 'create_issue' | 'start_chat' | 'run_agent' | 'navigate' | 'custom'
-
-export interface QuickAction {
-  id: string
-  label: string
-  icon: string
-  action_type: QuickActionType
-  payload: Record<string, unknown>
-  sort_order: number
-  enabled: boolean
-  created_at: string
-}
-
-// ── Default quick actions (no DB needed for v1) ────────────────────────────
-
-export const DEFAULT_QUICK_ACTIONS: Omit<QuickAction, 'id' | 'created_at'>[] = [
-  { label: 'New Issue',     icon: '📝', action_type: 'create_issue', payload: {},                       sort_order: 0, enabled: true },
-  { label: 'New Chat',      icon: '💬', action_type: 'start_chat',   payload: {},                       sort_order: 1, enabled: true },
-  { label: 'Run Builder',   icon: '🔨', action_type: 'run_agent',    payload: { agent: 'builder' },     sort_order: 2, enabled: true },
-  { label: 'Go to Board',   icon: '📋', action_type: 'navigate',     payload: { tab: 'board' },         sort_order: 3, enabled: true },
-  { label: 'Go to Infra',   icon: '⚙️', action_type: 'navigate',     payload: { tab: 'infra' },         sort_order: 4, enabled: true },
-]
-
 // ── Data layer (persisted actions — optional, falls back to defaults) ──────
 
-export async function listQuickActions(): Promise<QuickAction[]> {
+/**
+ * Falls back to DEFAULT_QUICK_ACTIONS only when the query genuinely found no
+ * rows (a fresh workspace that never customized its actions) — never when the
+ * query itself failed. It used to fabricate the same four default rows with
+ * a fresh `created_at` on ANY error, including a missing `quick_actions`
+ * table, which made `/api/quick-actions` return 200 with invented data on
+ * exactly the failure `/api/health` now reports as a 503. A missing table is
+ * now returned as an error, exactly like every other query in this codebase,
+ * so the route can answer with the same honest 424 as the rest of the API
+ * (see app/api/quick-actions/route.ts).
+ */
+export async function listQuickActions(): Promise<{ data: QuickAction[]; error: DbError | null }> {
   const { data, error } = await getSupabase()
     .from('quick_actions')
     .select('*')
     .eq('enabled', true)
     .order('sort_order', { ascending: true })
-  if (error || !data?.length) {
+  if (error) return { data: [], error }
+  if (!data?.length) {
     // Return defaults as QuickAction shape
-    return DEFAULT_QUICK_ACTIONS.map((a, i) => ({
-      ...a,
-      id: `default-${i}`,
-      created_at: new Date().toISOString(),
-    }))
+    return {
+      data: DEFAULT_QUICK_ACTIONS.map((a, i) => ({
+        ...a,
+        id: `default-${i}`,
+        created_at: new Date().toISOString(),
+      })),
+      error: null,
+    }
   }
-  return data as QuickAction[]
+  return { data: data as QuickAction[], error: null }
 }
 
 export async function upsertQuickAction(action: Partial<QuickAction> & { label: string }) {

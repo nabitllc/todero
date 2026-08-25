@@ -1,20 +1,29 @@
 'use client'
 import React, { useState, useEffect } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import AgentOffice from '@/components/AgentOffice'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
+import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
+import { formatElapsed } from '@/components/office/officeDrawing'
 
-function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}> }) {
+function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}> }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
   const [runs, setRuns] = useState<any[]>([])
+  const [runsError, setRunsError] = useState<ApiError | null>(null)
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
-    const SUPA = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const fetchRuns = () => {
-      fetch(`${SUPA}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`, {
-        headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-      }).then(r => r.json()).then(data => {
-        if (Array.isArray(data)) setRuns(data)
-      }).catch(() => {})
+      const url = dbUrl(`agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+      fetchJson<any[]>(url, { headers: dbRestHeaders() }).then(res => {
+        // TOD-654: a refused query keeps the banner up instead of showing
+        // "no runs" as though the office were simply idle.
+        if (!res.ok) { setRunsError(res.error); setRuns([]); return }
+        setRunsError(null)
+        if (Array.isArray(res.data)) setRuns(res.data)
+      })
     }
     fetchRuns()
     // Slowed from 30s → 120s to reduce egress; office activity is not time-critical
@@ -28,18 +37,20 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
     builder:{name:'Builder',emoji:'🔨'}, tester:{name:'Tester',emoji:'🧪'}, deployer:{name:'Deployer',emoji:'🚀'},
   }
 
-  const activeRuns = runs.filter(r => {
-    if (r.status === 'running') return true
-    if (!r.started_at) return false
-    return (Date.now() - new Date(r.started_at).getTime()) < 300000 // 5 min
-  })
-  const completedRuns = runs.filter(r => r.status !== 'running' && (r.started_at ? (Date.now() - new Date(r.started_at).getTime()) >= 300000 : true)).slice(0, 10)
+  // Single shared liveness rule (hooks/useAgentStatus.ts:runLiveness) — the
+  // canvas's "0 ACTIVE" and this panel's "Active (n)" can never disagree,
+  // because they both run the same function over the same rows. A
+  // status='running' row that outlived the staleness window is 'stale'
+  // (orphaned — the process died without reporting), never 'live'.
+  const liveRuns = runs.filter(r => runLiveness(r) === 'live')
+  const staleRuns = runs.filter(r => runLiveness(r) === 'stale')
+  const endedRuns = runs.filter(r => runLiveness(r) === 'ended')
+  const completedRuns = endedRuns.slice(0, 10)
   const failedRuns = runs.filter(r => r.status === 'error')
 
-  const fmtRuntime = (startedAt: string) => {
-    const mins = Math.round((Date.now() - new Date(startedAt).getTime()) / 60000)
-    return mins < 1 ? '<1m' : mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`
-  }
+  // Same formula the office canvas renders under a working agent
+  // (officeDrawing.ts formatElapsed) — one source of truth for elapsed time.
+  const fmtRuntime = (startedAt: string) => formatElapsed(startedAt) || '<1m'
 
   return (
     <div className={`absolute top-3 right-3 z-10 rounded-xl border border-white/10/60 shadow-2xl transition-all ${collapsed ? 'w-10' : 'w-72'}`}
@@ -54,12 +65,15 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
             <span className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Subagent Activity</span>
             <button onClick={() => setCollapsed(true)} className="text-white/30 hover:text-white/70 text-xs">▶</button>
           </div>
+          {runsError && <ApiErrorBanner error={runsError} />}
 
-          {/* Active */}
-          {activeRuns.length > 0 && (
+          {/* Active — 'live' only. Zero here must read "No active subagents"
+              even when stale (orphaned) rows exist below, so this header can
+              never contradict the canvas's own active count. */}
+          {liveRuns.length > 0 ? (
             <div>
-              <div className="text-[9px] text-emerald-400/70 uppercase tracking-widest mb-1.5 font-semibold">Active ({activeRuns.length})</div>
-              {activeRuns.map((r, i) => {
+              <div className="text-[9px] text-emerald-400/70 uppercase tracking-widest mb-1.5 font-semibold">Active ({liveRuns.length})</div>
+              {liveRuns.map((r, i) => {
                 const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
                 return (
                   <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
@@ -74,9 +88,33 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
                 )
               })}
             </div>
-          )}
-          {activeRuns.length === 0 && (
+          ) : (
             <div className="text-white/30 text-[10px] text-center py-2">No active subagents</div>
+          )}
+
+          {/* Stale — a 'running' row that outlived the staleness window
+              without a terminal status. The process died without reporting;
+              this is never rendered as live (no pulsing dot, no green,
+              no climbing timer — the age shown is time since the last
+              recorded heartbeat, not an ongoing run). */}
+          {staleRuns.length > 0 && (
+            <div>
+              <div className="text-[9px] text-amber-400/70 uppercase tracking-widest mb-1.5 font-semibold">Stale — process ended without reporting ({staleRuns.length})</div>
+              {staleRuns.map((r, i) => {
+                const ag = AGENT_NAMES[r.agent_id] || { name: r.agent_id, emoji: '🤖' }
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                    <span className="text-xs">{ag.emoji}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white/80 text-[11px] font-medium truncate">{ag.name}</p>
+                      <p className="text-white/40 text-[9px] truncate">{r.task_title || 'Unknown task'}</p>
+                    </div>
+                    {r.started_at && <span className="text-[9px] text-amber-400/60 font-mono shrink-0" title="time since last heartbeat">{fmtRuntime(r.started_at)} ago</span>}
+                  </div>
+                )
+              })}
+            </div>
           )}
 
           {/* Failed */}
@@ -122,7 +160,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
 export default function OfficeTab({
   agentRunsData,
 }: {
-  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>
+  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>
 }) {
   return (
             <div className="h-[calc(100vh-88px)] -mx-6 -my-5 relative">

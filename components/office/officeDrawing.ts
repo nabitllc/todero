@@ -3,15 +3,31 @@
 // Contains ALL drawing functions, helpers, localStorage, audio, camera, day/night.
 
 import {
-  MAP_COLS, MAP_ROWS, STANCHION_R, ORCHESTRATOR_ID,
-  ALL_AGENTS, ACTIVE_IDS, DESK_POS, BENCH_POS,
+  MAP_COLS, MAP_ROWS, STANCHION_R,
+  deskSlot, benchSlot,
   ORCH_TX, ORCH_TY, CONF_TX, CONF_TY, CONF_TW, CONF_TH,
   ROW_Y, COL_X,
-  THEMES, PLANNED_LABELS,
+  THEMES,
   LS_KEY,
-  DEPENDENCIES,
 } from './officeConstants';
 import type { AgentRunInfo, ThemeKey } from './officeConstants';
+
+// The one roster shape initAgents() ever accepts: whatever /api/agents
+// actually returned (mapped in AgentOffice.tsx), never a hardcoded stand-in.
+export interface RosterAgent {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  role: string;
+  active: boolean;
+  [key: string]: any;
+}
+
+/** "Chief Orchestrator", "Orchestrator" — the one role AGENT_META/AGENTS.md use for the lead seat. Never assumes a specific id. */
+export function isOrchestratorRole(role: string | undefined | null): boolean {
+  return !!role && /orchestrat/i.test(role);
+}
 
 // Re-export types for consumers
 export type { AgentRunInfo, ThemeKey };
@@ -20,17 +36,20 @@ export type { AgentRunInfo, ThemeKey };
 export function tileCenterPx(tx:number,ty:number,T:number){ return { x:(tx+0.5)*T, y:(ty+0.5)*T }; }
 export function fmt(n:number){ return n<10?"0"+n:""+n; }
 export function nowts(){ const d=new Date(); return `${fmt(d.getHours())}:${fmt(d.getMinutes())}:${fmt(d.getSeconds())}`; }
-export function lpath(fx:number,fy:number,tx:number,ty:number){ return [{x:tx,y:fy},{x:tx,y:ty}]; }
 export function clamp(v:number,lo:number,hi:number){ return Math.max(lo,Math.min(hi,v)); }
 
-export function confRingPos(n:number,T:number){
-  const cx=(CONF_TX+CONF_TW/2)*T, cy=(CONF_TY+CONF_TH/2)*T;
-  const rx=T*(CONF_TW/2+0.5), ry=T*(CONF_TH/2+0.5);
-  return Array.from({length:n},(_,i)=>{
-    const a=(i/n)*Math.PI*2-Math.PI/2;
-    return { x:cx+Math.cos(a)*rx, y:cy+Math.sin(a)*ry };
-  });
+// The one quantity actually observed for a working agent: elapsed wall-clock
+// time since agent_runs.started_at. Same formula OfficeTab.tsx renders in the
+// roster (fmtRuntime) — kept here as the single source so the canvas and the
+// tab can never disagree. There is no real completion fraction anywhere in
+// agent_runs, so this is intentionally text, not a bar: a bar implies a
+// measured percent-done that nothing computes.
+export function formatElapsed(startedAt: string | null | undefined): string | null {
+  if(!startedAt) return null;
+  const mins=Math.max(0,Math.round((Date.now()-new Date(startedAt).getTime())/60000));
+  return mins<1?"<1m":mins<60?`${mins}m`:`${Math.floor(mins/60)}h ${mins%60}m`;
 }
+
 export function mkBurst(x:number,y:number,color:string){
   return Array.from({length:12},(_,i)=>{
     const a=(i/12)*Math.PI*2, spd=2.5+Math.random()*3;
@@ -43,32 +62,38 @@ export function loadMemory(){ try{return JSON.parse(localStorage.getItem(LS_KEY)
 export function saveMemory(agents:any[]){
   try{
     const m:any={};
-    agents.forEach(ag=>{m[ag.id]={tasksCompleted:ag.tasksCompleted,meetingsAttended:ag.meetingsAttended,timeWorking:ag.timeWorking,timeMeeting:ag.timeMeeting,taskHistory:ag.taskHistory};});
+    agents.forEach(ag=>{m[ag.id]={tasksCompleted:ag.tasksCompleted,timeWorking:ag.timeWorking,taskHistory:ag.taskHistory};});
     localStorage.setItem(LS_KEY,JSON.stringify(m));
   }catch(e){}
 }
 
-export function initAgents(T:number, activeIds:string[]){
+// Builds sim agents from the REAL roster only. Placement is computed, not
+// looked up: the first agent whose role reads as orchestrator (or, failing
+// that, the first agent at all) gets the orchestrator desk; every other
+// `active` agent gets the next open desk slot in encounter order; every
+// non-active agent gets the next bench slot. Nothing here can fabricate an
+// agent that was not in `roster`, and nothing here decides who is active —
+// that came from /api/agents.
+export function initAgents(T:number, roster: RosterAgent[]){
   const mem=loadMemory();
-  return ALL_AGENTS.map(a=>{
-    const isActive=activeIds.includes(a.id);
-    const posMap:any=isActive?DESK_POS:BENCH_POS;
-    const tp=posMap[a.id]||{tx:2,ty:STANCHION_R+0.8};
-    const orch=(a.id===ORCHESTRATOR_ID);
-    const {x,y}=tileCenterPx(tp.tx+(orch?1.1:0.75), tp.ty+(orch?1.0:0.85), T);
+  const orchestratorId = roster.find(a=>isOrchestratorRole(a.role))?.id ?? roster[0]?.id ?? null;
+  let deskI=0, benchI=0;
+  return roster.map(a=>{
+    const isOrch = a.id===orchestratorId;
+    const tp = isOrch ? {tx:ORCH_TX,ty:ORCH_TY} : (a.active ? deskSlot(deskI++) : benchSlot(benchI++));
+    const {x,y}=tileCenterPx(tp.tx+(isOrch?1.1:0.75), tp.ty+(isOrch?1.0:0.85), T);
     const saved:any=mem[a.id]||{};
     return {...a,
-      active:isActive, spawning:false, spawnAge:0,
+      isOrchestrator:isOrch,
+      active:a.active, spawning:false, spawnAge:0,
       state:"idle",task:null,progress:0,
-      px:x,py:y,waypoints:[],deskX:x,deskY:y,
-      facing:"down",animTick:0,idleCooldown:0,
+      px:x,py:y,waypoints:[],deskX:x,deskY:y,deskTx:tp.tx,deskTy:tp.ty,
+      facing:"down",animTick:0,
+      personality: a.personality ?? { workBurst:0.85, focusDuration:3 },
       taskHistory:saved.taskHistory||[],
-      monologue:null,
       timeWorking:saved.timeWorking||0,
       timeIdle:0,
-      timeMeeting:saved.timeMeeting||0,
       tasksCompleted:saved.tasksCompleted||0,
-      meetingsAttended:saved.meetingsAttended||0,
       mood:88,
       glowTick:0, // flashes on state transition
       lastStateChange:Date.now(),
@@ -93,8 +118,6 @@ export function createAudio(){
       master,
       playClick(){[0,100,200].forEach(d=>setTimeout(()=>note(700+Math.random()*400,0.04),d));},
       playComplete(){[523,659,784].forEach((f,i)=>setTimeout(()=>note(f,0.2,"sine",0.11),i*90));},
-      playMeeting(){note(330,0.4,"sine",0.09);},
-      playIncident(){[200,150,100].forEach((f,i)=>setTimeout(()=>note(f,0.3,"sawtooth",0.14),i*80));},
       playSpawn(){[440,554,659].forEach((f,i)=>setTimeout(()=>note(f,0.15,"sine",0.10),i*70));},
     };
   }catch(e){return null;}
@@ -117,7 +140,7 @@ export function clampCam(cam:any,W:number,H:number){
 export function applyCamera(ctx:CanvasRenderingContext2D,cam:any){ctx.translate(cam.x,cam.y);ctx.scale(cam.z,cam.z);}
 
 // ─── Draw floor ───────────────────────────────────────────────────────────────
-export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,incidentActive:boolean,thm:typeof THEMES.A,showGrid:boolean){
+export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,thm:typeof THEMES.A,showGrid:boolean){
   ctx.save();applyCamera(ctx,cam);
   for(let r=0;r<MAP_ROWS;r++) for(let c=0;c<MAP_COLS;c++){
     const hold=r>STANCHION_R;
@@ -135,7 +158,6 @@ export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlph
     ctx.fillStyle=thm.rowDiv;ctx.fillRect(0,(ry-0.15)*T,MAP_COLS*T,T*0.25);
   });
   if(darkAlpha>0.03){ctx.fillStyle=`rgba(5,5,28,${darkAlpha})`;ctx.fillRect(0,0,MAP_COLS*T,STANCHION_R*T);}
-  if(incidentActive){ctx.fillStyle=`rgba(255,40,40,${0.05+0.03*Math.sin(Date.now()*0.008)})`;ctx.fillRect(0,0,MAP_COLS*T,STANCHION_R*T);}
   const sy=STANCHION_R*T+T*0.45;
   ctx.strokeStyle="#FDCB6Eaa";ctx.lineWidth=T*0.04;ctx.setLineDash([T*0.14,T*0.07]);
   ctx.beginPath();ctx.moveTo(T*0.3,sy);ctx.lineTo(MAP_COLS*T-T*0.3,sy);ctx.stroke();ctx.setLineDash([]);
@@ -152,29 +174,33 @@ export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlph
 }
 
 // ─── Draw furniture ───────────────────────────────────────────────────────────
-export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A,liveRuns:Record<string,AgentRunInfo>={}){
+export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,darkAlpha:number,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A,liveRuns:Record<string,AgentRunInfo>={}){
   ctx.save();applyCamera(ctx,cam);
 
   // ── Dependency graph overlay ──
+  // TOD (agent-roster-truth): this used to draw dashed "possible" edges from
+  // a hardcoded topology (main → scout/kemuni-sme/vespera-sme, …) — the same
+  // fabricated-roster problem in graph form: it drew reporting lines to
+  // specific ids whether or not those agents existed on this host. There is
+  // no source of a real dependency/reporting graph yet, so this only draws
+  // edges that were actually observed firing (critPairs) — nothing invented.
   if(showDepGraph){
-    Object.entries(DEPENDENCIES).forEach(([srcId,dstIds])=>{
+    critPairs.forEach(([srcId,dstId]:any)=>{
       const src=agents.find(a=>a.id===srcId); if(!src||!src.active) return;
-      dstIds.forEach(dstId=>{
-        const dst=agents.find(a=>a.id===dstId); if(!dst||!dst.active) return;
-        const fired=critPairs.find(([s,d]:any)=>s===srcId&&d===dstId);
-        ctx.strokeStyle=fired?"#FDCB6Ecc":src.color+"44";
-        ctx.lineWidth=fired?T*0.04:T*0.02;
-        ctx.setLineDash(fired?[]:[T*0.08,T*0.06]);
+      const dst=agents.find(a=>a.id===dstId); if(!dst||!dst.active) return;
+      {
+        ctx.strokeStyle="#FDCB6Ecc";
+        ctx.lineWidth=T*0.04;
         ctx.beginPath();ctx.moveTo(src.px,src.py);ctx.lineTo(dst.px,dst.py);ctx.stroke();
         ctx.setLineDash([]);
         const angle=Math.atan2(dst.py-src.py,dst.px-src.px);
         const ax=dst.px-Math.cos(angle)*T*0.35,ay=dst.py-Math.sin(angle)*T*0.35;
-        ctx.fillStyle=fired?"#FDCB6E":src.color+"88";
+        ctx.fillStyle="#FDCB6E";
         ctx.beginPath();ctx.moveTo(ax,ay);
         ctx.lineTo(ax-Math.cos(angle-0.4)*T*0.18,ay-Math.sin(angle-0.4)*T*0.18);
         ctx.lineTo(ax-Math.cos(angle+0.4)*T*0.18,ay-Math.sin(angle+0.4)*T*0.18);
         ctx.closePath();ctx.fill();
-      });
+      }
     });
   }
 
@@ -194,9 +220,9 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
   });
 
   // ── Orchestrator desk ──
-  const orchAg=agents.find(a=>a.id===ORCHESTRATOR_ID);
-  // Pulse ring: expand outward when KAOS is coordinating (working + other agents also working)
-  const othersWorking2=agents.filter(a=>a.id!==ORCHESTRATOR_ID&&a.active&&a.state==="working");
+  const orchAg=agents.find(a=>a.isOrchestrator);
+  // Pulse ring: expand outward when the orchestrator is coordinating (working + other agents also working)
+  const othersWorking2=agents.filter(a=>!a.isOrchestrator&&a.active&&a.state==="working");
   if(orchAg&&orchAg.state==="working"&&othersWorking2.length>=1){
     const cx=ORCH_TX*T+T*1.1, cy=ORCH_TY*T+T*1.0;
     const pulse=(now*0.0008)%1;
@@ -231,7 +257,7 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
       }
     } else {
       // MC-15: Orchestrator health indicators when idle
-      const orchRun=liveRuns[ORCHESTRATOR_ID];
+      const orchRun=orchAg?liveRuns[orchAg.id]:undefined;
       if(orchRun&&orchRun.status!=='never'){
         const hColor=orchRun.todayErrors>2?'#ff4444':orchRun.todayErrors>0?'#f59e0b':'#00ff88';
         const hPx=Math.max(9,Math.round(T*0.10));
@@ -278,19 +304,18 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
   }
 
   // ── Regular desks (active non-orchestrator agents) ──
-  ACTIVE_IDS.filter(id=>id!==ORCHESTRATOR_ID).forEach(id=>{
-    const dp=DESK_POS[id]; if(!dp) return;
-    const ag=agents.find(a=>a.id===id); if(!ag) return;
-    const x=dp.tx*T, y=dp.ty*T, dw=T*1.5, dh=T*1.7;
+  agents.filter(ag=>ag.active&&!ag.isOrchestrator).forEach(ag=>{
+    const id=ag.id;
+    const x=ag.deskTx*T, y=ag.deskTy*T, dw=T*1.5, dh=T*1.7;
     const working=ag.state==="working";
     const mood=(ag.mood||88)/100;
     ctx.fillStyle=thm.deskBody;
-    ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(incidentActive?"#ff333344":(ag.color+"18"));
+    ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(ag.color+"18");
     ctx.lineWidth=working?T*0.022:T*0.01;
     ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
     const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
     ctx.fillStyle="#090918";ctx.fillRect(mx2,my2,mw,mh);
-    ctx.strokeStyle=working?ag.color+"cc":incidentActive?"#ff222233":"#252550";ctx.lineWidth=T*0.014;ctx.strokeRect(mx2,my2,mw,mh);
+    ctx.strokeStyle=working?ag.color+"cc":"#252550";ctx.lineWidth=T*0.014;ctx.strokeRect(mx2,my2,mw,mh);
     if(working){
       const t2=now*0.001;
       for(let l=0;l<3;l++){
@@ -332,31 +357,33 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
     ctx.fillRect(x+dw/2-T*0.12,y+dh*0.87,T*0.24,T*0.055);
   });
 
-  // ── Empty row 3 desks (dimmed, no agents) ──
-  PLANNED_LABELS.forEach(({tx,ty,emoji,name})=>{
-    const x=tx*T, y=ty*T, dw=T*1.5, dh=T*1.7;
-    ctx.fillStyle="#0f0f1c";
-    ctx.strokeStyle="#181830";
-    ctx.lineWidth=T*0.008;
-    ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
-    const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
-    ctx.fillStyle="#060610";ctx.fillRect(mx2,my2,mw,mh);
-    ctx.strokeStyle="#131328";ctx.lineWidth=T*0.012;ctx.strokeRect(mx2,my2,mw,mh);
-    if(name){
-      ctx.font=`${Math.round(T*0.18)}px serif`;ctx.textAlign="center";
-      ctx.fillStyle="#1a1a38";ctx.fillText(emoji,x+dw/2,y+dh*0.42);
-      ctx.font=`${Math.round(T*0.12)}px "IBM Plex Mono",monospace`;
-      ctx.fillStyle="#181835";ctx.fillText(name,x+dw/2,y+dh*0.72);
+  // ── Empty desks (dimmed, unassigned) ──
+  // TOD (agent-roster-truth): these used to be labeled with two invented
+  // future hires ("Quill", "Echo") that do not exist in any roster this
+  // product has ever read. An unfilled desk is now drawn empty — furniture,
+  // not a name — because nothing here knows who (if anyone) will sit there.
+  {
+    const usedDesks=agents.filter(a=>a.active&&!a.isOrchestrator).length;
+    for(let i=0;i<4;i++){
+      const {tx,ty}=deskSlot(usedDesks+i);
+      const x=tx*T, y=ty*T, dw=T*1.5, dh=T*1.7;
+      ctx.fillStyle="#0f0f1c";
+      ctx.strokeStyle="#181830";
+      ctx.lineWidth=T*0.008;
+      ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
+      const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
+      ctx.fillStyle="#060610";ctx.fillRect(mx2,my2,mw,mh);
+      ctx.strokeStyle="#131328";ctx.lineWidth=T*0.012;ctx.strokeRect(mx2,my2,mw,mh);
     }
-  });
+  }
 
-  // ── Conference table ──
+  // ── Conference table ── (static furniture — no live meeting state to render; see kill-office-fiction)
   const tcx=CONF_TX*T, tcy=CONF_TY*T, tw=CONF_TW*T, th=CONF_TH*T;
   ctx.fillStyle=thm.confTable;
-  ctx.strokeStyle=activeMeeting?"#FDCB6Ecc":incidentActive?"#ff3333aa":"#282848";
-  ctx.lineWidth=activeMeeting?T*0.028:T*0.014;
+  ctx.strokeStyle="#282848";
+  ctx.lineWidth=T*0.014;
   ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.fill();ctx.stroke();
-  ctx.strokeStyle=activeMeeting?"#FDCB6E22":"#ffffff05";ctx.lineWidth=T*0.01;
+  ctx.strokeStyle="#ffffff05";ctx.lineWidth=T*0.01;
   ctx.beginPath();ctx.roundRect(tcx+T*0.1,tcy+T*0.1,tw-T*0.2,th-T*0.2,T*0.15);ctx.stroke();
   // Chairs: 4 top, 4 bottom (evenly spaced with margin), 2 left, 2 right
   const cW=T*0.22,cH=T*0.14;
@@ -375,46 +402,10 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
     // Cushion
     ctx.fillStyle="#24243e";ctx.beginPath();ctx.roundRect(cx+T*0.02,cy+T*0.02,cW-T*0.04,cH*0.5,T*0.02);ctx.fill();
   });
-  if(activeMeeting&&darkAlpha>0.04){ctx.shadowColor="#FDCB6E";ctx.shadowBlur=T*0.3*darkAlpha;ctx.strokeStyle="#FDCB6E33";ctx.lineWidth=T*0.025;ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();ctx.shadowBlur=0;}
-  // MC-16: Show agents at conference table based on real sessions
-  const meetingAgents=agents.filter(a=>a.state==="meeting"||a.state==="moving_to_meeting");
-  if(!activeMeeting&&meetingAgents.length>=2){
-    // Multiple agents active simultaneously but not in formal meeting — show collaboration
-    ctx.strokeStyle="#00ff8844";ctx.lineWidth=T*0.02;
-    ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();
-  }
   ctx.font=`bold ${Math.round(T*0.15)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-  if(activeMeeting&&topic){
-    ctx.fillStyle="#FDCB6E";ctx.fillText("⬡ "+topic,tcx+tw/2,tcy+th+T*0.3);
-    // MC-16: Show participant names
-    const pNames=meetingAgents.map(a=>a.name).join(", ");
-    if(pNames){
-      ctx.font=`${Math.round(T*0.10)}px 'IBM Plex Mono',monospace`;
-      ctx.fillStyle="#FDCB6E88";ctx.fillText(pNames,tcx+tw/2,tcy+th+T*0.48);
-    }
-  }
-  else if(incidentActive){ctx.fillStyle="#ff4444";ctx.fillText("🚨 INCIDENT",tcx+tw/2,tcy+th+T*0.3);}
-  else{ctx.fillStyle="#252550";ctx.fillText("Conference Table",tcx+tw/2,tcy+th+T*0.3);}
+  ctx.fillStyle="#252550";ctx.fillText("Conference Table",tcx+tw/2,tcy+th+T*0.3);
 
   ctx.restore();
-}
-
-export function drawChatBubbles(ctx:CanvasRenderingContext2D,bubbles:any[],T:number,cam:any){
-  ctx.save();applyCamera(ctx,cam);
-  bubbles.forEach(b=>{
-    const alpha=Math.min(1,b.age/15)*Math.max(0,1-(b.age-b.maxAge*0.55)/(b.maxAge*0.45));
-    if(alpha<=0) return;
-    ctx.globalAlpha=Math.max(0,alpha);
-    const fPx=Math.round(T*0.115);
-    ctx.font=`${fPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-    const tw2=ctx.measureText(b.text).width+T*0.18,th2=fPx*1.55;
-    ctx.fillStyle="#1a1a3aee";ctx.strokeStyle=b.color+"77";ctx.lineWidth=T*0.01;
-    ctx.beginPath();ctx.roundRect(b.x-tw2/2,b.y-th2,tw2,th2,T*0.04);ctx.fill();ctx.stroke();
-    ctx.beginPath();ctx.moveTo(b.x-T*0.055,b.y);ctx.lineTo(b.x+T*0.055,b.y);ctx.lineTo(b.x,b.y+T*0.075);
-    ctx.fillStyle="#1a1a3aee";ctx.fill();
-    ctx.fillStyle=b.color;ctx.fillText(b.text,b.x,b.y-th2*0.28);
-  });
-  ctx.globalAlpha=1;ctx.restore();
 }
 
 export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:any){
@@ -427,16 +418,15 @@ export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:a
   ctx.globalAlpha=1;ctx.restore();
 }
 
-export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0){
-  const visible=ag.active||BENCH_POS[ag.id];
-  if(!visible) return;
+export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0,startedAt:string|null=null){
+  // Every roster agent gets a real position at init (desk or bench — see
+  // initAgents), so there is no more "agent with nowhere to stand" case to
+  // filter for here.
   ctx.save();applyCamera(ctx,cam);
-  const {px,py,color,name,state,task,progress,facing,mood,active}=ag;
-  const isOrch=ag.id===ORCHESTRATOR_ID;
+  const {px,py,color,name,state,task,facing,mood,active}=ag;
+  const isOrch=!!ag.isOrchestrator;
   const sz=isOrch?T*0.78:T*0.58, hs=sz/2;
   const moodN=(mood||88)/100;
-  const moving=state==="moving_to_meeting"||state==="returning";
-  const isInc=incidentActive&&(state==="moving_to_meeting"||state==="meeting");
 
   if(ag.spawning){
     const sf=Math.min(1,ag.spawnAge/30);
@@ -446,8 +436,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
   }
 
   const bob=state==="idle"?Math.sin(now*0.003+ag.animTick*0.12)*T*0.018*moodN:0;
-  const runBob=moving?Math.abs(Math.sin(now*0.013))*T*0.03-T*0.01:0;
-  const dy2=bob+runBob;
+  const dy2=bob;
   const [ox,oy]=({down:[0,T*0.022],up:[0,-T*0.022],left:[-T*0.022,0],right:[T*0.022,0]} as any)[facing]||[0,0];
 
   if(isSelected){
@@ -461,7 +450,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
   ctx.fillStyle="#00000044";
   ctx.beginPath();ctx.ellipse(px+ox,py+hs+T*0.022+oy+dy2,hs*0.65,T*0.022,0,0,Math.PI*2);ctx.fill();
   const bA=Math.round((0.7+moodN*0.3)*255).toString(16).padStart(2,"0");
-  const bodyCol=isInc?"#ff2222":(active?color+bA:"#3a3a5e"+bA);
+  const bodyCol=active?color+bA:"#3a3a5e"+bA;
   // MC-19: Enhanced state transition animation — glow + scale pulse + fade
   let transScale=1;
   if(ag.glowTick>0){
@@ -479,7 +468,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     ctx.fillStyle=color+Math.round(glowAlpha*25).toString(16).padStart(2,"0");ctx.fill();
     ctx.shadowBlur=0;
   }
-  if(darkAlpha>0.05){ctx.shadowColor=isInc?"#ff2222":color;ctx.shadowBlur=sz*0.22*darkAlpha;}
+  if(darkAlpha>0.05){ctx.shadowColor=color;ctx.shadowBlur=sz*0.22*darkAlpha;}
   // Apply scale for transition animation
   const asz=sz*transScale,ahs=asz/2;
   ctx.fillStyle=bodyCol;ctx.fillRect(px-ahs+ox,py-ahs+dy2+oy,asz,asz);ctx.shadowBlur=0;
@@ -504,14 +493,8 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     }
     ctx.strokeStyle="#111";ctx.lineWidth=sz*0.04;ctx.stroke();
   }
-  ctx.fillStyle=isInc?"#ff2222":color;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz*0.18);
-  if(moving){
-    const sw=Math.sin(now*0.016)*sz*0.17;
-    ctx.fillStyle=(isInc?"#ff2222":color)+"88";
-    ctx.fillRect(px-sz*0.21+ox+sw,py+sz*0.37+oy,sz*0.19,sz*0.27);
-    ctx.fillRect(px+sz*0.02+ox-sw, py+sz*0.37+oy,sz*0.19,sz*0.27);
-  }
-  const dotC=isInc?"#ff3333":state==="working"?"#00ff88":(state==="meeting"||state==="moving_to_meeting")?"#FDCB6E":active?"#4a5568":"#2a2a4a";
+  ctx.fillStyle=color;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz*0.18);
+  const dotC=state==="working"?"#00ff88":active?"#4a5568":"#2a2a4a";
   ctx.beginPath();ctx.arc(px+hs-sz*0.1+ox,py-hs+sz*0.1+dy2+oy,sz*0.1,0,Math.PI*2);
   ctx.fillStyle=dotC;ctx.fill();ctx.strokeStyle="#0b0b14";ctx.lineWidth=sz*0.035;ctx.stroke();
 
@@ -545,26 +528,17 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     ctx.fillStyle="#0b0b1ff0";ctx.strokeStyle=color+"88";ctx.lineWidth=T*0.016;
     ctx.beginPath();ctx.roundRect(px-tlW/2,tlY,tlW,tlH,T*0.04);ctx.fill();ctx.stroke();
     ctx.fillStyle=color;ctx.fillText(short,px,tlY+tlH*0.73);
-    const bW=Math.max(tlW,nlW),bH=T*0.055,bY=nlY+nlH+T*0.025;
-    ctx.fillStyle="#151528";ctx.fillRect(px-bW/2,bY,bW,bH);
-    ctx.fillStyle=color;ctx.fillRect(px-bW/2,bY,bW*(progress/100),bH);
-  }
-  if(ag.monologue&&state==="working"){
-    const mPx=Math.max(9,Math.round(T*0.10));
-    ctx.font=`${mPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-    const mW=ctx.measureText(ag.monologue).width+T*0.12,mH=mPx*1.6;
-    const taskH=task?Math.max(11,Math.round(T*0.19))*1.8+T*0.10:0;
-    const mY=py-hs-taskH-mH-T*0.2+dy2+oy;
-    ctx.fillStyle="#0f0f22ee";ctx.strokeStyle="#3a3a6a";ctx.lineWidth=T*0.01;
-    ctx.beginPath();ctx.roundRect(px-mW/2,mY,mW,mH,T*0.03);ctx.fill();ctx.stroke();
-    ctx.beginPath();ctx.moveTo(px-T*0.04,mY+mH);ctx.lineTo(px+T*0.04,mY+mH);ctx.lineTo(px,mY+mH+T*0.06);
-    ctx.fillStyle="#0f0f22ee";ctx.fill();ctx.fillStyle="#8892b0";ctx.fillText(ag.monologue,px,mY+mH*0.76);
-  }
-  if(state==="meeting"){
-    for(let b=0;b<3;b++){
-      const phase=((now*0.0014+b*0.42)%1),alpha=Math.sin(phase*Math.PI)*0.9;
-      ctx.beginPath();ctx.arc(px+sz*0.5+b*sz*0.22+ox,py-hs-T*0.05-phase*T*0.26+dy2+oy,(sz*0.1-b*sz*0.02),0,Math.PI*2);
-      ctx.fillStyle=isInc?`rgba(255,80,80,${alpha})`:`rgba(253,203,110,${alpha})`;ctx.fill();
+    // Elapsed time since the run actually started (agent_runs.started_at) —
+    // the one quantity observed. No fabricated completion percentage: there
+    // is no field anywhere that measures how much of the task is done.
+    const elapsed=formatElapsed(startedAt);
+    if(elapsed){
+      const ePx=Math.max(9,Math.round(T*0.115));
+      ctx.font=`${ePx}px 'IBM Plex Mono',monospace`;
+      const eW=Math.max(tlW,nlW),eH=ePx*1.5,eY=nlY+nlH+T*0.025;
+      ctx.fillStyle="#151528";ctx.fillRect(px-eW/2,eY,eW,eH);
+      ctx.fillStyle=color+"dd";ctx.textAlign="center";
+      ctx.fillText(`⏱ ${elapsed}`,px,eY+eH*0.75);
     }
   }
   // Idle timer display
@@ -587,7 +561,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     ctx.fillText(`💰 ${costText}`,px,py+hs+T*0.48+dy2+oy);
   }
   // Sub-agent activity badge — only for orchestrator when sub-agents are active
-  if(ag.id===ORCHESTRATOR_ID&&subagentCount>0){
+  if(ag.isOrchestrator&&subagentCount>0){
     const badgeX=px+hs-T*0.05;
     const badgeY=py-hs-T*0.35;
     const bPx=Math.max(8,Math.round(T*0.11));
@@ -620,15 +594,14 @@ export function drawMinimap(ctx:CanvasRenderingContext2D,T:number,agents:any[],c
   const mmSY=mmY+STANCHION_R*T*sy;
   ctx.strokeStyle="#FDCB6E55";ctx.lineWidth=1;ctx.setLineDash([3,2]);
   ctx.beginPath();ctx.moveTo(mmX,mmSY);ctx.lineTo(mmX+mw,mmSY);ctx.stroke();ctx.setLineDash([]);
-  Object.entries(DESK_POS).forEach(([id,{tx,ty}])=>{
-    const ag=ALL_AGENTS.find(a=>a.id===id);if(!ag) return;
+  agents.filter(a=>a.active).forEach(ag=>{
     ctx.fillStyle=ag.color+"33";
-    ctx.fillRect(mmX+tx*T*sx,mmY+ty*T*sy,T*sx*1.5,T*sy*1.7);
+    ctx.fillRect(mmX+ag.deskTx*T*sx,mmY+ag.deskTy*T*sy,T*sx*1.5,T*sy*1.7);
   });
   agents.forEach(a=>{
     const ax=mmX+a.px*sx,ay=mmY+a.py*sy,r=Math.max(2,3);
     ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);
-    ctx.fillStyle=a.state==="working"?"#00ff88":a.state==="meeting"||a.state==="moving_to_meeting"?"#FDCB6E":a.active?a.color:"#4a4a6a";
+    ctx.fillStyle=a.state==="working"?"#00ff88":a.active?a.color:"#4a4a6a";
     ctx.fill();ctx.strokeStyle="#000";ctx.lineWidth=0.5;ctx.stroke();
   });
   const vx=mmX+(-cam.x/cam.z)*sx,vy=mmY+(-cam.y/cam.z)*sy;
@@ -639,7 +612,7 @@ export function drawMinimap(ctx:CanvasRenderingContext2D,T:number,agents:any[],c
   ctx.fillText("MAP",mmX+mw/2,mmY-4);
 
   if(showLegend){
-    const items=[["#00ff88","Working"],["#FDCB6E","Meeting"],["#4a5568","Idle"]];
+    const items=[["#00ff88","Working"],["#4a5568","Idle"]];
     const legH=items.length*16+10;
     const legW=86;
     const legX=mmX+mw-legW;

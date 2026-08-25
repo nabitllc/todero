@@ -2,9 +2,11 @@
 import React from 'react'
 import { Badge, PriorityBadge, StatusBadge } from '@/components/ui'
 
-const PROJECT_COLORS: Record<string, string> = {
-  Vespera: '#a855f7', Kemuni: '#3b82f6', 'Mission Control': '#10b981', Infrastructure: '#6b7280',
-}
+// TOD (no-invented-projects): this used to be PROJECT_COLORS, a four-name
+// table (Vespera/Kemuni/Mission Control/Infrastructure). /api/projects sends
+// no color field on a project row, so every card now gets the same neutral
+// accent rather than a lookup keyed by a hand-written name list.
+const DEFAULT_PROJECT_COLOR = '#6b7280'
 
 const ASSIGNEE_EMOJI: Record<string, string> = {
   builder: '🔨', kaos: '🧠', scout: '🔍', tester: '🧪', ops: '⚙️', nabit: '👤',
@@ -34,7 +36,7 @@ export default function FeatureCard({ feature, expanded, onToggle, onViewIssues 
   const done = feature.children.filter(c => c.status_category === 'SignOff' || c.status_category === 'Done').length
   const total = feature.children.length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
-  const projColor = PROJECT_COLORS[feature.project ?? ''] ?? '#6b7280'
+  const projColor = DEFAULT_PROJECT_COLOR
   const acPending = 'Acceptance criteria pending — update before sprint.'
   const isReady = !!(feature.acceptance_criteria?.trim()) && feature.acceptance_criteria.trim() !== acPending
 

@@ -12,13 +12,18 @@
 // Todero prompts are runtime-neutral (SOUL/AGENTS/skills + task + gates), so
 // this adapter just needs to shell out with the right flags. No prompt rewriting.
 
-import { exec } from 'child_process'
-import { existsSync } from 'fs'
+import { mkdtempSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
+import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+import { resolveBinary } from '../paths'
+import { recordRunOnExit } from '../memory-loop'
 
-// Codex's default install location via npm -g or the official installer
-const CODEX_BIN = process.env.CODEX_BIN ?? '/opt/homebrew/bin/codex'
+// Bare name: resolved through PATH at spawn time, so an npm -g install, a
+// Homebrew install and a Windows shim all work. CODEX_BIN overrides.
+export const CODEX_BIN = process.env.CODEX_BIN ?? 'codex'
 
 // Codex has no exact sonnet/opus/haiku alias. Map to OpenAI models:
 // - sonnet → o4-mini (fast, balanced)
@@ -43,7 +48,7 @@ export const codexRuntime: AgentRuntime = {
 
   async isAvailable() {
     try {
-      return existsSync(CODEX_BIN)
+      return resolveBinary(CODEX_BIN) !== null
     } catch {
       return false
     }
@@ -69,38 +74,68 @@ export const codexRuntime: AgentRuntime = {
       )
     }
 
-    const escapedPrompt = opts.prompt.replace(/'/g, "'\\''")
     const model = mapModel(opts.model)
-    const permissionFlag = opts.bypassPermissions !== false ? '--full-auto' : ''
 
-    // codex exec: single-shot mode. Read/write tools available under --full-auto.
-    // The prompt is passed as a positional argument.
-    const cmd = `cd ${effectiveWorkingDir} && `
-      + `nohup ${CODEX_BIN} exec ${permissionFlag} --model ${model} '${escapedPrompt}' `
-      + `> ${opts.logFile} 2>&1 < /dev/null & disown`
-
+    // The prompt goes to the child on stdin instead of being single-quote
+    // escaped into a shell string. `codex exec` with no positional prompt reads
+    // stdin, and Windows' ~32k command-line cap makes argv unusable for a
+    // Todero-sized prompt anyway.
+    let promptFile: string
     try {
-      exec(cmd, { timeout: 5000 })
-
-      if (teardownPath) {
-        setTimeout(() => {
-          const tr = teardownWorktree(teardownPath!)
-          if (!tr.ok) console.warn(`[codex] worktree teardown failed: ${tr.error}`)
-        }, WORKTREE_TEARDOWN_MINUTES * 60 * 1000).unref()
-      }
-
-      return {
-        ok: true,
-        command: cmd.slice(0, 200) + '…',
-        runtime: 'codex',
-      }
-    } catch (err: unknown) {
+      const tmp = mkdtempSync(join(tmpdir(), `todero-codex-${opts.agentId}-`))
+      promptFile = join(tmp, 'prompt.txt')
+      writeFileSync(promptFile, opts.prompt, { encoding: 'utf8' })
+    } catch (err) {
       if (teardownPath) teardownWorktree(teardownPath)
       return {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: `failed to write prompt file: ${err instanceof Error ? err.message : String(err)}`,
         runtime: 'codex',
       }
+    }
+
+    const argv = ['exec']
+    if (opts.bypassPermissions !== false) argv.push('--full-auto')
+    argv.push('--model', model)
+
+    const result = await spawnDetached(CODEX_BIN, argv, opts.logFile, {
+      cwd: effectiveWorkingDir,
+      env: process.env,
+      stdinFile: promptFile,
+    })
+
+    if (!result.ok) {
+      if (teardownPath) teardownWorktree(teardownPath)
+      return {
+        ok: false,
+        error: result.error ?? 'spawn failed',
+        logFile: result.logFile,
+        command: result.command,
+        runtime: 'codex',
+      }
+    }
+
+    appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
+    watchChildExit(result.pid, opts.logFile, () => {
+      appendLog(opts.logFile, `[spawn-exit] agent=${opts.agentId} task=${opts.taskId ?? 'none'}`)
+      // memory-loop-write (round 2): one agent_run_records row per run.
+      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
+    }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
+
+    if (teardownPath) {
+      const captured = teardownPath
+      setTimeout(() => {
+        const tr = teardownWorktree(captured)
+        if (!tr.ok) console.warn(`[codex] worktree teardown failed: ${tr.error}`)
+      }, WORKTREE_TEARDOWN_MINUTES * 60 * 1000).unref()
+    }
+
+    return {
+      ok: true,
+      pid: result.pid,
+      logFile: result.logFile,
+      command: result.command,
+      runtime: 'codex',
     }
   },
 }

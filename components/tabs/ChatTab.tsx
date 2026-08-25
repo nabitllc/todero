@@ -1,15 +1,31 @@
 'use client'
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import IssuePreviewCard from '@/components/IssuePreviewCard'
 import AgentSelector from '@/components/AgentSelector'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, formatApiError, type ApiError } from '@/hooks/useApiData'
+import { useAgentRoster } from '@/hooks/useAgentRoster'
+import { agentDisplay } from '@/lib/agents-config'
 
 // Chat types
-interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string }
+/** `persistError` is set when the message is on screen but is NOT in the
+ *  database — the /api/chat/messages POST failed, or /api/chat reported a
+ *  `persistError` frame for the assistant reply. It is rendered inline and
+ *  never cleared on its own, because the alternative (staying silent) means
+ *  the message simply disappears on the next reload with no explanation. */
+interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string; persistError?: string }
 interface ChatConversation { id: string; title: string; model: string; messages: ChatMessage[]; createdAt: number; updatedAt: number; pinned?: boolean; project?: string|null; agent_id?: string; system_prompt?: string|null; forked_from?: string|null }
 
 // MC-157: Auto-scroll lock indicator types
+/** One entry from /api/chat/models. The two context windows are kept apart
+ *  on purpose: `servedContextLength` is what the loaded slot will accept and
+ *  is the only figure the budget meter may use; `trainedContextLength` is the
+ *  window the weights were trained with and is background only. Either can be
+ *  absent, and absent means unknown — never fill one in from the other. */
+interface LiveModel { id: string; servedContextLength?: number; trainedContextLength?: number }
+
 interface ScrollLockState {
   locked: boolean            // true = user scrolled up, auto-scroll paused
   missedMessages: number     // count of new messages since lock engaged
@@ -109,32 +125,12 @@ function stripMarkdownPreview(text: string): string {
     .slice(0, 60)
 }
 
-const AGENT_MODEL_MAP: Record<string, string> = {
-  'main': 'Claude Max',
-  'kemuni-sme': 'Claude Max',
-  'vespera-sme': 'Claude Max',
-  'scout': 'Gemma 3 4B (local)',
-}
-
-// Model options available in chat (agent default or per-message override).
-// Grouped by provider with context window sizes.
-const MODEL_OPTIONS: { id: string; label: string; desc: string; provider: string; ctx?: string }[] = [
-  { id: 'default',                       label: '⚡ Agent default',          desc: 'Use the selected agent\'s default model', provider: 'System' },
-  // Anthropic
-  { id: 'anthropic/claude-sonnet-4-6',   label: '🟣 Claude Sonnet 4.6',     desc: 'Best for complex tasks',     provider: 'Anthropic', ctx: '200k' },
-  { id: 'anthropic/claude-haiku-4-5',    label: '🔵 Claude Haiku 4.5',      desc: 'Fast, lightweight',          provider: 'Anthropic', ctx: '200k' },
-  { id: 'anthropic/claude-opus-4-6',     label: '🔶 Claude Opus 4.6',       desc: 'Most powerful',              provider: 'Anthropic', ctx: '200k' },
-  // OpenRouter
-  { id: 'openrouter/auto',               label: '🔀 OpenRouter auto',        desc: 'Best available via OpenRouter', provider: 'OpenRouter' },
-  { id: 'openrouter/google/gemini-2.5-pro', label: '🔷 Gemini 2.5 Pro',     desc: 'Google flagship',            provider: 'OpenRouter', ctx: '1M' },
-  { id: 'openrouter/deepseek/deepseek-r1', label: '🧩 DeepSeek R1',         desc: 'Reasoning model',            provider: 'OpenRouter', ctx: '128k' },
-  { id: 'openrouter/meta-llama/llama-4-maverick', label: '🦙 Llama 4 Maverick', desc: 'Open weights',          provider: 'OpenRouter', ctx: '1M' },
-  { id: 'openrouter/qwen/qwen3-235b-a22b', label: '🌐 Qwen3 235B',         desc: 'MoE reasoning',              provider: 'OpenRouter', ctx: '128k' },
-  // Ollama (local)
-  { id: 'ollama/gemma3:4b',              label: '🟢 Gemma 3 4B',            desc: 'Private, free, offline',     provider: 'Ollama', ctx: '128k' },
-]
-
-const MODEL_PROVIDERS = Array.from(new Set(MODEL_OPTIONS.map(m => m.provider)))
+// The model list is deliberately NOT hardcoded here. Owner directive: local
+// Ollama only, no cloud vendor menu. The dropdown is populated at
+// runtime from a live GET of ${LLM_BASE_URL}/models (proxied through
+// /api/chat/models — see that route and lib/llm-provider.ts), so whatever is
+// actually pulled on this host is what a user can pick. See the
+// `liveModels` / `defaultModelId` state below.
 
 // Expanded file type groups
 const FILE_TYPE_GROUPS = [
@@ -145,23 +141,22 @@ const FILE_TYPE_GROUPS = [
   { label: 'Any text',   accept: '*' },
 ]
 
-const AGENT_BADGE_MAP: Record<string, string> = {
-  'main': '🧠',
-  'kemuni-sme': '🚀',
-  'vespera-sme': '🖤',
-  'scout': '🔍',
-}
 
-const PROJECT_TAG_COLORS: Record<string, string> = {
-  'Kemuni': '#3b82f6',
-  'Vespera': '#a855f7',
-  'Infrastructure': '#6b7280',
-  'General': '#10b981',
-}
-const PROJECT_CYCLE = [null, 'Kemuni', 'Vespera', 'Infrastructure', 'General'] as const
+/**
+ * TOD (no-invented-projects): this used to be PROJECT_TAG_COLORS, a
+ * four-name table (Kemuni/Vespera/Infrastructure, plus a "General" that was
+ * never actually assigned to any conversation — a category invented purely
+ * to fill the map) and PROJECT_CYCLE, a hardcoded button that let an
+ * operator tag a conversation with a project that did not exist. Every
+ * project a conversation can be tagged with now comes from the live
+ * `liveProjectNames` list (GET /api/projects) built inside the component;
+ * see its declaration below. One neutral color stands in for every real
+ * project — no per-name table.
+ */
+const PROJECT_TAG_DEFAULT_COLOR = '#3b82f6'
 
 const PROMPT_TEMPLATES = [
-  { label: '🗺️ Plan a feature', text: 'Help me plan a new feature for Kemuni. The feature is: ' },
+  { label: '🗺️ Plan a feature', text: 'Help me plan a new feature. The feature is: ' },
   { label: '🐛 Debug code', text: 'I have a bug in my code. Here\'s what\'s happening:\n\n' },
   { label: '📋 Write a PRD', text: 'Write a product requirements document for: ' },
   { label: '🔍 Research topic', text: 'Research and summarize the latest developments in: ' },
@@ -256,6 +251,10 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
 
 export default function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
   const [chats, setChats] = useState<ChatConversation[]>([])
+  // TOD-654: distinguishes "the server refused" from "you have no chats".
+  const [chatsError, setChatsError] = useState<ApiError | null>(null)
+  const [chatsLoaded, setChatsLoaded] = useState(false)
+  const [chatsReload, setChatsReload] = useState(0)
   const [activeChat, setActiveChat] = useState<string|null>(null)
   const [search, setSearch] = useState('')
   const [inputVal, setInputVal] = useState('')
@@ -271,6 +270,15 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [renamingTitle, setRenamingTitle] = useState<string|null>(null)
   const [selectedAgent, setSelectedAgent] = useState<string>('main')
   const [selectedModel, setSelectedModel] = useState<string>('default')
+  // Live model roster from /api/chat/models (a same-origin proxy of a live
+  // GET against ${LLM_BASE_URL}/models — see lib/llm-provider.ts). Never a
+  // hardcoded vendor list: whatever is actually pulled on this host is what
+  // shows up here, and a failed load is shown as an explicit error naming
+  // the URL that failed, not silently swallowed into an empty dropdown.
+  const [liveModels, setLiveModels] = useState<LiveModel[]>([])
+  const [defaultModelId, setDefaultModelId] = useState<string | null>(null)
+  const [modelsError, setModelsError] = useState<ApiError | null>(null)
+  const [modelsLoading, setModelsLoading] = useState(true)
   const [showFileTypePicker, setShowFileTypePicker] = useState(false)
   const fileTypePickerRef = useRef<HTMLDivElement>(null)
   const [sidebarFocusIdx, setSidebarFocusIdx] = useState<number>(-1)
@@ -328,6 +336,10 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [showFileBrowser, setShowFileBrowser] = useState(false)
   const [fileBrowserPath, setFileBrowserPath] = useState('')
   const [fileBrowserEntries, setFileBrowserEntries] = useState<{name:string;isDir:boolean;path:string}[]>([])
+  // Unconfigured host / unreadable path must be visible, not disguised as an
+  // empty folder. Holds the server's real message plus the workspace it tried.
+  const [fileBrowserError, setFileBrowserError] = useState<string|null>(null)
+  const [fileBrowserWorkspace, setFileBrowserWorkspace] = useState<string|null>(null)
   // NEW: Image URL input
   const [showImageUrlInput, setShowImageUrlInput] = useState(false)
   const [imageUrlDraft, setImageUrlDraft] = useState('')
@@ -335,6 +347,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [sidebarTab, setSidebarTab] = useState<'mine'|'heartbeats'>('mine')
   const [ocSessions, setOcSessions] = useState<any[]>([])
   const [ocLoading, setOcLoading] = useState(false)
+  const [ocError, setOcError] = useState<ApiError | null>(null)
   // NEW: Send-to-agent dropdown
   const [showSendToAgent, setShowSendToAgent] = useState(false)
   const sendToAgentRef = useRef<HTMLDivElement>(null)
@@ -353,14 +366,56 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
 
-  const AGENT_OPTIONS = [
-    { id: 'main', label: '🧠 KAOS', desc: 'Chief of Staff' },
-    { id: 'kemuni-sme', label: '🚀 Kemuni SME', desc: 'Kemuni Specialist' },
-    { id: 'vespera-sme', label: '🖤 Vespera SME', desc: 'Vespera Specialist' },
-    { id: 'scout', label: '🔍 Scout', desc: 'Research Agent' },
-    { id: 'ops', label: '⚙️ Ops', desc: 'Operations Agent' },
-  ]
-  const currentAgent = AGENT_OPTIONS.find(a => a.id === selectedAgent) || AGENT_OPTIONS[0]
+  // The @-mention list, the "send to" list and the handoff labels all come
+  // from the host's AGENTS.md via GET /api/agents. This used to be a literal
+  // of five agents — a different lie from the thirteen the agent picker beside
+  // it was importing, and both disagreed with the sixteen the API serves, so
+  // `@security` could not be mentioned while `@infra-sme` could. An empty
+  // roster yields an empty list here, which correctly renders no dropdown at
+  // all rather than a menu of invented recipients.
+  const { agents: rosterAgents, byId: rosterById } = useAgentRoster()
+  // Project tag options for the filter pills and the conversation-header
+  // cycle button — see PROJECT_TAG_DEFAULT_COLOR above. `null` while
+  // /api/projects has not answered yet, so both surfaces render nothing
+  // extra rather than a guessed list.
+  const [liveProjectNames, setLiveProjectNames] = useState<string[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<Array<{ name: string }>>('/api/projects').then(res => {
+      if (cancelled) return
+      if (!res.ok) { setLiveProjectNames([]); return }
+      setLiveProjectNames(Array.isArray(res.data) ? res.data.map(p => p.name).filter(Boolean) : [])
+    })
+    return () => { cancelled = true }
+  }, [])
+  // Chat-row avatar. The module-level AGENT_BADGE_MAP this replaces knew four
+  // agents and handed every other one KAOS's 🧠, so a conversation with the
+  // Tester was labelled as a conversation with the orchestrator.
+  const agentBadgeFor = useCallback(
+    (id: string) => rosterById[id]?.emoji ?? agentDisplay(id).emoji,
+    [rosterById],
+  )
+  // registry-reaches-dispatch piece: `a.dispatchable` is computed server-side
+  // (app/api/agents/route.ts) from the same getQueueConfig() POST
+  // /api/run-agent itself calls — including the config a Brain2 vault
+  // manifest now derives (lib/agent-manifests.ts), which this file's own
+  // client-bundle copy of getQueueConfig() has no way to see. Chatting with
+  // a non-dispatchable agent still works (this picker only chooses who the
+  // LLM impersonates), so it stays selectable — but the label says so, the
+  // same way the Issues assignee dropdown does, instead of implying a queue
+  // that does not exist for this id.
+  const AGENT_OPTIONS = useMemo(
+    () => rosterAgents.map(a => ({
+      id: a.id,
+      label: `${a.emoji} ${a.name}`,
+      desc: !a.dispatchable ? `${a.role} · not dispatchable` : a.role,
+    })),
+    [rosterAgents],
+  )
+  // No `|| AGENT_OPTIONS[0]`: a selected id the roster does not name must show
+  // as itself, not be silently rewritten to whoever happens to be first.
+  const currentAgent = AGENT_OPTIONS.find(a => a.id === selectedAgent)
+    ?? { id: selectedAgent, label: agentDisplay(selectedAgent).name, desc: agentDisplay(selectedAgent).role }
 
   // Slash command definitions
   const SLASH_COMMANDS = [
@@ -370,7 +425,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     { cmd: '/compact', icon: '📦', desc: 'Ask AI to summarize conversation so far' },
     { cmd: '/pin',     icon: '📌', desc: 'Toggle pin on current conversation' },
     { cmd: '/export',  icon: '↓',  desc: 'Export this conversation as Markdown' },
-    { cmd: '/imagine', icon: '🎨', desc: 'Generate an image: /imagine a purple cat in space' },
     { cmd: '/tasks',   icon: '📋', desc: 'Show open tasks for current sprint' },
     { cmd: '/deploy',  icon: '🚀', desc: 'Trigger a deploy or show deploy status' },
     { cmd: '/agents',  icon: '👥', desc: 'List active agents and their status' },
@@ -380,9 +434,14 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // Load chats from Supabase on mount, restore active chat from localStorage
   useEffect(() => {
     const savedActiveChat = typeof window !== 'undefined' ? localStorage.getItem('mc-active-chat') : null
-    fetch('/api/chat/conversations')
-      .then(r => r.json())
-      .then(data => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped conversation rows
+    fetchJson<any[]>('/api/chat/conversations')
+      .then(res => {
+        // TOD-654: a 403/500 must not leave `chats` at [] and print "No chats yet".
+        if (!res.ok) { setChatsError(res.error); setChatsLoaded(true); return }
+        setChatsError(null)
+        setChatsLoaded(true)
+        const data = res.data
         if (Array.isArray(data)) {
           const normalized: ChatConversation[] = data.map((c: any) => ({
             id: c.id,
@@ -411,8 +470,29 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
           }
         }
       })
-      .catch(() => {})
+  }, [chatsReload])
+
+  // Live model roster — the model dropdown has no hardcoded contents. If the
+  // local LLM endpoint is down (e.g. Ollama stopped), this surfaces as a
+  // visible error naming the URL, not an empty/frozen select.
+  const loadLiveModels = useCallback(() => {
+    setModelsLoading(true)
+    fetchJson<{ base_url: string; default_model: string | null; models: LiveModel[] }>('/api/chat/models')
+      .then(res => {
+        if (!res.ok) {
+          setModelsError(res.error)
+          setLiveModels([])
+          setDefaultModelId(null)
+          setModelsLoading(false)
+          return
+        }
+        setModelsError(null)
+        setLiveModels(res.data.models || [])
+        setDefaultModelId(res.data.default_model)
+        setModelsLoading(false)
+      })
   }, [])
+  useEffect(() => { loadLiveModels() }, [loadLiveModels])
 
   // Persist active chat to localStorage whenever it changes
   useEffect(() => {
@@ -589,20 +669,35 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // NEW: Load file browser entries when path changes
   useEffect(() => {
     if (!showFileBrowser) return
-    fetch(`/api/files?path=${encodeURIComponent(fileBrowserPath)}`)
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setFileBrowserEntries(data) })
-      .catch(() => {})
+    const endpoint = `/api/files?path=${encodeURIComponent(fileBrowserPath)}`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped directory listing
+    fetchJson<any>(endpoint).then(res => {
+      if (!res.ok) {
+        setFileBrowserEntries([])
+        setFileBrowserWorkspace(null)
+        setFileBrowserError(formatApiError(res.error))
+        return
+      }
+      const d = res.data
+      setFileBrowserEntries(d?.entries ?? [])
+      setFileBrowserWorkspace(d?.workspace ?? null)
+      setFileBrowserError(d?.error ?? null)
+    })
   }, [showFileBrowser, fileBrowserPath])
 
   // Fetch agent activity when sidebar tab switches to heartbeats
   useEffect(() => {
     if (sidebarTab === 'mine') return
     setOcLoading(true)
-    fetch('/api/status').then(r => r.json()).then(data => {
-      const activity: any[] = data.recentActivity || []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+    fetchJson<any>('/api/status').then(res => {
+      if (!res.ok) { setOcError(res.error); setOcSessions([]); setOcLoading(false); return }
+      setOcError(null)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped activity rows
+      const activity: any[] = res.data?.recentActivity || []
       setOcSessions(activity)
-    }).catch(() => {}).finally(() => setOcLoading(false))
+      setOcLoading(false)
+    })
   }, [sidebarTab])
 
   // Auto-grow textarea
@@ -616,7 +711,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const newChat = async () => {
     const id = 'chat-' + Date.now()
     const conv: ChatConversation = {
-      id, title: 'New Chat', model: 'kaos', messages: [],
+      id, title: 'New Chat', model: resolvedModelId, messages: [],
       createdAt: Date.now(), updatedAt: Date.now(),
       pinned: false, project: null, agent_id: selectedAgent, system_prompt: null,
     }
@@ -625,7 +720,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     await fetch('/api/chat/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, title: 'New Chat', model: 'kaos', agent_id: selectedAgent }),
+      body: JSON.stringify({ id, title: 'New Chat', model: resolvedModelId, agent_id: selectedAgent }),
     })
   }
 
@@ -645,13 +740,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     } else if (cmd === '/clear') {
       await clearChat(activeConv.id)
     } else if (cmd === '/status') {
-      const mdl = AGENT_MODEL_MAP[selectedAgent] || 'Claude Max'
-      const tokEst = activeConv ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4) : 0
-      const tokLabel = tokEst >= 1000 ? `~${(tokEst/1000).toFixed(1)}k / 200k tokens` : `~${tokEst} / 200k tokens`
+      const mdl = agentModelLabel
       const statusMsg: ChatMessage = {
         id: 'status-' + Date.now(),
         role: 'assistant',
-        content: `**Session Status**\n- Session key: \`mc-chat-${activeConv.id}\`\n- Agent: ${selectedAgent} (${currentAgent.label})\n- Model: ${mdl}\n- Messages: ${activeConv.messages.length}\n- Est. tokens: ${tokLabel}\n- Pinned: ${activeConv.pinned ? 'yes' : 'no'}\n- Project: ${activeConv.project || 'none'}`,
+        content: `**Session Status**\n- Session key: \`mc-chat-${activeConv.id}\`\n- Agent: ${selectedAgent} (${currentAgent.label})\n- Model: ${mdl}\n- Messages: ${activeConv.messages.length}\n- Est. tokens: ${contextTokenLabel}\n- Pinned: ${activeConv.pinned ? 'yes' : 'no'}\n- Project: ${activeConv.project || 'none'}`,
         ts: Date.now(),
       }
       setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, statusMsg] } : c))
@@ -663,57 +756,42 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       await togglePin(activeConv.id, !activeConv.pinned)
     } else if (cmd === '/export') {
       exportChat(activeConv)
-    } else if (cmd === '/imagine') {
-      const prompt = inputVal.replace('/imagine', '').trim()
-      if (!prompt) {
-        const hint: ChatMessage = { id: 'hint-'+Date.now(), role:'assistant', content:'Usage: `/imagine <description>` — e.g. `/imagine a purple cat floating in space`', ts: Date.now() }
-        setChats(prev => prev.map(c => c.id === activeConv?.id ? { ...c, messages: [...c.messages, hint] } : c))
-        return
-      }
-      setLoading(true)
-      const userMsg: ChatMessage = { id: 'img-user-'+Date.now(), role:'user', content:`🎨 /imagine ${prompt}`, ts: Date.now() }
-      const placeholderId = 'img-'+Date.now()
-      const placeholder: ChatMessage = { id: placeholderId, role:'assistant', content:'⏳ Generating image…', ts: Date.now() }
-      setChats(prev => prev.map(c => c.id === activeConv?.id ? { ...c, messages: [...c.messages, userMsg, placeholder] } : c))
-      try {
-        const r = await fetch('/api/imagine', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt }) })
-        const d = await r.json()
-        if (d.url) {
-          setChats(prev => prev.map(c => c.id === activeConv?.id ? {
-            ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: `![generated](${d.url})`, image_url: d.url } : m)
-          } : c))
-        } else {
-          setChats(prev => prev.map(c => c.id === activeConv?.id ? {
-            ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: `❌ Image gen failed: ${d.error||'unknown error'}` } : m)
-          } : c))
-        }
-      } catch(e) {
-        setChats(prev => prev.map(c => c.id === activeConv?.id ? {
-          ...c, messages: c.messages.map(m => m.id === placeholderId ? { ...m, content: '❌ Network error generating image' } : m)
-        } : c))
-      } finally {
-        setLoading(false)
-      }
     } else if (cmd === '/tasks') {
-      try {
-        const r = await fetch('/api/issues?limit=0')
-        const data = await r.json()
-        const issues = Array.isArray(data) ? data : data?.data ?? []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
+      const r = await fetchJson<any>('/api/issues?limit=0')
+      if (!r.ok) {
+        // TOD-654 round 3: a failed load must read as a failure, not "No open
+        // tasks" — that used to be indistinguishable from a real empty sprint.
+        const errMsg: ChatMessage = { id: 'tasks-err-'+Date.now(), role: 'assistant', content: `❌ ${formatApiError(r.error)}`, ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
+      } else {
+        const issues = Array.isArray(r.data) ? r.data : r.data?.data ?? []
         const open = issues.filter((i: any) => i.status === 'open' || i.status === 'in_progress')
         const lines = open.slice(0, 15).map((i: any) => `- **${i.task_key || '?'}** ${i.title} — _${i.status}_ (${i.priority || 'med'}) ${i.assignee ? `→ ${i.assignee}` : ''}`).join('\n')
         const tasksMsg: ChatMessage = { id: 'tasks-'+Date.now(), role: 'assistant', content: `**Open Tasks** (${open.length})\n\n${lines || '_No open tasks_'}`, ts: Date.now() }
         setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, tasksMsg] } : c))
-      } catch {
-        const errMsg: ChatMessage = { id: 'tasks-err-'+Date.now(), role: 'assistant', content: '❌ Could not fetch tasks', ts: Date.now() }
-        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
       }
     } else if (cmd === '/deploy') {
-      const deployMsg: ChatMessage = { id: 'deploy-'+Date.now(), role: 'assistant', content: '**Deploy Status**\n\n- Vercel: auto-deploy on push to `main`\n- Last deploy: check [Vercel dashboard](https://vercel.com)\n- To trigger: push to main or run `vercel --prod`\n\n_Tip: Use the chat to ask KAOS to deploy._', ts: Date.now() }
+      // The old block asserted a fixed "Vercel: auto-deploy on push to main /
+      // Last deploy: check dashboard" regardless of whether that was true on
+      // this host — fabricated status, not a query. Todero has no deploy
+      // endpoint to ask, so say that plainly instead of inventing an answer.
+      const deployMsg: ChatMessage = { id: 'deploy-'+Date.now(), role: 'assistant', content: '**Deploy Status**\n\n_Not available — Todero has no deploy-status endpoint on this host. Check your own CI/deploy dashboard._', ts: Date.now() }
       setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, deployMsg] } : c))
     } else if (cmd === '/agents') {
-      const agentLines = AGENT_OPTIONS.map(a => `- ${a.label} — ${a.desc}`).join('\n')
-      const agentsMsg: ChatMessage = { id: 'agents-'+Date.now(), role: 'assistant', content: `**Active Agents**\n\n${agentLines}\n\n_Select an agent using the dropdown above the input._`, ts: Date.now() }
-      setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, agentsMsg] } : c))
+      // Live roster from /api/agents (AGENTS.md, real run state) — not the
+      // static AGENT_OPTIONS list used only for the chat-recipient dropdown.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AgentDto is server-only typed
+      const r = await fetchJson<{ agents: any[] }>('/api/agents')
+      if (!r.ok) {
+        const errMsg: ChatMessage = { id: 'agents-err-'+Date.now(), role: 'assistant', content: `❌ ${formatApiError(r.error)}`, ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
+      } else {
+        const roster = r.data.agents ?? []
+        const agentLines = roster.map((a: any) => `- ${a.emoji ?? ''} **${a.name}** — ${a.desc || a.role} _(${a.status})_${a.currentTask ? `: ${a.currentTask}` : ''}`).join('\n')
+        const agentsMsg: ChatMessage = { id: 'agents-'+Date.now(), role: 'assistant', content: `**Active Agents** (${roster.length})\n\n${agentLines || '_No agents in the roster_'}\n\n_Select an agent using the dropdown above the input._`, ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, agentsMsg] } : c))
+      }
     }
   }
 
@@ -787,14 +865,36 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
         c.title.toLowerCase().includes(search.toLowerCase())
       )
 
+  // The literal model id that will actually receive this request — same
+  // resolution /api/chat itself does (override, else the live default) —
+  // for storing as provenance on conversations/messages, and for looking up
+  // that model's own measured context window below.
+  const resolvedModelId = selectedModel !== 'default' ? selectedModel : (defaultModelId || 'unknown')
+  // TOD: local-model-only chat context — the budget denominator is the
+  // window the server has ACTUALLY loaded for this model (`servedContextLength`,
+  // read off Ollama's /api/ps), never the window the weights were trained
+  // with. Those differ by 8x on this host — 4096 served vs 32768 trained —
+  // and it is the served figure a conversation gets truncated against. Showing
+  // the trained one would advertise headroom the runtime will not honour.
+  const activeModel = liveModels.find(m => m.id === resolvedModelId)
+  const servedContextLength = activeModel?.servedContextLength
+
   // Feature 15: context budget
+  // Thresholds are percentages of the served window. When the model is not
+  // loaded yet, /api/ps does not list it and there is no denominator at all —
+  // render the estimate plain and say the window is unknown. Substituting the
+  // trained number here is exactly the pretence this meter exists to avoid.
   const contextTokenEstimate = activeConv
     ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4)
     : 0
-  const contextTokenColor = contextTokenEstimate > 150000 ? 'text-red-500' : contextTokenEstimate > 50000 ? 'text-yellow-500' : 'text-white/30'
-  const contextTokenLabel = contextTokenEstimate >= 1000
-    ? `~${(contextTokenEstimate / 1000).toFixed(1)}k / 200k tokens`
-    : `~${contextTokenEstimate} / 200k tokens`
+  const contextUsagePct = servedContextLength ? contextTokenEstimate / servedContextLength : null
+  const contextTokenColor = contextUsagePct === null
+    ? 'text-white/30'
+    : contextUsagePct > 0.85 ? 'text-red-500' : contextUsagePct > 0.6 ? 'text-yellow-500' : 'text-white/30'
+  const formatTok = (n: number) => n >= 1000 ? `~${(n / 1000).toFixed(1)}k` : `~${n}`
+  const contextTokenLabel = servedContextLength
+    ? `${formatTok(contextTokenEstimate)} / ${formatTok(servedContextLength)} tokens (served)`
+    : `${formatTok(contextTokenEstimate)} tokens · context window unknown until the model loads`
 
   // Cmd+K / arrow-key nav wired up after helpers defined (see below)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -841,19 +941,40 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     setActiveChat(filteredChats[sidebarFocusIdx].id)
   }, [sidebarFocusIdx])
 
-  const persistMessage = async (convId: string, msg: ChatMessage) => {
-    await fetch('/api/chat/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: msg.id,
-        conversation_id: convId,
-        role: msg.role,
-        content: msg.content,
-        model: msg.model || null,
-        image_url: msg.image_url || null,
-      }),
-    })
+  /** Writes one message to the database. Returns `null` on success, or the
+   *  reason it did not save. The result is not optional to look at: an ignored
+   *  failure here is a message that is on screen now and gone after reload. */
+  const persistMessage = async (convId: string, msg: ChatMessage): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: msg.id,
+          conversation_id: convId,
+          role: msg.role,
+          content: msg.content,
+          model: msg.model || null,
+          image_url: msg.image_url || null,
+        }),
+      })
+      if (res.ok) return null
+      const body = await res.json().catch(() => null)
+      return `${msg.role} message was not saved to chat_messages: ${body?.error || `${res.status} from /api/chat/messages`}`
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      return `${msg.role} message was not saved to chat_messages: ${detail}`
+    }
+  }
+
+  /** Attach a persist failure to the message it belongs to, so the warning
+   *  renders next to the text that is at risk rather than as a floating toast. */
+  const markPersistError = (convId: string, msgId: string, reason: string) => {
+    setChats(prev => prev.map(c =>
+      c.id === convId
+        ? { ...c, messages: c.messages.map(m => m.id === msgId ? { ...m, persistError: reason } : m) }
+        : c
+    ))
   }
 
   const copyMessage = (id: string, content: string) => {
@@ -891,7 +1012,8 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     )
     setChats(updatedChats)
 
-    await persistMessage(convToUse.id, userMsg)
+    const userPersistError = await persistMessage(convToUse.id, userMsg)
+    if (userPersistError) markPersistError(convToUse.id, userMsg.id, userPersistError)
     if (isFirstMsg) {
       await fetch('/api/chat/conversations', {
         method: 'PATCH',
@@ -924,7 +1046,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       })
 
       if (!res.ok || !res.body) {
-        setChatError('Gateway error — could not stream response')
+        // /api/chat returns a real 400 (not a 200-wrapped SSE error) when
+        // the requested model id isn't in the live LLM_BASE_URL/models list
+        // — surface that exact message rather than a generic gateway string.
+        const body = await res.json().catch(() => null)
+        setChatError(body?.error || `${res.status} from /api/chat — could not stream response`)
         setLoading(false)
         setIsSending(false)
         return
@@ -935,7 +1061,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
         id: streamMsgId,
         role: 'assistant',
         content: '',
-        model: 'kaos',
+        model: resolvedModelId,
         ts: Date.now(),
         agent_id: selectedAgent,
       }
@@ -965,6 +1091,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
             if (parsed.error) {
               setChatError(parsed.error)
               break
+            }
+            // The reply streamed but the server could not write it to
+            // chat_messages. Keep the text on screen AND say so — otherwise
+            // the message silently disappears on the next load.
+            if (parsed.persistError) {
+              markPersistError(convToUse.id, streamMsgId, parsed.persistError)
+              continue
             }
             if (parsed.done) {
               finalId = parsed.id || streamMsgId
@@ -1084,12 +1217,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const handleSend = async () => {
     if (!inputVal.trim() || !activeConv) return
 
-    // Handle /imagine typed manually
-    if (inputVal.trim().startsWith('/imagine ')) {
-      await executeSlashCommand('/imagine')
-      return
-    }
-
     // Handle slash commands — match exact OR first filtered result from palette
     if (inputVal.startsWith('/')) {
       const typed = inputVal.trim().split(' ')[0]
@@ -1099,12 +1226,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       const filtered = SLASH_COMMANDS.filter(c => c.cmd.startsWith(typed))
       if (filtered.length >= 1 && showSlashPalette) {
         const chosen = filtered[slashPaletteIdx] || filtered[0]
-        if (chosen.cmd === '/imagine') {
-          setInputVal('/imagine ')
-          setShowSlashPalette(false)
-          setTimeout(() => textareaRef.current?.focus(), 0)
-          return
-        }
         await executeSlashCommand(chosen.cmd)
         return
       }
@@ -1204,13 +1325,17 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const doMessageSearch = async (q: string) => {
     if (q.length < 3) return
     setIsSearching(true)
-    try {
-      const res = await fetch(`/api/chat/search?q=${encodeURIComponent(q)}`)
-      const data = await res.json()
-      setSearchResults(data)
+    // A failed search used to hand a non-array error body ({error: "..."})
+    // straight to `searchResults`, which every render treats as an array —
+    // a genuine crash risk, not just a UI lie. Only ever accept a real array.
+    const r = await fetchJson<Array<{id:string;conversation_id:string;content:string;role:string;created_at:string}>>(`/api/chat/search?q=${encodeURIComponent(q)}`)
+    if (r.ok && Array.isArray(r.data)) {
+      setSearchResults(r.data)
       setSearchMode('messages')
-    } catch { /* ignore */ }
-    finally { setIsSearching(false) }
+    } else {
+      setSearchResults([])
+    }
+    setIsSearching(false)
   }
 
   // Feature 13: generate follow-up suggestions
@@ -1246,11 +1371,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conversationId, firstUserMessage }),
-    }).then(r => r.json()).then(data => {
-      if (data.title) {
-        setChats(prev => prev.map(c => c.id === conversationId ? { ...c, title: data.title } : c))
+    }).then(async res => {
+      if (!res.ok) return
+      const data = await res.json().catch(() => null) as { title?: string } | null
+      if (data?.title) {
+        setChats(prev => prev.map(c => c.id === conversationId ? { ...c, title: data.title as string } : c))
       }
-    }).catch(() => {})
+    })
   }
 
   // Feature 18: export helpers
@@ -1293,7 +1420,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       id: newId,
       title: newTitle,
       model: conv.model,
-      messages: messagesToCopy.map(m => ({ ...m, id: 'msg-fork-' + Date.now() + Math.random().toString(36).slice(2) })),
+      // A fork is a fresh write, so the copy starts without the source's
+      // persist warning — it earns its own below if the write fails.
+      messages: messagesToCopy.map(m => ({ ...m, id: 'msg-fork-' + Date.now() + Math.random().toString(36).slice(2), persistError: undefined })),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       pinned: false,
@@ -1310,12 +1439,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: newId, title: newTitle, model: conv.model, agent_id: conv.agent_id, forked_from: conv.id }),
     })
+    // Same rule as a normal send: a copy that did not reach the database is
+    // marked on the message itself rather than left to disappear on reload.
     for (const m of newConv.messages) {
-      await fetch('/api/chat/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: m.id, conversation_id: newId, role: m.role, content: m.content, model: m.model || null }),
-      })
+      const err = await persistMessage(newId, m)
+      if (err) markPersistError(newId, m.id, err)
     }
   }
 
@@ -1346,8 +1474,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
 
   const groupedChats = groupChatsByDate(filteredChats)
 
-  // Feature 8: model label
-  const agentModelLabel = AGENT_MODEL_MAP[selectedAgent] || 'Claude Max'
+  // Feature 8: model label — the model that will actually answer this
+  // message, not a per-agent vendor claim. An explicit override shows its id
+  // verbatim; otherwise this shows whatever /api/chat/models reported as the
+  // live default, or an honest loading/unavailable state — never a guess.
+  const agentModelLabel = selectedModel !== 'default'
+    ? selectedModel
+    : modelsLoading ? 'checking…' : modelsError ? 'model list unavailable' : (defaultModelId || 'no model configured')
 
   // NEW: Send last assistant message to another agent
   const sendToAgent = async (targetAgentId: string) => {
@@ -1411,7 +1544,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   title={c.title}
                   className={'w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition-all ' +
                     (activeChat === c.id ? 'bg-white/10' : 'bg-[#0f0f0f] hover:bg-white/10')}>
-                  {AGENT_BADGE_MAP[c.agent_id || 'main'] || '💬'}
+                  {c.agent_id ? agentBadgeFor(c.agent_id) : '💬'}
                 </button>
               ))}
             </div>
@@ -1453,14 +1586,14 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   (!projectFilter && !starredFilter ? 'bg-white/15 text-white border-white/20' : 'text-white/50 border-white/10 hover:border-white/10')}>
                 All
               </button>
-              {Object.entries(PROJECT_TAG_COLORS).map(([proj, color]) => (
+              {(liveProjectNames ?? []).map(proj => (
                 <button
                   key={proj}
                   onClick={() => { setProjectFilter(projectFilter === proj ? null : proj); setStarredFilter(false) }}
                   className={'text-[9px] px-2 py-0.5 rounded-full border transition-colors ' +
                     (projectFilter === proj ? 'text-white' : 'text-white/50 hover:text-white/70')}
                   style={projectFilter === proj
-                    ? { background: color + '30', borderColor: color + '80', color }
+                    ? { background: PROJECT_TAG_DEFAULT_COLOR + '30', borderColor: PROJECT_TAG_DEFAULT_COLOR + '80', color: PROJECT_TAG_DEFAULT_COLOR }
                     : { borderColor: '#27272a' }}>
                   {proj}
                 </button>
@@ -1509,7 +1642,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
 
             {/* Grouped Chats */}
             <div className="flex-1 overflow-y-auto px-2 py-2">
-              {filteredChats.length === 0 ? (
+              {chatsError ? (
+                <div className="px-2 py-3"><ApiErrorBanner error={chatsError} onRetry={() => setChatsReload(n => n + 1)} /></div>
+              ) : !chatsLoaded ? (
+                <p className="text-white/20 text-xs px-3 py-4">Loading chats…</p>
+              ) : filteredChats.length === 0 ? (
                 <p className="text-white/20 text-xs px-3 py-4">No chats yet</p>
               ) : (
                 groupedChats.map(group => (
@@ -1524,8 +1661,8 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                         const preview = searchMode === 'messages'
                           ? searchResults.find(r => r.conversation_id === c.id)?.content.slice(0, 60)
                           : lastMsg ? stripMarkdownPreview(lastMsg.content) : ''
-                        const agentBadge = AGENT_BADGE_MAP[c.agent_id || 'main'] || '🧠'
-                        const projColor = c.project ? PROJECT_TAG_COLORS[c.project] : null
+                        const agentBadge = agentBadgeFor(c.agent_id ?? 'main')
+                        const projColor = c.project ? PROJECT_TAG_DEFAULT_COLOR : null
                         const highlightedPreview = searchMode === 'messages' && preview && search.length >= 3
                           ? (() => {
                               const idx = preview.toLowerCase().indexOf(search.toLowerCase())
@@ -1616,8 +1753,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
             {/* Heartbeats tab content */}
             {sidebarTab === 'heartbeats' && (
               <div className="flex-1 overflow-y-auto">
+                {ocError && <div className="p-3"><ApiErrorBanner error={ocError} /></div>}
                 {ocLoading && <div className="p-4 text-center text-white/30 text-xs">Loading…</div>}
-                {!ocLoading && (() => {
+                {!ocLoading && !ocError && (() => {
                   const items = ocSessions.filter(s => s.action === 'cron' || s.channel?.includes('Cron'))
                   if (items.length === 0) return <div className="p-4 text-center text-white/30 text-xs">No sessions found</div>
                   return items.map((s: any, i: number) => (
@@ -1651,7 +1789,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
               <button onClick={() => setMobileSidebarOpen(false)} className="w-7 h-7 flex items-center justify-center text-white/50 hover:text-white transition-colors text-sm rounded-lg hover:bg-white/10">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto px-2 py-2">
-              {filteredChats.length === 0 ? (
+              {chatsError ? (
+                <div className="px-2 py-3"><ApiErrorBanner error={chatsError} onRetry={() => setChatsReload(n => n + 1)} /></div>
+              ) : !chatsLoaded ? (
+                <p className="text-white/20 text-xs px-3 py-4">Loading chats…</p>
+              ) : filteredChats.length === 0 ? (
                 <p className="text-white/20 text-xs px-3 py-4">No chats yet</p>
               ) : (
                 filteredChats.map(c => (
@@ -1674,12 +1816,27 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       {/* CENTER: CHAT AREA */}
       <div className="flex-1 flex flex-col min-w-0 relative" style={{background:'#080808'}}>
         {!activeConv ? (
-          <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center px-6">
             <div className="text-center">
               <div className="text-5xl mb-4">💬</div>
               <p className="text-white/40 text-sm font-medium">No conversation selected</p>
               <p className="text-white/20 text-xs mt-1">Click "New Chat" to start</p>
             </div>
+            {/* A dead model endpoint has to be visible before the user types a
+                first message, not only once a conversation exists — otherwise
+                "No conversation selected" reads as a working, idle app. The
+                server message names the endpoint that failed. */}
+            {modelsError && (
+              <div className="mt-6 max-w-lg w-full rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-center">
+                <p className="text-[11px] text-red-400 break-words">⚠️ {modelsError.message}</p>
+                <button
+                  type="button"
+                  onClick={loadLiveModels}
+                  className="mt-1 text-[10px] text-red-300/80 underline hover:text-red-200">
+                  retry
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -1707,17 +1864,23 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                       onDoubleClick={() => setRenamingTitle(activeConv.title)}>
                       {activeConv.title}
                     </h2>
-                    {/* Feature 9: project badge in header */}
+                    {/* Feature 9: project badge in header. Cycles through
+                        null + the real /api/projects rows (projectCycle
+                        below) — never a hardcoded four-name list. Until
+                        those rows have loaded, the button is a no-op rather
+                        than offering a guessed project. */}
                     <button
                       onClick={() => {
+                        const projectCycle: (string | null)[] = [null, ...(liveProjectNames ?? [])]
+                        if (projectCycle.length <= 1) return
                         const current = activeConv.project || null
-                        const idx = PROJECT_CYCLE.indexOf(current as any)
-                        const next = PROJECT_CYCLE[(idx + 1) % PROJECT_CYCLE.length]
+                        const idx = projectCycle.indexOf(current)
+                        const next = projectCycle[(idx + 1) % projectCycle.length]
                         setConvProject(activeConv.id, next)
                       }}
                       className="text-[9px] px-2 py-0.5 rounded-full border transition-colors shrink-0"
                       style={activeConv.project
-                        ? { background: (PROJECT_TAG_COLORS[activeConv.project] || '#555') + '20', color: PROJECT_TAG_COLORS[activeConv.project] || '#aaa', borderColor: (PROJECT_TAG_COLORS[activeConv.project] || '#555') + '50' }
+                        ? { background: PROJECT_TAG_DEFAULT_COLOR + '20', color: PROJECT_TAG_DEFAULT_COLOR, borderColor: PROJECT_TAG_DEFAULT_COLOR + '50' }
                         : { color: '#555', borderColor: '#2a2a2a', background: '#141414' }}
                       title="Click to cycle project tag">
                       {activeConv.project || '+ project'}
@@ -1732,12 +1895,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                     <span className="text-white/30">·</span>
                     <span style={{color:'#818cf8'}}>{agentModelLabel}</span>
                   </span>
-                  {selectedModel !== 'default' && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-medium"
-                      style={{background:'#0f1a0f',borderColor:'#1a3a1a',color:'#34d399'}}>
-                      {MODEL_OPTIONS.find(m=>m.id===selectedModel)?.label.replace(/^[^ ]+ /,'') || selectedModel}
-                    </span>
-                  )}
                   {activeConv.messages.length > 0 && (
                     <span className={`text-[9px] tabular-nums ${contextTokenColor}`}>{contextTokenLabel}</span>
                   )}
@@ -1937,7 +2094,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                     <div
                       className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm mt-0.5"
                       style={{ background: msg.role === 'user' ? '#1e1e1e' : '#3b82f620' }}>
-                      {msg.role === 'user' ? '👤' : (AGENT_BADGE_MAP[msgAgent] || '🧠')}
+                      {msg.role === 'user' ? '👤' : agentBadgeFor(msgAgent)}
                     </div>
 
                     {/* Bubble */}
@@ -2031,6 +2188,18 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                               : <MarkdownMessage content={msg.content} />
                             }
                           </div>
+                          {/* This message is on screen but not in the database.
+                              It will be gone after a reload, so the warning is
+                              persistent rather than a toast, and it names the
+                              reason the write failed. */}
+                          {msg.persistError && (
+                            <div className={
+                              'mt-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 ' +
+                              (msg.role === 'user' ? 'text-right' : 'text-left')
+                            }>
+                              <p className="text-[11px] text-red-400 break-words">⚠️ {msg.persistError} — it will not be here after a reload.</p>
+                            </div>
+                          )}
                           {/* NEW: Approval flow buttons */}
                           {msg.role === 'assistant' && /\/approve\s+(allow-once|allow-always|deny)/i.test(msg.content) && !approvalUsed[msg.id] && (
                             <div className="flex gap-2 mt-2 flex-wrap">
@@ -2298,16 +2467,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   {slashFilter.map((c, i) => (
                     <button
                       key={c.cmd}
-                      onClick={() => {
-                        // For /imagine: insert command into input so user can type their prompt, don't execute
-                        if (c.cmd === '/imagine') {
-                          setInputVal('/imagine ')
-                          setShowSlashPalette(false)
-                          setTimeout(() => textareaRef.current?.focus(), 0)
-                        } else {
-                          executeSlashCommand(c.cmd)
-                        }
-                      }}
+                      onClick={() => executeSlashCommand(c.cmd)}
                       className={'w-full text-left px-3 py-2 flex items-center gap-2.5 border-b border-white/10/50 last:border-0 transition-colors ' +
                         (i === slashPaletteIdx ? 'bg-white/10 text-white' : 'text-white/40 hover:bg-[#0f0f0f]')}>
                       <span className="text-base shrink-0">{c.icon}</span>
@@ -2442,23 +2602,41 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   }}
                 />
 
-                {/* Model selector */}
-                <select
-                  value={selectedModel}
-                  onChange={e => setSelectedModel(e.target.value)}
-                  disabled={isSending}
-                  className="hidden sm:block px-1.5 py-1 rounded-lg bg-[#0f0f0f] border border-white/10 text-[10px] text-white/40 shrink-0 outline-none focus:border-white/20 disabled:opacity-50 cursor-pointer"
-                  title="Select model">
-                  {MODEL_PROVIDERS.map(provider => (
-                    <optgroup key={provider} label={provider}>
-                      {MODEL_OPTIONS.filter(m => m.provider === provider).map(m => (
-                        <option key={m.id} value={m.id} title={m.desc}>
-                          {m.label}{m.ctx ? ` (${m.ctx})` : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                {/* Model selector — populated from a live GET of the LLM
+                    endpoint's /models (proxied via /api/chat/models, see
+                    lib/llm-provider.ts). No hardcoded vendor list: if the
+                    local model server is down, this renders an explicit,
+                    named error instead of a frozen or empty dropdown. */}
+                {modelsError ? (
+                  // The server's own message leads with the URL that failed
+                  // ("http://localhost:11434/v1 is unreachable — …"), so it is
+                  // rendered verbatim rather than replaced with a generic
+                  // "unavailable": the operator needs to see WHICH endpoint is
+                  // down. Never hidden on small screens — an error the user
+                  // cannot see is the same as no error at all.
+                  <button
+                    type="button"
+                    onClick={loadLiveModels}
+                    disabled={isSending}
+                    title={`${formatApiError(modelsError, 'model list unavailable')} — click to retry`}
+                    className="flex items-center gap-1 px-1.5 py-1 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-400 shrink-0 disabled:opacity-50 max-w-[16rem] sm:max-w-[22rem]">
+                    <span aria-hidden="true">⚠️</span>
+                    <span className="truncate">{modelsError.message}</span>
+                    <span className="shrink-0 underline">retry</span>
+                  </button>
+                ) : (
+                  <select
+                    value={selectedModel}
+                    onChange={e => setSelectedModel(e.target.value)}
+                    disabled={isSending || modelsLoading}
+                    className="hidden sm:block px-1.5 py-1 rounded-lg bg-[#0f0f0f] border border-white/10 text-[10px] text-white/40 shrink-0 outline-none focus:border-white/20 disabled:opacity-50 cursor-pointer"
+                    title={modelsLoading ? 'Loading models…' : 'Live model list from the configured LLM_BASE_URL'}>
+                    <option value="default">⚡ Agent default{defaultModelId ? ` (${defaultModelId})` : modelsLoading ? ' (loading…)' : ''}</option>
+                    {liveModels.map(m => (
+                      <option key={m.id} value={m.id}>{m.id}</option>
+                    ))}
+                  </select>
+                )}
 
                 {/* Send-to-agent button */}
                 {showSendToAgent !== undefined && (
@@ -2527,13 +2705,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                         e.preventDefault()
                         const chosen = visible[slashPaletteIdx]
                         if (chosen) {
-                          if (chosen.cmd === '/imagine') {
-                            setInputVal('/imagine ')
-                            setShowSlashPalette(false)
-                            setTimeout(() => textareaRef.current?.focus(), 0)
-                          } else {
-                            executeSlashCommand(chosen.cmd)
-                          }
+                          executeSlashCommand(chosen.cmd)
                         }
                         return
                       }
@@ -2687,7 +2859,15 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
               </div>
             </div>
             <div className="flex-1 overflow-y-auto py-1">
-              {fileBrowserEntries.length === 0 ? (
+              {fileBrowserError ? (
+                <div className="mx-3 my-3 rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2.5">
+                  <p className="text-red-300 text-xs font-medium">{fileBrowserError}</p>
+                  {fileBrowserWorkspace && (
+                    <p className="text-[10px] text-white/50 font-mono break-all mt-1.5">{fileBrowserWorkspace}</p>
+                  )}
+                  <p className="text-[10px] text-white/40 mt-1.5">Set TODERO_WORKSPACE_DIR</p>
+                </div>
+              ) : fileBrowserEntries.length === 0 ? (
                 <p className="text-white/30 text-xs px-4 py-3">Empty directory</p>
               ) : (
                 fileBrowserEntries.map(entry => (
@@ -2703,6 +2883,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                         if (data.content !== undefined) {
                           setSelectedFile({ name: entry.name, content: data.content })
                           setShowFileBrowser(false)
+                        } else {
+                          // Don't swallow it — an unreadable file looked like a no-op click.
+                          setFileBrowserError(data.error ?? `Could not read ${entry.name}`)
                         }
                       }
                     }}

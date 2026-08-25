@@ -1,14 +1,16 @@
 // Shared task update helper — used by all agent run endpoints
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+import { db } from '@/lib/db'
 
 export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'code_review' | 'approved' | 'released' | 'completed' | 'closed'
 
 // INF-203: Cost trend sparkline data model
+// TOD: kill-fake-infra-greens — cost/tokens are null when no snapshot was
+// stored for that day. A day nothing measured must render as absent, not
+// as a fabricated $0.00 that looks identical to a real zero-spend day.
 export interface CostSnapshot {
   date: string
-  cost: number
-  tokens: number
+  cost: number | null
+  tokens: number | null
 }
 
 // INF-218: Kanban swimlane types
@@ -72,16 +74,10 @@ export interface Task {
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  await fetch(`${SUPA_URL}/rest/v1/issues?id=eq.${taskId}`, {
-    method: 'PATCH',
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${SUPA_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal',
-    },
-    body: JSON.stringify({ status, updated_at: new Date().toISOString() }),
-  })
+  await db()
+    .from('issues')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', taskId)
 }
 
 export async function logAgentRun(agentId: string, taskId: string | null, taskTitle: string, status: 'running' | 'done' | 'failed', output?: string, error?: string) {
@@ -91,16 +87,6 @@ export async function logAgentRun(agentId: string, taskId: string | null, taskTi
   if (output) body.output = output.slice(-2000)
   if (error) body.error = error
 
-  const res = await fetch(`${SUPA_URL}/rest/v1/agent_runs`, {
-    method: 'POST',
-    headers: {
-      'apikey': SUPA_KEY,
-      'Authorization': `Bearer ${SUPA_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation',
-    },
-    body: JSON.stringify(body),
-  })
-  const data = await res.json()
-  return data[0]?.id ?? null
+  const { data } = await db().from('agent_runs').insert(body).select('id')
+  return (data as Array<{ id: string }> | null)?.[0]?.id ?? null
 }

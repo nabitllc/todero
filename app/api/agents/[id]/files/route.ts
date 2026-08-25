@@ -1,8 +1,9 @@
-// Phase 2.3: Read agent docs from Supabase agent_documents instead of local filesystem
+// Phase 2.3: Read agent docs from the agent_documents table instead of local files
 // TOD-1514 — works on both local and remote access
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 export async function GET(
   _req: NextRequest,
@@ -13,12 +14,19 @@ export async function GET(
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
 
+  // Empty documents and an unconfigured database are different facts. Say which.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const db = createAdminClient()
     const { data: docs, error } = await db
       .from('agent_documents')
       .select('doc_type, content')
-      .or(`agent_id.eq.${id},agent_id.eq.global`)
+      .or([
+        { column: 'agent_id', op: 'eq', value: id },
+        { column: 'agent_id', op: 'eq', value: 'global' },
+      ])
       .in('doc_type', ['soul', 'heartbeat', 'agents'])
 
     if (error) {

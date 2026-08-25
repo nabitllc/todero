@@ -3,21 +3,65 @@
 // Handles Supabase agent_runs polling and board task polling.
 
 import { useEffect } from 'react';
-import {
-  SUPA_URL, SUPA_KEY, SUPA_AGENTS,
-} from '@/components/office/officeConstants';
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser';
+import { readApiError, formatApiError, type ApiError } from '@/lib/fetch-json';
 import type { AgentRunInfo, AgentRunStatus } from '@/components/office/officeConstants';
 
 export type { AgentRunInfo, AgentRunStatus };
+export type { ApiError };
 
+// A `status='running'` agent_runs row this old never received a terminal
+// status (dispatch died, the process crashed, the machine slept). Treated as
+// 'stale' — orphaned, not live — everywhere in the office, so the canvas and
+// every sidebar panel agree on what "active" means.
+export const RUN_STALE_MS = 5 * 60 * 1000; // 5 minutes
+
+// No per-1k-token price is configured anywhere in this deployment. This used
+// to synthesize $0.003/1k (Claude Sonnet's rate, silently applied to every
+// agent regardless of which model actually ran) and even charged a flat
+// $0.01 for runs with zero recorded tokens. Until a real price is wired in
+// (e.g. per-model, from the agent's manifest), cost is reported as `null`
+// rather than a fabricated number. Set NEXT_PUBLIC_TOKEN_PRICE_PER_1K to
+// opt in once a real price exists.
+const TOKEN_PRICE_PER_1K: number | null = (() => {
+  const raw = process.env.NEXT_PUBLIC_TOKEN_PRICE_PER_1K;
+  const n = raw ? parseFloat(raw) : NaN;
+  return Number.isFinite(n) ? n : null;
+})();
+
+interface RunLikeRow { status?: string | null; started_at?: string | null }
+
+/**
+ * The one liveness rule for agent_runs. 'live' only when the row is actively
+ * `running` AND started within RUN_STALE_MS — an orphaned `running` row
+ * (process died without reporting) is 'stale', never 'live'. A missing row
+ * (or one with no started_at) is 'never': the agent hasn't run at all, which
+ * must render distinct from a measured idle/ended agent.
+ */
+export function runLiveness(row: RunLikeRow | null | undefined): AgentRunStatus {
+  if (!row || !row.started_at) return 'never';
+  const startMs = new Date(row.started_at).getTime();
+  if (Number.isNaN(startMs)) return 'never';
+  if (row.status === 'running') {
+    return (Date.now() - startMs) < RUN_STALE_MS ? 'live' : 'stale';
+  }
+  return 'ended';
+}
+
+/**
+ * Fetch the latest agent_runs rows and reduce them to one AgentRunInfo per
+ * agent. Throws (with an `.apiError` on the Error) on a failed request
+ * instead of silently returning `{}` — a refused query must never be
+ * indistinguishable from "no agents have ever run".
+ */
 export async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
-  const res = await fetch(
-    `${SUPA_URL}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`,
-    { headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` } }
-  );
-  if (!res.ok) return {};
+  const endpoint = dbUrl(`agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=200`);
+  const res = await fetch(endpoint, { headers: dbRestHeaders() });
+  if (!res.ok) {
+    const apiError = await readApiError(res, 'agent_runs');
+    throw Object.assign(new Error(formatApiError(apiError)), { apiError });
+  }
   const rows: any[] = await res.json();
-  const now = Date.now();
   const todayStart = new Date(); todayStart.setHours(0,0,0,0);
   const todayMs = todayStart.getTime();
   const result: Record<string, AgentRunInfo> = {};
@@ -29,18 +73,25 @@ export async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
   }
   for (const [aid, aRows] of Object.entries(agentRows)) {
     const latest = aRows[0];
-    const startMs = latest.started_at ? new Date(latest.started_at).getTime() : 0;
-    const ageMin = (now - startMs) / 60000;
-    const st: AgentRunStatus = (latest.status === 'running' || ageMin < 5) ? 'working' : 'idle';
+    const st: AgentRunStatus = runLiveness(latest);
     const todayRuns = aRows.filter(r => r.started_at && new Date(r.started_at).getTime() >= todayMs);
     const todayTasks = todayRuns.filter(r => r.status !== 'error').length;
     const todayErrors = todayRuns.filter(r => r.status === 'error').length;
-    const estimatedCost = todayRuns.reduce((sum: number, r: any) => sum + (r.tokens_used ? (r.tokens_used / 1000) * 0.003 : 0.01), 0);
+    let estimatedCost: number | null = null;
+    if (TOKEN_PRICE_PER_1K != null) {
+      const runsWithTokens = todayRuns.filter(r => typeof r.tokens_used === 'number' && r.tokens_used > 0);
+      if (runsWithTokens.length > 0) {
+        estimatedCost = runsWithTokens.reduce((sum: number, r: any) => sum + (r.tokens_used / 1000) * TOKEN_PRICE_PER_1K, 0);
+      }
+    }
     result[aid] = { status: st, taskTitle: (latest.task_title || '').slice(0, 35), startedAt: latest.started_at, todayTasks, todayErrors, estimatedCost };
   }
-  for (const id of SUPA_AGENTS) {
-    if (!result[id]) result[id] = { status: 'never', taskTitle: '', startedAt: null, todayTasks: 0, todayErrors: 0, estimatedCost: 0 };
-  }
+  // TOD (agent-roster-truth): this used to backfill a 'never' entry for a
+  // hardcoded 8-agent list (SUPA_AGENTS) so every "known" agent always had a
+  // row, whether or not it was in the real roster. Deleted with the rest of
+  // that fallback — every caller already treats a *missing* key the same way
+  // it treats an explicit 'never' status, so no entry is the honest answer
+  // for an agent nothing here was told to expect.
   return result;
 }
 
@@ -96,15 +147,15 @@ export function useAgentStatus({
         agents.forEach((ag: any) => {
           const run = runs[ag.id];
           if (!run) return;
-          if (run.status === 'working') {
-            if (ag.state !== 'working' && ag.state !== 'meeting' && ag.state !== 'moving_to_meeting') {
+          if (run.status === 'live') {
+            if (ag.state !== 'working') {
               ag.state = 'working'; ag.task = run.taskTitle || 'Working'; ag.progress = 5;
               ag.monologue = null; ag.glowTick = 60; ag.lastStateChange = Date.now();
               addFeed(`${ag.emoji} ${ag.name}: ${run.taskTitle || 'Working'}`, ag.color);
             } else if (ag.state === 'working' && run.taskTitle && ag.task !== run.taskTitle) {
               ag.task = run.taskTitle; ag.progress = 5;
             }
-          } else if (run.status === 'idle') {
+          } else if (run.status === 'ended') {
             if (ag.state === 'working') {
               ag.tasksCompleted++;
               ag.taskHistory = [...(ag.taskHistory || []), ag.task].slice(-20);
@@ -112,11 +163,19 @@ export function useAgentStatus({
               ag.state = 'idle'; ag.task = null; ag.progress = 0; ag.monologue = null;
               ag.lastStateChange = Date.now();
             }
+          } else if (run.status === 'stale') {
+            // Orphaned 'running' row — the process died without reporting a
+            // terminal status. We do not know whether it succeeded, so we
+            // stop showing it as working without claiming "done".
+            if (ag.state === 'working') {
+              ag.state = 'idle'; ag.task = null; ag.progress = 0; ag.monologue = null;
+              ag.lastStateChange = Date.now();
+            }
           }
         });
         const subSessions: typeof subagentSessionsRef.current = [];
         for (const [aid, info] of Object.entries(runs)) {
-          if (aid === 'main' || !info || info.status !== 'working') continue;
+          if (aid === 'main' || !info || info.status !== 'live') continue;
           const meta = SUB_AGENT_MAP[aid];
           if (meta) {
             subSessions.push({ id: aid, ...meta, task: info.taskTitle, startedAt: info.startedAt ? new Date(info.startedAt).getTime() : Date.now() });

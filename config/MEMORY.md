@@ -25,7 +25,7 @@ Vespera and Kemuni are PAUSED. All work is on Todero platform.
 - **Mission Control app:** ~/mission-control | Next.js 14 + Supabase + Tailwind
 - **Live at:** https://kaos.nabit.work (Cloudflare tunnel, permanent)
 - **MC API:** http://localhost:3000/api/issues (all issue ops go through here)
-- **Supabase (Todero):** https://twthgapiouiqhavrcnry.supabase.co
+- **Supabase (Todero):** ${NEXT_PUBLIC_SUPABASE_URL}
 - **GitHub:** github.com/nabitllc/kaos-mission-control (mission control app)
 - **GitHub:** github.com/nabitllc/kaos-config (agent config, scripts, memory)
 - **Auto-deploy:** pushes to main → Mac Mini pulls + rebuilds every 5 min
@@ -83,7 +83,7 @@ Vespera and Kemuni are PAUSED. All work is on Todero platform.
 - No data on Chinese servers
 
 ## Key Credentials
-- Supabase service role (Todero): eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q
+- Supabase service role (Todero): SET_SUPABASE_SERVICE_ROLE_KEY_HERE
 - GitHub token: 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
 - Discord bot token: MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo
 - Cloudflare tunnel ID: e776dde7-37ae-42c0-b843-1d735bae152b

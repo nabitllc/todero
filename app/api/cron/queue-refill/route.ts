@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function isAuthorized(req: Request): boolean {
   const authHeader = req.headers.get('authorization')
@@ -43,6 +44,12 @@ interface RefinedIssue {
 }
 
 export async function GET(req: Request) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
@@ -80,7 +87,7 @@ export async function GET(req: Request) {
         .eq('project', project)
         .eq('type', issueType)
         .eq('status', 'open')
-        .not('assignee', 'in', '(michael,main)')
+        .not('assignee', 'in', ['michael', 'main'])
 
       if (countErr) {
         console.warn(`[queue-refill] count error ${project}/${issueType}:`, countErr.message)
@@ -102,7 +109,7 @@ export async function GET(req: Request) {
         .eq('type', issueType)
         .eq('status', 'refined')
         .is('started_at', null)          // skip issues PO is actively refining
-        .not('assignee', 'in', '(michael,main)')
+        .not('assignee', 'in', ['michael', 'main'])
         .limit(50)
 
       if (candErr || !candidates?.length) continue
@@ -174,7 +181,7 @@ export async function GET(req: Request) {
     .from('issues')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'open')
-    .not('assignee', 'in', '(michael,main)')
+    .not('assignee', 'in', ['michael', 'main'])
 
   if ((totalOpen ?? 0) === 0 && promoted.length === 0) {
     try {

@@ -40,7 +40,7 @@ UI, and issue board at `http://localhost:3000`.
 |---|---|
 | Todero app | `/Users/kemuniagent/todero` |
 | Todero API | `http://localhost:3000/api/issues` |
-| Supabase | `https://twthgapiouiqhavrcnry.supabase.co` |
+| Supabase | `${NEXT_PUBLIC_SUPABASE_URL}` |
 | Agent scripts | `./scripts/` |
 | Skills | `./skills/` |
 | Daily memory | `./memory/YYYY-MM-DD.md` |

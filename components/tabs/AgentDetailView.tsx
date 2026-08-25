@@ -6,8 +6,15 @@ import {
   LayoutDashboard, BookOpen, Zap, Settings, PlayCircle,
   ChevronRight, X, RefreshCw, Clock, CheckCircle2, Code2,
   AlertCircle, FileText, Activity, BarChart3, DollarSign,
-  Edit3, Save, Pause, Plus, Heart
+  Edit3, Save, Pause, Plus, Heart, Trash2
 } from 'lucide-react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, useApiData, formatApiError, type ApiError } from '@/hooks/useApiData'
+import { dbUrl } from '@/lib/db/browser'
+import { estimateModelRateUsd } from '@/lib/model-rates'
+import type { VaultBadgeInfo } from '@/lib/vault-badge'
+import AgentLaunchControl from '@/components/tabs/AgentLaunchControl'
+import AgentRunTrace from '@/components/tabs/AgentRunTrace'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Agent {
@@ -25,6 +32,23 @@ interface Agent {
   ago?: number | null
   lastUpdatedAt?: number
   currentTask?: string | null
+  type?: 'consultant' | 'permanent'
+  // Liveness as /api/agents reports it — derived from heartbeats the server
+  // actually received, never inferred. Optional so call sites that hold a
+  // partial agent object (search results, office sprites) still compile; a
+  // missing value renders as "liveness unknown", not as "Idle".
+  liveness?: 'live' | 'stale' | 'idle' | 'never'
+  lastSeenAt?: number | null
+  livenessSource?: 'heartbeat' | 'none'
+  // 'registered' means this row exists only because it POSTed to
+  // /api/connect — no AGENTS.md names it. Only those rows can be hard-deleted
+  // from the "Remove" action below; an AGENTS.md-defined agent has no
+  // registration row for DELETE /api/agents/{id} to remove.
+  rosterSource?: string
+  // Brain2 vault manifest data for this id, or null/undefined when the
+  // vault does not name it. Optional for the same reason as the liveness
+  // fields above — a partial agent object should still compile.
+  vault?: VaultBadgeInfo | null
 }
 
 interface Issue {
@@ -43,9 +67,29 @@ interface AgentFiles {
   agents: string
 }
 
+// agent_runs row shape (see migrations/017_agent_runs_cost.sql + app/api/run-agent/route.ts
+// insert). No `type` column exists yet to distinguish heartbeat from task runs — every row
+// here is a task run until that lands.
+interface AgentRun {
+  id: string
+  agent_id: string
+  task_id?: string | null
+  task_title?: string | null
+  status?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  type?: string | null
+}
+
 interface AgentDetailViewProps {
   agent: Agent
   onClose: () => void
+  /** Called after a successful hard delete, so the caller can drop this
+   *  agent from whatever roster state it is holding without waiting for the
+   *  next poll. Optional so older call sites still compile; when absent the
+   *  card still closes and the DELETE still lands, it just relies on the
+   *  next /api/agents poll to reflect it. */
+  onRemoved?: (agentId: string) => void
 }
 
 // ── Tab types ──────────────────────────────────────────────────────────────────
@@ -87,6 +131,27 @@ function relTime(ms: number | undefined | null): string {
   return `${Math.round(diff / 1440)}d ago`
 }
 
+/**
+ * The one place liveness turns into words. Every state names what the SERVER
+ * knows, so no reading is ever invented:
+ *   live   — a heartbeat arrived in the last minute
+ *   stale  — one arrived recently but the agent has missed its last beats
+ *   idle   — it checked in at some point, but not for over ten minutes
+ *   never  — no heartbeat has EVER been received for this agent
+ * The old view showed "Idle" for all four, which made a roster that has never
+ * reported anything look identical to one whose agents had just gone quiet.
+ */
+function livenessLabel(agent: Agent): { text: string; live: boolean; tone: string } {
+  const seen = relTime(agent.lastSeenAt ?? null)
+  switch (agent.liveness) {
+    case 'live':  return { text: `Running — heartbeat ${seen}`, live: true,  tone: 'text-emerald-400' }
+    case 'stale': return { text: `Stale — last heartbeat ${seen}`, live: false, tone: 'text-amber-400' }
+    case 'idle':  return { text: `Idle — last heartbeat ${seen}`, live: false, tone: 'text-white/40' }
+    case 'never': return { text: 'Never checked in', live: false, tone: 'text-white/40' }
+    default:      return { text: 'Liveness unknown — no heartbeat data', live: false, tone: 'text-white/40' }
+  }
+}
+
 // ── Markdown renderer (simple) ────────────────────────────────────────────────
 function SimpleMarkdown({ content }: { content: string }) {
   if (!content) return <p className="text-white/30 text-sm italic">No content available.</p>
@@ -113,28 +178,40 @@ function SimpleMarkdown({ content }: { content: string }) {
 
 // ── Tab: Dashboard ────────────────────────────────────────────────────────────
 function DashboardTab({ agent }: { agent: Agent }) {
-  const [issues, setIssues] = useState<Issue[]>([])
+  // TOD-654: null = failed/not loaded. Never [] on a non-ok response.
+  const [issues, setIssues] = useState<Issue[] | null>(null)
+  const [issuesError, setIssuesError] = useState<ApiError | null>(null)
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
-      .then(r => r.json())
-      .then((data: any) => {
+    setLoading(true)
+    fetchJson<Issue[] | { data?: Issue[] }>(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
+      .then(r => {
+        if (!r.ok) { setIssuesError(r.error); setIssues(null); setLoading(false); return }
+        setIssuesError(null)
+        const data = r.data
         setIssues(Array.isArray(data) ? data : data?.data ?? [])
+        setLoading(false)
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [agent.id])
+  }, [agent.id, reload])
 
-  const inProgress = issues.filter(i => i.status === 'in_progress').length
-  const inReview   = issues.filter(i => i.status === 'code_review').length
-  const open       = issues.filter(i => i.status === 'open').length
-  const active     = issues.filter(i => ['in_progress','code_review','open'].includes(i.status))
+  const loaded     = issues ?? []
+  const inProgress = loaded.filter(i => i.status === 'in_progress').length
+  const inReview   = loaded.filter(i => i.status === 'code_review').length
+  const open       = loaded.filter(i => i.status === 'open').length
+  const active     = loaded.filter(i => ['in_progress','code_review','open'].includes(i.status))
 
-  const isRunning = agent.status === 'running'
+  // `agent.status` is one of active/scheduled/idle — it was never 'running',
+  // so this indicator was hard-wired off. Liveness now comes from the same
+  // heartbeat field /api/agents computes it from.
+  const live = livenessLabel(agent)
+  const isRunning = live.live
 
   return (
     <div className="space-y-5">
+      {/* TOD-654: a refused issue query is stated, never rendered as 0 counts. */}
+      {issuesError && <ApiErrorBanner error={issuesError} onRetry={() => setReload(n => n + 1)} />}
       {/* Live Run indicator */}
       <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
         isRunning
@@ -144,8 +221,8 @@ function DashboardTab({ agent }: { agent: Agent }) {
         <span className={`inline-block w-2 h-2 rounded-full ${
           isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-white/20'
         }`} />
-        <span className={`text-xs font-medium ${isRunning ? 'text-emerald-400' : 'text-white/40'}`}>
-          {isRunning ? `Running — ${relTime(agent.lastUpdatedAt)}` : 'Idle'}
+        <span className={`text-xs font-medium ${live.tone}`}>
+          {live.text}
         </span>
       </div>
 
@@ -217,6 +294,7 @@ function DashboardTab({ agent }: { agent: Agent }) {
 // ── Tab: Instructions ─────────────────────────────────────────────────────────
 function InstructionsTab({ agent }: { agent: Agent }) {
   const [files, setFiles] = useState<AgentFiles | null>(null)
+  const [filesError, setFilesError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeFile, setActiveFile] = useState<'soul' | 'heartbeat' | 'agents'>('soul')
   const [isEditing, setIsEditing] = useState(false)
@@ -224,11 +302,13 @@ function InstructionsTab({ agent }: { agent: Agent }) {
   const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
-    fetch(`/api/agents/${agent.id}/files`)
-      .then(r => r.json())
-      .then(setFiles)
-      .catch(() => setFiles({ soul: '', heartbeat: '', agents: '' }))
-      .finally(() => setLoading(false))
+    fetchJson<AgentFiles>(`/api/agents/${agent.id}/files`)
+      .then(r => {
+        if (!r.ok) { setFilesError(r.error); setFiles(null); setLoading(false); return }
+        setFilesError(null)
+        setFiles(r.data)
+        setLoading(false)
+      })
   }, [agent.id])
 
   // Reset edit mode on file tab switch
@@ -274,6 +354,7 @@ function InstructionsTab({ agent }: { agent: Agent }) {
 
   return (
     <div className="space-y-4">
+      {filesError && <ApiErrorBanner error={filesError} />}
       <div className="flex items-center gap-2">
         <div className="flex gap-2 flex-1">
           {tabs.map(t => (
@@ -327,13 +408,18 @@ function InstructionsTab({ agent }: { agent: Agent }) {
 
 // ── Tab: Skills ───────────────────────────────────────────────────────────────
 function SkillsTab({ agent }: { agent: Agent }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped skill rows
   const [skills, setSkills] = useState<any[]>([])
+  const [skillsError, setSkillsError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/status')
-      .then(r => r.json())
-      .then((data: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+    fetchJson<any>('/api/status')
+      .then(r => {
+        if (!r.ok) { setSkillsError(r.error); setSkills([]); setLoading(false); return }
+        setSkillsError(null)
+        const data = r.data
         const agentSkills = data?.skills ?? data?.agents?.skills ?? []
         if (Array.isArray(agentSkills)) {
           setSkills(agentSkills)
@@ -341,6 +427,7 @@ function SkillsTab({ agent }: { agent: Agent }) {
           // Fallback: parse skills from the capabilities of the agent
           setSkills(agent.capabilities.map(c => ({ name: c, description: '', location: '' })))
         }
+        setLoading(false)
       })
       .catch(() => {
         setSkills(agent.capabilities.map(c => ({ name: c, description: '', location: '' })))
@@ -353,6 +440,7 @@ function SkillsTab({ agent }: { agent: Agent }) {
 
   return (
     <div className="space-y-4">
+      {skillsError && <ApiErrorBanner error={skillsError} />}
       <div>
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Built-in Capabilities</p>
         <div className="space-y-2">
@@ -391,39 +479,131 @@ function SkillsTab({ agent }: { agent: Agent }) {
 }
 
 // ── Tab: Configuration ────────────────────────────────────────────────────────
+//
+// agent-config-panel-truth piece (round 3): the model rows come from GET
+// /api/run-agent?info=1&agent=<id> — the same guard-free resolver
+// (lib/resolve-dispatch-model.ts's `resolveDispatchModel()`, walking
+// `modelChain` then `mapModel()` against the live `${LLM_BASE_URL}/models`
+// roster when openai-api wins) that POST /api/run-agent's real spawn path
+// uses AND that GET /api/agents now uses to compute every row's
+// `model`/`modelShort` — so this panel and the header badge above it (which
+// just renders `agent.modelShort`, no client-side re-derivation any more)
+// can never disagree again. A 4xx/5xx from that endpoint, or a null
+// `mapModel()` result, renders "not resolvable — <the endpoint's own
+// message>"; nothing here ever falls back to `agent.model`, AGENTS.md text,
+// or an env-URL heuristic (the deleted lib/vault-badge.ts's
+// resolveVaultBadge() + `localProviderConfigured`).
+interface RunAgentInfoAlternative {
+  label: string
+  reason: string
+}
+
+interface RunAgentInfo {
+  agent: string
+  resolvedRuntime: string
+  modelAlias: string
+  resolvedModelId: string | null
+  resolvedModelError: string | null
+  alternatives: RunAgentInfoAlternative[]
+  chainLength: number
+  dispatchEnabled: boolean
+}
+
 function ConfigurationTab({ agent }: { agent: Agent }) {
-  const [config, setConfig] = useState<any>(null)
+  const [row, setRow] = useState<Agent | null>(null)
+  const [configError, setConfigError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
+  const [info, setInfo] = useState<RunAgentInfo | null>(null)
+  const [infoError, setInfoError] = useState<ApiError | null>(null)
+  const [infoLoading, setInfoLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/status')
-      .then(r => r.json())
-      .then((data: any) => {
-        const agentsList: any[] = data?.agents?.agents ?? []
-        const found = agentsList.find((a: any) => a.id === agent.id)
-        setConfig(found ?? null)
+    setLoading(true)
+    fetchJson<{ agents?: Agent[] }>('/api/agents')
+      .then(r => {
+        if (!r.ok) { setConfigError(r.error); setRow(null); setLoading(false); return }
+        setConfigError(null)
+        const agentsList: Agent[] = Array.isArray(r.data?.agents) ? r.data.agents : []
+        const found = agentsList.find(a => a.id === agent.id)
+        setRow(found ?? null)
+        setLoading(false)
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
   }, [agent.id])
 
-  const heartbeatCfg = config?.heartbeat ?? {}
-  const workspacePath = config?.workspaceDir ?? agent.workspace ?? ''
+  useEffect(() => {
+    setInfoLoading(true)
+    fetchJson<RunAgentInfo>(`/api/run-agent?info=1&agent=${encodeURIComponent(agent.id)}`)
+      .then(r => {
+        if (!r.ok) { setInfoError(r.error); setInfo(null); setInfoLoading(false); return }
+        setInfoError(null)
+        setInfo(r.data)
+        setInfoLoading(false)
+      })
+  }, [agent.id])
 
-  const rows: { label: string; value: string | undefined }[] = [
-    { label: 'Default Model',    value: config?.model ?? agent.model },
-    { label: 'Model (fallback)', value: 'See AGENTS.md routing table' },
-    { label: 'Model (escalate)', value: 'See AGENTS.md routing table' },
-    { label: 'Heartbeat',        value: heartbeatCfg.every ? `Every ${heartbeatCfg.every}` : 'Disabled' },
-    { label: 'Workspace',        value: workspacePath },
-    { label: 'Sessions',         value: config?.sessionsCount != null ? String(config.sessionsCount) : '—' },
-    { label: 'Agent ID',         value: agent.id },
+  // Prefer the fresh /api/agents row; fall back to the prop this modal was
+  // opened with (same shape, one poll older) while the fetch above is still
+  // in flight or failed — never a fabricated intermediate value.
+  const live: Agent = row ?? agent
+
+  // Same three states livenessLabel() already renders on the Dashboard tab,
+  // plus the one case that is not a state at all: livenessSource === 'none'
+  // means the server could not read a heartbeat store this request, so no
+  // liveness claim — live, stale, idle, OR "Disabled" — can honestly be made.
+  const heartbeatValue = live.livenessSource === 'none' ? 'not measured' : livenessLabel(live).text
+
+  let wouldRunLabel: string
+  if (infoError) {
+    wouldRunLabel = `not resolvable — ${formatApiError(infoError, 'endpoint error')}`
+  } else if (infoLoading || !info) {
+    wouldRunLabel = 'Loading…'
+  } else if (info.resolvedRuntime === 'openai-api') {
+    wouldRunLabel = info.resolvedModelId
+      ? `openai-api · ${info.resolvedModelId}`
+      : `not resolvable — ${info.resolvedModelError ?? 'the endpoint gave no reason'}`
+  } else {
+    wouldRunLabel = `${info.resolvedRuntime} · ${info.modelAlias}`
+  }
+
+  const alternatives = info?.alternatives ?? []
+
+  const otherRows: { label: string; value: string | undefined }[] = [
+    { label: 'Heartbeat',  value: heartbeatValue },
+    { label: 'Workspace',  value: live.workspace || '—' },
+    { label: 'Agent ID',   value: live.id },
   ]
 
   return (
     <div className="space-y-3">
-      {loading && <p className="text-white/20 text-xs">Loading…</p>}
-      {rows.map(r => (
+      {configError && <ApiErrorBanner error={configError} />}
+      {loading && !configError && <p className="text-white/20 text-xs">Loading…</p>}
+
+      <div className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
+        <p className="text-white/30 text-[10px] uppercase tracking-wider">Would run</p>
+        <p className="text-white/70 text-xs font-mono break-all">{wouldRunLabel}</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
+        <p className="text-white/30 text-[10px] uppercase tracking-wider">Alternatives</p>
+        {infoError ? (
+          <p className="text-white/40 text-xs">{formatApiError(infoError, 'endpoint error')}</p>
+        ) : infoLoading && !info ? (
+          <p className="text-white/20 text-xs">Loading…</p>
+        ) : alternatives.length === 0 ? (
+          <p className="text-white/40 text-xs">none — this agent has no other binding to fall back to</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {alternatives.map((a, i) => (
+              <li key={`${a.label}-${i}`} className="text-xs leading-snug">
+                <span className="text-white/60 font-mono break-all">{a.label}</span>
+                <span className="text-white/30"> — {a.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {otherRows.map(r => (
         <div key={r.label} className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider">{r.label}</p>
           <p className="text-white/70 text-xs font-mono break-all">{r.value ?? '—'}</p>
@@ -436,24 +616,21 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
 // ── Tab: Runs ─────────────────────────────────────────────────────────────────
 function RunsTab({ agent }: { agent: Agent }) {
   const [subTab, setSubTab] = useState<'task' | 'heartbeat'>('task')
-  const [runs, setRuns] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch(`/api/agents/${agent.id}/runs`)
-      .then(r => {
-        if (!r.ok) throw new Error('No runs')
-        return r.json()
-      })
-      .then(data => setRuns(Array.isArray(data) ? data : []))
-      .catch(() => setRuns([]))
-      .finally(() => setLoading(false))
-  }, [agent.id])
+  // run-agent-locally piece: which run's trace is expanded, if any. One at a
+  // time — a second click on the same row collapses it.
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
+  // Real agent_runs rows for this agent, through the same session-gated db proxy
+  // OfficeCanvas/useAgentStatus already use — not a bespoke /api/agents/:id/runs
+  // endpoint that never existed. A failed load leaves `runs` null so the empty
+  // state below can never paint over a 403/500/network error.
+  const { data: runs, error, loading, refetch } = useApiData<AgentRun[]>(
+    dbUrl(`agent_runs?agent_id=eq.${encodeURIComponent(agent.id)}&order=started_at.desc&limit=50`)
+  )
 
   const lastActiveStr = relTime(agent.lastUpdatedAt)
   const hasActivity = agent.lastUpdatedAt && agent.lastUpdatedAt > 0
 
-  const filteredRuns = runs.filter(r => subTab === 'heartbeat' ? r.type === 'heartbeat' : r.type !== 'heartbeat')
+  const filteredRuns = (runs ?? []).filter(r => subTab === 'heartbeat' ? r.type === 'heartbeat' : r.type !== 'heartbeat')
 
   return (
     <div className="space-y-4">
@@ -501,22 +678,32 @@ function RunsTab({ agent }: { agent: Agent }) {
       )}
 
       {/* Runs list */}
-      {loading ? (
+      {error ? (
+        <ApiErrorBanner error={error} onRetry={refetch} />
+      ) : loading ? (
         <p className="text-white/20 text-xs">Loading…</p>
       ) : filteredRuns.length > 0 ? (
         <div className="space-y-2">
-          {filteredRuns.map((run: any, i: number) => (
-            <div key={run.id ?? i} className="flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f]">
-              <PlayCircle size={12} className="text-white/30" />
-              <div className="flex-1 min-w-0">
-                <p className="text-white/70 text-xs truncate">{run.title ?? run.task ?? `Run #${i + 1}`}</p>
-                <p className="text-white/30 text-[10px]">{run.created_at ? relTime(new Date(run.created_at).getTime()) : '—'}</p>
-              </div>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold ${
-                run.status === 'success' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                : run.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                : 'bg-white/5 text-white/40 border-white/10'
-              }`}>{run.status ?? 'unknown'}</span>
+          {filteredRuns.map((run, i: number) => (
+            <div key={run.id ?? i}>
+              <button
+                type="button"
+                onClick={() => run.id && setExpandedRunId(id => id === run.id ? null : run.id!)}
+                className="w-full flex items-center gap-3 rounded-lg px-3 py-2 border border-white/10 bg-[#0f0f0f] text-left hover:border-white/20 transition-colors focus:outline-none focus:ring-2 focus:ring-white/30"
+                title="Open this run's trace — every model call and tool call it made"
+              >
+                <PlayCircle size={12} className="text-white/30 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white/70 text-xs truncate">{run.task_title ?? `Run #${i + 1}`}</p>
+                  <p className="text-white/30 text-[10px]">{run.started_at ? relTime(new Date(run.started_at).getTime()) : '—'}</p>
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-semibold shrink-0 ${
+                  run.status === 'done' || run.status === 'success' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : run.status === 'error' || run.status === 'failed' ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                  : 'bg-white/5 text-white/40 border-white/10'
+                }`}>{run.status ?? 'unknown'}</span>
+              </button>
+              {expandedRunId === run.id && run.id && <AgentRunTrace runId={run.id} />}
             </div>
           ))}
         </div>
@@ -532,51 +719,104 @@ function RunsTab({ agent }: { agent: Agent }) {
 }
 
 // ── Tab: Budget ───────────────────────────────────────────────────────────────
+//
+// TOD-2381 (agent-budget-stop) round 3: this tab used to POST to
+// /api/agents/{id}/config, a route that has never existed (a 404 every save
+// silently swallowed), and its "Projected Monthly" figure multiplied a
+// hardcoded avgTokens=2000 guess by a heartbeat cadence — never a real number.
+// It now reads and writes the actual enforcement path: GET/PATCH
+// /api/agents/{id}/budget, backed by lib/agent-budget.ts and the same
+// agent_runs/token_ledger rows the dispatch and heartbeat ceiling checks read.
+interface BudgetGetResponse {
+  budget: {
+    period: 'run' | 'daily' | 'monthly'
+    limitUsd: number | null
+    maxConcurrentPerAgent: number
+    maxRunMs: number
+    noProgressHeartbeats: number
+    maxRunsPerPeriod: number
+    source: 'row' | 'default' | 'unavailable'
+  }
+  spend: {
+    runningNow: number
+    runningTotalAllAgents: number
+    runsInLast24h: number
+    spendUsdThisPeriod: number | null
+    spendError: string | null
+    overConcurrency: boolean
+    overRunCount: boolean
+    overDollarBudget: boolean
+  }
+  overCeiling: { ceiling: string; reason?: string } | null
+}
+
 function BudgetTab({ agent }: { agent: Agent }) {
-  const [budgetLimit, setBudgetLimit] = useState('')
-  const [config, setConfig] = useState<any>(null)
+  const { data, error, loading, refetch } = useApiData<BudgetGetResponse>(`/api/agents/${agent.id}/budget`)
+  const [limitUsd, setLimitUsd] = useState('')
+  const [maxRunsPerPeriod, setMaxRunsPerPeriod] = useState('')
+  const [maxConcurrentPerAgent, setMaxConcurrentPerAgent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<ApiError | null>(null)
 
+  // Seed the editable fields from the server once per load — never on every
+  // render, or a keystroke would be stomped by the next poll.
   useEffect(() => {
-    fetch('/api/status')
-      .then(r => r.json())
-      .then((data: any) => {
-        const agentsList: any[] = data?.agents?.agents ?? []
-        const found = agentsList.find((a: any) => a.id === agent.id)
-        setConfig(found ?? null)
-      })
-      .catch(() => {})
-  }, [agent.id])
+    if (!data) return
+    setLimitUsd(data.budget.limitUsd == null ? '' : String(data.budget.limitUsd))
+    setMaxRunsPerPeriod(String(data.budget.maxRunsPerPeriod))
+    setMaxConcurrentPerAgent(String(data.budget.maxConcurrentPerAgent))
+  }, [data])
 
-  // Calculate projected monthly cost
-  const heartbeatEvery = config?.heartbeat?.everyMinutes ?? 60
-  const avgTokens = 2000
-  const modelRates: Record<string, number> = {
-    'claude-haiku-4-5': 0.80,
-    'claude-sonnet-4-6': 3.00,
-  }
-  const rate = modelRates[agent.model] ?? 3.00
-  const projected = ((1440 / heartbeatEvery) * 30 * avgTokens / 1_000_000 * rate).toFixed(2)
-
-  function saveBudgetLimit() {
-    fetch(`/api/agents/${agent.id}/config`, {
-      method: 'POST',
+  async function saveBudget() {
+    setSaving(true)
+    setSaveError(null)
+    const body: Record<string, unknown> = {
+      maxRunsPerPeriod: Number(maxRunsPerPeriod),
+      maxConcurrentPerAgent: Number(maxConcurrentPerAgent),
+      limitUsd: limitUsd.trim() === '' ? null : Number(limitUsd),
+    }
+    const r = await fetchJson<{ ok: boolean }>(`/api/agents/${agent.id}/budget`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ budgetLimit: Number(budgetLimit) }),
+      body: JSON.stringify(body),
     })
-      .then(r => { if (!r.ok) throw new Error('Failed') })
-      .catch(() => alert('Failed to save budget limit'))
+    setSaving(false)
+    if (!r.ok) { setSaveError(r.error); return }
+    refetch()
   }
+
+  const rate = estimateModelRateUsd(agent.model)
+  const schemaUnavailable = data?.budget.source === 'unavailable'
 
   return (
     <div className="space-y-5">
-      <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">Budget &amp; Token Usage</p>
+      {error && <ApiErrorBanner error={error} />}
+      {saveError && <ApiErrorBanner error={saveError} />}
+      <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">Budget &amp; Ceilings</p>
 
-      {/* Stat cards */}
+      {loading && !data && <p className="text-white/20 text-xs">Loading…</p>}
+
+      {schemaUnavailable && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+          Ceiling schema not migrated on this database — every dispatch for this
+          agent is being refused (fail-closed) rather than run with an
+          unverifiable ceiling. Apply migrations/038_agent_budgets_and_ceilings.sql.
+        </div>
+      )}
+
+      {data?.overCeiling && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300 font-medium">
+          Over ceiling — {data.overCeiling.ceiling}
+          {data.overCeiling.reason ? `: ${data.overCeiling.reason}` : ''}
+        </div>
+      )}
+
+      {/* Stat cards — real numbers from the enforcement path, never an estimate */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'This Week', value: '—' },
-          { label: 'This Month', value: '—' },
-          { label: 'Projected Monthly', value: `$${projected}` },
+          { label: 'Spend (period)', value: data?.spend.spendUsdThisPeriod != null ? `$${data.spend.spendUsdThisPeriod.toFixed(4)}` : data?.spend.spendError ? 'error' : '—' },
+          { label: 'Runs (24h)', value: data ? `${data.spend.runsInLast24h}/${data.budget.maxRunsPerPeriod}` : '—' },
+          { label: 'Running now', value: data ? `${data.spend.runningNow}/${data.budget.maxConcurrentPerAgent}` : '—' },
         ].map(s => (
           <div key={s.label} className="bg-[#0f0f0f] border border-white/10 rounded-xl p-4">
             <p className="text-white/30 text-[10px] mb-1">{s.label}</p>
@@ -585,80 +825,149 @@ function BudgetTab({ agent }: { agent: Agent }) {
         ))}
       </div>
 
-      {/* Projection formula */}
-      <div className="rounded-xl border border-white/10 p-3 bg-[#0f0f0f]">
-        <p className="text-white/30 text-[10px] mb-1">Projection formula</p>
-        <p className="text-white/40 text-[10px] font-mono">
-          (1440/{heartbeatEvery}) × 30 × {avgTokens} / 1M × ${rate.toFixed(2)} = ${projected}/mo
-        </p>
-      </div>
-
-      {/* Budget limit */}
+      {/* Ceilings — the operator's lever. PATCH /api/agents/{id}/budget is
+          how "set a deliberately tiny limit and show it refuse" is done for
+          real (piece brief's own words for the required demonstration). */}
       <div className="rounded-xl border border-white/10 p-4 space-y-3 bg-[#0f0f0f]">
-        <p className="text-white/50 text-xs font-semibold">Budget Limit</p>
-        <div className="flex gap-2">
-          <Input
-            type="number"
-            placeholder="No limit set"
-            value={budgetLimit}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBudgetLimit(e.target.value)}
-            className="flex-1"
-          />
-          <Button variant="secondary" size="sm" onClick={saveBudgetLimit}>Save</Button>
-        </div>
-      </div>
-
-      {/* Token breakdown */}
-      <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
-        <p className="text-white/50 text-xs font-semibold mb-3">Token Breakdown</p>
+        <p className="text-white/50 text-xs font-semibold">Ceilings</p>
         <div className="space-y-2">
-          {['Input tokens', 'Output tokens', 'Cached'].map(label => (
-            <div key={label} className="flex justify-between text-xs">
-              <span className="text-white/30">{label}</span>
-              <span className="text-white/50 font-mono">—</span>
-            </div>
-          ))}
+          <label className="block">
+            <span className="text-white/30 text-[10px] uppercase tracking-wider">Max runs / 24h — bounds a self-retriggering loop</span>
+            <Input
+              type="number"
+              value={maxRunsPerPeriod}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxRunsPerPeriod(e.target.value)}
+              className="mt-1"
+            />
+          </label>
+          <label className="block">
+            <span className="text-white/30 text-[10px] uppercase tracking-wider">Max concurrent runs (this agent)</span>
+            <Input
+              type="number"
+              value={maxConcurrentPerAgent}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxConcurrentPerAgent(e.target.value)}
+              className="mt-1"
+            />
+          </label>
+          <label className="block">
+            <span className="text-white/30 text-[10px] uppercase tracking-wider">Dollar limit — dormant on a local-model host (rate ${rate.toFixed(2)}/1M)</span>
+            <Input
+              type="number"
+              placeholder="No limit set"
+              value={limitUsd}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLimitUsd(e.target.value)}
+              className="mt-1"
+            />
+          </label>
         </div>
+        <Button variant="secondary" size="sm" onClick={saveBudget} disabled={saving || !data}>
+          {saving ? 'Saving…' : 'Save ceilings'}
+        </Button>
       </div>
     </div>
   )
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps) {
+export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDetailViewProps) {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
+  // agent-config-panel-truth piece (round 3): `agent.modelShort`/`agent.model`
+  // now ARE the resolved-dispatch label — GET /api/agents computes them
+  // server-side via lib/resolve-dispatch-model.ts's `resolveDispatchModel()`,
+  // the same chain walk the Configuration tab's GET /api/run-agent?info=1
+  // call runs, for every row. This header used to re-derive its own label
+  // via the deleted lib/vault-badge.ts's resolveVaultBadge() + an env-URL
+  // heuristic — which is exactly what let this modal show the header badge
+  // "qwen2.5-coder:14b" one screen above a Configuration panel that called
+  // that same model "not selected". No client-side re-derivation needed
+  // any more: `agent` already carries the truth.
+  const displayAgent: Agent = agent
   const [isEditing, setIsEditing] = useState(false)
+  // Result of the header's two write actions. A refused write shows the
+  // server's real status and message in the same ApiErrorBanner every loader
+  // in this file uses — never an alert() that says the action succeeded
+  // because the promise happened to resolve.
+  const [actionError, setActionError] = useState<ApiError | null>(null)
+  const [actionNote, setActionNote] = useState<string | null>(null)
+  // Two clicks to remove: the first arms it (button switches to "Confirm
+  // Remove"), the second actually sends the DELETE. Cheaper than a modal for
+  // a destructive-but-recoverable-by-reconnecting action, and it means no
+  // click can hard-delete a row by accident.
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  // TOD (no-invented-projects): "Assign Task" used to POST a hardcoded
+  // project: 'Mission Control' — a name absent from GET /api/projects on
+  // this installation, so every click wrote a real issue row tagged with a
+  // project that does not exist. The quick-assign action now uses the
+  // first real project from /api/projects; `null` while unanswered or if
+  // none exist, in which case the button is disabled rather than guessing.
+  const [firstLiveProject, setFirstLiveProject] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchJson<Array<{ name: string }>>('/api/projects').then(res => {
+      if (cancelled || !res.ok) return
+      const name = Array.isArray(res.data) ? res.data[0]?.name : undefined
+      if (name) setFirstLiveProject(name)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // Reset edit mode on tab switch
   useEffect(() => {
     setIsEditing(false)
   }, [activeTab])
 
-  function handleAssignTask() {
-    fetch('/api/issues', {
+  async function handleAssignTask() {
+    if (!firstLiveProject) return
+    setActionError(null); setActionNote(null)
+    const r = await fetchJson<{ task_key?: string }>('/api/issues', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: 'Task for ' + agent.name,
         assignee: agent.id,
-        project: 'Mission Control',
+        project: firstLiveProject,
         type: 'task',
         priority: 'medium',
         status: 'backlog',
         acceptance_criteria: 'Define acceptance criteria',
       }),
     })
-      .then(r => {
-        if (!r.ok) throw new Error('Failed')
-        alert('Task assigned to ' + agent.name)
-      })
-      .catch(() => alert('Failed to create task'))
+    if (!r.ok) { setActionError(r.error); return }
+    setActionNote(`Task ${r.data?.task_key ?? ''} assigned to ${agent.name}`.replace('  ', ' '))
   }
 
-  function handleRunHeartbeat() {
-    fetch(`/api/agents/${agent.id}/heartbeat`, { method: 'POST' })
-      .then(() => alert('Heartbeat triggered'))
-      .catch(() => alert('Failed to trigger heartbeat'))
+  async function handleRunHeartbeat() {
+    setActionError(null); setActionNote(null)
+    // POST /api/agents/<id>/heartbeat records a check-in; the response carries
+    // the timestamp and the liveness the server derived from it, so the button
+    // reports what was actually written instead of asserting success.
+    const r = await fetchJson<{ last_seen?: string; liveness?: string; warning?: string | null }>(
+      `/api/agents/${agent.id}/heartbeat`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) },
+    )
+    if (!r.ok) { setActionError(r.error); return }
+    const when = r.data?.last_seen ? new Date(r.data.last_seen).toLocaleTimeString() : 'now'
+    setActionNote(
+      `Heartbeat recorded at ${when} — ${agent.name} is ${r.data?.liveness ?? 'live'}` +
+      (r.data?.warning ? ` (${r.data.warning})` : ''),
+    )
+  }
+
+  // Permanent removal — only real for a self-registered agent, since
+  // DELETE /api/agents/{id} hard-deletes the `agent_registrations` row and
+  // an AGENTS.md-defined agent has no such row to delete.
+  async function handleRemove() {
+    if (!confirmingRemove) { setConfirmingRemove(true); return }
+    setActionError(null); setActionNote(null); setRemoving(true)
+    const r = await fetchJson<{ ok?: boolean; warning?: string | null }>(
+      `/api/agents/${encodeURIComponent(agent.id)}`,
+      { method: 'DELETE' },
+    )
+    setRemoving(false)
+    if (!r.ok) { setActionError(r.error); setConfirmingRemove(false); return }
+    onRemoved?.(agent.id)
+    onClose()
   }
 
   return (
@@ -685,12 +994,25 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
               {agent.status === 'planned' && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-white/10 text-white/50 bg-[#0f0f0f] font-semibold uppercase">Planned</span>
               )}
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{agent.modelShort}</span>
+              {agent.type === 'consultant' && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
+              )}
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgent.modelShort}</span>
+              {agent.vault && (
+                <span
+                  className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+                  title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+                >
+                  Brain2
+                </span>
+              )}
             </div>
             <p className="text-white/50 text-xs">{agent.role}</p>
           </div>
           <div className="flex items-center gap-1.5 ml-auto shrink-0">
-            <Button variant="secondary" size="sm" onClick={handleAssignTask}>
+            <AgentLaunchControl agentId={agent.id} vault={agent.vault} />
+            <Button variant="secondary" size="sm" onClick={handleAssignTask} disabled={!firstLiveProject}
+              title={firstLiveProject ? undefined : 'No project found via /api/projects yet'}>
               <Plus size={12} className="mr-1" /> Assign Task
             </Button>
             <Button variant="secondary" size="sm" onClick={handleRunHeartbeat}>
@@ -699,11 +1021,39 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
             <Button variant="ghost" size="sm" disabled>
               <Pause size={12} className="mr-1" /> Pause
             </Button>
+            {/* Only a self-registered agent (rosterSource 'registered') has a
+                row DELETE /api/agents/{id} can actually remove — an
+                AGENTS.md-defined agent has none, so the button does not even
+                render for it rather than offering an action that would 404. */}
+            {agent.rosterSource === 'registered' && (
+              <Button
+                variant={confirmingRemove ? 'danger' : 'ghost'}
+                size="sm"
+                onClick={handleRemove}
+                disabled={removing}
+                title="Hard-delete this agent's registration — the roster stops naming it at all"
+              >
+                <Trash2 size={12} className="mr-1" />
+                {removing ? 'Removing…' : confirmingRemove ? 'Confirm Remove' : 'Remove'}
+              </Button>
+            )}
             <Button variant="icon" onClick={onClose}>
               <X size={16} />
             </Button>
           </div>
         </div>
+
+        {/* Outcome of the header actions — stated, never assumed. */}
+        {(actionError || actionNote) && (
+          <div className="px-5 pt-3 shrink-0">
+            {actionError && <ApiErrorBanner error={actionError} />}
+            {actionNote && (
+              <p className="text-emerald-400/80 text-[11px] rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                {actionNote}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Tab bar */}
         <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-white/10 overflow-x-auto shrink-0 no-scrollbar">
@@ -729,12 +1079,12 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {activeTab === 'dashboard'     && <DashboardTab     agent={agent} />}
-          {activeTab === 'instructions'  && <InstructionsTab  agent={agent} />}
-          {activeTab === 'skills'        && <SkillsTab        agent={agent} />}
-          {activeTab === 'configuration' && <ConfigurationTab agent={agent} />}
-          {activeTab === 'runs'          && <RunsTab          agent={agent} />}
-          {activeTab === 'budget'        && <BudgetTab        agent={agent} />}
+          {activeTab === 'dashboard'     && <DashboardTab     agent={displayAgent} />}
+          {activeTab === 'instructions'  && <InstructionsTab  agent={displayAgent} />}
+          {activeTab === 'skills'        && <SkillsTab        agent={displayAgent} />}
+          {activeTab === 'configuration' && <ConfigurationTab agent={displayAgent} />}
+          {activeTab === 'runs'          && <RunsTab          agent={displayAgent} />}
+          {activeTab === 'budget'        && <BudgetTab        agent={displayAgent} />}
         </div>
       </div>
     </div>

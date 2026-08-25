@@ -3,7 +3,13 @@
 -- Roles: owner (full access + role management), member (full issue/board access),
 --        viewer (read-only)
 
-create type workspace_role as enum ('owner', 'member', 'viewer');
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'workspace_role') then
+    create type workspace_role as enum ('owner', 'member', 'viewer');
+  end if;
+end
+$$;
 
 create table if not exists workspace_members (
   id          uuid primary key default gen_random_uuid(),
@@ -24,6 +30,7 @@ begin
 end;
 $$;
 
+drop trigger if exists trg_workspace_members_updated_at on workspace_members;
 create trigger trg_workspace_members_updated_at
   before update on workspace_members
   for each row execute procedure set_workspace_members_updated_at();

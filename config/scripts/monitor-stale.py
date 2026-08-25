@@ -23,8 +23,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
-SUPA = "https://twthgapiouiqhavrcnry.supabase.co"
-SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q"
+SUPA = os.environ["NEXT_PUBLIC_SUPABASE_URL"]
+SK = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 TODERO_API = "http://localhost:3000/api/issues"
 # TOD-XXX: prefer env vars; hardcoded values are dev fallbacks only.
 TELEGRAM_CHAT = os.environ.get("TELEGRAM_GROUP_CHAT", "-1003598670302")

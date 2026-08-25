@@ -1,6 +1,8 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { readApiError, type ApiError } from '@/hooks/useApiData'
 
 interface ActivityEvent {
   id: string
@@ -76,16 +78,44 @@ interface ActivityFeedProps {
 export default function ActivityFeed({ limit = 10, projectFilter, onNavigate, maxHeight }: ActivityFeedProps) {
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [loading, setLoading] = useState(true)
+  // TOD-654: a 403/500 body is an object, so `Array.isArray(data)` was false and
+  // the feed showed "No recent activity" over a refused request. Keep the error.
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
+    let cancelled = false
     const params = new URLSearchParams({ limit: String(limit) })
     if (projectFilter) params.set('project', projectFilter)
-    fetch(`/api/activity-feed?${params}`)
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setEvents(data) })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [limit, projectFilter])
+    const endpoint = `/api/activity-feed?${params}`
+    setLoading(true)
+    ;(async () => {
+      try {
+        const res = await fetch(endpoint)
+        if (cancelled) return
+        if (!res.ok) {
+          setError(await readApiError(res, '/api/activity-feed'))
+          setEvents([])
+          return
+        }
+        const data = await res.json()
+        if (cancelled) return
+        setError(null)
+        setEvents(Array.isArray(data) ? data : [])
+      } catch (e) {
+        if (cancelled) return
+        setError({
+          status: 0,
+          endpoint: '/api/activity-feed',
+          message: e instanceof Error ? e.message : 'could not reach the server',
+        })
+        setEvents([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [limit, projectFilter, reloadKey])
 
   const shown = events.slice(0, limit)
 
@@ -98,7 +128,14 @@ export default function ActivityFeed({ limit = 10, projectFilter, onNavigate, ma
         {loading && (
           <p className="text-white/20 text-xs px-4 py-4">Loading activity...</p>
         )}
-        {!loading && shown.length === 0 && (
+        {!loading && error && (
+          <ApiErrorBanner
+            error={error}
+            onRetry={() => setReloadKey(k => k + 1)}
+            className="border-0 rounded-none bg-transparent"
+          />
+        )}
+        {!loading && !error && shown.length === 0 && (
           <p className="text-white/20 text-xs px-4 py-4">No recent activity</p>
         )}
         {shown.map((event, i) => (

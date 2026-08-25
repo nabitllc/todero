@@ -1,12 +1,15 @@
 'use client'
 import React, { useState } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
 import { Dot, Chip, SH } from '@/lib/mc-atoms'
-import { pColor, fmtMins, CRONS } from '@/lib/mc-constants'
+import { pColor, fmtMins } from '@/lib/mc-constants'
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
 export default function CalendarTab({
   calendarIssues,
+  calendarError,
   sprintProjects,
   calendarView,
   setCalendarView,
@@ -15,9 +18,15 @@ export default function CalendarTab({
   cronModal,
   setCronModal,
   projectFilter,
+  cronsMeta,
 }: {
-  calendarIssues: any[]
-  sprintProjects: any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
+  // TOD-654: null means the query failed or has not finished, never "no issues".
+  calendarIssues: any[] | null
+  /** Why the due-date query failed, if it did. */
+  calendarError?: ApiError | null
+  /** null while /api/projects is unanswered or refused — already read as `?? []` below. */
+  sprintProjects: any[] | null
   calendarView: 'week' | 'month'
   setCalendarView: (v: 'week' | 'month') => void
   displayCrons: any[]
@@ -25,6 +34,8 @@ export default function CalendarTab({
   cronModal: any
   setCronModal: (c: any) => void
   projectFilter?: string | null
+  /** What /api/automations actually checked on this host — powers the honest empty state. */
+  cronsMeta?: { source: string; scheduler: string; warnings: string[] } | null
 }) {
             const calIssues = ((calendarIssues ?? []) as any[]).filter(
               (i: any) => !projectFilter || i.project === projectFilter
@@ -70,6 +81,9 @@ export default function CalendarTab({
 
             return (
             <div className="space-y-5">
+              {/* TOD-654: a refused due-date query is stated, not drawn as an
+                  empty calendar full of days with nothing scheduled. */}
+              {calendarError && <ApiErrorBanner error={calendarError} />}
               {/* View toggle */}
               <div className="flex items-center justify-between">
                 <SH icon="📅">Calendar</SH>
@@ -98,23 +112,60 @@ export default function CalendarTab({
                 </div>
               )}
 
-              {/* Always Running */}
-              <div>
-                <SH icon="⚡">Always Running</SH>
-                <div className="flex flex-wrap gap-2">
-                  {CRONS.filter(c=>c.days==='daily'&&c.status==='active').map(c=>(
-                    <button key={c.id} className="flex items-center gap-2 px-2.5 md:px-3 py-1.5 rounded-full border cursor-pointer hover:brightness-125 transition-all"
-                      style={{background:pColor(c.project)+'15',borderColor:pColor(c.project)+'40'}}
-                      aria-label={`View details for ${cronLabel(c)} automation`}
-                      onClick={()=>setCronModal(c)}>
-                      <Dot status="active" sm />
-                      <span className="text-xs font-medium" style={{color:pColor(c.project)}}>{cronLabel(c)}</span>
-                      <span className="text-white/30 text-[10px]">· {c.time}</span>
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/40 font-mono">{c.model}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Recurring automations — "always running" means a scheduler on THIS
+                  host actually proved it will fire this, not merely that a config
+                  file declares it. TOD (kill-fake-automations, round 2): `status`
+                  alone used to be enough to render "active" + a countdown even
+                  when nobody checked whether anything schedules this process —
+                  gate strictly on `scheduled`, which the API only sets true after
+                  checking process.env.VERCEL or `launchctl list`. */}
+              {(() => {
+                const recurring = displayCrons.filter((c: any) => c.scheduled)
+                if (recurring.length === 0) return null
+                return (
+                  <div>
+                    <SH icon="⚡">Always Running</SH>
+                    <div className="flex flex-wrap gap-2">
+                      {recurring.map((c:any)=>(
+                        <button key={c.id} className="flex items-center gap-2 px-2.5 md:px-3 py-1.5 rounded-full border cursor-pointer hover:brightness-125 transition-all"
+                          style={{background:pColor(c.project)+'15',borderColor:pColor(c.project)+'40'}}
+                          aria-label={`View details for ${cronLabel(c)} automation`}
+                          onClick={()=>setCronModal(c)}>
+                          <Dot status="active" sm />
+                          <span className="text-xs font-medium" style={{color:pColor(c.project)}}>{cronLabel(c)}</span>
+                          <span className="text-white/30 text-[10px]">· {c.time}</span>
+                          {c.model && <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/40 font-mono">{c.model}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Declared-but-unproven automations: config exists (vercel.json entry,
+                  a plist on disk) but this host never confirmed a scheduler will fire
+                  it. Shown separately, in grey, with the evidence string and no time —
+                  a schedule we can't confirm gets no clock-face treatment. */}
+              {(() => {
+                const declared = displayCrons.filter((c: any) => !c.scheduled)
+                if (declared.length === 0) return null
+                return (
+                  <div>
+                    <SH icon="⏸">Declared, not scheduled here</SH>
+                    <div className="flex flex-wrap gap-2">
+                      {declared.map((c:any)=>(
+                        <button key={c.id} className="flex items-center gap-2 px-2.5 md:px-3 py-1.5 rounded-full border border-white/10 bg-white/[0.03] cursor-pointer hover:bg-white/[0.06] transition-all"
+                          aria-label={`View details for ${cronLabel(c)} automation`}
+                          onClick={()=>setCronModal(c)}>
+                          <Dot status="planned" sm />
+                          <span className="text-xs font-medium text-white/50">{cronLabel(c)}</span>
+                          <span className="text-white/30 text-[10px]">· {c.schedulerEvidence}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Calendar Grid */}
               <div>
@@ -134,8 +185,13 @@ export default function CalendarTab({
                     const isToday = ds === todayStr
                     const isCurrentMonth = d.getMonth() === new Date().getMonth()
                     const dayIssues = issuesByDate[ds] || []
+                    // TOD (kill-fake-automations, round 2): only a scheduled item recurs
+                    // "every day" — painting an unproven cron across all 7 day cells is
+                    // the same fabrication as the countdown, just without a clock face.
                     const dayCrons = displayCrons.filter((c:any)=>{
-                      if(c.days==='daily') return true
+                      if (!c.scheduled) return false
+                      // 'interval' jobs (e.g. a Vercel cron running every 30min) recur every day too.
+                      if(c.days==='daily' || c.days==='interval') return true
                       if(c.days===DAYS[d.getDay()]) return true
                       return false
                     })
@@ -179,10 +235,11 @@ export default function CalendarTab({
                   })}
                 </div></div>
               </div>
+              {nextRuns.length > 0 && (
               <div>
                 <SH icon="⏭">Next Up</SH>
                 <div className="space-y-2">
-                  {nextRuns.map(({cron,mins},i)=>(
+                  {nextRuns.map(({cron,mins}: {cron:any; mins:number},i:number)=>(
                     <button key={cron.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 px-4 md:px-5 py-3 rounded-xl border border-white/10 cursor-pointer hover:border-white/20 transition-colors w-full text-left" style={{background:'#0f0f0f'}} aria-label={`View details for ${cron.id}`} onClick={()=>setCronModal(cron)}>
                       <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
                         <span className="text-white/30 text-xs shrink-0">#{i+1}</span>
@@ -200,6 +257,7 @@ export default function CalendarTab({
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Automations / Crons */}
               <div>
@@ -224,10 +282,12 @@ export default function CalendarTab({
                               <div className="flex items-center gap-2 sm:gap-4">
                                 <span className="font-mono text-xs text-white/40 shrink-0">{c.time}</span>
                                 <span className="text-white/30 text-[10px] shrink-0">{c.days}</span>
-                                <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
-                                  style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
-                                  {c.model}
-                                </span>
+                                {c.model && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
+                                    style={{background:modelColor+'20',color:modelColor,border:'1px solid '+modelColor+'30'}}>
+                                    {c.model}
+                                  </span>
+                                )}
                                 <Dot status={isError ? 'error' : c.status} sm />
                                 {isError && <span className="text-[9px] text-red-400">⚠ {c.consecutiveErrors}x error</span>}
                               </div>
@@ -242,6 +302,15 @@ export default function CalendarTab({
                       </div>
                     )
                   })}
+                  {displayCrons.length === 0 && (
+                    <div className="px-4 py-6 text-center">
+                      <p className="text-white/40 text-sm">No automations on this host</p>
+                      <p className="text-white/25 text-xs mt-1">
+                        {cronsMeta?.scheduler ? `Checked: ${cronsMeta.scheduler}. ` : ''}
+                        Add a cron to vercel.json&apos;s &quot;crons&quot; array, or a LaunchAgent plist on macOS, to create one.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -257,8 +326,8 @@ export default function CalendarTab({
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Description</p><p className="text-white/70 text-sm">{cronModal.desc}</p></div>
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Time</p><p className="text-white/70 text-sm font-mono">{cronModal.time}</p></div>
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Schedule</p><p className="text-white/70 text-sm">{cronModal.days}</p></div>
-                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Runner</p><p className="text-white/70 text-sm font-mono">{cronModal.model}</p></div>
-                      <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>
+                      {cronModal.model && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Runner</p><p className="text-white/70 text-sm font-mono">{cronModal.model}</p></div>}
+                      {cronModal.project && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Project</p><Chip label={cronModal.project} color={pColor(cronModal.project)} /></div>}
                       <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Status</p><div className="flex items-center gap-2"><Dot status={cronModal.status} /><span className="text-white/70 text-sm">{cronModal.status}</span></div></div>
                       {(cronModal as any).source === 'launchagent' && <>
                         {(cronModal as any).sessionTarget && <div><p className="text-white/30 text-[10px] uppercase tracking-wider">Session Target</p><p className="text-white/70 text-sm font-mono">{(cronModal as any).sessionTarget}</p></div>}

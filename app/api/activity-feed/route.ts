@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { assertDbConfigured, db } from '@/lib/db'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required')
-  return createClient(url, key)
+  // db() throws a DbConfigurationError naming the exact missing variables.
+  assertDbConfigured()
+  return db()
 }
 
 const AGENT_ACTORS = new Set(['builder','tester','designer','ops','scout','kemuni-sme','vespera-sme','main','KAOS','auditor','deployer','po'])
@@ -66,6 +66,12 @@ function describeTransition(title: string, status: string, resolution_type?: str
 }
 
 export async function GET(req: Request) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   let supabase
   try {
     supabase = getSupabase()
@@ -94,6 +100,47 @@ export async function GET(req: Request) {
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
+  // This route reaches the raw db proxy, not GET /api/issues (which already
+  // hides archived rows by default). Without this filter an archived issue
+  // — e.g. "TOD-1 CRITIC probe epic" — shows up in Recent Activity as if it
+  // were live. Excluded at the query, not filtered out of the response,
+  // per the no-invented-projects piece.
+  const includeArchived =
+    (searchParams.get('include_archived') ?? '').toLowerCase() === '1' ||
+    (searchParams.get('include_archived') ?? '').toLowerCase() === 'true'
+  if (!includeArchived) query = query.is('archived_at', null)
+
+  // ActivityFeed.tsx has always SENT `project` on this request. This route
+  // selected the column and never filtered on it, so the landing screen's
+  // Recent Activity showed every project's rows while the request said it was
+  // scoped. A parameter that is accepted and ignored is worse than one that is
+  // missing: the caller can see it in the URL and reasonably concludes the
+  // filter is applied. Nothing surfaced it because the other projects happened
+  // to be archived — which is exactly the condition this wave stopped relying on.
+  // The header, not the query param. Reading searchParams meant scope was a
+  // CLIENT PROP again — this route was clean only because ActivityFeed.tsx
+  // happens to pass one, and that prop is optional. Drop the prop and the route
+  // handed over every project. That is the exact sentence this wave exists to
+  // falsify, left standing on the route the piece named first.
+  const resolvedScope = req.headers.get('x-mc-project')
+  const crossProjectDestination = req.headers.get('x-mc-all-projects') === '1'
+  const wantsAllProjects = ['1', 'true', 'yes'].includes(
+    (searchParams.get('all_projects') ?? '').toLowerCase()
+  )
+  if (resolvedScope) {
+    query = query.eq('project', resolvedScope)
+  } else if (!wantsAllProjects && !crossProjectDestination) {
+    return NextResponse.json(
+      {
+        error: 'unscoped_issues_read',
+        message:
+          'This activity query has no project scope. Request it from a /p/<project> screen, ' +
+          'or pass all_projects=1 to read across every project deliberately.',
+      },
+      { status: 400 },
+    )
+  }
+
   if (actor) query = query.eq('assignee', actor)
   if (issueId) query = query.eq('id', issueId)
   if (statusFilter) query = query.in('status', statusFilter)
@@ -101,7 +148,7 @@ export async function GET(req: Request) {
   const { data, error } = await query
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, 'issues')
   }
 
   const now = Date.now()

@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { db } from '@/lib/db'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 // Opt out of static prerender — route reads DB at request time. (TOD-2296)
 export const dynamic = 'force-dynamic'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 function getSupabase() {
-  return createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY ?? '')
+  return db()
 }
 
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const supabase = getSupabase()
   const agentId = req.nextUrl.searchParams.get('agent_id')
   const memoryType = req.nextUrl.searchParams.get('type')
@@ -21,11 +27,17 @@ export async function GET(req: NextRequest) {
   if (date) query = query.eq('date_key', date)
 
   const { data, error } = await query.limit(100)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'agent_memory_files')
   return NextResponse.json({ memory: data })
 }
 
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const secret = process.env.CRON_SECRET
   const host = req.headers.get('host') || ''
   const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1')
@@ -54,6 +66,6 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'agent_memory_files')
   return NextResponse.json(data)
 }

@@ -5,6 +5,32 @@
 import React, { useState, useEffect } from 'react'
 import { AGENT_QUEUE_CONFIGS } from '@/lib/agent-queue'
 import { AGENT_REGISTRY } from '@/lib/agent-capabilities'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, formatApiError, type ApiError } from '@/hooks/useApiData'
+import { type VaultBadgeInfo } from '@/lib/vault-badge'
+import { resolvePauseOutcome, type AgentPauseResponseBody } from '@/lib/agent-pause-ui'
+
+// agent-config-panel-truth piece (round 2): see the identical comment on
+// ConfigurationTab in components/tabs/AgentDetailView.tsx — this page's
+// Model card had the same defect (resolveVaultBadge() + localProviderConfigured,
+// an env-URL heuristic, not runtime selection), applied to the class rather
+// than just that one file. Both now read GET /api/run-agent?info=1&agent=<id>,
+// the same guard-free resolver POST /api/run-agent's real spawn path uses.
+interface RunAgentInfoAlternative {
+  label: string
+  reason: string
+}
+
+interface RunAgentInfo {
+  agent: string
+  resolvedRuntime: string
+  modelAlias: string
+  resolvedModelId: string | null
+  resolvedModelError: string | null
+  alternatives: RunAgentInfoAlternative[]
+  chainLength: number
+  dispatchEnabled: boolean
+}
 
 interface Issue {
   id: string
@@ -35,55 +61,130 @@ function statusColor(s: string) {
 export default function AgentDetailView({ agentId }: { agentId: string }) {
   const agent = AGENT_REGISTRY[agentId as keyof typeof AGENT_REGISTRY]
   const queueConfig = AGENT_QUEUE_CONFIGS[agentId]
-  const [issues, setIssues] = useState<Issue[]>([])
+  // TOD-654: null = the query failed or has not finished. Never [] on a
+  // non-ok response, or this view prints "No active issues assigned." over a 403.
+  const [issues, setIssues] = useState<Issue[] | null>(null)
+  const [issuesError, setIssuesError] = useState<ApiError | null>(null)
+  const [agentsError, setAgentsError] = useState<ApiError | null>(null)
+  const [reload, setReload] = useState(0)
   const [paused, setPaused] = useState(false)
   const [lastRun, setLastRun] = useState<number | null>(null)
   const [toggling, setToggling] = useState(false)
+  // TOD-2381 (wave-5, silent-write-failures): PATCH /api/agent-pause always
+  // answers 200, so res.ok alone cannot tell a real recovery from a write
+  // that failed (ok:false) or a still_blocked_by that means the agent
+  // un-paused but the issue it was blocking never became re-dispatchable.
+  // This banner is the only place either of those surfaces to the operator.
+  const [pauseNotice, setPauseNotice] = useState<{ text: string; kind: 'warning' | 'error' } | null>(null)
+  // Brain2 vault manifest data for this id, when GET /api/agents' row names
+  // one — same fetch this component already makes for lastUpdatedAt, just
+  // reading a field it used to discard. Null for every id AGENT_REGISTRY
+  // already covers (none of it overlaps a vault manifest id today), real for
+  // any id that is vault-only. Used ONLY to show the "Brain2" provenance
+  // chip below — never to derive a model label; that comes from `info`.
+  const [vault, setVault] = useState<VaultBadgeInfo | null>(null)
+  const [info, setInfo] = useState<RunAgentInfo | null>(null)
+  const [infoError, setInfoError] = useState<ApiError | null>(null)
+  const [infoLoading, setInfoLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/issues?assignee=${encodeURIComponent(agentId)}`)
-      .then(r => r.json())
-      .then(d => setIssues(Array.isArray(d?.data ?? d) ? (d?.data ?? d) : []))
-      .catch(() => {})
-
-    fetch(`/api/agent-pause?agent=${encodeURIComponent(agentId)}`)
-      .then(r => r.json())
-      .then(d => setPaused(d.is_paused === true))
-      .catch(() => {})
-
-    fetch('/api/agents')
-      .then(r => r.json())
-      .then((agents: any[]) => {
-        const found = Array.isArray(agents) ? agents.find(a => a.id === agentId) : null
-        if (found?.lastUpdatedAt) setLastRun(found.lastUpdatedAt)
+    fetchJson<{ data?: Issue[] } | Issue[]>(`/api/issues?assignee=${encodeURIComponent(agentId)}`)
+      .then(r => {
+        if (!r.ok) { setIssuesError(r.error); setIssues(null); return }
+        setIssuesError(null)
+        const d = r.data
+        const rows = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []
+        setIssues(rows)
       })
-      .catch(() => {})
-  }, [agentId])
+
+    fetchJson<{ is_paused?: boolean }>(`/api/agent-pause?agent=${encodeURIComponent(agentId)}`)
+      .then(r => { if (r.ok) setPaused(r.data?.is_paused === true) })
+
+    // Envelope-or-array: /api/agents returns { agents, configured, error }.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- envelope or bare array
+    fetchJson<any>('/api/agents').then(r => {
+      if (!r.ok) { setAgentsError(r.error); return }
+      setAgentsError(null)
+      const body = r.data
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
+      const agents: any[] = Array.isArray(body) ? body : Array.isArray(body?.agents) ? body.agents : []
+      const found = agents.find(a => a.id === agentId)
+      if (found?.lastUpdatedAt) setLastRun(found.lastUpdatedAt)
+      setVault(found?.vault ?? null)
+    })
+  }, [agentId, reload])
+
+  useEffect(() => {
+    setInfoLoading(true)
+    fetchJson<RunAgentInfo>(`/api/run-agent?info=1&agent=${encodeURIComponent(agentId)}`)
+      .then(r => {
+        if (!r.ok) { setInfoError(r.error); setInfo(null); setInfoLoading(false); return }
+        setInfoError(null)
+        setInfo(r.data)
+        setInfoLoading(false)
+      })
+  }, [agentId, reload])
 
   async function togglePause() {
     setToggling(true)
-    try {
-      const res = await fetch('/api/agent-pause', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent: agentId, paused: !paused }),
-      })
-      if (res.ok) setPaused(p => !p)
-    } finally {
-      setToggling(false)
+    const nextPaused = !paused
+    const r = await fetchJson<AgentPauseResponseBody>('/api/agent-pause', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: agentId, paused: nextPaused }),
+    })
+    setToggling(false)
+
+    if (!r.ok) {
+      // HTTP-level failure (network / 4xx / 5xx) — nothing landed.
+      setPauseNotice({ text: `data unavailable — ${r.error.status} from /api/agent-pause: ${r.error.message}`, kind: 'error' })
+      return
     }
+
+    // The wave-4 defect recreated one layer up: a 200 body can still carry
+    // ok:false (a write inside the route failed) or a non-null
+    // still_blocked_by (the agent's own flag cleared, but the issue it was
+    // blocking is still blocked by something else). resolvePauseOutcome is
+    // the single place that decides whether local state may advance —
+    // see lib/agent-pause-ui.ts, unit-tested directly since this repo's
+    // jest config has no DOM/render harness to exercise the component with.
+    const outcome = resolvePauseOutcome(r.data)
+    if (outcome.paused !== undefined) setPaused(outcome.paused)
+    setPauseNotice(outcome.notice)
   }
 
   if (!agent) {
     return <p className="text-white/40 text-sm p-8">Agent &quot;{agentId}&quot; not found.</p>
   }
 
-  const activeIssues = issues.filter(i => ['open', 'in_progress', 'code_review'].includes(i.status))
+  const activeIssues = (issues ?? []).filter(i => ['open', 'in_progress', 'code_review'].includes(i.status))
   const eligibleStatuses = queueConfig ? [queueConfig.pickupStatus] : []
   const extraFilters = queueConfig?.extraFilters ?? ''
 
+  // "Would run" — read from the same guard-free resolver POST /api/run-agent's
+  // real spawn path uses (GET /api/run-agent?info=1), never `agent.modelShort`,
+  // `queueConfig.model`, or a vault badge derived from an env-URL heuristic.
+  // A 4xx/5xx, or a null mapModel() result, renders "not resolvable — <the
+  // endpoint's own message>".
+  let modelLabel: string
+  if (infoError) {
+    modelLabel = `not resolvable — ${formatApiError(infoError, 'endpoint error')}`
+  } else if (infoLoading || !info) {
+    modelLabel = 'Loading…'
+  } else if (info.resolvedRuntime === 'openai-api') {
+    modelLabel = info.resolvedModelId
+      ? `openai-api · ${info.resolvedModelId}`
+      : `not resolvable — ${info.resolvedModelError ?? 'the endpoint gave no reason'}`
+  } else {
+    modelLabel = `${info.resolvedRuntime} · ${info.modelAlias}`
+  }
+  const alternatives = info?.alternatives ?? []
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      {/* TOD-654: refused loads are stated before anything claims emptiness. */}
+      {issuesError && <ApiErrorBanner error={issuesError} onRetry={() => setReload(n => n + 1)} />}
+      {agentsError && <ApiErrorBanner error={agentsError} onRetry={() => setReload(n => n + 1)} />}
       {/* Header */}
       <div className="flex items-center gap-4 p-5 rounded-2xl border border-white/10 bg-[#0f0f0f]">
         <div
@@ -96,8 +197,16 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-white font-bold text-lg">{agent.name}</h1>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">
-              {agent.modelShort ?? queueConfig?.model ?? '—'}
+              {modelLabel}
             </span>
+            {vault && (
+              <span
+                className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+                title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+              >
+                Brain2
+              </span>
+            )}
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-semibold ${
               paused
                 ? 'bg-red-500/20 text-red-400 border-red-500/30'
@@ -107,25 +216,41 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
           <p className="text-white/50 text-sm mt-0.5">{agent.role}</p>
           <p className="text-white/30 text-xs mt-1">{agent.description}</p>
         </div>
-        <button
-          onClick={togglePause}
-          disabled={toggling}
-          aria-label={paused ? `Unpause ${agent.name}` : `Pause ${agent.name}`}
-          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-white/30 disabled:opacity-50 ${
-            paused
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-              : 'border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
-          }`}
-        >
-          {toggling ? '…' : paused ? 'Unpause' : 'Pause'}
-        </button>
+        <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-[220px]">
+          <button
+            onClick={togglePause}
+            disabled={toggling}
+            aria-label={paused ? `Unpause ${agent.name}` : `Pause ${agent.name}`}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-white/30 disabled:opacity-50 ${
+              paused
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                : 'border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
+            }`}
+          >
+            {toggling ? '…' : paused ? 'Unpause' : 'Pause'}
+          </button>
+          {/* Persistent — a write that half-landed (still_blocked_by) or
+              failed outright (ok:false) must stay visible until the next
+              toggle, not flash and vanish like a toast would. */}
+          {pauseNotice && (
+            <p
+              role="alert"
+              data-testid="pause-notice"
+              className={`text-[10px] leading-snug text-right ${
+                pauseNotice.kind === 'error' ? 'text-red-400' : 'text-amber-400'
+              }`}
+            >
+              {pauseNotice.text}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Agent-specific metadata */}
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Model</p>
-          <p className="text-white/70 text-xs font-mono break-all">{agent.modelShort ?? queueConfig?.model ?? '—'}</p>
+          <p className="text-white/70 text-xs font-mono break-all">{modelLabel}</p>
         </div>
         <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Queue Filters</p>
@@ -144,13 +269,42 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
         </div>
       </div>
 
+      {/* Alternatives — agent-config-panel-truth piece: every other binding
+          this agent's chain would have tried, plus the manifest's `preferred`
+          display name when vault-backed, each labelled with why it did not
+          win. Same GET /api/run-agent?info=1 response the Model card above
+          reads; never a second, disagreeing source. */}
+      <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
+        <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Alternatives</p>
+        {infoError ? (
+          <p className="text-white/40 text-xs">{formatApiError(infoError, 'endpoint error')}</p>
+        ) : infoLoading && !info ? (
+          <p className="text-white/20 text-xs">Loading…</p>
+        ) : alternatives.length === 0 ? (
+          <p className="text-white/40 text-xs">none — this agent has no other binding to fall back to</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {alternatives.map((a, i) => (
+              <li key={`${a.label}-${i}`} className="text-xs leading-snug">
+                <span className="text-white/60 font-mono break-all">{a.label}</span>
+                <span className="text-white/30"> — {a.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {/* Assigned issues */}
       <div>
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">
-          Assigned Issues ({activeIssues.length} active)
+          Assigned Issues ({issues === null ? 'data unavailable' : `${activeIssues.length} active`})
         </p>
         {activeIssues.length === 0 ? (
-          <p className="text-white/20 text-xs italic px-1">No active issues assigned.</p>
+          issuesError
+            ? <p className="text-red-400 text-xs px-1">data unavailable</p>
+            : issues === null
+              ? <p className="text-white/20 text-xs italic px-1">Loading…</p>
+              : <p className="text-white/20 text-xs italic px-1">No active issues assigned.</p>
         ) : (
           <div className="space-y-2">
             {activeIssues.slice(0, 10).map(issue => (
@@ -171,7 +325,11 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       {/* Activity feed — most recently updated issues */}
       <div>
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Recent Activity</p>
-        {issues.length === 0 ? (
+        {issuesError ? (
+          <ApiErrorBanner error={issuesError} onRetry={() => setReload(n => n + 1)} />
+        ) : issues === null ? (
+          <p className="text-white/20 text-xs italic px-1">Loading…</p>
+        ) : issues.length === 0 ? (
           <p className="text-white/20 text-xs italic px-1">No recent activity.</p>
         ) : (
           <div className="divide-y divide-white/5 rounded-xl border border-white/10 overflow-hidden">

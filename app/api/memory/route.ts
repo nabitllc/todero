@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withPermission } from '@/lib/rbac-middleware'
+import { db } from '@/lib/db'
+import { dbErrorResponse, dbUnavailableResponse } from '@/lib/db-http'
 
 // Memory is now read from Supabase agent_memory_files (AGENT_CONTEXT_SOURCE=db).
 // FS fallback removed — getFromFS() was dead code once DB mode was activated.
@@ -49,18 +51,22 @@ export async function GET(req: NextRequest) {
   const REQUIRED_PERMISSION = 'memory:read' as const
   const denied = await withPermission(REQUIRED_PERMISSION)(req)
   if (denied) return denied
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
   return getFromDB()
 }
 
 async function getFromDB() {
   try {
-    const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-    const res = await fetch(
-      `${SUPA_URL}/rest/v1/agent_memory_files?agent_id=eq.global&memory_type=eq.daily&order=date_key.desc&limit=30`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
-    )
-    const rows = await res.json() as Array<{ date_key: string; content: string; updated_at: string }>
+    const { data, error } = await db()
+      .from('agent_memory_files')
+      .select('date_key,content,updated_at')
+      .eq('agent_id', 'global')
+      .eq('memory_type', 'daily')
+      .order('date_key', { ascending: false })
+      .limit(30)
+    if (error) throw new Error(error.message)
+    const rows = (data ?? []) as Array<{ date_key: string; content: string; updated_at: string }>
 
     const now = new Date()
     const today = now.toISOString().slice(0, 10)
@@ -105,7 +111,15 @@ async function getFromDB() {
 
     return NextResponse.json({ files })
   } catch (e) {
-    return NextResponse.json({ files: [], error: String(e) })
+    // Never answer 200 with an empty list when the read failed — an empty array
+    // and "there is no memory" are different facts, and the caller cannot tell
+    // them apart. A missing credential names its variable; anything else is 500.
+    const unconfigured = dbErrorResponse(e)
+    if (unconfigured) return unconfigured
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : String(e) },
+      { status: 500 },
+    )
   }
 }
 

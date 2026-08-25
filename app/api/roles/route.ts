@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { hasPermission } from '@/lib/rbac-types'
 import type { Role } from '@/lib/rbac-types'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
+
+const TABLE = 'workspace_members'
 
 function getSupabase() {
   return createAdminClient()
@@ -27,6 +30,11 @@ function getRoleFromCookie(req: NextRequest): Role | null {
 // ── GET — list members ────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:read')) {
     return NextResponse.json({ error: 'Forbidden: roles:read permission required' }, { status: 403 })
@@ -37,9 +45,7 @@ export async function GET(req: NextRequest) {
     .select('id, identity, role, assigned_by, created_at, updated_at')
     .order('created_at', { ascending: true })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
 
   return NextResponse.json(data)
 }
@@ -47,6 +53,11 @@ export async function GET(req: NextRequest) {
 // ── POST — add member ─────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:admin')) {
     return NextResponse.json({ error: 'Forbidden: owner role required to manage workspace members' }, { status: 403 })
@@ -78,7 +89,7 @@ export async function POST(req: NextRequest) {
     if (error.code === '23505') {
       return NextResponse.json({ error: `Member '${identity}' already exists. Use PATCH to change their role.` }, { status: 409 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, TABLE)
   }
 
   return NextResponse.json(data, { status: 201 })
@@ -87,6 +98,11 @@ export async function POST(req: NextRequest) {
 // ── PATCH — change role ───────────────────────────────────────────────────────
 
 export async function PATCH(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:admin')) {
     return NextResponse.json({ error: 'Forbidden: owner role required to manage workspace members' }, { status: 403 })
@@ -116,9 +132,7 @@ export async function PATCH(req: NextRequest) {
     .select()
     .single()
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
   if (!data) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }
@@ -129,6 +143,11 @@ export async function PATCH(req: NextRequest) {
 // ── DELETE — remove member ────────────────────────────────────────────────────
 
 export async function DELETE(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:admin')) {
     return NextResponse.json({ error: 'Forbidden: owner role required to manage workspace members' }, { status: 403 })
@@ -151,9 +170,7 @@ export async function DELETE(req: NextRequest) {
     .select()
     .single()
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
   if (!data) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }

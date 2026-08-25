@@ -1,10 +1,16 @@
 // Shared constants for Mission Control
 // These were previously defined inline in page.tsx
 
-export const KEMUNI_START     = new Date('2026-03-21')
-export const KEMUNI_DEADLINE  = new Date('2026-04-20')
-export const VESPERA_DEADLINE = new Date('2026-03-31')
-export const VESPERA_START    = new Date('2026-03-22')
+// KEMUNI_START / KEMUNI_DEADLINE / VESPERA_START / VESPERA_DEADLINE were here.
+//
+// They were four hardcoded dates rendered on the landing screen as if they
+// were live sprint data, for two projects that are not this installation's.
+// Because they were constants and not a query, no project filter could remove
+// them, and by the time anyone looked they read "0 days left · 100% elapsed" —
+// the most prominent thing on the home screen was two dead countdowns.
+//
+// Deleted rather than updated. A sprint countdown renders from a row in the
+// sprints table or it does not render; see SprintCountdowns in OverviewTab.
 
 export function daysUntil(d: Date) { return Math.max(0, Math.ceil((d.getTime()-Date.now())/86400000)) }
 export function daysSince(d: Date) { return Math.floor((Date.now()-d.getTime())/86400000) }
@@ -20,45 +26,33 @@ export const AGENT_DISPLAY: Record<string,{name:string;emoji:string;role:string;
   tester:        {name:'Tester',      emoji:'🧪', role:'QA Agent',          color:'#ef4444', desc:'Automated testing, bug detection, regression checks.', capabilities:['Testing','QA','Bug Detection']},
 }
 
-export const CRONS = [
-  { id:'morning-brief',      time:'6:00 AM', hour:6,  min:0, days:'daily',  model:'Haiku',  project:'Kemuni',  status:'active',  desc:'Morning brief to Telegram' },
-  { id:'trending-alerts',    time:'6:00 AM', hour:6,  min:0, days:'daily',  model:'Haiku',  project:'Kemuni',  status:'active',  desc:'PropTech trends scan' },
-  { id:'overnight-employee', time:'2:00 AM', hour:2,  min:0, days:'daily',  model:'Sonnet', project:'Kemuni',  status:'active',  desc:'Autonomous task completion' },
-  { id:'billing-review',     time:'9:00 AM', hour:9,  min:0, days:'daily',  model:'n8n',    project:'Infrastructure',     status:'active',  desc:'OpenRouter balance to Telegram' },
-  { id:'security-audit',     time:'9:00 AM', hour:9,  min:0, days:'Mon',    model:'Sonnet', project:'Infrastructure',     status:'active',  desc:'Weekly audit to Discord' },
-  { id:'scout-morning',      time:'8:00 AM', hour:8,  min:0, days:'daily',  model:'Gemma',  project:'Vespera', status:'planned', desc:'Goth scene research to Telegram' },
-]
-
-export const LIVE_FEED = [
-  { agentId:'main',    action:'memory',   desc:'Distilled session into MEMORY.md',      ago:2  },
-  { agentId:'builder', action:'code',     desc:'Scaffolded Mission Control sidebar',    ago:5  },
-  { agentId:'main',    action:'cron',     desc:'Morning brief sent to Telegram',        ago:60 },
-  { agentId:'scout',   action:'research', desc:'Queued: goth scene scan for 8am',       ago:15 },
-  { agentId:'main',    action:'delegate', desc:'Assigned Vespera auth to Builder',      ago:45 },
-  { agentId:'builder', action:'code',     desc:'Vespera: Next.js layout scaffolded',    ago:120},
-]
+// TOD (agent-roster-truth, round 2): LIVE_FEED — a hardcoded scripted feed
+// ("Distilled session into MEMORY.md", ago:2) that rotated on a 4s interval
+// forever, regardless of whether anything real had happened — was deleted
+// along with the `feedIdx` interval in app/page.tsx that drove it. Real
+// activity comes from /api/activity-feed and /api/agents; nothing here
+// stands in for it.
 
 export const ACTION_COLORS: Record<string,string> = {
   memory:'#6b7280', code:'#3b82f6', cron:'#10b981',
   research:'#a855f7', delegate:'#f59e0b', session:'#6366f1',
 }
 
+/**
+ * A stable colour for a project name.
+ *
+ * This used to be a name table — Vespera purple, Infrastructure grey, everything
+ * else blue. Two of those three projects do not exist any more, and a real one
+ * could never get its own colour without editing this file. Hashing the name
+ * gives every project a consistent colour and knows none of them by name.
+ */
 export function pColor(p: string) {
-  return p==='Vespera'?'#a855f7':p==='Infrastructure'?'#6b7280':'#3b82f6'
-}
-
-export function getNextRuns(crons: typeof CRONS) {
-  const now = new Date()
-  const et = new Date(now.toLocaleString('en-US',{timeZone:'America/New_York'}))
-  const etH = et.getHours(), etM = et.getMinutes()
-  const out: {cron:typeof CRONS[0]; mins:number}[] = []
-  for(const c of crons){
-    if(c.status==='planned') continue
-    const daysOff = c.days==='Mon' ? ((8-et.getDay())%7||7) : 0
-    const diff = daysOff*1440 + (c.hour*60+c.min) - (etH*60+etM)
-    out.push({cron:c, mins: diff<0 ? diff+1440 : diff})
-  }
-  return out.sort((a,b)=>a.mins-b.mins).slice(0,3)
+  if (!p) return '#3b82f6'
+  let h = 0
+  for (let i = 0; i < p.length; i++) h = (h * 31 + p.charCodeAt(i)) | 0
+  // Fixed saturation and lightness so every chip reads at the same weight
+  // against the dark ground; only the hue varies.
+  return `hsl(${Math.abs(h) % 360} 65% 60%)`
 }
 
 export function fmtMins(m: number) {
@@ -67,26 +61,32 @@ export function fmtMins(m: number) {
   return mm ? h+'h '+mm+'m' : h+'h'
 }
 
-export const ALL_AGENTS = [
-  { id:'main',    name:'KAOS',    emoji:'🧠', role:'Chief of Staff',    status:'active',    model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#6b7280', desc:'Main orchestrator. Strategy, memory, delegation, comms.', capabilities:['Orchestration','Memory','Strategy','Comms','Delegation'], floor: true },
-  { id:'builder', name:'Builder', emoji:'🔨', role:'Coding Agent',      status:'active',    model:'anthropic/claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#3b82f6', desc:'Ships clean PRs for Vespera and Kemuni. Runs nightly from task queue.', capabilities:['Next.js','Supabase','TypeScript','APIs'], floor: true },
-  { id:'tester',  name:'Tester',  emoji:'🧪', role:'QA Reviewer',      status:'active',    model:'anthropic/claude-haiku-4-5', modelShort:'Haiku 4.5', color:'#a855f7', desc:'Reviews PRs from Builder. Catches bugs before they reach production.', capabilities:['Code Review','Testing','Bug Detection','PR Review'], floor: true },
-  { id:'scout',   name:'Scout',   emoji:'🔍', role:'Research Agent',    status:'scheduled', model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#a855f7', desc:'Morning scan: goth scene, competitors, PropTech trends.', capabilities:['Web Research','Summarization','Trends'], floor: true },
-]
+// TOD (agent-roster-truth): ALL_AGENTS — a hardcoded 4-agent array
+// (KAOS/Builder/Tester/Scout) — used to be here as the fallback whenever
+// /api/agents failed or returned nothing. It declared those four agents
+// "active"/"scheduled" regardless of whether they were real, running, or
+// even existed on the host. Deleted along with every read of it: a failed
+// roster fetch now renders an explicit error naming the endpoint and status
+// (see AgentsTab / CrewTab / OfficeTab), and an empty roster renders "no
+// agents configured" — never a plausible-looking invented list.
 
-export const PROJECT_COLORS: Record<string,string> = { Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280' }
+// PROJECT_COLORS was a three-name colour table with no remaining call sites.
 export const TYPE_COLORS: Record<string,string> = { feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b' }
 
-export const DEFAULT_SPRINT_PROJECTS = [
-  {id:'kemuni',name:'Kemuni Launch',desc:'Community & Property SaaS',emoji:'🚀',startDate:'2026-03-21',deadline:'2026-04-20',totalDays:30,color:'#ffffff',borderColor:'border-white/10',bg:'#0f0f0f',bgDark:'#0f0f0f'},
-  {id:'vespera',name:'Vespera',desc:'Colombia Goth Community',emoji:'🦇',startDate:'2026-03-22',deadline:'2026-03-31',totalDays:9,color:'#a855f7',borderColor:'border-purple-900/30',bg:'#0f0a14',bgDark:'#0f0a14'},
-]
+// DEFAULT_SPRINT_PROJECTS was here: two invented sprints — "Kemuni Launch"
+// (2026-03-21 to 2026-04-20) and "Vespera" (2026-03-22 to 2026-03-31) — carried
+// as a bundled fallback. Both windows closed months ago, and the only thing
+// still naming the constant was a comment. Deleted rather than refreshed: a
+// sprint renders from a sprints row or it does not render.
 
-export const ACTIVITIES: Record<string,string[]> = {
-  main:    ['Reviewing sprint goals...','Planning delegations...','Updating MEMORY.md...','Checking crons...'],
-  builder: ['Idle — awaiting task','Ready to build...','Standing by...'],
-  scout:   ['Scheduled for 8:00 AM','Queued research tasks...','Idle'],
-}
+// TOD (agent-roster-truth, round 2): ACTIVITIES — a hardcoded per-agent list
+// of scripted status lines ("Reviewing sprint goals...", "Standing by...")
+// that page.tsx's `act()` helper cycled through on a 3s tick as if it were
+// live activity, whether or not the agent existed or had ever run. Deleted
+// along with `act()` and the `tick` interval that drove it, and the `act`
+// prop threaded through CrewTab -> AgentsTab (never actually called there).
+// `agentCurrentTask` (from /api/status, itself sourced from real issue rows)
+// is the only "what is this agent doing" signal this app shows now.
 
 // Toast color tokens
 export const TOAST_COLORS = { started: '#60a5fa', done: '#34d399', error: '#f87171', default: '#00ff88' }

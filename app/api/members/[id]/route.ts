@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { assertDbConfigured, db } from '@/lib/db'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Missing Supabase env vars')
-  return createClient(url, key)
+  // db() throws a DbConfigurationError naming the exact missing variables.
+  assertDbConfigured()
+  return db()
 }
 
 // Static registry of human workspace members
@@ -30,6 +30,12 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { id } = await params
   const member = HUMAN_MEMBERS[id]
   if (!member) {
@@ -53,7 +59,7 @@ export async function GET(
     .limit(50)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, 'issues')
   }
 
   const allIssues = issues ?? []

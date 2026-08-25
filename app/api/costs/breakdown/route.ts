@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { assertDbConfigured, db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('costs/breakdown: missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars')
-  return createClient(url, key)
+  // db() throws a DbConfigurationError naming the exact missing variables.
+  assertDbConfigured()
+  return db()
 }
 
 export interface CostBreakdownRow {
@@ -17,6 +17,12 @@ export interface CostBreakdownRow {
 
 // GET /api/costs/breakdown?from=2026-04-01&to=2026-04-30
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { searchParams } = req.nextUrl
   const from = searchParams.get('from')
   const to = searchParams.get('to')

@@ -1,11 +1,41 @@
 'use client'
 import React from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
 
-export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
-  memFiles: any[]
+/** One journal entry inside a memory file. */
+export interface MemEntry {
+  title: string
+  bullets: string[]
+  body: string
+}
+
+/** A row of /api/memory's `files` array. */
+export interface MemFile {
+  filename: string
+  label: string
+  date: string
+  /** The route formats this with toFixed(1), so it arrives as a string. */
+  kb: string | number
+  words: number
+  group: 'today' | 'yesterday' | 'week' | 'month' | 'older'
+  entries: MemEntry[]
+}
+
+/**
+ * TOD-654: `memFiles` is `MemFile[] | null`, not `MemFile[]`. `null` means the
+ * load failed or has not finished — the component must branch on it, and the
+ * type makes forgetting a compile error. Neither the "{n} entries" counter nor
+ * the "No memory files yet." empty state may render while `error` is set.
+ */
+export default function MemoryTab({ memFiles, error, onRetry, openMem, setOpenMem }: {
+  memFiles: MemFile[] | null
+  error?: ApiError | null
+  onRetry?: () => void
   openMem: string | null
   setOpenMem: (f: string | null) => void
 }) {
+  const loaded: MemFile[] | null = error ? null : memFiles
   return (
             <div className="flex gap-0 h-[calc(100vh-88px)] -mx-6 -my-5">
 
@@ -37,18 +67,24 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
                 <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                   <span className="text-white/50 text-[10px] font-semibold uppercase tracking-widest">Daily Journal</span>
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                    style={{background:'#3b82f620',color:'#3b82f6'}}>
-                    {memFiles.length} entries
+                    style={{background: loaded ? '#3b82f620' : '#ef444420', color: loaded ? '#3b82f6' : '#ef4444'}}>
+                    {loaded ? `${loaded.length} entries` : error ? 'data unavailable' : 'loading…'}
                   </span>
                 </div>
 
                 {/* File list */}
                 <div className="flex-1 overflow-y-auto">
-                  {memFiles.length===0 ? (
+                  {error ? (
+                    <div className="px-3 py-3">
+                      <ApiErrorBanner error={error} onRetry={onRetry} />
+                    </div>
+                  ) : loaded === null ? (
+                    <p className="text-white/20 text-xs px-4 py-3">Loading memory…</p>
+                  ) : loaded.length===0 ? (
                     <p className="text-white/20 text-xs px-4 py-3">No memory files yet.</p>
                   ) : (
                     (['today','yesterday','week','month','older'] as const).map(group => {
-                      const grouped = (memFiles as any[]).filter(f=>f.group===group)
+                      const grouped = loaded.filter(f=>f.group===group)
                       if(!grouped.length) return null
                       const labels: Record<string,string> = {
                         today:'Today', yesterday:'Yesterday',
@@ -68,7 +104,7 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
                             <span className="text-white/20 text-[10px]">({grouped.length})</span>
                           </div>
                           {/* Files */}
-                          {!isCompact && grouped.map((f:any)=>(
+                          {!isCompact && grouped.map(f=>(
                             <button key={f.filename}
                               onClick={()=>setOpenMem(openMem===f.filename?null:f.filename)}
                               className={'w-full text-left px-4 py-2 border-l-2 transition-all '+(
@@ -111,7 +147,13 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
                 Back to list
               </button>}
               <div className="flex-1 overflow-y-auto">
-                {!openMem ? (
+                {error ? (
+                  <div className="flex items-center justify-center h-full px-8">
+                    <div className="max-w-xl w-full">
+                      <ApiErrorBanner error={error} onRetry={onRetry} />
+                    </div>
+                  </div>
+                ) : !openMem ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">
                       <div className="w-12 h-12 rounded-2xl mx-auto mb-4 flex items-center justify-center text-2xl"
@@ -121,7 +163,7 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
                     </div>
                   </div>
                 ) : (()=>{
-                  const file = (memFiles as any[]).find(f=>f.filename===openMem)
+                  const file = loaded?.find(f=>f.filename===openMem)
                   if(!file) return null
                   const fullDate = new Date(file.date+'T12:00:00').toLocaleDateString('en-US',{
                     weekday:'long', year:'numeric', month:'long', day:'numeric'
@@ -141,7 +183,7 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
 
                       {/* Entries */}
                       <div className="space-y-10">
-                        {file.entries.map((entry:any, i:number)=>(
+                        {file.entries.map((entry, i)=>(
                           <div key={i} className="flex gap-4">
                             {/* Left: colored dot + line */}
                             <div className="flex flex-col items-center pt-1 shrink-0">
@@ -159,7 +201,7 @@ export default function MemoryTab({ memFiles, openMem, setOpenMem }: {
                               </h2>
                               {entry.bullets.length>0 ? (
                                 <div className="space-y-2">
-                                  {entry.bullets.map((b:string,j:number)=>{
+                                  {entry.bullets.map((b,j)=>{
                                     const colonIdx = b.indexOf(':')
                                     const hasLabel = colonIdx>0 && colonIdx<40
                                     return (

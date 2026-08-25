@@ -9,7 +9,7 @@
   <key>StartInterval</key><integer>7200</integer>
   <key>RunAtLoad</key><false/>
   <key>EnvironmentVariables</key><dict>
-    <key>SUPABASE_SERVICE_ROLE_KEY</key><string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q</string>
+    <key>SUPABASE_SERVICE_ROLE_KEY</key><string>SET_SUPABASE_SERVICE_ROLE_KEY_HERE</string>
     <key>DISCORD_BOT_TOKEN</key><string>MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GT-1av.FQM4lTSXgIVvB6XEA1Td7ir65uYWcyt6LvPHmk</string>
     <key>TELEGRAM_BOT_TOKEN</key><string>8792497927:AAEcRevJI2KnxlKpHochhSJj4-SviK281is</string>
     <key>TELEGRAM_GROUP_CHAT</key><string>-1003598670302</string>

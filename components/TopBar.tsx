@@ -6,13 +6,22 @@ import {
   Search, MessageSquare, Inbox, User, Play, Pause,
 } from 'lucide-react'
 import NotificationBell from './NotificationBell'
+import type { ApiError } from '@/hooks/useApiData'
 
 interface TopBarProps {
   tab: string
   selectedBusiness: string | null
   onSearchOpen: () => void
   onNavigate: (tab: string) => void
-  agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: string }>
+  // The /api/agents roster the page already holds — not agent_runs. A
+  // `running` agent_runs row that nothing ever closed used to be counted
+  // here directly; that let the badge claim agents were active with zero
+  // live heartbeats. `liveAgents === null` means the roster hasn't loaded
+  // (or the fetch failed and returned nothing usable); `agentsError` means
+  // /api/agents refused. Either one means the count is unknown, not zero.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent DTO rows from /api/agents
+  liveAgents: any[] | null
+  agentsError?: ApiError | null
   unreadChat?: boolean
   inboxPendingCount?: number
   onOpenInbox?: () => void
@@ -25,16 +34,25 @@ export default function TopBar({
   selectedBusiness,
   onSearchOpen,
   onNavigate,
-  agentRunsData,
+  liveAgents,
+  agentsError,
   unreadChat = false,
   inboxPendingCount = 0,
   onOpenInbox,
   hubPaused = false,
   onTogglePause,
 }: TopBarProps) {
-  const activeAgentCount = Object.values(agentRunsData).filter(
-    a => a.status === 'running'
-  ).length
+  // Unknown beats a fabricated number: a null roster (still loading, or a
+  // fetch that returned nothing usable) or a refused /api/agents call must
+  // never render as "0 agents running" or as a stale count — both look like
+  // real data. Only a successful roster with no error renders a count, and
+  // that count is heartbeat-live agents only (liveness==='live'), never a
+  // raw agent_runs.status==='running' row.
+  const rosterUnknown = liveAgents === null || !!agentsError
+  const activeAgentCount = rosterUnknown
+    ? 0
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent DTO rows from /api/agents
+    : liveAgents.filter((a: any) => a.liveness === 'live').length
 
   return (
     <header className="border-b border-white/[0.07] px-3 md:px-5 h-12 grid grid-cols-[auto_1fr_auto] items-center shrink-0 sticky top-0 z-20 bg-[#080808]">
@@ -90,7 +108,21 @@ export default function TopBar({
           </button>
         )}
 
-        {activeAgentCount > 0 && (
+        {rosterUnknown ? (
+          <button
+            onClick={() => onNavigate('team')}
+            aria-label="Agent count unknown"
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-white/[0.05] transition-colors"
+            title={
+              agentsError
+                ? `Agents unknown — ${agentsError.endpoint} returned ${agentsError.status}: ${agentsError.message}`
+                : 'Agents unknown — /api/agents has not answered yet'
+            }
+          >
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-white/25" />
+            <span className="text-[10px] text-white/40 font-medium">agents unknown</span>
+          </button>
+        ) : activeAgentCount > 0 && (
           <button
             onClick={() => onNavigate('team')}
             aria-label={`${activeAgentCount} agent${activeAgentCount > 1 ? 's' : ''} running`}

@@ -49,5 +49,24 @@ else
   echo "⚠️  Header not found"
 fi
 
+# Check 6 (TOD-654): no tab may render an empty state over a non-ok response.
+echo ""
+if node "$(dirname "$0")/no-silent-empty.mjs"; then
+  echo "✅ Honest-error guard passed"
+else
+  echo "❌ Honest-error guard FAILED — see scripts/no-silent-empty.mjs"
+  exit 1
+fi
+
+# Check 7 (scope-is-a-boundary): no dbUrl('issues?...') literal may skip the
+# project + archived clauses that issuesUrl() otherwise injects once.
+echo ""
+if node "$(dirname "$0")/no-unscoped-issues.mjs"; then
+  echo "✅ Scope guard passed"
+else
+  echo "❌ Scope guard FAILED — see scripts/no-unscoped-issues.mjs"
+  exit 1
+fi
+
 echo ""
 echo "✅ Smoke test complete"

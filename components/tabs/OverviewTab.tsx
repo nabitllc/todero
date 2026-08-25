@@ -1,742 +1,559 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { AGENT_DISPLAY, daysUntil, daysSince, miniPct, KEMUNI_DEADLINE, KEMUNI_START, VESPERA_DEADLINE, VESPERA_START } from '@/lib/mc-constants'
-import { Bar, SH } from '@/lib/mc-atoms'
-import { deriveIssueStatusCategory } from '@/lib/status-category'
-import ActiveAgentsCard from '@/components/ActiveAgentsCard'
+import React, { useEffect, useState, useCallback } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 import ActivityFeed from '@/components/ActivityFeed'
+import { readApiError, type ApiError } from '@/hooks/useApiData'
+import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
+import Card from '@/components/nav/Card'
 
-// INF-77: Needs-attention block (high/critical open issues)
-function NeedsAttentionBlock() {
-  const [items, setItems] = React.useState<any[]>([])
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    fetch(`${SUPA}/rest/v1/issues?assignee=eq.main&status=in.(open,backlog)&priority=in.(critical,high)&select=task_key,title,project,priority,blocked_by,description&order=priority.asc&limit=5`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then(data => {
-      if (Array.isArray(data)) setItems(data)
-    }).catch(() => {})
-  }, [])
-  if (items.length === 0) return null
+// cards-and-identity piece (Wave 6): Now's four cards — Needs you, Running
+// now, Bolt status, Recent activity. Every other panel this file used to
+// render (Subscriptions & Balances, Project Health, Per-Project Progress,
+// the old two-hardcoded-then-later-query-driven Sprint Countdowns, Risk
+// Radar and Today's Standup as SEPARATE cards) is gone from THIS
+// destination, not rewritten in place — see the piece doc's build
+// instruction 3: Subscriptions moves to Settings, Project Progress moves to
+// Work, and Risk Radar + the inbox count + the blockers list merge into one
+// "Needs you" card. Settings and Work are owned by other pieces; until they
+// pick this up, that content simply does not exist anywhere in the app. That
+// is a real, intentional gap — see the builder report, not a silent drop.
+//
+// TOD-654 follow-up (carried over): every fetch below distinguishes a
+// refused/failed load from a genuinely empty answer. `null` = not
+// loaded/refused; `[]` = the server said there is nothing. Cards render the
+// failure in place of the empty state, never alongside it.
+
+const SUPA_HEADERS = dbRestHeaders()
+
+/** Loose projection of the issue rows these cards select. */
+interface IssueRow {
+  id?: string
+  task_key?: string
+  title?: string
+  project?: string
+  assignee?: string
+  priority?: string
+  status?: string
+  type?: string
+  blocked_by?: string | null
+}
+
+interface InboxItem { id: string; agent: string; type: string; created_at: string }
+
+interface SprintRow { sprint_number?: number | string; name?: string; project?: string; start_date?: string; end_date?: string }
+
+type Fetched<T> = { ok: true; data: T } | { ok: false; error: ApiError }
+
+/** Short, readable label for provenance text: the path without its querystring. */
+function endpointLabel(url: string): string {
+  const path = url.split('?')[0]
+  if (path.startsWith('/')) return path
+  try { return new URL(path).pathname } catch { return path }
+}
+
+/** fetch + parse that hands back the failure instead of an empty array. */
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<Fetched<T>> {
+  const endpoint = endpointLabel(url)
+  try {
+    const res = await fetch(url, init)
+    if (!res.ok) return { ok: false, error: await readApiError(res, endpoint) }
+    return { ok: true, data: (await res.json()) as T }
+  } catch (e) {
+    return {
+      ok: false,
+      error: { status: 0, endpoint, message: e instanceof Error ? e.message : 'could not reach the server' },
+    }
+  }
+}
+
+/** First failure in a Promise.all group, or null when every leg succeeded. */
+function firstError(results: Fetched<unknown>[]): ApiError | null {
+  const failed = results.find(r => !r.ok)
+  return failed && !failed.ok ? failed.error : null
+}
+
+/** Rows out of a successful fetch; `[]` only ever means "the server said none". */
+function rowsOf<T>(res: Fetched<T[]>): T[] {
+  return res.ok && Array.isArray(res.data) ? res.data : []
+}
+
+/** Bump the returned counter to re-run a card's load effect. */
+function useReload(): [number, () => void] {
+  const [n, setN] = useState(0)
+  return [n, useCallback(() => setN(v => v + 1), [])]
+}
+
+/** Skeleton stand-in for a list whose rows have not come back yet. */
+function PendingRows({ rows = 2 }: { rows?: number }) {
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">🚨</span>
-        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Needs Your Attention</span>
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/30 text-red-400 font-medium">{items.length}</span>
-      </div>
-      <div className="space-y-2">
-        {items.slice(0, 3).map((t: any, i: number) => (
-          <div key={t.task_key || i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-white/10 bg-[#080808]">
-            <span className="text-red-400 text-xs mt-0.5">{t.priority === 'critical' ? '🔴' : '🟠'}</span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                {t.task_key && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/40 shrink-0">{t.task_key}</span>}
-                <p className="text-white text-xs font-medium truncate">{t.title}</p>
-              </div>
-              <p className="text-white/30 text-[10px] mt-0.5 truncate">
-                {t.blocked_by ? `Blocked by: ${t.blocked_by}` : t.project || 'Needs decision'}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
+    <div data-testid="pending-rows" aria-label="not loaded yet" className="space-y-1.5">
+      {Array.from({ length: rows }).map((_, i) => (
+        <span key={i} className="block h-2.5 rounded bg-white/10 animate-pulse" style={{ width: `${80 - i * 22}%` }} />
+      ))}
     </div>
   )
 }
 
-// INF-76: Done-yesterday wins callout
-function DoneYesterdayWins() {
-  const [wins, setWins] = React.useState<any[]>([])
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const now = new Date()
-    const yStart = new Date(now); yStart.setDate(now.getDate()-1); yStart.setHours(0,0,0,0)
-    const yEnd = new Date(now); yEnd.setHours(0,0,0,0)
-    fetch(`${SUPA}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${yStart.toISOString()}&updated_at=lt.${yEnd.toISOString()}&select=task_key,title,project,assignee,resolution_type&limit=10`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then(data => {
-      if (Array.isArray(data) && data.length > 0) setWins(data)
-    }).catch(() => {})
-  }, [])
-  if (wins.length === 0) return null
-  const ASSIGNEE_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤' }
-  return (
-    <div className="bg-[#0f0f0f] border border-white/10 rounded-xl p-4 md:p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-lg">🏆</span>
-        <span className="text-xs font-semibold tracking-widest text-emerald-400 uppercase">Yesterday&apos;s Wins</span>
-        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 font-medium">{wins.length} shipped</span>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {wins.map((w, i) => (
-          <div key={w.task_key || i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-emerald-900/30 text-xs bg-emerald-500/5">
-            {w.assignee && ASSIGNEE_EMOJI[w.assignee] && <span>{ASSIGNEE_EMOJI[w.assignee]}</span>}
-            {w.task_key && <span className="font-mono text-emerald-600 text-[9px]">{w.task_key}</span>}
-            <span className="text-emerald-300 truncate max-w-[180px]">{w.title}</span>
-            {w.project && <span className="text-emerald-700 text-[9px]">{w.project}</span>}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+/**
+ * Bolt units (build instruction 4): a 24h window rendered with day-granularity
+ * math is exactly the fabrication TOD-2401 deleted ("0 days left" with hours
+ * still on the clock). This never invokes day math for anything under 48h —
+ * it reads real hours/minutes off the millisecond difference directly, so
+ * there is no rounding step that can collapse "9 hours left" into "0".
+ */
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return 'ended'
+  // Round to a single whole-minute integer FIRST, then derive h/m from THAT
+  // integer via floor/mod. Rounding the leftover minutes independently of
+  // the floored hour (e.g. h = floor(ms/3600000), m = round(remainder/60000))
+  // can round 59.97 minutes up to a literal "60m" instead of carrying into
+  // the next hour — a smaller instance of the same rounding-vs-truncation
+  // class of bug this function exists to avoid.
+  const totalMinutes = Math.round(ms / 60000)
+  if (totalMinutes < 60) return `${totalMinutes}m`
+  if (totalMinutes < 48 * 60) {
+    const h = Math.floor(totalMinutes / 60)
+    const m = totalMinutes % 60
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+  return `${Math.floor(ms / 86400000)}d`
 }
 
-// MC-119: Risk Radar card
-function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
-  const [risks, setRisks] = React.useState<{p0Bugs: any[]; blocked: any[]; noChildren: any[]}>({ p0Bugs: [], blocked: [], noChildren: [] })
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
+// ─── Needs you — inbox + blockers + risk radar merged (build instruction 3) ──
+
+interface NeedRow {
+  key: string
+  kind: 'inbox' | 'blocked' | 'risk'
+  title: string
+  subtitle: string
+}
+
+const KIND_LABEL: Record<NeedRow['kind'], { text: string; className: string }> = {
+  inbox: { text: 'INBOX', className: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  blocked: { text: 'BLOCKED', className: 'bg-red-500/10 text-red-400 border-red-500/20' },
+  risk: { text: 'P0 BUG', className: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+}
+
+function NeedsYouCard({ projectFilter, onNavigate }: { projectFilter: string | null; onNavigate: (id: string) => void }) {
+  const [inboxItems, setInboxItems] = useState<InboxItem[] | null>(null)
+  const [blocked, setBlocked] = useState<IssueRow[] | null>(null)
+  const [p0, setP0] = useState<IssueRow[] | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
+
+  useEffect(() => {
+    let cancelled = false
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
-    Promise.all([
-      fetch(`${SUPA}/rest/v1/issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?parent_id=not.is.null&select=parent_id&limit=1000`, { headers: h }).then(r => r.json()),
-    ]).then(([p0, blocked, features, children]) => {
-      const parentIds = new Set((Array.isArray(children) ? children : []).map((c: any) => c.parent_id))
-      const noChildren = (Array.isArray(features) ? features : []).filter((f: any) => !parentIds.has(f.id))
-      setRisks({ p0Bugs: Array.isArray(p0) ? p0 : [], blocked: Array.isArray(blocked) ? blocked : [], noChildren })
-    }).catch(() => {})
-  }, [])
-  const signals = [
-    { label: 'P0 Bugs (>24h)', count: risks.p0Bugs.length, items: risks.p0Bugs, icon: '\u{1F534}' },
-    { label: 'Blocked Issues', count: risks.blocked.length, items: risks.blocked, icon: '\u{1F6AB}' },
-    { label: 'Features (0 children)', count: risks.noChildren.length, items: risks.noChildren, icon: '\u26A0\uFE0F' },
+    ;(async () => {
+      const [inboxRes, blockedRes, p0Res] = await Promise.all([
+        // Inbox is agent-approval-queue data, deliberately fleet-wide rather
+        // than project-scoped — same as the badge PrimaryNav already shows.
+        fetchJson<InboxItem[]>('/api/inbox?status=pending'),
+        fetchJson<IssueRow[]>(
+          dbUrl(`issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`),
+          { headers: SUPA_HEADERS },
+        ),
+        fetchJson<IssueRow[]>(
+          dbUrl(`issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=5`),
+          { headers: SUPA_HEADERS },
+        ),
+      ])
+      if (cancelled) return
+      const failure = firstError([inboxRes, blockedRes, p0Res])
+      if (failure) { setError(failure); setInboxItems(null); setBlocked(null); setP0(null); return }
+      setError(null)
+      setInboxItems(rowsOf(inboxRes))
+      setBlocked(rowsOf(blockedRes))
+      setP0(rowsOf(p0Res))
+    })()
+    return () => { cancelled = true }
+  }, [reloadKey])
+
+  const source = (
+    <>
+      GET /api/inbox?status=pending (fleet-wide)
+      <br />
+      /api/db/issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&amp;status=not.in.(completed,released,closed)
+      <br />
+      /api/db/issues?type=eq.bug&amp;priority=eq.critical&amp;status=in.(open,in_progress)&amp;created_at=lte.&lt;24h ago&gt;
+    </>
+  )
+
+  if (error) {
+    return <Card id="now-needs-you" title="Needs you" source={source}><ApiErrorBanner error={error} onRetry={reload} /></Card>
+  }
+  if (inboxItems === null || blocked === null || p0 === null) {
+    return <Card id="now-needs-you" title="Needs you" source={source}><PendingRows rows={3} /></Card>
+  }
+
+  const rows: NeedRow[] = [
+    ...inboxItems.map(i => ({ key: `inbox-${i.id}`, kind: 'inbox' as const, title: i.type.replace(/_/g, ' '), subtitle: `agent: ${i.agent}` })),
+    ...p0.map(i => ({ key: `p0-${i.task_key ?? i.id}`, kind: 'risk' as const, title: i.title ?? '(untitled)', subtitle: i.task_key ?? '' })),
+    ...blocked.map(i => ({ key: `blocked-${i.task_key ?? i.id}`, kind: 'blocked' as const, title: i.title ?? '(untitled)', subtitle: i.blocked_by ? `blocked by ${i.blocked_by}` : (i.task_key ?? '') })),
   ]
+  const total = rows.length
+
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">{'\u{1F6E1}\uFE0F'}</span>
-        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Risk Radar</span>
+    <Card
+      id="now-needs-you"
+      title="Needs you"
+      source={source}
+      metric={total > 0 ? { value: total, label: 'waiting', tone: 'amber' } : { value: 0, label: 'waiting' }}
+      empty={total === 0 ? {
+        active: true,
+        message: `Nothing needs you in ${projectFilter ?? 'this project'} right now — inbox, blockers and P0 bugs (>24h) are all clear.`,
+      } : undefined}
+    >
+      <div className="space-y-1.5">
+        {rows.slice(0, 6).map(r => (
+          <button
+            key={r.key}
+            onClick={() => onNavigate(r.kind === 'inbox' ? 'inbox' : 'board')}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-white/10 bg-[#080808] hover:bg-white/[0.04] text-left transition-colors"
+          >
+            <span className={`text-[9px] font-mono font-medium px-1.5 py-0.5 rounded border shrink-0 ${KIND_LABEL[r.kind].className}`}>
+              {KIND_LABEL[r.kind].text}
+            </span>
+            <span className="text-white text-xs font-medium truncate flex-1">{r.title}</span>
+            <span className="text-white/30 text-[10px] shrink-0 truncate max-w-[160px]">{r.subtitle}</span>
+          </button>
+        ))}
+        {total > 6 && <p className="text-white/30 text-[10px] pl-1">+{total - 6} more</p>}
       </div>
-      <div className="space-y-2.5">
-        {signals.map(s => {
-          const badgeClass = s.count === 0
-            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-            : s.count <= 3
-              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-              : 'bg-red-500/10 text-red-400 border border-red-500/20'
+    </Card>
+  )
+}
+
+// ─── Running now — real heartbeat liveness, no token/cost figures this ──────
+// codebase does not track on Now (see components/nav/NowSignal.tsx's header
+// comment: those need agent-approval-queue/cost telemetry that doesn't exist
+// yet — Runs, not Now, is where a real cost eventually belongs).
+
+interface LiveAgentRow {
+  id: string
+  liveness?: 'live' | 'stale' | 'idle'
+  currentTask?: string | null
+}
+
+interface AgentRunInfo { taskTitle: string; startedAt: string | null; status: string }
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m`
+  return `${totalSec}s`
+}
+
+function RunningNowCard({
+  liveAgents, agentsError, agentRunsData, onReload,
+}: {
+  liveAgents: LiveAgentRow[] | null
+  agentsError: ApiError | null | undefined
+  agentRunsData: Record<string, AgentRunInfo>
+  onReload: () => void
+}) {
+  const source = 'GET /api/agents (liveness === "live") — fleet-wide, not project-scoped'
+  if (agentsError) {
+    return <Card id="now-running" title="Running now" source={source}><ApiErrorBanner error={agentsError} onRetry={onReload} /></Card>
+  }
+  if (liveAgents === null) {
+    return <Card id="now-running" title="Running now" source={source}><PendingRows rows={2} /></Card>
+  }
+  const live = liveAgents.filter(a => a.liveness === 'live')
+  return (
+    <Card
+      id="now-running"
+      title="Running now"
+      source={source}
+      metric={{ value: live.length, label: live.length === 1 ? 'agent' : 'agents' }}
+      empty={live.length === 0 ? { active: true, message: 'No agent has a live heartbeat right now.' } : undefined}
+    >
+      <div className="divide-y divide-white/5 border border-white/10 rounded-lg overflow-hidden">
+        {live.map(a => {
+          const run = agentRunsData[a.id]
+          const elapsedMs = run?.startedAt ? Date.now() - new Date(run.startedAt).getTime() : null
           return (
-            <div key={s.label} className="rounded-xl border border-white/10 px-3 py-2.5 bg-[#080808]">
-              <div className="flex items-center gap-2">
-                <span className="text-xs">{s.icon}</span>
-                <span className="text-white/40 text-xs flex-1">{s.label}</span>
-                <button onClick={() => onNavigate('board')}
-                  className={`text-xs font-bold px-2 py-0.5 rounded-full transition-colors hover:opacity-80 ${badgeClass}`}>
-                  {s.count}
-                </button>
+            <div key={a.id} className="flex items-center gap-2.5 px-3 py-2.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+              <span className="text-white text-sm font-medium shrink-0">{a.id}</span>
+              <span className="text-white/60 text-xs truncate flex-1">{a.currentTask || run?.taskTitle || 'heartbeat just now'}</span>
+              {elapsedMs !== null && <span className="text-white/40 text-xs font-mono shrink-0">{formatElapsed(elapsedMs)}</span>}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ─── Bolt status — the 24h agent-activity reporting window ──────────────────
+//
+// OWNER CORRECTION: bolts and sprints are both real and both stay. The
+// owner's own words: "Bolts tell the summary of what agents have done in
+// 24h. Sprints are meant for humans. I remember creating '24H sprints', it
+// is what exists just with a different name so it is easier to
+// differentiate them." So a bolt is not a renamed sprint concept — it is a
+// SPRINTS-table row whose window happens to be ~24h (what he already built
+// as "24h sprints"), opened automatically at a set cadence, reporting on
+// agent activity. A sprints-table row with a real multi-day/two-week window
+// is the human planning horizon and keeps its existing meaning — this card
+// renders that honestly as a Sprint, never relabeled into a bolt it isn't.
+//
+// Reads the same `sprints` table the old Sprint Countdowns card did (column
+// names unchanged — this is a display/units change, not a migration). What
+// changed: units are derived from the ACTUAL remaining milliseconds, never
+// from a fixed day-granularity formula, so a 24h window renders in hours
+// however short it gets — never "0 days left" while hours remain, which is
+// the exact fabrication TOD-2401 deleted.
+//
+// Not built here (out of this card's scope, and not asked for by the
+// acceptance criteria): a manual "start a bolt when the automatic cadence is
+// paused" control. The toolbar's "Start builder run" button above is a
+// different thing entirely — see its own comment — and must not be read as
+// that control.
+
+function BoltStatusCard({ projectFilter }: { projectFilter: string | null }) {
+  const [rows, setRows] = useState<SprintRow[] | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
+  const [, forceTick] = useState(0)
+
+  useEffect(() => {
+    let live = true
+    const scope = projectFilter ? `&project=eq.${encodeURIComponent(projectFilter)}` : ''
+    void (async () => {
+      const r = await fetchJson<SprintRow[]>(
+        dbUrl(`sprints?status=eq.active${scope}&select=sprint_number,name,project,start_date,end_date&order=end_date.asc&limit=4`),
+        { headers: SUPA_HEADERS },
+      )
+      if (!live) return
+      if (!r.ok) { setError(r.error); setRows(null); return }
+      setError(null)
+      setRows(Array.isArray(r.data) ? r.data : [])
+    })()
+    return () => { live = false }
+  }, [projectFilter, reloadKey])
+
+  // Re-render every 30s so the hour/minute countdown stays live without a refetch.
+  useEffect(() => {
+    const t = setInterval(() => forceTick(n => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [])
+
+  const source = `/api/db/sprints?status=eq.active${projectFilter ? `&project=eq.${projectFilter}` : ''}&select=sprint_number,name,project,start_date,end_date`
+
+  if (error) {
+    return <Card id="now-bolt-status" title="Bolt status" source={source}><ApiErrorBanner error={error} onRetry={reload} /></Card>
+  }
+  if (rows === null) {
+    return <Card id="now-bolt-status" title="Bolt status" source={source}><PendingRows rows={2} /></Card>
+  }
+  if (rows.length === 0) {
+    return (
+      <Card
+        id="now-bolt-status"
+        title="Bolt status"
+        source={source}
+        empty={{
+          active: true,
+          message: `No active bolt for ${projectFilter ?? 'this project'}. A countdown appears here once one is opened — nothing is overdue, there is simply nothing scheduled yet.`,
+        }}
+      />
+    )
+  }
+
+  const computed = rows.map(row => {
+    const startsAt = row.start_date ? new Date(row.start_date) : null
+    const endsAt = row.end_date ? new Date(row.end_date) : null
+    const windowMs = startsAt && endsAt ? endsAt.getTime() - startsAt.getTime() : null
+    // <=30h counts as bolt-scale even allowing for a little slack around the
+    // nominal 24h; a real two-week sprint is nowhere near this threshold.
+    const isBolt = windowMs !== null && windowMs <= 30 * 3600000
+    const remainingMs = endsAt ? endsAt.getTime() - Date.now() : null
+    const elapsedMs = startsAt ? Date.now() - startsAt.getTime() : null
+    const pct = windowMs && windowMs > 0 && elapsedMs !== null ? Math.max(0, Math.min(100, Math.round((elapsedMs / windowMs) * 100))) : null
+    const noun = windowMs === null ? 'Bolt' : isBolt ? 'Bolt' : 'Sprint'
+    const label = row.name ?? (row.sprint_number != null ? `${noun} ${row.sprint_number}` : noun)
+    return { row, remainingMs, pct, label, noun }
+  })
+  const soonest = computed.reduce((a, b) => (a.remainingMs ?? Infinity) <= (b.remainingMs ?? Infinity) ? a : b)
+
+  return (
+    <Card
+      id="now-bolt-status"
+      title="Bolt status"
+      source={source}
+      metric={soonest.remainingMs !== null ? { value: formatRemaining(soonest.remainingMs), label: 'left' } : undefined}
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {computed.map(({ row, remainingMs, pct, label, noun }) => {
+          const urgent = remainingMs !== null && remainingMs <= 3 * 3600000 && remainingMs > 0
+          const ended = remainingMs !== null && remainingMs <= 0
+          return (
+            <div key={`${row.project ?? ''}-${row.sprint_number ?? label}`} className="rounded-xl border border-white/10 p-3.5 bg-[#080808]">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-white/50 text-[10px] font-semibold uppercase tracking-widest">{label}</span>
+                {row.project && <span className="text-white/25 text-[9px]">{row.project}</span>}
+                {noun === 'Bolt' && (
+                  <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/40 font-mono">24h</span>
+                )}
+                {urgent && <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold">DUE SOON</span>}
               </div>
-              {s.count > 0 && (
-                <div className="mt-2 space-y-1">
-                  {s.items.slice(0, 3).map((item: any, i: number) => (
-                    <div key={item.task_key || i} className="flex items-center gap-2 text-[10px]">
-                      {item.task_key && <span className="font-mono text-white/50">{item.task_key}</span>}
-                      <span className="text-white/40 truncate">{item.title}</span>
-                    </div>
-                  ))}
-                  {s.count > 3 && <span className="text-[9px] text-white/30">+{s.count - 3} more</span>}
+              {remainingMs !== null ? (
+                <span className={`text-2xl font-bold tabular-nums leading-none ${ended ? 'text-white/40' : urgent ? 'text-red-500' : 'text-white/85'}`}>
+                  {formatRemaining(Math.max(0, remainingMs))}{!ended && <span className="text-white/40 text-xs font-normal ml-1.5">left</span>}
+                </span>
+              ) : (
+                <span className="text-white/40 text-sm">no end date set</span>
+              )}
+              {pct !== null && (
+                <div className="w-full rounded-full h-1.5 bg-white/5 mt-2">
+                  <div className={`h-1.5 rounded-full transition-all ${urgent ? 'bg-red-500' : 'bg-white/40'}`} style={{ width: `${pct}%` }} />
                 </div>
               )}
             </div>
           )
         })}
       </div>
-    </div>
+    </Card>
   )
 }
 
-// MC-120: Today's Standup card
-function StandupCard() {
-  const [data, setData] = React.useState<{shipped: any[]; inFlight: any[]; blockers: any[]}>({ shipped: [], inFlight: [], blockers: [] })
-  React.useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const h = { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
-    Promise.all([
-      fetch(`${SUPA}/rest/v1/issues?status=in.(completed,released,closed)&updated_at=gte.${since24h}&select=task_key,title&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?status=eq.in_progress&select=task_key,title,assignee&order=updated_at.desc&limit=5`, { headers: h }).then(r => r.json()),
-      fetch(`${SUPA}/rest/v1/issues?or=(blocked_by.not.is.null,is_blocked.eq.true)&status=not.in.(completed,released,closed)&select=task_key,title,blocked_by,assignee&limit=5`, { headers: h }).then(r => r.json()),
-    ]).then(([shipped, inFlight, blockers]) => {
-      setData({
-        shipped: Array.isArray(shipped) ? shipped : [],
-        inFlight: Array.isArray(inFlight) ? inFlight : [],
-        blockers: Array.isArray(blockers) ? blockers : [],
-      })
-    }).catch(() => {})
-  }, [])
-  const sections = [
-    { label: 'Shipped Yesterday', icon: '\u2705', items: data.shipped, emptyMsg: 'Nothing shipped', colorClass: 'text-green-400' },
-    { label: 'Ongoing Today', icon: '\u{1F527}', items: data.inFlight, emptyMsg: 'Nothing in progress', colorClass: 'text-blue-400' },
-    { label: 'Blockers', icon: '\u{1F6AB}', items: data.blockers, emptyMsg: 'No blockers', colorClass: 'text-red-400' },
-  ]
-  return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-sm">{'\u{1F4CB}'}</span>
-        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Today&apos;s Standup</span>
-      </div>
-      <div className="space-y-3">
-        {sections.map(s => (
-          <div key={s.label}>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xs">{s.icon}</span>
-              <span className={`text-[10px] font-semibold uppercase tracking-wider ${s.colorClass}`}>{s.label}</span>
-              <span className="text-[9px] text-white/30">({s.items.length})</span>
-            </div>
-            {s.items.length === 0 ? (
-              <p className="text-[10px] text-white/20 italic pl-5">{s.emptyMsg}</p>
-            ) : (
-              <div className="space-y-1 pl-5">
-                {s.items.slice(0, 5).map((item: any, i: number) => (
-                  <div key={item.task_key || i} className="flex items-center gap-2 text-xs">
-                    {item.task_key && <span className="text-[9px] font-mono text-white/50 shrink-0">{item.task_key}</span>}
-                    <span className="text-white/40 truncate">{item.title}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
+// ─── Recent activity ─────────────────────────────────────────────────────────
 
-// MC-102 / TOD-774: Sprint Progress Card with status category bar
-const SPRINT_CATS = [
-  { label: 'Planned', color: '#6b7280' },
-  { label: 'Ongoing', color: '#3b82f6' },
-  { label: 'SignOff', color: '#10b981' },
-  { label: 'Done',    color: '#a855f7' },
-] as const
-
-function SprintProgressCard() {
-  const [sprintData, setSprintData] = useState<{total:number;done:number}|null>(null)
-  const [cats, setCats] = useState<Record<string,number>>({Planned:0,Ongoing:0,SignOff:0,Done:0})
-  const [priorData, setPriorData] = useState<{total:number;done:number}|null>(null)
-  const [sprintLabel, setSprintLabel] = useState('')
-  const [sprintDate, setSprintDate] = useState('')
-  const [countdown, setCountdown] = useState('')
+function RecentActivityCard({ projectFilter, onNavigate }: { projectFilter: string | null; onNavigate: (id: string) => void }) {
+  const [count, setCount] = useState<number | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
+  const [reloadKey, reload] = useReload()
 
   useEffect(() => {
-    const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    const headers = { 'apikey': SUPA_KEY, 'Authorization': `Bearer ${SUPA_KEY}` }
+    let cancelled = false
+    const params = new URLSearchParams({ limit: '5' })
+    if (projectFilter) params.set('project', projectFilter)
+    fetchJson<unknown[]>(`/api/activity-feed?${params}`).then(res => {
+      if (cancelled) return
+      if (!res.ok) { setError(res.error); setCount(null); return }
+      setError(null)
+      setCount(Array.isArray(res.data) ? res.data.length : 0)
+    })
+    return () => { cancelled = true }
+  }, [projectFilter, reloadKey])
 
-    // Fetch active sprint dynamically
-    fetch(`${SUPA_URL}/rest/v1/sprints?status=eq.active&select=sprint_number,start_date,end_date&limit=1`, { headers })
-      .then(r => r.json())
-      .then(sprints => {
-        if (!Array.isArray(sprints) || sprints.length === 0) return
-        const active = sprints[0]
-        const num = active.sprint_number ?? '?'
-        const activeDate = active.start_date
-        setSprintLabel(`Sprint ${num}`)
-        setSprintDate(activeDate)
+  const source = `GET /api/activity-feed?limit=5${projectFilter ? `&project=${projectFilter}` : ''}`
 
-        // Fetch issues for active sprint
-        fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.${activeDate}&select=id,status`, { headers })
-          .then(r => r.json())
-          .then(data => {
-            if (Array.isArray(data)) {
-              setSprintData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
-              const counts: Record<string,number> = {Planned:0,Ongoing:0,SignOff:0,Done:0}
-              for (const issue of data) {
-                const cat = deriveIssueStatusCategory(issue.status)
-                if (cat) counts[cat] = (counts[cat] ?? 0) + 1
-              }
-              setCats(counts)
-            }
-          }).catch(() => {})
-
-        // Fetch prior sprint for velocity comparison
-        fetch(`${SUPA_URL}/rest/v1/sprints?status=eq.closed&select=sprint_number,start_date&order=created_at.desc&limit=1`, { headers })
-          .then(r => r.json())
-          .then(priorSprints => {
-            if (!Array.isArray(priorSprints) || priorSprints.length === 0) return
-            const priorDate = priorSprints[0].start_date
-            fetch(`${SUPA_URL}/rest/v1/issues?sprint=eq.${priorDate}&select=id,status`, { headers })
-              .then(r => r.json())
-              .then(data => {
-                if (Array.isArray(data)) {
-                  setPriorData({ total: data.length, done: data.filter((i:any) => ['completed', 'released', 'closed'].includes(i.status)).length })
-                }
-              }).catch(() => {})
-          }).catch(() => {})
-      }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    const update = () => {
-      // TOD-XXX: delegate to lib/time.ts — DST-correct. Previously hardcoded
-      // +11 hours assuming EDT forever, broke after DST fall-back.
-      // Dynamic import to avoid SSR issues
-      import('@/lib/time').then(({ nextEtTime }) => {
-        const now = new Date()
-        const target = nextEtTime(7, 0, now)
-        const diff = target.getTime() - now.getTime()
-        const h = Math.floor(diff / 3600000)
-        const m = Math.floor((diff % 3600000) / 60000)
-        const s = Math.floor((diff % 60000) / 1000)
-        setCountdown(`${h}h ${m}m ${s}s`)
-      }).catch(() => {
-        // Fallback: raw math
-        const now = new Date()
-        const target = new Date(now)
-        target.setUTCHours(11, 0, 0, 0)
-        if (target <= now) target.setDate(target.getDate() + 1)
-        const diff = target.getTime() - now.getTime()
-        setCountdown(`${Math.floor(diff/3600000)}h`)
-      })
-    }
-    update()
-    const t = setInterval(update, 1000)
-    return () => clearInterval(t)
-  }, [])
-
-  if (!sprintData || sprintData.total === 0) return null
-  const pct = Math.round((sprintData.done / sprintData.total) * 100)
-  const velocityDelta = priorData && priorData.done > 0
-    ? sprintData.done - priorData.done
-    : null
+  if (error) {
+    return <Card id="now-recent-activity" title="Recent activity" source={source}><ApiErrorBanner error={error} onRetry={reload} /></Card>
+  }
 
   return (
-    <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm">🏃</span>
-          <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">{sprintLabel || 'Sprint'}{sprintDate ? ` · ${sprintDate}` : ''}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-white/30">Next 7am EDT in</span>
-          <span className="text-[11px] font-mono text-white/40">{countdown}</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-3 mb-2">
-        <span className="text-white text-sm font-semibold tabular-nums">{sprintData.done}/{sprintData.total}</span>
-        <span className="text-white/50 text-xs">done</span>
-        {velocityDelta !== null && (
-          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${velocityDelta > 0 ? 'bg-green-500/10 text-green-400' : velocityDelta < 0 ? 'bg-red-500/10 text-red-400' : 'bg-zinc-500/20 text-zinc-400'}`}>
-            {velocityDelta > 0 ? '+' : ''}{velocityDelta} vs prior
-          </span>
-        )}
-        <span className={`ml-auto text-lg font-bold tabular-nums ${pct === 100 ? 'text-green-500' : pct >= 50 ? 'text-blue-500' : 'text-amber-500'}`}>{pct}%</span>
-      </div>
-      <div className="w-full rounded-full h-2 bg-[#1a1a1a]">
-        <div className={`h-2 rounded-full transition-all duration-500 ${pct === 100 ? 'bg-green-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-500'}`} style={{width: pct+'%'}} />
-      </div>
-      {/* TOD-774: Status category breakdown bar */}
-      <div className="mt-3">
-        <div className="flex w-full rounded-full h-2 overflow-hidden bg-[#1a1a1a]">
-          {SPRINT_CATS.map(c => {
-            const w = sprintData.total > 0 ? ((cats[c.label] ?? 0) / sprintData.total) * 100 : 0
-            return w > 0 ? (
-              <div key={c.label} style={{width: w + '%', background: c.color}} className="h-2 transition-all duration-500" />
-            ) : null
-          })}
-        </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
-          {SPRINT_CATS.map(c => (
-            <div key={c.label} className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background: c.color}} />
-              <span className="text-[9px] text-white/40">{c.label}</span>
-              <span className="text-[9px] text-white/60 tabular-nums">{cats[c.label] ?? 0}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    <Card
+      id="now-recent-activity"
+      title="Recent activity"
+      source={source}
+      metric={count !== null ? { value: count, label: count === 1 ? 'event' : 'events' } : undefined}
+      empty={count === 0 ? {
+        active: true,
+        message: `No activity for ${projectFilter ?? 'this project'} in the last window — that is correct, not broken.`,
+      } : undefined}
+    >
+      {count !== 0 && <ActivityFeed limit={5} projectFilter={projectFilter} onNavigate={onNavigate} />}
+    </Card>
   )
 }
 
-// MC-111: Project Breakdown Bars (epic/feature/issue)
-function ProjectBreakdownBars({ project }: { project: string }) {
-  const [data, setData] = useState<{epics:{done:number;total:number};features:{done:number;total:number};issues:{done:number;total:number}}|null>(null)
-  useEffect(() => {
-    const SUPA = 'https://twthgapiouiqhavrcnry.supabase.co'
-    const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3dGhnYXBpb3VpcWhhdnJjbnJ5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDUzMTY3NiwiZXhwIjoyMDkwMTA3Njc2fQ.EyNdtvECdcHx3RuaizdfLGNRY4OJotzjE2QeOQ9Yf4Q'
-    fetch(`${SUPA}/rest/v1/issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`, {
-      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }
-    }).then(r => r.json()).then((rows: any[]) => {
-      if (!Array.isArray(rows)) return
-      const count = (type: string) => {
-        const matching = rows.filter(r => r.type === type)
-        return { done: matching.filter(r => ['completed', 'released', 'closed'].includes(r.status)).length, total: matching.length }
-      }
-      setData({ epics: count('epic'), features: count('feature'), issues: { done: rows.filter(r => !['epic','feature'].includes(r.type) && ['completed', 'released', 'closed'].includes(r.status)).length, total: rows.filter(r => !['epic','feature'].includes(r.type)).length } })
-    }).catch(() => {})
-  }, [project])
-  if (!data) return null
-  const rows = [
-    { label: 'Epics', ...data.epics, colorClass: 'bg-purple-500' },
-    { label: 'Features', ...data.features, colorClass: 'bg-blue-500' },
-    { label: 'Issues', ...data.issues, colorClass: 'bg-green-500' },
-  ]
-  return (
-    <div className="mt-2 pt-2 border-t border-white/10 space-y-1.5">
-      {rows.map(r => (
-        <div key={r.label} className="flex items-center gap-2">
-          <span className="text-[9px] text-white/50 w-12 shrink-0">{r.label}</span>
-          <div className="flex-1 h-1 rounded-full bg-[#1a1a1a]">
-            <div className={`h-1 rounded-full transition-all ${r.colorClass}`} style={{width: r.total > 0 ? (r.done/r.total*100)+'%' : '0%'}} />
-          </div>
-          <span className="text-[9px] text-white/30 tabular-nums w-8 text-right">{r.done}/{r.total}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
+// ─── Now ──────────────────────────────────────────────────────────────────
 
 export default function OverviewTab({
   globalSync,
   syncing,
-  liveStatus,
-  sprintProjects,
+  liveAgents,
+  agentsError,
+  agentRunsData,
   onNavigate,
   projectFilter,
 }: {
   globalSync: () => Promise<void>
   syncing: boolean
-  liveStatus: any
-  sprintProjects: any[]
+  /** Real /api/agents roster — null = not loaded yet. */
+  liveAgents: LiveAgentRow[] | null
+  agentsError?: ApiError | null
+  /** Real agent_runs poll, keyed by agent id — see app/page.tsx. */
+  agentRunsData: Record<string, AgentRunInfo>
   onNavigate: (tab: string) => void
-  projectFilter?: string | null
+  projectFilter: string | null
 }) {
-  const [sprintRunning, setSprintRunning] = useState(false)
-  const [sprintToast, setSprintToast] = useState<{text: string; ok: boolean} | null>(null)
+  const [builderRunning, setBuilderRunning] = useState(false)
+  const [builderToast, setBuilderToast] = useState<{ text: string; ok: boolean } | null>(null)
 
-  const handleRunSprint = async () => {
-    setSprintRunning(true)
-    setSprintToast(null)
+  // OWNER CORRECTION: this used to be relabeled "Run Bolt". It is neither a
+  // bolt control nor a sprint control — the owner's own words: "the 'Start'
+  // is not meant for bolts but something different, like a specific
+  // goal/feature/etc. So the 'Start' runs for X amount of time and it can
+  // take less or more than 1 bolt." What POST /api/run-sprint actually does
+  // (read, not assumed — app/api/** is out of this piece's ownership, another
+  // agent is verifying it concurrently) is dispatch the builder agent onto
+  // its next queued task via /api/run-agent?agent=builder: a goal/
+  // feature-scoped run of whatever length that task takes. Labeled for that.
+  const handleRunBuilder = async () => {
+    setBuilderRunning(true)
+    setBuilderToast(null)
     try {
       const res = await fetch('/api/run-sprint', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       const data = await res.json()
       if (res.ok && data.ok) {
-        setSprintToast({ text: `🚀 Sprint started: ${data.task ?? data.message ?? 'Builder is working'}`, ok: true })
+        setBuilderToast({ text: `Builder started: ${data.task ?? data.message ?? 'working a queued task'}`, ok: true })
       } else {
-        setSprintToast({ text: data.message ?? 'Sprint trigger failed', ok: false })
+        setBuilderToast({ text: data.message ?? 'Builder trigger failed', ok: false })
       }
     } catch {
-      setSprintToast({ text: 'Could not reach sprint API', ok: false })
+      setBuilderToast({ text: 'Could not reach the builder API', ok: false })
     } finally {
-      setSprintRunning(false)
-      setTimeout(() => setSprintToast(null), 5000)
+      setBuilderRunning(false)
+      setTimeout(() => setBuilderToast(null), 5000)
     }
   }
 
   return (
-    <>
-            <div className="space-y-5">
+    <div className="space-y-3">
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={handleRunBuilder}
+          disabled={builderRunning}
+          className="text-[10px] px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 hover:border-emerald-400/50 bg-emerald-500/5 transition-all flex items-center gap-1.5 disabled:opacity-50 font-medium"
+        >
+          {builderRunning ? (
+            <span className="w-3 h-3 border border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin inline-block" />
+          ) : (
+            <span>▶</span>
+          )}
+          {builderRunning ? 'Starting…' : 'Start builder run'}
+        </button>
+        <button
+          onClick={globalSync}
+          disabled={syncing}
+          className="text-[10px] px-3 py-1.5 rounded-lg border border-white/10 text-white/40 hover:text-white hover:border-white/20 bg-[#0f0f0f]/50 transition-all flex items-center gap-1.5 disabled:opacity-50"
+        >
+          {syncing ? (
+            <span className="w-3 h-3 border border-white/30 border-t-transparent rounded-full animate-spin inline-block" />
+          ) : (
+            <span>↻</span>
+          )}
+          {syncing ? 'Syncing…' : 'Sync'}
+        </button>
+      </div>
+      {builderToast && (
+        <div className={`rounded-xl border px-4 py-3 text-xs font-medium ${builderToast.ok ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' : 'border-red-500/30 bg-red-500/5 text-red-400'}`}>
+          {builderToast.text}
+        </div>
+      )}
 
-              {/* MC-112: Sync button + Run Sprint */}
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={handleRunSprint}
-                  disabled={sprintRunning}
-                  className="text-[10px] px-3 py-1.5 rounded-lg border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 hover:border-emerald-400/50 bg-emerald-500/5 transition-all flex items-center gap-1.5 disabled:opacity-50 font-medium">
-                  {sprintRunning ? (
-                    <span className="w-3 h-3 border border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin inline-block" />
-                  ) : (
-                    <span>▶</span>
-                  )}
-                  {sprintRunning ? 'Starting...' : 'Run Sprint'}
-                </button>
-                <button
-                  onClick={globalSync}
-                  disabled={syncing}
-                  className="text-[10px] px-3 py-1.5 rounded-lg border border-white/10 text-white/40 hover:text-white hover:border-white/20 bg-[#0f0f0f]/50 transition-all flex items-center gap-1.5 disabled:opacity-50">
-                  {syncing ? (
-                    <span className="w-3 h-3 border border-white/30 border-t-transparent rounded-full animate-spin inline-block" />
-                  ) : (
-                    <span>↻</span>
-                  )}
-                  {syncing ? 'Syncing...' : 'Sync'}
-                </button>
-              </div>
-              {sprintToast && (
-                <div className={`rounded-xl border px-4 py-3 text-xs font-medium ${sprintToast.ok ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400' : 'border-red-500/30 bg-red-500/5 text-red-400'}`}>
-                  {sprintToast.text}
-                </div>
-              )}
-
-              {/* ── Hero Countdown Timers (INF-75) ── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {([
-                  { name: 'Vespera', emoji: '🦇', deadline: VESPERA_DEADLINE, start: VESPERA_START, totalDays: 9, color: '#a855f7', bg: 'linear-gradient(135deg, #0f0a14 0%, #1a0e24 100%)' },
-                  { name: 'Kemuni', emoji: '🚀', deadline: KEMUNI_DEADLINE, start: KEMUNI_START, totalDays: 30, color: '#3b82f6', bg: 'linear-gradient(135deg, #0a0f1a 0%, #0e1a2e 100%)' },
-                ] as const).map(p => {
-                  const left = daysUntil(p.deadline)
-                  const elap = daysSince(p.start)
-                  const pct = miniPct(elap, p.totalDays)
-                  const urgent = left <= 3
-                  const numColor = urgent ? '#ef4444' : p.color
-                  return (
-                    <div key={p.name} className="rounded-2xl border border-white/10 p-5 md:p-6" style={{ background: p.bg }}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-xl">{p.emoji}</span>
-                        <span className="text-white/40 text-xs font-semibold uppercase tracking-widest">{p.name}</span>
-                        {urgent && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold animate-pulse">URGENT</span>}
-                      </div>
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-5xl md:text-6xl font-black tabular-nums leading-none" style={{ color: numColor }}>{left}</span>
-                        <span className="text-white/50 text-lg font-medium">days left</span>
-                      </div>
-                      <p className="text-white/30 text-xs mb-3">
-                        {p.deadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                        {' · Day '}{elap}/{p.totalDays}
-                      </p>
-                      <div className="w-full rounded-full h-2.5" style={{ background: '#1a1a1a' }}>
-                        <div className="h-2.5 rounded-full transition-all" style={{ width: pct + '%', background: numColor }} />
-                      </div>
-                      <div className="flex justify-between mt-1.5">
-                        <span className="text-white/30 text-[10px]">{pct}% elapsed</span>
-                        <span className="text-white/30 text-[10px]">{100 - pct}% remaining</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* TOD-649: Active Agents live status */}
-              <ActiveAgentsCard agentCurrentTask={liveStatus?.agentCurrentTask} />
-
-              {/* ── Needs Your Attention (INF-77) ── */}
-              <NeedsAttentionBlock />
-
-              {/* MC-119: Risk Radar + MC-120: Standup */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <RiskRadarCard onNavigate={onNavigate} />
-                <StandupCard />
-              </div>
-
-              {/* INF-76: Done-yesterday wins */}
-              <DoneYesterdayWins />
-
-              {/* ── Subscriptions & Balances (INF-66) ── */}
-              <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-sm">💳</span>
-                  <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Subscriptions & Balances</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { name: 'Claude Pro', type: 'subscription', note: '$20/mo · Active', color: '#a855f7', icon: '🧠' },
-                    { name: 'Vercel Pro', type: 'subscription', note: '$20/mo · Renews Apr 24', color: '#ffffff', icon: '▲' },
-                    { name: 'OpenRouter', type: 'balance', note: `$${(liveStatus?.openrouter?.remaining ?? 9.57).toFixed(2)} remaining`, color: liveStatus?.openrouter?.remaining < 2 ? '#ef4444' : '#10b981', icon: '🔀' },
-                    { name: 'Brave Search', type: 'subscription', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
-                  ].map(s => (
-                    <div key={s.name} className="rounded-xl border border-white/10 px-3 py-2.5 bg-[#080808]">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-xs">{s.icon}</span>
-                        <span className="text-white text-[11px] font-medium">{s.name}</span>
-                      </div>
-                      <p className="text-[10px]" style={{color: s.color}}>{s.note}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── Project Health Card ── */}
-              {(()=>{
-                const allProjects = sprintProjects.filter(p => p.taskCounts && p.taskCounts.total > 0)
-                const sorted = [...allProjects].sort((a,b) => (a.taskProgress ?? 0) - (b.taskProgress ?? 0))
-                if (!sorted.length) return null
-                return (
-                  <div className="rounded-2xl border border-white/10 p-4 md:p-5 bg-[#0f0f0f]">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">📊</span>
-                        <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Project Health</span>
-                      </div>
-                      <span className="text-white/20 text-[10px]">sorted by progress ↑</span>
-                    </div>
-                    <div className="space-y-3.5">
-                      {sorted.map(proj => {
-                        const tc = proj.taskCounts!
-                        const pct = proj.taskProgress ?? 0
-                        const isLow = pct < 30
-                        const isMid = pct >= 30 && pct < 70
-                        const barColor = isLow ? '#ef4444' : isMid ? '#f59e0b' : '#10b981'
-                        const statusLabel = isLow ? 'Needs work' : isMid ? 'In progress' : 'Nearly done'
-                        const statusColor = isLow ? '#ef4444' : isMid ? '#f59e0b' : '#10b981'
-                        return (
-                          <div key={proj.id}>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-base shrink-0">{proj.emoji}</span>
-                                <span className="text-white text-xs font-medium truncate">{proj.name}</span>
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-medium"
-                                  style={{background: statusColor+'18', color: statusColor}}>
-                                  {statusLabel}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0 ml-2">
-                                <span className="text-white/40 text-xs tabular-nums font-medium">{tc.done}<span className="text-white/20">/{tc.total}</span></span>
-                                <span className="text-white/30 text-[10px] tabular-nums w-8 text-right">{pct}%</span>
-                              </div>
-                            </div>
-                            <Bar v={pct} color={barColor} bg='#1a1a1a' />
-                            {/* MC-109: Status breakdown subtext */}
-                            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5 text-[9px]">
-                              {tc.open > 0 && <span className="text-white/50">Open: {tc.open}</span>}
-                              {tc.inProgress > 0 && <span className="text-blue-400">In Progress: {tc.inProgress}</span>}
-                              {(tc.inReview ?? 0) > 0 && <span className="text-amber-400">In Review: {tc.inReview}</span>}
-                              {(tc.blocked ?? 0) > 0 && <span className="text-red-400 font-medium">Blocked: {tc.blocked}</span>}
-                              {tc.open === 0 && tc.inProgress === 0 && !(tc.inReview ?? 0) && !(tc.blocked ?? 0) && (
-                                <span className="text-white/20">All done</span>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* ── Per-Project Progress Reports (INF-65) ── */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-sm">📋</span>
-                  <span className="text-xs font-semibold tracking-widest text-white/50 uppercase">Project Progress</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                  {(['Vespera','Kemuni','Infrastructure','Todero'] as const).map(projName => {
-                    const proj = sprintProjects.find((p: any) => p.supabaseProject === projName || p.name?.includes(projName))
-                    if (!proj) return null
-                    const tc = (proj as any).taskCounts ?? { total: 0, done: 0, inProgress: 0, open: 0 }
-                    const pct = tc.total > 0 ? Math.round((tc.done / tc.total) * 100) : 0
-                    const dl = new Date((proj as any).deadline)
-                    const left = daysUntil(dl)
-                    const blockers = (proj as any).blockerCount ?? 0
-                    const lastPR = (proj as any).lastPRDate
-                    const lastPRLabel = lastPR
-                      ? new Date(lastPR).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : '—'
-                    const pColor = (proj as any).color ?? '#6b7280'
-                    return (
-                      <div key={projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="text-lg">{(proj as any).emoji}</span>
-                          <span className="text-white text-xs font-semibold truncate">{projName}</span>
-                        </div>
-                        {/* % done */}
-                        <div className="flex items-baseline gap-1 mb-2">
-                          <span className="text-2xl font-bold tabular-nums" style={{ color: pColor }}>{pct}%</span>
-                          <span className="text-white/30 text-[10px]">done</span>
-                          <span className="ml-auto text-white/50 text-[10px] tabular-nums">{tc.done}/{tc.total}</span>
-                        </div>
-                        <div className="w-full rounded-full h-1.5 mb-3" style={{ background: '#1a1a1a' }}>
-                          <div className="h-1.5 rounded-full transition-all" style={{ width: pct + '%', background: pColor }} />
-                        </div>
-                        {/* Stats grid */}
-                        <div className="grid grid-cols-2 gap-2 text-[10px]">
-                          <div>
-                            <span className="text-white/30 block">Deadline</span>
-                            <span className="text-white/70 font-medium">{left}d left</span>
-                          </div>
-                          <div>
-                            <span className="text-white/30 block">Last PR</span>
-                            <span className="text-white/70 font-medium">{lastPRLabel}</span>
-                          </div>
-                          <div>
-                            <span className="text-white/30 block">Blockers</span>
-                            <span className={blockers > 0 ? 'text-red-400 font-medium' : 'text-white/50'}>{blockers}</span>
-                          </div>
-                          <div>
-                            <span className="text-white/30 block">In Progress</span>
-                            <span className="text-blue-400 font-medium">{tc.inProgress}</span>
-                          </div>
-                        </div>
-                        {/* MC-111: Epic/Feature/Issue breakdown */}
-                        <ProjectBreakdownBars project={projName} />
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Sprint Progress Card (MC-102) */}
-              <SprintProgressCard />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sprintProjects.map(proj=>{
-                  const dl=new Date(proj.deadline), st=new Date(proj.startDate)
-                  const left=daysUntil(dl), elap=daysSince(st), pct=miniPct(elap,proj.totalDays)
-                  const dlLabel=dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})
-                  const isUrgent = left<=2 && proj.color!=='#ffffff'
-                  return (
-                    <div key={proj.id} className={`rounded-2xl p-4 md:p-5 border ${proj.borderColor} card-glow`} style={{background:proj.bg}}>
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="min-w-0 flex-1 mr-2">
-                          <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{color:proj.color==='#ffffff'?'#71717a':proj.color+'b3'}}>{proj.name}</p>
-                          <p className="text-white text-xs sm:text-sm font-medium truncate">{proj.desc}</p>
-                        </div>
-                        <span className="text-xl">{proj.emoji}</span>
-                      </div>
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-3">
-                        <span className={`text-3xl md:text-4xl font-bold tabular-nums ${isUrgent ? 'text-red-400' : 'text-white'}`}>{left}</span>
-                        <span className="text-white/50 text-sm"> Days</span>
-                        <span className="ml-auto text-white/30 text-xs">Day {elap}/{proj.totalDays}</span>
-                      </div>
-                      <Bar v={pct} color={proj.color} bg={proj.color==='#ffffff'?'#1e1e1e':'#1a0a2a'} />
-                      <div className="flex flex-col sm:flex-row justify-between mt-1.5 gap-0.5">
-                        <span className="text-white/30 text-[10px]">{pct}% elapsed</span>
-                        <span className="text-white/30 text-[10px]">{dlLabel}</span>
-                      </div>
-                      {proj.taskCounts && proj.taskCounts.total > 0 && (
-                        <div className="mt-3 pt-3 border-t border-white/10">
-                          <div className="flex justify-between mb-1.5">
-                            <span className="text-white/30 text-[10px]">Issues</span>
-                            <span className="text-white/50 text-[10px]">{proj.taskCounts.done}/{proj.taskCounts.total} done</span>
-                          </div>
-                          <Bar v={proj.taskProgress} color='#10b981' bg='#0a1a12' />
-                          <div className="flex gap-3 mt-1">
-                            {proj.taskCounts.inProgress > 0 && <span className="text-blue-400 text-[9px]">● {proj.taskCounts.inProgress} active</span>}
-                            {proj.taskCounts.open > 0 && <span className="text-white/30 text-[9px]">○ {proj.taskCounts.open} open</span>}
-                          </div>
-                        </div>
-                      )}
-                      {proj.activeFeatures && proj.activeFeatures.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-white/10">
-                          <span className="text-white/30 text-[10px] font-semibold uppercase tracking-wider">Active Features</span>
-                          <div className="mt-1.5 space-y-1.5">
-                            {proj.activeFeatures.slice(0, 3).map((af: any) => (
-                              <div key={af.id}>
-                                <div className="flex items-center justify-between">
-                                  <span className="text-white/40 text-[10px] truncate flex-1 min-w-0 mr-2">{af.title}</span>
-                                  <span className="text-white/30 text-[9px] shrink-0">{af.done}/{af.total}</span>
-                                </div>
-                                <div className="w-full rounded-full h-1 mt-0.5" style={{background:'#1a1a1a'}}>
-                                  <div className="h-1 rounded-full transition-all" style={{width:af.pct+'%',background:'#3b82f6'}} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          {proj.activeFeatures.length > 3 && (
-                            <p className="text-white/30 text-[9px] mt-1">+{proj.activeFeatures.length - 3} more</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Live Activity Feed (mini) */}
-              <div>
-                <SH icon="📡">Recent Activity</SH>
-                <ActivityFeed limit={5} projectFilter={projectFilter} onNavigate={onNavigate} />
-              </div>
-
-            </div>
-    </>
+      <NeedsYouCard projectFilter={projectFilter} onNavigate={onNavigate} />
+      <RunningNowCard liveAgents={liveAgents} agentsError={agentsError} agentRunsData={agentRunsData} onReload={globalSync} />
+      <BoltStatusCard projectFilter={projectFilter} />
+      <RecentActivityCard projectFilter={projectFilter} onNavigate={onNavigate} />
+    </div>
   )
 }

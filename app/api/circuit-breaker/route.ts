@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const AGENT_ID = 'circuit-breaker'
 const TRIP_THRESHOLD = 5
@@ -37,15 +38,23 @@ async function readState(db: ReturnType<typeof createAdminClient>): Promise<Brea
   return v as BreakerState
 }
 
-async function writeState(db: ReturnType<typeof createAdminClient>, state: BreakerState) {
-  await db.from('agent_memory').upsert(
+/** Returns the write error (if any) rather than swallowing it — callers decide how loud to be. */
+async function writeState(db: ReturnType<typeof createAdminClient>, state: BreakerState): Promise<string | null> {
+  const { error } = await db.from('agent_memory').upsert(
     { agent_id: AGENT_ID, key: 'state', value: state },
     { onConflict: 'agent_id,key' }
   )
+  return error ? error.message : null
 }
 
 /** GET — return current circuit state for all providers */
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const db = createAdminClient()
   const state = await readState(db)
 
@@ -60,16 +69,23 @@ export async function GET() {
       changed = true
     }
   }
+  let writeError: string | null = null
   if (changed) {
     state.updated_at = new Date().toISOString()
-    await writeState(db, state)
+    writeError = await writeState(db, state)
   }
 
-  return NextResponse.json(state)
+  return NextResponse.json(writeError ? { ...state, _warning: `auto-reset write failed: ${writeError}` } : state)
 }
 
 /** POST — record a 5xx failure for a provider */
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json() as { provider?: string; error?: string }
   if (!body.provider) return NextResponse.json({ error: 'provider is required' }, { status: 400 })
 
@@ -96,7 +112,10 @@ export async function POST(req: NextRequest) {
 
   state.providers[body.provider] = ps
   state.updated_at = now
-  await writeState(db, state)
+  const writeError = await writeState(db, state)
+  if (writeError) {
+    return NextResponse.json({ error: `failed to persist circuit-breaker state: ${writeError}` }, { status: 500 })
+  }
 
   if (justTripped) {
     // Pause all agents
@@ -122,6 +141,12 @@ export async function POST(req: NextRequest) {
 
 /** DELETE — reset a provider's counter (manual recovery) */
 export async function DELETE(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json() as { provider?: string }
   if (!body.provider) return NextResponse.json({ error: 'provider is required' }, { status: 400 })
 
@@ -133,7 +158,10 @@ export async function DELETE(req: NextRequest) {
     consecutive_failures: 0, last_failure_at: null, last_error: null, tripped: false, tripped_at: null,
   }
   state.updated_at = now
-  await writeState(db, state)
+  const writeError = await writeState(db, state)
+  if (writeError) {
+    return NextResponse.json({ error: `failed to persist circuit-breaker reset: ${writeError}` }, { status: 500 })
+  }
 
   return NextResponse.json({ ok: true, provider: body.provider, reset: true })
 }

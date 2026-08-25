@@ -4,10 +4,13 @@
 // Members and Viewers see read-only list.
 
 import React, { useEffect, useState, useCallback } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
 import { Users, ShieldCheck, Eye, UserCog, Plus, Trash2, RefreshCw, AlertCircle } from 'lucide-react'
-import AgentsTab from '@/components/tabs/AgentsTab'
+import AgentsTab, { type RosterMeta } from '@/components/tabs/AgentsTab'
 import MemberDetailView from '@/components/tabs/MemberDetailView'
 import type { WorkspaceMember } from '@/lib/rbac-types'
+import type { AgentRunStatus } from '@/hooks/useAgentStatus'
 
 // ── Role badges ───────────────────────────────────────────────────────────────
 
@@ -149,9 +152,11 @@ function MemberRow({
     setChanging(false)
   }
 
+  const isMe = currentIdentity !== null && currentIdentity === member.identity
+
   return (
     <div className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
-      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs font-medium flex-shrink-0">
+      <div className={`w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs font-medium flex-shrink-0${isMe ? ' ring-2 ring-blue-500/60' : ''}`}>
         {member.identity.charAt(0).toUpperCase()}
       </div>
       <button
@@ -162,8 +167,8 @@ function MemberRow({
       >
         <div className="flex items-center gap-2">
           <span className="text-white text-sm font-medium truncate">{member.identity}</span>
-          {currentIdentity === member.identity && (
-            <span className="text-white/30 text-[10px]">(you)</span>
+          {isMe && (
+            <span className="bg-blue-500/30 text-blue-300 border border-blue-500/40 px-1.5 py-0.5 rounded text-[9px] font-semibold">You</span>
           )}
         </div>
         {member.assigned_by && (
@@ -200,25 +205,34 @@ function MemberRow({
 // ── CrewTab ───────────────────────────────────────────────────────────────────
 
 export default function CrewTab({
+  agentsError,
   userRole,
+  currentIdentity,
   displayAgents,
   agentLiveStatus,
   agentRunsData,
   liveAgents,
-  act,
+  rosterMeta,
   agentModal,
   setAgentModal,
   projectFilter,
+  onAgentRemoved,
 }: {
+  /** Why /api/agents failed, if it did. TOD-654: shown, not swallowed. */
+  agentsError?: ApiError | null
   userRole: string | null
+  currentIdentity: string | null
   displayAgents: any[]
   agentLiveStatus: (agentId: string) => { dot: 'green' | 'amber' | 'grey'; label: string }
-  agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: string }>
+  agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: AgentRunStatus }>
   liveAgents: any[] | null
-  act: (id: string) => string
+  /** Roster provenance from the /api/agents envelope — survives an empty roster. */
+  rosterMeta?: RosterMeta | null
   agentModal: any
   setAgentModal: (a: any) => void
   projectFilter?: string | null
+  /** See AgentsTab's prop of the same name — bubbled up one more level. */
+  onAgentRemoved?: (agentId: string) => void
 }) {
   const isOwner = userRole === 'owner' || userRole === 'god' || userRole === 'admin'
 
@@ -280,6 +294,7 @@ export default function CrewTab({
 
   return (
     <div className="space-y-8">
+      {agentsError && <ApiErrorBanner error={agentsError} />}
       {/* ── Role reference ──────────────────────────────────────────────── */}
       <div>
         <h2 className="text-white/70 text-xs font-semibold uppercase tracking-wider mb-3">
@@ -342,12 +357,18 @@ export default function CrewTab({
 
         {members.length > 0 && (
           <div className="bg-white/3 border border-white/8 rounded-xl px-4">
-            {members.map(m => (
+            {[...members].sort((a, b) => {
+              const aIsMe = currentIdentity ? a.identity === currentIdentity : false
+              const bIsMe = currentIdentity ? b.identity === currentIdentity : false
+              if (aIsMe && !bIsMe) return -1
+              if (!aIsMe && bIsMe) return 1
+              return 0
+            }).map(m => (
               <MemberRow
                 key={m.id}
                 member={m}
                 isOwner={isOwner}
-                currentIdentity={null}
+                currentIdentity={currentIdentity}
                 onRoleChange={handleRoleChange}
                 onRemove={handleRemove}
                 onSelect={setSelectedMember}
@@ -367,10 +388,12 @@ export default function CrewTab({
           agentLiveStatus={agentLiveStatus}
           agentRunsData={agentRunsData}
           liveAgents={liveAgents}
-          act={act}
+          rosterMeta={rosterMeta}
+          agentsError={agentsError}
           agentModal={agentModal}
           setAgentModal={setAgentModal}
           projectFilter={projectFilter}
+          onAgentRemoved={onAgentRemoved}
         />
       </div>
 

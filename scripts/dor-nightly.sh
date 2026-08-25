@@ -4,7 +4,7 @@
 # DoR-incomplete = assignee=builder AND (description IS NULL OR test_tier IS NULL OR acceptance_criteria IS NULL) AND status NOT IN (completed, closed, backlog)
 set -euo pipefail
 
-SUPA_URL="https://twthgapiouiqhavrcnry.supabase.co"
+SUPA_URL="${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is not set - see .env.local.template}"
 SUPA_KEY="${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY is required}"
 MC_API="${MC_API_URL:-http://localhost:3000/api}"
 DISCORD_CHANNEL="${DISCORD_ALERTS_CHANNEL:-1487584901678104698}"

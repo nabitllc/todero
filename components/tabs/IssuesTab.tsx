@@ -1,9 +1,13 @@
 'use client'
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button, Input, Select, EmptyState } from '@/components/ui'
 import { TypeBadge, PriorityBadge, StatusBadge, Badge } from '@/components/ui'
 import { List } from 'lucide-react'
+import { useApiList } from '@/hooks/useApiData'
+import { useAgentRoster } from '@/hooks/useAgentRoster'
+import { agentDisplay } from '@/lib/agents-config'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
   id: string; title: string; description?: string; status: string;
@@ -15,22 +19,28 @@ interface Issue {
 
 const STATUS_OPTIONS = ['backlog','defined','open','in_progress','code_review','product_review','approved','completed','released','closed']
 const PRIORITY_OPTIONS = ['critical','high','medium','low']
-const ASSIGNEE_OPTIONS = ['main','builder','tester','scout','ops','kemuni-sme','vespera-sme']
-
-const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
-  main:{emoji:'🧠',name:'KAOS'}, builder:{emoji:'🔨',name:'Builder'},
-  tester:{emoji:'🧪',name:'Tester'}, scout:{emoji:'🔍',name:'Scout'},
-  ops:{emoji:'⚙️',name:'Ingo'}, 'kemuni-sme':{emoji:'🚀',name:'Kemuni SME'},
-  'vespera-sme':{emoji:'🖤',name:'Vespera SME'},
-}
+// Assignees come from the host's AGENTS.md via GET /api/agents. The literal
+// seven-id ASSIGNEE_OPTIONS this replaces meant nine rostered agents —
+// designer, ux, po, deployer, auditor, security, growth, content, community —
+// could never be picked in the UI even though the API accepts them, and an
+// issue already assigned to one rendered as a bare id with no name.
 
 type SortKey = 'task_key'|'type'|'title'|'status'|'priority'|'assignee'|'sprint'
 type SortDir = 'asc'|'desc'
 
 export default function IssuesTab({ projectFilter }: { projectFilter?: string | null }) {
-  const [issues, setIssues] = useState<Issue[]>([])
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string|null>(null)
+  const endpoint = useMemo(() => {
+    const params = new URLSearchParams()
+    if (projectFilter) params.set('project', projectFilter)
+    params.set('limit', '0')
+    return `/api/issues?${params.toString()}`
+  }, [projectFilter])
+  const { items, total, error: fetchError, loading, refetch, setItems } = useApiList<Issue>(endpoint)
+  const { agents: rosterAgents, byId: rosterById } = useAgentRoster()
+  const issues = items ?? []
+  // Optimistic updates always run after a successful load, so treating a null
+  // (never-loaded) list as empty here is safe and keeps call sites simple.
+  const setIssues = (update: (prev: Issue[]) => Issue[]) => setItems(prev => update(prev ?? []))
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('task_key')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -40,17 +50,6 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
-
-  useEffect(() => {
-    const params = new URLSearchParams()
-    if (projectFilter) params.set('project', projectFilter)
-    params.set('limit', '0')
-    const qs = params.toString()
-    fetch(`/api/issues${qs ? `?${qs}` : ''}`).then(r=>r.json()).then(d => {
-      setIssues(Array.isArray(d) ? d : d?.data ?? [])
-      setFetchError(null)
-    }).catch(() => setFetchError('Failed to load issues')).finally(()=>setLoading(false))
-  }, [projectFilter])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -154,7 +153,19 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
               <Badge label={projectFilter} className="bg-blue-500/20 text-blue-400 border border-blue-500/30" />
             )}
           </div>
-          <p className="text-xs text-white/40 mt-0.5">{filtered.length} issues{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
+          <p className="text-xs text-white/40 mt-0.5">
+            {fetchError
+              ? 'data unavailable'
+              // total comes from the server's {data,total,has_more} envelope — the
+              // true row count, not issues.length (this endpoint is called with
+              // limit=0, which batches through every matching row, but total is
+              // still the authoritative source rather than re-deriving it).
+              : `${(() => {
+                  const trueTotal = total ?? issues.length
+                  const base = search ? `Showing ${filtered.length} of ${trueTotal}` : `${trueTotal}`
+                  return `${base} issue${trueTotal !== 1 ? 's' : ''}`
+                })()}${selected.size > 0 ? ` · ${selected.size} selected` : ''}`}
+          </p>
         </div>
         <div className="relative max-w-xs flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25 z-10" />
@@ -191,15 +202,12 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
           </div>
         )}
         {fetchError && (
-          <div className="flex flex-col items-center py-8 gap-3">
-            <p className="text-red-400 text-sm">{fetchError}</p>
-            <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues?limit=0').then(r=>r.json()).then(d => { setIssues(Array.isArray(d)?d:d?.data??[]); setFetchError(null) }).catch(()=>setFetchError('Failed to load issues')).finally(()=>setLoading(false)) }}>
-              Retry
-            </Button>
+          <div className="p-3">
+            <ApiErrorBanner error={fetchError} onRetry={refetch} />
           </div>
         )}
 
-        {!loading && (
+        {!loading && !fetchError && (
           <div className="overflow-x-auto">
             {/* Header */}
             <div className="hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 border-b border-white/10 bg-white/3">
@@ -246,7 +254,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                   <StatusBadge value={issue.status} />
                   <PriorityBadge value={issue.priority ?? ''} />
                   <span className="text-[10px] text-white/40">
-                    {issue.assignee ? (ASSIGNEE_MAP[issue.assignee]?.emoji??'') + ' ' + (ASSIGNEE_MAP[issue.assignee]?.name??issue.assignee) : '—'}
+                    {issue.assignee ? `${rosterById[issue.assignee]?.emoji ?? agentDisplay(issue.assignee).emoji} ${rosterById[issue.assignee]?.name ?? agentDisplay(issue.assignee).name}` : '—'}
                   </span>
                   <span className="text-[10px] text-white/40 font-mono">{issue.sprint??'—'}</span>
                 </div>
@@ -276,7 +284,28 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                         <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Assignee</span>
                         <Select value={editFields.assignee??''} onChange={e => setEditFields(f=>({...f,assignee:e.target.value}))} className="text-xs rounded-lg px-2 py-1.5">
                           <option value="" className="bg-[#0f0f0f] text-white">Unassigned</option>
-                          {ASSIGNEE_OPTIONS.map(a => <option key={a} value={a} className="bg-[#0f0f0f] text-white">{ASSIGNEE_MAP[a]?.name??a}</option>)}
+                          {/* registry-reaches-dispatch piece: a.dispatchable
+                              is computed server-side (app/api/agents/route.ts)
+                              from the same getQueueConfig() POST
+                              /api/run-agent itself calls, including a config
+                              derived from a Brain2 vault manifest
+                              (lib/agent-manifests.ts) — this file's own
+                              client-bundle copy of getQueueConfig() cannot
+                              see that. Assigning to a non-dispatchable agent
+                              still works (assigning is not itself an error)
+                              — the option just says so instead of implying a
+                              queue lane that does not exist for this id. */}
+                          {rosterAgents.map(a => (
+                            <option key={a.id} value={a.id} className="bg-[#0f0f0f] text-white">
+                              {a.name}{!a.dispatchable ? ' (not dispatchable)' : ''}
+                            </option>
+                          ))}
+                          {/* An assignee already on the issue that this host's roster does not
+                              declare stays selectable, so opening the editor cannot silently
+                              reassign the issue to whoever happens to be first in the list. */}
+                          {editFields.assignee && !rosterById[editFields.assignee] && (
+                            <option value={editFields.assignee} className="bg-[#0f0f0f] text-white">{editFields.assignee} (not in roster)</option>
+                          )}
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">

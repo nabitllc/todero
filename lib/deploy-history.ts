@@ -1,12 +1,11 @@
 // INF-209: Deploy history log — schema, types, and data layer
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { db, type DbAdapter } from '@/lib/db'
 
-const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
+let _supabase: DbAdapter | null = null
+function getSupabase(): DbAdapter {
   if (!_supabase) {
-    _supabase = createClient(SUPA_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    _supabase = db()
   }
   return _supabase
 }
