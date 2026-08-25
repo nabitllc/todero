@@ -1,14 +1,16 @@
 /**
  * Tests for office constants module (INF-153)
  * Verifies static data structure integrity
+ *
+ * MEETINGS and AGENT_TASKS were removed under kill-office-fiction: they backed
+ * a co-activity meeting inference and canned task-name generator that fabricated
+ * activity the office never actually observed. See officeConstants.ts.
  */
 import {
   ALL_AGENTS,
   ACTIVE_IDS,
   BENCH_IDS,
   DEPENDENCIES,
-  AGENT_TASKS,
-  MEETINGS,
   DESK_POS,
   BENCH_POS,
   MAP_COLS,
@@ -73,15 +75,6 @@ describe('officeConstants', () => {
     });
   });
 
-  describe('AGENT_TASKS', () => {
-    it('all agents in ALL_AGENTS should have tasks', () => {
-      ALL_AGENTS.forEach(agent => {
-        expect(AGENT_TASKS[agent.id]).toBeDefined();
-        expect(AGENT_TASKS[agent.id].length).toBeGreaterThan(0);
-      });
-    });
-  });
-
   describe('DESK_POS', () => {
     it('all ACTIVE_IDS should have desk positions', () => {
       ACTIVE_IDS.forEach(id => {
@@ -106,23 +99,6 @@ describe('officeConstants', () => {
     it('MAP_COLS and MAP_ROWS should be positive', () => {
       expect(MAP_COLS).toBeGreaterThan(0);
       expect(MAP_ROWS).toBeGreaterThan(0);
-    });
-  });
-
-  describe('MEETINGS', () => {
-    it('each meeting should have topic and agents', () => {
-      MEETINGS.forEach(meeting => {
-        expect(meeting.topic).toBeTruthy();
-        expect(meeting.agents.length).toBeGreaterThanOrEqual(2);
-      });
-    });
-
-    it('all meeting agents should be in ALL_AGENTS', () => {
-      MEETINGS.forEach(meeting => {
-        meeting.agents.forEach(id => {
-          expect(ALL_AGENTS.find(a => a.id === id)).toBeTruthy();
-        });
-      });
     });
   });
 });

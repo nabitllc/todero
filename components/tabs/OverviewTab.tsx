@@ -211,21 +211,34 @@ function RiskRadarCard({ onNavigate }: { onNavigate: (tab: string) => void }) {
   useEffect(() => {
     let cancelled = false
     const since24h = new Date(Date.now() - 24 * 3600000).toISOString()
-    Promise.all([
-      fetchJson<IssueRow[]>(dbUrl(`issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`), { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(dbUrl(`issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`), { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(dbUrl(`issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`), { headers: SUPA_HEADERS }),
-      fetchJson<IssueRow[]>(dbUrl(`issues?parent_id=not.is.null&select=parent_id&limit=1000`), { headers: SUPA_HEADERS }),
-    ]).then(([p0, blocked, features, children]) => {
+    ;(async () => {
+      const [p0, blocked, features] = await Promise.all([
+        fetchJson<IssueRow[]>(dbUrl(`issues?type=eq.bug&priority=eq.critical&status=in.(open,in_progress)&created_at=lte.${since24h}&select=task_key,title,project,assignee&limit=20`), { headers: SUPA_HEADERS }),
+        fetchJson<IssueRow[]>(dbUrl(`issues?is_blocked=eq.true&assignee=not.is.null&status=not.in.(completed,released,closed)&select=task_key,title,project,assignee,blocked_by&limit=20`), { headers: SUPA_HEADERS }),
+        fetchJson<IssueRow[]>(dbUrl(`issues?type=eq.feature&status=not.in.(completed,released,closed)&select=id,task_key,title,project&limit=100`), { headers: SUPA_HEADERS }),
+      ])
       if (cancelled) return
-      // Any leg refusing means the three counts below would be fiction.
-      const failure = firstError([p0, blocked, features, children])
-      setError(failure)
-      if (failure) { setRisks({ p0Bugs: [], blocked: [], noChildren: [] }); return }
+      // Any leg refusing means the counts below would be fiction.
+      const failure = firstError([p0, blocked, features])
+      if (failure) { setError(failure); setRisks({ p0Bugs: [], blocked: [], noChildren: [] }); return }
+
+      const featureIds = rowsOf(features).map(f => f.id).filter((id): id is string => !!id)
+      // Scoped to the (small) set of open features rather than pulling every
+      // parent_id in the table: that used to be `limit=1000` over ~2000+ rows,
+      // which silently dropped children for whichever features lost the coin
+      // flip and made them look orphaned ("Features (0 children)") when they
+      // were not.
+      const children = featureIds.length === 0
+        ? { ok: true as const, data: [] as IssueRow[] }
+        : await fetchJson<IssueRow[]>(dbUrl(`issues?parent_id=in.(${featureIds.join(',')})&select=parent_id&limit=1000`), { headers: SUPA_HEADERS })
+      if (cancelled) return
+      const childrenFailure = firstError([children])
+      if (childrenFailure) { setError(childrenFailure); setRisks({ p0Bugs: [], blocked: [], noChildren: [] }); return }
+      setError(null)
       const parentIds = new Set(rowsOf(children).map(c => c.parent_id))
       const noChildren = rowsOf(features).filter(f => !parentIds.has(f.id ?? null))
       setRisks({ p0Bugs: rowsOf(p0), blocked: rowsOf(blocked), noChildren })
-    })
+    })()
     return () => { cancelled = true }
   }, [reloadKey])
   const signals = [
@@ -492,13 +505,17 @@ function ProjectBreakdownBars({ project }: { project: string }) {
   const [reloadKey, reload] = useReload()
   useEffect(() => {
     let cancelled = false
-    fetchJson<IssueRow[]>(dbUrl(`issues?project=eq.${encodeURIComponent(project)}&status=neq.backlog&select=type,status&limit=500`), {
-      headers: SUPA_HEADERS,
-    }).then(res => {
+    // Goes through /api/issues (limit=0 = every matching row, paged through
+    // server-side) rather than the raw db proxy's `&limit=500`: a
+    // per-project total above 500 — Todero alone runs ~1,600 — used to be
+    // dropped from these bars with nothing to say a truncation happened.
+    fetchJson<{ data: IssueRow[]; total: number }>(
+      `/api/issues?project=${encodeURIComponent(project)}&limit=0`,
+    ).then(res => {
       if (cancelled) return
       if (!res.ok) { setError(res.error); setData(null); return }
       setError(null)
-      const rows = rowsOf(res)
+      const rows = (res.data.data ?? []).filter(r => r.status !== 'backlog')
       const count = (type: string) => {
         const matching = rows.filter(r => r.type === type)
         return { done: matching.filter(r => isDone(r.status)).length, total: matching.length }

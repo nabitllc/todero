@@ -1,23 +1,19 @@
 "use client";
 import { useState, useCallback } from "react";
 import { fetchJson, formatApiError } from '@/hooks/useApiData'
-import { ALL_AGENTS, ORCHESTRATOR_ID, DEPENDENCIES, AGENT_TASKS } from './officeConstants';
+import { ALL_AGENTS, ORCHESTRATOR_ID, DEPENDENCIES } from './officeConstants';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 export interface OfficeSidebarProps {
   // Display data
   roster: any[];
-  stats: { working: number; meeting: number; idle: number; completed: number };
+  stats: { working: number; idle: number; completed: number };
   feed: any[];
   feedRef: React.RefObject<HTMLDivElement | null>;
   detail: any;
   selectedId: string | null;
-  meetingLogs: any[];
   waterfall: any[];
   leaderboard: any[];
-  incidentLog: any[];
-  incident: any;
-  dialogue: any[];
   timeline: any[];
   realTaskCounts: Record<string, { h24: number; d7: number }>;
   boardTasks: Record<string, string>;
@@ -45,8 +41,8 @@ export interface OfficeSidebarProps {
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function OfficeSidebar(props: OfficeSidebarProps) {
   const {
-    roster, stats, feed, feedRef, detail, selectedId, meetingLogs, waterfall,
-    leaderboard, incidentLog, incident, dialogue, timeline, realTaskCounts,
+    roster, stats, feed, feedRef, detail, selectedId, waterfall,
+    leaderboard, timeline, realTaskCounts,
     boardTasks, liveRunsRef, theme, sidebarCollapsed, toggleSidebar, isMobile,
     setSelectedId, setDetail, ctxMenu, setCtxMenu, simRef, addFeed,
     volume, changeVolume,
@@ -92,12 +88,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
   const ctxAction = (action: string) => {
     const ag = simRef.current?.agents?.find((a: any) => a.id === ctxMenu?.agentId);
     if (!ag) { setCtxMenu(null); return; }
-    if (action === "task" && ag.state === "idle") {
-      const tasks = AGENT_TASKS[ag.id] || [];
-      if (tasks.length) { ag.state = "working"; ag.task = tasks[Math.floor(Math.random() * tasks.length)]; ag.progress = 0; addFeed(`⚡ ${ag.name} force-assigned task`, ag.color); }
-    } else if (action === "complete" && ag.state === "working") {
-      ag.progress = 99.9;
-    } else if (action === "config") {
+    if (action === "config") {
       openConfig(ag);
     }
     setCtxMenu(null);
@@ -181,8 +172,6 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   <span className="text-[10px] font-bold" style={{ color: ag.color }}>{ag.name}</span>
                 </div>
                 {[
-                  { action: "task", label: "⚡ Assign random task", disabled: ag.state !== "idle" },
-                  { action: "complete", label: "✓ Force complete task", disabled: ag.state !== "working" },
                   { action: "config", label: "⚙ Configure agent", disabled: false },
                 ].map(item => (
                   <button key={item.action} onClick={() => ctxAction(item.action)} disabled={item.disabled}
@@ -204,7 +193,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {sidebarCollapsed && (
           <div className="flex flex-col items-center gap-0.5 py-1.5">
             {detail && <button onClick={() => toggleSidebar()} className="bg-transparent border-none text-base cursor-pointer p-1 min-w-[44px] min-h-[44px] flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-white/30 rounded-lg" style={{ color: detail.color }} title={detail.name}>{detail.emoji}</button>}
-            {[{ id: "feed", icon: "📡", label: "Feed" }, { id: "flow", icon: "✓", label: "Tasks" }, { id: "meetings", icon: "📅", label: "Meetings" }, { id: "board", icon: "🏆", label: "Leaderboard" }, { id: "incidents", icon: "🚨", label: "Incidents" }, { id: "deps", icon: "🔗", label: "Dependencies" }].map(p => (
+            {[{ id: "feed", icon: "📡", label: "Feed" }, { id: "flow", icon: "✓", label: "Tasks" }, { id: "board", icon: "🏆", label: "Leaderboard" }, { id: "deps", icon: "🔗", label: "Dependencies" }].map(p => (
               <button key={p.id} onClick={() => { if (!openPanels.has(p.id)) togglePanel(p.id); toggleSidebar(); }}
                 className={`border-none text-[13px] cursor-pointer rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-white/30 ${openPanels.has(p.id) ? 'bg-[#1a1a1a] text-[#a29bfe]' : 'bg-transparent text-white/30'}`}
                 title={p.label}>{p.icon}</button>
@@ -247,7 +236,6 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
               ) : null })()}
               <div className="flex gap-3 mb-2">
                 <div className="text-center"><div className="text-sm font-bold" style={{ color: detail.color }}>{detail.tasksCompleted}</div><div className="text-[10px] text-white/50">TASKS</div></div>
-                <div className="text-center"><div className="text-sm text-[#FDCB6E] font-bold">{detail.meetingsAttended}</div><div className="text-[10px] text-white/50">MEETINGS</div></div>
               </div>
               {detail.taskHistory?.length > 0 && (
                 <div>
@@ -341,6 +329,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                     <span className="text-white/30 text-[9px] flex-shrink-0 mt-0.5">{e.ts}</span>
                     <span className="text-[11px] leading-normal" style={{ color: e.color }}>{e.text}</span>
                   </div>)}
+                  {feed.length === 0 && <div className="text-white/30 text-[10px] text-center py-3">No agent events observed yet</div>}
                 </div>
               </>
             )}
@@ -367,7 +356,6 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   {waterfall.map((wf: any) => {
                     const ag = ALL_AGENTS.find(a => a.id === wf.agentId);
                     if (!ag) return null;
-                    const deps = DEPENDENCIES[wf.agentId];
                     return (
                       <div key={wf.id} className="px-3 py-1 border-b border-white/10">
                         <div className="flex items-center gap-1.5 mb-0.5">
@@ -376,48 +364,9 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                           <span className="text-white/50 text-[10px]">✓ {wf.task}</span>
                           <span className="text-white/30 text-[9px] ml-auto">{wf.ts}</span>
                         </div>
-                        {deps && deps.length > 0 && (
-                          <div className="pl-4 flex items-center gap-1 flex-wrap">
-                            <span className="text-white/50 text-[9px]">triggers →</span>
-                            {deps.map(depId => { const dep = ALL_AGENTS.find(a => a.id === depId); return dep ? <span key={depId} className="text-[9px] px-1 py-px rounded" style={{ color: dep.color, background: dep.color + "15" }}>{dep.emoji} {dep.name}</span> : null; })}
-                          </div>
-                        )}
                       </div>
                     );
                   })}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* ▶ MEETINGS */}
-          <div>
-            <div onClick={() => togglePanel("meetings")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("meetings") ? "▼" : "▶"} MEETINGS</span>
-              <span className={`text-[9px] ${meetingLogs.length > 0 ? 'text-[#FDCB6E]' : 'text-white/30'}`}>{meetingLogs.length}</span>
-            </div>
-            {openPanels.has("meetings") && (
-              <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div className="max-h-[200px] overflow-y-auto">
-                  {meetingLogs.length === 0 && <div className="px-3 py-3 text-white/30 text-[11px] text-center">Transcripts appear after meetings end.</div>}
-                  {meetingLogs.map((m: any) => (
-                    <div key={m.id} className="px-3 py-2 border-b border-white/10">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[#FDCB6E] text-[11px] font-semibold">{m.topic}</span>
-                        <span className="text-white/30 text-[9px]">{m.ts}</span>
-                      </div>
-                      <div className="text-white/50 text-[10px] mb-1">{m.attendees.join(", ")}</div>
-                      <div className="text-white/70 text-[11px] leading-relaxed whitespace-pre-line">{m.summary}</div>
-                    </div>
-                  ))}
                 </div>
               </>
             )}
@@ -448,7 +397,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                         : lbTimeframe === '24h' ? real.h24
                         : real.d7;
                       return { ...a, displayCount: count };
-                    }).sort((a, b) => b.displayCount - a.displayCount || b.efficiency - a.efficiency);
+                    }).sort((a, b) => b.displayCount - a.displayCount);
                     if (ranked.every(a => a.displayCount === 0)) return (
                       <div className="px-3 py-3 text-white/30 text-[11px] text-center">
                         {lbTimeframe === 'session' ? 'Collecting data…' : 'No activity in this window'}
@@ -469,47 +418,6 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   })()}
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* ▶ INCIDENT LOG */}
-          <div>
-            <div onClick={() => togglePanel("incidents")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("incidents") ? "▼" : "▶"} INCIDENT LOG</span>
-              <span className={`text-[9px] ${incidentLog.length > 0 ? 'text-red-500' : 'text-white/30'}`}>{incidentLog.length}</span>
-            </div>
-            {openPanels.has("incidents") && (
-              <>
-                <div className="flex border-b border-white/10 bg-[#080808]">
-                  {(['session', '24h', '7d'] as const).map(tf => (
-                    <button key={tf} onClick={(e) => { e.stopPropagation(); setPanelTimeframe(tf); }}
-                      className={`flex-1 py-1 text-[10px] font-semibold tracking-wide bg-transparent border-none cursor-pointer font-[inherit] focus:outline-none focus:ring-2 focus:ring-white/30 ${panelTimeframe === tf ? 'text-[#a29bfe] border-b-2 border-b-[#6C5CE7]' : 'text-white/30 border-b-2 border-b-transparent'}`}>
-                      {tf.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-                <div className="max-h-[160px] overflow-y-auto">
-                  {incident && (
-                    <div className="px-3 py-1.5 bg-red-950/30 border-b border-red-900/30 flex items-center gap-1.5">
-                      <span className="text-[11px]">🔴</span>
-                      <div className="flex-1">
-                        <div className="text-red-500 text-[11px] font-bold">{incident.title}</div>
-                        <div className="text-red-400 text-[10px]">Active — all hands</div>
-                      </div>
-                    </div>
-                  )}
-                  {incidentLog.length === 0 && !incident && <div className="px-3 py-3 text-white/30 text-[11px] text-center">No incidents recorded.</div>}
-                  {incidentLog.map((inc: any) => (
-                    <div key={inc.id} className="px-3 py-1 border-b border-white/10 flex items-center gap-1.5">
-                      <span className="text-[10px]">✓</span>
-                      <div className="flex-1">
-                        <div className="text-white/50 text-[11px]">{inc.title}</div>
-                        <div className="text-white/30 text-[9px]">Resolved {inc.ts}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
             )}
           </div>
 
@@ -539,7 +447,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
 
         {/* Stats bar */}
         <div className={`flex-shrink-0 border-t border-white/10 py-1.5 ${sidebarCollapsed ? 'hidden' : 'flex'}`}>
-          {[{ l: "DONE", v: stats.completed, c: "#6C5CE7" }, { l: "ACTIVE", v: stats.working, c: "#00ff88" }, { l: "MTG", v: stats.meeting, c: "#FDCB6E" }, { l: "IDLE", v: stats.idle, c: "#3a3a5e" }].map((s, i, arr) => (
+          {[{ l: "DONE", v: stats.completed, c: "#6C5CE7" }, { l: "ACTIVE", v: stats.working, c: "#00ff88" }, { l: "IDLE", v: stats.idle, c: "#3a3a5e" }].map((s, i, arr) => (
             <div key={s.l} className={`flex-1 text-center ${i < arr.length - 1 ? 'border-r border-white/10' : ''}`}>
               <div className="text-base font-bold leading-none" style={{ color: s.c }}>{s.v}</div>
               <div className="text-[10px] text-white/30 tracking-wide mt-0.5">{s.l}</div>
@@ -550,7 +458,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {/* Event timeline strip */}
         {timeline.length > 0 && (
           <div className="flex-shrink-0 border-t border-white/10 px-3 py-1">
-            <div className="h-[5px] bg-[#080808] rounded overflow-hidden relative" title="Session events: green=task, gold=meeting, red=incident">
+            <div className="h-[5px] bg-[#080808] rounded overflow-hidden relative" title="Session events: green=task started/completed">
               {timeline.map((ev: any, i: number) => (
                 <div key={i} title={`${ev.ts} — ${ev.label}`} className="absolute top-0 w-[3px] h-full rounded-sm opacity-70 -translate-x-1/2"
                   style={{

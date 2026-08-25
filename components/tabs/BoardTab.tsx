@@ -7,6 +7,7 @@ import { Chip } from '@/lib/mc-atoms'
 import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
 import { KanbanCard } from '@/components/KanbanCard'
 import { readApiError, formatApiError } from '@/hooks/useApiData'
+import { sessionOperator } from '@/lib/operator-identity'
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -336,7 +337,16 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   const updateTask = async (id: string, fields: Partial<Task>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, ...fields}) })
+      // The workflow engine attributes every status change to a named actor and
+      // rejects the transition when it has none. Board edits are made by the
+      // signed-in human, so name them — read from the session, never hardcoded,
+      // so a viewer sends nothing and is still refused by the server.
+      const actor = sessionOperator()
+      const res = await fetch('/api/issues', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...fields, ...(actor ? { transitioned_by: actor } : {}) }),
+      })
       if (!res.ok) { raiseActionError(await describeFailure(res, '/api/issues')); return false }
       const d = await res.json(); setTasks(prev => prev.map(t => t.id===id ? d : t)); setEditTask(null); return true
     } catch (e) {
@@ -360,7 +370,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
     setClosedConfirm(id)
     setTimeout(() => setClosedConfirm(prev => prev===id ? null : prev), 2000)
     try {
-      const res = await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
+      const actor = sessionOperator()
+      const res = await fetch('/api/issues', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'closed', ...(actor ? { transitioned_by: actor } : {}) }),
+      })
       if (!res.ok) {
         raiseActionError(await describeFailure(res, '/api/issues'))
         setClosedConfirm(prev => prev===id ? null : prev)

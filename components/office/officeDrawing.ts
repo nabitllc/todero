@@ -20,17 +20,8 @@ export type { AgentRunInfo, ThemeKey };
 export function tileCenterPx(tx:number,ty:number,T:number){ return { x:(tx+0.5)*T, y:(ty+0.5)*T }; }
 export function fmt(n:number){ return n<10?"0"+n:""+n; }
 export function nowts(){ const d=new Date(); return `${fmt(d.getHours())}:${fmt(d.getMinutes())}:${fmt(d.getSeconds())}`; }
-export function lpath(fx:number,fy:number,tx:number,ty:number){ return [{x:tx,y:fy},{x:tx,y:ty}]; }
 export function clamp(v:number,lo:number,hi:number){ return Math.max(lo,Math.min(hi,v)); }
 
-export function confRingPos(n:number,T:number){
-  const cx=(CONF_TX+CONF_TW/2)*T, cy=(CONF_TY+CONF_TH/2)*T;
-  const rx=T*(CONF_TW/2+0.5), ry=T*(CONF_TH/2+0.5);
-  return Array.from({length:n},(_,i)=>{
-    const a=(i/n)*Math.PI*2-Math.PI/2;
-    return { x:cx+Math.cos(a)*rx, y:cy+Math.sin(a)*ry };
-  });
-}
 export function mkBurst(x:number,y:number,color:string){
   return Array.from({length:12},(_,i)=>{
     const a=(i/12)*Math.PI*2, spd=2.5+Math.random()*3;
@@ -43,7 +34,7 @@ export function loadMemory(){ try{return JSON.parse(localStorage.getItem(LS_KEY)
 export function saveMemory(agents:any[]){
   try{
     const m:any={};
-    agents.forEach(ag=>{m[ag.id]={tasksCompleted:ag.tasksCompleted,meetingsAttended:ag.meetingsAttended,timeWorking:ag.timeWorking,timeMeeting:ag.timeMeeting,taskHistory:ag.taskHistory};});
+    agents.forEach(ag=>{m[ag.id]={tasksCompleted:ag.tasksCompleted,timeWorking:ag.timeWorking,taskHistory:ag.taskHistory};});
     localStorage.setItem(LS_KEY,JSON.stringify(m));
   }catch(e){}
 }
@@ -61,14 +52,11 @@ export function initAgents(T:number, activeIds:string[]){
       active:isActive, spawning:false, spawnAge:0,
       state:"idle",task:null,progress:0,
       px:x,py:y,waypoints:[],deskX:x,deskY:y,
-      facing:"down",animTick:0,idleCooldown:0,
+      facing:"down",animTick:0,
       taskHistory:saved.taskHistory||[],
-      monologue:null,
       timeWorking:saved.timeWorking||0,
       timeIdle:0,
-      timeMeeting:saved.timeMeeting||0,
       tasksCompleted:saved.tasksCompleted||0,
-      meetingsAttended:saved.meetingsAttended||0,
       mood:88,
       glowTick:0, // flashes on state transition
       lastStateChange:Date.now(),
@@ -93,8 +81,6 @@ export function createAudio(){
       master,
       playClick(){[0,100,200].forEach(d=>setTimeout(()=>note(700+Math.random()*400,0.04),d));},
       playComplete(){[523,659,784].forEach((f,i)=>setTimeout(()=>note(f,0.2,"sine",0.11),i*90));},
-      playMeeting(){note(330,0.4,"sine",0.09);},
-      playIncident(){[200,150,100].forEach((f,i)=>setTimeout(()=>note(f,0.3,"sawtooth",0.14),i*80));},
       playSpawn(){[440,554,659].forEach((f,i)=>setTimeout(()=>note(f,0.15,"sine",0.10),i*70));},
     };
   }catch(e){return null;}
@@ -117,7 +103,7 @@ export function clampCam(cam:any,W:number,H:number){
 export function applyCamera(ctx:CanvasRenderingContext2D,cam:any){ctx.translate(cam.x,cam.y);ctx.scale(cam.z,cam.z);}
 
 // ─── Draw floor ───────────────────────────────────────────────────────────────
-export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,incidentActive:boolean,thm:typeof THEMES.A,showGrid:boolean){
+export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlpha:number,thm:typeof THEMES.A,showGrid:boolean){
   ctx.save();applyCamera(ctx,cam);
   for(let r=0;r<MAP_ROWS;r++) for(let c=0;c<MAP_COLS;c++){
     const hold=r>STANCHION_R;
@@ -135,7 +121,6 @@ export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlph
     ctx.fillStyle=thm.rowDiv;ctx.fillRect(0,(ry-0.15)*T,MAP_COLS*T,T*0.25);
   });
   if(darkAlpha>0.03){ctx.fillStyle=`rgba(5,5,28,${darkAlpha})`;ctx.fillRect(0,0,MAP_COLS*T,STANCHION_R*T);}
-  if(incidentActive){ctx.fillStyle=`rgba(255,40,40,${0.05+0.03*Math.sin(Date.now()*0.008)})`;ctx.fillRect(0,0,MAP_COLS*T,STANCHION_R*T);}
   const sy=STANCHION_R*T+T*0.45;
   ctx.strokeStyle="#FDCB6Eaa";ctx.lineWidth=T*0.04;ctx.setLineDash([T*0.14,T*0.07]);
   ctx.beginPath();ctx.moveTo(T*0.3,sy);ctx.lineTo(MAP_COLS*T-T*0.3,sy);ctx.stroke();ctx.setLineDash([]);
@@ -152,7 +137,7 @@ export function drawFloor(ctx:CanvasRenderingContext2D,T:number,cam:any,darkAlph
 }
 
 // ─── Draw furniture ───────────────────────────────────────────────────────────
-export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,activeMeeting:boolean,topic:string|null,darkAlpha:number,incidentActive:boolean,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A,liveRuns:Record<string,AgentRunInfo>={}){
+export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agents:any[],now:number,darkAlpha:number,critPairs:any[],showDepGraph:boolean,thm:typeof THEMES.A,liveRuns:Record<string,AgentRunInfo>={}){
   ctx.save();applyCamera(ctx,cam);
 
   // ── Dependency graph overlay ──
@@ -285,12 +270,12 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
     const working=ag.state==="working";
     const mood=(ag.mood||88)/100;
     ctx.fillStyle=thm.deskBody;
-    ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(incidentActive?"#ff333344":(ag.color+"18"));
+    ctx.strokeStyle=working?ag.color+Math.round(80+mood*120).toString(16).padStart(2,"0"):(ag.color+"18");
     ctx.lineWidth=working?T*0.022:T*0.01;
     ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
     const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
     ctx.fillStyle="#090918";ctx.fillRect(mx2,my2,mw,mh);
-    ctx.strokeStyle=working?ag.color+"cc":incidentActive?"#ff222233":"#252550";ctx.lineWidth=T*0.014;ctx.strokeRect(mx2,my2,mw,mh);
+    ctx.strokeStyle=working?ag.color+"cc":"#252550";ctx.lineWidth=T*0.014;ctx.strokeRect(mx2,my2,mw,mh);
     if(working){
       const t2=now*0.001;
       for(let l=0;l<3;l++){
@@ -350,13 +335,13 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
     }
   });
 
-  // ── Conference table ──
+  // ── Conference table ── (static furniture — no live meeting state to render; see kill-office-fiction)
   const tcx=CONF_TX*T, tcy=CONF_TY*T, tw=CONF_TW*T, th=CONF_TH*T;
   ctx.fillStyle=thm.confTable;
-  ctx.strokeStyle=activeMeeting?"#FDCB6Ecc":incidentActive?"#ff3333aa":"#282848";
-  ctx.lineWidth=activeMeeting?T*0.028:T*0.014;
+  ctx.strokeStyle="#282848";
+  ctx.lineWidth=T*0.014;
   ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.fill();ctx.stroke();
-  ctx.strokeStyle=activeMeeting?"#FDCB6E22":"#ffffff05";ctx.lineWidth=T*0.01;
+  ctx.strokeStyle="#ffffff05";ctx.lineWidth=T*0.01;
   ctx.beginPath();ctx.roundRect(tcx+T*0.1,tcy+T*0.1,tw-T*0.2,th-T*0.2,T*0.15);ctx.stroke();
   // Chairs: 4 top, 4 bottom (evenly spaced with margin), 2 left, 2 right
   const cW=T*0.22,cH=T*0.14;
@@ -375,46 +360,10 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
     // Cushion
     ctx.fillStyle="#24243e";ctx.beginPath();ctx.roundRect(cx+T*0.02,cy+T*0.02,cW-T*0.04,cH*0.5,T*0.02);ctx.fill();
   });
-  if(activeMeeting&&darkAlpha>0.04){ctx.shadowColor="#FDCB6E";ctx.shadowBlur=T*0.3*darkAlpha;ctx.strokeStyle="#FDCB6E33";ctx.lineWidth=T*0.025;ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();ctx.shadowBlur=0;}
-  // MC-16: Show agents at conference table based on real sessions
-  const meetingAgents=agents.filter(a=>a.state==="meeting"||a.state==="moving_to_meeting");
-  if(!activeMeeting&&meetingAgents.length>=2){
-    // Multiple agents active simultaneously but not in formal meeting — show collaboration
-    ctx.strokeStyle="#00ff8844";ctx.lineWidth=T*0.02;
-    ctx.beginPath();ctx.roundRect(tcx,tcy,tw,th,T*0.2);ctx.stroke();
-  }
   ctx.font=`bold ${Math.round(T*0.15)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-  if(activeMeeting&&topic){
-    ctx.fillStyle="#FDCB6E";ctx.fillText("⬡ "+topic,tcx+tw/2,tcy+th+T*0.3);
-    // MC-16: Show participant names
-    const pNames=meetingAgents.map(a=>a.name).join(", ");
-    if(pNames){
-      ctx.font=`${Math.round(T*0.10)}px 'IBM Plex Mono',monospace`;
-      ctx.fillStyle="#FDCB6E88";ctx.fillText(pNames,tcx+tw/2,tcy+th+T*0.48);
-    }
-  }
-  else if(incidentActive){ctx.fillStyle="#ff4444";ctx.fillText("🚨 INCIDENT",tcx+tw/2,tcy+th+T*0.3);}
-  else{ctx.fillStyle="#252550";ctx.fillText("Conference Table",tcx+tw/2,tcy+th+T*0.3);}
+  ctx.fillStyle="#252550";ctx.fillText("Conference Table",tcx+tw/2,tcy+th+T*0.3);
 
   ctx.restore();
-}
-
-export function drawChatBubbles(ctx:CanvasRenderingContext2D,bubbles:any[],T:number,cam:any){
-  ctx.save();applyCamera(ctx,cam);
-  bubbles.forEach(b=>{
-    const alpha=Math.min(1,b.age/15)*Math.max(0,1-(b.age-b.maxAge*0.55)/(b.maxAge*0.45));
-    if(alpha<=0) return;
-    ctx.globalAlpha=Math.max(0,alpha);
-    const fPx=Math.round(T*0.115);
-    ctx.font=`${fPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-    const tw2=ctx.measureText(b.text).width+T*0.18,th2=fPx*1.55;
-    ctx.fillStyle="#1a1a3aee";ctx.strokeStyle=b.color+"77";ctx.lineWidth=T*0.01;
-    ctx.beginPath();ctx.roundRect(b.x-tw2/2,b.y-th2,tw2,th2,T*0.04);ctx.fill();ctx.stroke();
-    ctx.beginPath();ctx.moveTo(b.x-T*0.055,b.y);ctx.lineTo(b.x+T*0.055,b.y);ctx.lineTo(b.x,b.y+T*0.075);
-    ctx.fillStyle="#1a1a3aee";ctx.fill();
-    ctx.fillStyle=b.color;ctx.fillText(b.text,b.x,b.y-th2*0.28);
-  });
-  ctx.globalAlpha=1;ctx.restore();
 }
 
 export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:any){
@@ -427,7 +376,7 @@ export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:a
   ctx.globalAlpha=1;ctx.restore();
 }
 
-export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,incidentActive:boolean,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0){
+export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0){
   const visible=ag.active||BENCH_POS[ag.id];
   if(!visible) return;
   ctx.save();applyCamera(ctx,cam);
@@ -435,8 +384,6 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
   const isOrch=ag.id===ORCHESTRATOR_ID;
   const sz=isOrch?T*0.78:T*0.58, hs=sz/2;
   const moodN=(mood||88)/100;
-  const moving=state==="moving_to_meeting"||state==="returning";
-  const isInc=incidentActive&&(state==="moving_to_meeting"||state==="meeting");
 
   if(ag.spawning){
     const sf=Math.min(1,ag.spawnAge/30);
@@ -446,8 +393,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
   }
 
   const bob=state==="idle"?Math.sin(now*0.003+ag.animTick*0.12)*T*0.018*moodN:0;
-  const runBob=moving?Math.abs(Math.sin(now*0.013))*T*0.03-T*0.01:0;
-  const dy2=bob+runBob;
+  const dy2=bob;
   const [ox,oy]=({down:[0,T*0.022],up:[0,-T*0.022],left:[-T*0.022,0],right:[T*0.022,0]} as any)[facing]||[0,0];
 
   if(isSelected){
@@ -461,7 +407,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
   ctx.fillStyle="#00000044";
   ctx.beginPath();ctx.ellipse(px+ox,py+hs+T*0.022+oy+dy2,hs*0.65,T*0.022,0,0,Math.PI*2);ctx.fill();
   const bA=Math.round((0.7+moodN*0.3)*255).toString(16).padStart(2,"0");
-  const bodyCol=isInc?"#ff2222":(active?color+bA:"#3a3a5e"+bA);
+  const bodyCol=active?color+bA:"#3a3a5e"+bA;
   // MC-19: Enhanced state transition animation — glow + scale pulse + fade
   let transScale=1;
   if(ag.glowTick>0){
@@ -479,7 +425,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     ctx.fillStyle=color+Math.round(glowAlpha*25).toString(16).padStart(2,"0");ctx.fill();
     ctx.shadowBlur=0;
   }
-  if(darkAlpha>0.05){ctx.shadowColor=isInc?"#ff2222":color;ctx.shadowBlur=sz*0.22*darkAlpha;}
+  if(darkAlpha>0.05){ctx.shadowColor=color;ctx.shadowBlur=sz*0.22*darkAlpha;}
   // Apply scale for transition animation
   const asz=sz*transScale,ahs=asz/2;
   ctx.fillStyle=bodyCol;ctx.fillRect(px-ahs+ox,py-ahs+dy2+oy,asz,asz);ctx.shadowBlur=0;
@@ -504,14 +450,8 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     }
     ctx.strokeStyle="#111";ctx.lineWidth=sz*0.04;ctx.stroke();
   }
-  ctx.fillStyle=isInc?"#ff2222":color;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz*0.18);
-  if(moving){
-    const sw=Math.sin(now*0.016)*sz*0.17;
-    ctx.fillStyle=(isInc?"#ff2222":color)+"88";
-    ctx.fillRect(px-sz*0.21+ox+sw,py+sz*0.37+oy,sz*0.19,sz*0.27);
-    ctx.fillRect(px+sz*0.02+ox-sw, py+sz*0.37+oy,sz*0.19,sz*0.27);
-  }
-  const dotC=isInc?"#ff3333":state==="working"?"#00ff88":(state==="meeting"||state==="moving_to_meeting")?"#FDCB6E":active?"#4a5568":"#2a2a4a";
+  ctx.fillStyle=color;ctx.fillRect(px-hs+ox,py-hs+dy2+oy,sz,sz*0.18);
+  const dotC=state==="working"?"#00ff88":active?"#4a5568":"#2a2a4a";
   ctx.beginPath();ctx.arc(px+hs-sz*0.1+ox,py-hs+sz*0.1+dy2+oy,sz*0.1,0,Math.PI*2);
   ctx.fillStyle=dotC;ctx.fill();ctx.strokeStyle="#0b0b14";ctx.lineWidth=sz*0.035;ctx.stroke();
 
@@ -548,24 +488,6 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     const bW=Math.max(tlW,nlW),bH=T*0.055,bY=nlY+nlH+T*0.025;
     ctx.fillStyle="#151528";ctx.fillRect(px-bW/2,bY,bW,bH);
     ctx.fillStyle=color;ctx.fillRect(px-bW/2,bY,bW*(progress/100),bH);
-  }
-  if(ag.monologue&&state==="working"){
-    const mPx=Math.max(9,Math.round(T*0.10));
-    ctx.font=`${mPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
-    const mW=ctx.measureText(ag.monologue).width+T*0.12,mH=mPx*1.6;
-    const taskH=task?Math.max(11,Math.round(T*0.19))*1.8+T*0.10:0;
-    const mY=py-hs-taskH-mH-T*0.2+dy2+oy;
-    ctx.fillStyle="#0f0f22ee";ctx.strokeStyle="#3a3a6a";ctx.lineWidth=T*0.01;
-    ctx.beginPath();ctx.roundRect(px-mW/2,mY,mW,mH,T*0.03);ctx.fill();ctx.stroke();
-    ctx.beginPath();ctx.moveTo(px-T*0.04,mY+mH);ctx.lineTo(px+T*0.04,mY+mH);ctx.lineTo(px,mY+mH+T*0.06);
-    ctx.fillStyle="#0f0f22ee";ctx.fill();ctx.fillStyle="#8892b0";ctx.fillText(ag.monologue,px,mY+mH*0.76);
-  }
-  if(state==="meeting"){
-    for(let b=0;b<3;b++){
-      const phase=((now*0.0014+b*0.42)%1),alpha=Math.sin(phase*Math.PI)*0.9;
-      ctx.beginPath();ctx.arc(px+sz*0.5+b*sz*0.22+ox,py-hs-T*0.05-phase*T*0.26+dy2+oy,(sz*0.1-b*sz*0.02),0,Math.PI*2);
-      ctx.fillStyle=isInc?`rgba(255,80,80,${alpha})`:`rgba(253,203,110,${alpha})`;ctx.fill();
-    }
   }
   // Idle timer display
   if(state==="idle"&&active&&ag.lastStateChange){
@@ -628,7 +550,7 @@ export function drawMinimap(ctx:CanvasRenderingContext2D,T:number,agents:any[],c
   agents.forEach(a=>{
     const ax=mmX+a.px*sx,ay=mmY+a.py*sy,r=Math.max(2,3);
     ctx.beginPath();ctx.arc(ax,ay,r,0,Math.PI*2);
-    ctx.fillStyle=a.state==="working"?"#00ff88":a.state==="meeting"||a.state==="moving_to_meeting"?"#FDCB6E":a.active?a.color:"#4a4a6a";
+    ctx.fillStyle=a.state==="working"?"#00ff88":a.active?a.color:"#4a4a6a";
     ctx.fill();ctx.strokeStyle="#000";ctx.lineWidth=0.5;ctx.stroke();
   });
   const vx=mmX+(-cam.x/cam.z)*sx,vy=mmY+(-cam.y/cam.z)*sy;
@@ -639,7 +561,7 @@ export function drawMinimap(ctx:CanvasRenderingContext2D,T:number,agents:any[],c
   ctx.fillText("MAP",mmX+mw/2,mmY-4);
 
   if(showLegend){
-    const items=[["#00ff88","Working"],["#FDCB6E","Meeting"],["#4a5568","Idle"]];
+    const items=[["#00ff88","Working"],["#4a5568","Idle"]];
     const legH=items.length*16+10;
     const legW=86;
     const legX=mmX+mw-legW;

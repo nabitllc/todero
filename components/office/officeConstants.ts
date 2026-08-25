@@ -2,8 +2,13 @@
 // Extracted from AgentOffice.tsx (TOD-476)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-export type AgentRunStatus = 'working' | 'idle' | 'never';
-export interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; todayTasks: number; todayErrors: number; estimatedCost: number; }
+// 'live' = actively running and within the staleness window; 'stale' = a
+// 'running' row that outlived the staleness window without a terminal
+// status (orphaned); 'ended' = has a terminal status; 'never' = no run row
+// exists for this agent at all. See hooks/useAgentStatus.ts:runLiveness for
+// the single place this is computed.
+export type AgentRunStatus = 'live' | 'stale' | 'ended' | 'never';
+export interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; todayTasks: number; todayErrors: number; estimatedCost: number | null; }
 
 export const SUPA_AGENTS = ['main','scout','ops','kemuni-sme','vespera-sme','builder','tester','deployer'] as const;
 
@@ -35,45 +40,6 @@ export const DEPENDENCIES: Record<string,string[]> = {
   "vespera-sme": ["main"],
   "ops":         ["main"],
 };
-
-export const AGENT_TASKS: Record<string,string[]> = {
-  "main":        ["Orchestrating sprint","Reviewing agent outputs","Delegating subtasks","Aligning team goals","Synthesizing results","Planning next sprint"],
-  "scout":       ["Scanning competitor landscape","Researching goth events","Analyzing market trends","Fetching PropTech data","Summarizing research docs","Web scraping venues"],
-  "ops":         ["Checking gateway health","Monitoring heartbeat","Rotating API keys","Reviewing system logs","Cost optimization","Updating infrastructure"],
-  "kemuni-sme":  ["Designing property features","Planning tenant portal","Reviewing user flows","Drafting product specs","Analyzing competitor features","Prioritizing backlog"],
-  "vespera-sme": ["Planning event features","Designing social feeds","Reviewing goth UX patterns","Drafting community features","Analyzing user feedback","Planning onboarding flow"],
-  "builder":     ["Writing API endpoints","Refactoring components","Fixing bug reports","Building UI pages","Optimizing database queries","Implementing auth flow"],
-  "tester":      ["Running integration tests","Writing unit tests","Checking edge cases","Reviewing PR code","Regression testing","Load testing API"],
-  "deployer":    ["Deploying to production","Rolling back release","Checking deploy health","Updating CI pipeline","Provisioning environments","Running smoke tests"],
-};
-
-export const MEETINGS = [
-  {topic:"Sprint Planning",  agents:["main","kemuni-sme","vespera-sme"]},
-  {topic:"Research Review",  agents:["main","scout"]},
-  {topic:"Infra Check",      agents:["main","ops"]},
-  {topic:"Vespera Design",   agents:["vespera-sme","scout"]},
-  {topic:"Kemuni Strategy",  agents:["main","kemuni-sme"]},
-  {topic:"Full Team Sync",   agents:["main","scout","ops","kemuni-sme","vespera-sme"]},
-  {topic:"Product Review",   agents:["kemuni-sme","vespera-sme","main"]},
-];
-
-export const INCIDENTS = [
-  {title:"🔥 Gateway Down!",     victims:["ops","main"]},
-  {title:"💥 Build Failed",      victims:["vespera-sme","main"]},
-  {title:"🚨 Rate Limit Hit",    victims:["scout","ops","main"]},
-  {title:"⚡ Supabase Overload", victims:["vespera-sme","kemuni-sme"]},
-];
-
-export const CHAT_LINES = [
-  (a:string,b:string)=>`${b}, your turn`,
-  (a:string,b:string)=>`Pushed to main, ${b}`,
-  (a:string,b:string)=>`${b} — check PR`,
-  (a:string,b:string)=>`Ready for review, ${b}`,
-  (a:string,b:string)=>`${b}, tests passing`,
-  (a:string,b:string)=>`Blocked on ${b}`,
-  (a:string,b:string)=>`${b} — LGTM!`,
-  (a:string,b:string)=>`Deploying, ${b}`,
-];
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 export const ORCH_TX = 0.3,  ORCH_TY = 1.6;
@@ -118,41 +84,6 @@ export const PLANNED_LABELS = [
   {tx:COL_X[1],ty:ROW_Y[3],emoji:"",name:""},
   {tx:COL_X[2],ty:ROW_Y[3],emoji:"",name:""},
   {tx:COL_X[3],ty:ROW_Y[3],emoji:"",name:""},
-];
-
-// ─── Static Templates ─────────────────────────────────────────────────────────
-export const MONOLOGUES: Record<string,string[]> = {
-  "main":        ["delegating now","synthesizing outputs","checking priorities","aligning team","tracking dependencies","orchestrating flow"],
-  "scout":       ["scanning sources","parsing results","cross-referencing","indexing findings","compiling report","validating sources"],
-  "ops":         ["checking health","rotating credentials","monitoring logs","optimizing costs","updating config","validating endpoints"],
-  "kemuni-sme":  ["mapping user flows","reviewing specs","aligning features","prioritizing items","drafting requirements","analyzing gaps"],
-  "vespera-sme": ["designing interactions","mapping goth UX","reviewing flows","drafting features","analyzing feedback","planning onboarding"],
-  "builder":     ["writing handlers","refactoring modules","fixing edge cases","building components","optimizing queries","wiring auth"],
-  "tester":      ["running assertions","writing test cases","checking coverage","auditing edge cases","running regression","load testing"],
-  "deployer":    ["deploying build","checking health","rolling back","provisioning env","running smoke tests","updating pipeline"],
-};
-
-export const MEETING_SUMMARIES: Record<string,string> = {
-  "Sprint Planning":  "• Assigned top-priority features across KAOS, Kemuni SME, and Vespera SME\n• Set delivery targets for this sprint cycle\n• Identified 3 blockers for early resolution",
-  "Research Review":  "• Scout shared competitive landscape and PropTech market findings\n• Identified 2 key gaps and opportunities to exploit\n• KAOS updated strategy roadmap based on findings",
-  "Infra Check":      "• Ops confirmed all services nominal — gateway, heartbeat, APIs\n• Reviewed cost optimization opportunities\n• Scheduled key rotation for next maintenance window",
-  "Vespera Design":   "• Scout delivered goth community research for UX reference\n• Vespera SME finalized event feed and social interaction flows\n• 3 design decisions logged and handed off",
-  "Kemuni Strategy":  "• Reviewed Kemuni feature backlog priorities with KAOS\n• Kemuni SME refined tenant portal user flows\n• Launch milestones confirmed for target date",
-  "Full Team Sync":   "• All agents aligned on current sprint status\n• Cross-team dependencies mapped and delegated\n• Risk items flagged and assigned owners",
-  "Product Review":   "• Kemuni SME and Vespera SME presented feature progress\n• KAOS provided strategic direction on prioritization\n• 5 product decisions recorded and actioned",
-};
-
-export const DIALOGUE_POOL = [
-  "Completed the task — outputs are staged for review.",
-  "Task done, ready for your next delegation.",
-  "Finished and logging results to memory.",
-  "All done — flagging completion to you now.",
-  "Task complete. Awaiting next priority.",
-  "Wrapped up — no blockers encountered.",
-  "Done. Results are clean and ready.",
-  "Completed with full output. Standing by.",
-  "Task finished — triggering dependents now.",
-  "All clear on my end. Over to you.",
 ];
 
 // ─── Themes ────────────────────────────────────────────────────────────────

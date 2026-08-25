@@ -11,14 +11,16 @@ export default function AgentOffice() {
   const simRef=useRef<any>(null), feedRef=useRef<HTMLDivElement>(null), feedIdRef=useRef(1);
   const liveRunsRef=useRef<Record<string,AgentRunInfo>>({}), boardTasksRef=useRef<Record<string,string>>({});
   const subagentCountRef=useRef<number>(0), subagentSessionsRef=useRef<any[]>([]);
-  const [feed,setFeed]=useState<any[]>([{id:0,ts:nowts(),text:"KAOS agents online. 24/7/365.",color:"#00ff88"}]);
+  // No feed entry is fabricated at mount — every line must come from an
+  // observed agent_runs transition. The feed starts empty; panels that render
+  // it show "No agent events observed yet" for feed.length === 0.
+  const [feed,setFeed]=useState<any[]>([]);
   const [roster,setRoster]=useState<any[]>([]), [paused,setPaused]=useState(false);
-  const [stats,setStats]=useState({working:0,meeting:0,idle:0,completed:0});
+  const [stats,setStats]=useState({working:0,idle:0,completed:0});
   const [selectedId,setSelectedId]=useState<string|null>(null), [detail,setDetail]=useState<any>(null);
-  const [toasts,setToasts]=useState<any[]>([]), [meetingLogs,setMeetingLogs]=useState<any[]>([]);
-  const [incidentLog,setIncidentLog]=useState<any[]>([]), [incident,setIncident]=useState<any>(null);
+  const [toasts,setToasts]=useState<any[]>([]);
   const [waterfall,setWaterfall]=useState<any[]>([]), [leaderboard,setLeaderboard]=useState<any[]>([]);
-  const [dialogue,setDialogue]=useState<any[]>([]), [timeline,setTimeline]=useState<any[]>([]);
+  const [timeline,setTimeline]=useState<any[]>([]);
   const [boardTasks,setBoardTasks]=useState<Record<string,string>>({});
   const [realTaskCounts,setRealTaskCounts]=useState<Record<string,{h24:number;d7:number}>>({});
   const [showMinimap,setShowMinimap]=useState(true), [showDepGraph,setShowDepGraph]=useState(false);
@@ -75,10 +77,10 @@ export default function AgentOffice() {
       {/* Header */}
       <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "0 8px" : "0 14px", height: 44, background: thm.header, borderBottom: `1px solid ${thm.borderSub}`, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 9, height: 9, borderRadius: "50%", background: paused ? "#3a3a5e" : incident ? "#ff4444" : "#00ff88", boxShadow: paused ? "none" : incident ? "0 0 8px #ff444466" : "0 0 8px #00ff8866" }} />
+          <div style={{ width: 9, height: 9, borderRadius: "50%", background: paused ? "#3a3a5e" : "#00ff88", boxShadow: paused ? "none" : "0 0 8px #00ff8866" }} />
           {!isMobile && <span style={{ color: "#e0e0ff", fontSize: 13, letterSpacing: "0.14em", fontWeight: 700 }}>NABIT LLC</span>}
           {!isMobile && <span style={{ color: "#4a4a6a" }}>·</span>}
-          <span style={{ color: incident ? "#ff4444" : "#8892b0", fontSize: 12, letterSpacing: "0.09em" }}>{incident ? incident.title : "AGENT OFFICE"}</span>
+          <span style={{ color: "#8892b0", fontSize: 12, letterSpacing: "0.09em" }}>AGENT OFFICE</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", background: "#0f0f20", border: "1px solid #1a1a2e", borderRadius: 3 }}>
@@ -120,9 +122,9 @@ export default function AgentOffice() {
           showMinimap={showMinimap} showDepGraph={showDepGraph} showGrid={showGrid} showLegend={showLegend}
           simSpeed={simSpeed} replayMode={replayMode} isMobile={isMobile} canvasScale={canvasScale}
           setPaused={setPaused} setSelectedId={setSelectedId} setDetail={setDetail} setRoster={setRoster}
-          setStats={setStats} setMeetingLogs={setMeetingLogs} setWaterfall={setWaterfall} setTimeline={setTimeline}
-          setLeaderboard={setLeaderboard} setDialogue={setDialogue} setIncidentLog={setIncidentLog}
-          setIncident={setIncident} setReplayLen={setReplayLen} setRealTaskCounts={setRealTaskCounts}
+          setStats={setStats} setWaterfall={setWaterfall} setTimeline={setTimeline}
+          setLeaderboard={setLeaderboard}
+          setReplayLen={setReplayLen} setRealTaskCounts={setRealTaskCounts}
           setShowMinimap={setShowMinimap} setShowDepGraph={setShowDepGraph} setReplayMode={setReplayMode}
           setTab={setTab} addFeed={addFeed} addToast={addToast}
           simRef={simRef} liveRunsRef={liveRunsRef} boardTasksRef={boardTasksRef}
@@ -138,19 +140,21 @@ export default function AgentOffice() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {roster.filter(a => a.active).map(a => (
-                <div key={a.id} style={{ background: theme === "B" ? "#0c1a14" : "#0f0f1a", border: `1px solid ${thm.borderSub}`, borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                <div key={a.id} style={{ background: theme === "B" ? "#0c1a14" : "#0f0f1a", border: `1px solid ${thm.borderSub}`, borderRadius: 8, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, opacity: liveRunsRef.current[a.id]?.status === "never" ? 0.55 : 1 }}>
                   <span style={{ fontSize: 20 }}>{a.emoji}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ color: "#e0e0ff", fontSize: 12, fontWeight: 700 }}>{a.name}</span>
                       <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.08em", padding: "1px 6px", borderRadius: 9,
-                        background: a.state === "working" ? "#00ff8820" : a.state === "meeting" ? "#6C5CE720" : "#3a3a5e20",
-                        color: a.state === "working" ? "#00ff88" : a.state === "meeting" ? "#a29bfe" : "#6a6a8e",
-                        border: `1px solid ${a.state === "working" ? "#00ff8840" : a.state === "meeting" ? "#6C5CE740" : "#3a3a5e40"}`,
-                        textTransform: "uppercase" }}>{a.state === "working" ? "working" : a.state === "meeting" ? "meeting" : "idle"}</span>
+                        background: a.state === "working" ? "#00ff8820" : "#3a3a5e20",
+                        color: a.state === "working" ? "#00ff88" : "#6a6a8e",
+                        border: `1px solid ${a.state === "working" ? "#00ff8840" : "#3a3a5e40"}`,
+                        textTransform: "uppercase" }}>{a.state === "working" ? "working" : "idle"}</span>
                     </div>
                     <div style={{ color: thm.textDim, fontSize: 10, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {a.task ? (a.task.length > 40 ? a.task.slice(0, 40) + "…" : a.task) : "Standing by"}
+                      {a.task
+                        ? (a.task.length > 40 ? a.task.slice(0, 40) + "…" : a.task)
+                        : (liveRunsRef.current[a.id]?.status === "never" ? "No runs recorded" : "Standing by")}
                     </div>
                   </div>
                 </div>
@@ -166,8 +170,8 @@ export default function AgentOffice() {
 
         <OfficeSidebar
           roster={roster} stats={stats} feed={feed} feedRef={feedRef} detail={detail} selectedId={selectedId}
-          meetingLogs={meetingLogs} waterfall={waterfall} leaderboard={leaderboard} incidentLog={incidentLog}
-          incident={incident} dialogue={dialogue} timeline={timeline} realTaskCounts={realTaskCounts}
+          waterfall={waterfall} leaderboard={leaderboard}
+          timeline={timeline} realTaskCounts={realTaskCounts}
           boardTasks={boardTasks} liveRunsRef={liveRunsRef} theme={theme}
           sidebarCollapsed={sidebarCollapsed} toggleSidebar={toggleSidebar} isMobile={isMobile}
           setSelectedId={setSelectedId} setDetail={setDetail}
@@ -182,8 +186,6 @@ export default function AgentOffice() {
         fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, color: "#6a6a8e", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ color: "#00ff88", fontWeight: 700 }}>{stats.working}</span><span>active</span>
-          <span style={{ color: "#3a3a5e" }}>·</span>
-          <span style={{ color: "#FDCB6E", fontWeight: 700 }}>{stats.meeting}</span><span>in meeting</span>
           <span style={{ color: "#3a3a5e" }}>·</span>
           <span style={{ color: "#6C5CE7", fontWeight: 700 }}>{stats.completed}</span><span>done</span>
         </div>

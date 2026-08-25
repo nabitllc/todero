@@ -11,8 +11,69 @@ import { firstExistingPath, isDarwin, isWindows } from '@/lib/paths'
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_KEY || ''
 const N8N_KEY = process.env.N8N_API_KEY || ''
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
+const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || ''
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || ''
 
 const NO_KEY_ERROR = () => `${dbStatusMessage()} — agent activity and usage unavailable`
+
+// ── Service status vocabulary (TOD: kill-fake-infra-greens) ────────────────
+// A tile is 'ok' only if this request actually measured it and it answered
+// well. Everything else is honest about what it is: 'degraded' (measured,
+// answered, but not clean), 'down' (measured, failed to answer), or
+// 'unknown' (never checked — no credential configured on this host, or no
+// probe exists for it here). No literal 'ok' is assigned without a probe
+// behind it.
+type ServiceState = 'ok' | 'degraded' | 'down' | 'unknown'
+interface ServiceReading { status: ServiceState; note: string; checkedAt: string }
+function reading(status: ServiceState, note: string): ServiceReading {
+  return { status, note, checkedAt: new Date().toISOString() }
+}
+
+/** Bounded fetch — a hung upstream must not hold the whole probe open. */
+async function probe(url: string, init?: RequestInit, timeoutMs = 4000): Promise<{ ok: boolean; status?: number; error?: string }> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const r = await fetch(url, { ...init, signal: controller.signal, cache: 'no-store' })
+    return { ok: r.ok, status: r.status }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function checkTelegram(): Promise<ServiceReading> {
+  if (!TELEGRAM_TOKEN) return reading('unknown', 'no TELEGRAM_BOT_TOKEN configured on this host')
+  const r = await probe(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe`)
+  return r.ok ? reading('ok', 'getMe succeeded') : reading('down', r.error ? `unreachable: ${r.error}` : `getMe returned HTTP ${r.status}`)
+}
+
+async function checkDiscord(): Promise<ServiceReading> {
+  if (!DISCORD_TOKEN) return reading('unknown', 'no DISCORD_BOT_TOKEN configured on this host')
+  const r = await probe('https://discord.com/api/v10/users/@me', { headers: { Authorization: `Bot ${DISCORD_TOKEN}` } })
+  return r.ok ? reading('ok', 'bot identity confirmed') : reading('down', r.error ? `unreachable: ${r.error}` : `users/@me returned HTTP ${r.status}`)
+}
+
+async function checkGithub(): Promise<ServiceReading> {
+  if (!GITHUB_TOKEN) return reading('unknown', 'no GITHUB_TOKEN configured on this host')
+  const r = await probe('https://api.github.com/rate_limit', {
+    headers: { Authorization: `token ${GITHUB_TOKEN}`, 'User-Agent': 'todero-status-probe' },
+  })
+  return r.ok ? reading('ok', 'token authenticated') : reading('down', r.error ? `unreachable: ${r.error}` : `rate_limit returned HTTP ${r.status}`)
+}
+
+async function checkSupabase(): Promise<ServiceReading> {
+  if (!isDbConfigured()) return reading('unknown', dbStatusMessage())
+  try {
+    const { error } = await createAdminClient().from('issues').select('id').limit(1)
+    if (error) return reading('down', `query failed: ${error.message}`)
+    return reading('ok', 'reachable — issues table queried')
+  } catch (e) {
+    return reading('down', e instanceof Error ? e.message : String(e))
+  }
+}
 
 /**
  * Where the Vercel CLI keeps its auth token. The CLI uses xdg-app-paths, so the
@@ -55,7 +116,8 @@ function getVercelToken(): string | null {
 }
 
 export async function GET() {
-  const [openrouter, ollama, n8n, vercel] = await Promise.allSettled([
+  const vercelToken = getVercelToken()
+  const [openrouter, ollama, n8n, vercel, telegramReading, discordReading, githubReading, supabaseReading] = await Promise.allSettled([
     // OpenRouter
     // TOD-654: fetchJsonOrThrow rejects on a non-ok upstream, so the
     // `status === 'fulfilled'` checks below cannot mistake a 401 error body
@@ -76,14 +138,19 @@ export async function GET() {
 
     // Vercel
     (async () => {
-      const token = getVercelToken()
-      if (!token) throw new Error('No Vercel token')
+      if (!vercelToken) throw new Error('No Vercel token')
       const r = await fetch(
         'https://api.vercel.com/v6/deployments?app=vespera&limit=1&teamId=team_BPpNtsCP3vmSt4R0r8MXbxiJ',
-        { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }
+        { headers: { Authorization: `Bearer ${vercelToken}` }, cache: 'no-store' }
       )
       return r.json()
     })(),
+
+    // TOD: kill-fake-infra-greens — every tile below is a real probe, not a literal.
+    checkTelegram(),
+    checkDiscord(),
+    checkGithub(),
+    checkSupabase(),
   ])
 
   const result: any = { gateway: { running: true } }
@@ -135,6 +202,48 @@ export async function GET() {
     discord: !!process.env.DISCORD_BOT_TOKEN,
   }
   result.heartbeats = []
+
+  // ── Service tiles (TOD: kill-fake-infra-greens) ──
+  // Every reading here comes from a probe run in this same request, or is
+  // explicitly 'unknown' when no probe exists / no credential is configured
+  // on this host. None of these are literals — the Infra tab renders exactly
+  // this object, so a false 'ok' here would be a false 'ok' on screen.
+  result.services = {
+    // Claude Code's OAuth session lives in the CLI's local credential store,
+    // never in an env var this server process can read — so this tile is
+    // always 'unknown' here, honestly, not a guess dressed as 'ok'.
+    claude: reading('unknown', 'Claude session state is local to the CLI and not exposed to this server'),
+
+    openrouter: !OPENROUTER_KEY
+      ? reading('unknown', 'no OPENROUTER_API_KEY configured on this host')
+      : result.openrouter
+        ? reading('ok', `$${result.openrouter.remaining.toFixed(2)} remaining`)
+        : reading('down', 'key configured but the balance check failed'),
+
+    telegram: telegramReading.status === 'fulfilled' ? telegramReading.value : reading('unknown', 'probe did not run'),
+    discord: discordReading.status === 'fulfilled' ? discordReading.value : reading('unknown', 'probe did not run'),
+
+    ollama: result.ollama.running
+      ? reading(result.ollama.models.length > 0 ? 'ok' : 'degraded', result.ollama.models.length ? result.ollama.models.join(', ') : 'reachable but no models pulled')
+      : reading('down', 'not reachable at localhost:11434'),
+
+    vercel: !vercelToken
+      ? reading('unknown', 'no Vercel token found for this host')
+      : result.vercel
+        ? reading(
+            result.vercel.lastDeploy.status === 'READY' ? 'ok' : result.vercel.lastDeploy.status === 'ERROR' ? 'down' : 'degraded',
+            `${result.vercel.lastDeploy.status}${result.vercel.lastDeploy.branch ? ' · ' + result.vercel.lastDeploy.branch : ''}`,
+          )
+        : reading('down', 'token present but the deployments fetch failed'),
+
+    supabase: supabaseReading.status === 'fulfilled' ? supabaseReading.value : reading('unknown', 'probe did not run'),
+    github: githubReading.status === 'fulfilled' ? githubReading.value : reading('unknown', 'probe did not run'),
+
+    // Neither has an env var anywhere in this repo's config surface — there is
+    // nothing on this host to probe, so 'unknown' is the whole truth.
+    braveSearch: reading('unknown', 'no Brave Search API key configured on this host'),
+    cloudflare: reading('unknown', 'no tunnel health endpoint configured on this host'),
+  }
 
   // ── Agent activity from agent_runs ──
   // A host with no Supabase key cannot know any of this. Saying so beats
@@ -204,6 +313,18 @@ export async function GET() {
     result.agentCurrentTask = {}
     result.usage = null
     result.claude = null
+  }
+
+  // ── Host snapshot — replaces the InfraTab's old hardcoded "Mac mini ·
+  // Apple Silicon" card, which kept claiming Apple hardware on every host
+  // it ran on, Windows included. This is read from the running process.
+  result.system = {
+    platform: os.platform(),
+    arch: os.arch(),
+    hostname: os.hostname(),
+    totalMemGB: +(os.totalmem() / 1e9).toFixed(1),
+    nodeVersion: process.version,
+    uptimeSec: Math.round(os.uptime()),
   }
 
   result.configured = activityError === null

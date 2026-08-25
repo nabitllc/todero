@@ -101,22 +101,40 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
               })
             }, [reload])
             const ls = liveStatus
-            const orRemaining = ls?.openrouter?.remaining ?? 9.57
-            const orLimit = ls?.openrouter?.limit ?? 10
-            const orUsed = ls?.openrouter?.used ?? 0.43
+            // OpenRouter numbers are real only when /api/status actually reached
+            // OpenRouter this request. No fallback dollar figures — an unconnected
+            // account showing "$9.57 remaining" is exactly the fabrication this
+            // tab used to run on.
+            const orConnected = !!ls?.openrouter
+            const orRemaining = ls?.openrouter?.remaining ?? 0
+            const orLimit = ls?.openrouter?.limit ?? 0
+            const orUsed = ls?.openrouter?.used ?? 0
             const orPct = orLimit > 0 ? Math.min(100, Math.round((orUsed / orLimit) * 100)) : 0
-            const ollamaOk = ls?.ollama?.running ?? true
-            const ollamaModels = ls?.ollama?.models ?? ['gemma3:4b']
-            const vercelStatus = ls?.vercel?.lastDeploy?.status?.toUpperCase() ?? 'READY'
-            const vercelSt = vercelStatus === 'READY' ? 'ok' : vercelStatus === 'ERROR' ? 'warn' : vercelStatus === 'BUILDING' ? 'scheduled' : 'ok'
-            const tgOk = ls?.channels?.telegram ?? true
-            const dsOk = ls?.channels?.discord ?? true
             const usageCost = ls?.usage?.totalCost ?? 0
             const usageTokens = ls?.usage?.totalTokens ?? 0
             const usageByModel: Record<string,number> = ls?.usage?.byModel ?? {}
             const todayCost = ls?.usage?.todayCost ?? 0
             const todayTokens = ls?.usage?.todayTokens ?? 0
             const heartbeats: any[] = ls?.heartbeats ?? []
+
+            // TOD: kill-fake-infra-greens — /api/health, the one honest probe in
+            // the cluster, was wired to zero screens before this. Its own 503
+            // is meaningful data (which check failed), not just a fetch error —
+            // so this reads it directly instead of through the "non-2xx = error"
+            // fetchJson path other cards use.
+            const [health, setHealth] = useState<Record<string, any> | null>(null)
+            const [healthUnreachable, setHealthUnreachable] = useState<string | null>(null)
+            const fetchHealth = useCallback(() => {
+              fetch('/api/health', { cache: 'no-store' })
+                .then(async r => {
+                  const body = await r.json().catch(() => null)
+                  if (!body) { setHealthUnreachable(`HTTP ${r.status} — no parseable body`); setHealth(null); return }
+                  setHealthUnreachable(null)
+                  setHealth(body)
+                })
+                .catch(e => { setHealthUnreachable(e instanceof Error ? e.message : 'could not reach /api/health'); setHealth(null) })
+            }, [])
+            useEffect(() => { fetchHealth() }, [fetchHealth])
 
             // TOD-768: circuit breaker state
             const [cbState, setCbState] = useState<Record<string, {tripped: boolean; consecutive_failures: number; last_error?: string; tripped_at?: string}>>({})
@@ -133,18 +151,33 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
             const cbProviders = Object.entries(cbState)
             const cbTripped = cbProviders.some(([, p]) => p.tripped)
 
-            const liveInfra = [
-              { name:'Claude Max',   note:'OAuth \u00b7 sonnet-4-6 + haiku-4-5', status:'ok' },
-              { name:'OpenRouter',   note:`$${orRemaining.toFixed(2)} / $${orLimit.toFixed(2)} remaining`, status: orRemaining < 1 ? 'warn' : 'ok' },
-              { name:'Telegram',     note: tgOk ? '@KemuniClaw1Bot \u00b7 connected' : 'Disconnected', status: tgOk ? 'ok' : 'warn' },
-              { name:'Discord',      note: dsOk ? 'Kemuni Server \u00b7 connected' : 'Disconnected', status: dsOk ? 'ok' : 'warn' },
-              { name:'Ollama',       note: ollamaOk ? ollamaModels.join(', ') : 'Offline', status: ollamaOk ? 'ok' : 'warn' },
-              { name:'Vercel',       note: ls?.vercel ? `${vercelStatus}${ls.vercel.lastDeploy?.branch?' \u00b7 '+ls.vercel.lastDeploy.branch:''}${ls.vercel.lastDeploy?.commitSha?' \u00b7 '+ls.vercel.lastDeploy.commitSha.slice(0,7):''}${ls.vercel.lastDeploy?.createdAt?' \u00b7 '+new Date(ls.vercel.lastDeploy.createdAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):''}` : 'Unknown', status: vercelSt },
-              { name:'Supabase',     note:'Kemuni Agent HQ \u00b7 Vespera + Agent Brain', status:'ok' },
-              { name:'GitHub',       note:'nabitllc org \u00b7 kemuniagent@gmail.com',    status:'ok' },
-              { name:'Brave Search', note:'API \u00b7 renews Apr 21',                     status:'ok' },
-              { name:'Cloudflare',   note:'Tunnel active \u00b7 trycloudflare.com',       status:'ok' },
+            // TOD: kill-fake-infra-greens \u2014 every tile below reads its status and
+            // note straight off ls.services, which /api/status populates from a
+            // real probe run in that same request (or 'unknown' when no probe
+            // exists / no credential is configured on this host). No literal
+            // 'ok' is assigned in this file \u2014 the server did the measuring.
+            interface ServiceReading { status: 'ok' | 'degraded' | 'down' | 'unknown'; note: string; checkedAt: string }
+            const services: Record<string, ServiceReading> = ls?.services ?? {}
+            const SERVICE_TILES: Array<{ key: string; name: string }> = [
+              { key: 'claude',      name: 'Claude Max' },
+              { key: 'openrouter',  name: 'OpenRouter' },
+              { key: 'telegram',    name: 'Telegram' },
+              { key: 'discord',     name: 'Discord' },
+              { key: 'ollama',      name: 'Ollama' },
+              { key: 'vercel',      name: 'Vercel' },
+              { key: 'supabase',    name: 'Supabase' },
+              { key: 'github',      name: 'GitHub' },
+              { key: 'braveSearch', name: 'Brave Search' },
+              { key: 'cloudflare',  name: 'Cloudflare' },
             ]
+            const liveInfra = SERVICE_TILES.map(({ key, name }) => {
+              const svc = services[key]
+              return {
+                name,
+                note: svc?.note ?? 'not checked this request',
+                status: svc?.status ?? 'unknown',
+              }
+            })
 
             return (
             <div className="space-y-5">
@@ -178,13 +211,12 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
 
               <SH icon="\ud83d\udcac">Heartbeat Schedule</SH>
               <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
-                {(heartbeats.length > 0 ? heartbeats : [
-                  {agentId:'main', enabled:true, every:'4h'},
-                  {agentId:'scout', enabled:false, every:'disabled'},
-                  {agentId:'ops', enabled:false, every:'disabled'},
-                  {agentId:'kemuni-sme', enabled:false, every:'disabled'},
-                  {agentId:'vespera-sme', enabled:false, every:'disabled'},
-                ]).map((hb:any, i:number, arr:any[])=>(
+                {/* TOD: kill-fake-infra-greens \u2014 this used to fall back to five
+                    invented rows (a fake "every 4h" for an agent that may not
+                    exist on this host) whenever the live list was empty. An
+                    empty state beats a guess. */}
+                {heartbeats.length === 0 && <EmptyState icon={Server} title="No heartbeat schedule reported" className="py-6" />}
+                {heartbeats.map((hb:any, i:number, arr:any[])=>(
                   <div key={hb.agentId} className={'flex items-center gap-3 md:gap-4 px-4 md:px-5 py-3 '+(i<arr.length-1?'border-b border-white/10':'')}>
                     <Dot status={hb.enabled ? 'active' : 'planned'} />
                     <span className="font-mono text-xs text-white shrink-0">{hb.agentId}</span>
@@ -274,15 +306,66 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                 })}
               </div>
 
-              <SH icon="\ud83d\udda5">Hardware</SH>
+              <SH icon="\u2705">Cluster Health (/api/health)</SH>
               <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
+                {/* TOD: kill-fake-infra-greens \u2014 /api/health runs its own probe
+                    (a live query against the issues table, on a hard timeout)
+                    independent of everything above. Nothing renders here that
+                    health didn't just say. */}
+                {!health && !healthUnreachable && <p className="text-white/30 text-xs">Checking\u2026</p>}
+                {healthUnreachable && <ApiErrorBanner error={{ status: 0, endpoint: '/api/health', message: healthUnreachable }} onRetry={fetchHealth} />}
+                {health && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Dot status={health.ok ? 'ok' : 'down'} />
+                      <span className="text-white text-sm font-medium">{health.ok ? 'Healthy' : 'Unhealthy'}</span>
+                      <span className="text-white/20 text-[10px] ml-auto">checked {health.ts ? new Date(health.ts).toLocaleTimeString() : 'just now'}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={health.db?.reachable ? 'ok' : 'down'} sm />
+                        <span className="text-white/60">Database</span>
+                        <span className="text-white/30 ml-auto">{health.db?.reachable ? `${health.db.latencyMs ?? '?'}ms` : (health.db?.error ?? 'unreachable')}</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={Array.isArray(health.runtimes) && health.runtimes.length > 0 ? 'ok' : 'unknown'} sm />
+                        <span className="text-white/60">Runtimes</span>
+                        <span className="text-white/30 ml-auto">{Array.isArray(health.runtimes) ? health.runtimes.length : 0} registered</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={health.worktrees?.count > 0 ? 'ok' : 'unknown'} sm />
+                        <span className="text-white/60">Worktrees</span>
+                        <span className="text-white/30 ml-auto">{health.worktrees?.count ?? 0} active</span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={health.lastHeartbeat ? 'ok' : 'unknown'} sm />
+                        <span className="text-white/60">Last heartbeat</span>
+                        <span className="text-white/30 ml-auto truncate max-w-[10rem]">{health.lastHeartbeat?.timestamp ?? health.lastHeartbeat?.time ?? 'none recorded'}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <SH icon="\ud83d\udda5">Host</SH>
+              <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
+                {/* TOD: kill-fake-infra-greens \u2014 this card used to hardcode
+                    "Mac mini \u00b7 Apple Silicon" on every host, Windows included.
+                    It now reads whatever machine /api/status is actually
+                    running on. */}
                 <div className="flex items-start gap-4">
                   <span className="text-3xl">{"\ud83d\udda5\ufe0f"}</span>
                   <div>
-                    <p className="text-white font-medium text-sm">Mac mini \u00b7 Apple Silicon \u00b7 8GB \u00b7 arm64</p>
-                    <p className="text-white/50 text-xs mt-0.5">Todero native stack \u00b7 macOS 26.3.1 \u00b7 Node 22.22.1</p>
+                    {ls?.system ? (
+                      <>
+                        <p className="text-white font-medium text-sm">{ls.system.hostname} \u00b7 {ls.system.platform} \u00b7 {ls.system.arch} \u00b7 {ls.system.totalMemGB}GB</p>
+                        <p className="text-white/50 text-xs mt-0.5">Todero native stack \u00b7 Node {ls.system.nodeVersion} \u00b7 up {Math.round((ls.system.uptimeSec ?? 0) / 60)}m</p>
+                      </>
+                    ) : (
+                      <p className="text-white/30 text-xs">Host details unavailable \u2014 {statusError ? 'no successful /api/status response yet' : 'loading\u2026'}</p>
+                    )}
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {['Todero :3000','Ollama :11434','Cloudflare Tunnel'].map(l=><Chip key={l} label={l}/>)}
+                      {['Todero :3000', 'Ollama :11434'].map(l=><Chip key={l} label={l}/>)}
                     </div>
                   </div>
                 </div>
@@ -333,18 +416,29 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
 
               <SH icon="\ud83d\udcb3">OpenRouter Balance</SH>
               <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
-                <div className="flex items-end justify-between mb-3">
-                  <div>
-                    <p className="text-white/50 text-xs mb-1">Monthly credit</p>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-bold text-white">${orRemaining.toFixed(2)}</span>
-                      <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
+                {/* TOD: kill-fake-infra-greens \u2014 this card used to show
+                    "$9.57 / $10.00" on a host with no OpenRouter key at all.
+                    It now only shows numbers /api/status actually fetched. */}
+                {orConnected ? (
+                  <>
+                    <div className="flex items-end justify-between mb-3">
+                      <div>
+                        <p className="text-white/50 text-xs mb-1">Monthly credit</p>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-bold text-white">${orRemaining.toFixed(2)}</span>
+                          <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used \u00b7 resets monthly</p>
                     </div>
+                    <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Dot status="unknown" />
+                    <p className="text-white/30 text-xs">Not connected \u2014 no OPENROUTER_API_KEY configured on this host.</p>
                   </div>
-                  <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used \u00b7 resets monthly</p>
-                </div>
-                <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />
-                <p className="text-white/20 text-xs mt-2">Daily billing report via n8n \u2192 Telegram</p>
+                )}
               </div>
             </div>
             )

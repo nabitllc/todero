@@ -3,10 +3,13 @@ import React from 'react'
 
 export function Dot({status,sm}:{status:string;sm?:boolean}) {
   const sz = sm ? 'w-1.5 h-1.5' : 'w-2 h-2'
+  // 'unknown' (never checked, or uncheckable on this host) is deliberately
+  // NOT green — a grey dot must never read as "this was measured and is
+  // fine". It falls through to the same grey as 'planned' / the default.
   const cls = status==='active'||status==='ok' ? 'bg-green-400 anim-pg'
-    : status==='scheduled' ? 'bg-amber-400 anim-py'
-    : status==='planned' ? 'bg-white/20'
-    : status==='error' ? 'bg-red-400'
+    : status==='scheduled'||status==='degraded' ? 'bg-amber-400 anim-py'
+    : status==='planned'||status==='unknown' ? 'bg-white/20'
+    : status==='error'||status==='down' ? 'bg-red-400'
     : 'bg-white/20'
   return <span className={'inline-block rounded-full shrink-0 '+sz+' '+cls} />
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { encrypt } from '@/lib/encryption'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const VALID_TYPES = ['github', 'openai', 'anthropic', 'openrouter', 'webhook'] as const
 type ConnectionType = typeof VALID_TYPES[number]
@@ -12,6 +13,9 @@ function supabaseAdmin() {
 // ── GET /api/connections ──────────────────────────────────────────────────────
 // Returns all connections for a workspace. Never returns encrypted_value.
 export async function GET(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const { searchParams } = new URL(req.url)
   const workspace_id = searchParams.get('workspace_id')
 
@@ -35,6 +39,9 @@ export async function GET(req: NextRequest) {
 // ── POST /api/connections ─────────────────────────────────────────────────────
 // Creates a new connection. Encrypts value before storing.
 export async function POST(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   let body: {
     workspace_id?: string
     type?: string
@@ -85,6 +92,9 @@ export async function POST(req: NextRequest) {
 // ── DELETE /api/connections ───────────────────────────────────────────────────
 // Removes a connection row entirely.
 export async function DELETE(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const { searchParams } = new URL(req.url)
   const id = searchParams.get('id')
 

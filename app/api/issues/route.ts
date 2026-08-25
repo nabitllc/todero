@@ -26,6 +26,9 @@ import {
 } from '@/lib/issue-routing'
 import { recordAgentFailure, resetAgentFailures } from '@/lib/loop-breaker'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
+import { resolveSessionActor } from '@/lib/session-actor'
+import { isOwnerActor } from '@/lib/operator-identity'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 // ── Agent activation map ─────────────────────────────────────────────────────
 const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
@@ -492,7 +495,7 @@ async function validateWorkflowTransition(
 
   if (!transition) {
     // michael can override any workflow transition for maintenance/admin purposes
-    if (transitionedBy === 'michael') {
+    if (isOwnerActor(transitionedBy)) {
       return { transition: { condition_role: null, validators: [], post_functions: [] } as unknown as WorkflowTransition, error: null }
     }
     return {
@@ -509,7 +512,7 @@ async function validateWorkflowTransition(
 
   // michael is a global admin bypass — can execute any transition regardless of conditionRole.
   // DO NOT REMOVE — maintenance transitions (e.g. resetting stale claims) require this.
-  if (transitionedBy === 'michael') {
+  if (isOwnerActor(transitionedBy)) {
     return { transition: transition as WorkflowTransition, error: null }
   }
 
@@ -771,6 +774,9 @@ async function executePostFunctions(
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const REQUIRED_PERMISSION = 'issues:read' as const
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
@@ -895,6 +901,9 @@ export async function GET(req: NextRequest) {
 
 // ── POST ──────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
     const perm = await checkRoutePermission(callerRole, 'POST', '/api/issues')
@@ -1223,6 +1232,9 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
     const perm = await checkRoutePermission(callerRole, 'PATCH', '/api/issues')
@@ -1234,7 +1246,11 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json()
   // business_id is extracted for hub-scoped query validation, not written back to the issue
   const { id: rawId, task_key, transitioned_by: _transitionedBy, business_id: scopeBusinessId, ...fields } = body
-  const transitionedBy = _transitionedBy as string | undefined
+  // The browser has no agent id to send. When the body omits one, attribute the
+  // transition to the signed-in human instead of leaving it unset — otherwise the
+  // workflow guard below rejects every Board drag the owner makes. Agent callers
+  // carry no session cookie, so they still have to send their own identity.
+  const transitionedBy = (_transitionedBy as string | undefined) ?? resolveSessionActor(req)
 
   // Hub-scoped query context: when business_id is provided, scope all lookups to that hub
   const hubScope = scopeBusinessId ? getHubClient(scopeBusinessId as string) : null
@@ -2143,6 +2159,9 @@ export async function PATCH(req: NextRequest) {
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 export async function DELETE(req: NextRequest) {
+  const dbGate = dbUnavailableResponse()
+  if (dbGate) return dbGate
+
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { error } = await getSupabase().from('issues').delete().eq('id', id)

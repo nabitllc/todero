@@ -117,7 +117,8 @@ export const CHECKS = [
     async run() {
       const h = await countMatches(
         ['app', 'lib', 'components', 'hooks', 'config'],
-        'twthgapiouiqhavrcnry',
+        // Split so this harness is not itself a hit for the grep it runs.
+        'twthga' + 'piouiqhavrcnry',
         ['.ts', '.tsx', '.js', '.mjs', '.sh', '.json'],
       )
       return h.length === 0 ? ok('0 occurrences') : no(`${h.length} found: ${h.slice(0, 4).join(', ')}`)

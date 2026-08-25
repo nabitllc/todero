@@ -1,19 +1,20 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
-  ORCHESTRATOR_ID, MAP_COLS, MAP_ROWS, DESK_POS, BENCH_POS, COL_X, ROW_Y, ACTIVE_IDS, ALL_AGENTS,
-  DEPENDENCIES, AGENT_TASKS, CHAT_LINES, MONOLOGUES, DIALOGUE_POOL, MEETING_SUMMARIES, THEMES,
+  ORCHESTRATOR_ID, MAP_COLS, MAP_ROWS, DESK_POS, BENCH_POS, ACTIVE_IDS, THEMES,
 } from './officeConstants';
 import type { AgentRunInfo } from './officeConstants';
 
 import {
-  drawFloor, drawFurniture, drawChatBubbles, drawParticles, drawAgent, drawMinimap,
-  tileCenterPx, nowts, lpath, clamp, confRingPos, mkBurst,
+  drawFloor, drawFurniture, drawParticles, drawAgent, drawMinimap,
+  tileCenterPx, nowts,
   initAgents, saveMemory, createAudio, getDayNight, clampCam, applyCamera, captureFrame,
 } from './officeDrawing';
 
 import { fetchAgentRuns } from '../../hooks/useAgentStatus';
+import ApiErrorBanner from '../ApiErrorBanner';
+import { fetchJson, type ApiError } from '@/lib/fetch-json';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 interface OfficeCanvasProps {
@@ -37,13 +38,9 @@ interface OfficeCanvasProps {
   setDetail: (d: any | ((prev: any) => any)) => void;
   setRoster: (r: any[]) => void;
   setStats: (s: any) => void;
-  setMeetingLogs: (fn: (prev: any[]) => any[]) => void;
   setWaterfall: (w: any[]) => void;
   setTimeline: (t: any[]) => void;
   setLeaderboard: (l: any[]) => void;
-  setDialogue: (d: any[]) => void;
-  setIncidentLog: (fn: (prev: any[]) => any[]) => void;
-  setIncident: (i: any) => void;
   setReplayLen: (n: number) => void;
   setRealTaskCounts: (c: Record<string, { h24: number; d7: number }>) => void;
   setShowMinimap: (fn: (s: boolean) => boolean) => void;
@@ -68,14 +65,28 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   const {
     selectedId, theme, paused, soundOn, volume, showMinimap, showDepGraph,
     showGrid, showLegend, simSpeed, replayMode, isMobile, canvasScale,
-    setPaused, setSelectedId, setDetail, setRoster, setStats, setMeetingLogs,
-    setWaterfall, setTimeline, setLeaderboard, setDialogue, setIncidentLog,
-    setIncident, setReplayLen, setRealTaskCounts, setShowMinimap, setShowDepGraph,
+    setPaused, setSelectedId, setDetail, setRoster, setStats,
+    setWaterfall, setTimeline, setLeaderboard,
+    setReplayLen, setRealTaskCounts, setShowMinimap, setShowDepGraph,
     setReplayMode, setTab,
     addFeed, addToast,
     simRef, liveRunsRef, boardTasksRef, subagentCountRef, subagentSessionsRef,
     setCtxMenu,
   } = props;
+
+  // A failed poll must never be indistinguishable from "office full of idle
+  // agents" — each source that drives visible agent state sets its own key
+  // here on failure and clears it on the next success. Rendered as a banner
+  // over the canvas below.
+  const [pollErrors, setPollErrors] = useState<Record<string, ApiError>>({});
+  const setPollError = (key: string, err: ApiError | null) => {
+    setPollErrors(pe => {
+      if (err) return { ...pe, [key]: err };
+      if (!(key in pe)) return pe;
+      const { [key]: _drop, ...rest } = pe;
+      return rest;
+    });
+  };
 
   // ── Canvas-owned refs ──────────────────────────────────────────────────────
   const canvasRef      = useRef<HTMLCanvasElement>(null);
@@ -84,13 +95,9 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   const tileRef        = useRef(0);
   const feedIdRef      = useRef(1);
   const totalDone      = useRef(0);
-  const meetingLogsRef = useRef<any[]>([]);
-  const meetingRef     = useRef<any>(null);
   const activeIdsRef   = useRef([...ACTIVE_IDS]);
-  const chatBubbles    = useRef<any[]>([]);
   const replayFrames   = useRef<any[]>([]);
   const replayCurRef   = useRef(0);
-  const dialogueRef    = useRef<any[]>([]);
   const waterfallRef   = useRef<any[]>([]);
   const timelineRef    = useRef<any[]>([]);
   const hoverAgentRef  = useRef<any>(null);
@@ -127,8 +134,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   useEffect(()=>{
     const fetchTasks=async()=>{
       try{
-        const res=await fetch('/api/tasks');
-        const data=await res.json();
+        const r=await fetchJson<any[]>('/api/tasks');
+        if(!r.ok){ setPollError('tasks', r.error); return; }
+        setPollError('tasks', null);
+        const data=r.data;
         if(!Array.isArray(data)) return;
         const map:Record<string,string>={};
         data.filter((t:any)=>t.status==='in_progress'&&t.assignee&&t.title)
@@ -148,18 +157,18 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       try{
         const runs=await fetchAgentRuns();
         if(cancelled) return;
+        setPollError('runs', null);
         liveRunsRef.current=runs;
         if(!simRef.current?.agents) return;
         const agents=simRef.current.agents;
         agents.forEach((ag:any)=>{
           const run=runs[ag.id];
           if(!run) return;
-          if(run.status==='working'){
-            if(ag.state!=='working'&&ag.state!=='meeting'&&ag.state!=='moving_to_meeting'){
+          if(run.status==='live'){
+            if(ag.state!=='working'){
               ag.state='working';
               ag.task=run.taskTitle||'Working';
               ag.progress=5;
-              ag.monologue=null;
               ag.glowTick=60;
               ag.lastStateChange=Date.now();
               addFeed(`${ag.emoji} ${ag.name}: ${run.taskTitle||'Working'}`,ag.color);
@@ -167,19 +176,29 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
               ag.task=run.taskTitle;
               ag.progress=5;
             }
-          } else if(run.status==='idle'){
+          } else if(run.status==='ended'){
             if(ag.state==='working'){
               ag.tasksCompleted++;
               totalDone.current++;
               ag.taskHistory=[...(ag.taskHistory||[]),ag.task].slice(-20);
               addFeed(`${ag.emoji} ${ag.name}: done`,'#00ff88');
-              ag.state='idle';ag.task=null;ag.progress=0;ag.monologue=null;
+              ag.state='idle';ag.task=null;ag.progress=0;
+              ag.lastStateChange=Date.now();
+            }
+          } else if(run.status==='stale'){
+            // Orphaned 'running' row — the process died without reporting a
+            // terminal status. Stop showing it as working; do not claim done.
+            if(ag.state==='working'){
+              ag.state='idle';ag.task=null;ag.progress=0;
               ag.lastStateChange=Date.now();
             }
           }
           // 'never' agents stay idle with no task
         });
-      }catch(e){}
+      }catch(e:any){
+        if(cancelled) return;
+        setPollError('runs', e?.apiError ?? { status:0, endpoint:'agent_runs', message: e instanceof Error ? e.message : 'could not reach the server' });
+      }
     };
     pollRuns();
     const t=setInterval(pollRuns,30000); // raised 10s→30s (Supabase egress)
@@ -191,8 +210,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
     let prevStates:Record<string,string>={};
     const poll=async()=>{
       try{
-        const res=await fetch('/api/status');
-        const data=await res.json();
+        const r=await fetchJson<any>('/api/status');
+        if(!r.ok){ setPollError('status', r.error); return; }
+        setPollError('status', null);
+        const data=r.data;
         if(!simRef.current?.agents) return;
         const agents=simRef.current.agents;
         const taskMap:Record<string,string>=data.agentCurrentTask||{};
@@ -213,7 +234,7 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
           deployer:{name:'Deployer',emoji:'🚀',color:'#00CEC9'}, scout:{name:'Scout',emoji:'🔍',color:'#00B894'},
         }
         for (const [aid, info] of Object.entries(liveRuns)) {
-          if (aid === 'main' || !info || info.status !== 'working') continue
+          if (aid === 'main' || !info || info.status !== 'live') continue
           const meta = SUB_AGENT_MAP[aid]
           if (meta) {
             subSessions.push({ id: aid, ...meta, task: info.taskTitle, startedAt: info.startedAt ? new Date(info.startedAt).getTime() : Date.now() })
@@ -253,7 +274,6 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
               ag.state="working";
               ag.task=taskDesc;
               ag.progress=5;
-              ag.monologue=null;
               ag.glowTick=60; // 60-frame glow on transition
               ag.lastStateChange=Date.now();
               addFeed(`${ag.emoji} ${ag.name}: ${taskDesc}`,ag.color);
@@ -278,50 +298,15 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
               if(soundRef.current&&audioRef.current)audioRef.current.playComplete();
             }
             if(ag.state==="working"){
-              ag.state="idle";ag.task=null;ag.progress=0;ag.monologue=null;
+              ag.state="idle";ag.task=null;ag.progress=0;
             }
           }
           prevStates[ag.id]=isActive?"working":"idle";
         });
 
-        // Detect multi-agent collaboration → conference table meeting
-        const workingAgents=agents.filter((a:any)=>a.active&&a.state==="working");
-        const kaosWorking=workingAgents.find((a:any)=>a.id===ORCHESTRATOR_ID);
-        const othersWorking=workingAgents.filter((a:any)=>a.id!==ORCHESTRATOR_ID);
-        const kaosAge=kaosWorking?Date.now()-(kaosWorking.lastStateChange||0):0;
-        const collaborating=kaosWorking&&othersWorking.length>=1&&kaosAge>5000;
-        if(collaborating&&!meetingRef.current){
-          const topic=othersWorking.length>1?"Full Team Sync":`${kaosWorking.name} + ${othersWorking[0].name}`;
-          const meetingParticipants=[kaosWorking.id,...othersWorking.map((a:any)=>a.id)];
-          meetingRef.current={topic,agents:meetingParticipants,startTs:nowts()};
-          // Move all meeting participants toward conference table
-          const T2=tileRef.current;
-          if(T2>0){
-            const ringPositions=confRingPos(meetingParticipants.length,T2);
-            meetingParticipants.forEach((id:string,idx:number)=>{
-              const ag=agents.find((a:any)=>a.id===id);
-              if(!ag) return;
-              const target=ringPositions[idx]||ringPositions[0];
-              ag.state="moving_to_meeting";
-              ag.waypoints=lpath(ag.px,ag.py,target.x,target.y);
-            });
-          }
-          addFeed(`📅 "${topic}" — ${[kaosWorking,...othersWorking].map(a=>a.name).join(", ")}`,"#FDCB6E");
-          addToast(`📅 "${topic}"`,"#FDCB6E");
-          timelineRef.current=[...timelineRef.current,{type:"meeting",color:"#FDCB6E",ts:nowts(),label:`Meeting: ${topic}`,tick:0}].slice(-120);
-          setTimeline([...timelineRef.current]);
-          if(soundRef.current&&audioRef.current)audioRef.current.playMeeting();
-        } else if(meetingRef.current&&othersWorking.length===0){
-          addFeed(`✓ "${meetingRef.current.topic}" concluded`,"#FDCB6E");
-          const attendees=agents.filter((a:any)=>meetingRef.current.agents.includes(a.id));
-          const summary=MEETING_SUMMARIES[meetingRef.current.topic]||"• Coordinated agent tasks\n• Reviewed progress\n• Set next actions";
-          const logEntry={id:feedIdRef.current++,topic:meetingRef.current.topic,ts:meetingRef.current.startTs,attendees:attendees.map((a:any)=>a.name),summary};
-          meetingLogsRef.current=[logEntry,...meetingLogsRef.current].slice(0,20);
-          setMeetingLogs(()=>[...meetingLogsRef.current]);
-          meetingRef.current=null;
-        }
-
-      }catch(e){}
+      }catch(e:any){
+        setPollError('status', e?.apiError ?? { status:0, endpoint:'/api/status', message: e instanceof Error ? e.message : 'could not reach the server' });
+      }
     };
     // Try SSE first, fall back to polling
     let es:EventSource|null=null;
@@ -351,11 +336,11 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
           }
         }
         if(isActive&&taskDesc){
-          if(ag.state!=="working"){ag.state="working";ag.task=taskDesc;ag.progress=5;ag.monologue=null;ag.glowTick=60;ag.lastStateChange=Date.now();addFeed(`${ag.emoji} ${ag.name}: ${taskDesc}`,ag.color);if(soundRef.current&&audioRef.current)audioRef.current.playClick();timelineRef.current=[...timelineRef.current,{type:"task",color:ag.color,ts:nowts(),label:`${ag.name}: ${taskDesc}`,tick:0}].slice(-120);setTimeline([...timelineRef.current]);}
+          if(ag.state!=="working"){ag.state="working";ag.task=taskDesc;ag.progress=5;ag.glowTick=60;ag.lastStateChange=Date.now();addFeed(`${ag.emoji} ${ag.name}: ${taskDesc}`,ag.color);if(soundRef.current&&audioRef.current)audioRef.current.playClick();timelineRef.current=[...timelineRef.current,{type:"task",color:ag.color,ts:nowts(),label:`${ag.name}: ${taskDesc}`,tick:0}].slice(-120);setTimeline([...timelineRef.current]);}
           else if(ag.task!==taskDesc){ag.task=taskDesc;ag.progress=5;}
         } else {
           if(prev==="working"&&ag.state==="working"){ag.tasksCompleted++;totalDone.current++;ag.taskHistory=[...(ag.taskHistory||[]),ag.task].slice(-20);addFeed(`${ag.emoji} ${ag.name}: ✓ "${ag.task}"`,"#00ff88");addToast(`✓ ${ag.name} — "${ag.task}"`,ag.color);const wfEntry={id:feedIdRef.current++,agentId:ag.id,task:ag.task,state:"done",ts:nowts()};waterfallRef.current=[wfEntry,...waterfallRef.current].slice(-20);setWaterfall([...waterfallRef.current]);if(soundRef.current&&audioRef.current)audioRef.current.playComplete();}
-          if(ag.state==="working"){ag.state="idle";ag.task=null;ag.progress=0;ag.monologue=null;}
+          if(ag.state==="working"){ag.state="idle";ag.task=null;ag.progress=0;}
         }
         prevStates[ag.id]=isActive?"working":"idle";
       });
@@ -428,7 +413,7 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         case"d":case"D":depGraphRef.current=!depGraphRef.current;setShowDepGraph(s=>!s);break;
         case"r":case"R":setReplayMode(r=>{replayModeRef.current=!r;return!r;});break;
 
-        case"t":case"T":setTab(t=>t==="roster"?"meetings":t==="meetings"?"board":"roster");break;
+        case"t":case"T":setTab(t=>t==="roster"?"board":"roster");break;
         case"Escape":setSelectedId(null);setDetail(null);break;
       }
     }
@@ -438,8 +423,8 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
 
   // ── Simulation ────────────────────────────────────────────────────────────
   useEffect(()=>{
-    let agents:any[]=null as any,particles:any[]=[],meeting:any=null,meetingTick=0,simTick=0,lastTime=0;
-    let incidentData:any=null,incidentTick=0,critPairs:any[]=[];
+    let agents:any[]=null as any,particles:any[]=[],simTick=0,lastTime=0;
+    let critPairs:any[]=[];
 
     function ensureAgents(){
       if(!agents&&tileRef.current>0){
@@ -448,69 +433,6 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         simRef.current.boardTasks=()=>boardTasksRef.current;
         setRoster(agents.map((a:any)=>({...a})));
       }
-    }
-
-    function stepAgent(ag:any,dt:number){
-      if(!ag.waypoints?.length) return true;
-      const tgt=ag.waypoints[0];
-      const spd=2.8*tileRef.current*dt;
-      const dx=tgt.x-ag.px,dy=tgt.y-ag.py,d=Math.sqrt(dx*dx+dy*dy);
-      if(d<spd+0.5){ag.px=tgt.x;ag.py=tgt.y;ag.waypoints.shift();return!ag.waypoints.length;}
-      ag.px+=dx/d*spd;ag.py+=dy/d*spd;
-      ag.facing=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");
-      return false;
-    }
-
-    function startWork(ag:any,task:string){
-      ag.state="working";ag.task=task;ag.progress=0;
-      addFeed(`${ag.emoji} ${ag.name}: "${task}"`,ag.color);
-      const monos=MONOLOGUES[ag.id]||["processing..."];
-      ag.monologue=monos[Math.floor(Math.random()*monos.length)];
-      if(soundRef.current&&audioRef.current)audioRef.current.playClick();
-    }
-
-    function finishWork(ag:any){
-      ag.tasksCompleted++;totalDone.current++;
-      ag.taskHistory=[...(ag.taskHistory||[]),ag.task].slice(-20);
-      addFeed(`${ag.emoji} ${ag.name}: ✓ "${ag.task}"`,"#00ff88");
-      const tlEntry={type:"task",color:ag.color,ts:nowts(),label:`${ag.name}: ${ag.task}`,tick:simTick};
-      timelineRef.current=[...timelineRef.current,tlEntry].slice(-120);
-      setTimeline([...timelineRef.current]);
-      const wfEntry={id:feedIdRef.current++,agentId:ag.id,task:ag.task,state:"done",ts:nowts()};
-      waterfallRef.current=[wfEntry,...waterfallRef.current].slice(-20);
-      setWaterfall([...waterfallRef.current]);
-      addToast(`✓ ${ag.name} — "${ag.task}"`,ag.color);
-      particles.push(...mkBurst(ag.px,ag.py,ag.color));
-      if(soundRef.current&&audioRef.current)audioRef.current.playComplete();
-      ag.mood=Math.min(100,(ag.mood||88)+3);
-      ag.monologue=null;
-      (DEPENDENCIES[ag.id]||[]).forEach(depId=>{
-        const dep=agents.find((a:any)=>a.id===depId&&a.active);
-        if(dep&&dep.state==="idle"&&dep.idleCooldown<=0){
-          const tasks=AGENT_TASKS[depId]||[];
-          if(tasks.length)setTimeout(()=>{if(dep.state==="idle")startWork(dep,tasks[Math.floor(Math.random()*tasks.length)]);},400);
-          if(!critPairs.find(([s,d]:any)=>s===ag.id&&d===depId))critPairs.push([ag.id,depId]);
-          setTimeout(()=>{critPairs=critPairs.filter(([s,d]:any)=>!(s===ag.id&&d===depId));},8000);
-        }
-      });
-      if(ag.id!==ORCHESTRATOR_ID&&Math.random()<0.3){
-        const orchName=ALL_AGENTS.find(a=>a.id===ORCHESTRATOR_ID)?.name||"KAOS";
-        const txt=DIALOGUE_POOL[Math.floor(Math.random()*DIALOGUE_POOL.length)];
-        const entry={id:feedIdRef.current++,ts:nowts(),sender:ag.name,senderColor:ag.color,receiver:orchName,text:txt};
-        dialogueRef.current=[entry,...dialogueRef.current].slice(0,40);
-        setDialogue([...dialogueRef.current]);
-      }
-      ag.state="idle";ag.task=null;ag.progress=0;ag.idleCooldown=Math.round(ag.personality.focusDuration*8+Math.random()*20);
-    }
-
-    function maybeChat(){
-      const active=agents?.filter((a:any)=>a.active&&a.state==="working");
-      if(!active||active.length<2) return;
-      const sender=active[Math.floor(Math.random()*active.length)];
-      const receiver=active.filter((a:any)=>a.id!==sender.id)[Math.floor(Math.random()*(active.length-1))];
-      if(!receiver) return;
-      const line=CHAT_LINES[Math.floor(Math.random()*CHAT_LINES.length)](sender.name,receiver.name);
-      chatBubbles.current.push({x:sender.px,y:sender.py-tileRef.current*0.32,text:line,color:sender.color,age:0,maxAge:160,life:0});
     }
 
     const canvas=canvasRef.current!;
@@ -546,21 +468,12 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
 
         agents.forEach((ag:any)=>{
           ag.animTick++;
-          if(ag.idleCooldown>0)ag.idleCooldown--;
           if(ag.state==="working")ag.timeWorking++;
-          else if(ag.state==="meeting")ag.timeMeeting++;
           if(ag.spawning){ag.spawnAge++;if(ag.spawnAge>45)ag.spawning=false;}
-        });
-
-        agents.forEach((ag:any)=>{
-          if(ag.state==="moving_to_meeting"){if(stepAgent(ag,dt)){ag.state="meeting";ag.facing="down";}}
-          else if(ag.state==="returning"){if(stepAgent(ag,dt)){ag.state="idle";ag.facing="down";}}
         });
 
         particles.forEach((p:any)=>{p.age++;p.x+=p.vx*0.93;p.y+=p.vy*0.93;p.vy+=0.07;});
         for(let i=particles.length-1;i>=0;i--)if(particles[i].age>=particles[i].maxAge)particles.splice(i,1);
-        chatBubbles.current.forEach((b:any)=>{b.age++;b.life=Math.min(1,b.age/15);});
-        for(let i=chatBubbles.current.length-1;i>=0;i--)if(chatBubbles.current[i].age>=chatBubbles.current[i].maxAge)chatBubbles.current.splice(i,1);
 
         // ── Real-data only: no random simulation ──
         // Progress ticks for agents that are working (driven by real data via polling)
@@ -572,40 +485,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
           });
         }
 
-        // Incident state is managed by polling — just handle the auto-return animation
-        if(incidentData){
-          incidentTick++;
-          if(incidentTick>400){
-            addFeed(`${incidentData.title} — resolved ✓`,"#00ff88");
-            agents.forEach((ag:any)=>{if(incidentData.victims.includes(ag.id)&&(ag.state==="meeting"||ag.state==="moving_to_meeting")){ag.state="returning";ag.waypoints=lpath(ag.px,ag.py,ag.deskX,ag.deskY);}});
-            setIncidentLog(prev=>[{id:Date.now(),title:incidentData.title,ts:nowts(),resolved:true},...prev].slice(0,20));
-            incidentData=null;setIncident(null);
-          }
-        }
-
-        // Meeting state is managed by polling — just handle the return animation
-        if(meeting){
-          meetingTick++;
-          // Meetings auto-end after 500 ticks if polling hasn't cleared them
-          if(meetingTick>500){
-            const concluded=meeting;
-            addFeed(`✓ "${meeting.topic}" concluded`,"#FDCB6E");
-            agents.forEach((ag:any)=>{if(concluded.agents.includes(ag.id)&&(ag.state==="meeting"||ag.state==="moving_to_meeting")){ag.state="returning";ag.waypoints=lpath(ag.px,ag.py,ag.deskX,ag.deskY);}});
-            meeting=null;
-            const attendees=agents.filter((a:any)=>concluded.agents.includes(a.id));
-            const summary=MEETING_SUMMARIES[concluded.topic]||"• Discussed key topics\n• Assigned action items\n• Set follow-up timeline";
-            const e={id:feedIdRef.current++,topic:concluded.topic,ts:concluded.startTs,attendees:attendees.map((a:any)=>a.name),summary};
-            meetingLogsRef.current=[e,...meetingLogsRef.current].slice(0,20);
-            setMeetingLogs(()=>[...meetingLogsRef.current]);
-          }
-        }
-
         if(simTick%300===0){
-          const board=agents.filter((a:any)=>a.active).map((a:any)=>{
-            const total=a.timeWorking+a.timeMeeting||1;
-            const eff=Math.round((a.timeWorking/total)*100);
-            return{id:a.id,name:a.name,emoji:a.emoji,color:a.color,tasksCompleted:a.tasksCompleted,efficiency:eff,mood:Math.round(a.mood||88)};
-          }).sort((a:any,b:any)=>b.tasksCompleted-a.tasksCompleted||b.efficiency-a.efficiency);
+          const board=agents.filter((a:any)=>a.active).map((a:any)=>({
+            id:a.id,name:a.name,emoji:a.emoji,color:a.color,tasksCompleted:a.tasksCompleted,mood:Math.round(a.mood||88),
+          })).sort((a:any,b:any)=>b.tasksCompleted-a.tasksCompleted);
           setLeaderboard(board);
         }
 
@@ -646,10 +529,8 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       ctx.clearRect(0,0,W,H);
       const darkAlpha=getDayNight(simTick);
       const thm=THEMES[themeRef.current]||THEMES.A;
-      drawFloor(ctx,T2,cam,darkAlpha,!!incidentData,thm,showGridRef.current);
-      // Use meetingRef (real data) OR meeting (simulation), real data takes priority
-      const activeMeetingTopic=meetingRef.current?.topic||meeting?.topic||null;
-      drawFurniture(ctx,T2,cam,drawAgentsArr,now,!!(meetingRef.current||meeting),activeMeetingTopic,darkAlpha,!!incidentData,critPairs,depGraphRef.current,thm,liveRunsRef.current);
+      drawFloor(ctx,T2,cam,darkAlpha,thm,showGridRef.current);
+      drawFurniture(ctx,T2,cam,drawAgentsArr,now,darkAlpha,critPairs,depGraphRef.current,thm,liveRunsRef.current);
       // Connection lines: working agents → orchestrator
       const orchAgent2=drawAgentsArr.find((a:any)=>a.id===ORCHESTRATOR_ID);
       if(orchAgent2){
@@ -674,8 +555,7 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         ctx.restore();
       }
       drawParticles(ctx,particles,cam);
-      drawChatBubbles(ctx,chatBubbles.current,T2,cam);
-      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,!!incidentData,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0));
+      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0));
 
       // MC-45: Draw temporary subagent sprites near KAOS
       const orchAg = drawAgentsArr.find((a:any) => a.id === ORCHESTRATOR_ID)
@@ -748,8 +628,7 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         setRoster(snap);
         const wCount=snap.filter((a:any)=>a.active&&a.state==="working").length;
         setStats({working:wCount,
-          meeting:snap.filter((a:any)=>a.active&&(a.state==="meeting"||a.state==="moving_to_meeting")).length,
-          idle:snap.filter((a:any)=>a.active&&(a.state==="idle"||a.state==="returning")).length,
+          idle:snap.filter((a:any)=>a.active&&a.state==="idle").length,
           completed:totalDone.current});
         // #10: Update page title to reflect activity
         const workingAgent=snap.find((a:any)=>a.active&&a.state==="working");
@@ -872,10 +751,17 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   },[]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
+  const pollErrorList = Object.values(pollErrors);
   return (
-    <div style={{flex:isMobile?undefined:1,minHeight:isMobile?300:0,overflow:"hidden",background:theme==="B"?"#091410":"#060610",display:"flex",alignItems:"stretch",
+    <div style={{position:"relative",flex:isMobile?undefined:1,minHeight:isMobile?300:0,overflow:"hidden",background:theme==="B"?"#091410":"#060610",display:"flex",alignItems:"stretch",
       ...(canvasScale<1?{transform:`scale(${canvasScale})`,transformOrigin:"top left",width:`${100/canvasScale}%`}:{})}}>
       <canvas ref={canvasRef} style={{imageRendering:"pixelated" as any,display:"block",width:"100%",height:"100%"}}/>
+      {/* A failed poll must never render as an office full of idle agents — say so instead. */}
+      {pollErrorList.length > 0 && (
+        <div className="absolute top-3 left-3 z-20 w-[calc(100%-1.5rem)] max-w-md space-y-2">
+          {pollErrorList.map((err, i) => <ApiErrorBanner key={i} error={err} />)}
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
 import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings } from 'lucide-react'
-import { AGENT_DISPLAY, CRONS, LIVE_FEED, getNextRuns, ALL_AGENTS, PROJECT_COLORS, TYPE_COLORS, DEFAULT_SPRINT_PROJECTS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
+import { AGENT_DISPLAY, LIVE_FEED, ALL_AGENTS, PROJECT_COLORS, TYPE_COLORS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
 import { Dot } from '@/lib/mc-atoms'
 import BusinessRail from '@/components/BusinessRail'
 import OnboardingWizard from '@/components/OnboardingWizard'
@@ -149,7 +149,11 @@ export default function Home() {
   const [activityReload, setActivityReload] = useState(0)
   const [agoSec, setAgoSec] = useState<number>(0)
   const [liveAgents, setLiveAgents] = useState<typeof ALL_AGENTS | null>(null)
-  const [liveCrons, setLiveCrons] = useState<typeof CRONS | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped automation rows from /api/automations
+  const [liveCrons, setLiveCrons] = useState<any[] | null>(null)
+  // TOD (kill-fake-automations): the envelope's own account of what it checked,
+  // so an empty list can say WHY instead of reading as "you have no automations".
+  const [cronsMeta, setCronsMeta] = useState<{ source: string; scheduler: string; warnings: string[] } | null>(null)
   const [projects, setProjects] = useState<any[] | null>(null)
   const [globalToasts, setGlobalToasts] = useState<{id:number;text:string;color:string}[]>([])
   const globalToastIdRef = React.useRef(0)
@@ -185,6 +189,13 @@ export default function Home() {
     const r = await fetchJson<any>('/api/automations')
     const rows = rowsFrom(r.ok ? r.data : null, 'automations')
     if (rows) setLiveCrons(rows)
+    if (r.ok && r.data && typeof r.data === 'object' && !Array.isArray(r.data)) {
+      setCronsMeta({
+        source: r.data.source ?? 'none',
+        scheduler: r.data.scheduler ?? '',
+        warnings: Array.isArray(r.data.warnings) ? r.data.warnings : [],
+      })
+    }
     setCronsError(r.ok ? null : r.error)
   }, [])
 
@@ -403,11 +414,14 @@ export default function Home() {
   useEffect(() => { const t = setInterval(() => setFeedIdx(i => (i + 1) % LIVE_FEED.length), 4000); return () => clearInterval(t) }, [])
   useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 3000); return () => clearInterval(t) }, [])
 
-  // Only fall back to the bundled sample projects when the request succeeded
-  // and genuinely returned nothing; a refused request keeps `null` so the
-  // consuming tab can show the reason instead of demo data.
-  const sprintProjects = projectsError ? [] : (projects ?? DEFAULT_SPRINT_PROJECTS)
-  const nextRuns = getNextRuns(CRONS)
+  // null means "/api/projects has not answered yet, or refused" — it is never
+  // stood in for. The bundled DEFAULT_SPRINT_PROJECTS carry no taskCounts, so
+  // using them as a placeholder made the Overview's front page render
+  // "Vespera 0% done 0/0" before any request had even been made, and keep
+  // rendering it forever whenever the app bundle failed to boot. Consumers
+  // render the null as a skeleton or a banner, never as a number.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
+  const sprintProjects: any[] | null = projectsError ? null : projects
   const agentCurrentTask: Record<string,string> = liveStatus?.agentCurrentTask ?? {}
   const act = (id: string) => { if (agentCurrentTask[id]) return agentCurrentTask[id]; const a = ACTIVITIES[id] || ['Idle']; return a[tick % a.length] }
   const agentLiveStatus = (agentId: string): {dot:'green'|'amber'|'grey'; label:string} => {
@@ -417,7 +431,17 @@ export default function Home() {
     return { dot: 'grey', label: 'Idle' }
   }
   const displayAgents = (liveAgents && liveAgents.length > 0 ? liveAgents : ALL_AGENTS) as typeof ALL_AGENTS
-  const displayCrons = (liveCrons && liveCrons.length > 0 ? liveCrons : CRONS) as typeof CRONS
+  // TOD (kill-fake-automations): never fall back to a hardcoded job list —
+  // an empty real answer is the truth; a fake one is not.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped automation rows
+  const displayCrons = (liveCrons ?? []) as any[]
+  // A countdown only renders for a row where the API computed a real
+  // nextRunAtMs from an actual schedule expression it parsed — never guessed.
+  const nextRuns = displayCrons
+    .filter((c: any) => typeof c.nextRunAtMs === 'number')
+    .map((c: any) => ({ cron: c, mins: Math.max(0, Math.round((c.nextRunAtMs - Date.now()) / 60000)) }))
+    .sort((a: any, b: any) => a.mins - b.mins)
+    .slice(0, 3)
 
   const pushURL = useCallback((biz: string | null, t: string) => {
     const path = buildPath(biz, t)
@@ -526,10 +550,10 @@ export default function Home() {
         )}
 
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
-          {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
+          {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} projectsError={projectsError} onRetryProjects={loadProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} activityError={activityError} onRetryActivity={() => setActivityReload(n => n + 1)} statusError={statusError} onRetryStatus={loadStatus} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
           {tab === 'team' && <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
-          {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} />}
+          {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} cronsMeta={cronsMeta} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} error={memError} onRetry={refetchMem} openMem={openMem} setOpenMem={setOpenMem} />}
           {tab === 'board' && <BoardTab featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} projectFilter={selectedBusiness} />}
@@ -537,7 +561,7 @@ export default function Home() {
           {tab === 'pipeline' && <PipelineTab projectFilter={selectedBusiness} />}
           {tab === 'issues' && <IssuesTab projectFilter={selectedBusiness} />}
           {tab === 'projects' && <ProjectsTab projectFilter={selectedBusiness} />}
-          {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} cronsError={cronsError} />}
+          {tab === 'automations' && <AutomationsTab displayCrons={displayCrons} cronsError={cronsError} cronsMeta={cronsMeta} />}
           {tab === 'chat' && <ChatTab selectedBusiness={selectedBusiness} />}
           {tab === 'infra' && <InfraTab liveStatus={liveStatus} statusError={statusError} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />}
           {tab === 'product-board' && <ProductBoardTab projectFilter={selectedBusiness} />}
