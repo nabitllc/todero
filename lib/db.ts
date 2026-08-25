@@ -22,7 +22,7 @@
 // THE CONTRACT IS PROVEN, NOT ASSERTED
 //   Three adapters implement it today and none of them is privileged:
 //     provider `sqlite` — `lib/db/sqlite-adapter.ts`. One file on disk through
-//       Node's own `node:sqlite`, needing no server, no connection string and
+//       `better-sqlite3`, needing no server, no connection string and
 //       no account. It is what a checkout with no credentials resolves to, so
 //       `git clone && npm run setup && npm run dev` ends at a working board.
 //     provider `postgres` — `lib/db/pg-adapter.ts`. A plain node-postgres

@@ -51,6 +51,13 @@ export const DEFAULT_NO_PROGRESS_HEARTBEATS = Number(process.env.TODERO_NO_PROGR
 export const DEFAULT_MAX_RUNS_PER_PERIOD = Number(process.env.TODERO_MAX_RUNS_PER_PERIOD ?? 20)
 /** Window a "run count per period" ceiling counts over. */
 export const RUN_PERIOD_MS = 24 * 60 * 60 * 1000
+/**
+ * How old a `status='running'` agent_runs row can be and still count toward
+ * concurrency. Generous on purpose — well past any real per-agent wall-clock
+ * ceiling — so this is a dead-row filter, not a second wall clock. See the
+ * comment at its one call site (checkDispatchCeilings) for why it exists.
+ */
+export const STALE_RUN_CUTOFF_MS = Number(process.env.TODERO_STALE_RUN_CUTOFF_MS ?? 6 * 60 * 60 * 1000)
 
 export interface AgentBudget {
   agentId: string
@@ -202,9 +209,22 @@ export interface CeilingResult {
 export async function checkDispatchCeilings(agentId: string): Promise<CeilingResult> {
   const budget = await getAgentBudget(agentId)
 
+  // "Running" only counts a row started within a sane recency window. Without
+  // this, a concurrency ceiling reading agent_runs.status='running' verbatim
+  // is exactly the ledger-never-closes bug this piece exists to fix, one
+  // table over: this host's agent_runs currently carries 67,592 rows stuck at
+  // status='running' (the app/api/issues/route.ts close-on-status-change path
+  // only fires for issues that changed status — a crashed or abandoned run
+  // never does). Counting all of them as "currently occupying a slot" would
+  // make the ceiling permanently deny every dispatch, for the wrong reason,
+  // forever — a guard that never opens is as dishonest as one that never
+  // closes. A row past this cutoff should already have been stopped by the
+  // heartbeat-time wall-clock check; if it wasn't (heartbeats stopped
+  // arriving — a crash), it is stale, not concurrent, and does not count.
+  const staleCutoff = new Date(Date.now() - STALE_RUN_CUTOFF_MS).toISOString()
   const [{ data: runningForAgent }, { data: runningTotal }] = await Promise.all([
-    db().from('agent_runs').select('id').eq('agent_id', agentId).eq('status', 'running'),
-    db().from('agent_runs').select('id').eq('status', 'running'),
+    db().from('agent_runs').select('id').eq('agent_id', agentId).eq('status', 'running').gte('started_at', staleCutoff),
+    db().from('agent_runs').select('id').eq('status', 'running').gte('started_at', staleCutoff),
   ])
   const perAgent = (runningForAgent ?? []).length
   const total = (runningTotal ?? []).length
@@ -298,7 +318,10 @@ export async function checkInFlightCeilings(
     last_progress_hash: hash,
   }
   if (!stalled) progressUpdate.last_progress_at = new Date().toISOString()
-  await db().from('agent_runs').update(progressUpdate).eq('id', run.id)
+  const { error: progressError } = await db().from('agent_runs').update(progressUpdate).eq('id', run.id)
+  if (progressError) {
+    console.warn(`[agent-budget] stall-tracker update failed (${progressError.message}) — no-progress detection degrades to "never trips" until migrations/038_agent_budgets_and_ceilings.sql is applied.`)
+  }
 
   return { allowed: true, runId: run.id }
 }
@@ -324,12 +347,33 @@ async function stopRun(
 ): Promise<void> {
   const now = new Date().toISOString()
 
-  await db().from('agent_runs').update({
-    status: 'stopped',
-    stopped_reason: ceiling,
-    stopped_at: now,
-    finished_at: now,
-  }).eq('id', runId)
+  // Three tiers, each degrading to what the host's actual schema will accept.
+  // The enforcement already happened by the time this runs (the caller
+  // already returned allowed:false) — every tier here is only about how
+  // completely the stop gets RECORDED, and the one thing that must not
+  // happen is the row silently staying 'running' forever (which would then
+  // wrongly occupy a concurrency slot). Tier 1 needs
+  // migrations/038_agent_budgets_and_ceilings.sql applied (stopped_reason /
+  // stopped_at columns, and 'stopped' added to the status CHECK). Tier 2
+  // degrades for a host with the new columns but an unmigrated CHECK
+  // constraint. Tier 3 is for THIS repo's own hosted dev instance as found:
+  // an undocumented, drifted CHECK constraint (predating any migration file)
+  // that only accepts 'running' | 'failed' | 'done' — see the migration's
+  // comment for how that was discovered.
+  const tiers: Array<Record<string, unknown>> = [
+    { status: 'stopped', stopped_reason: ceiling, stopped_at: now, finished_at: now },
+    { status: 'stopped', finished_at: now },
+    { status: 'failed', finished_at: now },
+  ]
+  for (let i = 0; i < tiers.length; i++) {
+    const { error } = await db().from('agent_runs').update(tiers[i]).eq('id', runId)
+    if (!error) break
+    if (i === tiers.length - 1) {
+      console.warn(`[agent-budget] agent_runs update failed on every fallback tier, last error: ${error.message}. This run is stopped and observable via inbox/issues, but its agent_runs row could not be updated at all.`)
+    } else {
+      console.warn(`[agent-budget] agent_runs update tier ${i + 1} failed (${error.message}) — trying tier ${i + 2}. Run migrations/038_agent_budgets_and_ceilings.sql for full ceiling-stop bookkeeping.`)
+    }
+  }
 
   // Revert the issue to a state a human (or the main agent) triages — the
   // same shape lib/loop-breaker.ts uses for a paused agent, so this halt

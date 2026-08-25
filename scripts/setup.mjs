@@ -45,9 +45,10 @@ import { loadEnvFiles, parseEnvText, isPlaceholder } from './lib/env-file.mjs'
 import { llmStatus, requiredEnvReport, dropPlaceholderEnv } from './lib/env-report.mjs'
 import { requireNodeVersion } from './lib/node-version.mjs'
 
-// Before anything is written or probed: step 5 applies the sqlite migrations,
-// and that needs node:sqlite (Node 22.5+). Say so now, in one line, rather than
-// letting an unknown-builtin-module stack trace end a half-finished setup.
+// Before anything is written or probed: step 5 applies the sqlite migrations
+// through `better-sqlite3`, which needs Node 22+. Say so now, in one line,
+// rather than letting a cannot-find-module stack trace end a half-finished
+// setup.
 requireNodeVersion()
 
 const ENV_FILE = join(REPO_ROOT, '.env.local')

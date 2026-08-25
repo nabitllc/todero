@@ -22,15 +22,16 @@ const nextConfig = {
       // `pg`/`pg-native` belong under `alias` (stubs the package itself to
       // an empty module); the Node core modules `pg` reaches for at runtime
       // belong under `fallback`, so any of them fails safe as inert.
-      // `node:sqlite` is the same story for lib/db/sqlite-adapter.ts: a Node
-      // builtin the browser has no equivalent of, reached only from a route
-      // handler. Aliasing it to false keeps the client chunk resolvable
-      // instead of failing on an unhandled `node:` scheme.
+      // `better-sqlite3` is the same story for lib/db/sqlite-adapter.ts: a
+      // real installed package with native (.node) bindings, required only
+      // from a route handler, that the client bundle can never load anyway.
+      // Aliasing it to false — same treatment as `pg` above — keeps webpack
+      // from trying to bundle the native binding into a client chunk.
       config.resolve.alias = {
         ...(config.resolve.alias || {}),
         pg: false,
         'pg-native': false,
-        'node:sqlite': false,
+        'better-sqlite3': false,
       }
       config.resolve.fallback = {
         ...(config.resolve.fallback || {}),

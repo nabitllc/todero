@@ -3,7 +3,7 @@
 // The one place that names concrete vendors. `lib/db.ts` picks from this map by
 // `TODERO_DB_PROVIDER` and never learns what is behind the key.
 //
-//   sqlite   — one file under the checkout, through Node's own `node:sqlite`.
+//   sqlite   — one file under the checkout, through `better-sqlite3`.
 //              Needs nothing: no server, no account, no connection string.
 //              This is what a fresh clone gets, and what makes
 //              `npm run setup && npm run dev` end at a working board.

@@ -391,15 +391,26 @@ function restBridge(pgFactory: DbAdapterFactory, qp: QueryParams) {
  * The `sqlite` leg's schema, from the file `npm run setup` applies on a clone
  * with no account anywhere: `migrations/sqlite/000_baseline.sql`. File-backed,
  * not `:memory:`, because that is the mode the app actually runs in.
+ *
+ * Seeded through `better-sqlite3` — the same driver `sqlite-adapter.ts` opens
+ * the file with below, with the identical four PRAGMAs. This fixture used to
+ * seed through `node:sqlite` instead: a second engine writing the same file
+ * this suite then reopens through `better-sqlite3`, undetected because the
+ * two drivers happen to write a compatible file format. One driver everywhere
+ * is what makes this test suite actually exercise the engine production runs.
  */
 function seededSqlite(): string {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+  const Database = require('better-sqlite3') as typeof import('better-sqlite3')
   const file = join(
     tmpdir(),
     `todero-seam-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`,
   )
-  const seed = new DatabaseSync(file)
+  const seed = new Database(file)
+  seed.exec('PRAGMA foreign_keys = ON')
+  seed.exec('PRAGMA journal_mode = WAL')
+  seed.exec('PRAGMA synchronous = NORMAL')
+  seed.exec('PRAGMA busy_timeout = 5000')
   seed.exec(readFileSync(join(__dirname, '..', '..', 'migrations', 'sqlite', '000_baseline.sql'), 'utf8'))
   seed.close()
   return file

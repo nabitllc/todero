@@ -11,9 +11,18 @@
 // DATABASE_URL keeps the adapter it already had.
 //
 // DRIVER: `better-sqlite3` — the same synchronous, single-file driver
-// builderz-labs/mission-control runs on. It ships prebuilt binaries for every
-// platform Node targets, so `npm install` stays a no-toolchain step; nothing
-// above this file (or `lib/db.ts`) knows it exists. The connection is a
+// builderz-labs/mission-control runs on, and the ONLY sqlite driver this repo
+// uses anywhere: this adapter, `scripts/db-migrate.mjs`, and the test fixture
+// in `lib/__tests__/db-seam.test.ts` all open the file through it, with the
+// same four PRAGMAs. Two engines writing one file was a real bug here once —
+// `node:sqlite` has no `busy_timeout`, so a migration run against a live dev
+// server died in ~2ms with "database is locked" instead of waiting. It ships
+// prebuilt binaries for common platform/ABI pairs (macOS, Linux glibc and
+// musl, Windows — x64 and arm64), so `npm install` is a no-toolchain step on
+// those; on an uncommon host (FreeBSD, 32-bit, an ABI newer than the last
+// published prebuild) `npm install` compiles it from source instead, which
+// needs a C++ toolchain (`node-gyp`'s usual prerequisites). Nothing above
+// this file (or `lib/db.ts`) knows it exists. The connection is a
 // module-level singleton (`handle`, below): one open file descriptor per
 // process, reused by every route handler, with PRAGMAs set once at open time:
 //   - `journal_mode = WAL`      concurrent readers while a writer holds the file
@@ -171,7 +180,7 @@ export function setSqliteExecutor(next: SqlExecutor | null): void {
 // ── value encoding ───────────────────────────────────────────────────────────
 
 /**
- * Make a JS value bindable. `node:sqlite` accepts null, numbers, strings,
+ * Make a JS value bindable. `better-sqlite3` accepts null, numbers, strings,
  * bigints and buffers and rejects everything else outright, so the three
  * shapes the app really passes — booleans, Dates and JSON payloads — are
  * converted here rather than at 200 call sites.
@@ -278,7 +287,7 @@ function executorFor(table: string | null): SqlExecutor {
 
 // ── error mapping ────────────────────────────────────────────────────────────
 
-/** Error fields `node:sqlite` attaches. */
+/** Error fields `better-sqlite3` attaches. */
 interface SqliteErrorShape {
   message?: unknown
   code?: unknown

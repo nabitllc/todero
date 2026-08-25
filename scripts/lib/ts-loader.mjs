@@ -76,5 +76,20 @@ export async function load(url, context, nextLoad) {
     },
   })
 
-  return { format: 'module', source: transpiled.outputText, shortCircuit: true }
+  // The repo is `"type": "commonjs"` (see package.json) — under Next.js's own
+  // webpack/CJS runtime, a bare `require(...)` inside a .ts file (e.g.
+  // lib/db/sqlite-adapter.ts lazy-loading `better-sqlite3`) just works.
+  // Transpiling to an ES module for this loader does not add that global
+  // back, so any script that reaches such a file via importTs() dies with
+  // "require is not defined" — reproducible with e.g.
+  // `TODERO_DB_PROVIDER=sqlite node scripts/post-task-memory.mjs …`. Shim it
+  // in per-module, scoped to this file's own URL, the same way Node's own
+  // ESM docs recommend.
+  const source = /\brequire\s*\(/.test(transpiled.outputText)
+    ? `import { createRequire as __createRequireForTsImport } from 'node:module';\n` +
+      `const require = __createRequireForTsImport(${JSON.stringify(url)});\n` +
+      transpiled.outputText
+    : transpiled.outputText
+
+  return { format: 'module', source, shortCircuit: true }
 }

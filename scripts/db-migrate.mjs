@@ -47,9 +47,11 @@ import { importTs } from './lib/ts-import.mjs'
 import { databaseStatus } from './lib/env-report.mjs'
 import { requireNodeVersion } from './lib/node-version.mjs'
 
-// The sqlite path below reaches for `node:sqlite`, which exists only from Node
-// 22.5. Fail here with the version numbers rather than there with a builtin
-// module the reader has never heard of.
+// The sqlite path below reaches for `better-sqlite3`, the same driver
+// `lib/db/sqlite-adapter.ts` opens the file with — one engine, one set of
+// PRAGMAs, for every process that touches `db.sqlite`. It needs Node 22+;
+// fail here with the version numbers rather than mid-migration with a cannot-
+// find-module error the reader has never seen.
 requireNodeVersion()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -181,10 +183,18 @@ function migrationFiles(dir) {
  *
  * Same ledger, same "only ever the delta" behaviour and same refusal to record
  * a file that did not apply as the Postgres path below — the engine is the only
- * difference. `node:sqlite` ships inside Node, so this needs nothing installed.
+ * difference. It is `better-sqlite3`, the same driver and the same four
+ * PRAGMAs (`lib/db/sqlite-adapter.ts` sets them for every route handler) —
+ * NOT `node:sqlite`. Two engines writing the same file was a real bug here:
+ * `node:sqlite` sets no `busy_timeout`, so running this while `next dev` held
+ * a write lock failed in ~2ms with "database is locked" instead of waiting
+ * its turn. `busy_timeout = 5000` below is what makes a migration run against
+ * a live dev server wait instead of dying.
  */
 async function migrateSqlite() {
-  const { DatabaseSync } = await import('node:sqlite')
+  const { createRequire } = await import('node:module')
+  const require = createRequire(import.meta.url)
+  const Database = require('better-sqlite3')
 
   const adapter = await importTs('lib/db/sqlite-adapter.ts')
   if (!adapter.ok) {
@@ -205,9 +215,15 @@ async function migrateSqlite() {
     return
   }
 
-  const db = new DatabaseSync(file)
+  const db = new Database(file)
   try {
+    // The identical four PRAGMAs `lib/db/sqlite-adapter.ts` sets before any
+    // route handler touches this file — same engine, same knobs, whichever
+    // process opens it first.
     db.exec('PRAGMA foreign_keys = ON')
+    db.exec('PRAGMA journal_mode = WAL')
+    db.exec('PRAGMA synchronous = NORMAL')
+    db.exec('PRAGMA busy_timeout = 5000')
     db.exec(
       'CREATE TABLE IF NOT EXISTS schema_migrations (' +
         '  filename   TEXT PRIMARY KEY,' +

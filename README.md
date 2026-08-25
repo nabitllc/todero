@@ -7,7 +7,7 @@ a file on disk by default, hosted Postgres when you point it at one.
 
 ## Quickstart
 
-Prerequisite: **Node 22.5+**. Nothing else — no Docker, no Homebrew, no
+Prerequisite: **Node 22+** (`better-sqlite3`'s own requirement). Nothing else — no Docker, no Homebrew, no
 database server, no account with anybody. macOS, Linux and Windows all take the
 same four lines, and the result is a working board with real data in it.
 
@@ -30,9 +30,17 @@ never overwrites a value you set and it asks no questions, so it is safe to
 re-run at any time.
 
 There is no step where you go and sign up for something. A checkout with no
-credentials runs on `db.sqlite` in the repo root, through Node's own
-`node:sqlite` — a real database with the full schema, not a demo mode. Delete
-that file to start over.
+credentials runs on `db.sqlite` in the repo root, through `better-sqlite3` —
+a real database with the full schema, not a demo mode. Delete that file to
+start over.
+
+`better-sqlite3` ships prebuilt binaries for common platform/ABI pairs
+(macOS, Linux glibc and musl, Windows — x64 and arm64), so on those hosts
+`npm install` needs no compiler. On an uncommon host — FreeBSD, 32-bit, or a
+Node ABI newer than the last published prebuild — `npm install` compiles it
+from source instead, which needs a C++ toolchain (the usual `node-gyp`
+prerequisites: Python 3, a C++ compiler, and on Windows the Visual Studio
+Build Tools).
 
 Then check the machine:
 

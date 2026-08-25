@@ -48,6 +48,37 @@ ALTER TABLE agent_runs
 CREATE INDEX IF NOT EXISTS agent_runs_status_agent_idx
   ON agent_runs (status, agent_id);
 
+-- `stopped` is a new terminal status a ceiling puts a run into (distinct from
+-- `completed` — the agent did not finish, the supervisor ended it). No
+-- migration in this repo has ever declared agent_runs.status's allowed
+-- values (grep migrations/*.sql for agent_runs_status_check: nothing), so a
+-- database created purely from this directory has no constraint at all.
+--
+-- The hosted instance this was developed against has one anyway — undocumented
+-- schema drift from outside migrations/ — and empirical probing (inserting
+-- each candidate value directly against its REST API) found it accepts only
+-- 'running', 'failed', 'done' and REJECTS 'completed' and 'error' — the two
+-- values app/api/issues/route.ts and app/api/run-agent/route.ts have been
+-- writing to close a run since before this piece existed. Concretely: the
+-- "Close agent_runs on status change" write in app/api/issues/route.ts has
+-- been silently failing on this database on every single call, which is the
+-- other reason (alongside token_ledger's dead finalize function) agent_runs
+-- accumulates rows that never leave 'running' — 67,592 of them at the time
+-- of this migration. That code path is unchanged by this piece (it is not
+-- this piece's file to fix), but the constraint blocking it is squarely a
+-- "the ledger doesn't close" defect, so it is fixed here.
+--
+-- DROP IF EXISTS + (re)ADD makes this migration correct whether the database
+-- was created purely from this directory (no prior constraint) or is this
+-- drifted hosted instance (a private, narrower one) — either way it ends up
+-- with the same permissive, documented set: every status value any code in
+-- this repo actually writes, plus the two ('failed', 'done') the drifted
+-- constraint was already permitting, so old rows already in either shape
+-- keep validating.
+ALTER TABLE agent_runs DROP CONSTRAINT IF EXISTS agent_runs_status_check;
+ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_status_check
+  CHECK (status IN ('running', 'completed', 'error', 'stopped', 'killed', 'failed', 'done'));
+
 -- 3. Close the ledger, mark the orphans, move on. Before this round
 --    recordCompletion() (now finalizeRun(), see lib/runtimes/token-ledger.ts)
 --    was defined and never called, so every one of 66,879 rows sat at

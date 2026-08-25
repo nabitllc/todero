@@ -260,24 +260,31 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
     .join('\n')
 
   try {
+    // Deliberately NOT `.upsert(..., { onConflict: 'agent_id,memory_type,date_key' })`
+    // here: SQL treats every NULL as distinct from every other NULL, so a
+    // unique constraint that includes `date_key` never matches two rows that
+    // both have it NULL — which self_improving rows always do, this one
+    // included. An upsert against that target silently INSERTs a new row on
+    // every single run instead of merging into one, so promoteHotPatterns
+    // would grow an unbounded pile of near-duplicate HOT-tier rows rather
+    // than accumulating into the one the retrieval side reads. Select the
+    // row's id first and choose update vs. insert explicitly instead.
     const existing = await db()
       .from('agent_memory_files')
-      .select('content')
+      .select('id,content')
       .eq('agent_id', agentId)
       .eq('memory_type', 'self_improving')
       .is('date_key', null)
       .limit(1)
-    const priorContent = (existing.data?.[0] as { content?: string } | undefined)?.content ?? ''
+    const existingRow = existing.data?.[0] as { id?: string; content?: string } | undefined
+    const priorContent = existingRow?.content ?? ''
     const separator = priorContent && !priorContent.endsWith('\n') ? '\n' : ''
     const updated = `${priorContent}${separator}\n#### Promoted ${timestamp}\n${promotionText}\n`
 
-    const { error: upsertError } = await db()
-      .from('agent_memory_files')
-      .upsert(
-        { agent_id: agentId, memory_type: 'self_improving', date_key: null, content: updated, updated_at: timestamp },
-        { onConflict: 'agent_id,memory_type,date_key' },
-      )
-    if (!upsertError) summary.promotedToHot = hits.map(h => h.word)
+    const { error: writeError } = existingRow?.id
+      ? await db().from('agent_memory_files').update({ content: updated, updated_at: timestamp }).eq('id', existingRow.id)
+      : await db().from('agent_memory_files').insert({ agent_id: agentId, memory_type: 'self_improving', date_key: null, content: updated, updated_at: timestamp })
+    if (!writeError) summary.promotedToHot = hits.map(h => h.word)
   } catch {
     // Best-effort — a failed HOT-tier write should not block the vault
     // proposal below; the caller sees promotedToHot stay empty.
