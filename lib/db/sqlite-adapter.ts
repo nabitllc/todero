@@ -1,4 +1,4 @@
-// ─── SQLite adapter (node:sqlite) — the zero-account default ─────────────────
+// ─── SQLite adapter (better-sqlite3) — the zero-account default ──────────────
 //
 // The third implementation of the `DbAdapter` contract in `lib/db.ts`, and the
 // one that makes `git clone && npm install && npm run setup && npm run dev`
@@ -10,13 +10,24 @@
 // `lib/db/adapters.ts`. An install that has Supabase credentials or a
 // DATABASE_URL keeps the adapter it already had.
 //
-// Zero dependencies on purpose: `node:sqlite` ships inside Node itself (22.5+;
-// this repo runs 24), so "clone and run" stays true on a host with nothing
-// installed but Node — which is the same promise `npm run setup` makes.
+// DRIVER: `better-sqlite3` — the same synchronous, single-file driver
+// builderz-labs/mission-control runs on. It ships prebuilt binaries for every
+// platform Node targets, so `npm install` stays a no-toolchain step; nothing
+// above this file (or `lib/db.ts`) knows it exists. The connection is a
+// module-level singleton (`handle`, below): one open file descriptor per
+// process, reused by every route handler, with PRAGMAs set once at open time:
+//   - `journal_mode = WAL`      concurrent readers while a writer holds the file
+//   - `synchronous = NORMAL`    safe under WAL, far fewer fsyncs than FULL
+//   - `foreign_keys = ON`       the baseline declares real FKs; SQLite defaults them off
+//   - `busy_timeout = 5000`     Next.js runs concurrent route handlers against
+//                               the same file — without this a second writer
+//                               gets `SQLITE_BUSY` immediately instead of
+//                               waiting its turn.
 //
 // Enable it explicitly with:
 //     TODERO_DB_PROVIDER=sqlite
-//     TODERO_SQLITE_PATH=/some/where/db.sqlite     (optional)
+//     TODERO_SQLITE_PATH=/some/where/db.sqlite     (optional, full file path)
+//     TODERO_DATA_DIR=/some/where                  (optional, directory — see sqlitePath())
 //
 // HOW IT AVOIDS BEING A SECOND DIALECT
 //   Query building is `SqlQueryBuilder` from `pg-adapter.ts`, compiled by
@@ -43,7 +54,7 @@ import { SqlQueryBuilder, type SqlExecutor, type SqlFlavour } from './pg-adapter
 /** Where the database file lives when `TODERO_SQLITE_PATH` does not say. */
 const DEFAULT_FILENAME = 'db.sqlite'
 
-/** The one thing `node:sqlite` gives us, narrowed to what this file uses. */
+/** The subset of `better-sqlite3`'s `Database` this file actually uses. */
 interface SqliteDatabase {
   exec(sql: string): void
   close(): void
@@ -57,17 +68,30 @@ interface SqliteDatabase {
  * Absolute path of the database file. Inside the checkout by default, so it
  * travels with the install and is trivially deletable to start over.
  *
- * The root is resolved the same way `lib/paths.ts` resolves `TODERO_DIR`
- * (explicit env var, else the working directory) but WITHOUT importing it:
- * that module reaches for `os`/`fs`/`child_process` at module scope, and
- * `lib/db.ts` — which reaches this file through the adapter registry — is in
- * the client graph. Forward slashes are correct on every platform SQLite runs
- * on, Windows included.
+ * Resolution order:
+ *   1. `TODERO_SQLITE_PATH` — an exact file path, wins outright. Kept for
+ *      installs (and this repo's own test seam, `db-seam.test.ts`) that
+ *      already pin one.
+ *   2. `TODERO_DATA_DIR` — a directory; the file is `db.sqlite` inside it.
+ *      This is the knob builderz-labs/mission-control exposes, and the one
+ *      an operator reaches for to move the whole data directory (a Docker
+ *      volume mount, a different disk) without also renaming the file.
+ *   3. Neither set: `db.sqlite` at the repo root — unchanged from every
+ *      existing install, `.gitignore` entry, and `.env.local.template` note.
+ *
+ * The root for (2)/(3) is resolved the same way `lib/paths.ts` resolves
+ * `TODERO_DIR` (explicit env var, else the working directory) but WITHOUT
+ * importing it: that module reaches for `os`/`fs`/`child_process` at module
+ * scope, and `lib/db.ts` — which reaches this file through the adapter
+ * registry — is in the client graph. Forward slashes are correct on every
+ * platform SQLite runs on, Windows included.
  */
 export function sqlitePath(): string {
   const explicit = process.env.TODERO_SQLITE_PATH?.trim()
   if (explicit) return explicit
   const root = (process.env.TODERO_DIR?.trim() || process.cwd()).replace(/[\\/]+$/, '')
+  const dataDir = process.env.TODERO_DATA_DIR?.trim().replace(/[\\/]+$/, '')
+  if (dataDir) return `${dataDir}/${DEFAULT_FILENAME}`
   return `${root}/${DEFAULT_FILENAME}`
 }
 
@@ -89,7 +113,7 @@ function open(): SqliteDatabase {
   if (handle) return handle
   const file = sqlitePath()
 
-  // Deliberately refuse to CREATE the file. `new DatabaseSync(path)` on a
+  // Deliberately refuse to CREATE the file. `better-sqlite3`'s constructor on a
   // missing path happily makes an empty database, and every query after that
   // fails with "no such table: issues" — a message that describes the symptom
   // and hides the cause. Creating the schema is `npm run db:migrate`'s job;
@@ -100,18 +124,28 @@ function open(): SqliteDatabase {
     throw new DbConfigurationError(
       `The local database file does not exist yet: ${file}. ` +
         `Run \`npm run db:migrate\` (or \`npm run setup\`) to create it. ` +
-        `Point TODERO_SQLITE_PATH somewhere else to use a different file.`,
+        `Point TODERO_SQLITE_PATH or TODERO_DATA_DIR somewhere else to use a different file.`,
     )
   }
 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
-  const db = new DatabaseSync(file) as unknown as SqliteDatabase
+  const Database = require('better-sqlite3') as typeof import('better-sqlite3')
+  // `fileMustExist` is the driver's own belt to the existsSync check's braces —
+  // a TOCTOU deletion between the two lines above still fails loudly, not by
+  // silently creating an empty database out from under the check.
+  const db = new Database(file, { fileMustExist: true }) as unknown as SqliteDatabase
   // Referential integrity is off by default in SQLite; the baseline declares
   // real foreign keys, so turn it on and behave like the Postgres install.
   db.exec('PRAGMA foreign_keys = ON')
   // WAL lets the dev server read while a migration or a script writes.
   db.exec('PRAGMA journal_mode = WAL')
+  // NORMAL is safe under WAL (only checkpoints need to survive a power loss,
+  // not every commit) and far cheaper than the FULL default — the same
+  // tradeoff builderz-labs/mission-control makes for the same reason.
+  db.exec('PRAGMA synchronous = NORMAL')
+  // Next.js runs concurrent route handlers against this same file; without a
+  // busy timeout a second writer gets SQLITE_BUSY immediately instead of
+  // waiting the first one out.
   db.exec('PRAGMA busy_timeout = 5000')
   handle = db
   return db
