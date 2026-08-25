@@ -26,22 +26,42 @@ export async function rememberFact(agentId: string, key: string, value: unknown)
   }
 }
 
+/**
+ * Throws on a failed read, mirroring `rememberFact` — the same class of
+ * defect the memory-retrieval-relevance piece's round-4 critic found in
+ * `lib/memory-retrieval.ts`'s searchSqliteFts (a store failure other than
+ * one literal string classified as "searched, nothing there"), present here
+ * too: the old `const { data } = await db()...` discarded `error` entirely,
+ * so a table that does not exist, a connection failure, or any other driver
+ * error came back as `data === undefined` — indistinguishable from "the
+ * table exists and this agent genuinely has no memory for that key" (which
+ * is `data === []`/`null` with no error). A caller cannot tell "fact is
+ * absent" from "the store could not be read" from a bare `null`, and would
+ * silently proceed as if the fact were simply never remembered.
+ */
 export async function recallFact(agentId: string, key: string): Promise<unknown | null> {
-  const { data } = await db()
+  const { data, error } = await db()
     .from('agent_memory')
     .select('value')
     .eq('agent_id', agentId)
     .eq('key', key)
     .limit(1)
+  if (error) {
+    throw new Error(`[agent-memory] recallFact(${agentId}, ${key}) failed: ${error.message}`)
+  }
   return data?.[0]?.value ?? null
 }
 
+/** Throws on a failed read — see `recallFact`. */
 export async function recallAll(agentId: string): Promise<Record<string, unknown>> {
-  const { data } = await db()
+  const { data, error } = await db()
     .from('agent_memory')
     .select('key,value')
     .eq('agent_id', agentId)
     .order('updated_at', { ascending: false })
+  if (error) {
+    throw new Error(`[agent-memory] recallAll(${agentId}) failed: ${error.message}`)
+  }
   const rows = (data ?? []) as { key: string; value: unknown }[]
   return Object.fromEntries(rows.map(r => [r.key, r.value]))
 }

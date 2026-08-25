@@ -216,8 +216,17 @@ function searchSqliteFts(agentId: string, query: string, limit: number, exactTas
 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const Database = require('better-sqlite3') as typeof import('better-sqlite3')
-  const conn = new Database(file, { readonly: true, fileMustExist: true })
+  // Constructor call is INSIDE the try, not before it: `new Database(...)`
+  // throws its own driver errors (a non-database file at this path — "file
+  // is not a database" — a permissions failure, corruption) exactly like a
+  // query does, and those must degrade through the identical unavailable
+  // path below rather than crash `buildRetrievedContext` uncaught. A round-4
+  // critic pointed a corrupt store at this exact path and found the opposite:
+  // the constructor throwing before the try ever started was an unhandled
+  // exception, not an honest 'unavailable'.
+  let conn: InstanceType<typeof Database> | undefined
   try {
+    conn = new Database(file, { readonly: true, fileMustExist: true })
     // Keyed by id so an exact-key retry-boost hit that was ALSO a genuine
     // term match is only counted once, at its boosted rank.
     const byId = new Map<string, RawRunRecordRow & { rank: number }>()
@@ -300,20 +309,22 @@ function searchSqliteFts(agentId: string, query: string, limit: number, exactTas
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    // "no such table" is migration 041 never having run — the index itself
-    // is not there, not merely empty. That is the case this piece's round-2
-    // critic named explicitly: a store-level failure must not read back as a
-    // clean "searched, found nothing". Any other driver error (a malformed
-    // MATCH expression, a locked file, corruption) is a query-time failure
-    // against a store that DOES exist, so it degrades to 'available' with no
-    // records — same "search is best-effort, never fatal" contract Hermes's
-    // own `session_search` degrades under.
-    const isMissingIndex = /no such table/i.test(message)
-    return isMissingIndex
-      ? { records: [], availability: 'unavailable', unavailableReason: message }
-      : { records: [], availability: 'available' }
+    // EVERY caught error here — the constructor failing to open the file at
+    // all ("file is not a database", a permissions error), "no such table"
+    // (migration 041 never applied), a malformed MATCH expression, a locked
+    // file, corruption mid-query — means the store could not actually be
+    // searched. A round-4 critic found the previous version of this catch
+    // classifying anything other than a literal "no such table" match as
+    // 'available' with zero records: an unobserved store read back as a
+    // clean negative, the exact defect this piece exists to close. There is
+    // no reliable way to distinguish "queried fine, genuinely zero rows"
+    // from "the query itself failed" from inside a catch block — reaching
+    // catch at all means the query did not complete — so every path through
+    // here is 'unavailable', mirroring searchPortable's `if (error) return
+    // {..., availability: 'unavailable', ...}` exactly.
+    return { records: [], availability: 'unavailable', unavailableReason: message }
   } finally {
-    conn.close()
+    conn?.close()
   }
 }
 
