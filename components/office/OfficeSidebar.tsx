@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect } from "react";
 import { fetchJson, formatApiError } from '@/hooks/useApiData'
-import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+import type { VaultBadgeInfo } from '@/lib/vault-badge'
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 export interface OfficeSidebarProps {
@@ -49,25 +49,35 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
   } = props;
 
   // ─── Local state ─────────────────────────────────────────────────────────
-  // Brain2 vault manifest data, keyed by agent id — same shape/fetch every
-  // other model badge in the app reads (see lib/vault-badge.ts). The pixel
-  // office's sprite roster is a fixed, non-vault list today, so this is a
-  // no-op for every id currently clickable on the canvas; it is wired up so
-  // the same resolveVaultBadge() precedence applies here too the day a
-  // vault-only agent gets a sprite, instead of this file staying the one
-  // place in the class of "model badge" views that never learned about it.
+  // Brain2 vault manifest data + the server-resolved model label, keyed by
+  // agent id — read from the same /api/agents rows every other model badge
+  // in the app reads. `modelById` is GET /api/agents' `model` field, which
+  // lib/resolve-dispatch-model.ts's `resolveDispatchModel()` computed
+  // server-side from the same chain walk the real spawn path runs — this
+  // used to be re-derived client-side via the deleted lib/vault-badge.ts's
+  // resolveVaultBadge() + an env-URL heuristic instead of just reading what
+  // the server already resolved. The pixel office's sprite roster is a
+  // fixed, non-vault list today, so `vaultById` (used only to gate the
+  // "Brain2" chip below) is a no-op for every id currently clickable on the
+  // canvas; it is wired up so the day a vault-only agent gets a sprite, this
+  // file does not stay the one "model badge" view that never learned about it.
   const [vaultById, setVaultById] = useState<Record<string, VaultBadgeInfo>>({});
-  const [localProviderConfigured, setLocalProviderConfigured] = useState(false);
+  const [modelById, setModelById] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
     fetchJson<any>('/api/agents').then(r => {
       if (cancelled || !r.ok) return;
       const body = r.data;
       const rows: any[] = Array.isArray(body?.agents) ? body.agents : [];
-      const map: Record<string, VaultBadgeInfo> = {};
-      for (const row of rows) if (row?.id && row.vault) map[row.id] = row.vault;
-      setVaultById(map);
-      setLocalProviderConfigured(body?.localProviderConfigured === true);
+      const vMap: Record<string, VaultBadgeInfo> = {};
+      const mMap: Record<string, string> = {};
+      for (const row of rows) {
+        if (!row?.id) continue;
+        if (row.vault) vMap[row.id] = row.vault;
+        if (typeof row.model === 'string' && row.model) mMap[row.id] = row.model;
+      }
+      setVaultById(vMap);
+      setModelById(mMap);
     });
     return () => { cancelled = true; };
   }, []);
@@ -264,14 +274,13 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   {liveRun.todayErrors > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-950/50 text-red-500">{liveRun.todayErrors} errors</span>}
                 </div>
               ) : null })()}
-              {/* Same resolveVaultBadge() precedence as every other model
-                  badge in the app — see lib/vault-badge.ts. Only renders when
-                  the selected sprite's id has a Brain2 manifest. */}
+              {/* Server-resolved model label — same GET /api/agents row every
+                  other model badge in the app reads. Only renders when the
+                  selected sprite's id has a Brain2 manifest. */}
               {detail.id && vaultById[detail.id] && (() => {
-                const resolved = resolveVaultBadge(vaultById[detail.id], localProviderConfigured)
                 return (
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#1a1a1a] text-white/70">{resolved.label}</span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#1a1a1a] text-white/70">{modelById[detail.id] ?? '—'}</span>
                     <span
                       className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
                       title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"

@@ -66,8 +66,6 @@ interface AgentsEnvelope {
   vaultWarning: string | null
   /** registry-reaches-dispatch piece, round 2: the dispatch-side persist result. See RosterMeta's docstring. */
   vaultSync?: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null } | null
-  /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
-  localProviderConfigured: boolean
 }
 
 export interface AgentRosterState {
@@ -84,8 +82,6 @@ export interface AgentRosterState {
   vaultWarning: string | null
   /** registry-reaches-dispatch piece, round 2: the dispatch-side persist result. See RosterMeta's docstring. */
   vaultSync: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null } | null
-  /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
-  localProviderConfigured: boolean
   /** Non-null when the request itself failed. `agents` is empty in that case. */
   error: ApiError | null
   loading: boolean
@@ -123,15 +119,14 @@ export function useAgentRoster(): AgentRosterState {
   const vaultPath = data?.vaultPath ?? null
   const vaultWarning = data?.vaultWarning ?? null
   const vaultSync = data?.vaultSync ?? null
-  const localProviderConfigured = data?.localProviderConfigured ?? false
 
   const meta = useMemo<RosterMeta>(
-    () => ({ source: rosterSource, warning: rosterWarning, path: rosterPath, vaultPath, vaultWarning, vaultSync, localProviderConfigured }),
-    [rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, vaultSync, localProviderConfigured],
+    () => ({ source: rosterSource, warning: rosterWarning, path: rosterPath, vaultPath, vaultWarning, vaultSync }),
+    [rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, vaultSync],
   )
 
   return {
-    agents, rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, vaultSync, localProviderConfigured,
+    agents, rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, vaultSync,
     error, loading, refetch, byId, meta,
   }
 }

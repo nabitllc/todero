@@ -226,7 +226,6 @@ export default function Home() {
         persisted: env.vaultSync.persisted === true,
         warning: typeof env.vaultSync.warning === 'string' ? env.vaultSync.warning : null,
       } : null,
-      localProviderConfigured: env.localProviderConfigured === true,
     } : null)
     if (res.ok) {
       setAgentsError(null)

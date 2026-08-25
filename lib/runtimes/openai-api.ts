@@ -207,12 +207,21 @@ export function resetProviderProbeCache(): void {
  * but it is still checked against the endpoint's live roster like every
  * other candidate: a stale manifest naming a model this Ollama has not
  * pulled is reported by name, never dispatched anyway.
+ *
+ * `liveModelsOverride` (agent-config-panel-truth piece, round 3): a
+ * `fetchLiveModels()` result the caller already has. lib/resolve-
+ * dispatch-model.ts's `resolveDispatchModel()` passes one shared result in
+ * when resolving many agents in a single request (GET /api/agents can
+ * resolve ~42 rows this way) so this function does not issue its own live
+ * GET against the endpoint's `/models` once per row. Omitted = unchanged
+ * behavior — this function fetches its own, exactly as it always has.
  */
 export async function mapModel(
   alias: 'opus' | 'sonnet' | 'haiku' | undefined,
   overrideId?: string,
+  liveModelsOverride?: LiveModelsResult,
 ): Promise<string | null> {
-  const live = await fetchLiveModels()
+  const live = liveModelsOverride ?? await fetchLiveModels()
   if (!live.ok) return null
   const ids = live.models.map(m => m.id)
   const candidates = [

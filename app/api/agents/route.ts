@@ -13,21 +13,10 @@ import {
 import { readRegistrations, type AgentRegistration } from '@/lib/agent-registrations'
 import { internalHeaders } from '@/lib/internal-auth'
 import { getCeilingStatus, type CeilingName } from '@/lib/agent-budget'
-import { LLM_PROVIDER_ID } from '@/lib/llm-provider'
-import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+import { fetchLiveModels } from '@/lib/llm-provider'
+import { probeRuntimes, resolveDispatchModel } from '@/lib/resolve-dispatch-model'
 import { getQueueConfig } from '@/lib/agent-queue'
 import { ensureVaultDispatchConfigs } from '@/lib/agent-manifests'
-
-/**
- * Whether THIS host's configured LLM endpoint is a local one (Ollama, LM
- * Studio, or an unrecognized loopback/IP server) rather than a cloud vendor.
- * `lib/vault-badge.ts`'s `resolveVaultBadge()` is the one place this feeds
- * into a UI decision: a vault agent's `local_eligible`/`fallback_local` only
- * means a local run is what would actually happen when the host is actually
- * pointed at a local endpoint — the manifest carrying a local fallback name
- * is not itself evidence of that.
- */
-const LOCAL_LLM_PROVIDER_IDS = new Set(['ollama', 'lmstudio', 'local'])
 
 /**
  * Asked of the seam, never of the environment. This route used to read the
@@ -206,14 +195,6 @@ type AgentsResponse = {
    * field exists to stop hiding.
    */
   vaultSync: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null }
-  /**
-   * Whether this host's configured LLM endpoint is local (Ollama/LM Studio)
-   * rather than a cloud vendor — see `LOCAL_LLM_PROVIDER_IDS` above. The one
-   * input `resolveVaultBadge()` (lib/vault-badge.ts) needs beyond a row's own
-   * `vault` field to decide whether `vault.localModel` is what would really
-   * run, or just a fallback name a cloud-configured host cannot act on.
-   */
-  localProviderConfigured: boolean
 }
 
 function emptyRunState(): RunState {
@@ -355,7 +336,6 @@ function buildAgents(
     const isScheduled = !isActive && verifiedNextRunTs !== null
     const nextRunTs = isScheduled ? verifiedNextRunTs : null
 
-    const model = parsed.model || meta?.model || ''
     const role = parsed.role || meta?.role || ''
 
     return {
@@ -363,7 +343,13 @@ function buildAgents(
       name: parsed.name || meta?.name || id,
       emoji: meta?.emoji ?? '🤖',
       role,
-      model,
+      // Round 3: no longer `parsed.model || meta?.model` — AGENTS.md text and
+      // AGENT_META's static display strings are exactly the "manifest field"
+      // this piece forbids (Scout's own roster/meta text read "Gemma 3 4B
+      // (Ollama)" while this host's dispatcher actually resolves it to
+      // claude-code/sonnet). GET()'s post-processing pass overwrites this
+      // placeholder via `resolveDispatchModel()`, same as every other row.
+      model: '',
       active: isActive,
       status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
       isRunning,
@@ -371,7 +357,7 @@ function buildAgents(
       liveness,
       livenessSource: state.livenessSource,
       nextRunTs,
-      modelShort: shortModelLabel(model),
+      modelShort: '',
       queue_filter: meta?.queue_filter ?? [],
       color: meta?.color ?? '#6b7280',
       desc: role,
@@ -456,7 +442,13 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
     // route was already rewritten once to stop doing for the roster itself.
     emoji: '🔌',
     role: 'self-registered',
-    model: reg.runtime,
+    // Round 3: no longer `reg.runtime` — GET()'s post-processing pass
+    // overwrites this via `resolveDispatchModel()`, same as every other row.
+    // A self-registered agent with no dispatch config (most of them today —
+    // see `dispatchable` below) renders "not resolvable", not the runtime
+    // name it declared at connect time, which is a claim about how IT
+    // identifies itself, not about what Todero's own dispatcher would do.
+    model: '',
     active: isRunning,
     status: isRunning ? 'active' : 'idle',
     isRunning,
@@ -464,7 +456,7 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
     liveness,
     livenessSource: state.livenessSource,
     nextRunTs: null,
-    modelShort: shortModelLabel(reg.runtime),
+    modelShort: '',
     queue_filter: [],
     color: '#6b7280',
     desc: `runtime: ${reg.runtime}`,
@@ -498,8 +490,9 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
  * possible, which is a separate fact from whether a run has happened yet),
  * so it is not held to a different truth standard than a roster row.
  *
- * `model`/`modelShort` are resolved through the same `resolveVaultBadge()`
- * every client-side badge uses (lib/vault-badge.ts), not the manifest's raw
+ * `model`/`modelShort` are resolved (by GET()'s post-processing pass, not
+ * here — see that pass's comment) through the same `resolveDispatchModel()`
+ * every model badge in the app now reads server-side, not the manifest's raw
  * cloud `preferred` name — a vault-only row used to print `preferred`
  * (e.g. "claude-opus-5") here while its own badge, computed independently on
  * the client, showed the local/alias label two inches away. Any consumer
@@ -507,13 +500,19 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
  * badge itself (a config panel, a search result, an export) now gets the
  * same label the badge shows, so the same bug cannot resurface in a fourth
  * file the way it already had in three.
+ *
+ * Round 3: `model`/`modelShort` are no longer computed here at all — they
+ * are placeholders, overwritten by GET()'s single post-processing pass
+ * (see `resolveAllModels()` below) which resolves every row, vault-backed
+ * or not, through the same `resolveDispatchModel()` the real spawn path
+ * uses. Building them here from `resolveVaultBadge()` + an env-URL
+ * heuristic is exactly the defect this piece removes.
  */
 function buildVaultOnlyAgent(
   agent: VaultAgent,
   state: RunState,
   rosterWarning: string | null,
   rosterPath: string | null,
-  localProviderConfigured: boolean,
 ): AgentDto {
   const now = Date.now()
   const beat = state.heartbeats.get(agent.id) ?? null
@@ -522,11 +521,6 @@ function buildVaultOnlyAgent(
   const isRunning = liveness === 'live'
   const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
   const vault = vaultInfoFor(agent)
-  // vaultInfoFor() only returns null through its `AgentDto['vault']` return
-  // type when a caller looked an id up in a map and found nothing (see the
-  // `v ? vaultInfoFor(v) : null` call sites above) — called directly on a
-  // real VaultAgent, as here, it always builds the object.
-  const model = resolveVaultBadge(vault as VaultBadgeInfo, localProviderConfigured).label
 
   return {
     id: agent.id,
@@ -535,7 +529,7 @@ function buildVaultOnlyAgent(
     // named by the vault, not by a live connection or a Todero roster row.
     emoji: '🗂️',
     role: agent.model.tier ? `${agent.model.tier} tier` : '',
-    model,
+    model: '',
     active: isRunning,
     status: isRunning ? 'active' : 'idle',
     isRunning,
@@ -543,7 +537,7 @@ function buildVaultOnlyAgent(
     liveness,
     livenessSource: state.livenessSource,
     nextRunTs: null,
-    modelShort: shortModelLabel(model),
+    modelShort: '',
     queue_filter: [],
     color: agent.model.tier === 'frontier' ? '#8b5cf6' : agent.model.tier === 'mid' ? '#3b82f6' : '#6b7280',
     desc: agent.description,
@@ -615,11 +609,6 @@ export async function GET() {
   // every response branch below, success or failure alike.
   const schedule = await fetchVerifiedAgentSchedule()
 
-  // Computed once and reused everywhere a vault-backed row needs it: both by
-  // buildVaultOnlyAgent() (to resolve `model`/`modelShort` the same way the
-  // client-side badge does) and by the response envelope below.
-  const localProviderConfigured = LOCAL_LLM_PROVIDER_IDS.has(LLM_PROVIDER_ID)
-
   const respond = async (
     state: RunState,
     configured: boolean,
@@ -648,8 +637,35 @@ export async function GET() {
     const agents: AgentDto[] = [
       ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule, vaultById),
       ...registrationOnly.map((r) => buildRegistrationAgent(r, state, vaultById)),
-      ...vaultOnly.map((v) => buildVaultOnlyAgent(v, state, vaultRoster.warning, vaultRoster.path, localProviderConfigured)),
+      ...vaultOnly.map((v) => buildVaultOnlyAgent(v, state, vaultRoster.warning, vaultRoster.path)),
     ]
+
+    // agent-config-panel-truth piece (round 3): one probe of every registered
+    // runtime and one live GET against the configured LLM endpoint's
+    // /models, reused across every row below — a 42-row roster costs one
+    // probe + one live-models fetch, not 42 of each. Every row's
+    // `model`/`modelShort` is then resolved through the exact same
+    // lib/resolve-dispatch-model.ts function POST /api/run-agent's real
+    // spawn path and GET /api/run-agent?info=1's Configuration panel both
+    // use — so the Team tab card, the modal header badge, the office
+    // sidebar, and this route's own field can never show a different
+    // answer than "what would actually run" again. A row whose
+    // `getQueueConfig(id)` resolves nothing (not dispatchable — most
+    // self-registered probes today) renders "not resolvable — <reason>",
+    // never a manifest field or a self-reported runtime name.
+    const runtimeByName = await probeRuntimes()
+    const liveModels = await fetchLiveModels()
+    await Promise.all(agents.map(async (a) => {
+      const dispatchConfig = getQueueConfig(a.id)
+      if (!dispatchConfig) {
+        a.model = `not resolvable — no dispatch config is registered for "${a.id}"`
+        a.modelShort = 'not resolvable'
+        return
+      }
+      const resolved = await resolveDispatchModel(dispatchConfig, runtimeByName, liveModels)
+      a.model = resolved.label
+      a.modelShort = resolved.label.startsWith('not resolvable') ? 'not resolvable' : shortModelLabel(resolved.label)
+    }))
 
     // TOD-2381 round 3: over-ceiling flag per agent, only when the database
     // is actually reachable (`configured`) — an unconfigured/error path has
@@ -690,7 +706,6 @@ export async function GET() {
       vaultPath: vaultRoster.path,
       vaultWarning: vaultRoster.warning,
       vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },
-      localProviderConfigured,
     }
     return NextResponse.json(body, { status, headers: NO_STORE })
   }

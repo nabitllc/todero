@@ -7,7 +7,6 @@ import AgentDetailView from '@/components/tabs/AgentDetailView'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import type { ApiError } from '@/hooks/useApiData'
 import type { AgentRunStatus } from '@/hooks/useAgentStatus'
-import { resolveVaultBadge } from '@/lib/vault-badge'
 
 function formatAgo(ms: number): string {
   const sec = Math.floor(ms / 1000)
@@ -21,35 +20,36 @@ function formatAgo(ms: number): string {
 }
 
 /**
- * The model badge for one roster card. A vault-backed row (`a.vault !== null`
- * — Global_Agents/<id>/manifest.json exists) never renders the generic
- * `modelShort` derived from `preferred`: that is exactly what put "Opus"
- * directly above "mid tier" on six cards whose manifest `claude_code_alias`
- * was "sonnet". `resolveVaultBadge()` (lib/vault-badge.ts) is the one
- * resolution used everywhere a model badge renders for a vault row — see
- * that file's docstring for the local/alias/preferred precedence — and the
- * "Brain2" chip next to it is what makes the provenance visible so a vault
- * tier and a stale cloud model name can never be printed on top of each
- * other again.
+ * The model badge for one roster card. `agent.modelShort`/`agent.model` are
+ * now resolved server-side by GET /api/agents from
+ * lib/resolve-dispatch-model.ts's `resolveDispatchModel()` — the same chain
+ * walk the real spawn path runs — for EVERY row, vault-backed or not. This
+ * component just renders what the server already resolved; it no longer
+ * re-derives a label client-side (that re-derivation, via the deleted
+ * lib/vault-badge.ts's resolveVaultBadge() + an env-URL heuristic, is what
+ * put "Opus" directly above "mid tier" on six cards whose manifest
+ * `claude_code_alias` was "sonnet", and separately showed a cloud model
+ * under a badge the Configuration panel below it called "not selected").
+ * The "Brain2" chip is unrelated provenance (this id has a
+ * Global_Agents/<id>/manifest.json) and renders independent of the label.
  */
-function AgentModelBadge({ agent, localProviderConfigured }: { agent: any; localProviderConfigured: boolean }) {
-  if (agent?.vault) {
-    const resolved = resolveVaultBadge(agent.vault, localProviderConfigured)
-    return (
-      <span className="inline-flex items-center gap-1">
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{resolved.label}</span>
+function AgentModelBadge({ agent }: { agent: any }) {
+  const label = agent?.modelShort || agent?.model || ''
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label && (
+        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{label}</span>
+      )}
+      {agent?.vault && (
         <span
           className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
           title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
         >
           Brain2
         </span>
-      </span>
-    )
-  }
-  return agent?.modelShort ? (
-    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{agent.modelShort}</span>
-  ) : null
+      )}
+    </span>
+  )
 }
 
 function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>): string {
@@ -89,8 +89,6 @@ export type RosterMeta = {
    * that stops being invisible. Optional so older envelopes still compile.
    */
   vaultSync?: { source: 'vault-fs' | 'db' | 'none'; persisted: boolean; warning: string | null } | null
-  /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
-  localProviderConfigured: boolean
 }
 
 export default function AgentsTab({
@@ -141,7 +139,6 @@ export default function AgentsTab({
   // surfaces a per-agent `overCeiling.reason` inline rather than in a
   // separate banner — this is an envelope-level fact, not a per-row one.
   const vaultSyncWarning: string | null = rosterMeta?.vaultSync?.warning ?? null
-  const localProviderConfigured: boolean = rosterMeta?.localProviderConfigured ?? false
 
   // TOD (agent-roster-truth): `liveAgents === null` means /api/agents has not
   // yet produced any rows to show — never a fabricated agent list. That still
@@ -246,7 +243,7 @@ export default function AgentsTab({
                         {displayAgents[0].type === 'consultant' && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
                         )}
-                        <AgentModelBadge agent={displayAgents[0]} localProviderConfigured={localProviderConfigured} />
+                        <AgentModelBadge agent={displayAgents[0]} />
                       </div>
                       <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
                       {/* "On duty" is a claim that this agent is running NOW. It used to
@@ -308,7 +305,7 @@ export default function AgentsTab({
                           {a.type === 'consultant' && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
                           )}
-                          <AgentModelBadge agent={a} localProviderConfigured={localProviderConfigured} />
+                          <AgentModelBadge agent={a} />
                         </div>
                         <p className="text-white/50 text-xs truncate">{a.role}</p>
                         {a.liveness === 'live' && (
@@ -353,7 +350,7 @@ export default function AgentsTab({
                             {a.type === 'consultant' && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
                             )}
-                            <AgentModelBadge agent={a} localProviderConfigured={localProviderConfigured} />
+                            <AgentModelBadge agent={a} />
                           </div>
                           <p className="text-white/30 text-xs truncate">{a.role}</p>
                         </div>
@@ -376,7 +373,7 @@ export default function AgentsTab({
 
               {/* Agent Detail View */}
               {agentModal && (
-                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} onRemoved={onAgentRemoved} localProviderConfigured={localProviderConfigured} />
+                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} onRemoved={onAgentRemoved} />
               )}
             </div>
   )

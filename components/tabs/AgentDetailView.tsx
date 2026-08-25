@@ -12,7 +12,7 @@ import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, useApiData, formatApiError, type ApiError } from '@/hooks/useApiData'
 import { dbUrl } from '@/lib/db/browser'
 import { estimateModelRateUsd } from '@/lib/model-rates'
-import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+import type { VaultBadgeInfo } from '@/lib/vault-badge'
 import AgentLaunchControl from '@/components/tabs/AgentLaunchControl'
 import AgentRunTrace from '@/components/tabs/AgentRunTrace'
 
@@ -90,11 +90,6 @@ interface AgentDetailViewProps {
    *  card still closes and the DELETE still lands, it just relies on the
    *  next /api/agents poll to reflect it. */
   onRemoved?: (agentId: string) => void
-  /** Whether this host's configured LLM endpoint is local — see
-   *  lib/vault-badge.ts's resolveVaultBadge(). Optional so an older call
-   *  site still compiles; a vault-backed agent then falls back to its
-   *  Claude Code alias, which is still honest — just not local-aware. */
-  localProviderConfigured?: boolean
 }
 
 // ── Tab types ──────────────────────────────────────────────────────────────────
@@ -485,23 +480,19 @@ function SkillsTab({ agent }: { agent: Agent }) {
 
 // ── Tab: Configuration ────────────────────────────────────────────────────────
 //
-// agent-config-panel-truth piece (round 2): the model rows used to come from
-// `resolveVaultBadge()` (manifest flags) plus `localProviderConfigured` (an
-// env-URL heuristic — GET /api/agents' `localProviderConfigured` is only
-// "does LLM_BASE_URL's port look like Ollama's", not "which runtime actually
-// wins selection"). That let a local-eligible vault agent read "qwen2.5-
-// coder:14b — active" while the app's own dispatcher was about to spawn it
-// on claude-code/sonnet, and let a non-vault agent (`vault: null` — 29 of 42
-// roster ids) print AGENTS.md's static text with zero live provider context
-// at all (e.g. "Gemma 3 4B (Ollama)" for scout, a model this Ollama has never
-// pulled). Both rows now come from GET /api/run-agent?info=1&agent=<id> —
-// the SAME guard-free resolver (`inspectRuntime()` walking `modelChain`, then
-// `mapModel()` against the live `${LLM_BASE_URL}/models` roster when
-// openai-api wins) that POST /api/run-agent's real spawn path uses — for
-// every agent, vault-backed or not. A 4xx/5xx from that endpoint, or a null
+// agent-config-panel-truth piece (round 3): the model rows come from GET
+// /api/run-agent?info=1&agent=<id> — the same guard-free resolver
+// (lib/resolve-dispatch-model.ts's `resolveDispatchModel()`, walking
+// `modelChain` then `mapModel()` against the live `${LLM_BASE_URL}/models`
+// roster when openai-api wins) that POST /api/run-agent's real spawn path
+// uses AND that GET /api/agents now uses to compute every row's
+// `model`/`modelShort` — so this panel and the header badge above it (which
+// just renders `agent.modelShort`, no client-side re-derivation any more)
+// can never disagree again. A 4xx/5xx from that endpoint, or a null
 // `mapModel()` result, renders "not resolvable — <the endpoint's own
 // message>"; nothing here ever falls back to `agent.model`, AGENTS.md text,
-// or `localProviderConfigured`.
+// or an env-URL heuristic (the deleted lib/vault-badge.ts's
+// resolveVaultBadge() + `localProviderConfigured`).
 interface RunAgentInfoAlternative {
   label: string
   reason: string
@@ -878,17 +869,19 @@ function BudgetTab({ agent }: { agent: Agent }) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function AgentDetailView({ agent, onClose, onRemoved, localProviderConfigured = false }: AgentDetailViewProps) {
+export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDetailViewProps) {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
-  // A vault-backed agent (`agent.vault !== null`) never shows the generic
-  // `modelShort` derived from the manifest's cloud `preferred` name — that
-  // is what put "Opus" directly above "mid tier" on six cards. Every tab
-  // below reads `displayAgent` instead of `agent` so the fix applies
-  // wherever a model badge renders, not just the header. See
-  // lib/vault-badge.ts's resolveVaultBadge() for the local/alias/preferred
-  // precedence.
-  const vaultBadge = agent.vault ? resolveVaultBadge(agent.vault, localProviderConfigured) : null
-  const displayAgent: Agent = vaultBadge ? { ...agent, modelShort: vaultBadge.label } : agent
+  // agent-config-panel-truth piece (round 3): `agent.modelShort`/`agent.model`
+  // now ARE the resolved-dispatch label — GET /api/agents computes them
+  // server-side via lib/resolve-dispatch-model.ts's `resolveDispatchModel()`,
+  // the same chain walk the Configuration tab's GET /api/run-agent?info=1
+  // call runs, for every row. This header used to re-derive its own label
+  // via the deleted lib/vault-badge.ts's resolveVaultBadge() + an env-URL
+  // heuristic — which is exactly what let this modal show the header badge
+  // "qwen2.5-coder:14b" one screen above a Configuration panel that called
+  // that same model "not selected". No client-side re-derivation needed
+  // any more: `agent` already carries the truth.
+  const displayAgent: Agent = agent
   const [isEditing, setIsEditing] = useState(false)
   // Result of the header's two write actions. A refused write shows the
   // server's real status and message in the same ApiErrorBanner every loader
@@ -988,7 +981,7 @@ export default function AgentDetailView({ agent, onClose, onRemoved, localProvid
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
               )}
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgent.modelShort}</span>
-              {vaultBadge && (
+              {agent.vault && (
                 <span
                   className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
                   title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
