@@ -97,6 +97,26 @@ export interface RetrievedRecord {
 
 export type RetrievalEngine = 'fts5' | 'keyword-overlap'
 
+/**
+ * `'available'` — the store was actually searched, whether or not anything
+ * matched. `'unavailable'` — the search never happened because the store
+ * itself could not be reached (sqlite file missing, `agent_run_records_fts`
+ * table not there because migration 041 was never applied, the postgres
+ * table missing, a query error from the driver). These two must never be
+ * collapsed into the same "empty" result: "zero matches" is a fact about the
+ * task, "unavailable" is a fact about the deployment, and a caller silently
+ * treating the second as the first would report a clean negative it never
+ * actually observed.
+ */
+export type RetrievalAvailability = 'available' | 'unavailable'
+
+interface EngineSearchResult {
+  records: RetrievedRecord[]
+  availability: RetrievalAvailability
+  /** Present only when availability is 'unavailable' — why the store could not be searched. */
+  unavailableReason?: string
+}
+
 /** True when the active database provider is the sqlite adapter — the only one this repo can run real FTS5 search against directly. */
 export function isSqliteProvider(): boolean {
   return DB_PROVIDER === 'sqlite'
@@ -107,10 +127,33 @@ const STOPWORDS = new Set([
   'has', 'have', 'had', 'not', 'are', 'but', 'you', 'your', 'all', 'its',
 ])
 
-/** Lowercase alphanumeric terms, 3+ chars, stopwords dropped, de-duplicated — shared by both search paths so their notion of "the query terms" agrees. */
+/**
+ * An issue-key pattern like `TOD-2401`: a short (2-5 letter) alphabetic
+ * prefix, a hyphen, then digits. The prefix is shared by EVERY record this
+ * project has ever written (every task_key starts with the same project
+ * code), so letting it act as a query term makes every record "match" every
+ * other record regardless of what either is actually about — the defect a
+ * round-4 critic caught: relevance was asserted, never measured. The numeric
+ * half is just as useless as a term (it identifies one specific other
+ * ticket, not a topic). Both halves are stripped before ranking; the full,
+ * unstripped key is kept separately for an exact `task_key` retry-boost (see
+ * `searchSqliteFts` / `searchPortable`) so a genuine retry of the same
+ * ticket still finds its own history.
+ */
+const ISSUE_KEY_PATTERN = /\b([a-z]{2,5})-(\d+)\b/gi
+
+/** Lowercase alphanumeric terms, 3+ chars, stopwords and issue-key-prefix/number tokens dropped, de-duplicated — shared by both search paths so their notion of "the query terms" agrees. */
 function significantTerms(text: string): string[] {
+  const issueKeyPrefixes = new Set<string>()
+  const issueKeyNumbers = new Set<string>()
+  for (const m of Array.from(text.matchAll(ISSUE_KEY_PATTERN))) {
+    issueKeyPrefixes.add(m[1].toLowerCase())
+    issueKeyNumbers.add(m[2].toLowerCase())
+  }
   const terms = text.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []
-  return Array.from(new Set(terms.filter(t => !STOPWORDS.has(t)))).slice(0, 12)
+  return Array.from(
+    new Set(terms.filter(t => !STOPWORDS.has(t) && !issueKeyPrefixes.has(t) && !issueKeyNumbers.has(t))),
+  ).slice(0, 12)
 }
 
 /**
@@ -138,50 +181,123 @@ interface RawRunRecordRow {
  * (migrations/sqlite/041_agent_run_records_fts.sql), scoped to one agent.
  * Opens the same file `lib/db/sqlite-adapter.ts` serves the app's reads and
  * writes through (`sqlitePath()`), read-only — this module never mutates the
- * table. Degrades to an empty result (never throws) when the file or the FTS
- * table is not there yet: an unmigrated index must make retrieval return
- * nothing this run, not crash the spawn that asked for it.
+ * table. Never throws (a search must not crash the spawn that asked for it),
+ * but distinguishes a real empty search from a store that could not be
+ * searched at all — see `RetrievalAvailability`.
  */
-function searchSqliteFts(agentId: string, query: string, limit: number): RetrievedRecord[] {
+function searchSqliteFts(agentId: string, query: string, limit: number, exactTaskKey?: string): EngineSearchResult {
   const matchExpr = toFtsMatchExpr(query)
-  if (!matchExpr) return []
+  // No significant terms in the query AND no exact-key retry to attempt is a
+  // fact about the query, not the store — the store was never asked
+  // anything, so 'available' with zero records is the honest read, not
+  // 'unavailable'.
+  if (!matchExpr && !exactTaskKey) return { records: [], availability: 'available' }
 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { existsSync } = require('fs') as typeof import('fs')
   const file = sqlitePath()
-  if (!existsSync(file)) return []
+  if (!existsSync(file)) {
+    return { records: [], availability: 'unavailable', unavailableReason: `sqlite database not found at ${file}` }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const Database = require('better-sqlite3') as typeof import('better-sqlite3')
   const conn = new Database(file, { readonly: true, fileMustExist: true })
   try {
-    const rows = conn
-      .prepare(
-        `SELECT r.id, r.task_key, r.task_title, r.attempted, r.rejection_reason, r.reviewer_notes, r.created_at,
-                bm25(agent_run_records_fts) AS rank
-         FROM agent_run_records_fts
-         JOIN agent_run_records r ON r.rowid = agent_run_records_fts.rowid
-         WHERE agent_run_records_fts MATCH ? AND r.agent_id = ?
-         ORDER BY rank ASC
-         LIMIT ?`,
-      )
-      .all(matchExpr, agentId, limit) as Array<RawRunRecordRow & { rank: number }>
-    return rows.map(r => ({
-      id: r.id,
-      taskKey: r.task_key,
-      taskTitle: r.task_title,
-      attempted: r.attempted,
-      rejectionReason: r.rejection_reason,
-      reviewerNotes: r.reviewer_notes,
-      createdAt: r.created_at,
-      rank: r.rank,
-    }))
-  } catch {
-    // No such table (this database predates migration 041), a malformed MATCH
-    // expression, or any other driver error — none of these should crash a
-    // spawn over a search. Same "search is best-effort, never fatal" contract
-    // Hermes's own `session_search` degrades under.
-    return []
+    // Keyed by id so an exact-key retry-boost hit that was ALSO a genuine
+    // term match is only counted once, at its boosted rank.
+    const byId = new Map<string, RawRunRecordRow & { rank: number }>()
+
+    if (matchExpr) {
+      const rows = conn
+        .prepare(
+          `SELECT r.id, r.task_key, r.task_title, r.attempted, r.rejection_reason, r.reviewer_notes, r.created_at,
+                  bm25(agent_run_records_fts) AS rank
+           FROM agent_run_records_fts
+           JOIN agent_run_records r ON r.rowid = agent_run_records_fts.rowid
+           WHERE agent_run_records_fts MATCH ? AND r.agent_id = ?
+           ORDER BY rank ASC
+           LIMIT ?`,
+        )
+        .all(matchExpr, agentId, limit) as Array<RawRunRecordRow & { rank: number }>
+      for (const r of rows) {
+        // Relevance floor: bm25 is negative-is-better, and by FTS5's own
+        // contract a row MATCH actually selected is never non-negative — a
+        // row landing at rank >= 0 (the float-noise boundary around exact
+        // zero, not a small-but-real negative score) carries no measured
+        // relevance at all and must not be returned as "relevant past
+        // experience". This is deliberately NOT a larger magnitude cutoff
+        // like -0.0001: measured on this repo's own test fixtures, a
+        // genuinely-relevant row in a small corpus (a handful of records,
+        // typical for a single agent's history) can legitimately land at
+        // ~1e-6 too — BM25's IDF term collapses toward zero for ANY term
+        // that appears in most of a small corpus, spurious prefix pollution
+        // or not, so magnitude alone cannot separate the two cases in this
+        // regime. (Verified directly: a row matching solely through a
+        // shared issue-key prefix and a row matching through real shared
+        // vocabulary produced bm25 scores in the same ~1e-6 band.) The
+        // structural fix that actually closes the named defect is
+        // significantTerms() never emitting the issue-key prefix/number as
+        // a query term in the first place, so a purely-prefix-driven row
+        // does not match at all, not merely rank near zero — this floor is
+        // the narrow, always-safe backstop on top of that, not the
+        // mechanism doing the real work.
+        if (r.rank >= -1e-9) continue
+        byId.set(r.id, r)
+      }
+    }
+
+    if (exactTaskKey) {
+      // A genuine retry of the same ticket: find its own history by the
+      // FULL, unstripped key, independent of whatever term-level relevance
+      // scored above. Ranked ahead of every bm25 result — that is what
+      // "retry-boost" means here — since a record about this exact ticket
+      // is definitionally more useful than one merely about similar words.
+      const exactRows = conn
+        .prepare(
+          `SELECT id, task_key, task_title, attempted, rejection_reason, reviewer_notes, created_at
+           FROM agent_run_records
+           WHERE task_key = ? AND agent_id = ?
+           ORDER BY created_at DESC
+           LIMIT ?`,
+        )
+        .all(exactTaskKey, agentId, limit) as RawRunRecordRow[]
+      for (const r of exactRows) {
+        byId.set(r.id, { ...r, rank: -1_000 })
+      }
+    }
+
+    const merged = Array.from(byId.values())
+      .sort((a, b) => a.rank - b.rank)
+      .slice(0, limit)
+
+    return {
+      records: merged.map(r => ({
+        id: r.id,
+        taskKey: r.task_key,
+        taskTitle: r.task_title,
+        attempted: r.attempted,
+        rejectionReason: r.rejection_reason,
+        reviewerNotes: r.reviewer_notes,
+        createdAt: r.created_at,
+        rank: r.rank,
+      })),
+      availability: 'available',
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // "no such table" is migration 041 never having run — the index itself
+    // is not there, not merely empty. That is the case this piece's round-2
+    // critic named explicitly: a store-level failure must not read back as a
+    // clean "searched, found nothing". Any other driver error (a malformed
+    // MATCH expression, a locked file, corruption) is a query-time failure
+    // against a store that DOES exist, so it degrades to 'available' with no
+    // records — same "search is best-effort, never fatal" contract Hermes's
+    // own `session_search` degrades under.
+    const isMissingIndex = /no such table/i.test(message)
+    return isMissingIndex
+      ? { records: [], availability: 'unavailable', unavailableReason: message }
+      : { records: [], availability: 'available' }
   } finally {
     conn.close()
   }
@@ -197,9 +313,11 @@ function searchSqliteFts(agentId: string, query: string, limit: number): Retriev
  * weighted), and is labelled as such in `RetrievalResult.engine` rather than
  * silently presented as equivalent.
  */
-async function searchPortable(agentId: string, query: string, limit: number): Promise<RetrievedRecord[]> {
+async function searchPortable(agentId: string, query: string, limit: number, exactTaskKey?: string): Promise<EngineSearchResult> {
   const terms = significantTerms(query)
-  if (terms.length === 0) return []
+  // No significant terms AND no exact-key retry to attempt is a fact about
+  // the query, not the store — see the matching comment in searchSqliteFts.
+  if (terms.length === 0 && !exactTaskKey) return { records: [], availability: 'available' }
 
   const { data, error } = await db()
     .from('agent_run_records')
@@ -207,7 +325,11 @@ async function searchPortable(agentId: string, query: string, limit: number): Pr
     .eq('agent_id', agentId)
     .order('created_at', { ascending: false })
     .limit(200)
-  if (error || !data) return []
+  // A query error (missing table, connection failure, ...) means the store
+  // itself could not be searched — 'unavailable', not a clean empty result.
+  // `data === null` with no error is a real "the table exists, zero rows".
+  if (error) return { records: [], availability: 'unavailable', unavailableReason: error.message }
+  if (!data) return { records: [], availability: 'available' }
 
   const scored = (data as RawRunRecordRow[])
     .map(r => {
@@ -216,40 +338,68 @@ async function searchPortable(agentId: string, query: string, limit: number): Pr
         .join(' ')
         .toLowerCase()
       const score = terms.reduce((acc, t) => acc + (haystack.includes(t) ? 1 : 0), 0)
-      return { r, score }
+      const isExact = exactTaskKey !== undefined && r.task_key === exactTaskKey
+      return { r, score, isExact }
     })
-    .filter(x => x.score > 0)
-    .sort((a, b) => b.score - a.score || (b.r.created_at ?? '').localeCompare(a.r.created_at ?? ''))
+    // Relevance floor: a row with zero term overlap must not be returned as
+    // "relevant past experience" — UNLESS it is the exact-key retry-boost
+    // hit, which is relevant by definition (same ticket) independent of
+    // term overlap.
+    .filter(x => x.score > 0 || x.isExact)
+    .sort((a, b) => {
+      if (a.isExact !== b.isExact) return a.isExact ? -1 : 1
+      return b.score - a.score || (b.r.created_at ?? '').localeCompare(a.r.created_at ?? '')
+    })
     .slice(0, limit)
 
-  return scored.map(({ r, score }) => ({
-    id: r.id,
-    taskKey: r.task_key,
-    taskTitle: r.task_title,
-    attempted: r.attempted,
-    rejectionReason: r.rejection_reason,
-    reviewerNotes: r.reviewer_notes,
-    createdAt: r.created_at,
-    // Negated so "lower is more relevant" holds on both paths without callers branching on `engine`.
-    rank: -score,
-  }))
+  return {
+    records: scored.map(({ r, score, isExact }) => ({
+      id: r.id,
+      taskKey: r.task_key,
+      taskTitle: r.task_title,
+      attempted: r.attempted,
+      rejectionReason: r.rejection_reason,
+      reviewerNotes: r.reviewer_notes,
+      createdAt: r.created_at,
+      // Negated so "lower is more relevant" holds on both paths without
+      // callers branching on `engine`; the exact-key retry-boost ranks
+      // ahead of every real overlap score, mirroring searchSqliteFts.
+      rank: isExact ? -1_000 : -score,
+    })),
+    availability: 'available',
+  }
 }
 
 export interface SearchResult {
   records: RetrievedRecord[]
   engine: RetrievalEngine
+  availability: RetrievalAvailability
+  /** Present only when availability is 'unavailable'. */
+  unavailableReason?: string
 }
 
 /**
  * Rank the agent's own past run records by relevance to `query` (typically
  * the task key + title being spawned for). Real FTS5 on the sqlite provider;
- * an honestly-labelled portable fallback everywhere else.
+ * an honestly-labelled portable fallback everywhere else. `availability`
+ * tells the caller whether the store was actually searched — see
+ * `RetrievalAvailability`.
  */
-export async function searchRunRecords(agentId: string, query: string, limit = 8): Promise<SearchResult> {
-  if (isSqliteProvider()) {
-    return { records: searchSqliteFts(agentId, query, limit), engine: 'fts5' }
+export async function searchRunRecords(
+  agentId: string,
+  query: string,
+  limit = 8,
+  exactTaskKey?: string,
+): Promise<SearchResult> {
+  const result = isSqliteProvider()
+    ? searchSqliteFts(agentId, query, limit, exactTaskKey)
+    : await searchPortable(agentId, query, limit, exactTaskKey)
+  return {
+    records: result.records,
+    engine: isSqliteProvider() ? 'fts5' : 'keyword-overlap',
+    availability: result.availability,
+    unavailableReason: result.unavailableReason,
   }
-  return { records: await searchPortable(agentId, query, limit), engine: 'keyword-overlap' }
 }
 
 /** One retrieved record, formatted as a whole block — never partially, see `buildRetrievedContext`. */
@@ -268,6 +418,10 @@ export interface RetrievalResult {
   recordsFound: number
   budgetTokens: number
   engine: RetrievalEngine
+  /** Whether the store was actually searched — `text: ''` alone cannot say this; see `RetrievalAvailability`. */
+  availability: RetrievalAvailability
+  /** Present only when availability is 'unavailable'. */
+  unavailableReason?: string
 }
 
 /**
@@ -277,11 +431,13 @@ export interface RetrievalResult {
  *
  * Budget discipline mirrors `memory-loop.ts`'s `trimToMemoryBudget` /
  * `PromotionBlockTooLargeError` pair exactly, on the read side instead of the
- * write side: once the running total would exceed the budget, selection
- * simply STOPS (lower-ranked records are left out, not chopped) — except for
- * the single top-ranked record, which is the one result nothing may silently
- * drop. If IT alone exceeds the budget, that is `RetrievalBudgetExceededError`,
- * raised rather than truncated, exactly as the piece brief specifies.
+ * write side: any record that would push the running total over budget is
+ * skipped (left out, not chopped) and selection CONTINUES to the next
+ * lower-ranked one — a single oversized record must not crowd out smaller
+ * records ranked below it that still fit — except for the single top-ranked
+ * record, which is the one result nothing may silently drop. If IT alone
+ * exceeds the budget, that is `RetrievalBudgetExceededError`, raised rather
+ * than truncated, exactly as the piece brief specifies.
  */
 export async function buildRetrievedContext(
   agentId: string,
@@ -293,7 +449,13 @@ export async function buildRetrievedContext(
   const limit = opts.limit ?? 8
   const query = [taskKey, taskTitle].filter(Boolean).join(' ')
 
-  const { records, engine } = await searchRunRecords(agentId, query, limit)
+  // The full, unstripped taskKey is passed through separately as the
+  // exact-match retry-boost — significantTerms() strips its issue-key
+  // prefix/number out of the ranked query itself (see the comment there),
+  // so a genuine retry of the same ticket still finds its own history by
+  // exact task_key match, not by the prefix coincidentally matching every
+  // other record this project has ever written.
+  const { records, engine, availability, unavailableReason } = await searchRunRecords(agentId, query, limit, taskKey)
 
   const blocks: string[] = []
   let usedTokens = 0
@@ -308,7 +470,10 @@ export async function buildRetrievedContext(
       // one record that mattered").
       throw new RetrievalBudgetExceededError(agentId, taskKey, record.taskKey, blockTokens, budgetTokens)
     }
-    if (usedTokens + blockTokens > budgetTokens) break // whole lower-ranked records are left out, never chopped
+    // A single oversized LOWER-ranked record must not exclude smaller
+    // records that still fit under the budget — continue scanning instead
+    // of stopping selection outright.
+    if (usedTokens + blockTokens > budgetTokens) continue
 
     blocks.push(block)
     usedTokens += blockTokens
@@ -319,5 +484,13 @@ export async function buildRetrievedContext(
       ? `# RELEVANT PAST EXPERIENCE (${engine} search, ${blocks.length}/${records.length} match(es) fit, ~${usedTokens}/${budgetTokens} tokens)\n\n${blocks.join('\n\n')}`
       : ''
 
-  return { text, recordsUsed: blocks.length, recordsFound: records.length, budgetTokens, engine }
+  return {
+    text,
+    recordsUsed: blocks.length,
+    recordsFound: records.length,
+    budgetTokens,
+    engine,
+    availability,
+    unavailableReason,
+  }
 }

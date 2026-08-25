@@ -28,6 +28,12 @@ import { join } from 'path'
 import { db } from '@/lib/db'
 import { applyFilters, applyShaping, readQueryShape } from '@/lib/db/query-params'
 import { dbUnavailableResponse } from '@/lib/db-http'
+import {
+  buildRetrievedContext,
+  RetrievalBudgetExceededError,
+  estimateTokens,
+  getContextBudgetTokens,
+} from '@/lib/memory-retrieval'
 
 /**
  * Run one of the queue's filter strings through the database seam.
@@ -68,60 +74,68 @@ const CLAUDE_BIN = resolveBinary(process.env.CLAUDE_BIN ?? 'claude') ?? 'claude'
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
 const MAX_REJECTION_CYCLES = 3
 
-const MAX_CONTEXT_BYTES = 30_000
-
-// In-memory context cache keyed by agentId — TTL 30 minutes
-// Agent memory/context changes at most daily; short TTL was causing unnecessary DB reads
+// In-memory context cache keyed by agentId — TTL 30 minutes.
+// Agent memory/context changes at most daily; short TTL was causing unnecessary DB reads.
+// This ONLY caches the identity half of the context (SOUL/handbook/skills/daily
+// notes) — agent-level, not task-level. A per-agent cache can never be
+// task-relevant, so the task-specific retrieval half (below) is never cached
+// here; it is already a small, budgeted, ranked query per spawn, not the
+// wholesale dump the cache originally existed to avoid re-querying.
 const CONTEXT_CACHE_TTL_MS = 30 * 60 * 1000
 const contextCache = new Map<string, { context: string; expiresAt: number }>()
 
-async function loadContextFromDB(agentId: string): Promise<string> {
-  const cached = contextCache.get(agentId)
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.context
-  }
+/**
+ * Budget for the identity half of the spawn context (SOUL, per-agent SOUL,
+ * AGENTS handbook, skill docs, recent daily notes) assembled below. Derived
+ * from the retrieval budget (`getContextBudgetTokens()`) rather than an
+ * unrelated magic number, so the one env knob
+ * (`TODERO_MEMORY_RETRIEVAL_BUDGET_TOKENS`) scales both halves of the spawn
+ * context together. The multiplier lands close to the old
+ * `MAX_CONTEXT_BYTES = 30_000` (~7,500 tokens) this replaces: identity docs
+ * are static guidance read once per spawn, not per-task retrieval, so they
+ * get a larger allowance than the ~1,300-token retrieval budget.
+ */
+const IDENTITY_CONTEXT_BUDGET_MULTIPLIER = 6
+function getIdentityContextBudgetTokens(): number {
+  return getContextBudgetTokens() * IDENTITY_CONTEXT_BUDGET_MULTIPLIER
+}
+
+/**
+ * Fetches the agent-level (not task-level) half of the spawn context: SOUL,
+ * per-agent SOUL, the AGENTS handbook, skill docs, and today/yesterday's
+ * daily notes. Cached per agent for 30 minutes by `loadContextFromDB` below.
+ *
+ * memory-loop-retrieval round 2: this used to also pull self_improving /
+ * long_term / corrections WHOLESALE (limit=20, unranked) and then silently
+ * drop whole sections off the end with `while (...) sections.pop()` once the
+ * combined text passed a fixed byte cap — exactly the "uncapped, unranked
+ * injection that buries the record that mattered" bug this piece exists to
+ * fix, just relocated to a query with no task key to rank against. That tier
+ * now lives in `buildRetrievedContext()` (`loadContextFromDB` below), ranked
+ * against the actual task. What remains here is genuinely task-independent
+ * identity material, so it keeps its own (larger) budget and is selected by
+ * the same whole-section discipline `lib/memory-retrieval.ts` already
+ * applies to ranked records: never chop a section, never silently drop the
+ * first (most important) one.
+ */
+async function loadIdentityContext(agentId: string): Promise<string> {
   // Fetch global + per-agent documents + shared skill docs
   const docs = await selectRows<{ agent_id: string; doc_type: string; slug: string; content: string }>(
     'agent_documents',
     `or=(agent_id.eq.global,agent_id.eq.${agentId},agent_id.eq.skill)&select=agent_id,doc_type,slug,content&order=doc_type.asc,slug.asc&limit=100`,
   )
 
-  // Fetch memory: today + yesterday daily notes + long_term + self_improving + corrections
-  // Bug fix: table was renamed agent_memory → agent_memory_files (agent_memory is the key-value store)
+  // Fetch memory: today + yesterday daily notes only. long_term / self_improving
+  // / corrections moved to buildRetrievedContext() — ranked against the task,
+  // not dumped here. Bug fix (kept from the prior round): table was renamed
+  // agent_memory → agent_memory_files (agent_memory is the key-value store).
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-  // memory-loop-write (round 2): two defects fixed together here, because
-  // fixing #1 alone would have hit #2.
-  //   1. This was hard-filtered to `agent_id=eq.global`, so the per-agent HOT
-  //      tier rows promoteHotPatterns() writes to `agent_id: agentId`
-  //      (lib/memory-loop.ts) landed on a key this query never read — the
-  //      header comment on memory-loop.ts asserted the opposite. Now scoped
-  //      to `agent_id IN (global, <this agent>)`, matching the sibling
-  //      agent_documents query just above, which already did this correctly.
-  //   2. The old single query string nested `and(memory_type.eq.daily,…)`
-  //      inside an `or=`, but this translator's `or()` only ever accepts a
-  //      FLAT list of column/op/value predicates (lib/db.ts's `DbPredicate`,
-  //      lib/db/query-params.ts's `parseOrPredicates`) — AND-inside-OR was
-  //      never supported. That combination throws `DbQueryParseError`
-  //      ("Invalid filter column \"and(memory_type\"") on every call, which
-  //      propagated unhandled out of this function and would 500 any
-  //      dispatch that reached it. Split into two flat queries (no nested
-  //      AND needed in either) and merge+re-sort in JS instead of asking the
-  //      string DSL for a shape it cannot express.
   const agentMemoryScope = `or=(agent_id.eq.global,agent_id.eq.${agentId})`
-  const [hotAndLongTermRows, dailyRows] = await Promise.all([
-    selectRows<{ memory_type: string; date_key: string | null; content: string; updated_at?: string }>(
-      'agent_memory_files',
-      `${agentMemoryScope}&memory_type=in.(long_term,self_improving,corrections)&select=memory_type,date_key,content,updated_at&order=updated_at.desc&limit=20`,
-    ),
-    selectRows<{ memory_type: string; date_key: string | null; content: string; updated_at?: string }>(
-      'agent_memory_files',
-      `${agentMemoryScope}&memory_type=eq.daily&date_key=in.(${today},${yesterday})&select=memory_type,date_key,content,updated_at&order=updated_at.desc&limit=20`,
-    ),
-  ])
-  const memRows = [...hotAndLongTermRows, ...dailyRows]
-    .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
-    .slice(0, 20)
+  const dailyRows = await selectRows<{ memory_type: string; date_key: string | null; content: string; updated_at?: string }>(
+    'agent_memory_files',
+    `${agentMemoryScope}&memory_type=eq.daily&date_key=in.(${today},${yesterday})&select=memory_type,date_key,content,updated_at&order=updated_at.desc&limit=20`,
+  )
 
   const sections: string[] = []
 
@@ -143,28 +157,67 @@ async function loadContextFromDB(agentId: string): Promise<string> {
     sections.push(`# SKILL: ${skill.slug}\n\n${skill.content}`)
   }
 
-  // Memory: self_improving first (HOT), then long_term, then daily (newest first)
-  const siMem = memRows.find(m => m.memory_type === 'self_improving')
-  if (siMem) sections.push(`# SELF-IMPROVING MEMORY\n\n${siMem.content}`)
-
-  const ltMem = memRows.find(m => m.memory_type === 'long_term')
-  if (ltMem) sections.push(`# LONG-TERM MEMORY\n\n${ltMem.content}`)
-
-  const dailyMem = memRows.filter(m => m.memory_type === 'daily').sort((a, b) => (b.date_key ?? '').localeCompare(a.date_key ?? ''))
+  // Daily notes, newest first
+  const dailyMem = dailyRows
+    .filter(m => m.memory_type === 'daily')
+    .sort((a, b) => (b.date_key ?? '').localeCompare(a.date_key ?? ''))
   for (const m of dailyMem) {
     sections.push(`# DAILY MEMORY (${m.date_key})\n\n${m.content}`)
   }
 
-  // Hard context limit: drop from the end (oldest memory) until under MAX_CONTEXT_BYTES
-  let combined = sections.join('\n\n---\n\n')
-  while (combined.length > MAX_CONTEXT_BYTES && sections.length > 1) {
-    sections.pop()
-    combined = sections.join('\n\n---\n\n')
+  // Whole-section budget selection — the same discipline
+  // lib/memory-retrieval.ts applies to ranked records: estimate tokens per
+  // section, keep adding whole sections while under budget, STOP (never
+  // chop) once the running total would overflow. The one section that may
+  // never be silently dropped is the first non-empty one — an agent's own
+  // identity (global SOUL, or whatever section landed first) — mirroring
+  // "the top-ranked record" in buildRetrievedContext: if it alone exceeds
+  // the budget, that is RetrievalBudgetExceededError, raised rather than
+  // truncated. This replaces the old `while (...) sections.pop()` loop,
+  // which silently dropped whichever section happened to land last,
+  // regardless of whether that was the important one.
+  const budgetTokens = getIdentityContextBudgetTokens()
+  const selected: string[] = []
+  let usedTokens = 0
+  for (const section of sections) {
+    const sectionTokens = estimateTokens(section)
+    if (selected.length === 0 && sectionTokens > budgetTokens) {
+      const label = section.split('\n', 1)[0].replace(/^#\s*/, '')
+      throw new RetrievalBudgetExceededError(agentId, '(identity-context)', label, sectionTokens, budgetTokens)
+    }
+    if (usedTokens + sectionTokens > budgetTokens) break
+    selected.push(section)
+    usedTokens += sectionTokens
   }
 
-  // Cache the result
-  contextCache.set(agentId, { context: combined, expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS })
-  return combined
+  return selected.join('\n\n---\n\n')
+}
+
+/**
+ * Full spawn context: the cached, agent-level identity half plus a fresh,
+ * task-ranked retrieval half. `taskKey`/`taskTitle` identify the task being
+ * spawned for — retrieval ranks this agent's past run records against THAT,
+ * not against nothing, and is never served from `contextCache` (see the
+ * comment on that Map).
+ */
+async function loadContextFromDB(agentId: string, taskKey: string, taskTitle: string): Promise<string> {
+  const cached = contextCache.get(agentId)
+  let identityContext: string
+  if (cached && cached.expiresAt > Date.now()) {
+    identityContext = cached.context
+  } else {
+    identityContext = await loadIdentityContext(agentId)
+    contextCache.set(agentId, { context: identityContext, expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS })
+  }
+
+  const retrieved = await buildRetrievedContext(agentId, taskKey, taskTitle)
+  if (retrieved.availability === 'unavailable') {
+    console.warn(
+      `[run-agent] retrieval unavailable for ${agentId}/${taskKey} (${retrieved.engine}): ${retrieved.unavailableReason ?? 'unknown reason'} — proceeding with identity context only, not a clean "nothing relevant" result`,
+    )
+  }
+
+  return [identityContext, retrieved.text].filter(Boolean).join('\n\n---\n\n')
 }
 
 
@@ -507,23 +560,42 @@ export async function POST(req: NextRequest) {
 
   // ── Step 4b: Query inbox for resolved entry linked to this task ──
   // AC (TOD-1069): inject <inbox-response> block if a resolved inbox entry exists for this issue.
+  //
+  // Round-3 fix: dropped the `response_data=not.is.null` filter. On a database
+  // still missing migration 022's response_data column, PATCH /api/inbox
+  // (app/api/inbox/route.ts) degrades to writing the same outcome into
+  // `context.resolution.effect` instead — a row resolved that way would never
+  // match `response_data=not.is.null` and this block would silently never
+  // fire, which is exactly the two-halves-disagreeing bug this fixes. Fetch a
+  // few candidates by recency instead and read whichever place the payload
+  // actually landed.
   let inboxResponseBlock = ''
   try {
     const inboxRows = await selectRows<{
-      type: string; status: string; response_data: Record<string, unknown>; resolved_by: string | null
+      type: string; status: string; response_data: Record<string, unknown> | null
+      resolved_by: string | null; context: Record<string, unknown> | null
     }>(
       'inbox',
-      `issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&response_data=not.is.null&order=resolved_at.desc&limit=1&select=type,status,response_data,resolved_by`,
+      `issue_id=eq.${task.id}&status=in.(approved,denied,explained,timeout)&order=resolved_at.desc&limit=5&select=type,status,response_data,resolved_by,context`,
     )
-    if (inboxRows.length > 0) {
-      const entry = inboxRows[0]
-      const responseFields = Object.entries(entry.response_data ?? {})
+    const contextResolutionOf = (row: { context: Record<string, unknown> | null }) =>
+      (row.context && typeof row.context === 'object' && !Array.isArray(row.context))
+        ? (row.context as Record<string, unknown>).resolution as Record<string, unknown> | undefined
+        : undefined
+    const entry = inboxRows.find(r => {
+      const res = contextResolutionOf(r)
+      return r.response_data != null || res?.effect != null || res?.data != null
+    })
+    if (entry) {
+      const res = contextResolutionOf(entry)
+      const payload = (entry.response_data ?? res?.effect ?? res?.data ?? {}) as Record<string, unknown>
+      const responseFields = Object.entries(payload)
         .map(([k, v]) => `  <${k}>${JSON.stringify(v)}</${k}>`)
         .join('\n')
       inboxResponseBlock = `\n<inbox-response>
   <request_type>${entry.type}</request_type>
   <resolution_status>${entry.status}</resolution_status>
-  <resolved_by>${entry.resolved_by ?? 'unknown'}</resolved_by>
+  <resolved_by>${entry.resolved_by ?? (res?.by as string | undefined) ?? 'unknown'}</resolved_by>
   <response_data>
 ${responseFields}
   </response_data>
@@ -572,7 +644,11 @@ ${responseFields}
 
   // ── Step 9: Spawn Claude Code agent in background ──
   // FIX (2026-04-10): Previously `$(cat ...)` template literal was never evaluated.
-  const dbContext = await loadContextFromDB(agentId)
+  // memory-loop-retrieval round 2: this is the ONLY code path that actually
+  // spawns an agent, so it must be the one that carries the task key/title
+  // through to retrieval — without them, loadContextFromDB cannot rank
+  // anything and retrieval degrades to "nothing to search for".
+  const dbContext = await loadContextFromDB(agentId, task.task_key ?? task.id, task.title ?? '')
   const context = `# WORKSPACE IDENTITY\n\n${dbContext}`
 
   // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)

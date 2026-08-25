@@ -116,21 +116,41 @@ done
 if [[ -n "$AGENT_ID" && -n "$TASK_KEY" ]]; then
   echo "## Relevant Past Experience (retrieved)"
   echo ""
-  if RETRIEVED=$(node "${REPO_ROOT}/scripts/retrieve-context.mjs" "$AGENT_ID" "$TASK_KEY" "$TASK_TITLE" 2>/dev/null); then
+  RETRIEVE_ERR_FILE="$(mktemp)"
+  RETRIEVE_EXIT=0
+  RETRIEVED="$(node "${REPO_ROOT}/scripts/retrieve-context.mjs" "$AGENT_ID" "$TASK_KEY" "$TASK_TITLE" 2>"$RETRIEVE_ERR_FILE")" || RETRIEVE_EXIT=$?
+  if [[ "$RETRIEVE_EXIT" -eq 0 ]]; then
     if [[ -n "$RETRIEVED" ]]; then
       echo "$RETRIEVED"
     else
       echo "_(no past run record ranked relevant to this task)_"
     fi
+  elif [[ "$RETRIEVE_EXIT" -eq 2 ]]; then
+    # RetrievalBudgetExceededError — the single top-ranked matching record
+    # cannot fit inside the configured budget on its own. This one STAYS
+    # FATAL: silently continuing here is exactly the "truncate and lose the
+    # record that mattered" failure this piece exists to prevent, so the
+    # caller must see it, not a degraded-but-complete document.
+    echo "retrieve-context.mjs exceeded its context budget (exit 2) — diagnostic follows:" >&2
+    cat "$RETRIEVE_ERR_FILE" >&2
+    rm -f "$RETRIEVE_ERR_FILE"
+    exit 2
   else
-    # Non-zero exit here is `retrieve-context.mjs` reporting
-    # RetrievalBudgetExceededError (or a genuine failure) — `set -e` above
-    # already means this whole script stops rather than continuing with a
-    # partial context, but the explicit branch keeps the failure message
-    # attributable to retrieval specifically rather than an opaque abort.
-    echo "ERROR: retrieval failed or exceeded its context budget — see stderr" >&2
-    exit 1
+    # Any other non-zero exit means the retrieval subprocess itself could not
+    # complete cleanly — a usage error, a crash, an unhandled failure. This is
+    # NOT the same thing as "searched and found nothing relevant" (that's the
+    # RETRIEVE_EXIT -eq 0, empty-$RETRIEVED branch above). Print the real
+    # diagnostic instead of discarding it (the old `2>/dev/null` here is
+    # exactly what hid the previous failure from whoever had to debug it),
+    # but DEGRADE rather than abort the whole spawn: a context document
+    # that's merely missing retrieved memory is still usable by the agent
+    # that spawns with it, whereas a document truncated before
+    # "# End Workspace Context" is not.
+    echo "retrieve-context.mjs exited ${RETRIEVE_EXIT} — diagnostic follows:" >&2
+    cat "$RETRIEVE_ERR_FILE" >&2
+    echo "_(retrieval unavailable — the run-record store could not be searched; this is NOT \"no relevant records\")_"
   fi
+  rm -f "$RETRIEVE_ERR_FILE"
   echo ""
   echo "---"
   echo ""

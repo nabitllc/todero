@@ -18,12 +18,18 @@
 import { useMemo } from 'react'
 import { useApiData, type ApiError } from '@/hooks/useApiData'
 import type { RosterMeta } from '@/components/tabs/AgentsTab'
+import type { VaultBadgeInfo } from '@/lib/vault-badge'
 
 /**
  * One roster row as the API serves it. This is the client-side view of the
  * route's `AgentDto`: identity and display only. Liveness fields exist on the
  * wire but pickers have no business rendering them, so they are not restated
  * here — components that need them read /api/agents directly.
+ *
+ * `vault` IS restated, unlike the liveness fields: it is the one field this
+ * hook's whole reason for existing (docs/brain2-integration.md) hinges on —
+ * a picker needs it to know an id came from the Brain2 vault rather than any
+ * roster/registration a dispatcher actually knows how to run.
  */
 export interface RosterAgent {
   id: string
@@ -34,6 +40,8 @@ export interface RosterAgent {
   model: string
   modelShort: string
   floor: boolean
+  /** Brain2 vault manifest data for this id, or null when the vault does not name it. */
+  vault: VaultBadgeInfo | null
 }
 
 interface AgentsEnvelope {
@@ -41,6 +49,12 @@ interface AgentsEnvelope {
   rosterSource: string
   rosterWarning: string | null
   rosterPath: string | null
+  /** Global_Agents/ actually scanned, or null when the vault was not found there — see app/api/agents/route.ts. */
+  vaultPath: string | null
+  /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
+  vaultWarning: string | null
+  /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
+  localProviderConfigured: boolean
 }
 
 export interface AgentRosterState {
@@ -51,6 +65,12 @@ export interface AgentRosterState {
   /** Operator-facing reason the roster is empty, naming the path searched. */
   rosterWarning: string | null
   rosterPath: string | null
+  /** Global_Agents/ actually scanned, or null when the vault was not found there. */
+  vaultPath: string | null
+  /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
+  vaultWarning: string | null
+  /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
+  localProviderConfigured: boolean
   /** Non-null when the request itself failed. `agents` is empty in that case. */
   error: ApiError | null
   loading: boolean
@@ -85,13 +105,19 @@ export function useAgentRoster(): AgentRosterState {
   const rosterSource = data?.rosterSource ?? 'none'
   const rosterWarning = data?.rosterWarning ?? null
   const rosterPath = data?.rosterPath ?? null
+  const vaultPath = data?.vaultPath ?? null
+  const vaultWarning = data?.vaultWarning ?? null
+  const localProviderConfigured = data?.localProviderConfigured ?? false
 
   const meta = useMemo<RosterMeta>(
-    () => ({ source: rosterSource, warning: rosterWarning, path: rosterPath }),
-    [rosterSource, rosterWarning, rosterPath],
+    () => ({ source: rosterSource, warning: rosterWarning, path: rosterPath, vaultPath, vaultWarning, localProviderConfigured }),
+    [rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, localProviderConfigured],
   )
 
-  return { agents, rosterSource, rosterWarning, rosterPath, error, loading, refetch, byId, meta }
+  return {
+    agents, rosterSource, rosterWarning, rosterPath, vaultPath, vaultWarning, localProviderConfigured,
+    error, loading, refetch, byId, meta,
+  }
 }
 
 /**

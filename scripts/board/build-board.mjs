@@ -357,6 +357,15 @@ ${decisionBlocks}
 `
 
 await writeFile(outPath, html)
+
+// Record what the board now SHOWS, so a watcher can tell "the product moved"
+// from "the orchestrator already handled this". The old monitor compared against
+// its own previous reading, so every manual fix produced a stale transition
+// report minutes later — four of six wake-ups reported something already done.
+await writeFile(join(here, 'last-published.json'), JSON.stringify({
+  passed: harness.passed, total: harness.total,
+  score: harness.score, criticalFailed: harness.criticalFailed,
+}, null, 1))
 console.log(`board written → ${outPath}`)
 console.log(`  harness ${harness.passed}/${harness.total} (${harness.score}/10, ${harness.criticalFailed} critical)`)
 console.log(`  channels ${base.toFixed(1)} → ${cur.toFixed(1)} / ${channels.goalAvg} · ${cleared} cleared`)

@@ -12,6 +12,7 @@ import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, useApiData, type ApiError } from '@/hooks/useApiData'
 import { dbUrl } from '@/lib/db/browser'
 import { estimateModelRateUsd } from '@/lib/model-rates'
+import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Agent {
@@ -42,6 +43,10 @@ interface Agent {
   // from the "Remove" action below; an AGENTS.md-defined agent has no
   // registration row for DELETE /api/agents/{id} to remove.
   rosterSource?: string
+  // Brain2 vault manifest data for this id, or null/undefined when the
+  // vault does not name it. Optional for the same reason as the liveness
+  // fields above — a partial agent object should still compile.
+  vault?: VaultBadgeInfo | null
 }
 
 interface Issue {
@@ -83,6 +88,11 @@ interface AgentDetailViewProps {
    *  card still closes and the DELETE still lands, it just relies on the
    *  next /api/agents poll to reflect it. */
   onRemoved?: (agentId: string) => void
+  /** Whether this host's configured LLM endpoint is local — see
+   *  lib/vault-badge.ts's resolveVaultBadge(). Optional so an older call
+   *  site still compiles; a vault-backed agent then falls back to its
+   *  Claude Code alias, which is still honest — just not local-aware. */
+  localProviderConfigured?: boolean
 }
 
 // ── Tab types ──────────────────────────────────────────────────────────────────
@@ -472,39 +482,72 @@ function SkillsTab({ agent }: { agent: Agent }) {
 }
 
 // ── Tab: Configuration ────────────────────────────────────────────────────────
-function ConfigurationTab({ agent }: { agent: Agent }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent config row
-  const [config, setConfig] = useState<any>(null)
+//
+// Round 4 fix: this used to fetch /api/status and read `.agents.agents` off
+// it looking for a per-agent config row — but /api/status has no `agents`
+// key at all (it is a health/db/env envelope), so `config` was always null
+// and every row below silently fell back to an invented string: the vault
+// manifest's raw cloud `preferred` name printed directly under a badge that
+// had already been fixed to show the local/alias label, "See AGENTS.md
+// routing table" for a table AGENTS.md does not contain, and "Disabled" for
+// every agent regardless of whether it had ever actually heartbeat. Every
+// row here now comes from GET /api/agents (the same envelope the header
+// badge and the rest of the roster already trust), matched by id, with the
+// `agent` prop as the one-poll-older fallback while that fetch is in flight.
+function ConfigurationTab({ agent, localProviderConfigured }: { agent: Agent; localProviderConfigured: boolean }) {
+  const [row, setRow] = useState<Agent | null>(null)
   const [configError, setConfigError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
-    fetchJson<any>('/api/status')
+    setLoading(true)
+    fetchJson<{ agents?: Agent[] }>('/api/agents')
       .then(r => {
-        if (!r.ok) { setConfigError(r.error); setConfig(null); setLoading(false); return }
+        if (!r.ok) { setConfigError(r.error); setRow(null); setLoading(false); return }
         setConfigError(null)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
-        const agentsList: any[] = r.data?.agents?.agents ?? []
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
-        const found = agentsList.find((a: any) => a.id === agent.id)
-        setConfig(found ?? null)
+        const agentsList: Agent[] = Array.isArray(r.data?.agents) ? r.data.agents : []
+        const found = agentsList.find(a => a.id === agent.id)
+        setRow(found ?? null)
         setLoading(false)
       })
   }, [agent.id])
 
-  const heartbeatCfg = config?.heartbeat ?? {}
-  const workspacePath = config?.workspaceDir ?? agent.workspace ?? ''
+  // Prefer the fresh /api/agents row; fall back to the prop this modal was
+  // opened with (same shape, one poll older) while the fetch above is still
+  // in flight or failed — never a fabricated intermediate value.
+  const live: Agent = row ?? agent
+  const vault: VaultBadgeInfo | null = live.vault ?? null
+  const vaultBadge = vault ? resolveVaultBadge(vault, localProviderConfigured) : null
+
+  // Same three states livenessLabel() already renders on the Dashboard tab,
+  // plus the one case that is not a state at all: livenessSource === 'none'
+  // means the server could not read a heartbeat store this request, so no
+  // liveness claim — live, stale, idle, OR "Disabled" — can honestly be made.
+  const heartbeatValue = live.livenessSource === 'none' ? 'not measured' : livenessLabel(live).text
 
   const rows: { label: string; value: string | undefined }[] = [
-    { label: 'Default Model',    value: config?.model ?? agent.model },
-    { label: 'Model (fallback)', value: 'See AGENTS.md routing table' },
-    { label: 'Model (escalate)', value: 'See AGENTS.md routing table' },
-    { label: 'Heartbeat',        value: heartbeatCfg.every ? `Every ${heartbeatCfg.every}` : 'Disabled' },
-    { label: 'Workspace',        value: workspacePath },
-    { label: 'Sessions',         value: config?.sessionsCount != null ? String(config.sessionsCount) : '—' },
-    { label: 'Agent ID',         value: agent.id },
+    { label: 'Default Model', value: vaultBadge ? vaultBadge.label : live.model },
   ]
+
+  // A fallback model only exists for a vault-backed agent — AGENTS.md names
+  // no routing table for anyone else, so no other row invents one. Named
+  // from the manifest's own `fallback_local`, with the same local_eligible /
+  // localProviderConfigured gate resolveVaultBadge() uses, so this line
+  // never promises a route that would not actually be taken.
+  if (vault) {
+    const localNote = vault.localEligible
+      ? (localProviderConfigured
+          ? 'active — this host is configured for local routing'
+          : 'eligible per manifest, but this host has no local provider configured')
+      : 'not eligible for this agent (manifest local_eligible: false)'
+    rows.push({ label: 'Model (fallback)', value: `${vault.fallbackLocal} — ${localNote}` })
+  }
+
+  rows.push(
+    { label: 'Heartbeat',  value: heartbeatValue },
+    { label: 'Workspace',  value: live.workspace || '—' },
+    { label: 'Agent ID',   value: live.id },
+  )
 
   return (
     <div className="space-y-3">
@@ -765,8 +808,17 @@ function BudgetTab({ agent }: { agent: Agent }) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDetailViewProps) {
+export default function AgentDetailView({ agent, onClose, onRemoved, localProviderConfigured = false }: AgentDetailViewProps) {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
+  // A vault-backed agent (`agent.vault !== null`) never shows the generic
+  // `modelShort` derived from the manifest's cloud `preferred` name — that
+  // is what put "Opus" directly above "mid tier" on six cards. Every tab
+  // below reads `displayAgent` instead of `agent` so the fix applies
+  // wherever a model badge renders, not just the header. See
+  // lib/vault-badge.ts's resolveVaultBadge() for the local/alias/preferred
+  // precedence.
+  const vaultBadge = agent.vault ? resolveVaultBadge(agent.vault, localProviderConfigured) : null
+  const displayAgent: Agent = vaultBadge ? { ...agent, modelShort: vaultBadge.label } : agent
   const [isEditing, setIsEditing] = useState(false)
   // Result of the header's two write actions. A refused write shows the
   // server's real status and message in the same ApiErrorBanner every loader
@@ -865,7 +917,15 @@ export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDeta
               {agent.type === 'consultant' && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
               )}
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{agent.modelShort}</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgent.modelShort}</span>
+              {vaultBadge && (
+                <span
+                  className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+                  title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+                >
+                  Brain2
+                </span>
+              )}
             </div>
             <p className="text-white/50 text-xs">{agent.role}</p>
           </div>
@@ -937,12 +997,12 @@ export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDeta
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {activeTab === 'dashboard'     && <DashboardTab     agent={agent} />}
-          {activeTab === 'instructions'  && <InstructionsTab  agent={agent} />}
-          {activeTab === 'skills'        && <SkillsTab        agent={agent} />}
-          {activeTab === 'configuration' && <ConfigurationTab agent={agent} />}
-          {activeTab === 'runs'          && <RunsTab          agent={agent} />}
-          {activeTab === 'budget'        && <BudgetTab        agent={agent} />}
+          {activeTab === 'dashboard'     && <DashboardTab     agent={displayAgent} />}
+          {activeTab === 'instructions'  && <InstructionsTab  agent={displayAgent} />}
+          {activeTab === 'skills'        && <SkillsTab        agent={displayAgent} />}
+          {activeTab === 'configuration' && <ConfigurationTab agent={displayAgent} localProviderConfigured={localProviderConfigured} />}
+          {activeTab === 'runs'          && <RunsTab          agent={displayAgent} />}
+          {activeTab === 'budget'        && <BudgetTab        agent={displayAgent} />}
         </div>
       </div>
     </div>

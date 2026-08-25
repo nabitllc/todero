@@ -45,3 +45,4 @@ scripts/acceptance/.gate.lock
 /db.sqlite
 /db.sqlite-wal
 /db.sqlite-shm
+.next-critic/

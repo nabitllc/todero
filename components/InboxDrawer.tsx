@@ -43,6 +43,77 @@ function timeAgo(ts: string): string {
   return `${Math.floor(diff / 3600000)}h ago`
 }
 
+/** The fallback shape PATCH /api/inbox writes to `context.resolution` when
+ * the `response_data` column doesn't exist — see app/api/inbox/route.ts. */
+interface ContextResolution {
+  by?: string
+  at?: string
+  status?: string
+  /** Round-3 shape: `{effect, ok, detail}` — what the decision actually did. */
+  effect?: unknown
+  /** Pre-round-3 shape, kept for entries resolved before this fix. */
+  data?: unknown
+}
+
+/** Round-3: response_data is now the real consequence of a decision, not the
+ * reason a human typed — see app/api/inbox/route.ts's INBOX_EFFECTS map. */
+interface EffectOutcome {
+  effect?: unknown
+  ok?: unknown
+  detail?: unknown
+}
+
+function isEffectOutcome(payload: unknown): payload is EffectOutcome {
+  return !!payload && typeof payload === 'object' && !Array.isArray(payload) && 'effect' in payload && 'detail' in payload
+}
+
+function formatResolutionPayload(data: unknown): string | null {
+  if (data === null || data === undefined) return null
+  // The real shape since round 3: what the decision actually did, not what
+  // the human typed. Render that outcome, flagging a failed effect plainly
+  // rather than letting it read like a clean success.
+  if (isEffectOutcome(data)) {
+    const detail = typeof data.detail === 'string' && data.detail.trim() ? data.detail.trim() : String(data.effect ?? '')
+    if (!detail) return null
+    return data.ok === false ? `${detail} (FAILED)` : detail
+  }
+  // Pre-round-3 entries: response_data was whatever the human typed in the
+  // modal (a deny reason, or field values). Kept so old history still renders.
+  if (typeof data === 'object') {
+    const obj = data as Record<string, unknown>
+    if (typeof obj.reason === 'string' && obj.reason.trim()) return obj.reason.trim()
+    const entries = Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== '')
+    if (entries.length === 0) return null
+    return entries.map(([k, v]) => `${k}: ${v}`).join(', ')
+  }
+  const str = String(data).trim()
+  return str || null
+}
+
+/** What actually happened as a result of a decision, for the historic view.
+ * Reads the real `response_data` column when it's present, and falls back to
+ * `context.resolution` (the read-modify-write the API does when that column
+ * is missing) so the payload is visible either way instead of vanishing. */
+function resolutionLine(entry: InboxEntry): string | null {
+  const contextResolution = (entry.context && typeof entry.context === 'object' && !Array.isArray(entry.context))
+    ? (entry.context as Record<string, unknown>).resolution as ContextResolution | undefined
+    : undefined
+
+  const payload = entry.response_data ?? contextResolution?.effect ?? contextResolution?.data
+  const detail = formatResolutionPayload(payload)
+  if (!detail) return null
+
+  const by = entry.resolved_by ?? contextResolution?.by ?? '—'
+  return `${entry.status} by ${by} — ${detail}`
+}
+
+/** Request types with a registered automated consequence — mirrors
+ * INBOX_EFFECTS in app/api/inbox/route.ts. A type NOT in this set has no
+ * effect the server can dispatch, so it must not show Approve/Deny (buttons
+ * that imply a consequence they don't have) — it gets a single Acknowledge
+ * action instead. */
+const TYPES_WITH_EFFECT = new Set(['loop_breaker_pause', 'ceiling_stop'])
+
 function ActionModal({ entry, action, onClose, onSubmit }: {
   entry: InboxEntry
   action: 'approved' | 'denied' | 'explained'
@@ -142,6 +213,7 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
   // permission error or a 500.
   const [entries, setEntries] = useState<InboxEntry[] | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
+  const [actionError, setActionError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ entry: InboxEntry; action: 'approved' | 'denied' | 'explained' } | null>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -184,12 +256,25 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
   }
 
   const resolve = async (entry: InboxEntry, action: 'approved' | 'denied' | 'explained', responseData?: unknown) => {
-    await fetch('/api/inbox', {
+    // Was a bare `fetch` with no `res.ok` check — a 404/5xx read back exactly
+    // like a success, closed the modal, and moved on. Use fetchJson and
+    // check `r.ok` the same way InboxTab does so a failed decision can't
+    // look like a clean one.
+    const r = await fetchJson<InboxEntry & { _warning?: string }>('/api/inbox', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: entry.id, status: action, resolved_by: 'michael', response_data: responseData }),
     })
     setModal(null)
+    if (!r.ok) { setActionError(r.error); return }
+    // A 2xx can still carry a `_warning` (e.g. response_data fell back to
+    // context.resolution because the dedicated column is missing) — show it
+    // instead of letting a partial write look like a clean success.
+    setActionError(
+      r.data._warning
+        ? { status: r.status, endpoint: '/api/inbox', message: r.data._warning }
+        : null,
+    )
     fetchEntries()
   }
 
@@ -258,6 +343,9 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+          {actionError && (
+            <ApiErrorBanner error={actionError} onRetry={() => setActionError(null)} />
+          )}
           {loading && <p className="text-white/30 text-xs py-8 text-center">Loading…</p>}
           {!loading && error && (
             <ApiErrorBanner error={error} onRetry={fetchEntries} />
@@ -294,6 +382,10 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
                 </span>
               </div>
 
+              {view === 'historic' && resolutionLine(entry) && (
+                <p className="text-white/40 text-[11px] mb-2">{resolutionLine(entry)}</p>
+              )}
+
               <div className="flex items-center justify-between gap-2">
                 <span className="text-white/25 text-[10px]">
                   {view === 'pending'
@@ -302,19 +394,30 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
                 </span>
                 {view === 'pending' && (
                   <div className="flex gap-1">
-                    {(['approved', 'explained', 'denied'] as const).map(action => (
+                    {TYPES_WITH_EFFECT.has(entry.type) ? (
+                      (['approved', 'explained', 'denied'] as const).map(action => (
+                        <button
+                          key={action}
+                          onClick={() => setModal({ entry, action })}
+                          className={`px-2.5 py-1 text-[10px] font-medium rounded-lg transition-colors capitalize ${
+                            action === 'approved' ? 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400'
+                            : action === 'denied' ? 'bg-red-600/20 hover:bg-red-600/40 text-red-400'
+                            : 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400'
+                          }`}
+                        >
+                          {action === 'approved' ? 'Approve' : action === 'denied' ? 'Deny' : 'Explain'}
+                        </button>
+                      ))
+                    ) : (
+                      // No registered effect for this type (see TYPES_WITH_EFFECT above) —
+                      // Approve/Deny would imply a consequence the server can't dispatch.
                       <button
-                        key={action}
-                        onClick={() => setModal({ entry, action })}
-                        className={`px-2.5 py-1 text-[10px] font-medium rounded-lg transition-colors capitalize ${
-                          action === 'approved' ? 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400'
-                          : action === 'denied' ? 'bg-red-600/20 hover:bg-red-600/40 text-red-400'
-                          : 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400'
-                        }`}
+                        onClick={() => resolve(entry, 'explained', { reason: 'Acknowledged — no automated effect for this request type.' })}
+                        className="px-2.5 py-1 text-[10px] font-medium rounded-lg transition-colors bg-white/10 hover:bg-white/20 text-white/70"
                       >
-                        {action === 'approved' ? 'Approve' : action === 'denied' ? 'Deny' : 'Explain'}
+                        Acknowledge
                       </button>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>

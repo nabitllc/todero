@@ -20,6 +20,22 @@
 //        all is that a caller sourcing this script's stdout under `set -e`
 //        (as spawn-context.sh does) fails loudly instead of silently
 //        injecting a truncated record.
+//
+// Exit discipline: this process must NEVER call `process.exit()` itself.
+// On the supabase provider, the "store unavailable" path has already made an
+// HTTP request (via the Supabase SDK's fetch) that failed — and calling
+// `process.exit()` while that request's underlying socket/keep-alive handle
+// is still being torn down hits a genuine libuv race on Windows
+// (`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file
+// src\win\async.c, line 94`), which aborts the process with exit code 127 —
+// not the exit code this script ever intends to produce, and one that looks
+// nothing like the deliberate 0/1/2 contract above. Reproduced
+// deterministically (3/3) with `process.exit(0)` called immediately after a
+// failed `fetch()`; letting the event loop drain naturally after the same
+// failed fetch exits cleanly every time. So every path below only sets
+// `process.exitCode` and returns — Node exits on its own once the event loop
+// is empty, which also gives any pending handle from a failed request time to
+// finish closing before the process actually goes down.
 
 import { loadEnvFiles } from './lib/env-file.mjs'
 import { importTs, REPO_ROOT } from './lib/ts-import.mjs'
@@ -32,34 +48,48 @@ loadEnvFiles(REPO_ROOT)
 const [agentId, taskKey, ...titleParts] = process.argv.slice(2)
 if (!agentId || !taskKey) {
   console.error('usage: node scripts/retrieve-context.mjs <agent_id> <task_key> [task_title...]')
-  process.exit(1)
-}
-const taskTitle = titleParts.join(' ')
+  process.exitCode = 1
+} else {
+  const taskTitle = titleParts.join(' ')
 
-const mod = await importTs('lib/memory-retrieval.ts')
-if (!mod.ok) {
-  console.error(`[retrieve-context] could not load lib/memory-retrieval.ts: ${mod.reason}`)
-  process.exit(1)
-}
-const { buildRetrievedContext, RetrievalBudgetExceededError } = mod.module
-
-try {
-  const result = await buildRetrievedContext(agentId, taskKey, taskTitle)
-  if (result.text) {
-    process.stdout.write(result.text + '\n')
-    console.error(
-      `[retrieve-context] ${agentId}/${taskKey}: ${result.recordsUsed}/${result.recordsFound} record(s) ` +
-        `injected via ${result.engine} search, ~${result.budgetTokens} token budget`,
-    )
+  const mod = await importTs('lib/memory-retrieval.ts')
+  if (!mod.ok) {
+    console.error(`[retrieve-context] could not load lib/memory-retrieval.ts: ${mod.reason}`)
+    process.exitCode = 1
   } else {
-    console.error(`[retrieve-context] ${agentId}/${taskKey}: no relevant past run records found (${result.engine} search)`)
+    const { buildRetrievedContext, RetrievalBudgetExceededError } = mod.module
+
+    try {
+      const result = await buildRetrievedContext(agentId, taskKey, taskTitle)
+      if (result.availability === 'unavailable') {
+        // NOT the same message as "searched, found nothing" below — the store
+        // itself could not be reached (sqlite file/FTS table missing, postgres
+        // table missing, a query error), so nothing was actually observed. A
+        // caller reading this as a clean negative would be trusting a search
+        // that never happened.
+        console.error(
+          `[retrieve-context] ${agentId}/${taskKey}: RETRIEVAL UNAVAILABLE — the ${result.engine} store could not be ` +
+            `searched (${result.unavailableReason ?? 'unknown reason'}). This is NOT "no relevant records found"; it is ` +
+            `"nothing was observed". Proceeding with no injected context.`,
+        )
+      } else if (result.text) {
+        process.stdout.write(result.text + '\n')
+        console.error(
+          `[retrieve-context] ${agentId}/${taskKey}: ${result.recordsUsed}/${result.recordsFound} record(s) ` +
+            `injected via ${result.engine} search, ~${result.budgetTokens} token budget`,
+        )
+      } else {
+        console.error(`[retrieve-context] ${agentId}/${taskKey}: no relevant past run records found (${result.engine} search)`)
+      }
+      process.exitCode = 0
+    } catch (err) {
+      if (err instanceof RetrievalBudgetExceededError || err?.name === 'RetrievalBudgetExceededError') {
+        console.error(`[retrieve-context] BUDGET EXCEEDED: ${err.message}`)
+        process.exitCode = 2
+      } else {
+        console.error(`[retrieve-context] retrieval failed: ${err instanceof Error ? err.message : String(err)}`)
+        process.exitCode = 1
+      }
+    }
   }
-  process.exit(0)
-} catch (err) {
-  if (err instanceof RetrievalBudgetExceededError || err?.name === 'RetrievalBudgetExceededError') {
-    console.error(`[retrieve-context] BUDGET EXCEEDED: ${err.message}`)
-    process.exit(2)
-  }
-  console.error(`[retrieve-context] retrieval failed: ${err instanceof Error ? err.message : String(err)}`)
-  process.exit(1)
 }

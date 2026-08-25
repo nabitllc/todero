@@ -7,6 +7,7 @@ import { AGENT_QUEUE_CONFIGS } from '@/lib/agent-queue'
 import { AGENT_REGISTRY } from '@/lib/agent-capabilities'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
 
 interface Issue {
   id: string
@@ -46,6 +47,13 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
   const [paused, setPaused] = useState(false)
   const [lastRun, setLastRun] = useState<number | null>(null)
   const [toggling, setToggling] = useState(false)
+  // Brain2 vault manifest data for this id, when GET /api/agents' row names
+  // one — same fetch this component already makes for lastUpdatedAt, just
+  // reading a field it used to discard. Null for every id AGENT_REGISTRY
+  // already covers (none of it overlaps a vault manifest id today), real for
+  // any id that is vault-only.
+  const [vault, setVault] = useState<VaultBadgeInfo | null>(null)
+  const [localProviderConfigured, setLocalProviderConfigured] = useState(false)
 
   useEffect(() => {
     fetchJson<{ data?: Issue[] } | Issue[]>(`/api/issues?assignee=${encodeURIComponent(agentId)}`)
@@ -70,6 +78,8 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       const agents: any[] = Array.isArray(body) ? body : Array.isArray(body?.agents) ? body.agents : []
       const found = agents.find(a => a.id === agentId)
       if (found?.lastUpdatedAt) setLastRun(found.lastUpdatedAt)
+      setVault(found?.vault ?? null)
+      setLocalProviderConfigured(!Array.isArray(body) && body?.localProviderConfigured === true)
     })
   }, [agentId, reload])
 
@@ -94,6 +104,14 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
   const activeIssues = (issues ?? []).filter(i => ['open', 'in_progress', 'code_review'].includes(i.status))
   const eligibleStatuses = queueConfig ? [queueConfig.pickupStatus] : []
   const extraFilters = queueConfig?.extraFilters ?? ''
+  // A vault-backed id (see `vault` state above) never falls through to the
+  // generic modelShort/queueConfig label — same resolveVaultBadge() every
+  // other model badge in the app goes through. `vault` is null for every id
+  // this page currently reaches (AGENT_REGISTRY has none in common with a
+  // Global_Agents manifest today), so this is a no-op until that changes;
+  // it is here so it does not silently regress the day it does.
+  const vaultBadge = vault ? resolveVaultBadge(vault, localProviderConfigured) : null
+  const modelLabel = vaultBadge?.label ?? agent.modelShort ?? queueConfig?.model ?? '—'
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -112,8 +130,16 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-white font-bold text-lg">{agent.name}</h1>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">
-              {agent.modelShort ?? queueConfig?.model ?? '—'}
+              {modelLabel}
             </span>
+            {vaultBadge && (
+              <span
+                className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+                title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+              >
+                Brain2
+              </span>
+            )}
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full border font-semibold ${
               paused
                 ? 'bg-red-500/20 text-red-400 border-red-500/30'
@@ -141,7 +167,7 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Model</p>
-          <p className="text-white/70 text-xs font-mono break-all">{agent.modelShort ?? queueConfig?.model ?? '—'}</p>
+          <p className="text-white/70 text-xs font-mono break-all">{modelLabel}</p>
         </div>
         <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Queue Filters</p>

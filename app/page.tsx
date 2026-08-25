@@ -212,6 +212,12 @@ export default function Home() {
       source: typeof env.rosterSource === 'string' ? env.rosterSource : 'none',
       warning: typeof env.rosterWarning === 'string' ? env.rosterWarning : null,
       path: typeof env.rosterPath === 'string' ? env.rosterPath : null,
+      // Brain2 vault provenance (docs/brain2-integration.md) — independent
+      // of the AGENTS.md fields above, so a good roster and an unreachable
+      // vault can both be true of the same response.
+      vaultPath: typeof env.vaultPath === 'string' ? env.vaultPath : null,
+      vaultWarning: typeof env.vaultWarning === 'string' ? env.vaultWarning : null,
+      localProviderConfigured: env.localProviderConfigured === true,
     } : null)
     if (res.ok) {
       setAgentsError(null)

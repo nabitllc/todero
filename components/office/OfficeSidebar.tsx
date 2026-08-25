@@ -1,6 +1,7 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { fetchJson, formatApiError } from '@/hooks/useApiData'
+import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 export interface OfficeSidebarProps {
@@ -48,6 +49,29 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
   } = props;
 
   // ─── Local state ─────────────────────────────────────────────────────────
+  // Brain2 vault manifest data, keyed by agent id — same shape/fetch every
+  // other model badge in the app reads (see lib/vault-badge.ts). The pixel
+  // office's sprite roster is a fixed, non-vault list today, so this is a
+  // no-op for every id currently clickable on the canvas; it is wired up so
+  // the same resolveVaultBadge() precedence applies here too the day a
+  // vault-only agent gets a sprite, instead of this file staying the one
+  // place in the class of "model badge" views that never learned about it.
+  const [vaultById, setVaultById] = useState<Record<string, VaultBadgeInfo>>({});
+  const [localProviderConfigured, setLocalProviderConfigured] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson<any>('/api/agents').then(r => {
+      if (cancelled || !r.ok) return;
+      const body = r.data;
+      const rows: any[] = Array.isArray(body?.agents) ? body.agents : [];
+      const map: Record<string, VaultBadgeInfo> = {};
+      for (const row of rows) if (row?.id && row.vault) map[row.id] = row.vault;
+      setVaultById(map);
+      setLocalProviderConfigured(body?.localProviderConfigured === true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const [openPanels, setOpenPanels] = useState<Set<string>>(() => {
     try { const s = localStorage.getItem("office_panels"); return s ? new Set(JSON.parse(s)) : new Set(["feed"]); } catch { return new Set(["feed"]); }
   });
@@ -240,6 +264,23 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                   {liveRun.todayErrors > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-950/50 text-red-500">{liveRun.todayErrors} errors</span>}
                 </div>
               ) : null })()}
+              {/* Same resolveVaultBadge() precedence as every other model
+                  badge in the app — see lib/vault-badge.ts. Only renders when
+                  the selected sprite's id has a Brain2 manifest. */}
+              {detail.id && vaultById[detail.id] && (() => {
+                const resolved = resolveVaultBadge(vaultById[detail.id], localProviderConfigured)
+                return (
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#1a1a1a] text-white/70">{resolved.label}</span>
+                    <span
+                      className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+                      title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+                    >
+                      Brain2
+                    </span>
+                  </div>
+                )
+              })()}
               <div className="flex gap-3 mb-2">
                 <div className="text-center"><div className="text-sm font-bold" style={{ color: detail.color }}>{detail.tasksCompleted}</div><div className="text-[10px] text-white/50">TASKS</div></div>
               </div>

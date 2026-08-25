@@ -13,6 +13,19 @@ import {
 import { readRegistrations, type AgentRegistration } from '@/lib/agent-registrations'
 import { internalHeaders } from '@/lib/internal-auth'
 import { getCeilingStatus, type CeilingName } from '@/lib/agent-budget'
+import { LLM_PROVIDER_ID } from '@/lib/llm-provider'
+import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+
+/**
+ * Whether THIS host's configured LLM endpoint is a local one (Ollama, LM
+ * Studio, or an unrecognized loopback/IP server) rather than a cloud vendor.
+ * `lib/vault-badge.ts`'s `resolveVaultBadge()` is the one place this feeds
+ * into a UI decision: a vault agent's `local_eligible`/`fallback_local` only
+ * means a local run is what would actually happen when the host is actually
+ * pointed at a local endpoint — the manifest carrying a local fallback name
+ * is not itself evidence of that.
+ */
+const LOCAL_LLM_PROVIDER_IDS = new Set(['ollama', 'lmstudio', 'local'])
 
 /**
  * Asked of the seam, never of the environment. This route used to read the
@@ -164,6 +177,14 @@ type AgentsResponse = {
   vaultPath: string | null
   /** Operator-facing reason the vault contributed no agents, naming the path searched. Null when it did. */
   vaultWarning: string | null
+  /**
+   * Whether this host's configured LLM endpoint is local (Ollama/LM Studio)
+   * rather than a cloud vendor — see `LOCAL_LLM_PROVIDER_IDS` above. The one
+   * input `resolveVaultBadge()` (lib/vault-badge.ts) needs beyond a row's own
+   * `vault` field to decide whether `vault.localModel` is what would really
+   * run, or just a fallback name a cloud-configured host cannot act on.
+   */
+  localProviderConfigured: boolean
 }
 
 function emptyRunState(): RunState {
@@ -442,8 +463,24 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
  * `state.heartbeats` for liveness the same way every other row does (it will
  * simply never have one, since nothing dispatches a vault-only agent yet),
  * so it is not held to a different truth standard than a roster row.
+ *
+ * `model`/`modelShort` are resolved through the same `resolveVaultBadge()`
+ * every client-side badge uses (lib/vault-badge.ts), not the manifest's raw
+ * cloud `preferred` name — a vault-only row used to print `preferred`
+ * (e.g. "claude-opus-5") here while its own badge, computed independently on
+ * the client, showed the local/alias label two inches away. Any consumer
+ * that reads `.model`/`.modelShort` off this row instead of recomputing the
+ * badge itself (a config panel, a search result, an export) now gets the
+ * same label the badge shows, so the same bug cannot resurface in a fourth
+ * file the way it already had in three.
  */
-function buildVaultOnlyAgent(agent: VaultAgent, state: RunState, rosterWarning: string | null, rosterPath: string | null): AgentDto {
+function buildVaultOnlyAgent(
+  agent: VaultAgent,
+  state: RunState,
+  rosterWarning: string | null,
+  rosterPath: string | null,
+  localProviderConfigured: boolean,
+): AgentDto {
   const now = Date.now()
   const beat = state.heartbeats.get(agent.id) ?? null
   const lastSeenAt = beat?.lastSeen ?? null
@@ -451,7 +488,11 @@ function buildVaultOnlyAgent(agent: VaultAgent, state: RunState, rosterWarning: 
   const isRunning = liveness === 'live'
   const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
   const vault = vaultInfoFor(agent)
-  const model = agent.model.preferred || agent.model.claude_code_alias || ''
+  // vaultInfoFor() only returns null through its `AgentDto['vault']` return
+  // type when a caller looked an id up in a map and found nothing (see the
+  // `v ? vaultInfoFor(v) : null` call sites above) — called directly on a
+  // real VaultAgent, as here, it always builds the object.
+  const model = resolveVaultBadge(vault as VaultBadgeInfo, localProviderConfigured).label
 
   return {
     id: agent.id,
@@ -518,6 +559,11 @@ export async function GET() {
   // every response branch below, success or failure alike.
   const schedule = await fetchVerifiedAgentSchedule()
 
+  // Computed once and reused everywhere a vault-backed row needs it: both by
+  // buildVaultOnlyAgent() (to resolve `model`/`modelShort` the same way the
+  // client-side badge does) and by the response envelope below.
+  const localProviderConfigured = LOCAL_LLM_PROVIDER_IDS.has(LLM_PROVIDER_ID)
+
   const respond = async (
     state: RunState,
     configured: boolean,
@@ -546,7 +592,7 @@ export async function GET() {
     const agents: AgentDto[] = [
       ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule, vaultById),
       ...registrationOnly.map((r) => buildRegistrationAgent(r, state, vaultById)),
-      ...vaultOnly.map((v) => buildVaultOnlyAgent(v, state, vaultRoster.warning, vaultRoster.path)),
+      ...vaultOnly.map((v) => buildVaultOnlyAgent(v, state, vaultRoster.warning, vaultRoster.path, localProviderConfigured)),
     ]
 
     // TOD-2381 round 3: over-ceiling flag per agent, only when the database
@@ -587,6 +633,7 @@ export async function GET() {
       heartbeatWarning,
       vaultPath: vaultRoster.path,
       vaultWarning: vaultRoster.warning,
+      localProviderConfigured,
     }
     return NextResponse.json(body, { status, headers: NO_STORE })
   }

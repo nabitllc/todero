@@ -177,6 +177,36 @@ describe('memory-loop-retrieval (FTS5 search, ranking, hard budget)', () => {
     expect(result.recordsUsed).toBe(0)
   })
 
+  it('never injects a record on the strength of a shared issue-key prefix alone — a zero-relevance match must not be returned', async () => {
+    const { retrieval, memoryLoop } = loadModules()
+    await memoryLoop.writeRunRecord({
+      agentId: 'builder',
+      taskKey: 'TOD-100',
+      taskTitle: 'Fix PATCH endpoint',
+      failed: true,
+      attempted: 'patched auth.ts',
+      rejectionReason: 'forgot regression_test field on the PATCH',
+      reviewerNotes: 'PATCH rejected: missing regression_test',
+    })
+    await memoryLoop.writeRunRecord({
+      agentId: 'builder',
+      taskKey: 'TOD-101',
+      taskTitle: 'Fix sidebar layout',
+      failed: true,
+      attempted: 'edited sidebar component',
+      rejectionReason: 'broke the hidden md:flex class on the desktop sidebar',
+      reviewerNotes: 'layout regression, sidebar collapsed on desktop',
+    })
+
+    // "TOD" is every task_key's prefix in this store — it must not act as a
+    // query term. Neither stored record is about dark mode or settings, so
+    // this must come back genuinely empty, not "everything matches because
+    // every task_key starts with TOD".
+    const result = await retrieval.buildRetrievedContext('builder', 'TOD-2401', 'Add dark mode toggle to settings')
+    expect(result.text).toBe('')
+    expect(result.recordsFound).toBe(0)
+  })
+
   it('the budget is configurable via TODERO_MEMORY_RETRIEVAL_BUDGET_TOKENS, and small by default', () => {
     const { retrieval } = loadModules()
     expect(retrieval.getContextBudgetTokens()).toBe(retrieval.CONTEXT_BUDGET_TOKENS_DEFAULT)

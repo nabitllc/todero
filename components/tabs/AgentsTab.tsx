@@ -7,6 +7,7 @@ import AgentDetailView from '@/components/tabs/AgentDetailView'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import type { ApiError } from '@/hooks/useApiData'
 import type { AgentRunStatus } from '@/hooks/useAgentStatus'
+import { resolveVaultBadge } from '@/lib/vault-badge'
 
 function formatAgo(ms: number): string {
   const sec = Math.floor(ms / 1000)
@@ -17,6 +18,38 @@ function formatAgo(ms: number): string {
   if (h < 24) return `${h}h ${min % 60}m ago`
   const d = Math.floor(h / 24)
   return `${d}d ${h % 24}h ago`
+}
+
+/**
+ * The model badge for one roster card. A vault-backed row (`a.vault !== null`
+ * — Global_Agents/<id>/manifest.json exists) never renders the generic
+ * `modelShort` derived from `preferred`: that is exactly what put "Opus"
+ * directly above "mid tier" on six cards whose manifest `claude_code_alias`
+ * was "sonnet". `resolveVaultBadge()` (lib/vault-badge.ts) is the one
+ * resolution used everywhere a model badge renders for a vault row — see
+ * that file's docstring for the local/alias/preferred precedence — and the
+ * "Brain2" chip next to it is what makes the provenance visible so a vault
+ * tier and a stale cloud model name can never be printed on top of each
+ * other again.
+ */
+function AgentModelBadge({ agent, localProviderConfigured }: { agent: any; localProviderConfigured: boolean }) {
+  if (agent?.vault) {
+    const resolved = resolveVaultBadge(agent.vault, localProviderConfigured)
+    return (
+      <span className="inline-flex items-center gap-1">
+        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{resolved.label}</span>
+        <span
+          className="text-[8px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
+          title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
+        >
+          Brain2
+        </span>
+      </span>
+    )
+  }
+  return agent?.modelShort ? (
+    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{agent.modelShort}</span>
+  ) : null
 }
 
 function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>): string {
@@ -33,8 +66,24 @@ function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:st
  * Roster provenance from the /api/agents envelope: which file the roster came
  * from and, when it is empty, why. Envelope-level on purpose — an empty roster
  * has no row to hang it on.
+ *
+ * `vaultPath`/`vaultWarning` are the same pattern for the Brain2 vault's
+ * Global_Agents/ registry (docs/brain2-integration.md) — independent of
+ * `source`/`warning`/`path`, which describe AGENTS.md only. A host can have
+ * a perfectly good AGENTS.md roster (`source: 'agents-md'`) while the vault
+ * is unreachable, and that must still surface: an absent vault is a fact
+ * about the vault, not about AGENTS.md, so it cannot be gated on
+ * `rosterSource === 'none'`.
  */
-export type RosterMeta = { source: string; warning: string | null; path: string | null }
+export type RosterMeta = {
+  source: string
+  warning: string | null
+  path: string | null
+  vaultPath: string | null
+  vaultWarning: string | null
+  /** Whether this host's configured LLM endpoint is local — see lib/vault-badge.ts's resolveVaultBadge(). */
+  localProviderConfigured: boolean
+}
 
 export default function AgentsTab({
   displayAgents,
@@ -72,6 +121,12 @@ export default function AgentsTab({
   const rosterSource: string | undefined = rosterMeta?.source ?? liveAgents?.[0]?.rosterSource
   const rosterWarning: string | null = rosterMeta?.warning ?? liveAgents?.[0]?.rosterWarning ?? null
   const rosterPath: string | null = rosterMeta?.path ?? liveAgents?.[0]?.rosterPath ?? null
+  // Brain2 vault provenance — envelope-only (see RosterMeta's docstring): no
+  // per-row fallback exists, because a vault problem is a fact about the
+  // vault, not about any one agent row.
+  const vaultPath: string | null = rosterMeta?.vaultPath ?? null
+  const vaultWarning: string | null = rosterMeta?.vaultWarning ?? null
+  const localProviderConfigured: boolean = rosterMeta?.localProviderConfigured ?? false
 
   // TOD (agent-roster-truth): `liveAgents === null` means /api/agents has not
   // yet produced any rows to show — never a fabricated agent list. That still
@@ -107,6 +162,21 @@ export default function AgentsTab({
                   <span className="text-white/60 text-[10px] leading-relaxed break-all">{rosterWarning}</span>
                 </div>
               )}
+              {/* Independent of rosterSource: a host can have a perfectly good
+                  AGENTS.md roster while the Brain2 vault is unreachable, and
+                  that must still surface — an absent vault is a fact about the
+                  vault, not about AGENTS.md. Renders whenever the vault
+                  contributed no agents or hit unreadable manifests, quoting
+                  the exact path the API searched (embedded in vaultWarning by
+                  lib/vault-agents.ts). */}
+              {vaultWarning && (
+                <div className="flex items-start gap-2 rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-2">
+                  <span className="text-purple-300 text-[11px] font-medium shrink-0">
+                    {vaultPath ? 'Brain2 registry issue' : 'Brain2 agent registry not read'}
+                  </span>
+                  <span className="text-white/60 text-[10px] leading-relaxed break-all">{vaultWarning}</span>
+                </div>
+              )}
               {displayAgents.length === 0 && (
                 <EmptyStateUI
                   icon={Users}
@@ -137,7 +207,7 @@ export default function AgentsTab({
                         {displayAgents[0].type === 'consultant' && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
                         )}
-                        {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgents[0].modelShort}</span>}
+                        <AgentModelBadge agent={displayAgents[0]} localProviderConfigured={localProviderConfigured} />
                       </div>
                       <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
                       {/* "On duty" is a claim that this agent is running NOW. It used to
@@ -199,7 +269,7 @@ export default function AgentsTab({
                           {a.type === 'consultant' && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
                           )}
-                          {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
+                          <AgentModelBadge agent={a} localProviderConfigured={localProviderConfigured} />
                         </div>
                         <p className="text-white/50 text-xs truncate">{a.role}</p>
                         {a.liveness === 'live' && (
@@ -244,7 +314,7 @@ export default function AgentsTab({
                             {a.type === 'consultant' && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/50 text-purple-300 bg-purple-500/10 font-semibold">Consultant</span>
                             )}
-                            {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
+                            <AgentModelBadge agent={a} localProviderConfigured={localProviderConfigured} />
                           </div>
                           <p className="text-white/30 text-xs truncate">{a.role}</p>
                         </div>
@@ -267,7 +337,7 @@ export default function AgentsTab({
 
               {/* Agent Detail View */}
               {agentModal && (
-                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} onRemoved={onAgentRemoved} />
+                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} onRemoved={onAgentRemoved} localProviderConfigured={localProviderConfigured} />
               )}
             </div>
   )

@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
+// This route reports a live decision (status/resolved_by/resolved_at) for one
+// request. Without forcing dynamic rendering, Next can serve a cached
+// first-seen snapshot forever — a denied or approved request would keep
+// reading back as pending indefinitely.
+export const dynamic = 'force-dynamic'
+
 /** GET /api/inbox/:id — fetch single request by id */
 export async function GET(
   req: NextRequest,
