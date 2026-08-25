@@ -81,6 +81,39 @@ describe('spawn-context.sh honestly distinguishes "store unavailable" from "noth
     expect(stdout).not.toContain('no past run record ranked relevant')
   })
 
+  it('memory-retrieval-relevance round 4: a corrupt store (not a database file, no "no such table" message anywhere) still reports "retrieval unavailable", never the false negative', () => {
+    // Round-4 critic finding: searchSqliteFts() used to classify ONLY the
+    // literal "no such table" driver error as `availability: 'unavailable'`
+    // — every other store failure (a locked file, corruption, the
+    // constructor itself throwing) degraded to `'available'` with zero
+    // records, and this exact script then printed the false negative
+    // "no past run record ranked relevant to this task" over a store it
+    // never actually searched. Reproduce that condition for real: overwrite
+    // dbPath with plain text, so `better-sqlite3` throws "file is not a
+    // database" — a message containing neither "no such table" nor anything
+    // that string-matched the old special case.
+    const { writeFileSync } = require('fs') as typeof import('fs')
+    writeFileSync(dbPath, 'this is not a sqlite database file')
+
+    const stdout = execFileSync(
+      'bash',
+      [join(REPO_ROOT, 'scripts', 'spawn-context.sh'), workspaceDir, AGENT_ID, TASK_KEY, TASK_TITLE],
+      {
+        cwd: REPO_ROOT,
+        env: {
+          ...process.env,
+          TODERO_DB_PROVIDER: 'sqlite',
+          TODERO_SQLITE_PATH: dbPath,
+        },
+        encoding: 'utf8',
+      },
+    )
+
+    expect(stdout).toContain('retrieval unavailable')
+    expect(stdout).toContain('file is not a database')
+    expect(stdout).not.toContain('no past run record ranked relevant')
+  })
+
   it('by contrast, a genuinely empty (but available) store DOES fall back to "no past run record ranked relevant"', () => {
     // Sanity check the test above is not vacuous: apply the FTS migration
     // too, so the store is fully available and genuinely has nothing for

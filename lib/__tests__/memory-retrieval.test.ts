@@ -207,6 +207,28 @@ describe('memory-loop-retrieval (FTS5 search, ranking, hard budget)', () => {
     expect(result.recordsFound).toBe(0)
   })
 
+  it('a corrupt store (not a database file) reports availability "unavailable", never a clean empty result — round-4 critic finding', async () => {
+    // beforeEach already pointed TODERO_SQLITE_PATH at a real, migrated
+    // scratch db.sqlite; overwrite it with plain text so `new Database(...)`
+    // opens the path fine (readonly + fileMustExist do not validate file
+    // format) but the first real query against it throws
+    // "file is not a database" — the exact class of driver error a round-4
+    // critic found silently degrading to `availability: 'available'` with
+    // zero records everywhere except the one literal "no such table" string.
+    const { writeFileSync } = require('fs') as typeof import('fs')
+    writeFileSync(dbPath, 'this is not a sqlite database file')
+
+    const { retrieval } = loadModules()
+    const result = await retrieval.buildRetrievedContext('builder', 'TOD-2401', 'Add dark mode toggle to settings')
+
+    expect(result.availability).toBe('unavailable')
+    expect(result.unavailableReason).toMatch(/file is not a database/i)
+    // The store was never actually searched — this must never read back as
+    // the same shape a genuine "searched, found nothing" result produces.
+    expect(result.text).toBe('')
+    expect(result.recordsFound).toBe(0)
+  })
+
   it('the budget is configurable via TODERO_MEMORY_RETRIEVAL_BUDGET_TOKENS, and small by default', () => {
     const { retrieval } = loadModules()
     expect(retrieval.getContextBudgetTokens()).toBe(retrieval.CONTEXT_BUDGET_TOKENS_DEFAULT)
