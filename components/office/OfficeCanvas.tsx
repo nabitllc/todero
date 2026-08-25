@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
-  ORCHESTRATOR_ID, MAP_COLS, MAP_ROWS, DESK_POS, BENCH_POS, ACTIVE_IDS, THEMES,
+  MAP_COLS, MAP_ROWS, THEMES,
 } from './officeConstants';
 import type { AgentRunInfo } from './officeConstants';
 
@@ -79,6 +79,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   // here on failure and clears it on the next success. Rendered as a banner
   // over the canvas below.
   const [pollErrors, setPollErrors] = useState<Record<string, ApiError>>({});
+  // TOD (agent-roster-truth): 'loading' until /api/agents answers once,
+  // 'empty' when it succeeded with zero rows (a real, honest state — not
+  // silently filled with invented agents), 'ready' otherwise.
+  const [rosterState, setRosterState] = useState<'loading' | 'ready' | 'empty'>('loading');
   const setPollError = (key: string, err: ApiError | null) => {
     setPollErrors(pe => {
       if (err) return { ...pe, [key]: err };
@@ -95,7 +99,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   const tileRef        = useRef(0);
   const feedIdRef      = useRef(1);
   const totalDone      = useRef(0);
-  const activeIdsRef   = useRef([...ACTIVE_IDS]);
+  // TOD (agent-roster-truth): the real roster, fetched from /api/agents —
+  // null until the first successful answer, never a hardcoded stand-in. See
+  // the "Roster polling" effect below.
+  const rosterRef      = useRef<any[] | null>(null);
   const replayFrames   = useRef<any[]>([]);
   const replayCurRef   = useRef(0);
   const waterfallRef   = useRef<any[]>([]);
@@ -129,6 +136,28 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
 
   // ── Save on unmount ────────────────────────────────────────────────────────
   useEffect(()=>()=>{if(simRef.current?.agents)saveMemory(simRef.current.agents);},[]);
+
+  // ── Roster polling ──────────────────────────────────────────────────────
+  // The office's ONLY source of who exists. A failed fetch renders the same
+  // ApiErrorBanner every other tab uses (naming /api/agents and the status);
+  // a successful-but-empty roster is drawn as an empty office, never as the
+  // office's own fabricated stand-in cast.
+  useEffect(()=>{
+    let cancelled=false;
+    const fetchRoster=async()=>{
+      const r=await fetchJson<any>('/api/agents');
+      if(cancelled) return;
+      if(!r.ok){ setPollError('roster', r.error); return; }
+      setPollError('roster', null);
+      const data:any=r.data;
+      const rows:any[] = Array.isArray(data) ? data : (data && Array.isArray(data.agents) ? data.agents : []);
+      rosterRef.current=rows;
+      setRosterState(rows.length>0?'ready':'empty');
+    };
+    fetchRoster();
+    const t=setInterval(fetchRoster,60000);
+    return()=>{cancelled=true;clearInterval(t);};
+  },[]);
 
   // ── Board task polling ─────────────────────────────────────────────────────
   useEffect(()=>{
@@ -388,12 +417,14 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       const data=r.data;
       // Use recentActivity to count tasks per agent in timeframe windows
       const activity:any[]=data?.recentActivity||[];
+      // TOD (agent-roster-truth): this used to pre-seed counts for a
+      // hardcoded 5-agent list and silently drop activity for any other real
+      // agent id. Every id actually seen in the activity feed gets counted now.
       const counts:Record<string,{h24:number,d7:number}>={};
-      const agentIds=['main','scout','ops','kemuni-sme','vespera-sme'];
-      agentIds.forEach(id=>{ counts[id]={h24:0,d7:0}; });
       activity.forEach((entry:any)=>{
         const id=entry.agentId;
-        if(!counts[id]) return;
+        if(!id) return;
+        if(!counts[id]) counts[id]={h24:0,d7:0};
         const agoMs=(entry.ago||0)*60*1000;
         if(agoMs < 86400000) counts[id].h24++;
         if(agoMs < 604800000) counts[id].d7++;
@@ -429,8 +460,12 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
     let critPairs:any[]=[];
 
     function ensureAgents(){
-      if(!agents&&tileRef.current>0){
-        agents=initAgents(tileRef.current,activeIdsRef.current);
+      // Waits on the real roster (rosterRef, set by the "Roster polling"
+      // effect above) — never builds the sim off a hardcoded list. `[]` is a
+      // legitimate, honest roster (genuinely zero agents); `null` means "not
+      // loaded yet", which is the only case this holds off building.
+      if(!agents&&tileRef.current>0&&rosterRef.current){
+        agents=initAgents(tileRef.current,rosterRef.current);
         simRef.current={agents,particles,critPairs:()=>critPairs};
         simRef.current.boardTasks=()=>boardTasksRef.current;
         setRoster(agents.map((a:any)=>({...a})));
@@ -524,11 +559,11 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       drawFloor(ctx,T2,cam,darkAlpha,thm,showGridRef.current);
       drawFurniture(ctx,T2,cam,drawAgentsArr,now,darkAlpha,critPairs,depGraphRef.current,thm,liveRunsRef.current);
       // Connection lines: working agents → orchestrator
-      const orchAgent2=drawAgentsArr.find((a:any)=>a.id===ORCHESTRATOR_ID);
+      const orchAgent2=drawAgentsArr.find((a:any)=>a.isOrchestrator);
       if(orchAgent2){
         ctx.save();applyCamera(ctx,cam);
         drawAgentsArr.forEach((ag:any)=>{
-          if(ag.id===ORCHESTRATOR_ID||ag.state!=="working"||!ag.active) return;
+          if(ag.isOrchestrator||ag.state!=="working"||!ag.active) return;
           const workingMs=Date.now()-(ag.lastStateChange||Date.now());
           const fadeIn=Math.min(1,workingMs/2000);
           if(fadeIn<=0) return;
@@ -547,10 +582,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         ctx.restore();
       }
       drawParticles(ctx,particles,cam);
-      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,boardTasksRef.current,ag.id==='main'?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0,liveRunsRef.current[ag.id]?.startedAt||null));
+      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,boardTasksRef.current,ag.isOrchestrator?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0,liveRunsRef.current[ag.id]?.startedAt||null));
 
-      // MC-45: Draw temporary subagent sprites near KAOS
-      const orchAg = drawAgentsArr.find((a:any) => a.id === ORCHESTRATOR_ID)
+      // MC-45: Draw temporary subagent sprites near the orchestrator
+      const orchAg = drawAgentsArr.find((a:any) => a.isOrchestrator)
       if (orchAg && subagentSessionsRef.current.length > 0) {
         ctx.save()
         applyCamera(ctx, cam)
@@ -649,11 +684,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       const T=dw/MAP_COLS;tileRef.current=T;
       if(simRef.current?.agents){
         simRef.current.agents.forEach((ag:any)=>{
-          const isActive=activeIdsRef.current.includes(ag.id);
-          const posMap=isActive?DESK_POS:BENCH_POS;
-          const tp=posMap[ag.id];if(!tp) return;
-          const orch=ag.id===ORCHESTRATOR_ID;
-          const{x,y}=tileCenterPx(tp.tx+(orch?1.1:0.75),tp.ty+(orch?1.0:0.85),T);
+          // Each agent already carries the desk/bench slot it was assigned
+          // in initAgents() — no id-keyed lookup table to fall back to.
+          const orch=!!ag.isOrchestrator;
+          const{x,y}=tileCenterPx(ag.deskTx+(orch?1.1:0.75),ag.deskTy+(orch?1.0:0.85),T);
           ag.deskX=x;ag.deskY=y;
           if(ag.state==="idle"||ag.state==="working"){ag.px=x;ag.py=y;}
         });

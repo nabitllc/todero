@@ -26,11 +26,19 @@ function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:st
   return formatAgo(diff)
 }
 
+/**
+ * Roster provenance from the /api/agents envelope: which file the roster came
+ * from and, when it is empty, why. Envelope-level on purpose — an empty roster
+ * has no row to hang it on.
+ */
+export type RosterMeta = { source: string; warning: string | null; path: string | null }
+
 export default function AgentsTab({
   displayAgents,
   agentLiveStatus,
   agentRunsData,
   liveAgents,
+  rosterMeta,
   act,
   agentModal,
   setAgentModal,
@@ -40,29 +48,56 @@ export default function AgentsTab({
   agentLiveStatus: (agentId: string) => { dot: 'green'|'amber'|'grey'; label: string }
   agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>
   liveAgents: any[] | null
+  /** Envelope metadata from /api/agents. Optional so older call sites still compile. */
+  rosterMeta?: RosterMeta | null
   act: (id: string) => string
   agentModal: any
   setAgentModal: (a: any) => void
   projectFilter?: string | null
 }) {
-  // /api/agents stamps every row with where the roster came from. When it fell
-  // back to the built-in list the UI must say so — otherwise a host with no
-  // AGENTS.md looks identical to one with a real roster.
-  const rosterSource: string | undefined = liveAgents?.[0]?.rosterSource
-  const rosterWarning: string | null = liveAgents?.[0]?.rosterWarning ?? null
+  // Prefer the envelope; fall back to the per-row copy for any caller that has
+  // not been threaded through yet. Reading row[0] alone lost the warning in the
+  // exact case it is needed — a roster with no rows.
+  const rosterSource: string | undefined = rosterMeta?.source ?? liveAgents?.[0]?.rosterSource
+  const rosterWarning: string | null = rosterMeta?.warning ?? liveAgents?.[0]?.rosterWarning ?? null
+  const rosterPath: string | null = rosterMeta?.path ?? liveAgents?.[0]?.rosterPath ?? null
+
+  // TOD (agent-roster-truth): `liveAgents === null` means /api/agents has
+  // never answered successfully — that state is rendered by the ApiErrorBanner
+  // CrewTab already shows above this component, or as a loading state, never
+  // as a fabricated agent list. Only a *successful* response with zero rows
+  // (liveAgents !== null && displayAgents.length === 0) is a genuinely empty
+  // roster, and that gets its own honest message naming where the roster was
+  // searched.
+  if (liveAgents === null) {
+    return (
+      <div className="space-y-6">
+        <EmptyStateUI icon={Users} title="Loading agent roster…" description="Waiting on /api/agents." />
+      </div>
+    )
+  }
 
   return (
             <div className="space-y-6">
-              {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
-              {rosterSource === 'builtin' && (
+              <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>
+              {rosterSource === 'none' && rosterWarning && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                  <span className="text-amber-300 text-[11px] font-medium shrink-0">Built-in roster</span>
-                  <span className="text-white/60 text-[10px] leading-relaxed">
-                    {rosterWarning ?? 'No AGENTS.md found on this host.'} Showing the built-in agent list — set TODERO_AGENTS_MD to point at a real roster.
-                  </span>
+                  <span className="text-amber-300 text-[11px] font-medium shrink-0">Roster unavailable</span>
+                  <span className="text-white/60 text-[10px] leading-relaxed break-all">{rosterWarning}</span>
                 </div>
               )}
-              {displayAgents.length === 0 && <EmptyStateUI icon={Users} title="No agents registered yet" />}
+              {displayAgents.length === 0 && (
+                <EmptyStateUI
+                  icon={Users}
+                  title="No agents configured"
+                  description={
+                    rosterWarning
+                      ?? (rosterPath
+                        ? `The roster at ${rosterPath} declares no agents. Add rows to its Agents table.`
+                        : 'No AGENTS.md roster was found. Set AGENTS_MD_PATH to point at one.')
+                  }
+                />
+              )}
 
               {/* Lead agent card */}
               {displayAgents.length > 0 && (() => {

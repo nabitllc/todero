@@ -3,7 +3,7 @@ import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { processListCommand } from '@/lib/paths'
-import { AGENT_META, parseAgentsFromMd, type ParsedAgent } from '@/lib/agent-roster'
+import { AGENT_META, loadAgentRoster, type ParsedAgent } from '@/lib/agent-roster'
 
 const execFileAsync = promisify(execFile)
 
@@ -20,7 +20,14 @@ const NO_KEY_ERROR = () => `${dbStatusMessage()} — agent run state unavailable
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const
 
-type RosterSource = 'agents-md' | 'builtin'
+/**
+ * Where the roster came from. There is no 'builtin' any more: this route used
+ * to union AGENTS.md with the 16-entry AGENT_META registry and, on a host with
+ * no roster file at all, serve AGENT_META *as* the roster. Both made the API
+ * report agents that no file on the host declares. AGENT_META is now strictly
+ * display metadata for agents the roster names.
+ */
+type RosterSource = 'agents-md' | 'none'
 
 /** One agent row as the dashboard renders it. */
 type AgentDto = {
@@ -47,6 +54,7 @@ type AgentDto = {
   workStartedAt: number | null
   rosterSource: RosterSource
   rosterWarning: string | null
+  rosterPath: string | null
 }
 
 /** Live run state: from Supabase (issues/runs) plus the local process table. */
@@ -65,6 +73,8 @@ type AgentsResponse = {
   agents: AgentDto[]
   rosterSource: RosterSource
   rosterWarning: string | null
+  /** The AGENTS.md actually read, so an empty roster can name the file it wanted. */
+  rosterPath: string | null
   configured: boolean
   error: string | null
 }
@@ -93,6 +103,51 @@ async function listProcessCommandLines(): Promise<string[]> {
 }
 
 /**
+ * The process table is the slow part of this endpoint: on Windows the listing
+ * shells out to PowerShell, which costs ~0.75s of interpreter startup on its
+ * own and dominated the response time. The scan is cached for PROC_SCAN_TTL_MS
+ * and refreshed in the background, so a poll inside the window answers from
+ * memory instead of paying for a fresh interpreter. One in-flight scan is
+ * shared by every concurrent request rather than spawning a shell per caller.
+ *
+ * The TTL is well under the UI's 30s refresh, so what is served is at worst a
+ * few seconds stale — never the previous poll's state.
+ */
+const PROC_SCAN_TTL_MS = 5000
+let procScanAt = 0
+let procScanValue: Set<string> | null = null
+let procScanInFlight: Promise<Set<string>> | null = null
+
+function scanRunningAgents(): Promise<Set<string>> {
+  if (procScanInFlight) return procScanInFlight
+  procScanInFlight = detectRunningAgents()
+    .then(result => {
+      procScanValue = result
+      procScanAt = Date.now()
+      return result
+    })
+    .finally(() => { procScanInFlight = null })
+  return procScanInFlight
+}
+
+/**
+ * Cached view of which agents have a live CLI session. Returns the cached set
+ * immediately when it is fresh; kicks off a refresh and returns the stale set
+ * when it is not; only blocks on the very first call of a process's life.
+ */
+async function runningAgentsCached(): Promise<Set<string>> {
+  const fresh = procScanValue !== null && Date.now() - procScanAt < PROC_SCAN_TTL_MS
+  if (fresh) return procScanValue as Set<string>
+  if (procScanValue !== null) {
+    // Stale-while-revalidate: never make an operator wait on a shell spawn for
+    // a signal that only changes when an agent starts or stops.
+    void scanRunningAgents()
+    return procScanValue
+  }
+  return scanRunningAgents()
+}
+
+/**
  * Which agents have a spawned CLI session right now. Purely local — needs no
  * database — so it stays truthful even on a host with no Supabase key.
  */
@@ -118,12 +173,32 @@ async function detectRunningAgents(): Promise<Set<string>> {
 }
 
 /**
+ * A short badge for the model column.
+ *
+ * This used to be `model.includes('haiku') ? 'Haiku 4.5' : 'Sonnet 4.6'`, which
+ * labelled every non-Haiku agent "Sonnet 4.6" — including Scout, whose roster
+ * entry says Gemma 3 4B on Ollama, and any local model an operator configures.
+ * A badge that contradicts the roster it was derived from is worse than no
+ * badge, so an unrecognised model now shortens its own name instead.
+ */
+function shortModelLabel(model: string): string {
+  const m = model.trim()
+  if (!m) return ''
+  const lower = m.toLowerCase()
+  if (lower.includes('haiku')) return 'Haiku 4.5'
+  if (lower.includes('sonnet')) return 'Sonnet 4.6'
+  if (lower.includes('opus')) return 'Opus'
+  // e.g. "Gemma 3 4B (Ollama)" -> "Gemma 3 4B", "qwen2.5-coder:14b" -> as-is.
+  const withoutParens = m.replace(/\s*\(.*\)\s*$/, '').trim()
+  return withoutParens.length > 18 ? `${withoutParens.slice(0, 17)}…` : withoutParens
+}
+
+/**
  * Merge the roster with whatever run state was collectable.
- *   - AGENTS.md roster is authoritative for id/name/role/model
- *   - AGENT_META provides emoji/color/capabilities/floor/queue_filter overrides
- *   - Agents in AGENT_META but not in AGENTS.md are deprecated (active=false)
- *   - With no AGENTS.md on this host, AGENT_META *is* the roster, so every
- *     registered agent stays eligible instead of all reading as deprecated
+ *   - AGENTS.md is the ONLY source of who exists: one row in, one row out
+ *   - AGENT_META supplies presentation only (emoji/color/capabilities/floor/
+ *     queue_filter), and falls back to neutral defaults for an agent it has
+ *     never heard of, so a roster can add an agent without a code change
  * Run state may be empty (unconfigured host); the roster is still real, so the
  * operator sees who exists next to the reason their state is not live.
  */
@@ -131,19 +206,14 @@ function buildAgents(
   parsedAgents: ParsedAgent[],
   rosterSource: RosterSource,
   rosterWarning: string | null,
+  rosterPath: string | null,
   state: RunState,
 ): AgentDto[] {
   const now = Date.now()
-  const agentMdIds = rosterSource === 'agents-md'
-    ? new Set(parsedAgents.map(a => a.id))
-    : new Set(Object.keys(AGENT_META))
-  const allIdSet = new Set([...parsedAgents.map(a => a.id), ...Object.keys(AGENT_META)])
-  const allIds = Array.from(allIdSet)
 
-  return allIds.map((id): AgentDto => {
-    const parsed = parsedAgents.find(a => a.id === id)
+  return parsedAgents.map((parsed): AgentDto => {
+    const id = parsed.id
     const meta = AGENT_META[id]
-    const inAgentsMd = agentMdIds.has(id)
 
     const issue = state.agentIssue[id]
     const lastTs = state.agentLastActive[id] ?? 0
@@ -151,9 +221,8 @@ function buildAgents(
 
     const isRunning = state.runningAgents.has(id)
     const hasInProgressIssue = !!issue && issue.status === 'in_progress'
-    // Deprecated agents (not in AGENTS.md) are never active
-    const isActive = inAgentsMd && (isRunning || hasInProgressIssue)
-    const isScheduled = inAgentsMd && id === 'ops' && !isActive
+    const isActive = isRunning || hasInProgressIssue
+    const isScheduled = id === 'ops' && !isActive
 
     // Compute next scheduled run based on fixed 30-min intervals anchored to the hour
     // Ops heartbeat fires at :00 and :30 of every hour (fixed schedule, not relative)
@@ -166,12 +235,12 @@ function buildAgents(
       nextRunTs = now + msUntilNext
     }
 
-    const model = parsed?.model ?? meta?.model ?? ''
-    const role = parsed?.role ?? meta?.role ?? ''
+    const model = parsed.model || meta?.model || ''
+    const role = parsed.role || meta?.role || ''
 
     return {
       id,
-      name: meta?.name ?? parsed?.name ?? id,
+      name: parsed.name || meta?.name || id,
       emoji: meta?.emoji ?? '🤖',
       role,
       model,
@@ -179,7 +248,7 @@ function buildAgents(
       status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
       isRunning,
       nextRunTs,
-      modelShort: model.includes('haiku') ? 'Haiku 4.5' : 'Sonnet 4.6',
+      modelShort: shortModelLabel(model),
       queue_filter: meta?.queue_filter ?? [],
       color: meta?.color ?? '#6b7280',
       desc: role,
@@ -196,29 +265,29 @@ function buildAgents(
       // components that only ever hold a single agent.
       rosterSource,
       rosterWarning,
+      rosterPath,
     }
   })
 }
 
 export async function GET() {
-  // AGENTS.md is the preferred roster, but it is a host artifact: a fresh clone
-  // on another machine may have none. Missing/unparseable is not a server error
-  // — fall back to the built-in registry and say so via `rosterSource`.
-  let parsedAgents: ParsedAgent[] = []
-  let rosterSource: RosterSource = 'builtin'
-  let rosterWarning: string | null = null
-  try {
-    parsedAgents = parseAgentsFromMd()
-    rosterSource = 'agents-md'
-  } catch (e) {
-    rosterWarning = e instanceof Error ? e.message : String(e)
-  }
+  // AGENTS.md is the roster, and it is a host artifact: a fresh clone on
+  // another machine may have none, or AGENTS_MD_PATH may point somewhere that
+  // does not exist. Neither is a server fault, so neither is a 500 — the
+  // response is a 200 carrying an empty roster and a warning naming the path,
+  // which lets the UI say "no agents configured" instead of inventing some.
+  const roster = loadAgentRoster()
+  const parsedAgents: ParsedAgent[] = roster.agents
+  const rosterSource: RosterSource = roster.agents.length > 0 ? 'agents-md' : 'none'
+  const rosterWarning = roster.warning
+  const rosterPath = roster.path
 
   const respond = (state: RunState, configured: boolean, error: string | null, status = 200) => {
     const body: AgentsResponse = {
-      agents: buildAgents(parsedAgents, rosterSource, rosterWarning, state),
+      agents: buildAgents(parsedAgents, rosterSource, rosterWarning, rosterPath, state),
       rosterSource,
       rosterWarning,
+      rosterPath,
       configured,
       error,
     }
@@ -229,7 +298,7 @@ export async function GET() {
   // local, so return both — with 503 and the reason, never a bare empty 200.
   if (!isDbConfigured()) {
     const state = emptyRunState()
-    state.runningAgents = await detectRunningAgents()
+    state.runningAgents = await runningAgentsCached()
     return respond(state, false, NO_KEY_ERROR(), 503)
   }
 
@@ -237,20 +306,28 @@ export async function GET() {
     const supabase = db()
     const state = emptyRunState()
 
-    // 1. Fetch issues that are actively being worked on (in_progress, code_review)
-    const { data: activeIssues } = await supabase
-      .from('issues')
-      .select('task_key, title, status, assignee, worked_by, updated_at, started_at')
-      .in('status', ['open', 'in_progress', 'code_review', 'product_review', 'approved'])
-      .order('updated_at', { ascending: false })
-      .limit(50)
-
-    // 2. Fetch recent agent_runs for last-activity tracking
-    const { data: recentRuns } = await supabase
-      .from('agent_runs')
-      .select('agent_id, started_at, completed_at, status')
-      .order('started_at', { ascending: false })
-      .limit(50)
+    // The process scan and the two queries are independent, so they run
+    // together. Awaiting them in sequence added the shell-spawn cost on top of
+    // the round trips instead of hiding it behind them.
+    const [{ data: activeIssues }, { data: recentRuns }, runningAgents] = await Promise.all([
+      // 1. Issues that are actively being worked on (in_progress, code_review)
+      supabase
+        .from('issues')
+        .select('task_key, title, status, assignee, worked_by, updated_at, started_at')
+        .in('status', ['open', 'in_progress', 'code_review', 'product_review', 'approved'])
+        .order('updated_at', { ascending: false })
+        .limit(50),
+      // 2. Recent agent_runs for last-activity tracking
+      supabase
+        .from('agent_runs')
+        .select('agent_id, started_at, completed_at, status')
+        .order('started_at', { ascending: false })
+        .limit(50),
+      // 3. Running claude CLI agent processes (real-time, local, cached).
+      //    Only spawned agent sessions match, NOT the main Claude Desktop session.
+      runningAgentsCached(),
+    ])
+    state.runningAgents = runningAgents
 
     // Build lookup: agent → most recent activity timestamp
     for (const run of recentRuns ?? []) {
@@ -287,10 +364,6 @@ export async function GET() {
         }
       }
     }
-
-    // 3. Check for running claude CLI agent processes (real-time detection)
-    //    Only spawned agent sessions match, NOT the main Claude Desktop session.
-    state.runningAgents = await detectRunningAgents()
 
     return respond(state, true, null)
   } catch (e) {

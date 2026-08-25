@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body{margin:0;background:#080808;color:#e5e5e5;font-family:Inter,-apple-system,sans-serif}
+    a{color:#3b82f6}a:hover{color:#60a5fa}
+    .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+    .prov{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,.42)}
+  </style>
+</helmet>
+
+<div style="width:1280px;min-height:880px;background:#080808;padding:24px 28px;display:flex;flex-direction:column;gap:16px">
+
+  <div style="display:flex;align-items:center;gap:14px">
+    <h1 style="margin:0;font-size:20px;font-weight:600;color:#fff">Work</h1>
+    <div style="display:flex;gap:3px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:3px">
+      <sc-for list="{{views}}" as="v" hint-placeholder-count="4">
+        <span style="font-size:12.5px;font-weight:500;color:{{v.fg}};background:{{v.bg}};border-radius:6px;padding:5px 12px">{{v.label}}</span>
+      </sc-for>
+    </div>
+    <div style="flex-grow:1"></div>
+    <span class="mono" style="font-size:12px;color:rgba(255,255,255,.62)">3,071 issues · 517 features · 34 epics</span>
+    <span class="prov">exact counts</span>
+  </div>
+
+  <!-- honest error banner, shown as a state -->
+  <div style="display:flex;gap:11px;align-items:flex-start;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.28);border-radius:10px;padding:12px 15px">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg>
+    <div style="flex-grow:1;display:flex;flex-direction:column;gap:2px">
+      <div style="font-size:12.5px;font-weight:600;color:#fca5a5">Epics unavailable — 500 from /api/issues?type=epic</div>
+      <div class="mono" style="font-size:10.5px;color:rgba(255,255,255,.55);line-height:1.5">relation &ldquo;epics&rdquo; does not exist · run npm run db:migrate</div>
+    </div>
+    <span style="font-size:11.5px;font-weight:500;color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:5px 11px;flex-shrink:0">Retry</span>
+  </div>
+
+  <!-- board -->
+  <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:start">
+    <sc-for list="{{cols}}" as="c" hint-placeholder-count="5">
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:8px;padding:0 3px">
+          <span style="width:7px;height:7px;border-radius:50%;background:{{c.dot}}"></span>
+          <span style="font-size:12.5px;font-weight:600;color:rgba(255,255,255,.85)">{{c.name}}</span>
+          <div style="flex-grow:1"></div>
+          <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">{{c.n}}</span>
+        </div>
+
+        <sc-for list="{{c.cards}}" as="k" hint-placeholder-count="3">
+          <div style="background:#0f0f0f;border:1px solid {{k.border}};border-radius:9px;padding:11px 12px;display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span class="mono" style="font-size:10px;color:rgba(255,255,255,.5)">{{k.key}}</span>
+              <div style="flex-grow:1"></div>
+              <span style="width:5px;height:5px;border-radius:50%;background:{{k.pri}}"></span>
+            </div>
+            <div style="font-size:12.5px;line-height:1.4;color:rgba(255,255,255,.85)">{{k.title}}</div>
+            <div style="display:flex;align-items:center;gap:7px">
+              <span class="mono" style="font-size:10px;color:rgba(255,255,255,.48)">{{k.who}}</span>
+              <div style="flex-grow:1"></div>
+              <sc-if value="{{k.flag}}" hint-placeholder-val="{{true}}">
+                <span class="mono" style="font-size:9.5px;color:{{k.flagTone}};background:{{k.flagBg}};border-radius:4px;padding:2px 6px">{{k.flag}}</span>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+
+        <sc-if value="{{c.empty}}" hint-placeholder-val="{{true}}">
+          <div style="border:1px dashed rgba(255,255,255,.1);border-radius:9px;padding:16px 12px;text-align:center">
+            <div class="prov" style="line-height:1.5">{{c.empty}}</div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+
+  <!-- rejected move toast -->
+  <div style="display:flex;justify-content:center;margin-top:6px">
+    <div style="display:flex;align-items:center;gap:11px;background:#1a1a1a;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:11px 16px;max-width:620px">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" style="flex-shrink:0"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path></svg>
+      <div style="flex-grow:1;display:flex;flex-direction:column;gap:1px">
+        <span style="font-size:12.5px;font-weight:600;color:#fff">Moved back — the server rejected it</span>
+        <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.58)">422 · in_review requires implementation_notes, commit_sha and regression_test</span>
+      </div>
+      <span style="font-size:11.5px;font-weight:500;color:#0a0a0a;background:#fff;border-radius:6px;padding:5px 12px;flex-shrink:0">Fix</span>
+    </div>
+  </div>
+
+  <div class="prov" style="text-align:center;line-height:1.6;padding-top:2px">A card never rests where the server refused to put it. Counts come from a <span style="color:rgba(255,255,255,.62)">count:'exact'</span> query, never from the length of a page.</div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const B = 'rgba(255,255,255,.1)'
+    return {
+      views: [
+        { label: 'Board', fg: '#0a0a0a', bg: '#fff' },
+        { label: 'List', fg: 'rgba(255,255,255,.7)', bg: 'transparent' },
+        { label: 'Epics', fg: 'rgba(255,255,255,.7)', bg: 'transparent' },
+        { label: 'Sprint', fg: 'rgba(255,255,255,.7)', bg: 'transparent' },
+      ],
+      cols: [
+        { name: 'Backlog', n: '2,904', dot: '#52525b', empty: null, cards: [
+          { key: 'TOD-2412', title: 'Route all data access through one db seam', who: 'ops', pri: '#f87171', border: B, flag: null },
+          { key: 'TOD-2404', title: 'Boot-time migrations with a ledger table', who: 'builder', pri: '#f59e0b', border: B, flag: null },
+        ]},
+        { name: 'Ready', n: '38', dot: '#60a5fa', empty: null, cards: [
+          { key: 'TOD-2401', title: 'Agent registration and heartbeat endpoint', who: 'builder', pri: '#f87171', border: B, flag: 'DoR ok', flagTone: '#4ade80', flagBg: 'rgba(34,197,94,.12)' },
+        ]},
+        { name: 'In progress', n: '2', dot: '#22c55e', empty: null, cards: [
+          { key: 'TOD-2398', title: 'No surface renders an empty state over an error', who: 'builder', pri: '#f59e0b', border: 'rgba(34,197,94,.3)', flag: 'r-8f21', flagTone: '#4ade80', flagBg: 'rgba(34,197,94,.12)' },
+          { key: 'TOD-2399', title: 'SQLite adapter behind the db seam', who: 'tester', pri: '#f59e0b', border: 'rgba(34,197,94,.3)', flag: 'r-8f22', flagTone: '#4ade80', flagBg: 'rgba(34,197,94,.12)' },
+        ]},
+        { name: 'Review', n: '4', dot: '#f59e0b', empty: null, cards: [
+          { key: 'TOD-2388', title: 'Per-agent ceilings enforced by the supervisor', who: 'you', pri: '#f87171', border: 'rgba(245,158,11,.32)', flag: 'needs you', flagTone: '#f59e0b', flagBg: 'rgba(245,158,11,.12)' },
+        ]},
+        { name: 'Done', n: '123', dot: '#4ade80', empty: 'Nothing shipped today.\nLast was TOD-2381, 6h ago.', cards: [] },
+      ],
+    }
+  }
+}
+</script>
+</body>
+</html>

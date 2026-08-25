@@ -1,0 +1,234 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body{margin:0;background:#080808;color:#e5e5e5;font-family:Inter,-apple-system,sans-serif}
+    a{color:#3b82f6}a:hover{color:#60a5fa}
+    .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+    .prov{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,.45)}
+    .phone{width:375px;background:#080808;border:1px solid rgba(255,255,255,.14);border-radius:22px;overflow:hidden;display:flex;flex-direction:column}
+  </style>
+</helmet>
+
+<div style="width:1280px;min-height:880px;background:#080808;padding:32px 34px;display:flex;flex-direction:column;gap:22px">
+
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <h1 style="margin:0;font-size:22px;font-weight:600;color:#fff">On the phone</h1>
+    <p style="margin:0;font-size:13.5px;line-height:1.55;color:rgba(255,255,255,.6);max-width:88ch">375&thinsp;px. Every hit target is at least 44&thinsp;px, and body text never goes below 12&thinsp;px &mdash; the current build measures 1.74:1 contrast at 9&thinsp;px in places, which is why the audit scored accessibility a 1. Five slots in the bottom bar, the rest behind More.</p>
+  </div>
+
+  <div style="display:flex;gap:26px;align-items:flex-start">
+
+    <!-- 1. NOW -->
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div class="phone" style="height:706px">
+        <div style="padding:16px 16px 10px;display:flex;align-items:center;gap:9px;border-bottom:1px solid rgba(255,255,255,.08)">
+          <span style="font-size:19px;font-weight:600;color:#fff;flex-grow:1">Now</span>
+          <span style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border-radius:7px;padding:6px 10px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#71717a"></span>
+            <span class="mono" style="font-size:11px;color:rgba(255,255,255,.62)">off</span>
+          </span>
+        </div>
+
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px;flex-grow:1">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span style="font-size:13px;font-weight:600;color:#fff">Needs you</span>
+            <span class="mono" style="font-size:11px;color:#f59e0b">3</span>
+          </div>
+
+          <sc-for list="{{cards}}" as="c" hint-placeholder-count="3">
+            <div style="background:#0f0f0f;border:1px solid {{c.border}};border-radius:12px;padding:13px 14px;display:flex;flex-direction:column;gap:9px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="mono" style="font-size:10px;color:{{c.tone}};background:{{c.bg}};border-radius:4px;padding:2px 7px">{{c.agent}}</span>
+                <div style="flex-grow:1"></div>
+                <span class="prov">{{c.wait}}</span>
+              </div>
+              <div style="font-size:13.5px;font-weight:600;line-height:1.35;color:#fff">{{c.title}}</div>
+              <div style="font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.62)">{{c.body}}</div>
+              <div style="display:flex;gap:8px;padding-top:2px">
+                <div style="flex-grow:1;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.16);border-radius:9px;font-size:13px;font-weight:500;color:rgba(255,255,255,.7)">Reject</div>
+                <div style="flex-grow:1;height:44px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:9px;font-size:13px;font-weight:600;color:#0a0a0a">{{c.cta}}</div>
+              </div>
+            </div>
+          </sc-for>
+
+          <div style="border-top:1px solid rgba(255,255,255,.07);padding-top:12px;display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:13px;font-weight:600;color:#fff">Running</span>
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="width:7px;height:7px;border-radius:50%;background:#22c55e"></span>
+              <span style="font-size:12.5px;color:rgba(255,255,255,.78);flex-grow:1">builder &mdash; editing WorkTab</span>
+              <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">6m</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="width:7px;height:7px;border-radius:50%;background:#22c55e"></span>
+              <span style="font-size:12.5px;color:rgba(255,255,255,.78);flex-grow:1">tester &mdash; acceptance suite</span>
+              <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">1m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- bottom nav -->
+        <div style="border-top:1px solid rgba(255,255,255,.1);background:#0b0b0b;display:grid;grid-template-columns:repeat(5,1fr);height:60px">
+          <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;position:relative">
+              <span style="width:17px;height:17px;border-radius:5px;background:{{t.c}}"></span>
+              <span style="font-size:10.5px;font-weight:500;color:{{t.c}}">{{t.n}}</span>
+              <sc-if value="{{t.badge}}" hint-placeholder-val="{{true}}">
+                <span class="mono" style="position:absolute;top:8px;right:26px;font-size:9px;background:#f59e0b;color:#0a0a0a;border-radius:7px;padding:0 5px;font-weight:600">{{t.badge}}</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="prov" style="text-align:center">Now &mdash; only what is waiting on you</div>
+    </div>
+
+    <!-- 2. APPROVAL -->
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div class="phone" style="height:706px">
+        <div style="padding:16px;display:flex;align-items:center;gap:11px;border-bottom:1px solid rgba(255,255,255,.08)">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          <span style="font-size:16px;font-weight:600;color:#fff;flex-grow:1">Approval</span>
+          <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">TOD-2412</span>
+        </div>
+
+        <div style="padding:16px;display:flex;flex-direction:column;gap:15px;flex-grow:1">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:36px;height:36px;border-radius:10px;background:rgba(167,139,250,.16);display:flex;align-items:center;justify-content:center">
+              <span class="mono" style="font-size:12px;color:#a78bfa">OPS</span>
+            </span>
+            <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1">
+              <span style="font-size:14px;font-weight:600;color:#fff">ops wants wider scope</span>
+              <span class="prov">paused 6m ago &middot; run r-8f24</span>
+            </div>
+          </div>
+
+          <div style="font-size:13.5px;line-height:1.55;color:rgba(255,255,255,.75)">It needs to edit a file outside the set this task declared. Approving widens its scope for this run only.</div>
+
+          <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:11px;overflow:hidden">
+            <div style="padding:10px 13px;border-bottom:1px solid rgba(255,255,255,.07)">
+              <span class="prov">declared scope</span>
+            </div>
+            <sc-for list="{{scope}}" as="f" hint-placeholder-count="4">
+              <div style="padding:9px 13px;display:flex;align-items:center;gap:9px;border-bottom:1px solid rgba(255,255,255,.04)">
+                <span class="mono" style="font-size:11px;color:{{f.tone}};flex-grow:1">{{f.path}}</span>
+                <span class="mono" style="font-size:9.5px;color:{{f.tone}}">{{f.tag}}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.26);border-radius:11px;padding:12px 13px;display:flex;flex-direction:column;gap:5px">
+            <span style="font-size:12.5px;font-weight:600;color:#fbbf24">Why it is asking</span>
+            <span style="font-size:12.5px;line-height:1.5;color:rgba(255,255,255,.7)">lib/db.ts is on the protected list. Three earlier sessions reverted it by accident, so it now requires a human.</span>
+          </div>
+
+          <div style="flex-grow:1"></div>
+
+          <div style="display:flex;flex-direction:column;gap:9px">
+            <div style="height:48px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:11px;font-size:14.5px;font-weight:600;color:#0a0a0a">Allow for this run</div>
+            <div style="height:48px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.16);border-radius:11px;font-size:14.5px;font-weight:500;color:rgba(255,255,255,.72)">Reject and explain</div>
+          </div>
+        </div>
+      </div>
+      <div class="prov" style="text-align:center">Approval &mdash; decidable in one screen, no pinching</div>
+    </div>
+
+    <!-- 3. FLEET -->
+    <div style="display:flex;flex-direction:column;gap:9px">
+      <div class="phone" style="height:706px">
+        <div style="padding:16px 16px 10px;display:flex;align-items:center;gap:9px;border-bottom:1px solid rgba(255,255,255,.08)">
+          <span style="font-size:19px;font-weight:600;color:#fff;flex-grow:1">Fleet</span>
+          <span class="mono" style="font-size:11px;color:rgba(255,255,255,.55)">2 live</span>
+        </div>
+
+        <div style="height:196px;position:relative;background:#0d0d0d;border-bottom:1px solid rgba(255,255,255,.08)">
+          <div style="position:absolute;left:52px;top:58px;display:flex;flex-direction:column;align-items:center;gap:5px">
+            <div style="width:24px;height:19px;border-radius:4px;background:#3b82f6"></div>
+            <span class="mono" style="font-size:9.5px;color:rgba(255,255,255,.6)">builder</span>
+          </div>
+          <div style="position:absolute;left:172px;top:36px;display:flex;flex-direction:column;align-items:center;gap:5px">
+            <div style="background:#f59e0b;color:#0a0a0a;border-radius:7px;padding:4px 8px;font-size:10.5px;font-weight:600;white-space:nowrap">needs you</div>
+            <div style="width:24px;height:19px;border-radius:4px;background:#a78bfa"></div>
+            <span class="mono" style="font-size:9.5px;color:rgba(255,255,255,.6)">ops</span>
+          </div>
+          <div style="position:absolute;left:272px;top:104px;display:flex;flex-direction:column;align-items:center;gap:5px">
+            <div style="width:24px;height:19px;border-radius:4px;background:#22c55e"></div>
+            <span class="mono" style="font-size:9.5px;color:rgba(255,255,255,.6)">tester</span>
+          </div>
+        </div>
+
+        <div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px;flex-grow:1">
+          <sc-for list="{{fleet}}" as="f" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:10px;min-height:44px">
+              <span style="width:8px;height:8px;border-radius:50%;background:{{f.dot}};flex-shrink:0"></span>
+              <div style="display:flex;flex-direction:column;gap:1px;flex-grow:1">
+                <span style="font-size:13.5px;font-weight:500;color:#fff">{{f.name}}</span>
+                <span class="prov">{{f.state}}</span>
+              </div>
+              <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.5)">{{f.model}}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="border-top:1px solid rgba(255,255,255,.1);background:#0b0b0b;display:grid;grid-template-columns:repeat(5,1fr);height:60px">
+          <sc-for list="{{tabs2}}" as="t" hint-placeholder-count="5">
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+              <span style="width:17px;height:17px;border-radius:5px;background:{{t.c}}"></span>
+              <span style="font-size:10.5px;font-weight:500;color:{{t.c}}">{{t.n}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div class="prov" style="text-align:center">Fleet &mdash; the bubble is the notification</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const dim = 'rgba(255,255,255,.42)'
+    return {
+      cards: [
+        { agent: 'ops', tone: '#a78bfa', bg: 'rgba(167,139,250,.14)', border: 'rgba(245,158,11,.32)', wait: '6m',
+          title: 'Wants to edit outside its scope', body: 'lib/db.ts is protected. Approving widens scope for this run only.', cta: 'Allow' },
+        { agent: 'ops', tone: '#a78bfa', bg: 'rgba(167,139,250,.14)', border: 'rgba(255,255,255,.1)', wait: '41m',
+          title: '2 skills proposed to the vault', body: 'Drafted from repeated failures. Nothing is written until you approve.', cta: 'Review' },
+        { agent: 'tester', tone: '#4ade80', bg: 'rgba(34,197,94,.14)', border: 'rgba(255,255,255,.1)', wait: '2h',
+          title: 'TOD-2398 ready for review', body: 'Build clean, regression test attached.', cta: 'Open' },
+      ],
+      tabs: [
+        { n: 'Now', c: '#fff', badge: '3' }, { n: 'Work', c: dim, badge: null },
+        { n: 'Fleet', c: dim, badge: null }, { n: 'Chat', c: dim, badge: null },
+        { n: 'More', c: dim, badge: null },
+      ],
+      tabs2: [
+        { n: 'Now', c: dim }, { n: 'Work', c: dim },
+        { n: 'Fleet', c: '#fff' }, { n: 'Chat', c: dim }, { n: 'More', c: dim },
+      ],
+      scope: [
+        { path: 'components/tabs/WorkTab.tsx', tag: 'in scope', tone: 'rgba(255,255,255,.6)' },
+        { path: 'hooks/useApiData.ts', tag: 'in scope', tone: 'rgba(255,255,255,.6)' },
+        { path: 'lib/db.ts', tag: 'requested', tone: '#fbbf24' },
+        { path: 'scripts/acceptance/', tag: 'never', tone: 'rgba(255,255,255,.35)' },
+      ],
+      fleet: [
+        { name: 'builder', state: 'editing WorkTab.tsx · 6m', dot: '#22c55e', model: 'qwen 14b' },
+        { name: 'ops', state: 'waiting on you · 6m', dot: '#f59e0b', model: 'qwen 14b' },
+        { name: 'tester', state: 'acceptance suite · 1m', dot: '#22c55e', model: 'qwen 7b' },
+        { name: 'deployer', state: 'last seen 4h 12m ago', dot: '#52525b', model: 'qwen 32b' },
+      ],
+    }
+  }
+}
+</script>
+</body>
+</html>

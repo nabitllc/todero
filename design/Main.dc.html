@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body{margin:0;background:#080808;color:#e5e5e5;font-family:Inter,-apple-system,sans-serif}
+    a{color:#3b82f6}a:hover{color:#60a5fa}
+    .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+    .prov{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,.42);letter-spacing:.02em}
+  </style>
+</helmet>
+
+<div style="width:1280px;min-height:900px;background:#080808;display:flex">
+
+  <!-- rail -->
+  <div style="width:56px;background:#0b0b0b;border-right:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:6px">
+    <div style="width:30px;height:30px;border-radius:8px;background:#3b82f6;display:flex;align-items:center;justify-content:center;margin-bottom:10px">
+      <span class="mono" style="font-size:13px;font-weight:500;color:#fff">T</span>
+    </div>
+    <sc-for list="{{rail}}" as="i" hint-placeholder-count="7">
+      <div style="width:38px;height:38px;border-radius:9px;background:{{i.bg}};display:flex;align-items:center;justify-content:center;position:relative">
+        <span class="mono" style="font-size:10px;color:{{i.fg}}">{{i.k}}</span>
+        <sc-if value="{{i.badge}}" hint-placeholder-val="{{true}}">
+          <span class="mono" style="position:absolute;top:-2px;right:-2px;font-size:9px;background:#f59e0b;color:#0a0a0a;border-radius:8px;padding:1px 5px;font-weight:500">{{i.badge}}</span>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="flex-grow:1;display:flex;flex-direction:column">
+
+    <!-- top bar -->
+    <div style="height:56px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;padding:0 24px;gap:16px">
+      <div style="font-size:17px;font-weight:600;color:#fff">Now</div>
+      <div style="flex-grow:1"></div>
+      <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:5px 11px">
+        <span style="width:6px;height:6px;border-radius:50%;background:#71717a"></span>
+        <span class="mono" style="font-size:11.5px;color:rgba(255,255,255,.62)">Dispatch off</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:5px 11px">
+        <span style="width:6px;height:6px;border-radius:50%;background:#22c55e"></span>
+        <span class="mono" style="font-size:11.5px;color:rgba(255,255,255,.62)">qwen2.5-coder:14b</span>
+      </div>
+    </div>
+
+    <div style="padding:26px 28px;display:flex;flex-direction:column;gap:26px">
+
+      <!-- NEEDS YOU -->
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <h2 style="margin:0;font-size:15px;font-weight:600;color:#fff;letter-spacing:.01em">Needs you</h2>
+          <span class="mono" style="font-size:11px;color:#f59e0b">3 waiting</span>
+          <div style="flex-grow:1"></div>
+          <span class="prov">nothing else is surfaced — 14 events handled without you since 21:00</span>
+        </div>
+
+        <sc-for list="{{needs}}" as="n" hint-placeholder-count="3">
+          <div style="background:#0f0f0f;border:1px solid {{n.border}};border-radius:11px;padding:15px 17px;display:flex;gap:15px;align-items:flex-start">
+            <div style="width:34px;height:34px;border-radius:9px;background:{{n.tint}};display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <span class="mono" style="font-size:12px;color:{{n.ic}}">{{n.abbr}}</span>
+            </div>
+            <div style="flex-grow:1;display:flex;flex-direction:column;gap:5px">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="font-size:14px;font-weight:600;color:#fff">{{n.title}}</span>
+                <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);border-radius:4px;padding:2px 6px">{{n.key}}</span>
+              </div>
+              <div style="font-size:13px;line-height:1.5;color:rgba(255,255,255,.68);max-width:78ch">{{n.body}}</div>
+              <div class="prov">{{n.why}}</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-shrink:0;align-items:center">
+              <div style="font-size:12.5px;font-weight:500;color:rgba(255,255,255,.62);border:1px solid rgba(255,255,255,.16);border-radius:7px;padding:7px 13px">Reject</div>
+              <div style="font-size:12.5px;font-weight:600;color:#0a0a0a;background:#fff;border-radius:7px;padding:8px 15px">{{n.cta}}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- RUNNING -->
+      <div style="display:flex;flex-direction:column;gap:11px">
+        <div style="display:flex;align-items:baseline;gap:10px">
+          <h2 style="margin:0;font-size:15px;font-weight:600;color:#fff">Running</h2>
+          <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">2 of 4 agents</span>
+          <div style="flex-grow:1"></div>
+          <span class="prov">from heartbeats · last 14s ago</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+          <sc-for list="{{running}}" as="r" hint-placeholder-count="2">
+            <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:14px 16px;display:flex;flex-direction:column;gap:9px">
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="width:7px;height:7px;border-radius:50%;background:#22c55e"></span>
+                <span style="font-size:14px;font-weight:600;color:#fff">{{r.agent}}</span>
+                <div style="flex-grow:1"></div>
+                <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">{{r.elapsed}}</span>
+              </div>
+              <div style="font-size:12.5px;color:rgba(255,255,255,.66);line-height:1.45">{{r.doing}}</div>
+              <div style="display:flex;gap:14px;align-items:center">
+                <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">{{r.tokens}} tok</span>
+                <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">{{r.steps}} steps</span>
+                <span class="mono" style="font-size:11px;color:#22c55e">{{r.cost}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- SINCE + SAFETY -->
+      <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:18px;align-items:start">
+
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div style="display:flex;align-items:baseline;gap:10px">
+            <h2 style="margin:0;font-size:15px;font-weight:600;color:#fff">Since yesterday</h2>
+            <div style="flex-grow:1"></div>
+            <span class="prov">brief · 08:00 daily</span>
+          </div>
+          <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:6px 0">
+            <sc-for list="{{brief}}" as="b" hint-placeholder-count="4">
+              <div style="display:flex;gap:13px;align-items:center;padding:11px 16px;border-bottom:1px solid rgba(255,255,255,.05)">
+                <span class="mono" style="font-size:17px;font-weight:500;color:{{b.tone}};min-width:44px">{{b.n}}</span>
+                <span style="font-size:13px;color:rgba(255,255,255,.72);flex-grow:1">{{b.label}}</span>
+                <span class="prov">{{b.note}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div style="display:flex;align-items:baseline;gap:10px">
+            <h2 style="margin:0;font-size:15px;font-weight:600;color:#fff">Limits</h2>
+            <div style="flex-grow:1"></div>
+            <span class="prov">enforced by the supervisor</span>
+          </div>
+          <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{limits}}" as="l" hint-placeholder-count="4">
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <div style="display:flex;align-items:baseline;gap:8px">
+                  <span style="font-size:12.5px;color:rgba(255,255,255,.72);flex-grow:1">{{l.name}}</span>
+                  <span class="mono" style="font-size:11.5px;color:{{l.tone}}">{{l.val}}</span>
+                </div>
+                <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.08);position:relative">
+                  <div style="position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:{{l.tone}};width:{{l.pct}}"></div>
+                </div>
+              </div>
+            </sc-for>
+            <div class="prov" style="line-height:1.5;padding-top:2px">Dollar budget is wired but dormant — every run is local, so it costs GPU time, not money.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      rail: [
+        { k: 'NOW', bg: 'rgba(59,130,246,.16)', fg: '#60a5fa', badge: '3' },
+        { k: 'WRK', bg: 'transparent', fg: 'rgba(255,255,255,.45)', badge: null },
+        { k: 'FLT', bg: 'transparent', fg: 'rgba(255,255,255,.45)', badge: null },
+        { k: 'RUN', bg: 'transparent', fg: 'rgba(255,255,255,.45)', badge: null },
+        { k: 'MEM', bg: 'transparent', fg: 'rgba(255,255,255,.45)', badge: null },
+        { k: 'CHT', bg: 'transparent', fg: 'rgba(255,255,255,.45)', badge: null },
+        { k: 'SET', bg: 'transparent', fg: 'rgba(255,255,255,.45)', badge: null },
+      ],
+      needs: [
+        { abbr: 'BLD', tint: 'rgba(59,130,246,.14)', ic: '#60a5fa', border: 'rgba(245,158,11,.35)',
+          title: 'Builder wants to write outside its scope', key: 'TOD-2412',
+          body: 'Wants to edit lib/db.ts, which is outside the file set this task declared. Approving widens its scope for this run only.',
+          why: 'waiting 6m · run r-8f21 · paused, not failed', cta: 'Allow once' },
+        { abbr: 'OPS', tint: 'rgba(167,139,250,.14)', ic: '#a78bfa', border: 'rgba(255,255,255,.1)',
+          title: 'Two skills proposed from repeated failures', key: '_pending',
+          body: 'The same rejection reason appeared 4 times this week. Drafted as vault proposals — nothing is written to Brain2 until you approve.',
+          why: 'waiting 41m · from 4 runs', cta: 'Review' },
+        { abbr: 'TST', tint: 'rgba(34,197,94,.14)', ic: '#4ade80', border: 'rgba(255,255,255,.1)',
+          title: 'Ready for review', key: 'TOD-2398',
+          body: 'Tests pass, build clean, regression test attached. Nothing merges without you.',
+          why: 'waiting 2h · 41 files changed', cta: 'Open diff' },
+      ],
+      running: [
+        { agent: 'builder', elapsed: '6m 12s', doing: 'Editing components/tabs/WorkTab.tsx — step 9 of an estimated 14', tokens: '48.2k', steps: '9', cost: '$0.00 local' },
+        { agent: 'tester', elapsed: '1m 40s', doing: 'Running the acceptance suite against localhost:3000', tokens: '11.7k', steps: '3', cost: '$0.00 local' },
+      ],
+      brief: [
+        { n: '12', label: 'runs completed', tone: '#e5e5e5', note: '2 halted on no-progress' },
+        { n: '4', label: 'issues moved to review', tone: '#e5e5e5', note: 'all have a regression test' },
+        { n: '2', label: 'skills proposed to the vault', tone: '#a78bfa', note: 'awaiting your approval' },
+        { n: '0', label: 'runs stopped by a limit', tone: 'rgba(255,255,255,.5)', note: 'no ceiling was reached' },
+      ],
+      limits: [
+        { name: 'Concurrent runs', val: '2 / 3', tone: '#22c55e', pct: '66%' },
+        { name: 'Longest run', val: '6m / 30m', tone: '#22c55e', pct: '20%' },
+        { name: 'Runs this hour', val: '12 / 40', tone: '#22c55e', pct: '30%' },
+        { name: 'No-progress halt', val: '2 heartbeats', tone: 'rgba(255,255,255,.5)', pct: '0%' },
+      ],
+    }
+  }
+}
+</script>
+</body>
+</html>

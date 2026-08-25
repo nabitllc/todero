@@ -1,10 +1,11 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { AGENT_META, parseAgentsFromMd, resolveAgentIdentity } from '@/lib/agent-roster'
+import { AGENT_META, loadAgentRoster, parseAgentsFromMd, resolveAgentIdentity } from '@/lib/agent-roster'
 
 let tmpDir: string
 const prevEnv = process.env.TODERO_AGENTS_MD
+const prevAgentsMdPath = process.env.AGENTS_MD_PATH
 
 function writeRoster(contents: string): string {
   const file = path.join(tmpDir, `AGENTS-${Math.random().toString(36).slice(2)}.md`)
@@ -20,7 +21,14 @@ beforeAll(() => {
 afterAll(() => {
   if (prevEnv === undefined) delete process.env.TODERO_AGENTS_MD
   else process.env.TODERO_AGENTS_MD = prevEnv
+  if (prevAgentsMdPath === undefined) delete process.env.AGENTS_MD_PATH
+  else process.env.AGENTS_MD_PATH = prevAgentsMdPath
   fs.rmSync(tmpDir, { recursive: true, force: true })
+})
+
+afterEach(() => {
+  delete process.env.AGENTS_MD_PATH
+  delete process.env.TODERO_AGENTS_MD
 })
 
 describe('resolveAgentIdentity', () => {
@@ -80,15 +88,55 @@ describe('parseAgentsFromMd', () => {
     expect(() => parseAgentsFromMd()).toThrow(/Agent Roster table not found/)
   })
 
-  it('throws when this host has no AGENTS.md anywhere — the route treats that as "use the built-in registry"', () => {
+  it('throws when this host has no AGENTS.md anywhere', () => {
     process.env.TODERO_AGENTS_MD = path.join(tmpDir, 'definitely-absent.md')
-    // Also neutralise the other candidates so the repo's own AGENTS.md is not found.
-    const spy = jest.spyOn(fs, 'existsSync').mockReturnValue(false)
-    try {
-      expect(() => parseAgentsFromMd()).toThrow(/No AGENTS\.md found on this host/)
-    } finally {
-      spy.mockRestore()
-    }
+    expect(() => parseAgentsFromMd()).toThrow(/No AGENTS\.md found on this host/)
+  })
+
+  it('reads the id column when the roster provides one', () => {
+    writeRoster([
+      '| Id | Agent | Role | Model | Status |',
+      '|----|-------|------|-------|--------|',
+      '| ops | Ingo | Infrastructure Watchdog | Claude Haiku 4.5 | Scheduled |',
+      '| deployer | Deployer | Deploy Agent | Claude Haiku 4.5 | Active |',
+    ].join('\n'))
+
+    const agents = parseAgentsFromMd()
+    expect(agents.map(a => a.id)).toEqual(['ops', 'deployer'])
+    expect(agents[0].name).toBe('Ingo')
+  })
+})
+
+describe('loadAgentRoster', () => {
+  it("does NOT fall back to another file when AGENTS_MD_PATH points at nothing", () => {
+    const bogus = path.join(tmpDir, 'definitely-absent.md')
+    process.env.AGENTS_MD_PATH = bogus
+
+    const roster = loadAgentRoster()
+    // The repo's own AGENTS.md exists and would parse — the point is that an
+    // explicit override that missed must not silently resolve to it.
+    expect(roster.agents).toEqual([])
+    expect(roster.path).toBeNull()
+    expect(roster.warning).toContain(bogus)
+  })
+
+  it('reports an unparseable roster instead of throwing', () => {
+    const file = writeRoster('# Just prose\n\nNo table here.\n')
+    process.env.AGENTS_MD_PATH = file
+
+    const roster = loadAgentRoster()
+    expect(roster.agents).toEqual([])
+    expect(roster.path).toBe(file)
+    expect(roster.warning).toMatch(/Agent Roster table not found/)
+  })
+
+  it("reads the repo's own AGENTS.md, which declares ops and deployer", () => {
+    const roster = loadAgentRoster()
+    expect(roster.warning).toBeNull()
+    const ids = roster.agents.map(a => a.id)
+    expect(ids.length).toBeGreaterThan(4)
+    expect(ids).toContain('ops')
+    expect(ids).toContain('deployer')
   })
 })
 

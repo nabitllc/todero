@@ -10,36 +10,24 @@
 export type AgentRunStatus = 'live' | 'stale' | 'ended' | 'never';
 export interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; todayTasks: number; todayErrors: number; estimatedCost: number | null; }
 
-export const SUPA_AGENTS = ['main','scout','ops','kemuni-sme','vespera-sme','builder','tester','deployer'] as const;
+// TOD (agent-roster-truth): SUPA_AGENTS/ALL_AGENTS/ACTIVE_IDS/BENCH_IDS/
+// DESK_POS/BENCH_POS/PLANNED_LABELS used to be a hardcoded 8-agent roster
+// (KAOS/Scout/Ingo/Kemuni SME/Vespera SME/Builder/Tester/Deployer) with a
+// literal id → desk-position table, plus two invented "planned" hires
+// ("Quill", "Echo") drawn at empty desks. The office rendered that fixed
+// cast forever, independent of what /api/agents actually reports — an agent
+// could be running a task and the canvas would still show it "on the bench",
+// or a genuinely idle process would sit at a desk marked active. All of it
+// is deleted. The office now takes its roster from the real /api/agents
+// response (see AgentOffice.tsx / OfficeCanvas.tsx) and computes desk/bench
+// placement from each agent's *own* `active` field — nothing here asserts
+// who exists or what they are doing.
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 export const MAP_COLS    = 16;
 export const MAP_ROWS    = 16;
 export const OFFICE_ROWS = 12;
 export const STANCHION_R = 12;
-export const ORCHESTRATOR_ID = "main";
-
-export const ALL_AGENTS = [
-  { id:"main",        name:"KAOS",       color:"#6C5CE7", emoji:"🧠", role:"Orchestrator",     personality:{ workBurst:0.95, focusDuration:4 } },
-  { id:"scout",       name:"Scout",      color:"#00B894", emoji:"🔍", role:"Research",          personality:{ workBurst:0.92, focusDuration:1 } },
-  { id:"ops",         name:"Ingo",        color:"#F0932B", emoji:"⚙️", role:"Infrastructure",   personality:{ workBurst:0.80, focusDuration:5 } },
-  { id:"kemuni-sme",  name:"Kemuni SME", color:"#E17055", emoji:"🚀", role:"Kemuni Product",   personality:{ workBurst:0.88, focusDuration:3 } },
-  { id:"vespera-sme", name:"Vespera SME",color:"#74B9FF", emoji:"🖤", role:"Vespera Product",  personality:{ workBurst:0.85, focusDuration:3 } },
-  { id:"builder",     name:"Builder",    color:"#0984E3", emoji:"🔨", role:"Code Generation",  personality:{ workBurst:0.88, focusDuration:5 } },
-  { id:"tester",      name:"Tester",     color:"#E84393", emoji:"🧪", role:"QA & Testing",     personality:{ workBurst:0.85, focusDuration:2 } },
-  { id:"deployer",    name:"Deployer",   color:"#00CEC9", emoji:"🚀", role:"Deployment",       personality:{ workBurst:0.90, focusDuration:3 } },
-];
-
-export const ACTIVE_IDS = ["main","scout","ops","kemuni-sme","vespera-sme"];
-export const BENCH_IDS  = ["builder","tester","deployer"];
-
-export const DEPENDENCIES: Record<string,string[]> = {
-  "main":        ["scout","kemuni-sme","vespera-sme"],
-  "scout":       ["main"],
-  "kemuni-sme":  ["main"],
-  "vespera-sme": ["main"],
-  "ops":         ["main"],
-};
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 export const ORCH_TX = 0.3,  ORCH_TY = 1.6;
@@ -50,41 +38,24 @@ export const CONF_TH = 2.2;
 export const ROW_Y = [1.6, 4.5, 7.0, 9.5];
 export const COL_X = [1.0, 4.5, 8.0, 11.5];
 
-export const DESK_POS: Record<string,{tx:number,ty:number}> = {
-  main:          { tx:ORCH_TX,    ty:ORCH_TY    },
-  scout:         { tx:COL_X[0],  ty:ROW_Y[1]   },
-  "kemuni-sme":  { tx:COL_X[1],  ty:ROW_Y[1]   },
-  ops:           { tx:COL_X[0],  ty:ROW_Y[2]   },
-  "vespera-sme": { tx:COL_X[1],  ty:ROW_Y[2]   },
-};
+// Pure geometry — an ordered pool of desk/bench slots with no agent identity
+// attached. initAgents() (officeDrawing.ts) hands the Nth active agent the
+// Nth desk slot and the Nth inactive agent the Nth bench slot, generating
+// extra rows on the fly if the real roster is bigger than the base grid.
+const DESK_ROWS = [ROW_Y[1], ROW_Y[2], ROW_Y[3]];
+export function deskSlot(i: number): { tx: number; ty: number } {
+  const col = COL_X[i % COL_X.length];
+  const rowIdx = Math.floor(i / COL_X.length);
+  const ty = rowIdx < DESK_ROWS.length ? DESK_ROWS[rowIdx] : DESK_ROWS[DESK_ROWS.length - 1] + (rowIdx - DESK_ROWS.length + 1) * 2.5;
+  return { tx: col, ty };
+}
 
-export const EMPTY_DESK_POS = [
-  { tx:COL_X[2], ty:ROW_Y[1] },
-  { tx:COL_X[3], ty:ROW_Y[1] },
-  { tx:COL_X[2], ty:ROW_Y[2] },
-  { tx:COL_X[3], ty:ROW_Y[2] },
-  { tx:COL_X[0], ty:ROW_Y[3] },
-  { tx:COL_X[1], ty:ROW_Y[3] },
-  { tx:COL_X[2], ty:ROW_Y[3] },
-  { tx:COL_X[3], ty:ROW_Y[3] },
-];
-
-export const BENCH_POS: Record<string,{tx:number,ty:number}> = {
-  builder: { tx:1.5,  ty:STANCHION_R+1.0 },
-  tester:  { tx:5.0,  ty:STANCHION_R+1.0 },
-  deployer:{ tx:9.5,  ty:STANCHION_R+1.0 },
-};
-
-export const PLANNED_LABELS = [
-  {tx:COL_X[2],ty:ROW_Y[1],emoji:"🔨",name:"Builder"},
-  {tx:COL_X[3],ty:ROW_Y[1],emoji:"🧪",name:"Tester"},
-  {tx:COL_X[2],ty:ROW_Y[2],emoji:"✍️",name:"Quill"},
-  {tx:COL_X[3],ty:ROW_Y[2],emoji:"📣",name:"Echo"},
-  {tx:COL_X[0],ty:ROW_Y[3],emoji:"",name:""},
-  {tx:COL_X[1],ty:ROW_Y[3],emoji:"",name:""},
-  {tx:COL_X[2],ty:ROW_Y[3],emoji:"",name:""},
-  {tx:COL_X[3],ty:ROW_Y[3],emoji:"",name:""},
-];
+const BENCH_COLS = [1.5, 5.0, 9.5];
+export function benchSlot(i: number): { tx: number; ty: number } {
+  const col = BENCH_COLS[i % BENCH_COLS.length];
+  const rowIdx = Math.floor(i / BENCH_COLS.length);
+  return { tx: col, ty: STANCHION_R + 1.0 + rowIdx * 1.8 };
+}
 
 // ─── Themes ────────────────────────────────────────────────────────────────
 export const THEMES = {

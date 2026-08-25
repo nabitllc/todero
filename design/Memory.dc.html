@@ -1,0 +1,161 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body{margin:0;background:#080808;color:#e5e5e5;font-family:Inter,-apple-system,sans-serif}
+    a{color:#3b82f6}a:hover{color:#60a5fa}
+    .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+    .prov{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,.42)}
+  </style>
+</helmet>
+
+<div style="width:1280px;min-height:880px;background:#080808;padding:24px 28px;display:flex;flex-direction:column;gap:18px">
+
+  <div style="display:flex;align-items:baseline;gap:12px">
+    <h1 style="margin:0;font-size:20px;font-weight:600;color:#fff">Memory</h1>
+    <span class="mono" style="font-size:12px;color:rgba(255,255,255,.5)">1,204 records · 9 skills · 2 proposed</span>
+    <div style="flex-grow:1"></div>
+    <span class="prov">Todero&rsquo;s own store — the vault stays read-only</span>
+  </div>
+
+  <!-- context budget: the signature control -->
+  <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:11px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:13px;font-weight:600;color:#fff">Always-in-context budget</span>
+      <span class="mono" style="font-size:12px;color:#f59e0b">1,180 / 1,300 tokens</span>
+      <div style="flex-grow:1"></div>
+      <span class="prov">overflow raises an error — it never truncates silently</span>
+    </div>
+    <div style="height:8px;border-radius:4px;background:rgba(255,255,255,.08);position:relative;overflow:hidden">
+      <div style="position:absolute;inset:0 auto 0 0;width:48%;background:#3b82f6"></div>
+      <div style="position:absolute;inset:0 auto 0 48%;width:33%;background:#a78bfa"></div>
+      <div style="position:absolute;inset:0 auto 0 81%;width:10%;background:#f59e0b"></div>
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <sc-for list="{{legend}}" as="l" hint-placeholder-count="4">
+        <span style="display:flex;align-items:center;gap:6px">
+          <span style="width:11px;height:6px;border-radius:2px;background:{{l.c}}"></span>
+          <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.55)">{{l.t}}</span>
+        </span>
+      </sc-for>
+    </div>
+    <div class="prov" style="line-height:1.55;max-width:96ch">Approaching the ceiling is the signal to consolidate, not to trim. Everything outside this budget still exists and is retrieved by search when a task looks similar — nothing is lost, only unloaded.</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start">
+
+    <!-- episodic -->
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <h2 style="margin:0;font-size:14px;font-weight:600;color:#fff">What it tried</h2>
+        <div style="flex-grow:1"></div>
+        <span class="prov">retrieved by search, ranked</span>
+      </div>
+      <sc-for list="{{records}}" as="r" hint-placeholder-count="3">
+        <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:11px;padding:13px 15px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="width:6px;height:6px;border-radius:50%;background:{{r.dot}}"></span>
+            <span style="font-size:12.5px;font-weight:600;color:#fff;flex-grow:1">{{r.task}}</span>
+            <span class="mono" style="font-size:10px;color:rgba(255,255,255,.45)">{{r.when}}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;gap:9px;align-items:flex-start">
+              <span class="mono" style="font-size:9.5px;color:#f87171;min-width:44px;padding-top:2px">FAILED</span>
+              <span style="font-size:12px;line-height:1.45;color:rgba(255,255,255,.66)">{{r.failed}}</span>
+            </div>
+            <div style="display:flex;gap:9px;align-items:flex-start">
+              <span class="mono" style="font-size:9.5px;color:#4ade80;min-width:44px;padding-top:2px">WORKED</span>
+              <span style="font-size:12px;line-height:1.45;color:rgba(255,255,255,.82)">{{r.worked}}</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding-top:2px">
+            <span class="mono" style="font-size:9.5px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.05);border-radius:4px;padding:2px 7px">seen {{r.seen}}&times;</span>
+            <div style="flex-grow:1"></div>
+            <span class="prov">{{r.run}}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- skills -->
+    <div style="display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <h2 style="margin:0;font-size:14px;font-weight:600;color:#fff">Skills</h2>
+        <div style="flex-grow:1"></div>
+        <span class="prov">written after a path is found the hard way</span>
+      </div>
+
+      <sc-for list="{{skills}}" as="s" hint-placeholder-count="3">
+        <div style="background:#0f0f0f;border:1px solid {{s.border}};border-radius:11px;padding:13px 15px;display:flex;flex-direction:column;gap:7px">
+          <div style="display:flex;align-items:center;gap:9px">
+            <span style="font-size:12.5px;font-weight:600;color:#fff;flex-grow:1">{{s.name}}</span>
+            <span class="mono" style="font-size:9.5px;color:{{s.tone}};background:{{s.bg}};border-radius:4px;padding:2px 7px">{{s.status}}</span>
+          </div>
+          <div style="font-size:12px;line-height:1.5;color:rgba(255,255,255,.66)">{{s.body}}</div>
+          <div style="display:flex;align-items:center;gap:9px;padding-top:2px">
+            <span class="prov">{{s.meta}}</span>
+            <div style="flex-grow:1"></div>
+            <sc-if value="{{s.action}}" hint-placeholder-val="{{true}}">
+              <span style="font-size:11.5px;font-weight:600;color:#0a0a0a;background:#fff;border-radius:6px;padding:5px 12px">{{s.action}}</span>
+            </sc-if>
+          </div>
+        </div>
+      </sc-for>
+
+      <div style="display:flex;gap:10px;align-items:flex-start;background:rgba(167,139,250,.07);border:1px solid rgba(167,139,250,.24);border-radius:11px;padding:13px 15px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="1.9" stroke-linecap="round" style="flex-shrink:0;margin-top:1px"><path d="M12 19V5M5 12l7-7 7 7"></path></svg>
+        <div style="font-size:12px;line-height:1.55;color:rgba(255,255,255,.7)">Proposals go to <span class="mono" style="color:rgba(255,255,255,.9)">Mich-Brain2/_pending/</span> and wait for you. Todero never writes to the vault itself, and never approves its own proposal.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      legend: [
+        { c: '#3b82f6', t: 'agent body · 620' },
+        { c: '#a78bfa', t: 'skills loaded · 430' },
+        { c: '#f59e0b', t: 'retrieved records · 130' },
+        { c: 'rgba(255,255,255,.12)', t: 'headroom · 120' },
+      ],
+      records: [
+        { task: 'Convert a tab to the shared fetch hook', when: '2h ago', dot: '#4ade80', seen: '4', run: 'r-8f21',
+          failed: 'Assumed the hook returned the array directly — tsc failed on the envelope.',
+          worked: 'Destructure { data, error, status } and branch on error before touching data.' },
+        { task: 'Add a migration', when: '5h ago', dot: '#f59e0b', seen: '2', run: 'r-8e04',
+          failed: 'Picked the next integer prefix — collided with an existing 021.',
+          worked: 'Read the ledger table for the highest applied prefix, not the directory listing.' },
+        { task: 'Point a runtime at the local model', when: '1d ago', dot: '#4ade80', seen: '6', run: 'r-8b77',
+          failed: 'Used the https module — localhost:11434 is plain HTTP and silently refused.',
+          worked: 'Parse the base URL and let its protocol pick the transport.' },
+      ],
+      skills: [
+        { name: 'Never parse a response before checking res.ok', status: 'active', tone: '#4ade80', bg: 'rgba(34,197,94,.12)',
+          border: 'rgba(255,255,255,.1)', action: null,
+          body: 'Branch on error first and render the status and endpoint. An empty array is not a failure state.',
+          meta: 'used in 11 runs · patched twice' },
+        { name: 'Read the migration ledger, not the directory', status: 'proposed', tone: '#a78bfa', bg: 'rgba(167,139,250,.14)',
+          border: 'rgba(167,139,250,.3)', action: 'Review',
+          body: 'Drafted from 2 repeated failures. Waiting for you before it reaches the vault.',
+          meta: 'from r-8e04, r-8d51' },
+        { name: 'Fix the class, not the file the grep matched', status: 'proposed', tone: '#a78bfa', bg: 'rgba(167,139,250,.14)',
+          border: 'rgba(167,139,250,.3)', action: 'Review',
+          body: 'A check passing in one file is not proof the defect is gone elsewhere.',
+          meta: 'from 4 rejected reviews' },
+      ],
+    }
+  }
+}
+</script>
+</body>
+</html>

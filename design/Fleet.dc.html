@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body{margin:0;background:#080808;color:#e5e5e5;font-family:Inter,-apple-system,sans-serif}
+    a{color:#3b82f6}a:hover{color:#60a5fa}
+    .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+    .prov{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,.42)}
+    .floor{
+      background-image:
+        linear-gradient(45deg,#111 25%,transparent 25%),
+        linear-gradient(-45deg,#111 25%,transparent 25%),
+        linear-gradient(45deg,transparent 75%,#111 75%),
+        linear-gradient(-45deg,transparent 75%,#111 75%);
+      background-size:32px 32px;
+      background-position:0 0,0 16px,16px -16px,-16px 0;
+      background-color:#0d0d0d;
+    }
+  </style>
+</helmet>
+
+<div style="width:1280px;min-height:880px;background:#080808;padding:24px 28px;display:flex;flex-direction:column;gap:18px">
+
+  <div style="display:flex;align-items:baseline;gap:12px">
+    <h1 style="margin:0;font-size:20px;font-weight:600;color:#fff">Fleet</h1>
+    <span class="mono" style="font-size:12px;color:rgba(255,255,255,.5)">4 registered · 2 live · 1 waiting on you</span>
+    <div style="flex-grow:1"></div>
+    <span class="prov">state from hook events, never inferred · last event 4s ago</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 344px;gap:18px;align-items:start">
+
+    <!-- OFFICE -->
+    <div style="border:1px solid rgba(255,255,255,.1);border-radius:12px;overflow:hidden;background:#0d0d0d">
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid rgba(255,255,255,.08);background:#0f0f0f">
+        <span style="font-size:13px;font-weight:600;color:#fff">Office</span>
+        <span class="prov">positions reflect the workspace folder each agent is in</span>
+        <div style="flex-grow:1"></div>
+        <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);border-radius:4px;padding:2px 7px">live</span>
+      </div>
+
+      <div class="floor" style="height:462px;position:relative">
+
+        <!-- area labels -->
+        <div class="mono" style="position:absolute;left:22px;top:18px;font-size:10px;letter-spacing:.14em;color:rgba(255,255,255,.28)">APP /</div>
+        <div class="mono" style="position:absolute;left:340px;top:18px;font-size:10px;letter-spacing:.14em;color:rgba(255,255,255,.28)">LIB /</div>
+        <div class="mono" style="position:absolute;left:640px;top:18px;font-size:10px;letter-spacing:.14em;color:rgba(255,255,255,.28)">SCRIPTS /</div>
+
+        <!-- agents -->
+        <sc-for list="{{agents}}" as="a" hint-placeholder-count="4">
+          <div style="position:absolute;left:{{a.x}};top:{{a.y}};display:flex;flex-direction:column;align-items:center;gap:6px">
+
+            <sc-if value="{{a.bubble}}" hint-placeholder-val="{{true}}">
+              <div style="background:#f59e0b;color:#0a0a0a;border-radius:9px;padding:6px 10px;max-width:186px;position:relative;margin-bottom:2px">
+                <div style="font-size:11.5px;font-weight:600;line-height:1.35">{{a.bubble}}</div>
+                <div style="position:absolute;bottom:-5px;left:50%;margin-left:-5px;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid #f59e0b"></div>
+              </div>
+            </sc-if>
+
+            <div style="width:30px;height:38px;position:relative">
+              <div style="width:30px;height:24px;border-radius:5px;background:{{a.color}}"></div>
+              <div style="width:20px;height:14px;margin:2px auto 0;border-radius:3px;background:{{a.color}};opacity:.62"></div>
+              <div style="position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:{{a.dot}};border:2px solid #0d0d0d"></div>
+            </div>
+
+            <div class="mono" style="font-size:10px;color:rgba(255,255,255,.62);background:rgba(0,0,0,.55);border-radius:4px;padding:2px 6px;white-space:nowrap">{{a.name}}</div>
+            <div class="mono" style="font-size:9.5px;color:{{a.stateTone}};white-space:nowrap">{{a.state}}</div>
+          </div>
+        </sc-for>
+
+        <!-- honest empty area -->
+        <div style="position:absolute;right:26px;bottom:24px;display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+          <div class="mono" style="font-size:10px;color:rgba(255,255,255,.34)">no subagents this session</div>
+          <div class="mono" style="font-size:10px;color:rgba(255,255,255,.34)">hook stream connected</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROSTER -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;overflow:hidden">
+        <div style="padding:11px 15px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:9px">
+          <span style="font-size:13px;font-weight:600;color:#fff">Roster</span>
+          <div style="flex-grow:1"></div>
+          <span class="prov">from Brain2 manifests</span>
+        </div>
+
+        <sc-for list="{{roster}}" as="r" hint-placeholder-count="4">
+          <div style="padding:13px 15px;border-bottom:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{r.dot}}"></span>
+              <span style="font-size:13.5px;font-weight:600;color:#fff">{{r.name}}</span>
+              <div style="flex-grow:1"></div>
+              <span class="mono" style="font-size:10px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.06);border-radius:4px;padding:2px 6px">{{r.tier}}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.55)">{{r.model}}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="prov">{{r.seen}}</span>
+              <div style="flex-grow:1"></div>
+              <sc-if value="{{r.canRun}}" hint-placeholder-val="{{true}}">
+                <span style="font-size:11.5px;font-weight:500;color:rgba(255,255,255,.38);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:4px 10px">Run</span>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+
+        <div style="padding:12px 15px;display:flex;gap:9px;align-items:flex-start;background:rgba(255,255,255,.02)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1.9" style="flex-shrink:0;margin-top:1px"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke-linecap="round"></path></svg>
+          <div class="prov" style="line-height:1.55">Run is disabled because dispatch is off. Set <span style="color:rgba(255,255,255,.7)">TODERO_DISPATCH_ENABLED=1</span> to arm it — the control never appears live and then refuses.</div>
+        </div>
+      </div>
+
+      <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:13px 15px;display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:12.5px;font-weight:600;color:#fff">Register an agent</div>
+        <div class="mono" style="font-size:10.5px;line-height:1.65;color:rgba(255,255,255,.55);background:#0a0a0a;border:1px solid rgba(255,255,255,.08);border-radius:7px;padding:10px 11px;overflow-x:auto;white-space:pre">POST /api/connect
+&rarr; { connection_id,
+    heartbeat_url,
+    task_report_url }</div>
+        <div class="prov" style="line-height:1.5">Heartbeat every 30s. Offline after 10m of silence. A GET on the heartbeat URL returns pending work, so an agent behind a firewall can poll.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      agents: [
+        { name: 'builder', x: '96px', y: '128px', color: '#3b82f6', dot: '#22c55e',
+          state: 'editing WorkTab.tsx', stateTone: '#4ade80', bubble: null },
+        { name: 'ops', x: '392px', y: '96px', color: '#a78bfa', dot: '#f59e0b',
+          state: 'waiting on you', stateTone: '#f59e0b', bubble: 'Needs permission to edit lib/db.ts' },
+        { name: 'tester', x: '676px', y: '208px', color: '#22c55e', dot: '#22c55e',
+          state: 'running acceptance', stateTone: '#4ade80', bubble: null },
+        { name: 'deployer', x: '236px', y: '304px', color: '#52525b', dot: '#52525b',
+          state: 'idle · 4h', stateTone: 'rgba(255,255,255,.42)', bubble: null },
+      ],
+      roster: [
+        { name: 'builder', dot: '#22c55e', tier: 'mid', model: 'qwen2.5-coder:14b', seen: 'heartbeat 4s ago', canRun: true },
+        { name: 'ops', dot: '#f59e0b', tier: 'mid', model: 'qwen2.5-coder:14b', seen: 'paused — awaiting approval', canRun: false },
+        { name: 'tester', dot: '#22c55e', tier: 'cheap', model: 'qwen2.5-coder:7b', seen: 'heartbeat 11s ago', canRun: true },
+        { name: 'deployer', dot: '#52525b', tier: 'frontier', model: 'qwen2.5-coder:32b', seen: 'last seen 4h 12m ago', canRun: true },
+      ],
+    }
+  }
+}
+</script>
+</body>
+</html>

@@ -725,25 +725,41 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
         setLoading(false)
       }
     } else if (cmd === '/tasks') {
-      try {
-        const r = await fetch('/api/issues?limit=0')
-        const data = await r.json()
-        const issues = Array.isArray(data) ? data : data?.data ?? []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
+      const r = await fetchJson<any>('/api/issues?limit=0')
+      if (!r.ok) {
+        // TOD-654 round 3: a failed load must read as a failure, not "No open
+        // tasks" — that used to be indistinguishable from a real empty sprint.
+        const errMsg: ChatMessage = { id: 'tasks-err-'+Date.now(), role: 'assistant', content: `❌ ${formatApiError(r.error)}`, ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
+      } else {
+        const issues = Array.isArray(r.data) ? r.data : r.data?.data ?? []
         const open = issues.filter((i: any) => i.status === 'open' || i.status === 'in_progress')
         const lines = open.slice(0, 15).map((i: any) => `- **${i.task_key || '?'}** ${i.title} — _${i.status}_ (${i.priority || 'med'}) ${i.assignee ? `→ ${i.assignee}` : ''}`).join('\n')
         const tasksMsg: ChatMessage = { id: 'tasks-'+Date.now(), role: 'assistant', content: `**Open Tasks** (${open.length})\n\n${lines || '_No open tasks_'}`, ts: Date.now() }
         setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, tasksMsg] } : c))
-      } catch {
-        const errMsg: ChatMessage = { id: 'tasks-err-'+Date.now(), role: 'assistant', content: '❌ Could not fetch tasks', ts: Date.now() }
-        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
       }
     } else if (cmd === '/deploy') {
-      const deployMsg: ChatMessage = { id: 'deploy-'+Date.now(), role: 'assistant', content: '**Deploy Status**\n\n- Vercel: auto-deploy on push to `main`\n- Last deploy: check [Vercel dashboard](https://vercel.com)\n- To trigger: push to main or run `vercel --prod`\n\n_Tip: Use the chat to ask KAOS to deploy._', ts: Date.now() }
+      // The old block asserted a fixed "Vercel: auto-deploy on push to main /
+      // Last deploy: check dashboard" regardless of whether that was true on
+      // this host — fabricated status, not a query. Todero has no deploy
+      // endpoint to ask, so say that plainly instead of inventing an answer.
+      const deployMsg: ChatMessage = { id: 'deploy-'+Date.now(), role: 'assistant', content: '**Deploy Status**\n\n_Not available — Todero has no deploy-status endpoint on this host. Check your own CI/deploy dashboard._', ts: Date.now() }
       setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, deployMsg] } : c))
     } else if (cmd === '/agents') {
-      const agentLines = AGENT_OPTIONS.map(a => `- ${a.label} — ${a.desc}`).join('\n')
-      const agentsMsg: ChatMessage = { id: 'agents-'+Date.now(), role: 'assistant', content: `**Active Agents**\n\n${agentLines}\n\n_Select an agent using the dropdown above the input._`, ts: Date.now() }
-      setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, agentsMsg] } : c))
+      // Live roster from /api/agents (AGENTS.md, real run state) — not the
+      // static AGENT_OPTIONS list used only for the chat-recipient dropdown.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- AgentDto is server-only typed
+      const r = await fetchJson<{ agents: any[] }>('/api/agents')
+      if (!r.ok) {
+        const errMsg: ChatMessage = { id: 'agents-err-'+Date.now(), role: 'assistant', content: `❌ ${formatApiError(r.error)}`, ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
+      } else {
+        const roster = r.data.agents ?? []
+        const agentLines = roster.map((a: any) => `- ${a.emoji ?? ''} **${a.name}** — ${a.desc || a.role} _(${a.status})_${a.currentTask ? `: ${a.currentTask}` : ''}`).join('\n')
+        const agentsMsg: ChatMessage = { id: 'agents-'+Date.now(), role: 'assistant', content: `**Active Agents** (${roster.length})\n\n${agentLines || '_No agents in the roster_'}\n\n_Select an agent using the dropdown above the input._`, ts: Date.now() }
+        setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, agentsMsg] } : c))
+      }
     }
   }
 
@@ -1234,13 +1250,17 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const doMessageSearch = async (q: string) => {
     if (q.length < 3) return
     setIsSearching(true)
-    try {
-      const res = await fetch(`/api/chat/search?q=${encodeURIComponent(q)}`)
-      const data = await res.json()
-      setSearchResults(data)
+    // A failed search used to hand a non-array error body ({error: "..."})
+    // straight to `searchResults`, which every render treats as an array —
+    // a genuine crash risk, not just a UI lie. Only ever accept a real array.
+    const r = await fetchJson<Array<{id:string;conversation_id:string;content:string;role:string;created_at:string}>>(`/api/chat/search?q=${encodeURIComponent(q)}`)
+    if (r.ok && Array.isArray(r.data)) {
+      setSearchResults(r.data)
       setSearchMode('messages')
-    } catch { /* ignore */ }
-    finally { setIsSearching(false) }
+    } else {
+      setSearchResults([])
+    }
+    setIsSearching(false)
   }
 
   // Feature 13: generate follow-up suggestions

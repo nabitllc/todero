@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body{margin:0;background:#080808;color:#e5e5e5;font-family:Inter,-apple-system,sans-serif}
+    a{color:#3b82f6}a:hover{color:#60a5fa}
+    .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  </style>
+</helmet>
+
+<div style="width:1180px;min-height:860px;background:#080808;padding:40px 44px;display:flex;flex-direction:column;gap:32px">
+
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <div class="mono" style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.45)">Todero · target information architecture</div>
+    <h1 style="margin:0;font-size:30px;font-weight:700;color:#fff;letter-spacing:-.01em">Twenty tabs become seven</h1>
+    <p style="margin:0;font-size:14px;line-height:1.6;color:rgba(255,255,255,.6);max-width:74ch">The current nav is an inherited list, not a structure — it grew tab by tab from the OpenClaw lineage. Seven destinations, each answering one question an operator actually asks.</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:300px 1fr;gap:28px;align-items:start">
+
+    <!-- the sidebar itself -->
+    <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:16px 12px;display:flex;flex-direction:column;gap:4px">
+      <div class="mono" style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.4);padding:4px 10px 10px">Primary</div>
+
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px;background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3)">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round"><path d="M12 8v4l3 2"></path><circle cx="12" cy="12" r="9"></circle></svg>
+        <span style="font-size:14px;font-weight:600;color:#fff;flex-grow:1">Now</span>
+        <span class="mono" style="font-size:11px;font-weight:500;color:#0a0a0a;background:#f59e0b;border-radius:9px;padding:2px 7px">3</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg>
+        <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Work</span>
+        <span class="mono" style="font-size:11px;color:rgba(255,255,255,.45)">3,071</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3"></circle><path d="M3 20a6 6 0 0 1 12 0"></path><circle cx="17" cy="9" r="2.5"></circle><path d="M15.5 19a5 5 0 0 1 5.5-4.8"></path></svg>
+        <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Fleet</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e"></span><span class="mono" style="font-size:11px;color:rgba(255,255,255,.45)">2</span></span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h13"></path></svg>
+        <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Runs</span>
+        <span class="mono" style="font-size:10px;color:#a78bfa;background:rgba(167,139,250,.14);border-radius:4px;padding:2px 6px">new</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><path d="M12 3a7 7 0 0 0-4 12.7V19h8v-3.3A7 7 0 0 0 12 3Z"></path><path d="M10 22h4"></path></svg>
+        <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Memory</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"></path></svg>
+        <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Chat</span>
+        <span class="mono" style="font-size:10px;color:rgba(255,255,255,.4)">qwen 14b</span>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V7a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"></path></svg>
+        <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Settings</span>
+      </div>
+
+      <div style="height:1px;background:rgba(255,255,255,.08);margin:12px 6px"></div>
+      <div style="display:flex;align-items:center;gap:9px;padding:8px 11px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#71717a"></span>
+        <span class="mono" style="font-size:11px;color:rgba(255,255,255,.55)">Dispatch off</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;padding:0 11px 6px">
+        <span class="mono" style="font-size:11px;color:rgba(255,255,255,.4)">Ollama · localhost:11434</span>
+      </div>
+    </div>
+
+    <!-- the mapping -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="mono" style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.4)">What each one absorbs, and the question it answers</div>
+
+      <sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+        <div style="display:grid;grid-template-columns:132px 1fr;gap:18px;align-items:start;background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:14px 16px">
+          <div style="display:flex;flex-direction:column;gap:3px">
+            <div style="font-size:15px;font-weight:600;color:#fff">{{r.name}}</div>
+            <div class="mono" style="font-size:10px;color:{{r.tone}}">{{r.count}}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="font-size:13.5px;color:rgba(255,255,255,.82);line-height:1.45">&ldquo;{{r.question}}&rdquo;</div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+              <sc-for list="{{r.absorbs}}" as="t" hint-placeholder-count="4">
+                <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:2px 7px">{{t}}</span>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+
+      <div style="display:flex;gap:10px;align-items:flex-start;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.22);border-radius:10px;padding:13px 15px;margin-top:4px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.8" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 16v-5M12 8h.01" stroke-linecap="round"></path></svg>
+        <div style="font-size:12.5px;line-height:1.55;color:rgba(255,255,255,.7)">Nothing is deleted — every current view survives as a filter or a tab inside its new home, so no URL becomes a dead end. <span style="color:rgba(255,255,255,.9)">Hubs and project switching are deliberately absent</span> until one project works well.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      rows: [
+        { name: 'Now', count: 'home', tone: '#f59e0b', question: 'What needs me right now, and what is running?',
+          absorbs: ['Overview', 'Inbox', 'Activity', 'Notifications'] },
+        { name: 'Work', count: '7 tabs → 1', tone: 'rgba(255,255,255,.5)', question: 'What is the work, and where is it stuck?',
+          absorbs: ['Board', 'Issues', 'Features', 'Pipeline', 'Product Board', 'Epic Map', 'Projects'] },
+        { name: 'Fleet', count: '3 tabs → 1', tone: 'rgba(255,255,255,.5)', question: 'Which agents exist, which are alive, what are they doing?',
+          absorbs: ['Agents', 'Crew / Team', 'Office'] },
+        { name: 'Runs', count: 'new', tone: '#a78bfa', question: 'What did that agent actually do, and what did it cost?',
+          absorbs: ['— no equivalent exists today'] },
+        { name: 'Memory', count: '1 → 1', tone: 'rgba(255,255,255,.5)', question: 'What has it learned, and what will it reuse?',
+          absorbs: ['Memory', 'Agent docs', 'Skills'] },
+        { name: 'Chat', count: '1 → 1', tone: 'rgba(255,255,255,.5)', question: 'Let me just ask it something.',
+          absorbs: ['Chat'] },
+        { name: 'Settings', count: '5 tabs → 1', tone: 'rgba(255,255,255,.5)', question: 'How is this wired, and what are its limits?',
+          absorbs: ['Settings', 'AI Services', 'Automations', 'Infra', 'Calendar'] },
+      ],
+    }
+  }
+}
+</script>
+</body>
+</html>

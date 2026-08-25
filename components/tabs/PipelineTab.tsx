@@ -220,14 +220,23 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   }
   const [metricsWindow, setMetricsWindow] = useState<'7d' | '30d'>('7d')
   const [metrics, setMetrics] = useState<Metrics | null>(null)
-  useEffect(() => {
+  const [metricsError, setMetricsError] = useState<ApiError | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(true)
+  const metricsEndpoint = `/api/pipeline-metrics?window=${metricsWindow}`
+  const loadMetrics = useCallback(() => {
     let cancelled = false
-    fetch(`/api/pipeline-metrics?window=${metricsWindow}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d && !d.error) setMetrics(d) })
-      .catch(() => {})
+    setMetricsLoading(true)
+    fetchJson<Metrics>(metricsEndpoint).then(r => {
+      if (cancelled) return
+      // A failed load must not leave the strip stuck on "loading…" forever —
+      // that reads as a live metric that's merely slow, not a refused request.
+      if (r.ok) { setMetrics(r.data); setMetricsError(null) }
+      else { setMetrics(null); setMetricsError(r.error) }
+      setMetricsLoading(false)
+    })
     return () => { cancelled = true }
-  }, [metricsWindow])
+  }, [metricsEndpoint])
+  useEffect(() => loadMetrics(), [loadMetrics])
 
   if (loading) {
     return (
@@ -292,7 +301,9 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
             ))}
           </div>
         </div>
-        {metrics ? (
+        {metricsError ? (
+          <ApiErrorBanner error={metricsError} onRetry={loadMetrics} className="text-[11px]" />
+        ) : metrics ? (
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-[11px]">
             {[
               { label: 'PRs merged', value: metrics.prs_merged, color: '#10b981' },
@@ -313,7 +324,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
             ))}
           </div>
         ) : (
-          <div className="text-white/30 text-[11px]">loading…</div>
+          <div className="text-white/30 text-[11px]">{metricsLoading ? 'loading…' : 'no data'}</div>
         )}
       </div>
 

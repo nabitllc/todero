@@ -1,0 +1,159 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+    body{margin:0;background:#080808;color:#e5e5e5;font-family:Inter,-apple-system,sans-serif}
+    a{color:#3b82f6}a:hover{color:#60a5fa}
+    .mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+    .prov{font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,.42)}
+  </style>
+</helmet>
+
+<div style="width:1280px;min-height:880px;background:#080808;padding:24px 28px;display:flex;flex-direction:column;gap:18px">
+
+  <div style="display:flex;align-items:center;gap:11px">
+    <span class="mono" style="font-size:12px;color:rgba(255,255,255,.45)">Runs /</span>
+    <span class="mono" style="font-size:13px;color:#fff">r-8f21c4</span>
+    <span class="mono" style="font-size:10.5px;color:#4ade80;background:rgba(34,197,94,.13);border:1px solid rgba(34,197,94,.28);border-radius:5px;padding:2px 8px">completed</span>
+    <div style="flex-grow:1"></div>
+    <span class="prov">every number below is recorded, not estimated</span>
+  </div>
+
+  <!-- header stats -->
+  <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:11px;overflow:hidden">
+    <sc-for list="{{stats}}" as="s" hint-placeholder-count="6">
+      <div style="background:#0f0f0f;padding:13px 15px;display:flex;flex-direction:column;gap:4px">
+        <span class="mono" style="font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.45)">{{s.k}}</span>
+        <span class="mono" style="font-size:18px;font-weight:500;color:{{s.tone}};line-height:1.2">{{s.v}}</span>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 356px;gap:18px;align-items:start">
+
+    <!-- TRACE -->
+    <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;overflow:hidden">
+      <div style="padding:11px 15px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px">
+        <span style="font-size:13px;font-weight:600;color:#fff">Trace</span>
+        <span class="mono" style="font-size:11px;color:rgba(255,255,255,.5)">14 steps · 31 tool calls</span>
+        <div style="flex-grow:1"></div>
+        <span class="prov">click any step to open its input and output</span>
+      </div>
+
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="7">
+        <div style="padding:11px 15px;border-bottom:1px solid rgba(255,255,255,.05);display:flex;gap:13px;align-items:flex-start">
+          <span class="mono" style="font-size:11px;color:rgba(255,255,255,.38);min-width:22px;padding-top:2px">{{s.n}}</span>
+
+          <div style="width:3px;border-radius:2px;background:{{s.tone}};align-self:stretch;min-height:26px"></div>
+
+          <div style="flex-grow:1;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span class="mono" style="font-size:11.5px;color:{{s.tone}}">{{s.tool}}</span>
+              <span style="font-size:12.5px;color:rgba(255,255,255,.78)">{{s.what}}</span>
+            </div>
+            <sc-if value="{{s.detail}}" hint-placeholder-val="{{true}}">
+              <div class="mono" style="font-size:10.5px;color:rgba(255,255,255,.48);line-height:1.5">{{s.detail}}</div>
+            </sc-if>
+          </div>
+
+          <div style="display:flex;gap:13px;align-items:center;flex-shrink:0">
+            <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.45);min-width:52px;text-align:right">{{s.tok}}</span>
+            <span class="mono" style="font-size:10.5px;color:rgba(255,255,255,.45);min-width:46px;text-align:right">{{s.ms}}</span>
+          </div>
+        </div>
+      </sc-for>
+
+      <div style="padding:13px 15px;display:flex;gap:9px;align-items:flex-start;background:rgba(34,197,94,.05)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px"><path d="M20 6 9 17l-5-5"></path></svg>
+        <div style="font-size:12px;line-height:1.55;color:rgba(255,255,255,.72)">Moved <span class="mono" style="color:#fff">TOD-2398</span> to review with a regression test attached. Result written to memory as an episodic record.</div>
+      </div>
+    </div>
+
+    <!-- SIDE -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:11px">
+        <div style="font-size:12.5px;font-weight:600;color:#fff">Cost by step</div>
+        <sc-for list="{{cost}}" as="c" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span class="mono" style="font-size:11px;color:rgba(255,255,255,.62);flex-grow:1">{{c.label}}</span>
+              <span class="mono" style="font-size:11px;color:rgba(255,255,255,.75)">{{c.tok}}</span>
+            </div>
+            <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.08)">
+              <div style="height:4px;border-radius:2px;background:{{c.tone}};width:{{c.pct}}"></div>
+            </div>
+          </div>
+        </sc-for>
+        <div class="prov" style="line-height:1.5;padding-top:2px">Local model — 0 dollars, 4m 51s of GPU. The dollar column appears only when a run touches a paid provider.</div>
+      </div>
+
+      <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-size:12.5px;font-weight:600;color:#fff">What it learned</div>
+        <div style="font-size:12px;line-height:1.55;color:rgba(255,255,255,.7)">First attempt failed on a missing <span class="mono" style="color:rgba(255,255,255,.9)">res.ok</span> check. The retry that worked is recorded, and will be retrieved for similar tasks.</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <span class="mono" style="font-size:10px;color:#a78bfa;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.25);border-radius:5px;padding:3px 8px">episodic record</span>
+          <span class="mono" style="font-size:10px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:3px 8px">2 of 3 to skill</span>
+        </div>
+      </div>
+
+      <div style="background:#0f0f0f;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:9px">
+        <div style="font-size:12.5px;font-weight:600;color:#fff">Ceilings during this run</div>
+        <sc-for list="{{ceil}}" as="c" hint-placeholder-count="4">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span style="font-size:11.5px;color:rgba(255,255,255,.62);flex-grow:1">{{c.k}}</span>
+            <span class="mono" style="font-size:11px;color:{{c.tone}}">{{c.v}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      stats: [
+        { k: 'agent', v: 'builder', tone: '#fff' },
+        { k: 'model', v: 'qwen 14b', tone: '#fff' },
+        { k: 'duration', v: '4m 51s', tone: '#fff' },
+        { k: 'tokens', v: '61,480', tone: '#fff' },
+        { k: 'cost', v: '$0.00', tone: '#4ade80' },
+        { k: 'issue', v: 'TOD-2398', tone: '#60a5fa' },
+      ],
+      steps: [
+        { n: '01', tool: 'read', what: 'AGENTS.md, SOUL.md, task brief', detail: null, tok: '8.1k', ms: '340ms', tone: '#60a5fa' },
+        { n: '02', tool: 'memory', what: 'Retrieved 3 records for similar tasks', detail: 'ranked by FTS5 · 1,180 of 1,300 token budget used', tok: '1.2k', ms: '90ms', tone: '#a78bfa' },
+        { n: '03', tool: 'grep', what: 'Located the fetch anti-pattern across components/', detail: '11 matches in 5 files', tok: '2.4k', ms: '210ms', tone: '#60a5fa' },
+        { n: '04', tool: 'edit', what: 'components/tabs/IssuesTab.tsx', detail: null, tok: '6.9k', ms: '1.2s', tone: '#60a5fa' },
+        { n: '05', tool: 'bash', what: 'npx tsc --noEmit', detail: 'exit 1 — Property "error" does not exist on type', tok: '3.1k', ms: '18.4s', tone: '#f87171' },
+        { n: '06', tool: 'edit', what: 'Corrected the hook return type', detail: 'the failure and the fix are both recorded', tok: '4.8k', ms: '890ms', tone: '#60a5fa' },
+        { n: '07', tool: 'bash', what: 'node scripts/acceptance/run.mjs --piece ui-error-surfacing', detail: 'exit 0 — 4 of 4 passing', tok: '2.2k', ms: '5.9s', tone: '#4ade80' },
+      ],
+      cost: [
+        { label: 'reading context', tok: '11.7k', pct: '19%', tone: '#60a5fa' },
+        { label: 'editing', tok: '28.4k', pct: '46%', tone: '#60a5fa' },
+        { label: 'verifying', tok: '16.2k', pct: '26%', tone: '#4ade80' },
+        { label: 'memory', tok: '5.2k', pct: '9%', tone: '#a78bfa' },
+      ],
+      ceil: [
+        { k: 'Wall clock', v: '4m51s / 30m', tone: '#4ade80' },
+        { k: 'Concurrency', v: '2 / 3', tone: '#4ade80' },
+        { k: 'No-progress halt', v: 'not triggered', tone: 'rgba(255,255,255,.5)' },
+        { k: 'Budget', v: 'dormant — local', tone: 'rgba(255,255,255,.5)' },
+      ],
+    }
+  }
+}
+</script>
+</body>
+</html>

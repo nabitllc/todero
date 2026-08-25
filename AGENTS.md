@@ -58,16 +58,34 @@ When acting as a pipeline agent (Builder, Tester, Designer, PO, etc.):
 
 ## Agents
 
-| Agent | Role | Model | Status |
-|-------|------|-------|--------|
-| KAOS (main) | Chief of Staff / Orchestrator | Claude Sonnet 4.6 | Active |
-| Builder | Coding Agent | Claude Sonnet 4.6 | Active |
-| Tester | QA Reviewer | Claude Haiku 4.5 | Active |
-| Designer | Design Review Agent | Claude Haiku 4.5 | Active |
-| Scout | Research Agent | Gemma 3 4B (Ollama) | Scheduled |
-| Ingo | Infrastructure | — | Planned |
-| Kemuni SME | Kemuni Product Specialist | Claude Sonnet 4.6 | Active |
-| Vespera SME | Vespera Product Specialist | Claude Sonnet 4.6 | Active |
+**This table is the agent roster.** `GET /api/agents` reads it at request time
+and serves exactly these rows — no more. If an agent is not listed here it does
+not exist as far as Mission Control is concerned, and if this file is missing
+the API answers `200` with an empty roster and a warning naming the path it
+looked in. Nothing is ever substituted for it.
+
+The `Id` column is the canonical agent id used everywhere else in the codebase:
+`POST /api/run-agent?agent=<id>`, the `assignee`/`worked_by` fields on issues,
+and the office floor. Override the file's location with `AGENTS_MD_PATH`.
+
+| Id | Agent | Role | Model | Status |
+|----|-------|------|-------|--------|
+| main | KAOS | Chief of Staff / Orchestrator | Claude Sonnet 4.6 | Active |
+| builder | Builder | Coding Agent | Claude Sonnet 4.6 | Active |
+| tester | Tester | QA Reviewer | Claude Haiku 4.5 | Active |
+| designer | Designer | Design Review Agent | Claude Haiku 4.5 | Active |
+| ux | UX Designer | UX & Design Agent | Claude Sonnet 4.6 | Active |
+| po | Product Owner | Backlog grooming, PRDs, DoR | Claude Sonnet 4.6 | Active |
+| deployer | Deployer | Deploys, webhooks, release notes | Claude Haiku 4.5 | Active |
+| auditor | Auditor | Drift detection, config audit | Claude Sonnet 4.6 | Active |
+| ops | Ingo | Infrastructure Watchdog | Claude Haiku 4.5 | Scheduled |
+| scout | Scout | Research Agent | Gemma 3 4B (Ollama) | Scheduled |
+| security | Security | Security Auditor | Claude Sonnet 4.6 | Active |
+| growth | Growth | Growth Strategist | Claude Sonnet 4.6 | Active |
+| content | Content Creator | Blog, SEO, email, help docs | Claude Sonnet 4.6 | Active |
+| community | Community Mgr | Social content, brand voice | Claude Sonnet 4.6 | Active |
+| kemuni-sme | Kemuni SME | Kemuni Product Specialist | Claude Sonnet 4.6 | Active |
+| vespera-sme | Vespera SME | Vespera Product Specialist | Claude Sonnet 4.6 | Active |
 
 ## Issue Creation Protocol
 

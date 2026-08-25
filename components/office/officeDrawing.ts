@@ -3,15 +3,31 @@
 // Contains ALL drawing functions, helpers, localStorage, audio, camera, day/night.
 
 import {
-  MAP_COLS, MAP_ROWS, STANCHION_R, ORCHESTRATOR_ID,
-  ALL_AGENTS, ACTIVE_IDS, DESK_POS, BENCH_POS,
+  MAP_COLS, MAP_ROWS, STANCHION_R,
+  deskSlot, benchSlot,
   ORCH_TX, ORCH_TY, CONF_TX, CONF_TY, CONF_TW, CONF_TH,
   ROW_Y, COL_X,
-  THEMES, PLANNED_LABELS,
+  THEMES,
   LS_KEY,
-  DEPENDENCIES,
 } from './officeConstants';
 import type { AgentRunInfo, ThemeKey } from './officeConstants';
+
+// The one roster shape initAgents() ever accepts: whatever /api/agents
+// actually returned (mapped in AgentOffice.tsx), never a hardcoded stand-in.
+export interface RosterAgent {
+  id: string;
+  name: string;
+  emoji: string;
+  color: string;
+  role: string;
+  active: boolean;
+  [key: string]: any;
+}
+
+/** "Chief Orchestrator", "Orchestrator" — the one role AGENT_META/AGENTS.md use for the lead seat. Never assumes a specific id. */
+export function isOrchestratorRole(role: string | undefined | null): boolean {
+  return !!role && /orchestrat/i.test(role);
+}
 
 // Re-export types for consumers
 export type { AgentRunInfo, ThemeKey };
@@ -51,20 +67,29 @@ export function saveMemory(agents:any[]){
   }catch(e){}
 }
 
-export function initAgents(T:number, activeIds:string[]){
+// Builds sim agents from the REAL roster only. Placement is computed, not
+// looked up: the first agent whose role reads as orchestrator (or, failing
+// that, the first agent at all) gets the orchestrator desk; every other
+// `active` agent gets the next open desk slot in encounter order; every
+// non-active agent gets the next bench slot. Nothing here can fabricate an
+// agent that was not in `roster`, and nothing here decides who is active —
+// that came from /api/agents.
+export function initAgents(T:number, roster: RosterAgent[]){
   const mem=loadMemory();
-  return ALL_AGENTS.map(a=>{
-    const isActive=activeIds.includes(a.id);
-    const posMap:any=isActive?DESK_POS:BENCH_POS;
-    const tp=posMap[a.id]||{tx:2,ty:STANCHION_R+0.8};
-    const orch=(a.id===ORCHESTRATOR_ID);
-    const {x,y}=tileCenterPx(tp.tx+(orch?1.1:0.75), tp.ty+(orch?1.0:0.85), T);
+  const orchestratorId = roster.find(a=>isOrchestratorRole(a.role))?.id ?? roster[0]?.id ?? null;
+  let deskI=0, benchI=0;
+  return roster.map(a=>{
+    const isOrch = a.id===orchestratorId;
+    const tp = isOrch ? {tx:ORCH_TX,ty:ORCH_TY} : (a.active ? deskSlot(deskI++) : benchSlot(benchI++));
+    const {x,y}=tileCenterPx(tp.tx+(isOrch?1.1:0.75), tp.ty+(isOrch?1.0:0.85), T);
     const saved:any=mem[a.id]||{};
     return {...a,
-      active:isActive, spawning:false, spawnAge:0,
+      isOrchestrator:isOrch,
+      active:a.active, spawning:false, spawnAge:0,
       state:"idle",task:null,progress:0,
-      px:x,py:y,waypoints:[],deskX:x,deskY:y,
+      px:x,py:y,waypoints:[],deskX:x,deskY:y,deskTx:tp.tx,deskTy:tp.ty,
       facing:"down",animTick:0,
+      personality: a.personality ?? { workBurst:0.85, focusDuration:3 },
       taskHistory:saved.taskHistory||[],
       timeWorking:saved.timeWorking||0,
       timeIdle:0,
@@ -153,25 +178,29 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
   ctx.save();applyCamera(ctx,cam);
 
   // ── Dependency graph overlay ──
+  // TOD (agent-roster-truth): this used to draw dashed "possible" edges from
+  // a hardcoded topology (main → scout/kemuni-sme/vespera-sme, …) — the same
+  // fabricated-roster problem in graph form: it drew reporting lines to
+  // specific ids whether or not those agents existed on this host. There is
+  // no source of a real dependency/reporting graph yet, so this only draws
+  // edges that were actually observed firing (critPairs) — nothing invented.
   if(showDepGraph){
-    Object.entries(DEPENDENCIES).forEach(([srcId,dstIds])=>{
+    critPairs.forEach(([srcId,dstId]:any)=>{
       const src=agents.find(a=>a.id===srcId); if(!src||!src.active) return;
-      dstIds.forEach(dstId=>{
-        const dst=agents.find(a=>a.id===dstId); if(!dst||!dst.active) return;
-        const fired=critPairs.find(([s,d]:any)=>s===srcId&&d===dstId);
-        ctx.strokeStyle=fired?"#FDCB6Ecc":src.color+"44";
-        ctx.lineWidth=fired?T*0.04:T*0.02;
-        ctx.setLineDash(fired?[]:[T*0.08,T*0.06]);
+      const dst=agents.find(a=>a.id===dstId); if(!dst||!dst.active) return;
+      {
+        ctx.strokeStyle="#FDCB6Ecc";
+        ctx.lineWidth=T*0.04;
         ctx.beginPath();ctx.moveTo(src.px,src.py);ctx.lineTo(dst.px,dst.py);ctx.stroke();
         ctx.setLineDash([]);
         const angle=Math.atan2(dst.py-src.py,dst.px-src.px);
         const ax=dst.px-Math.cos(angle)*T*0.35,ay=dst.py-Math.sin(angle)*T*0.35;
-        ctx.fillStyle=fired?"#FDCB6E":src.color+"88";
+        ctx.fillStyle="#FDCB6E";
         ctx.beginPath();ctx.moveTo(ax,ay);
         ctx.lineTo(ax-Math.cos(angle-0.4)*T*0.18,ay-Math.sin(angle-0.4)*T*0.18);
         ctx.lineTo(ax-Math.cos(angle+0.4)*T*0.18,ay-Math.sin(angle+0.4)*T*0.18);
         ctx.closePath();ctx.fill();
-      });
+      }
     });
   }
 
@@ -191,9 +220,9 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
   });
 
   // ── Orchestrator desk ──
-  const orchAg=agents.find(a=>a.id===ORCHESTRATOR_ID);
-  // Pulse ring: expand outward when KAOS is coordinating (working + other agents also working)
-  const othersWorking2=agents.filter(a=>a.id!==ORCHESTRATOR_ID&&a.active&&a.state==="working");
+  const orchAg=agents.find(a=>a.isOrchestrator);
+  // Pulse ring: expand outward when the orchestrator is coordinating (working + other agents also working)
+  const othersWorking2=agents.filter(a=>!a.isOrchestrator&&a.active&&a.state==="working");
   if(orchAg&&orchAg.state==="working"&&othersWorking2.length>=1){
     const cx=ORCH_TX*T+T*1.1, cy=ORCH_TY*T+T*1.0;
     const pulse=(now*0.0008)%1;
@@ -228,7 +257,7 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
       }
     } else {
       // MC-15: Orchestrator health indicators when idle
-      const orchRun=liveRuns[ORCHESTRATOR_ID];
+      const orchRun=orchAg?liveRuns[orchAg.id]:undefined;
       if(orchRun&&orchRun.status!=='never'){
         const hColor=orchRun.todayErrors>2?'#ff4444':orchRun.todayErrors>0?'#f59e0b':'#00ff88';
         const hPx=Math.max(9,Math.round(T*0.10));
@@ -275,10 +304,9 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
   }
 
   // ── Regular desks (active non-orchestrator agents) ──
-  ACTIVE_IDS.filter(id=>id!==ORCHESTRATOR_ID).forEach(id=>{
-    const dp=DESK_POS[id]; if(!dp) return;
-    const ag=agents.find(a=>a.id===id); if(!ag) return;
-    const x=dp.tx*T, y=dp.ty*T, dw=T*1.5, dh=T*1.7;
+  agents.filter(ag=>ag.active&&!ag.isOrchestrator).forEach(ag=>{
+    const id=ag.id;
+    const x=ag.deskTx*T, y=ag.deskTy*T, dw=T*1.5, dh=T*1.7;
     const working=ag.state==="working";
     const mood=(ag.mood||88)/100;
     ctx.fillStyle=thm.deskBody;
@@ -329,23 +357,25 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
     ctx.fillRect(x+dw/2-T*0.12,y+dh*0.87,T*0.24,T*0.055);
   });
 
-  // ── Empty row 3 desks (dimmed, no agents) ──
-  PLANNED_LABELS.forEach(({tx,ty,emoji,name})=>{
-    const x=tx*T, y=ty*T, dw=T*1.5, dh=T*1.7;
-    ctx.fillStyle="#0f0f1c";
-    ctx.strokeStyle="#181830";
-    ctx.lineWidth=T*0.008;
-    ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
-    const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
-    ctx.fillStyle="#060610";ctx.fillRect(mx2,my2,mw,mh);
-    ctx.strokeStyle="#131328";ctx.lineWidth=T*0.012;ctx.strokeRect(mx2,my2,mw,mh);
-    if(name){
-      ctx.font=`${Math.round(T*0.18)}px serif`;ctx.textAlign="center";
-      ctx.fillStyle="#1a1a38";ctx.fillText(emoji,x+dw/2,y+dh*0.42);
-      ctx.font=`${Math.round(T*0.12)}px "IBM Plex Mono",monospace`;
-      ctx.fillStyle="#181835";ctx.fillText(name,x+dw/2,y+dh*0.72);
+  // ── Empty desks (dimmed, unassigned) ──
+  // TOD (agent-roster-truth): these used to be labeled with two invented
+  // future hires ("Quill", "Echo") that do not exist in any roster this
+  // product has ever read. An unfilled desk is now drawn empty — furniture,
+  // not a name — because nothing here knows who (if anyone) will sit there.
+  {
+    const usedDesks=agents.filter(a=>a.active&&!a.isOrchestrator).length;
+    for(let i=0;i<4;i++){
+      const {tx,ty}=deskSlot(usedDesks+i);
+      const x=tx*T, y=ty*T, dw=T*1.5, dh=T*1.7;
+      ctx.fillStyle="#0f0f1c";
+      ctx.strokeStyle="#181830";
+      ctx.lineWidth=T*0.008;
+      ctx.beginPath();ctx.roundRect(x+T*0.05,y+T*0.05,dw-T*0.1,dh-T*0.1,T*0.08);ctx.fill();ctx.stroke();ctx.setLineDash([]);
+      const mx2=x+dw*0.12,my2=y+dh*0.1,mw=dw*0.76,mh=dh*0.58;
+      ctx.fillStyle="#060610";ctx.fillRect(mx2,my2,mw,mh);
+      ctx.strokeStyle="#131328";ctx.lineWidth=T*0.012;ctx.strokeRect(mx2,my2,mw,mh);
     }
-  });
+  }
 
   // ── Conference table ── (static furniture — no live meeting state to render; see kill-office-fiction)
   const tcx=CONF_TX*T, tcy=CONF_TY*T, tw=CONF_TW*T, th=CONF_TH*T;
@@ -389,11 +419,12 @@ export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:a
 }
 
 export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0,startedAt:string|null=null){
-  const visible=ag.active||BENCH_POS[ag.id];
-  if(!visible) return;
+  // Every roster agent gets a real position at init (desk or bench — see
+  // initAgents), so there is no more "agent with nowhere to stand" case to
+  // filter for here.
   ctx.save();applyCamera(ctx,cam);
   const {px,py,color,name,state,task,facing,mood,active}=ag;
-  const isOrch=ag.id===ORCHESTRATOR_ID;
+  const isOrch=!!ag.isOrchestrator;
   const sz=isOrch?T*0.78:T*0.58, hs=sz/2;
   const moodN=(mood||88)/100;
 
@@ -530,7 +561,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     ctx.fillText(`💰 ${costText}`,px,py+hs+T*0.48+dy2+oy);
   }
   // Sub-agent activity badge — only for orchestrator when sub-agents are active
-  if(ag.id===ORCHESTRATOR_ID&&subagentCount>0){
+  if(ag.isOrchestrator&&subagentCount>0){
     const badgeX=px+hs-T*0.05;
     const badgeY=py-hs-T*0.35;
     const bPx=Math.max(8,Math.round(T*0.11));
@@ -563,10 +594,9 @@ export function drawMinimap(ctx:CanvasRenderingContext2D,T:number,agents:any[],c
   const mmSY=mmY+STANCHION_R*T*sy;
   ctx.strokeStyle="#FDCB6E55";ctx.lineWidth=1;ctx.setLineDash([3,2]);
   ctx.beginPath();ctx.moveTo(mmX,mmSY);ctx.lineTo(mmX+mw,mmSY);ctx.stroke();ctx.setLineDash([]);
-  Object.entries(DESK_POS).forEach(([id,{tx,ty}])=>{
-    const ag=ALL_AGENTS.find(a=>a.id===id);if(!ag) return;
+  agents.filter(a=>a.active).forEach(ag=>{
     ctx.fillStyle=ag.color+"33";
-    ctx.fillRect(mmX+tx*T*sx,mmY+ty*T*sy,T*sx*1.5,T*sy*1.7);
+    ctx.fillRect(mmX+ag.deskTx*T*sx,mmY+ag.deskTy*T*sy,T*sx*1.5,T*sy*1.7);
   });
   agents.forEach(a=>{
     const ax=mmX+a.px*sx,ay=mmY+a.py*sy,r=Math.max(2,3);

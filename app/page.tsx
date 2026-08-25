@@ -8,13 +8,13 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
 import { LayoutDashboard, Activity, Users, CalendarDays, Building2, Brain, Kanban, Zap, MessageSquare, Server, Map, Search, List, Settings } from 'lucide-react'
-import { AGENT_DISPLAY, LIVE_FEED, ALL_AGENTS, PROJECT_COLORS, TYPE_COLORS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
+import { AGENT_DISPLAY, LIVE_FEED, PROJECT_COLORS, TYPE_COLORS, ACTIVITIES, TOAST_COLORS, AGENT_EMOJI } from '@/lib/mc-constants'
 import { Dot } from '@/lib/mc-atoms'
 import BusinessRail from '@/components/BusinessRail'
 import OnboardingWizard from '@/components/OnboardingWizard'
 import OverviewTab from '@/components/tabs/OverviewTab'
 import ActivityTab from '@/components/tabs/ActivityTab'
-import AgentsTab from '@/components/tabs/AgentsTab'
+import AgentsTab, { type RosterMeta } from '@/components/tabs/AgentsTab'
 import CrewTab from '@/components/tabs/CrewTab'
 import CalendarTab from '@/components/tabs/CalendarTab'
 import OfficeTab from '@/components/tabs/OfficeTab'
@@ -148,7 +148,11 @@ export default function Home() {
   const [calendarError, setCalendarError] = useState<ApiError | null>(null)
   const [activityReload, setActivityReload] = useState(0)
   const [agoSec, setAgoSec] = useState<number>(0)
-  const [liveAgents, setLiveAgents] = useState<typeof ALL_AGENTS | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent DTO rows from /api/agents
+  const [liveAgents, setLiveAgents] = useState<any[] | null>(null)
+  // Where /api/agents got its roster, and why it is empty when it is. Held on
+  // the envelope so it survives a roster with zero rows.
+  const [rosterMeta, setRosterMeta] = useState<RosterMeta | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped automation rows from /api/automations
   const [liveCrons, setLiveCrons] = useState<any[] | null>(null)
   // TOD (kill-fake-automations): the envelope's own account of what it checked,
@@ -181,6 +185,16 @@ export default function Home() {
     const r = await fetchJson<any>('/api/agents')
     const rows = rowsFrom(r.ok ? r.data : null, 'agents')
     if (rows) setLiveAgents(rows)
+    // The roster warning lives on the ENVELOPE, not the rows. Reading it off
+    // row[0] — which the tabs used to do — lost it in the one case it matters:
+    // an empty roster has no row 0, so "no AGENTS.md at <path>" silently became
+    // a generic "no agents configured" with nothing to act on.
+    const env = r.ok && r.data && typeof r.data === 'object' && !Array.isArray(r.data) ? r.data : null
+    setRosterMeta(env ? {
+      source: typeof env.rosterSource === 'string' ? env.rosterSource : 'none',
+      warning: typeof env.rosterWarning === 'string' ? env.rosterWarning : null,
+      path: typeof env.rosterPath === 'string' ? env.rosterPath : null,
+    } : null)
     setAgentsError(r.ok ? null : r.error)
   }, [])
 
@@ -430,7 +444,14 @@ export default function Home() {
     if ((agentIssueCounts[agentId] ?? 0) > 0) return { dot: 'amber', label: `${agentIssueCounts[agentId]} open issue${agentIssueCounts[agentId] > 1 ? 's' : ''}` }
     return { dot: 'grey', label: 'Idle' }
   }
-  const displayAgents = (liveAgents && liveAgents.length > 0 ? liveAgents : ALL_AGENTS) as typeof ALL_AGENTS
+  // TOD (agent-roster-truth): never fall back to a hardcoded agent list — a
+  // roster fetch that failed or hasn't loaded yet must render its own error
+  // or loading state, not a fabricated set of agents wearing the real UI.
+  // `liveAgents` is null until /api/agents answers successfully at least
+  // once; consumers branch on that (not on emptiness) to tell "not loaded"
+  // apart from "genuinely zero agents".
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent DTO rows
+  const displayAgents = (liveAgents ?? []) as any[]
   // TOD (kill-fake-automations): never fall back to a hardcoded job list —
   // an empty real answer is the truth; a fake one is not.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped automation rows
@@ -553,7 +574,7 @@ export default function Home() {
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
           {tab === 'overview' && <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} projectsError={projectsError} onRetryProjects={loadProjects} onNavigate={navigate} projectFilter={selectedBusiness} />}
           {tab === 'activity' && <ActivityTab liveStatus={liveStatus} statusAt={statusAt} setLiveStatus={setLiveStatus} setStatusAt={setStatusAt} issueActivity={issueActivity} activityError={activityError} onRetryActivity={() => setActivityReload(n => n + 1)} statusError={statusError} onRetryStatus={loadStatus} displayAgents={displayAgents} projectFilter={selectedBusiness} />}
-          {tab === 'team' && <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
+          {tab === 'team' && <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} rosterMeta={rosterMeta} act={act} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedBusiness} />}
           {tab === 'calendar' && <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedBusiness} cronsMeta={cronsMeta} />}
           {tab === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
           {tab === 'memory' && <MemoryTab memFiles={memFiles} error={memError} onRetry={refetchMem} openMem={openMem} setOpenMem={setOpenMem} />}

@@ -7,7 +7,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import type { ApiError } from '@/hooks/useApiData'
 import { Users, ShieldCheck, Eye, UserCog, Plus, Trash2, RefreshCw, AlertCircle } from 'lucide-react'
-import AgentsTab from '@/components/tabs/AgentsTab'
+import AgentsTab, { type RosterMeta } from '@/components/tabs/AgentsTab'
 import MemberDetailView from '@/components/tabs/MemberDetailView'
 import type { WorkspaceMember } from '@/lib/rbac-types'
 
@@ -211,6 +211,7 @@ export default function CrewTab({
   agentLiveStatus,
   agentRunsData,
   liveAgents,
+  rosterMeta,
   act,
   agentModal,
   setAgentModal,
@@ -224,6 +225,8 @@ export default function CrewTab({
   agentLiveStatus: (agentId: string) => { dot: 'green' | 'amber' | 'grey'; label: string }
   agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: string }>
   liveAgents: any[] | null
+  /** Roster provenance from the /api/agents envelope — survives an empty roster. */
+  rosterMeta?: RosterMeta | null
   act: (id: string) => string
   agentModal: any
   setAgentModal: (a: any) => void
@@ -383,6 +386,7 @@ export default function CrewTab({
           agentLiveStatus={agentLiveStatus}
           agentRunsData={agentRunsData}
           liveAgents={liveAgents}
+          rosterMeta={rosterMeta}
           act={act}
           agentModal={agentModal}
           setAgentModal={setAgentModal}

@@ -774,9 +774,6 @@ async function executePostFunctions(
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
-  if (process.env.CRITIC_BLOCK_ISSUES === '1' || true) {
-    return NextResponse.json({ error: 'issues:read denied for role owner', code: 'PERMISSION_DENIED' }, { status: 403 })
-  }
   const dbGate = dbUnavailableResponse()
   if (dbGate) return dbGate
 

@@ -44,12 +44,14 @@ export function fmtMins(m: number) {
   return mm ? h+'h '+mm+'m' : h+'h'
 }
 
-export const ALL_AGENTS = [
-  { id:'main',    name:'KAOS',    emoji:'🧠', role:'Chief of Staff',    status:'active',    model:'claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#6b7280', desc:'Main orchestrator. Strategy, memory, delegation, comms.', capabilities:['Orchestration','Memory','Strategy','Comms','Delegation'], floor: true },
-  { id:'builder', name:'Builder', emoji:'🔨', role:'Coding Agent',      status:'active',    model:'anthropic/claude-sonnet-4-6', modelShort:'Sonnet 4.6', color:'#3b82f6', desc:'Ships clean PRs for Vespera and Kemuni. Runs nightly from task queue.', capabilities:['Next.js','Supabase','TypeScript','APIs'], floor: true },
-  { id:'tester',  name:'Tester',  emoji:'🧪', role:'QA Reviewer',      status:'active',    model:'anthropic/claude-haiku-4-5', modelShort:'Haiku 4.5', color:'#a855f7', desc:'Reviews PRs from Builder. Catches bugs before they reach production.', capabilities:['Code Review','Testing','Bug Detection','PR Review'], floor: true },
-  { id:'scout',   name:'Scout',   emoji:'🔍', role:'Research Agent',    status:'scheduled', model:'ollama/gemma3:4b',  modelShort:'Gemma 3 4B', color:'#a855f7', desc:'Morning scan: goth scene, competitors, PropTech trends.', capabilities:['Web Research','Summarization','Trends'], floor: true },
-]
+// TOD (agent-roster-truth): ALL_AGENTS — a hardcoded 4-agent array
+// (KAOS/Builder/Tester/Scout) — used to be here as the fallback whenever
+// /api/agents failed or returned nothing. It declared those four agents
+// "active"/"scheduled" regardless of whether they were real, running, or
+// even existed on the host. Deleted along with every read of it: a failed
+// roster fetch now renders an explicit error naming the endpoint and status
+// (see AgentsTab / CrewTab / OfficeTab), and an empty roster renders "no
+// agents configured" — never a plausible-looking invented list.
 
 export const PROJECT_COLORS: Record<string,string> = { Kemuni:'#3b82f6', Vespera:'#a855f7', Ops:'#6b7280' }
 export const TYPE_COLORS: Record<string,string> = { feature:'#3b82f6', bug:'#ef4444', task:'#71717a', ops:'#f59e0b', epic:'#a855f7', subtask:'#64748b' }

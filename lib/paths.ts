@@ -136,18 +136,35 @@ export function clearBinaryCache(name?: string): void {
 }
 
 /**
+ * Every path the roster loader will consider, in priority order.
+ *
+ * Exported so a caller that finds nothing can NAME the places it looked
+ * instead of reporting a bare "not found".
+ *
+ * An explicit override (`AGENTS_MD_PATH`, or its older alias
+ * `TODERO_AGENTS_MD`) is the ONLY candidate when set. Falling through to the
+ * repo copy after an override missed would make a typo'd path silently render
+ * a different host's roster — the operator would see agents and never learn
+ * the file they pointed at does not exist.
+ */
+export function agentsMdCandidates(): string[] {
+  const override = (process.env.AGENTS_MD_PATH ?? process.env.TODERO_AGENTS_MD)?.trim()
+  if (override) return [override]
+  return [
+    path.join(TODERO_DIR, 'AGENTS.md'),
+    path.join(CONFIG_DIR, 'AGENTS.md'),
+    path.join(WORKSPACE_DIR, 'AGENTS.md'),
+    path.join(os.homedir(), 'kaos-config', 'AGENTS.md'),
+  ]
+}
+
+/**
  * Locate the AGENTS.md that describes the agent roster.
  * Used to live at a hardcoded `~/kaos-config/AGENTS.md`, which 500'd on every
  * host but one. Returns null when no copy is present.
  */
 export function resolveAgentsMdPath(): string | null {
-  return firstExistingPath([
-    process.env.TODERO_AGENTS_MD,
-    path.join(TODERO_DIR, 'AGENTS.md'),
-    path.join(CONFIG_DIR, 'AGENTS.md'),
-    path.join(WORKSPACE_DIR, 'AGENTS.md'),
-    path.join(os.homedir(), 'kaos-config', 'AGENTS.md'),
-  ])
+  return firstExistingPath(agentsMdCandidates())
 }
 
 /**

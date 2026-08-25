@@ -7,7 +7,7 @@
 // SERVER ONLY: reads the filesystem.
 
 import { readFileSync } from 'fs'
-import { resolveAgentsMdPath } from './paths'
+import { agentsMdCandidates, firstExistingPath, resolveAgentsMdPath } from './paths'
 
 export interface AgentMeta {
   name: string
@@ -85,12 +85,16 @@ export function resolveAgentIdentity(agentCol: string): { id: string; name: stri
 // The file lives in a host-dependent place, so the path comes from lib/paths
 // (TODERO_AGENTS_MD) rather than one developer's home directory.
 //
-// Two column layouts are supported because both ship in the wild:
-//   | Agent | Model | Notes |            (legacy kaos-config roster)
-//   | Agent | Role  | Model | Status |   (Todero AGENTS.md)
-export function parseAgentsFromMd(): ParsedAgent[] {
-  const mdPath = resolveAgentsMdPath()
-  if (!mdPath) throw new Error('No AGENTS.md found on this host (set TODERO_AGENTS_MD)')
+// Three column layouts are supported because all three ship in the wild:
+//   | Agent | Model | Notes |                (legacy kaos-config roster)
+//   | Agent | Role  | Model | Status |       (older Todero AGENTS.md)
+//   | Id | Agent | Role | Model | Status |   (current Todero AGENTS.md)
+// When an explicit `Id` column is present it wins: guessing the canonical id
+// from a display name ("Ingo" -> ops) only works for names the code already
+// knows, so a roster that means to add a new agent has no way to say its id.
+export function parseAgentsFromMd(mdPathArg?: string): ParsedAgent[] {
+  const mdPath = mdPathArg ?? resolveAgentsMdPath()
+  if (!mdPath) throw new Error(`No AGENTS.md found on this host (looked in: ${agentsMdCandidates().join(', ')})`)
 
   const lines = readFileSync(mdPath, 'utf-8').split('\n')
   const headerIdx = lines.findIndex(l => {
@@ -105,6 +109,7 @@ export function parseAgentsFromMd(): ParsedAgent[] {
   const modelIdx = header.findIndex(c => /^model$/i.test(c))
   // "Notes" in the legacy layout carries the role description.
   const roleIdx = header.findIndex(c => /^(role|notes)$/i.test(c))
+  const idIdx = header.findIndex(c => /^id$/i.test(c))
 
   const agents: ParsedAgent[] = []
   // Skip header + separator
@@ -113,15 +118,56 @@ export function parseAgentsFromMd(): ParsedAgent[] {
     if (!line.startsWith('|')) break
     const cols = line.split('|').map(c => c.trim()).filter(Boolean)
     if (cols.length < header.length) continue
-    const { id, name } = resolveAgentIdentity(cols[agentIdx] ?? '')
+    const resolved = resolveAgentIdentity(cols[agentIdx] ?? '')
+    const explicitId = idIdx >= 0 ? normalizeId(cols[idIdx] ?? '') : ''
+    const id = explicitId || resolved.id
     if (!id) continue
     agents.push({
       id,
-      name,
+      // The file is the source of truth for the display name too; the built-in
+      // registry only fills in for a row that gave an id and no readable name.
+      name: resolved.name || AGENT_META[id]?.name || id,
       role: roleIdx >= 0 ? cols[roleIdx] ?? '' : '',
       model: modelIdx >= 0 ? cols[modelIdx] ?? '' : '',
     })
   }
   if (agents.length === 0) throw new Error(`No agents parsed from the roster table in ${mdPath}`)
   return agents
+}
+
+/** What the roster loader found, and — when it found nothing — why. */
+export interface RosterLoad {
+  agents: ParsedAgent[]
+  /** The file the roster was read from, or null when none was readable. */
+  path: string | null
+  /** Operator-facing reason the roster is empty. Names the path(s) searched. */
+  warning: string | null
+}
+
+/**
+ * Load the roster without throwing.
+ *
+ * A missing or unparseable AGENTS.md is a *configuration* fact, not a server
+ * fault: the route answers 200 with `agents: []` and this warning, so the UI
+ * can say "no agents configured, looked in <path>". It deliberately does NOT
+ * substitute AGENT_META for the roster — standing in a built-in list of 16
+ * agents for a roster the host does not have is the fiction this endpoint
+ * exists to stop. AGENT_META is display metadata (emoji/colour/capabilities)
+ * for agents the roster actually declares, and nothing more.
+ */
+export function loadAgentRoster(): RosterLoad {
+  const candidates = agentsMdCandidates()
+  const mdPath = firstExistingPath(candidates)
+  if (!mdPath) {
+    return {
+      agents: [],
+      path: null,
+      warning: `No AGENTS.md found on this host — looked in: ${candidates.join(', ')}. Set AGENTS_MD_PATH to point at a roster file.`,
+    }
+  }
+  try {
+    return { agents: parseAgentsFromMd(mdPath), path: mdPath, warning: null }
+  } catch (e) {
+    return { agents: [], path: mdPath, warning: e instanceof Error ? e.message : String(e) }
+  }
 }
