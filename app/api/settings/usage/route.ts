@@ -45,12 +45,43 @@ async function dbSizeBytes(): Promise<number | null> {
   }
 }
 
+/**
+ * All-time and today's Claude token/cost totals, summed from agent_runs.
+ * TOD: kill-fake-infra-greens — this used to be a hardcoded `{ totalTokens: 0,
+ * todayCost: 0 }` under a comment claiming it came "from agent_runs" when it
+ * never queried the table at all. Returns null when the DB is unconfigured or
+ * the query fails, so the caller can say "not tracked" instead of "$0.00".
+ */
+async function claudeTotals(): Promise<{ totalTokens: number; totalCost: number; todayTokens: number; todayCost: number } | null> {
+  if (!isDbConfigured()) return null
+  try {
+    const { data, error } = await db().from('agent_runs').select('tokens_used, cost_usd, started_at')
+    if (error || !Array.isArray(data)) return null
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    let totalTokens = 0, totalCost = 0, todayTokens = 0, todayCost = 0
+    for (const r of data as Array<{ tokens_used?: number; cost_usd?: number; started_at?: string }>) {
+      const tok = r.tokens_used ?? 0
+      const cost = r.cost_usd ?? 0
+      totalTokens += tok
+      totalCost += cost
+      if (r.started_at && new Date(r.started_at) >= todayStart) {
+        todayTokens += tok
+        todayCost += cost
+      }
+    }
+    return { totalTokens, totalCost: +totalCost.toFixed(4), todayTokens, todayCost: +todayCost.toFixed(4) }
+  } catch {
+    return null
+  }
+}
+
 export async function GET() {
   if (cache && Date.now() - cache.ts < CACHE_TTL) {
     return NextResponse.json(cache.data)
   }
 
-  const [supabaseDb, openrouter, cfKaos, discordBot] = await Promise.allSettled([
+  const [supabaseDb, openrouter, cfKaos, discordBot, claudeUsage] = await Promise.allSettled([
     // 1. Database size, through the seam's stored-procedure call.
     // TOD-654: an upstream failure resolves to null rather than an error body,
     // which the readers below would otherwise treat as a real number.
@@ -76,6 +107,9 @@ export async function GET() {
       headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN || ''}` },
       cache: 'no-store',
     }).then(r => ({ connected: r.ok })).catch(() => ({ connected: false })),
+
+    // 5. Claude token/cost totals, summed from agent_runs — real, not a literal.
+    claudeTotals(),
   ])
 
   const now = new Date().toISOString()
@@ -111,10 +145,21 @@ export async function GET() {
   }
 
   // --- Claude tokens (from agent_runs) ---
-  const claude: any = { totalTokens: 0, todayCost: 0, plan: 'Max $200/mo', lastChecked: now }
+  // TOD: kill-fake-infra-greens — no `plan` field: this server has no way to
+  // read the Claude CLI's local OAuth session, so asserting a paid tier here
+  // was a guess wearing a measurement's clothes. totalTokens/todayCost are
+  // real sums from agent_runs, or null when the query didn't run.
+  const claudeResult = claudeUsage.status === 'fulfilled' ? claudeUsage.value : null
+  const claude = claudeResult
+    ? { totalTokens: claudeResult.totalTokens, totalCost: claudeResult.totalCost, todayCost: claudeResult.todayCost, lastChecked: now }
+    : { totalTokens: null, totalCost: null, todayCost: null, lastChecked: now }
 
-  // --- Vercel (static) ---
-  const vercel = { plan: 'Pro $20/mo', seats: 1, renewsAt: '2026-04-24', lastChecked: now }
+  // TOD: kill-fake-infra-greens — the old "Vercel (static)" block asserted a
+  // `Pro $20/mo` plan, 1 seat, and a 2026-04-24 renewal date with no probe
+  // behind any of the three. This server has no Vercel billing API access, so
+  // there is nothing honest to report here; /api/status's `services.vercel`
+  // (a real deployments-API probe) is the source of truth for Vercel status.
+  const vercel = null
 
   const data = { supabase, openrouter: openrouterResult, cloudflare, discord, claude, vercel }
   cache = { data, ts: Date.now() }

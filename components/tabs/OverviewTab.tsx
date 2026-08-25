@@ -980,7 +980,8 @@ export default function OverviewTab({
                           </div>
                           <div>
                             <span className="text-white/30 block">Breakdown</span>
-                            <span className="text-white/50">below \u2193</span>
+                            {/* JSX text is not a string literal \u2014 a bare \u2193 here rendered verbatim. */}
+                            <span className="text-white/50">{'below \u2193'}</span>
                           </div>
                         </div>
                         {/* MC-111: Epic/Feature/Issue breakdown \u2014 genuinely measured */}

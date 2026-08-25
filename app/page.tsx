@@ -478,6 +478,7 @@ export default function Home() {
         onSelectBusiness={selectBusiness}
         onNewBusiness={() => setShowOnboarding(true)}
         businessRailRefresh={businessRailRefresh}
+        liveStatus={liveStatus}
       />
 
       {/* MOBILE BOTTOM NAV */}

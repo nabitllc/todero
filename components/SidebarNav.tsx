@@ -96,6 +96,24 @@ interface SidebarNavProps {
   onSelectBusiness?: (name: string | null) => void
   onNewBusiness?: () => void
   businessRailRefresh?: number
+  // TOD: kill-fake-infra-greens — /api/status's payload, so the footer pill
+  // reads the same rollup every other service indicator in the app reads,
+  // instead of a hardcoded "All nominal".
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- /api/status is a wide untyped health payload
+  liveStatus?: any
+}
+
+// TOD: kill-fake-infra-greens — derives the footer pill straight from
+// /api/status's `rollup`. No literal 'active'/'ok' here: an unreached
+// /api/status, or a rollup with nothing confirmed ok, reads grey — never
+// green by default.
+function rollupPill(liveStatus: unknown): { dot: 'ok' | 'degraded' | 'down' | 'unknown'; label: string } {
+  const rollup = (liveStatus as { rollup?: { ok: number; down: number; degraded: number; unknown: number; total: number; overall: string } } | null | undefined)?.rollup
+  if (!rollup) return { dot: 'unknown', label: 'Status unknown' }
+  if (rollup.overall === 'down') return { dot: 'down', label: `${rollup.down} down · ${rollup.unknown} unknown` }
+  if (rollup.overall === 'degraded') return { dot: 'degraded', label: `${rollup.degraded} degraded · ${rollup.unknown} unknown` }
+  if (rollup.overall === 'unknown') return { dot: 'unknown', label: `${rollup.unknown} unknown · nothing measured` }
+  return { dot: 'ok', label: rollup.unknown > 0 ? `${rollup.ok} ok · ${rollup.unknown} unknown` : `${rollup.ok} ok` }
 }
 
 // ── Tooltip (icon-only mode) ─────────────────────────────────────────────────
@@ -117,6 +135,7 @@ export default function SidebarNav({
   unreadChat = false,
   setUnreadChat,
   clock,
+  liveStatus,
 }: SidebarNavProps) {
   const [collapsed, setCollapsed]               = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
@@ -278,15 +297,18 @@ export default function SidebarNav({
             : <><ChevronLeft size={14} /><span className="text-[10px]">Collapse</span></>
           }
         </button>
-        {!collapsed && (
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5">
-              <Dot status="active" sm />
-              <span className="text-white/25 text-[10px]">All nominal</span>
+        {!collapsed && (() => {
+          const pill = rollupPill(liveStatus)
+          return (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5" title="From /api/status — see the Infra tab for the full breakdown">
+                <Dot status={pill.dot} sm />
+                <span className="text-white/25 text-[10px]">{pill.label}</span>
+              </div>
+              {clock && <p className="text-white/20 text-[10px] font-mono">{clock}</p>}
             </div>
-            {clock && <p className="text-white/20 text-[10px] font-mono">{clock}</p>}
-          </div>
-        )}
+          )
+        })()}
       </div>
     </aside>
   )

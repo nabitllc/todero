@@ -249,6 +249,22 @@ export async function GET() {
     cloudflare: reading('unknown', 'no tunnel health endpoint configured on this host'),
   }
 
+  // ── Rollup (TOD: kill-fake-infra-greens) ──
+  // The single source every other service indicator in the app must read
+  // instead of inventing its own "All nominal" — the sidebar pill, Overview's
+  // subscriptions panel, and AI Services all derive from this, not from a
+  // literal. `overall` is 'unknown' whenever nothing on this host has been
+  // confirmed ok — never a default of ok.
+  {
+    const readings = Object.values(result.services) as ServiceReading[]
+    const down = readings.filter(r => r.status === 'down').length
+    const degraded = readings.filter(r => r.status === 'degraded').length
+    const unknown = readings.filter(r => r.status === 'unknown').length
+    const ok = readings.filter(r => r.status === 'ok').length
+    const overall: ServiceState = down > 0 ? 'down' : degraded > 0 ? 'degraded' : ok > 0 ? 'ok' : 'unknown'
+    result.rollup = { ok, down, degraded, unknown, total: readings.length, overall }
+  }
+
   // ── Agent activity from agent_runs ──
   // A host with no Supabase key cannot know any of this. Saying so beats
   // rendering an empty activity feed that reads as "nothing happened today".
@@ -300,16 +316,39 @@ export async function GET() {
     result.recentActivity = allActivity.slice(0, 20)
     result.agentCurrentTask = agentCurrentTask
 
-    // Usage summary from agent_runs
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: costRows } = await db
+    // ── Usage summary from agent_runs (TOD: kill-fake-infra-greens) ──
+    // totalCost/totalTokens used to be literal 0s, rendered on the Infra tab
+    // as a confident "ALL-TIME $0.00" figure that nothing computed. This now
+    // sums every row on this host, real number or real zero — never a
+    // constant standing in for a number that was never added up.
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const { data: allRuns } = await db
       .from('agent_runs')
       .select('tokens_used, cost_usd, started_at')
-      .gte('started_at', today)
-    const todayCost = (costRows ?? []).reduce((s, r) => s + (r.cost_usd ?? 0), 0)
-    const todayTokens = (costRows ?? []).reduce((s, r) => s + (r.tokens_used ?? 0), 0)
-    result.usage = { totalCost: 0, totalTokens: 0, byModel: {}, todayCost: +todayCost.toFixed(4), todayTokens }
-    result.claude = { plan: 'Max', lastChecked: new Date().toISOString(), totalTokens: todayTokens, todayCost }
+    let totalCost = 0, totalTokens = 0, todayCost = 0, todayTokens = 0
+    for (const r of allRuns ?? []) {
+      const cost = r.cost_usd ?? 0
+      const tok = r.tokens_used ?? 0
+      totalCost += cost
+      totalTokens += tok
+      if (r.started_at && new Date(r.started_at) >= todayStart) {
+        todayCost += cost
+        todayTokens += tok
+      }
+    }
+    result.usage = {
+      totalCost: +totalCost.toFixed(4),
+      totalTokens,
+      byModel: {},
+      todayCost: +todayCost.toFixed(4),
+      todayTokens,
+    }
+    // TOD: kill-fake-infra-greens — no `plan` field: this server cannot read
+    // the Claude CLI's local OAuth session, so asserting 'Max' was a guess.
+    // services.claude (above) is the honest reading for Claude's connection
+    // state; this object is only ever the token/cost rollup.
+    result.claude = { lastChecked: new Date().toISOString(), totalTokens, todayCost }
   } catch (e) {
     // Never swallow the reason — an unreachable database is not "no activity".
     activityError = e instanceof Error ? e.message : String(e)

@@ -13,8 +13,14 @@ interface UsageData {
   openrouter: { balance: number | null; limit: number | null; used: number | null; isFreeTier: boolean; lastChecked: string }
   cloudflare: { kaos: { up: boolean; lastChecked: string } }
   discord: { connected: boolean; lastChecked: string }
-  claude: { totalTokens: number; todayCost: number; plan: string; lastChecked: string }
-  vercel: { plan: string; seats: number; renewsAt: string; lastChecked: string }
+  // TOD: kill-fake-infra-greens — no `plan`: this server cannot read the
+  // Claude CLI's local OAuth session, so there is nothing to assert. Token
+  // totals are null, not zero, when the sum never ran.
+  claude: { totalTokens: number | null; totalCost: number | null; todayCost: number | null; lastChecked: string }
+  // TOD: kill-fake-infra-greens — Vercel billing has no probe on this host;
+  // null means "not tracked", not "inactive". See services.vercel in
+  // /api/status for the real deployment-API reading.
+  vercel: null
 }
 
 function formatBytes(bytes: number): string {
@@ -232,12 +238,21 @@ export default function SettingsTab() {
           )}
         </ServiceCard>
 
-        {/* Claude */}
-        <ServiceCard emoji="🧠" name="Claude" plan={data.claude.plan}
-          status="active" statusLabel="Active"
+        {/* Claude — TOD: kill-fake-infra-greens: no plan tier is asserted (this
+            server cannot see the CLI's local OAuth session), and status
+            reflects whether any usage was actually summed this request. */}
+        <ServiceCard emoji="🧠" name="Claude" plan="Session state is local to the CLI — not visible to this server"
+          status={data.claude.totalTokens != null ? 'active' : 'idle'}
+          statusLabel={data.claude.totalTokens != null ? 'Tracked' : 'Not tracked'}
           lastChecked={data.claude.lastChecked}>
-          <div className="text-xs text-white/60">{formatTokens(data.claude.totalTokens)} tokens tracked</div>
-          {data.claude.todayCost > 0 && <div className="text-xs text-white/40 mt-0.5">Today: ${data.claude.todayCost.toFixed(2)}</div>}
+          {data.claude.totalTokens != null ? (
+            <>
+              <div className="text-xs text-white/60">{formatTokens(data.claude.totalTokens)} tokens tracked</div>
+              {(data.claude.todayCost ?? 0) > 0 && <div className="text-xs text-white/40 mt-0.5">Today: ${(data.claude.todayCost ?? 0).toFixed(2)}</div>}
+            </>
+          ) : (
+            <div className="text-xs text-white/30">No agent_runs data on this host</div>
+          )}
           <a href="https://claude.ai/settings" target="_blank" rel="noopener noreferrer"
             className="text-[10px] text-blue-400/70 hover:text-blue-400 mt-1 inline-block">claude.ai/settings</a>
         </ServiceCard>
@@ -258,11 +273,13 @@ export default function SettingsTab() {
           )}
         </ServiceCard>
 
-        {/* Vercel */}
-        <ServiceCard emoji="▲" name="Vercel" plan={data.vercel.plan}
-          status="active" statusLabel="Active"
-          lastChecked={data.vercel.lastChecked}>
-          <div className="text-xs text-white/60">{data.vercel.seats} seat · Renews {data.vercel.renewsAt}</div>
+        {/* Vercel — TOD: kill-fake-infra-greens: this route has no Vercel
+            billing probe, so nothing here is asserted as active. See the
+            Vercel tile on the Infra tab for the real deployment-API reading. */}
+        <ServiceCard emoji="▲" name="Vercel" plan="No billing probe on this host"
+          status="idle" statusLabel="Not tracked here"
+          lastChecked={undefined}>
+          <div className="text-xs text-white/30">See the Vercel tile on the Infra tab for the live deployment check.</div>
           <a href="https://vercel.com/account" target="_blank" rel="noopener noreferrer"
             className="text-[10px] text-blue-400/70 hover:text-blue-400 mt-1 inline-block">vercel.com/account</a>
         </ServiceCard>
