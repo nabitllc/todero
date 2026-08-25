@@ -51,10 +51,12 @@ import { dbUrl, dbRestHeaders, issuesUrl } from '@/lib/db/browser'
 import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
 
-const BIZ_EMOJI: Record<string, string> = {
-  'Vespera': '🖤', 'Kemuni': '🚀', 'Mission Control': '🧠', 'Todero': '🧠',
-  'Infrastructure': '⚙️', 'KAOS': '🤖',
-}
+// BIZ_EMOJI was here: a six-name emoji table (Vespera, Kemuni, Mission Control,
+// Todero, Infrastructure, KAOS). The sibling piece banned exactly this shape —
+// "an emoji or colour map keyed by project name is the same defect wearing
+// decoration" — and swept it out of BusinessRail, HubRail and HubSwitcher. This
+// copy survived only because the file-ownership split put page.tsx on the other
+// agent's side of the line. A business renders the neutral default now.
 
 // scope-is-a-boundary (item 7): design/Work.dc.html specifies four Work
 // views (Board, List, Epics, Sprint). These are the sub-tab groups for the
@@ -767,16 +769,16 @@ export default function Home() {
         {selectedBusiness && (
           <div className="px-4 md:px-6 py-3 border-b border-white/10 bg-[#0a0a0a]">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">{BIZ_EMOJI[selectedBusiness] || '🏢'}</span>
+              <span className="text-2xl">🏢</span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-white text-sm font-semibold truncate">{selectedBusiness}</h2>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-medium">Business</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-medium">Business</span>
                   {selectedProject && (
                     <>
                       <span className="text-white/20 text-xs">/</span>
                       <h2 className="text-white text-sm font-semibold truncate">{selectedProject}</h2>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 font-medium">Project</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 font-medium">Project</span>
                     </>
                   )}
                 </div>

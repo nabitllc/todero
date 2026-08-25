@@ -110,6 +110,16 @@ export async function GET(req: Request) {
     (searchParams.get('include_archived') ?? '').toLowerCase() === 'true'
   if (!includeArchived) query = query.is('archived_at', null)
 
+  // ActivityFeed.tsx has always SENT `project` on this request. This route
+  // selected the column and never filtered on it, so the landing screen's
+  // Recent Activity showed every project's rows while the request said it was
+  // scoped. A parameter that is accepted and ignored is worse than one that is
+  // missing: the caller can see it in the URL and reasonably concludes the
+  // filter is applied. Nothing surfaced it because the other projects happened
+  // to be archived — which is exactly the condition this wave stopped relying on.
+  const project = searchParams.get('project')
+  if (project) query = query.eq('project', project)
+
   if (actor) query = query.eq('assignee', actor)
   if (issueId) query = query.eq('id', issueId)
   if (statusFilter) query = query.in('status', statusFilter)

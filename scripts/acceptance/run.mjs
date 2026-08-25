@@ -26,12 +26,35 @@ const outPath = outIdx >= 0 ? args[outIdx + 1] : null
 // Probe two routes that must always answer; if neither does, refuse to grade the
 // HTTP checks rather than slander them.
 const { http: preflightHttp } = await import('./checks.mjs')
-let serverUp = true
-{
+
+/** Probe two routes that must always answer. Neither answering means it is down. */
+async function probeServer() {
   const a = await preflightHttp('/api/health', { timeoutMs: 8000 })
   const b = await preflightHttp('/login', { timeoutMs: 8000 })
   const dead = (r) => r.status === 0 || r.status === 404
-  if (dead(a) && dead(b)) serverUp = false
+  return !(dead(a) && dead(b))
+}
+
+let serverUp = await probeServer()
+
+// This probe used to run ONCE, before the loop. That makes it a statement about
+// the server at second zero which the suite then treats as true for the whole
+// run. A server that is healthy at the start and dies halfway through — which
+// this one did, under memory pressure, during a critic's run — has every
+// remaining transport failure graded as a PRODUCT REGRESSION. The reported
+// result was 31/45 with 7 critical failures against a tree that scores 45/45.
+// The suite slandered the product using a stale fact about itself.
+//
+// The health fact is re-established lazily now, on evidence: the first failure
+// that LOOKS like a transport fault re-probes once, and everything after is
+// judged against that answer. Free when nothing is wrong, honest when it is.
+let recheckedMidRun = false
+async function serverStillUp() {
+  if (!serverUp) return false
+  if (recheckedMidRun) return serverUp
+  recheckedMidRun = true
+  serverUp = await probeServer()
+  return serverUp
 }
 
 const started = Date.now()
@@ -45,7 +68,9 @@ for (const c of picked) {
   // detail shows a transport fault did not measure the product — it measured a dead
   // socket. Name-matching missed dispatch-guard-untouched and let it report
   // "guard present but POST returned 404", which reads as a safety hole and is not one.
-  if (!r.ok && !serverUp && /(0|404|502|503|504)|NETWORK|ECONNREFUSED|not serving|unreachable|timeout/i.test(String(r.detail))) {
+  const looksLikeTransport = !r.ok &&
+    /\b(0|404|502|503|504)\b|NETWORK|ECONNREFUSED|not serving|unreachable|timeout/i.test(String(r.detail))
+  if (looksLikeTransport && !(await serverStillUp())) {
     r = { ok: false, inconclusive: true, detail: 'INCONCLUSIVE — dev server not serving; not a product regression' }
   }
   results.push({ ...c, ...r })
@@ -84,7 +109,11 @@ if (jsonMode) {
   const pad = (s, n) => String(s).padEnd(n)
   console.log('')
   for (const r of results) {
-    const mark = r.ok ? 'PASS' : (r.critical ? 'FAIL*' : 'FAIL ')
+    // An inconclusive check must not print FAIL*. It reads as a critical product
+    // defect, and a critic reading this output has already been misled by it once —
+    // reporting 31/45 with 7 critical failures against a tree that scores 45/45,
+    // because the server had died mid-run. The mark has to say what happened.
+    const mark = r.ok ? 'PASS' : (r.inconclusive ? 'SKIP ' : (r.critical ? 'FAIL*' : 'FAIL '))
     console.log(`  ${pad(mark, 6)} ${pad(r.id, 30)} ${r.detail}`)
   }
   console.log('')
