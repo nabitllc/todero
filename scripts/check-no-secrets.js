@@ -52,8 +52,25 @@ const PATTERNS = [
     fix: 'read the URL from the environment, via lib/db.ts.',
   },
   {
-    needle: 'eyJhbGc' + 'iOi',
-    why: 'JWT header — a credential, not configuration',
+    // Scoped the same way the service_role rule below already had to be, and
+    // for the same reason: as a bare substring this matched PROSE. The
+    // acceptance specifications in docs/rebuild/ tell agents to grep for the
+    // JWT prefix, so they necessarily spell it, and moving those docs into the
+    // repo turned `npm run build` red on a clean clone.
+    //
+    // The bare prefix is not a credential. `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`
+    // decodes to {"alg":"HS256","typ":"JWT"} — the header every HS256 token on
+    // earth begins with, carrying no payload and no signature. What makes a
+    // token a token is what FOLLOWS it: a dot and a payload segment.
+    //
+    // So match the shape of a real token instead of the shape of a description.
+    // This is strictly stronger than an exclusion list would have been — a real
+    // key pasted into a doc, a fixture or a changelog still fails the build,
+    // where `:(exclude)docs/**` would have waved it through.
+    needle: 'eyJhbGc' + 'iOi[A-Za-z0-9_-]*[.][A-Za-z0-9_-]{8,}',
+    label: 'JWT',
+    regex: true,
+    why: 'a JWT with a payload — a credential, not configuration',
     paths: SECRET_EXCLUDES,
     fix: 'read the key from the environment, via lib/db.ts.',
   },

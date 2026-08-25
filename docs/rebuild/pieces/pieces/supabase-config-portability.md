@@ -37,7 +37,7 @@ There is no Supabase magic to replace. That is why a clean seam is cheap now.
    `lib/db/neon-adapter.ts` — write the interface it will have to satisfy as a
    TypeScript type in lib/db.ts, so the next agent has a contract to implement
    rather than a guess. Do NOT write the Neon adapter now.
-3. Replace every hardcoded occurrence of the literal `https://twthgapiouiqhavrcnry.supabase.co`
+3. Replace every hardcoded occurrence of the literal `https://<the hosted project ref>.supabase.co`
    and every inline JWT across app/, lib/, components/, hooks/, config/, scripts/
    with imports from the seam. There are currently ~78 occurrences. None may remain.
    Also remove the hardcoded owner email `michael@nabit.app` at
@@ -45,11 +45,11 @@ There is no Supabase magic to replace. That is why a clean seam is cheap now.
 4. Server-only credentials must never be imported from a file carrying 'use client'.
    (Another agent is removing the service_role key from client components right now —
    coordinate by NOT editing components/ files that already import from a server route.)
-5. Add a CI grep that fails the build if `twthgapiouiqhavrcnry`, `service_role`, or a
+5. Add a CI grep that fails the build if `<the hosted project ref>`, `service_role`, or a
    raw `eyJhbGciOi` JWT prefix appears anywhere outside .env files.
 
 ## ACCEPTANCE — a critic will verify these against the RUNNING app
-1. `grep -rn twthgapiouiqhavrcnry app/ lib/ components/ hooks/ config/ scripts/ | wc -l` -> 0
+1. `grep -rn <the hosted project ref> app/ lib/ components/ hooks/ config/ scripts/ | wc -l` -> 0
 2. `grep -rn "eyJhbGciOi" app/ lib/ components/ hooks/ | wc -l` -> 0
 3. With NEXT_PUBLIC_SUPABASE_URL unset, the app produces a startup/route error that
    NAMES the missing variable — not an opaque "supabaseUrl is required", and not a
