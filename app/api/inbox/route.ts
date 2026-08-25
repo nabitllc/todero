@@ -61,11 +61,15 @@ function nonApprovalOutcome(status: string, humanInput: unknown, stateWord: stri
 }
 
 const INBOX_EFFECTS: Record<string, InboxEffectHandler> = {
-  // lib/loop-breaker.ts pauseAgent() writes agent_memory.is_paused={paused:true} —
-  // that flag, not the inbox row, is what PATCH /api/run-agent's isAgentPaused()
-  // gate checks. Approving must clear the SAME flag the same way
-  // PATCH /api/agent-pause does, or the agent stays paused forever.
-  async loop_breaker_pause({ db, approved, status, agentId, humanInput }) {
+  // lib/loop-breaker.ts pauseAgent() does TWO things when it trips: writes
+  // agent_memory.is_paused={paused:true} (the flag PATCH /api/run-agent's
+  // isAgentPaused() gate checks) AND sets issues.is_blocked=true,
+  // blocked_by='system:loop_breaker' on the failing issue (lib/loop-breaker.ts
+  // pauseAgent(), ~line 114) so main can triage it. Approving must undo BOTH
+  // halves — exactly like ceiling_stop below undoes both its agent_memory
+  // marker and its issue block — or the agent comes back un-paused with
+  // nothing to dispatch, which is a half-consequence reported as a full one.
+  async loop_breaker_pause({ db, approved, status, agentId, requestContext, humanInput }) {
     if (!approved) return nonApprovalOutcome(status, humanInput, 'paused')
     if (!agentId) {
       return { effect: 'agent_unpause', ok: false, detail: 'no agent id on this request — nothing to un-pause' }
@@ -102,7 +106,42 @@ const INBOX_EFFECTS: Record<string, InboxEffectHandler> = {
         updated_at: now,
       }, { onConflict: 'agent_id,key' })
       if (resetBreaker.error) throw new Error(resetBreaker.error.message)
-      return { effect: 'agent_unpause', ok: true, detail: `agent '${agentId}' un-paused (agent_memory.is_paused=false); failure counter reset` }
+
+      // Second half: clear the issue block pauseAgent() set. `last_issue_id`
+      // is the issues.id UUID (lib/loop-breaker.ts pauseAgent() writes it
+      // straight from recordAgentFailure's `issueId` param, not a display
+      // key) — see the identical `context.last_issue_id` write in
+      // lib/loop-breaker.ts's inbox insert.
+      const lastIssueId = typeof requestContext.last_issue_id === 'string' ? requestContext.last_issue_id : null
+      if (!lastIssueId) {
+        return { effect: 'agent_unpause', ok: true, detail: `agent '${agentId}' un-paused (request carried no issue — nothing to unblock)` }
+      }
+      const { data: issueRows, error: findError } = await db.from('issues')
+        .select('id, task_key, blocked_by')
+        .eq('id', lastIssueId)
+        .limit(1)
+      if (findError) throw new Error(findError.message)
+      const issue = (issueRows as Array<{ id: string; task_key: string | null; blocked_by: string | null }> | null)?.[0]
+      if (!issue) {
+        return { effect: 'agent_unpause', ok: true, detail: `agent '${agentId}' un-paused (issue ${lastIssueId} not found — nothing to unblock)` }
+      }
+      const issueLabel = issue.task_key ?? issue.id
+      // Guard on blocked_by so we never clear a block some other system
+      // owns (e.g. ceiling_stop blocked the same issue after the loop
+      // breaker did) — matches the WHERE-clause guard on the update itself.
+      if (issue.blocked_by !== 'system:loop_breaker') {
+        return {
+          effect: 'agent_unpause',
+          ok: false,
+          detail: `agent '${agentId}' un-paused; issue ${issueLabel} is still blocked by ${issue.blocked_by ?? 'unknown'} — not re-dispatchable`,
+        }
+      }
+      const { error: clearError } = await db.from('issues')
+        .update({ is_blocked: false, blocked_by: null, updated_at: now })
+        .eq('id', lastIssueId)
+        .eq('blocked_by', 'system:loop_breaker')
+      if (clearError) throw new Error(clearError.message)
+      return { effect: 'agent_unpause', ok: true, detail: `agent '${agentId}' un-paused; issue ${issueLabel} unblocked and re-dispatchable` }
     } catch (err) {
       return { effect: 'agent_unpause', ok: false, detail: `un-pause failed: ${err instanceof Error ? err.message : String(err)}` }
     }
