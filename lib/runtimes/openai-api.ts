@@ -501,18 +501,37 @@ const RUNNER_SCRIPT = [
   '  for (let iter = 1; iter <= MAX_ITER; iter++) {',
   '    const callStart = Date.now()',
   '    const resp = await callApi({ model: MODEL, messages: messages, tools: TOOLS, tool_choice: "auto" })',
+  '    const callEnd = Date.now()',
+  // upstream_started_at / upstream_finished_at bracket exactly the fetch to
+  // `${BASE_URL}/chat/completions` this process just made — nothing before
+  // callStart or after callEnd is included, so this window cannot be
+  // stretched to cover a request some other run or process caused.
+  '    const upstreamStartedAt = new Date(callStart).toISOString()',
+  '    const upstreamFinishedAt = new Date(callEnd).toISOString()',
   '    const usage = resp && resp.usage ? resp.usage : {}',
   '    const tokensIn = usage.prompt_tokens || 0, tokensOut = usage.completion_tokens || 0',
   '    totalIn += tokensIn; totalOut += tokensOut',
   '    if (resp.error) {',
-  '      trace({ type: "model_call", iter: iter, ok: false, error: String(resp.error.message || resp.error), ms: Date.now() - callStart })',
+  '      trace({ type: "model_call", iter: iter, ok: false, error: String(resp.error.message || resp.error), ms: callEnd - callStart, upstream_started_at: upstreamStartedAt, upstream_finished_at: upstreamFinishedAt })',
   '      fs.appendFileSync(LOG_F, "[openai-api] API error: " + JSON.stringify(resp.error) + "\\n"); process.exit(1)',
   '    }',
   '    const choice = resp.choices && resp.choices[0]',
-  '    if (!choice) { trace({ type: "model_call", iter: iter, ok: false, error: "no choices in response" }); fs.appendFileSync(LOG_F, "[openai-api] No choices\\n"); process.exit(1) }',
+  '    if (!choice) { trace({ type: "model_call", iter: iter, ok: false, error: "no choices in response", upstream_started_at: upstreamStartedAt, upstream_finished_at: upstreamFinishedAt }); fs.appendFileSync(LOG_F, "[openai-api] No choices\\n"); process.exit(1) }',
   '    const msg = choice.message',
   '    messages.push(msg)',
-  '    trace({ type: "model_call", iter: iter, ok: true, finishReason: choice.finish_reason, tokensIn: tokensIn, tokensOut: tokensOut, ms: Date.now() - callStart, toolCalls: (msg.tool_calls || []).map(function(t) { return t.function.name }) })',
+  // response.id is the OpenAI-compatible completion id (Ollama echoes one
+  // back too, e.g. "chatcmpl-..."). response.model is what the endpoint
+  // itself reports it served, which is not always byte-identical to the
+  // MODEL string this process requested (a server may report a resolved/
+  // quantized tag). Both are written here, on the same trace line as the
+  // window that bounds the fetch that produced them — this line, and no
+  // other, is what verify.mjs treats as the run\'s upstream correlation
+  // record. A dedicated "upstream_correlation" type keeps it from being
+  // confused with the human-readable model_call bookkeeping line.
+  '    const providerResponseId = (resp && resp.id) || null',
+  '    const providerModel = (resp && resp.model) || MODEL',
+  '    trace({ type: "model_call", iter: iter, ok: true, finishReason: choice.finish_reason, tokensIn: tokensIn, tokensOut: tokensOut, ms: callEnd - callStart, toolCalls: (msg.tool_calls || []).map(function(t) { return t.function.name }) })',
+  '    trace({ type: "upstream_correlation", iter: iter, provider_response_id: providerResponseId, provider_model: providerModel, upstream_started_at: upstreamStartedAt, upstream_finished_at: upstreamFinishedAt })',
   '    if (choice.finish_reason === "stop" || !msg.tool_calls || msg.tool_calls.length === 0) {',
   '      fs.appendFileSync(LOG_F, "[openai-api] Final (iter=" + iter + "):\\n" + (msg.content || "") + "\\n")',
   '      trace({ type: "run_end", status: "completed", iterations: iter, tokensIn: totalIn, tokensOut: totalOut, at: new Date().toISOString() })',
@@ -546,6 +565,21 @@ export interface ParsedTrace {
   steps: TraceStep[]
   totals: { tokensIn: number; tokensOut: number; costUsd: number; toolCalls: number }
   status: 'completed' | 'failed' | 'max_iterations' | 'running' | 'unknown'
+  /**
+   * The upstream correlation record for THIS run — sourced from the last
+   * `upstream_correlation` trace line the child process wrote (see
+   * RUNNER_SCRIPT above), which brackets exactly one fetch this process made
+   * to `${LLM_BASE_URL}/chat/completions`. null when the log has no such
+   * line (a run that failed before any model call, or a log from before this
+   * field existed) — the caller must not invent a window when none was
+   * measured.
+   */
+  upstream: {
+    providerResponseId: string | null
+    providerModel: string | null
+    upstreamStartedAt: string | null
+    upstreamFinishedAt: string | null
+  } | null
 }
 
 /**
@@ -563,7 +597,7 @@ export function parseOpenAiTrace(logFile: string, model: string): ParsedTrace {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     raw = (require('fs') as typeof import('fs')).readFileSync(logFile, 'utf8')
   } catch {
-    return { steps, totals: { tokensIn: 0, tokensOut: 0, costUsd: 0, toolCalls: 0 }, status: 'unknown' }
+    return { steps, totals: { tokensIn: 0, tokensOut: 0, costUsd: 0, toolCalls: 0 }, status: 'unknown', upstream: null }
   }
   for (const line of raw.split('\n')) {
     const idx = line.indexOf('[trace] ')
@@ -579,7 +613,19 @@ export function parseOpenAiTrace(logFile: string, model: string): ParsedTrace {
   const costUsd = ((tokensIn + tokensOut) / 1_000_000) * rate
   const toolCalls = steps.filter(s => s.type === 'tool_call').length
   const status = (runEnd?.status as ParsedTrace['status'] | undefined) ?? (steps.length > 0 ? 'running' : 'unknown')
-  return { steps, totals: { tokensIn, tokensOut, costUsd, toolCalls }, status }
+  // The LAST upstream_correlation line is canonical: on a multi-iteration
+  // tool-use run it is the call that actually produced the final answer, and
+  // on the (typical) single-iteration run it is the only one there is.
+  const lastCorrelation = [...steps].reverse().find(s => s.type === 'upstream_correlation')
+  const upstream = lastCorrelation
+    ? {
+        providerResponseId: (lastCorrelation.provider_response_id as string | null | undefined) ?? null,
+        providerModel: (lastCorrelation.provider_model as string | null | undefined) ?? null,
+        upstreamStartedAt: (lastCorrelation.upstream_started_at as string | null | undefined) ?? null,
+        upstreamFinishedAt: (lastCorrelation.upstream_finished_at as string | null | undefined) ?? null,
+      }
+    : null
+  return { steps, totals: { tokensIn, tokensOut, costUsd, toolCalls }, status, upstream }
 }
 
 // ---------------------------------------------------------------------------
@@ -730,6 +776,14 @@ export const openaiApiRuntime: AgentRuntime = {
         inputTokens: parsed.totals.tokensIn || undefined,
         outputTokens: parsed.totals.tokensOut || undefined,
         costUsd: parsed.totals.costUsd || undefined,
+        // evidence-based-verification (round 2): the correlation record —
+        // written on this same ledger row, never inferred by a verifier from
+        // co-occurrence. Absent (undefined) when the run never completed a
+        // model call at all, e.g. it failed before the first fetch.
+        providerResponseId: parsed.upstream?.providerResponseId ?? undefined,
+        providerModel: parsed.upstream?.providerModel ?? undefined,
+        upstreamStartedAt: parsed.upstream?.upstreamStartedAt ?? undefined,
+        upstreamFinishedAt: parsed.upstream?.upstreamFinishedAt ?? undefined,
       })
     }, { maxMinutes: 90 })
 

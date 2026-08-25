@@ -100,6 +100,20 @@ export interface CompletionEntry {
    * running forever.
    */
   taskId?: string | null
+  // evidence-based-verification (round 2): upstream correlation, populated
+  // only by lib/runtimes/openai-api.ts. This is what lets
+  // scripts/evidence/verify.mjs prove a specific token_ledger row — not just
+  // "some row" — actually caused a specific line in Ollama's own log:
+  // providerResponseId/providerModel come straight off the chat-completions
+  // response body, upstream{Started,Finished}At bracket exactly the fetch
+  // that produced it (see RUNNER_SCRIPT's callStart/callEnd). claude-code,
+  // codex and cursor never set these — their rows stay null forever, which
+  // is intentional: a row this seam never populated must never be treated
+  // as if an upstream LLM endpoint produced it.
+  providerResponseId?: string | null
+  providerModel?: string | null
+  upstreamStartedAt?: string | null
+  upstreamFinishedAt?: string | null
 }
 
 /**
@@ -134,6 +148,10 @@ export function finalizeRun(entry: CompletionEntry): void {
       if (entry.inputTokens != null) updatePayload.input_tokens = entry.inputTokens
       if (entry.outputTokens != null) updatePayload.output_tokens = entry.outputTokens
       if (entry.costUsd != null) updatePayload.cost_usd = entry.costUsd
+      if (entry.providerResponseId != null) updatePayload.provider_response_id = entry.providerResponseId
+      if (entry.providerModel != null) updatePayload.provider_model = entry.providerModel
+      if (entry.upstreamStartedAt != null) updatePayload.upstream_started_at = entry.upstreamStartedAt
+      if (entry.upstreamFinishedAt != null) updatePayload.upstream_finished_at = entry.upstreamFinishedAt
       // Merge exit info into metadata
       if (entry.exitCode != null || entry.exitSignal != null || entry.error) {
         updatePayload.metadata = {
