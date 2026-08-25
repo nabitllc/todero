@@ -107,19 +107,22 @@ describe('PATCH /api/issues — downstream-unblock cascade write failure is hone
     responses = [
       // 1. beforeQ — fetch the issue being transitioned
       { data: BEFORE_ROW, error: null },
-      // 2. workflow_transitions lookup — no row on file; accepted via owner override (transitioned_by=michael)
+      // 2. workflow_transitions lookup (validateWorkflowTransition) — no row on
+      //    file; accepted via owner override (transitioned_by=michael)
       { data: null, error: null },
       // 3. main update — the issue actually transitions to 'completed'
       { data: UPDATED_ROW, error: null },
-      // 4. close running agent_runs for this task — succeeds
-      { error: null },
-      // 5. downstream unblock: find issues blocked_by this one, is_blocked=true
-      { data: [{ id: 'issue-1000', task_key: 'TOD-1000' }], error: null },
-      // 6. downstream unblock: the actual clear — THIS is the write that fails
-      { error: { message: 'connection reset by peer' } },
-      // 7. in-app notification insert on status transition — succeeds
+      // 4. second workflow_transitions lookup (post_functions) — none on file
       { data: null, error: null },
-      // 8. activity_events insert for status_changed — succeeds
+      // 5. close running agent_runs for this task — succeeds
+      { error: null },
+      // 6. downstream unblock: find issues blocked_by this one, is_blocked=true
+      { data: [{ id: 'issue-1000', task_key: 'TOD-1000' }], error: null },
+      // 7. downstream unblock: the actual clear — THIS is the write that fails
+      { error: { message: 'connection reset by peer' } },
+      // 8. in-app notification insert on status transition — succeeds
+      { data: null, error: null },
+      // 9. activity_events insert for status_changed — succeeds
       { data: null, error: null },
     ]
 
@@ -134,10 +137,6 @@ describe('PATCH /api/issues — downstream-unblock cascade write failure is hone
 
     // The honesty check: a downstream issue that was NOT unblocked must be
     // named in cascade_failures, not silently dropped behind a bare 200.
-    // eslint-disable-next-line no-console
-    console.log('DEBUG json:', JSON.stringify(json))
-    // eslint-disable-next-line no-console
-    console.log('DEBUG callLog:', JSON.stringify(callLog.map(c => ({ table: c.table, verb: c.verb }))))
     expect(Array.isArray(json.cascade_failures)).toBe(true)
     const failure = (json.cascade_failures as string[]).find((f: string) => f.includes('TOD-1000'))
     expect(failure).toBeDefined()
@@ -157,8 +156,9 @@ describe('PATCH /api/issues — downstream-unblock cascade write failure is hone
   it('reports success with no cascade_failures when the same write succeeds', async () => {
     responses = [
       { data: BEFORE_ROW, error: null },
-      { data: null, error: null },
+      { data: null, error: null }, // workflow_transitions (validate)
       { data: UPDATED_ROW, error: null },
+      { data: null, error: null }, // workflow_transitions (post_functions)
       { error: null }, // agent_runs close
       { data: [{ id: 'issue-1000', task_key: 'TOD-1000' }], error: null },
       { error: null }, // downstream unblock succeeds this time

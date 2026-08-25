@@ -1731,6 +1731,7 @@ export async function PATCH(req: NextRequest) {
           .single()
         if (epicErr || !newEpic) {
           console.error(`[TOD-1203] failed to auto-create epic for feature:`, epicErr?.message)
+          cascadeFailures.push(`auto-epic for feature "${featureTitle}" NOT created: ${epicErr?.message ?? 'unknown error'}`)
         } else {
           fields.parent_id = newEpic.id
           console.log(`[TOD-1203] auto-created epic ${newEpic.task_key} as parent for feature transitioning to defined`)
