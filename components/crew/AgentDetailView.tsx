@@ -6,9 +6,31 @@ import React, { useState, useEffect } from 'react'
 import { AGENT_QUEUE_CONFIGS } from '@/lib/agent-queue'
 import { AGENT_REGISTRY } from '@/lib/agent-capabilities'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
-import { fetchJson, type ApiError } from '@/hooks/useApiData'
-import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+import { fetchJson, formatApiError, type ApiError } from '@/hooks/useApiData'
+import { type VaultBadgeInfo } from '@/lib/vault-badge'
 import { resolvePauseOutcome, type AgentPauseResponseBody } from '@/lib/agent-pause-ui'
+
+// agent-config-panel-truth piece (round 2): see the identical comment on
+// ConfigurationTab in components/tabs/AgentDetailView.tsx — this page's
+// Model card had the same defect (resolveVaultBadge() + localProviderConfigured,
+// an env-URL heuristic, not runtime selection), applied to the class rather
+// than just that one file. Both now read GET /api/run-agent?info=1&agent=<id>,
+// the same guard-free resolver POST /api/run-agent's real spawn path uses.
+interface RunAgentInfoAlternative {
+  label: string
+  reason: string
+}
+
+interface RunAgentInfo {
+  agent: string
+  resolvedRuntime: string
+  modelAlias: string
+  resolvedModelId: string | null
+  resolvedModelError: string | null
+  alternatives: RunAgentInfoAlternative[]
+  chainLength: number
+  dispatchEnabled: boolean
+}
 
 interface Issue {
   id: string
@@ -58,9 +80,12 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
   // one — same fetch this component already makes for lastUpdatedAt, just
   // reading a field it used to discard. Null for every id AGENT_REGISTRY
   // already covers (none of it overlaps a vault manifest id today), real for
-  // any id that is vault-only.
+  // any id that is vault-only. Used ONLY to show the "Brain2" provenance
+  // chip below — never to derive a model label; that comes from `info`.
   const [vault, setVault] = useState<VaultBadgeInfo | null>(null)
-  const [localProviderConfigured, setLocalProviderConfigured] = useState(false)
+  const [info, setInfo] = useState<RunAgentInfo | null>(null)
+  const [infoError, setInfoError] = useState<ApiError | null>(null)
+  const [infoLoading, setInfoLoading] = useState(true)
 
   useEffect(() => {
     fetchJson<{ data?: Issue[] } | Issue[]>(`/api/issues?assignee=${encodeURIComponent(agentId)}`)
@@ -86,8 +111,18 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       const found = agents.find(a => a.id === agentId)
       if (found?.lastUpdatedAt) setLastRun(found.lastUpdatedAt)
       setVault(found?.vault ?? null)
-      setLocalProviderConfigured(!Array.isArray(body) && body?.localProviderConfigured === true)
     })
+  }, [agentId, reload])
+
+  useEffect(() => {
+    setInfoLoading(true)
+    fetchJson<RunAgentInfo>(`/api/run-agent?info=1&agent=${encodeURIComponent(agentId)}`)
+      .then(r => {
+        if (!r.ok) { setInfoError(r.error); setInfo(null); setInfoLoading(false); return }
+        setInfoError(null)
+        setInfo(r.data)
+        setInfoLoading(false)
+      })
   }, [agentId, reload])
 
   async function togglePause() {
@@ -125,14 +160,25 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
   const activeIssues = (issues ?? []).filter(i => ['open', 'in_progress', 'code_review'].includes(i.status))
   const eligibleStatuses = queueConfig ? [queueConfig.pickupStatus] : []
   const extraFilters = queueConfig?.extraFilters ?? ''
-  // A vault-backed id (see `vault` state above) never falls through to the
-  // generic modelShort/queueConfig label — same resolveVaultBadge() every
-  // other model badge in the app goes through. `vault` is null for every id
-  // this page currently reaches (AGENT_REGISTRY has none in common with a
-  // Global_Agents manifest today), so this is a no-op until that changes;
-  // it is here so it does not silently regress the day it does.
-  const vaultBadge = vault ? resolveVaultBadge(vault, localProviderConfigured) : null
-  const modelLabel = vaultBadge?.label ?? agent.modelShort ?? queueConfig?.model ?? '—'
+
+  // "Would run" — read from the same guard-free resolver POST /api/run-agent's
+  // real spawn path uses (GET /api/run-agent?info=1), never `agent.modelShort`,
+  // `queueConfig.model`, or a vault badge derived from an env-URL heuristic.
+  // A 4xx/5xx, or a null mapModel() result, renders "not resolvable — <the
+  // endpoint's own message>".
+  let modelLabel: string
+  if (infoError) {
+    modelLabel = `not resolvable — ${formatApiError(infoError, 'endpoint error')}`
+  } else if (infoLoading || !info) {
+    modelLabel = 'Loading…'
+  } else if (info.resolvedRuntime === 'openai-api') {
+    modelLabel = info.resolvedModelId
+      ? `openai-api · ${info.resolvedModelId}`
+      : `not resolvable — ${info.resolvedModelError ?? 'the endpoint gave no reason'}`
+  } else {
+    modelLabel = `${info.resolvedRuntime} · ${info.modelAlias}`
+  }
+  const alternatives = info?.alternatives ?? []
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -153,7 +199,7 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">
               {modelLabel}
             </span>
-            {vaultBadge && (
+            {vault && (
               <span
                 className="text-[9px] px-1.5 py-0.5 rounded-full border border-purple-500/40 text-purple-300 bg-purple-500/10 font-semibold"
                 title="Resolved from the Brain2 vault manifest (Global_Agents/<id>/manifest.json)"
@@ -221,6 +267,31 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
           <p className="text-white/30 text-[10px] uppercase tracking-wider mb-1">Last Run</p>
           <p className="text-white/70 text-xs">{relTime(lastRun)}</p>
         </div>
+      </div>
+
+      {/* Alternatives — agent-config-panel-truth piece: every other binding
+          this agent's chain would have tried, plus the manifest's `preferred`
+          display name when vault-backed, each labelled with why it did not
+          win. Same GET /api/run-agent?info=1 response the Model card above
+          reads; never a second, disagreeing source. */}
+      <div className="rounded-xl border border-white/10 p-4 bg-[#0f0f0f]">
+        <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Alternatives</p>
+        {infoError ? (
+          <p className="text-white/40 text-xs">{formatApiError(infoError, 'endpoint error')}</p>
+        ) : infoLoading && !info ? (
+          <p className="text-white/20 text-xs">Loading…</p>
+        ) : alternatives.length === 0 ? (
+          <p className="text-white/40 text-xs">none — this agent has no other binding to fall back to</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {alternatives.map((a, i) => (
+              <li key={`${a.label}-${i}`} className="text-xs leading-snug">
+                <span className="text-white/60 font-mono break-all">{a.label}</span>
+                <span className="text-white/30"> — {a.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Assigned issues */}

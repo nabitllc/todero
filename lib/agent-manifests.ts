@@ -109,6 +109,7 @@ export function manifestToQueueConfig(agent: VaultAgent): AgentQueueConfig {
       `${agent.description}`.trim(),
     modelChain,
     localFallbackModel,
+    preferred: agent.model.preferred || undefined,
     source: 'vault',
   }
 }

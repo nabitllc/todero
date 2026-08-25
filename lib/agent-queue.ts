@@ -70,6 +70,17 @@ export interface AgentQueueConfig {
    * dispatched anyway. Undefined for every agent defined in this file.
    */
   localFallbackModel?: string
+  /**
+   * agent-config-panel-truth piece: the manifest's raw `model.preferred`
+   * display name (e.g. "claude-opus-5") — never dispatched to directly (it
+   * is not a runtime binding, just a human-facing label), but named here so
+   * a caller building an honest "alternatives, and why each was not
+   * selected" list can say what it is and why it never runs, instead of
+   * either hiding it or — the defect this piece exists to fix — printing it
+   * as if it were the model that would actually be used. Undefined for
+   * every agent defined in this file (Todero's own lanes have no manifest).
+   */
+  preferred?: string
   /** 'todero' for every entry below; 'vault' for a config derived from a
    *  Brain2 manifest by lib/agent-manifests.ts. Read by callers that need to
    *  tell "one of our own lanes" apart from "a vault agent we made

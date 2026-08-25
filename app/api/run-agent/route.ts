@@ -19,6 +19,9 @@ import { isAgentPaused } from '@/lib/loop-breaker'
 import { checkDispatchCeilings } from '@/lib/agent-budget'
 import { exec } from 'child_process'
 import { getDefaultRuntime, getRuntimeByName, inspectRuntime, listRuntimes } from '@/lib/runtimes'
+import { mapModel } from '@/lib/runtimes/openai-api'
+import { fetchLiveModels, LLM_BASE_URL } from '@/lib/llm-provider'
+import type { ModelAlias } from '@/lib/agent-queue'
 import { isAlive } from '@/lib/runtimes/detached-spawn'
 import { recordSpawn } from '@/lib/runtimes/token-ledger'
 import { logAgentCost } from '@/lib/agent-cost-log'
@@ -1162,22 +1165,30 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: `Unknown agent: ${agentId}` }, { status: 400 })
     }
     const chainLength = config.modelChain?.length ?? 0
+
+    // agent-config-panel-truth piece: one probe of every registered runtime
+    // (priority + live availability + the sensor's own unavailableReason),
+    // reused below both to pick the winner AND to explain, by name, why every
+    // other chain entry lost — no separate per-binding inspectRuntime() calls
+    // whose reasons then had nowhere to go.
+    const runtimeList = await listRuntimes()
+    const runtimeByName = new Map(runtimeList.map(r => [r.name, r]))
+
     let resolvedRuntime: string
-    let modelAlias: string
+    let modelAlias: ModelAlias
+    let pickedIndex = -1
     if (config.modelChain && config.modelChain.length > 0) {
       // Walk the chain for the first binding whose runtime reports available —
       // mirrors the POST path's walk, but via the guard-free inspector.
-      let picked: { runtime: string; alias: string } | null = null
-      for (const binding of config.modelChain) {
-        const info = await inspectRuntime(binding.runtime)
-        if (info.available) {
-          picked = { runtime: info.runtime, alias: binding.alias }
+      for (let i = 0; i < config.modelChain.length; i++) {
+        if (runtimeByName.get(config.modelChain[i].runtime)?.available) {
+          pickedIndex = i
           break
         }
       }
-      if (picked) {
-        resolvedRuntime = picked.runtime
-        modelAlias = picked.alias
+      if (pickedIndex >= 0) {
+        resolvedRuntime = config.modelChain[pickedIndex].runtime
+        modelAlias = config.modelChain[pickedIndex].alias
       } else {
         const fallback = await inspectRuntime(null)
         resolvedRuntime = fallback.runtime
@@ -1188,10 +1199,68 @@ export async function GET(req: NextRequest) {
       resolvedRuntime = info.runtime
       modelAlias = config.model
     }
+
+    // The concrete id, not just the alias, when the winner is openai-api —
+    // the exact mapModel() call POST /api/run-agent's spawn path makes
+    // (modelOverride = config.localFallbackModel), against the SAME live
+    // ${LLM_BASE_URL}/models roster, so this read-only endpoint can never
+    // assert a model id the dispatcher would not actually spawn with. A
+    // vault agent's fallback_local that this host has never pulled comes
+    // back null here exactly as it would at dispatch time — reported by
+    // name below, never guessed at.
+    let resolvedModelId: string | null = null
+    let resolvedModelError: string | null = null
+    if (resolvedRuntime === 'openai-api') {
+      const mapped = await mapModel(modelAlias, config.localFallbackModel)
+      if (mapped) {
+        resolvedModelId = mapped
+      } else {
+        const live = await fetchLiveModels()
+        resolvedModelError = !live.ok
+          ? live.error
+          : live.models.length === 0
+            ? `${LLM_BASE_URL}/models returned no models — pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)`
+            : `none of ${[config.localFallbackModel, modelAlias].filter(Boolean).map(c => `"${c}"`).join(', ')} ` +
+              `match any id ${LLM_BASE_URL}/models reports (${live.models.map(m => m.id).join(', ') || 'none'})`
+      }
+    }
+
+    // Alternatives — every other binding in the chain, plus the manifest's
+    // `preferred` display name when this is a vault-backed agent, each
+    // explicitly labelled as not-selected with the reason. Never the AGENTS.md
+    // string, never `agent.model` — only what this same resolver walked past.
+    const alternatives: { label: string; reason: string }[] = []
+    if (config.modelChain) {
+      config.modelChain.forEach((binding, i) => {
+        if (i === pickedIndex) return
+        // The chain's openai-api entry IS the manifest's fallback_local model —
+        // label it as such so the reader can match it to the manifest field
+        // named in this piece, not just a bare runtime/alias pair.
+        const isFallbackLocal = binding.runtime === 'openai-api' && !!config.localFallbackModel
+        const label = isFallbackLocal ? `fallback_local ${config.localFallbackModel}` : `${binding.runtime} · ${binding.alias}`
+        const reason = pickedIndex >= 0 && i > pickedIndex
+          ? `not selected: ${resolvedRuntime} (priority ${runtimeByName.get(resolvedRuntime)?.priority ?? '?'}) is available and wins runtime selection`
+          : `not selected: ${runtimeByName.get(binding.runtime)?.unavailableReason ?? `${binding.runtime} is unavailable`}`
+        alternatives.push({ label, reason })
+      })
+    }
+    if (config.preferred) {
+      alternatives.push({
+        label: `preferred (manifest) ${config.preferred}`,
+        reason:
+          `not selected: "preferred" is the manifest's display name for this agent's tier, not a ` +
+          `dispatchable runtime binding — this agent dispatches via claude_code_alias "${config.model}" ` +
+          `(runtime claude-code) or fallback_local (runtime openai-api), never a raw preferred id`,
+      })
+    }
+
     return NextResponse.json({
       agent: agentId,
       resolvedRuntime,
       modelAlias,
+      resolvedModelId,
+      resolvedModelError,
+      alternatives,
       chainLength,
       dispatchEnabled: !dispatchDisabled(),
       vaultSync: { source: vaultSync.source, persisted: vaultSync.persisted, warning: vaultSync.warning },

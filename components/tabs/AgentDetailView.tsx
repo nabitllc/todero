@@ -9,7 +9,7 @@ import {
   Edit3, Save, Pause, Plus, Heart, Trash2
 } from 'lucide-react'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
-import { fetchJson, useApiData, type ApiError } from '@/hooks/useApiData'
+import { fetchJson, useApiData, formatApiError, type ApiError } from '@/hooks/useApiData'
 import { dbUrl } from '@/lib/db/browser'
 import { estimateModelRateUsd } from '@/lib/model-rates'
 import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
@@ -485,21 +485,46 @@ function SkillsTab({ agent }: { agent: Agent }) {
 
 // ── Tab: Configuration ────────────────────────────────────────────────────────
 //
-// Round 4 fix: this used to fetch /api/status and read `.agents.agents` off
-// it looking for a per-agent config row — but /api/status has no `agents`
-// key at all (it is a health/db/env envelope), so `config` was always null
-// and every row below silently fell back to an invented string: the vault
-// manifest's raw cloud `preferred` name printed directly under a badge that
-// had already been fixed to show the local/alias label, "See AGENTS.md
-// routing table" for a table AGENTS.md does not contain, and "Disabled" for
-// every agent regardless of whether it had ever actually heartbeat. Every
-// row here now comes from GET /api/agents (the same envelope the header
-// badge and the rest of the roster already trust), matched by id, with the
-// `agent` prop as the one-poll-older fallback while that fetch is in flight.
-function ConfigurationTab({ agent, localProviderConfigured }: { agent: Agent; localProviderConfigured: boolean }) {
+// agent-config-panel-truth piece (round 2): the model rows used to come from
+// `resolveVaultBadge()` (manifest flags) plus `localProviderConfigured` (an
+// env-URL heuristic — GET /api/agents' `localProviderConfigured` is only
+// "does LLM_BASE_URL's port look like Ollama's", not "which runtime actually
+// wins selection"). That let a local-eligible vault agent read "qwen2.5-
+// coder:14b — active" while the app's own dispatcher was about to spawn it
+// on claude-code/sonnet, and let a non-vault agent (`vault: null` — 29 of 42
+// roster ids) print AGENTS.md's static text with zero live provider context
+// at all (e.g. "Gemma 3 4B (Ollama)" for scout, a model this Ollama has never
+// pulled). Both rows now come from GET /api/run-agent?info=1&agent=<id> —
+// the SAME guard-free resolver (`inspectRuntime()` walking `modelChain`, then
+// `mapModel()` against the live `${LLM_BASE_URL}/models` roster when
+// openai-api wins) that POST /api/run-agent's real spawn path uses — for
+// every agent, vault-backed or not. A 4xx/5xx from that endpoint, or a null
+// `mapModel()` result, renders "not resolvable — <the endpoint's own
+// message>"; nothing here ever falls back to `agent.model`, AGENTS.md text,
+// or `localProviderConfigured`.
+interface RunAgentInfoAlternative {
+  label: string
+  reason: string
+}
+
+interface RunAgentInfo {
+  agent: string
+  resolvedRuntime: string
+  modelAlias: string
+  resolvedModelId: string | null
+  resolvedModelError: string | null
+  alternatives: RunAgentInfoAlternative[]
+  chainLength: number
+  dispatchEnabled: boolean
+}
+
+function ConfigurationTab({ agent }: { agent: Agent }) {
   const [row, setRow] = useState<Agent | null>(null)
   const [configError, setConfigError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
+  const [info, setInfo] = useState<RunAgentInfo | null>(null)
+  const [infoError, setInfoError] = useState<ApiError | null>(null)
+  const [infoLoading, setInfoLoading] = useState(true)
 
   useEffect(() => {
     setLoading(true)
@@ -514,12 +539,21 @@ function ConfigurationTab({ agent, localProviderConfigured }: { agent: Agent; lo
       })
   }, [agent.id])
 
+  useEffect(() => {
+    setInfoLoading(true)
+    fetchJson<RunAgentInfo>(`/api/run-agent?info=1&agent=${encodeURIComponent(agent.id)}`)
+      .then(r => {
+        if (!r.ok) { setInfoError(r.error); setInfo(null); setInfoLoading(false); return }
+        setInfoError(null)
+        setInfo(r.data)
+        setInfoLoading(false)
+      })
+  }, [agent.id])
+
   // Prefer the fresh /api/agents row; fall back to the prop this modal was
   // opened with (same shape, one poll older) while the fetch above is still
   // in flight or failed — never a fabricated intermediate value.
   const live: Agent = row ?? agent
-  const vault: VaultBadgeInfo | null = live.vault ?? null
-  const vaultBadge = vault ? resolveVaultBadge(vault, localProviderConfigured) : null
 
   // Same three states livenessLabel() already renders on the Dashboard tab,
   // plus the one case that is not a state at all: livenessSource === 'none'
@@ -527,35 +561,58 @@ function ConfigurationTab({ agent, localProviderConfigured }: { agent: Agent; lo
   // liveness claim — live, stale, idle, OR "Disabled" — can honestly be made.
   const heartbeatValue = live.livenessSource === 'none' ? 'not measured' : livenessLabel(live).text
 
-  const rows: { label: string; value: string | undefined }[] = [
-    { label: 'Default Model', value: vaultBadge ? vaultBadge.label : live.model },
-  ]
-
-  // A fallback model only exists for a vault-backed agent — AGENTS.md names
-  // no routing table for anyone else, so no other row invents one. Named
-  // from the manifest's own `fallback_local`, with the same local_eligible /
-  // localProviderConfigured gate resolveVaultBadge() uses, so this line
-  // never promises a route that would not actually be taken.
-  if (vault) {
-    const localNote = vault.localEligible
-      ? (localProviderConfigured
-          ? 'active — this host is configured for local routing'
-          : 'eligible per manifest, but this host has no local provider configured')
-      : 'not eligible for this agent (manifest local_eligible: false)'
-    rows.push({ label: 'Model (fallback)', value: `${vault.fallbackLocal} — ${localNote}` })
+  let wouldRunLabel: string
+  if (infoError) {
+    wouldRunLabel = `not resolvable — ${formatApiError(infoError, 'endpoint error')}`
+  } else if (infoLoading || !info) {
+    wouldRunLabel = 'Loading…'
+  } else if (info.resolvedRuntime === 'openai-api') {
+    wouldRunLabel = info.resolvedModelId
+      ? `openai-api · ${info.resolvedModelId}`
+      : `not resolvable — ${info.resolvedModelError ?? 'the endpoint gave no reason'}`
+  } else {
+    wouldRunLabel = `${info.resolvedRuntime} · ${info.modelAlias}`
   }
 
-  rows.push(
+  const alternatives = info?.alternatives ?? []
+
+  const otherRows: { label: string; value: string | undefined }[] = [
     { label: 'Heartbeat',  value: heartbeatValue },
     { label: 'Workspace',  value: live.workspace || '—' },
     { label: 'Agent ID',   value: live.id },
-  )
+  ]
 
   return (
     <div className="space-y-3">
       {configError && <ApiErrorBanner error={configError} />}
       {loading && !configError && <p className="text-white/20 text-xs">Loading…</p>}
-      {rows.map(r => (
+
+      <div className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
+        <p className="text-white/30 text-[10px] uppercase tracking-wider">Would run</p>
+        <p className="text-white/70 text-xs font-mono break-all">{wouldRunLabel}</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
+        <p className="text-white/30 text-[10px] uppercase tracking-wider">Alternatives</p>
+        {infoError ? (
+          <p className="text-white/40 text-xs">{formatApiError(infoError, 'endpoint error')}</p>
+        ) : infoLoading && !info ? (
+          <p className="text-white/20 text-xs">Loading…</p>
+        ) : alternatives.length === 0 ? (
+          <p className="text-white/40 text-xs">none — this agent has no other binding to fall back to</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {alternatives.map((a, i) => (
+              <li key={`${a.label}-${i}`} className="text-xs leading-snug">
+                <span className="text-white/60 font-mono break-all">{a.label}</span>
+                <span className="text-white/30"> — {a.reason}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {otherRows.map(r => (
         <div key={r.label} className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider">{r.label}</p>
           <p className="text-white/70 text-xs font-mono break-all">{r.value ?? '—'}</p>
@@ -1014,7 +1071,7 @@ export default function AgentDetailView({ agent, onClose, onRemoved, localProvid
           {activeTab === 'dashboard'     && <DashboardTab     agent={displayAgent} />}
           {activeTab === 'instructions'  && <InstructionsTab  agent={displayAgent} />}
           {activeTab === 'skills'        && <SkillsTab        agent={displayAgent} />}
-          {activeTab === 'configuration' && <ConfigurationTab agent={displayAgent} localProviderConfigured={localProviderConfigured} />}
+          {activeTab === 'configuration' && <ConfigurationTab agent={displayAgent} />}
           {activeTab === 'runs'          && <RunsTab          agent={displayAgent} />}
           {activeTab === 'budget'        && <BudgetTab        agent={displayAgent} />}
         </div>
