@@ -31,6 +31,21 @@ function getSessionCosts(sessionsPaths: string[]) {
   return { totalTokens, todayCost: +todayCost.toFixed(4) }
 }
 
+/**
+ * fetchLiveModels() returns one prose error string shaped differently per
+ * failure mode ("<url> is unreachable — <detail>" for a network failure,
+ * "<url>/models responded <status>: <text>" for a bad response). Pull out
+ * just the reason so the card can show the fixed `unreachable — <url> —
+ * <reason>` shape without repeating the URL twice.
+ */
+function reasonFrom(url: string, error: string): string {
+  const dash = error.lastIndexOf(' — ')
+  if (dash !== -1) return error.slice(dash + 3)
+  const prefix = `${url}/models `
+  if (error.startsWith(prefix)) return error.slice(prefix.length)
+  return error
+}
+
 /** Database size in bytes, or null when unavailable. Never throws. */
 async function dbSizeBytes(): Promise<number | null> {
   if (!isDbConfigured()) return null
@@ -126,17 +141,20 @@ export async function GET() {
   // this request — baseUrl and models come straight off the response, and a
   // failed probe names the URL and the exact reason rather than showing a
   // fabricated plan/balance for a vendor Todero doesn't use.
-  const localLlmResult = localLlmProbe.status === 'fulfilled' && localLlmProbe.value.ok
-    ? { baseUrl: LLM_BASE_URL, models: localLlmProbe.value.models.map(m => m.id), ok: true, error: null, lastChecked: now }
-    : {
-        baseUrl: LLM_BASE_URL,
-        models: [],
-        ok: false,
-        error: localLlmProbe.status === 'fulfilled'
-          ? `unreachable — ${LLM_BASE_URL} — ${localLlmProbe.value.error}`
-          : `unreachable — ${LLM_BASE_URL} — ${localLlmProbe.reason instanceof Error ? localLlmProbe.reason.message : String(localLlmProbe.reason)}`,
-        lastChecked: now,
-      }
+  let localLlmResult: { baseUrl: string; models: string[]; ok: boolean; error: string | null; lastChecked: string }
+  if (localLlmProbe.status === 'fulfilled' && localLlmProbe.value.ok) {
+    localLlmResult = { baseUrl: LLM_BASE_URL, models: localLlmProbe.value.models.map(m => m.id), ok: true, error: null, lastChecked: now }
+  } else {
+    let reason: string
+    if (localLlmProbe.status === 'fulfilled' && !localLlmProbe.value.ok) {
+      reason = reasonFrom(LLM_BASE_URL, localLlmProbe.value.error)
+    } else if (localLlmProbe.status === 'rejected') {
+      reason = localLlmProbe.reason instanceof Error ? localLlmProbe.reason.message : String(localLlmProbe.reason)
+    } else {
+      reason = 'unknown error'
+    }
+    localLlmResult = { baseUrl: LLM_BASE_URL, models: [], ok: false, error: `unreachable — ${LLM_BASE_URL} — ${reason}`, lastChecked: now }
+  }
 
   // --- Cloudflare tunnels ---
   const cloudflare = {
@@ -166,7 +184,7 @@ export async function GET() {
   // (a real deployments-API probe) is the source of truth for Vercel status.
   const vercel = null
 
-  const data = { supabase, openrouter: openrouterResult, cloudflare, discord, claude, vercel }
+  const data = { supabase, localLlm: localLlmResult, cloudflare, discord, claude, vercel }
   cache = { data, ts: Date.now() }
   return NextResponse.json(data)
 }

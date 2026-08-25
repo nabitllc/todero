@@ -470,7 +470,9 @@ export default function Home() {
     const open = agentIssueCounts[agentId] ?? 0
     const openSuffix = open > 0 ? ` · ${open} open issue${open > 1 ? 's' : ''}` : ''
     if (row?.liveness === 'live') {
-      return { dot: 'green', label: row.currentTask || agentRunsData[agentId]?.taskTitle || 'Heartbeat just now' }
+      // Deliberately NOT falling back to the newest agent_runs title: that row
+      // is hours old and never closed, so it described work that had finished.
+      return { dot: 'green', label: row.currentTask || 'Heartbeat just now' }
     }
     if (row?.liveness === 'stale') return { dot: 'amber', label: `Stale — last heartbeat ${seenAgo}${openSuffix}` }
     if (row?.liveness === 'idle')  return { dot: 'grey',  label: `Idle — last heartbeat ${seenAgo}${openSuffix}` }

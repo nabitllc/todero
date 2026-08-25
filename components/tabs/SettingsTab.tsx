@@ -13,7 +13,10 @@ import CostBreakdownTable from '@/components/CostBreakdownTable'
 
 interface UsageData {
   supabase: { dbBytes: number | null; dbLimitBytes: number; plan: string; lastChecked: string }
-  openrouter: { balance: number | null; limit: number | null; used: number | null; isFreeTier: boolean; lastChecked: string }
+  // Owner directive: no OpenRouter, no cloud LLM. This is a live read of
+  // ${LLM_BASE_URL}/models made fresh for the request — baseUrl/models come
+  // straight off that response, never a hardcoded roster or a fabricated plan.
+  localLlm: { baseUrl: string; models: string[]; ok: boolean; error: string | null; lastChecked: string }
   cloudflare: { kaos: { up: boolean; lastChecked: string } }
   discord: { connected: boolean; lastChecked: string }
   // TOD: kill-fake-infra-greens — no `plan`: this server cannot read the
@@ -260,19 +263,20 @@ export default function SettingsTab() {
             className="text-[10px] text-blue-400/70 hover:text-blue-400 mt-1 inline-block">claude.ai/settings</a>
         </ServiceCard>
 
-        {/* OpenRouter */}
-        <ServiceCard emoji="🌐" name="OpenRouter"
-          plan={data.openrouter.isFreeTier ? 'Free Tier' : 'Pay-as-you-go'}
-          status={data.openrouter.balance != null ? (data.openrouter.balance <= 1 ? 'warning' : 'active') : 'idle'}
-          statusLabel={data.openrouter.balance != null ? `$${data.openrouter.balance.toFixed(2)} remaining` : 'Unknown'}
-          lastChecked={data.openrouter.lastChecked}>
-          {data.openrouter.balance != null && data.openrouter.limit != null ? (
-            <>
-              <div className="text-xs text-white/60">${data.openrouter.used?.toFixed(2) ?? '0'} used / ${data.openrouter.limit.toFixed(2)} limit</div>
-              <UsageBar value={data.openrouter.used ?? 0} max={data.openrouter.limit} label="Credits" />
-            </>
+        {/* Local LLM — owner directive: no OpenRouter, no cloud LLM. Every
+            field below is a live read of ${LLM_BASE_URL}/models made for
+            this request. On failure there is nothing measured to caption or
+            timestamp — no plan string, no "checked Ns ago" — just the URL
+            and the reason it didn't answer. */}
+        <ServiceCard emoji="🖥️" name="Local LLM"
+          plan={data.localLlm.ok ? data.localLlm.baseUrl : ''}
+          status={data.localLlm.ok ? 'active' : 'error'}
+          statusLabel={data.localLlm.ok ? `${data.localLlm.models.length} model${data.localLlm.models.length === 1 ? '' : 's'}` : 'Unreachable'}
+          lastChecked={data.localLlm.ok ? data.localLlm.lastChecked : undefined}>
+          {data.localLlm.ok ? (
+            <div className="text-xs text-white/60">{data.localLlm.models.length > 0 ? data.localLlm.models.join(', ') : 'reachable but no models pulled'}</div>
           ) : (
-            <div className="text-xs text-white/60">{data.openrouter.balance != null ? `$${data.openrouter.balance.toFixed(2)} remaining` : 'Balance unavailable'}</div>
+            <div className="text-xs text-red-400/80">{data.localLlm.error}</div>
           )}
         </ServiceCard>
 

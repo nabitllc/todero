@@ -127,8 +127,8 @@ function emptyRunState(): RunState {
  * `ops` fires at :00/:30 of every hour — a rule invented in this file, never
  * read from anything a scheduler on the host actually promised. On a host
  * where `ops` was idle it rendered a live ticking countdown on the Overview
- * to a run nothing had scheduled, in the same class as the ALL_AGENTS
- * fallback this route was already rewritten to stop doing.
+ * to a run nothing had scheduled — the same class of invented state this
+ * route was already rewritten to stop returning for the roster itself.
  *
  * /api/automations is the one place this codebase has already earned the
  * right to say "a job is really scheduled": it only sets `scheduled: true`
@@ -259,7 +259,10 @@ function buildAgents(
       sessions: 0,
       ago: agoMin,
       lastUpdatedAt: lastTs,
-      currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : null,
+      // The assigned issue if there is one, else whatever the agent named in
+      // its own last heartbeat. Both are things somebody stated; neither is
+      // inferred from a run row that was never closed.
+      currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : beat?.task ?? null,
       workStartedAt: issue?.startedAt ?? null,
       // Where id/name/role/model came from, so the UI never implies a roster
       // file exists when it does not. Also on the envelope; kept per-row for

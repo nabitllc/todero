@@ -133,7 +133,12 @@ export default function AgentsTab({
                         {displayAgents[0].modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{displayAgents[0].modelShort}</span>}
                       </div>
                       <p className="text-white/50 text-xs">{displayAgents[0].role}</p>
-                      {agentRunsData[displayAgents[0].id]?.status === 'running' && (
+                      {/* "On duty" is a claim that this agent is running NOW. It used to
+                          come from the newest agent_runs row still marked 'running' —
+                          a record that is never cleared when a process dies, so agents
+                          wore the badge for hours after they stopped. It now follows
+                          the same heartbeat everything else does. */}
+                      {displayAgents[0].liveness === 'live' && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium mt-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                           On duty
@@ -190,7 +195,7 @@ export default function AgentsTab({
                           {a.modelShort && <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/50">{a.modelShort}</span>}
                         </div>
                         <p className="text-white/50 text-xs truncate">{a.role}</p>
-                        {agentRunsData[a.id]?.status === 'running' && (
+                        {a.liveness === 'live' && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-medium mt-0.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                             On duty

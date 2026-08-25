@@ -39,13 +39,19 @@ export async function PATCH(req: NextRequest) {
   // counts as this AGENT's liveness. Agents already call this endpoint every
   // ~5 min while working; before this, none of that traffic reached the agent
   // roster, which is why /api/agents could only ever guess who was running.
-  const ownerLookup = db.from('issues').select('task_key, assignee, worked_by')
+  const WORKING_STATUSES = ['in_progress', 'code_review', 'refined', 'approved', 'released']
+  const ownerLookup = db.from('issues').select('task_key, status, assignee, worked_by')
   const { data: ownerRows } = await (issue_id
     ? ownerLookup.eq('id', issue_id)
     : ownerLookup.eq('task_key', task_key as string)
   ).limit(1)
   const ownerRow = Array.isArray(ownerRows) ? ownerRows[0] : null
-  const owner: string | null = ownerRow?.worked_by || ownerRow?.assignee || null
+  // Only an issue in a working status counts as evidence that its owner is
+  // running. Beating for an owner of a backlog row would put a green dot on an
+  // agent nobody started — the exact kind of invented liveness this replaced.
+  const owner: string | null = ownerRow && WORKING_STATUSES.includes(ownerRow.status)
+    ? (ownerRow.worked_by || ownerRow.assignee || null)
+    : null
 
   let query = db.from('issues').update({ heartbeat_at: now })
 
@@ -61,7 +67,7 @@ export async function PATCH(req: NextRequest) {
   // - po works on 'refined'
   // - deployer works on 'approved'
   // - auditor works on 'released'
-  const { error } = await query.in('status', ['in_progress', 'code_review', 'refined', 'approved', 'released'])
+  const { error } = await query.in('status', WORKING_STATUSES)
 
   if (error) {
     return dbQueryErrorResponse(error, 'issues')
