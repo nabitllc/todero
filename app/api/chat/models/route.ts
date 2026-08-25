@@ -12,7 +12,7 @@ import { LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels } from '@/lib/llm-prov
 export const runtime = 'nodejs'
 
 export async function GET() {
-  const live = await fetchLiveModels()
+  const live = await fetchLiveModels(5000, { includeContextLength: true })
   if (!live.ok) {
     return NextResponse.json({ error: live.error, base_url: LLM_BASE_URL }, { status: 502 })
   }

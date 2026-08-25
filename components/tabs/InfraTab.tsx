@@ -116,20 +116,6 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
               })
             }, [reload])
             const ls = liveStatus
-            // OpenRouter numbers are real only when /api/status actually reached
-            // OpenRouter this request. No fallback dollar figures — an unconnected
-            // account showing "$9.57 remaining" is exactly the fabrication this
-            // tab used to run on.
-            const orConnected = !!ls?.openrouter
-            // TOD: kill-fake-infra-greens — OpenRouter reports limit:null for
-            // any pay-as-you-go key. That must stay null through the UI, not
-            // get coerced to 0/10 — a coerced 0 would render "$X.XX / $0.00"
-            // and a coerced 10 would resurrect the fabricated "$9.57 / $10.00"
-            // this tab was rebuilt to stop showing.
-            const orLimit: number | null = typeof ls?.openrouter?.limit === 'number' ? ls.openrouter.limit : null
-            const orRemaining: number | null = typeof ls?.openrouter?.remaining === 'number' ? ls.openrouter.remaining : null
-            const orUsed = ls?.openrouter?.used ?? 0
-            const orPct = orLimit !== null && orLimit > 0 ? Math.min(100, Math.round((orUsed / orLimit) * 100)) : 0
             const usageCost = ls?.usage?.totalCost ?? 0
             const usageTokens = ls?.usage?.totalTokens ?? 0
             const usageByModel: Record<string,number> = ls?.usage?.byModel ?? {}
@@ -181,7 +167,6 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
             const services: Record<string, ServiceReading> = ls?.services ?? {}
             const SERVICE_TILES: Array<{ key: string; name: string }> = [
               { key: 'claude',      name: 'Claude Max' },
-              { key: 'openrouter',  name: 'OpenRouter' },
               { key: 'telegram',    name: 'Telegram' },
               { key: 'discord',     name: 'Discord' },
               { key: 'ollama',      name: 'Ollama' },
@@ -478,48 +463,6 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                         </div>
                       </div>
                     ))}
-                  </div>
-                )}
-              </div>
-
-              <SH icon="💳">OpenRouter Balance</SH>
-              <div className="rounded-2xl border border-white/10 p-5" style={{background:'#0f0f0f'}}>
-                {/* TOD: kill-fake-infra-greens — this card used to show
-                    "$9.57 / $10.00" on a host with no OpenRouter key at all.
-                    It now only shows numbers /api/status actually fetched. */}
-                {orConnected ? (
-                  <>
-                    <div className="flex items-end justify-between mb-3">
-                      <div>
-                        <p className="text-white/50 text-xs mb-1">Monthly credit</p>
-                        <div className="flex items-baseline gap-2">
-                          {/* TOD: kill-fake-infra-greens — OpenRouter reports
-                              limit:null for pay-as-you-go keys (the common
-                              case). No limit means no denominator and no
-                              progress bar to fill against — showing "/ $0.00"
-                              or a fabricated ceiling is exactly the
-                              "$9.57 / $10.00" this tab was rebuilt to stop
-                              showing. */}
-                          {orLimit === null ? (
-                            <span className="text-3xl font-bold text-white">${orUsed.toFixed(2)}</span>
-                          ) : (
-                            <>
-                              <span className="text-3xl font-bold text-white">${(orRemaining ?? 0).toFixed(2)}</span>
-                              <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-white/30 text-xs">
-                        {orLimit === null ? '$' + orUsed.toFixed(3) + ' used · no credit limit set on this key' : `$${orUsed.toFixed(3)} used · resets monthly`}
-                      </p>
-                    </div>
-                    {orLimit !== null && <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />}
-                  </>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Dot status="unknown" />
-                    <p className="text-white/30 text-xs">Not connected — no OPENROUTER_API_KEY configured on this host.</p>
                   </div>
                 )}
               </div>

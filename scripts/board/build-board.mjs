@@ -35,6 +35,7 @@ const tok = (t) => (t >= 1e6 ? (t / 1e6).toFixed(2) + 'M' : t >= 1e3 ? Math.roun
 
 const waves = JSON.parse(await readFile(join(here, 'waves.json'), 'utf8'))
 const channels = JSON.parse(await readFile(join(here, 'channels.json'), 'utf8'))
+const decisions = JSON.parse(await readFile(join(here, 'decisions.json'), 'utf8'))
 
 // ── live harness ────────────────────────────────────────────────────────────
 let harness = { passed: 0, total: 0, score: 0, criticalFailed: 0, results: [] }
@@ -116,6 +117,19 @@ const groups = Object.entries(byPiece).map(([piece, rows]) => {
           ${rows.map(r => `<div class="chk ${r.ok ? 'ok' : r.critical ? 'crit' : 'warn'}"><span class="cid">${esc(r.id)}</span><span class="cdet">${esc(r.detail)}</span></div>`).join('\n          ')}
         </details>`
 }).join('\n')
+
+const openCount = decisions.decisions.filter(d => d.status === 'recommended').length
+const decisionBlocks = decisions.decisions.map(d => `      <div class="dec ${d.status}" id="dec-${d.id}">
+        <div class="dhead"><span class="dtitle">${esc(d.title)}</span><span class="chip ${d.status === 'recommended' ? 'building' : 'cleared'}">${d.status === 'recommended' ? 'awaiting you' : esc(d.status)}</span></div>
+        <div class="dq">${esc(d.question)}</div>
+        <div class="drec"><span class="dlab">Recommendation</span>${d.recommendation}</div>
+        <div class="dwhy">${esc(d.why)}</div>
+        <div class="dgrid">
+          <div><span class="dlab">Tradeoff</span>${esc(d.tradeoff)}</div>
+          <div><span class="dlab">What changes</span>${d.changes}</div>
+        </div>
+        <div class="dpat">${esc(d.pattern)}</div>
+      </div>`).join('\n')
 
 // ── page ────────────────────────────────────────────────────────────────────
 const html = `<title>Todero Flight Board</title>
@@ -232,6 +246,18 @@ section{margin-top:42px;scroll-margin-top:16px}
 .chk.crit .cid{color:var(--nogo)}
 .cdet{color:var(--ink3);word-break:break-word}
 
+.dec{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--wip);border-radius:5px;padding:15px 17px;margin-top:13px;display:flex;flex-direction:column;gap:9px;box-shadow:var(--sh)}
+.dec.accepted{border-left-color:var(--go)}
+.dhead{display:flex;align-items:baseline;gap:10px}
+.dtitle{font-family:"IBM Plex Sans Condensed",sans-serif;font-size:18px;font-weight:700}
+.dq{font-size:13px;color:var(--ink3);font-style:italic}
+.dlab{display:block;font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin-bottom:3px}
+.drec{font-size:14px;color:var(--ink);line-height:1.55;background:var(--panel2);border-radius:4px;padding:10px 12px}
+.dwhy{font-size:13px;color:var(--ink2);line-height:1.6;max-width:78ch}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:2px}
+@media(max-width:640px){.dgrid{grid-template-columns:1fr}}
+.dgrid div{font-size:12.5px;color:var(--ink2);line-height:1.55}
+.dpat{font-size:12px;color:var(--ink3);border-top:1px solid var(--soft);padding-top:8px}
 .method{background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:16px 19px;margin-top:14px;max-width:80ch}
 .method p{margin:9px 0;font-size:13.5px;color:var(--ink2);line-height:1.6}
 .method p:first-child{margin-top:0}
@@ -260,6 +286,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <a href="#waves">Waves<i>${waves.waves.length} run</i></a>
   <a href="#next">What's next<i>${waves.planned.length} queued</i></a>
   <a href="#harness">Harness<i>${harness.passed}/${harness.total}</i></a>
+  <a href="#decisions">Decisions<i>${openCount} open</i></a>
   <a href="#method">Method</a>
   <a href="#ledger">Ledger<i>~${money(T.cost)}</i></a>
 </nav>
@@ -290,6 +317,12 @@ ${plannedBlocks}
   <div style="margin-top:6px">
 ${groups}
   </div>
+</section>
+
+<section id="decisions">
+  <div class="shead"><h2>Decisions</h2><div class="note">${openCount} awaiting your veto</div></div>
+  <p class="lede">Design calls I have made rather than asked about, so the work can continue — each with the reasoning and the tradeoff, so you can overrule one cheaply. A decision that lands changes the design canvas too; the two must never disagree.</p>
+${decisionBlocks}
 </section>
 
 <section id="method">

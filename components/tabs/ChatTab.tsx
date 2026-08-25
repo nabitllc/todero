@@ -262,7 +262,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // hardcoded vendor list: whatever is actually pulled on this host is what
   // shows up here, and a failed load is shown as an explicit error naming
   // the URL that failed, not silently swallowed into an empty dropdown.
-  const [liveModels, setLiveModels] = useState<{ id: string }[]>([])
+  const [liveModels, setLiveModels] = useState<{ id: string; contextLength?: number }[]>([])
   const [defaultModelId, setDefaultModelId] = useState<string | null>(null)
   const [modelsError, setModelsError] = useState<ApiError | null>(null)
   const [modelsLoading, setModelsLoading] = useState(true)
@@ -422,7 +422,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // visible error naming the URL, not an empty/frozen select.
   const loadLiveModels = useCallback(() => {
     setModelsLoading(true)
-    fetchJson<{ base_url: string; default_model: string | null; models: { id: string }[] }>('/api/chat/models')
+    fetchJson<{ base_url: string; default_model: string | null; models: { id: string; contextLength?: number }[] }>('/api/chat/models')
       .then(res => {
         if (!res.ok) {
           setModelsError(res.error)
@@ -656,7 +656,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const newChat = async () => {
     const id = 'chat-' + Date.now()
     const conv: ChatConversation = {
-      id, title: 'New Chat', model: 'kaos', messages: [],
+      id, title: 'New Chat', model: resolvedModelId, messages: [],
       createdAt: Date.now(), updatedAt: Date.now(),
       pinned: false, project: null, agent_id: selectedAgent, system_prompt: null,
     }
@@ -665,7 +665,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     await fetch('/api/chat/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, title: 'New Chat', model: 'kaos', agent_id: selectedAgent }),
+      body: JSON.stringify({ id, title: 'New Chat', model: resolvedModelId, agent_id: selectedAgent }),
     })
   }
 
@@ -686,12 +686,10 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       await clearChat(activeConv.id)
     } else if (cmd === '/status') {
       const mdl = agentModelLabel
-      const tokEst = activeConv ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4) : 0
-      const tokLabel = tokEst >= 1000 ? `~${(tokEst/1000).toFixed(1)}k / 200k tokens` : `~${tokEst} / 200k tokens`
       const statusMsg: ChatMessage = {
         id: 'status-' + Date.now(),
         role: 'assistant',
-        content: `**Session Status**\n- Session key: \`mc-chat-${activeConv.id}\`\n- Agent: ${selectedAgent} (${currentAgent.label})\n- Model: ${mdl}\n- Messages: ${activeConv.messages.length}\n- Est. tokens: ${tokLabel}\n- Pinned: ${activeConv.pinned ? 'yes' : 'no'}\n- Project: ${activeConv.project || 'none'}`,
+        content: `**Session Status**\n- Session key: \`mc-chat-${activeConv.id}\`\n- Agent: ${selectedAgent} (${currentAgent.label})\n- Model: ${mdl}\n- Messages: ${activeConv.messages.length}\n- Est. tokens: ${contextTokenLabel}\n- Pinned: ${activeConv.pinned ? 'yes' : 'no'}\n- Project: ${activeConv.project || 'none'}`,
         ts: Date.now(),
       }
       setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, statusMsg] } : c))
@@ -812,14 +810,35 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
         c.title.toLowerCase().includes(search.toLowerCase())
       )
 
+  // The literal model id that will actually receive this request — same
+  // resolution /api/chat itself does (override, else the live default) —
+  // for storing as provenance on conversations/messages, and for looking up
+  // that model's own measured context window below.
+  const resolvedModelId = selectedModel !== 'default' ? selectedModel : (defaultModelId || 'unknown')
+  // TOD: local-model-only chat context — no hardcoded context ceiling. This
+  // comes only from /api/chat/models, which reads it live off Ollama's own
+  // /api/show for the selected model. undefined means the endpoint didn't
+  // report one — render "unknown", not a guessed number.
+  const activeContextLength = liveModels.find(m => m.id === resolvedModelId)?.contextLength
+
   // Feature 15: context budget
+  // TOD: local-model-only chat context — thresholds are percentages of the
+  // model's own measured window (activeContextLength, from /api/show), not
+  // a flat token count calibrated against a vendor ceiling nobody measured.
+  // When the endpoint reports no context length, there is no denominator
+  // and no safe threshold to color against — render the estimate plain,
+  // never a fake fraction.
   const contextTokenEstimate = activeConv
     ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4)
     : 0
-  const contextTokenColor = contextTokenEstimate > 150000 ? 'text-red-500' : contextTokenEstimate > 50000 ? 'text-yellow-500' : 'text-white/30'
-  const contextTokenLabel = contextTokenEstimate >= 1000
-    ? `~${(contextTokenEstimate / 1000).toFixed(1)}k / 200k tokens`
-    : `~${contextTokenEstimate} / 200k tokens`
+  const contextUsagePct = activeContextLength ? contextTokenEstimate / activeContextLength : null
+  const contextTokenColor = contextUsagePct === null
+    ? 'text-white/30'
+    : contextUsagePct > 0.85 ? 'text-red-500' : contextUsagePct > 0.6 ? 'text-yellow-500' : 'text-white/30'
+  const formatTok = (n: number) => n >= 1000 ? `~${(n / 1000).toFixed(1)}k` : `~${n}`
+  const contextTokenLabel = activeContextLength
+    ? `${formatTok(contextTokenEstimate)} / ${formatTok(activeContextLength)} tokens`
+    : `${formatTok(contextTokenEstimate)} tokens (context size unknown)`
 
   // Cmd+K / arrow-key nav wired up after helpers defined (see below)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -964,7 +983,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
         id: streamMsgId,
         role: 'assistant',
         content: '',
-        model: 'kaos',
+        model: resolvedModelId,
         ts: Date.now(),
         agent_id: selectedAgent,
       }

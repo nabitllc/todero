@@ -6,6 +6,7 @@ import { Users } from 'lucide-react'
 import AgentDetailView from '@/components/tabs/AgentDetailView'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import type { ApiError } from '@/hooks/useApiData'
+import type { AgentRunStatus } from '@/hooks/useAgentStatus'
 
 function formatAgo(ms: number): string {
   const sec = Math.floor(ms / 1000)
@@ -18,13 +19,13 @@ function formatAgo(ms: number): string {
   return `${d}d ${h % 24}h ago`
 }
 
-function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>): string {
+function lastActiveLabel(agentId: string, runsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>): string {
   const ar = runsData[agentId]
   if (!ar?.startedAt) return 'never'
   const started = new Date(ar.startedAt).getTime()
   if (Number.isNaN(started)) return 'unknown'
   const diff = Date.now() - started
-  if (ar.status === 'running' && diff < 30 * 60_000) return 'active now'
+  if (ar.status === 'live' && diff < 30 * 60_000) return 'active now'
   return formatAgo(diff)
 }
 
@@ -48,7 +49,7 @@ export default function AgentsTab({
 }: {
   displayAgents: any[]
   agentLiveStatus: (agentId: string) => { dot: 'green'|'amber'|'grey'; label: string }
-  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>
+  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>
   liveAgents: any[] | null
   /** Envelope metadata from /api/agents. Optional so older call sites still compile. */
   rosterMeta?: RosterMeta | null

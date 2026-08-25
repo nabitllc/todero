@@ -10,6 +10,7 @@ import { Users, ShieldCheck, Eye, UserCog, Plus, Trash2, RefreshCw, AlertCircle 
 import AgentsTab, { type RosterMeta } from '@/components/tabs/AgentsTab'
 import MemberDetailView from '@/components/tabs/MemberDetailView'
 import type { WorkspaceMember } from '@/lib/rbac-types'
+import type { AgentRunStatus } from '@/hooks/useAgentStatus'
 
 // ── Role badges ───────────────────────────────────────────────────────────────
 
@@ -222,7 +223,7 @@ export default function CrewTab({
   currentIdentity: string | null
   displayAgents: any[]
   agentLiveStatus: (agentId: string) => { dot: 'green' | 'amber' | 'grey'; label: string }
-  agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: string }>
+  agentRunsData: Record<string, { taskTitle: string; startedAt: string | null; status: AgentRunStatus }>
   liveAgents: any[] | null
   /** Roster provenance from the /api/agents envelope — survives an empty roster. */
   rosterMeta?: RosterMeta | null

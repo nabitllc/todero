@@ -4,10 +4,10 @@ import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import AgentOffice from '@/components/AgentOffice'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
-import { runLiveness } from '@/hooks/useAgentStatus'
+import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
 import { formatElapsed } from '@/components/office/officeDrawing'
 
-function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}> }) {
+function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}> }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
   const [runs, setRuns] = useState<any[]>([])
   const [runsError, setRunsError] = useState<ApiError | null>(null)
@@ -160,7 +160,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
 export default function OfficeTab({
   agentRunsData,
 }: {
-  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}>
+  agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>
 }) {
   return (
             <div className="h-[calc(100vh-88px)] -mx-6 -my-5 relative">

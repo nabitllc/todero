@@ -36,7 +36,6 @@ const STATUS_COLOR: Record<ServiceState, { dot: string; badge: string; label: st
 
 const PROVIDER_TILES: Array<{ key: string; name: string; icon: string }> = [
   { key: 'claude', name: 'Claude (Anthropic)', icon: '🧠' },
-  { key: 'openrouter', name: 'OpenRouter', icon: '🔀' },
   { key: 'ollama', name: 'Ollama (local)', icon: '🦙' },
   { key: 'supabase', name: 'Supabase', icon: '🗄️' },
   { key: 'vercel', name: 'Vercel', icon: '▲' },
@@ -59,7 +58,6 @@ function buildProviders(data: Record<string, unknown> | null): ProviderCard[] {
   if (!data) return []
   const services = (data.services as Record<string, ServiceReading> | undefined) ?? {}
   const usage = data.usage as { totalCost?: number; totalTokens?: number } | null
-  const openrouter = data.openrouter as { used?: number } | null
 
   return PROVIDER_TILES.map(({ key, name, icon }) => {
     const svc = services[key]
@@ -75,9 +73,6 @@ function buildProviders(data: Record<string, unknown> | null): ProviderCard[] {
     if (key === 'claude' && usage) {
       card.cost = usage.totalCost != null ? `$${usage.totalCost.toFixed(3)} all-time` : undefined
       card.tokens = usage.totalTokens ? `${(usage.totalTokens / 1000).toFixed(0)}K tokens` : undefined
-    }
-    if (key === 'openrouter' && openrouter?.used != null) {
-      card.cost = `$${openrouter.used.toFixed(3)} used`
     }
     return card
   })

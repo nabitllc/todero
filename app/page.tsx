@@ -40,6 +40,7 @@ import HubSwitcher from '@/components/HubSwitcher'
 import InboxDrawer from '@/components/InboxDrawer'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
+import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
 
 const LUCIDE_ICONS: Record<string, any> = {
   overview: LayoutDashboard, activity: Activity, team: Users, calendar: CalendarDays,
@@ -271,7 +272,11 @@ export default function Home() {
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
   const [calendarIssues, setCalendarIssues] = useState<any[] | null>(null)
-  const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:string}>>({})
+  // `status` here is a *liveness* value (see runLiveness in hooks/useAgentStatus.ts),
+  // never the raw agent_runs.status column. An orphaned `running` row (process
+  // died without reporting) must read as 'stale', not 'live' — every consumer
+  // of this state (TopBar, AgentsTab, OfficeTab) relies on that.
+  const [agentRunsData, setAgentRunsData] = useState<Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}>>({})
   const [agentIssueCounts, setAgentIssueCounts] = useState<Record<string, number>>({})
 
   // Read mc-role cookie (not httpOnly — accessible to JS) for RBAC-aware UI
@@ -325,16 +330,29 @@ export default function Home() {
         if (!res.ok) { addGlobalToast(formatApiError(res.error, 'agent runs unavailable'), TOAST_COLORS.error); return }
         const rows = res.data
         if (!Array.isArray(rows)) return
-        const byAgent: Record<string, {taskTitle:string; startedAt:string|null; status:string}> = {}
-        for (const r of rows) { if (!byAgent[r.agent_id]) byAgent[r.agent_id] = { taskTitle: (r.task_title || '').slice(0, 40), startedAt: r.started_at, status: r.status } }
-        for (const [agentId, info] of Object.entries(byAgent)) {
+        // Two views of the same latest-row-per-agent data: `rawStatusByAgent`
+        // is the literal agent_runs.status column, used only to decide which
+        // toast to fire on a transition (started/done/error). `byAgent` is
+        // what every other consumer reads, and it must never carry an
+        // unclosed 'running' row as if it were live — it goes through
+        // runLiveness() (hooks/useAgentStatus.ts), the same rule the office
+        // canvas and AgentsTab use, so nothing here can disagree with them.
+        const byAgent: Record<string, {taskTitle:string; startedAt:string|null; status:AgentRunStatus}> = {}
+        const rawStatusByAgent: Record<string, string> = {}
+        for (const r of rows) {
+          if (byAgent[r.agent_id]) continue
+          byAgent[r.agent_id] = { taskTitle: (r.task_title || '').slice(0, 40), startedAt: r.started_at, status: runLiveness(r) }
+          rawStatusByAgent[r.agent_id] = r.status
+        }
+        for (const [agentId, rawStatus] of Object.entries(rawStatusByAgent)) {
           const prev = prevRunsRef.current[agentId]; const e = AGENT_EMOJI[agentId] || '🤖'
-          if (prev && prev !== info.status) {
-            if (info.status === 'running') addGlobalToast(`${e} ${agentId} started: ${info.taskTitle}`, TOAST_COLORS.started)
-            else if (info.status === 'completed' || info.status === 'done') addGlobalToast(`${e} ${agentId} done: ${info.taskTitle}`, TOAST_COLORS.done)
-            else if (info.status === 'error') addGlobalToast(`${e} ${agentId} error: ${info.taskTitle}`, TOAST_COLORS.error)
+          const info = byAgent[agentId]
+          if (prev && prev !== rawStatus) {
+            if (rawStatus === 'running') addGlobalToast(`${e} ${agentId} started: ${info.taskTitle}`, TOAST_COLORS.started)
+            else if (rawStatus === 'completed' || rawStatus === 'done') addGlobalToast(`${e} ${agentId} done: ${info.taskTitle}`, TOAST_COLORS.done)
+            else if (rawStatus === 'error') addGlobalToast(`${e} ${agentId} error: ${info.taskTitle}`, TOAST_COLORS.error)
           }
-          prevRunsRef.current[agentId] = info.status
+          prevRunsRef.current[agentId] = rawStatus
         }
         setAgentRunsData(byAgent)
       })
@@ -582,7 +600,8 @@ export default function Home() {
           selectedBusiness={selectedBusiness}
           onSearchOpen={() => setSearchOpen(true)}
           onNavigate={navigate}
-          agentRunsData={agentRunsData}
+          liveAgents={liveAgents}
+          agentsError={agentsError}
           unreadChat={unreadChat}
           inboxPendingCount={inboxPendingCount}
           onOpenInbox={() => setInboxOpen(true)}

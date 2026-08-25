@@ -1,0 +1,27 @@
+{
+  "note": "Open design decisions the owner should be able to veto. Each carries a recommendation, not a menu — status is 'recommended' until Michael accepts or rejects it. A decision that lands changes the design canvas too; the two must never disagree.",
+  "decisions": [
+    {
+      "id": "infra-placement",
+      "title": "Infra",
+      "status": "recommended",
+      "question": "Own destination, folded into Settings, or something else?",
+      "recommendation": "Split it. The <b>signal</b> — is anything degraded right now — becomes a permanent one-line strip on Now. The <b>detail</b> — service list, deploy history, breaker controls, host facts — lives in Settings.",
+      "why": "Infra is checked reactively, when something already feels wrong. A tab makes you go look; a strip answers \"is anything wrong\" without the trip, and only earns your attention when the answer is yes. Folding the whole thing into Settings, which is what the canvas currently shows, buries the half you would actually use.",
+      "tradeoff": "If you find yourself opening Infra several times a day rather than reacting to it, the strip is too thin and it deserves its own destination. You use it more than I do — this is the call I am least sure of.",
+      "changes": "Nav stays at the same count. Now gains a status strip. Settings gains an Infra section.",
+      "pattern": "Same split-not-move applied to Calendar (due dates → Work, job timing → Settings) and Activity (feed → Now, drill-down → Runs)."
+    },
+    {
+      "id": "chat-surface",
+      "title": "Chat",
+      "status": "recommended",
+      "question": "A destination you navigate to, or an overlay you open over whatever you are looking at?",
+      "recommendation": "Make it an <b>overlay</b>, opened from anywhere with a keyboard shortcut and a persistent affordance, carrying the current screen as context. It leaves the tab list.",
+      "why": "You ask about the thing you are looking at. As a tab, asking means leaving that thing — you lose the issue, the run, the agent you were mid-thought on, and have to describe it from memory instead of pointing at it. An overlay keeps the context and can pass it to the model automatically.",
+      "tradeoff": "Chat has real furniture — conversation history, fork, export, slash commands, an agent selector. Some of that is awkward in an overlay and wants a full screen. Mitigation: the overlay expands to full screen on demand, so the history lives somewhere without costing a permanent nav slot.",
+      "changes": "The nav drops from seven destinations to <b>six</b>. On the phone the bottom bar becomes Now / Work / Fleet / Runs / More, with Chat as a floating affordance instead of a slot.",
+      "pattern": "This revises the design canvas, which currently draws Chat as the sixth tab."
+    }
+  ]
+}

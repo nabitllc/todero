@@ -19,8 +19,8 @@
 
   <div style="display:flex;flex-direction:column;gap:8px">
     <div class="mono" style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.45)">Todero · target information architecture</div>
-    <h1 style="margin:0;font-size:30px;font-weight:700;color:#fff;letter-spacing:-.01em">Twenty tabs become seven</h1>
-    <p style="margin:0;font-size:14px;line-height:1.6;color:rgba(255,255,255,.6);max-width:74ch">The current nav is an inherited list, not a structure — it grew tab by tab from the OpenClaw lineage. Seven destinations, each answering one question an operator actually asks.</p>
+    <h1 style="margin:0;font-size:30px;font-weight:700;color:#fff;letter-spacing:-.01em">Twenty tabs become six</h1>
+    <p style="margin:0;font-size:14px;line-height:1.6;color:rgba(255,255,255,.6);max-width:74ch">The current nav is an inherited list, not a structure — it grew tab by tab from the OpenClaw lineage. Six destinations, each answering one question an operator actually asks, plus Chat as an overlay you open over any of them.</p>
   </div>
 
   <div style="display:grid;grid-template-columns:300px 1fr;gap:28px;align-items:start">
@@ -58,11 +58,6 @@
         <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Memory</span>
       </div>
 
-      <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"></path></svg>
-        <span style="font-size:14px;color:rgba(255,255,255,.8);flex-grow:1">Chat</span>
-        <span class="mono" style="font-size:10px;color:rgba(255,255,255,.4)">qwen 14b</span>
-      </div>
 
       <div style="display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:8px">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V7a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"></path></svg>
@@ -70,6 +65,12 @@
       </div>
 
       <div style="height:1px;background:rgba(255,255,255,.08);margin:12px 6px"></div>
+      <div style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;border:1px dashed rgba(255,255,255,.16)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.8" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"></path></svg>
+        <span style="font-size:13px;color:rgba(255,255,255,.62);flex-grow:1">Chat</span>
+        <span class="mono" style="font-size:10px;color:rgba(255,255,255,.42);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 5px">&#8984;J</span>
+      </div>
+      <div class="mono" style="font-size:10px;color:rgba(255,255,255,.35);padding:5px 11px 2px;line-height:1.5">opens over whatever you are looking at, and carries it as context</div>
       <div style="display:flex;align-items:center;gap:9px;padding:8px 11px">
         <span style="width:7px;height:7px;border-radius:50%;background:#71717a"></span>
         <span class="mono" style="font-size:11px;color:rgba(255,255,255,.55)">Dispatch off</span>
@@ -102,7 +103,7 @@
 
       <div style="display:flex;gap:10px;align-items:flex-start;background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.22);border-radius:10px;padding:13px 15px;margin-top:4px">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.8" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 16v-5M12 8h.01" stroke-linecap="round"></path></svg>
-        <div style="font-size:12.5px;line-height:1.55;color:rgba(255,255,255,.7)">Nothing is deleted — every current view survives as a filter or a tab inside its new home, so no URL becomes a dead end. <span style="color:rgba(255,255,255,.9)">Hubs and project switching are deliberately absent</span> until one project works well.</div>
+        <div style="font-size:12.5px;line-height:1.55;color:rgba(255,255,255,.7)">Nothing is deleted — every current view survives as a filter or a tab inside its new home, so no URL becomes a dead end. <span style="color:rgba(255,255,255,.9)">Hubs and project switching are deliberately absent</span> until one project works well. Two tabs <em style="font-style:normal;color:rgba(255,255,255,.9)">split</em> rather than move: Calendar (due dates to Work, job timing to Settings) and Infra (the signal to Now, the detail to Settings).</div>
       </div>
     </div>
   </div>
@@ -115,19 +116,19 @@ class Component extends DCLogic {
     return {
       rows: [
         { name: 'Now', count: 'home', tone: '#f59e0b', question: 'What needs me right now, and what is running?',
-          absorbs: ['Overview', 'Inbox', 'Activity', 'Notifications'] },
+          absorbs: ['Overview', 'Inbox', 'Activity', 'Notifications', 'Infra — the signal'] },
         { name: 'Work', count: '7 tabs → 1', tone: 'rgba(255,255,255,.5)', question: 'What is the work, and where is it stuck?',
-          absorbs: ['Board', 'Issues', 'Features', 'Pipeline', 'Product Board', 'Epic Map', 'Projects'] },
+          absorbs: ['Board', 'Issues', 'Features', 'Pipeline', 'Product Board', 'Epic Map', 'Projects', 'Calendar — due dates'] },
         { name: 'Fleet', count: '3 tabs → 1', tone: 'rgba(255,255,255,.5)', question: 'Which agents exist, which are alive, what are they doing?',
           absorbs: ['Agents', 'Crew / Team', 'Office'] },
         { name: 'Runs', count: 'new', tone: '#a78bfa', question: 'What did that agent actually do, and what did it cost?',
           absorbs: ['— no equivalent exists today'] },
         { name: 'Memory', count: '1 → 1', tone: 'rgba(255,255,255,.5)', question: 'What has it learned, and what will it reuse?',
           absorbs: ['Memory', 'Agent docs', 'Skills'] },
-        { name: 'Chat', count: '1 → 1', tone: 'rgba(255,255,255,.5)', question: 'Let me just ask it something.',
-          absorbs: ['Chat'] },
-        { name: 'Settings', count: '5 tabs → 1', tone: 'rgba(255,255,255,.5)', question: 'How is this wired, and what are its limits?',
-          absorbs: ['Settings', 'AI Services', 'Automations', 'Infra', 'Calendar'] },
+        { name: 'Chat', count: 'overlay', tone: '#f59e0b', question: 'Let me ask about the thing I am looking at.',
+          absorbs: ['not a destination — opens over any screen'] },
+        { name: 'Settings', count: '4 tabs → 1', tone: 'rgba(255,255,255,.5)', question: 'How is this wired, and what are its limits?',
+          absorbs: ['Settings', 'AI Services', 'Automations', 'Infra — the detail', 'Calendar — job timing'] },
       ],
     }
   }

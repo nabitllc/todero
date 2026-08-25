@@ -5,7 +5,7 @@ import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 const TABLE = 'connections'
 
-const VALID_TYPES = ['github', 'openai', 'anthropic', 'openrouter', 'webhook'] as const
+const VALID_TYPES = ['github', 'openai', 'anthropic', 'webhook'] as const
 type ConnectionType = typeof VALID_TYPES[number]
 
 function supabaseAdmin() {

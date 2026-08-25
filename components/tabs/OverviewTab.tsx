@@ -649,7 +649,6 @@ const SERVICE_STATE_COLOR: Record<ServiceState, string> = {
 const SUBSCRIPTION_TILES: Array<{ key: string; name: string; icon: string }> = [
   { key: 'claude', name: 'Claude', icon: '🧠' },
   { key: 'vercel', name: 'Vercel', icon: '▲' },
-  { key: 'openrouter', name: 'OpenRouter', icon: '🔀' },
   { key: 'braveSearch', name: 'Brave Search', icon: '🦁' },
 ]
 
@@ -657,11 +656,10 @@ const SUBSCRIPTION_TILES: Array<{ key: string; name: string; icon: string }> = [
  * INF-66 / TOD: kill-fake-infra-greens. This panel used to hardcode three
  * subscriptions ("Claude Pro $20/mo · Active", "Vercel Pro · Renews Apr 24",
  * "Brave Search · Renews Apr 21") that were never read from anywhere — literal
- * strings sitting next to a real OpenRouter balance, telling the operator three
- * confident lies beside one honest number. Every tile here now reads its
- * status and note straight off `services`, the same object /api/status hands
- * to the Infra tab: 'unknown' renders its real reason (e.g. "no
- * OPENROUTER_API_KEY configured on this host"), never a fabricated plan/price.
+ * strings next to nothing real, telling the operator three confident lies.
+ * Every tile here now reads its status and note straight off `services`, the
+ * same object /api/status hands to the Infra tab: 'unknown' renders its real
+ * reason, never a fabricated plan/price.
  */
 function SubscriptionsPanel({ liveStatus }: { liveStatus: LiveStatusPayload | null }) {
   const { data, error, refetch } = useApiData<LiveStatusPayload>('/api/status')
