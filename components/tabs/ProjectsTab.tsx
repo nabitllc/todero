@@ -19,27 +19,31 @@ interface ProjectRow {
   openCount: number
 }
 
-const PROJECT_META: Record<string, { description: string; emoji: string }> = {
-  'Todero':          { description: 'Todero platform — MC app, agent infra, sprint tooling', emoji: '🧠' },
-  'Kemuni':          { description: 'Community & Property SaaS',                              emoji: '🚀' },
-  'Vespera':         { description: 'Colombia Goth Community',                                emoji: '🦇' },
-  'Mission Control': { description: 'Mission Control — legacy project key',                   emoji: '📡' },
-  'Infrastructure':  { description: 'Dev infrastructure, CI/CD, tooling',                     emoji: '⚙️' },
-}
-
-const KNOWN_PROJECTS = Object.keys(PROJECT_PREFIX)
+// PROJECT_META and KNOWN_PROJECTS were here: five hardcoded rows — Todero,
+// Kemuni, Vespera, Mission Control, Infrastructure — with hand-written
+// descriptions and emoji, rendered whenever no project was scoped, which is
+// the default state. Michael described the effect verbatim: "Showing a large
+// mess with things about Todero, Vespera, Kemuni (when only single project
+// selected 'Todero' was selected) showed a mess."
+//
+// They could not be filtered away because they were never queried. Projects
+// now come from the projects table, which is the only thing that knows which
+// projects exist.
 
 export default function ProjectsTab({ projectFilter }: { projectFilter?: string | null }) {
   const { items, total, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0')
+  const { items: projectRows } = useApiList<{ id?: string; name?: string; description?: string }>('/api/projects')
 
   // Counts are only meaningful once the issue list actually arrived — on a
   // failed load we render the banner instead of a table full of zeroes.
   const issues = items ?? []
-  const projects = projectFilter ? [projectFilter] : KNOWN_PROJECTS
+  const known = (projectRows ?? []).map(p => p.name ?? p.id ?? '').filter(Boolean)
+  const describe = new Map((projectRows ?? []).map(p => [p.name ?? p.id ?? '', p.description ?? '']))
+  const projects = projectFilter ? [projectFilter] : known
   const rows: ProjectRow[] = items === null ? [] : projects.map(name => {
     const matching = issues.filter(i => i.project === name)
     const open = matching.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
-    const meta = PROJECT_META[name] ?? { description: '', emoji: '📦' }
+    const meta = { description: describe.get(name) ?? '', emoji: '📦' }
     return {
       name,
       key: PROJECT_PREFIX[name] ?? '—',
@@ -55,13 +59,13 @@ export default function ProjectsTab({ projectFilter }: { projectFilter?: string 
   // silently dropped from this table with nothing to say so. Roll them into
   // one honest "Other" row instead of pretending they don't exist.
   if (items !== null && !projectFilter) {
-    const other = issues.filter(i => !i.project || !KNOWN_PROJECTS.includes(i.project))
+    const other = issues.filter(i => !i.project || !known.includes(i.project))
     if (other.length > 0) {
       const open = other.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
       rows.push({
         name: 'Other',
         key: '—',
-        description: `Issues with a project not in ${KNOWN_PROJECTS.join(', ')}`,
+        description: known.length ? `Issues with a project not in ${known.join(', ')}` : 'Issues whose project is not in the projects table',
         emoji: '❓',
         issueCount: other.length,
         openCount: open,

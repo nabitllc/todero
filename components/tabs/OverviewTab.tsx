@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { AGENT_DISPLAY, daysUntil, daysSince, miniPct, KEMUNI_DEADLINE, KEMUNI_START, VESPERA_DEADLINE, VESPERA_START } from '@/lib/mc-constants'
+import { AGENT_DISPLAY, daysUntil, daysSince, miniPct } from '@/lib/mc-constants'
 import { Bar, SH } from '@/lib/mc-atoms'
 import { deriveIssueStatusCategory } from '@/lib/status-category'
 import ActiveAgentsCard from '@/components/ActiveAgentsCard'
@@ -34,7 +34,7 @@ interface IssueRow {
   resolution_type?: string | null
 }
 
-interface SprintRow { sprint_number?: number | string; start_date?: string; end_date?: string }
+interface SprintRow { sprint_number?: number | string; name?: string; project?: string; start_date?: string; end_date?: string }
 
 type Fetched<T> = { ok: true; data: T } | { ok: false; error: ApiError }
 
@@ -688,6 +688,116 @@ function SubscriptionsPanel({ liveStatus }: { liveStatus: LiveStatusPayload | nu
   )
 }
 
+/**
+ * Sprint countdowns, from the sprints table.
+ *
+ * This block used to render TWO HARDCODED CARDS — Vespera and Kemuni — built
+ * from `KEMUNI_DEADLINE` / `VESPERA_DEADLINE` constants in `lib/mc-constants`.
+ * They were not queried, so no project filter could ever remove them, and they
+ * had run out months earlier: the most prominent thing on the landing screen
+ * was two dead countdowns reading "0 days left · 100% elapsed" for projects the
+ * operator had not selected. Michael described the effect exactly — it made a
+ * working system look like a stalled one.
+ *
+ * A card now renders from a sprint row or it does not render. When there is no
+ * active sprint, that is stated in words rather than implied by a dead number.
+ */
+function SprintCountdowns({ projectFilter }: { projectFilter?: string | null }) {
+  const [sprints, setSprints] = useState<SprintRow[] | null>(null)
+  const [failed, setFailed] = useState<ApiError | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let live = true
+    const scope = projectFilter ? `&project=eq.${encodeURIComponent(projectFilter)}` : ''
+    // fetchJson RETURNS its failure rather than throwing, so a `.catch` would
+    // never fire and a failed load would render as "no active sprint" — the
+    // exact silent-failure shape Wave 5 went after. Check `ok`.
+    void (async () => {
+      const r = await fetchJson<SprintRow[]>(
+        dbUrl(`sprints?status=eq.active${scope}&select=sprint_number,name,project,start_date,end_date&order=end_date.asc&limit=4`),
+        { headers: SUPA_HEADERS },
+      )
+      if (!live) return
+      if (!r.ok) { setFailed(r.error); setSprints(null); return }
+      setFailed(null)
+      setSprints(Array.isArray(r.data) ? r.data : [])
+    })()
+    return () => { live = false }
+  }, [projectFilter, reloadKey])
+
+  const where = projectFilter ? `for ${projectFilter}` : 'across every project'
+
+  // The shared banner, not a bespoke red div: one error surface across the app
+  // means a failed load always looks like a failed load, and always offers the
+  // same retry. scripts/smoke-test-layout.sh guards that this stays shared.
+  if (failed) return <ApiErrorBanner error={failed} onRetry={() => setReloadKey(k => k + 1)} />
+  if (sprints === null) {
+    return <div className="rounded-2xl border border-white/10 px-5 py-4 text-xs text-white/30">Loading sprints…</div>
+  }
+  if (sprints.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 px-5 py-4">
+        <p className="text-white/50 text-sm">No active sprint {where}.</p>
+        <p className="text-white/30 text-xs mt-1">
+          A countdown appears here once a sprint is opened. Nothing is overdue — there is simply nothing scheduled yet.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {sprints.map(sp => {
+        const startsAt = sp.start_date ? new Date(sp.start_date) : null
+        const endsAt = sp.end_date ? new Date(sp.end_date) : null
+        // Length comes from the row's own dates. The old cards carried a
+        // hardcoded totalDays (9 and 30) that no longer matched anything.
+        const totalDays =
+          startsAt && endsAt ? Math.max(1, Math.round((endsAt.getTime() - startsAt.getTime()) / 86400000)) : null
+        const left = endsAt ? daysUntil(endsAt) : null
+        const elapsed = startsAt ? daysSince(startsAt) : null
+        const pct = totalDays !== null && elapsed !== null ? miniPct(elapsed, totalDays) : null
+        const urgent = left !== null && left <= 3
+        const label = sp.name ?? (sp.sprint_number != null ? `Sprint ${sp.sprint_number}` : 'Sprint')
+
+        return (
+          <div key={`${sp.project ?? ''}-${sp.sprint_number ?? label}`} className="rounded-2xl border border-white/10 p-5 md:p-6 bg-white/[0.02]">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-white/40 text-xs font-semibold uppercase tracking-widest">{label}</span>
+              {sp.project && <span className="text-white/25 text-[10px]">{sp.project}</span>}
+              {urgent && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold">DUE SOON</span>}
+            </div>
+            {left !== null ? (
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className={`text-5xl md:text-6xl font-black tabular-nums leading-none ${urgent ? 'text-red-500' : 'text-white/80'}`}>{left}</span>
+                <span className="text-white/50 text-lg font-medium">days left</span>
+              </div>
+            ) : (
+              <p className="text-white/40 text-sm mb-1">No end date set</p>
+            )}
+            <p className="text-white/30 text-xs mb-3">
+              {endsAt ? endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'end date not set'}
+              {totalDays !== null && elapsed !== null ? ` · Day ${elapsed}/${totalDays}` : ''}
+            </p>
+            {pct !== null && (
+              <>
+                <div className="w-full rounded-full h-2.5 bg-white/5">
+                  <div className={`h-2.5 rounded-full transition-all ${urgent ? 'bg-red-500' : 'bg-white/40'}`} style={{ width: pct + '%' }} />
+                </div>
+                <div className="flex justify-between mt-1.5">
+                  <span className="text-white/30 text-[10px]">{pct}% elapsed</span>
+                  <span className="text-white/30 text-[10px]">{100 - pct}% remaining</span>
+                </div>
+              </>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function OverviewTab({
   globalSync,
   syncing,
@@ -773,43 +883,7 @@ export default function OverviewTab({
                 </div>
               )}
 
-              {/* ── Hero Countdown Timers (INF-75) ── */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {([
-                  { name: 'Vespera', emoji: '🦇', deadline: VESPERA_DEADLINE, start: VESPERA_START, totalDays: 9, color: '#a855f7', bg: 'linear-gradient(135deg, #0f0a14 0%, #1a0e24 100%)' },
-                  { name: 'Kemuni', emoji: '🚀', deadline: KEMUNI_DEADLINE, start: KEMUNI_START, totalDays: 30, color: '#3b82f6', bg: 'linear-gradient(135deg, #0a0f1a 0%, #0e1a2e 100%)' },
-                ] as const).map(p => {
-                  const left = daysUntil(p.deadline)
-                  const elap = daysSince(p.start)
-                  const pct = miniPct(elap, p.totalDays)
-                  const urgent = left <= 3
-                  const numColor = urgent ? '#ef4444' : p.color
-                  return (
-                    <div key={p.name} className="rounded-2xl border border-white/10 p-5 md:p-6" style={{ background: p.bg }}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-xl">{p.emoji}</span>
-                        <span className="text-white/40 text-xs font-semibold uppercase tracking-widest">{p.name}</span>
-                        {urgent && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold animate-pulse">URGENT</span>}
-                      </div>
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-5xl md:text-6xl font-black tabular-nums leading-none" style={{ color: numColor }}>{left}</span>
-                        <span className="text-white/50 text-lg font-medium">days left</span>
-                      </div>
-                      <p className="text-white/30 text-xs mb-3">
-                        {p.deadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                        {' · Day '}{elap}/{p.totalDays}
-                      </p>
-                      <div className="w-full rounded-full h-2.5" style={{ background: '#1a1a1a' }}>
-                        <div className="h-2.5 rounded-full transition-all" style={{ width: pct + '%', background: numColor }} />
-                      </div>
-                      <div className="flex justify-between mt-1.5">
-                        <span className="text-white/30 text-[10px]">{pct}% elapsed</span>
-                        <span className="text-white/30 text-[10px]">{100 - pct}% remaining</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              <SprintCountdowns projectFilter={projectFilter} />
 
               {/* TOD-649: Active Agents live status */}
               <ActiveAgentsCard agentCurrentTask={liveStatus?.agentCurrentTask} />

@@ -434,7 +434,12 @@ export default function Home() {
       })
     }
     const fetchAgentIssues = () => {
-      const countsUrl = dbUrl(`issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&select=assignee&limit=500`)
+      // Scoped, and archived rows excluded. Unscoped, this rendered "· N open
+      // issues" next to a live agent where N counted archived backlog from
+      // projects the operator had not selected — a number on screen with no
+      // traceable source, in the one file this piece owned outright.
+      const scope = selectedProject ? `&project=eq.${encodeURIComponent(selectedProject)}` : ''
+      const countsUrl = dbUrl(`issues?status=in.(open,in_progress,code_review,product_review,approved,released)&sprint=not.is.null&archived_at=is.null${scope}&select=assignee&limit=500`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
       fetchJson<any[]>(countsUrl, { headers: dbRestHeaders() }).then(res => {
         // A failed poll leaves the previous counts alone rather than zeroing them.
@@ -447,10 +452,14 @@ export default function Home() {
     fetchRuns(); fetchAgentIssues()
     const iv = setInterval(() => { fetchRuns(); fetchAgentIssues() }, 30000)
     return () => clearInterval(iv)
-    // Agent-level aggregates, not per-issue project-labeled content — Fleet and
-    // Runs are deliberately agent-centric, not scoped to one project's issues
-    // (design/Nav.dc.html: "which agents exist... what did that agent do").
-  }, [])
+    // fetchRuns is agent-level and deliberately unscoped — Fleet and Runs are
+    // agent-centric by design (design/Nav.dc.html: "which agents exist... what
+    // did that agent do"). fetchAgentIssues is NOT: it counts issues, so it
+    // reads selectedProject and must re-run when that changes. With an empty
+    // dependency list it would close over the value from first render and keep
+    // reporting the old project's count after a switch — the stale-closure
+    // version of exactly the leak this pass is removing.
+  }, [selectedProject])
 
   // Calendar issues — scoped to the selected project so Work's due-dates view
   // and Settings' job-timing view never show another project's issue.
@@ -683,11 +692,23 @@ export default function Home() {
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 font-medium">Project</span>
                     </>
                   )}
-                  <span className="flex items-center gap-1 text-[9px] text-emerald-400"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Active</span>
                 </div>
-                <p className="text-white/30 text-[10px] mt-0.5">
+                {/*
+                  This line used to read "Every panel below is scoped to X only —
+                  never another project's issues", beside a hardcoded green
+                  "Active" pill that consulted nothing.
+
+                  Both were removed rather than reworded. The sentence asserted a
+                  data-integrity invariant the code does not enforce: eleven
+                  sibling queries reach the database proxy with no project clause,
+                  and two tabs accept the filter prop and ignore it. A claim like
+                  that is worse than a missing feature, because it teaches the
+                  operator to stop checking. It goes back when the scope is a
+                  query boundary rather than an optional prop — and not before.
+                */}
+                <p className="text-white/55 text-[11px] mt-0.5">
                   {selectedProject
-                    ? `Every panel below is scoped to ${selectedProject} only — never another project's issues`
+                    ? `Scoped to ${selectedProject}. Some panels still read across projects — that is being fixed.`
                     : `Viewing all ${selectedBusiness} data across destinations`}
                 </p>
               </div>

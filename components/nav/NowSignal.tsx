@@ -35,27 +35,27 @@ export default function NowSignal({ inboxPendingCount, liveAgents, rollup, onOpe
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
         <button onClick={onOpenInbox} className="text-left border border-white/10 rounded-lg p-4 hover:bg-white/[0.03] transition-colors">
-          <p className="text-white/40 text-[10px] uppercase tracking-widest font-mono mb-1">Needs you</p>
+          <p className="text-white/75 text-xs uppercase tracking-widest font-mono mb-1">Needs you</p>
           <p className={`text-2xl font-semibold ${inboxPendingCount > 0 ? 'text-amber-400' : 'text-white'}`}>{inboxPendingCount}</p>
-          <p className="text-white/35 text-[11px] mt-1">from /api/inbox?status=pending</p>
+          <p className="text-white/60 text-xs mt-1">from /api/inbox?status=pending</p>
         </button>
 
         <button onClick={onOpenFleet} className="text-left border border-white/10 rounded-lg p-4 hover:bg-white/[0.03] transition-colors">
-          <p className="text-white/40 text-[10px] uppercase tracking-widest font-mono mb-1">Running now</p>
+          <p className="text-white/75 text-xs uppercase tracking-widest font-mono mb-1">Running now</p>
           <p className="text-2xl font-semibold text-white">{liveAgents === null ? '—' : live.length}</p>
-          <p className="text-white/35 text-[11px] mt-1">agents with a live heartbeat</p>
+          <p className="text-white/60 text-xs mt-1">agents with a live heartbeat</p>
         </button>
 
         <div className="border border-white/10 rounded-lg p-4">
-          <p className="text-white/40 text-[10px] uppercase tracking-widest font-mono mb-1">Infra rollup</p>
+          <p className="text-white/75 text-xs uppercase tracking-widest font-mono mb-1">Infra rollup</p>
           {rollup ? (
             <p className={`text-2xl font-semibold ${rollup.overall === 'ok' ? 'text-emerald-400' : rollup.overall === 'down' ? 'text-red-400' : 'text-amber-400'}`}>
-              {rollup.ok}<span className="text-white/30 text-sm font-normal">/{rollup.total} ok</span>
+              {rollup.ok}<span className="text-white/60 text-sm font-normal">/{rollup.total} ok</span>
             </p>
           ) : (
-            <p className="text-2xl font-semibold text-white/30">—</p>
+            <p className="text-2xl font-semibold text-white/60">—</p>
           )}
-          <p className="text-white/35 text-[11px] mt-1">detail at Settings → Infra</p>
+          <p className="text-white/60 text-xs mt-1">detail at Settings → Infra</p>
         </div>
       </div>
 
@@ -65,14 +65,14 @@ export default function NowSignal({ inboxPendingCount, liveAgents, rollup, onOpe
             <div key={a.id} className="flex items-center gap-2.5 px-4 py-2.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
               <span className="text-white text-sm font-medium">{a.id}</span>
-              <span className="text-white/50 text-xs truncate">{a.currentTask || 'heartbeat just now'}</span>
+              <span className="text-white/70 text-xs truncate">{a.currentTask || 'heartbeat just now'}</span>
             </div>
           ))}
         </div>
       )}
 
       {live.length === 0 && liveAgents !== null && (
-        <p className="text-white/30 text-xs">No agent has a live heartbeat right now.</p>
+        <p className="text-white/60 text-xs">No agent has a live heartbeat right now.</p>
       )}
     </div>
   )

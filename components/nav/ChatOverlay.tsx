@@ -39,7 +39,7 @@ export default function ChatOverlay({ open, onClose, selectedBusiness }: Props) 
       <div className="relative ml-auto h-full w-full sm:w-[560px] bg-neutral-950 border-l border-white/10 flex flex-col shadow-2xl">
         <div className="flex items-center justify-between px-4 h-12 border-b border-white/10 shrink-0">
           <span className="text-white text-sm font-semibold">Chat</span>
-          <button onClick={onClose} aria-label="Close (Esc)" className="text-white/50 hover:text-white p-1 rounded hover:bg-white/10">
+          <button onClick={onClose} aria-label="Close (Esc)" className="text-white/70 hover:text-white p-1 rounded hover:bg-white/10">
             <X size={16} />
           </button>
         </div>

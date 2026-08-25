@@ -32,7 +32,7 @@ export default function DestinationShell({ destination, activeView, onSelectView
     <div className="space-y-4">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-white text-lg font-semibold">{destination.label}</h1>
-        <span className="text-white/40 text-xs italic">&ldquo;{destination.question}&rdquo;</span>
+        <span className="text-white/75 text-xs italic">&ldquo;{destination.question}&rdquo;</span>
       </div>
 
       {destination.views.length > 1 && (
@@ -56,10 +56,16 @@ export default function DestinationShell({ destination, activeView, onSelectView
       {showEmptyNote && (
         <div className="flex items-start gap-2.5 bg-blue-500/[0.06] border border-blue-500/20 rounded-lg px-3.5 py-2.5">
           <span className="text-blue-400 text-sm leading-none mt-0.5">i</span>
-          <p className="text-xs leading-relaxed text-white/65">
-            <span className="text-white/85 font-medium">{projectName}</span> has 0 issues yet — that is correct, not broken.
-            It is a real project (live today as amazoniico.com) that Todero has not started building or operating yet. This
-            destination will fill in as work begins.
+          <p className="text-xs leading-relaxed text-white/75">
+            {/*
+              This said "It is a real project (live today as amazoniico.com)" —
+              one project's external URL hardcoded into a component whose project
+              name is a variable. Any second zero-issue project would have been
+              told it was live at amazoniico.com. The name is a prop; the facts
+              about it have to be too, or they do not belong on screen.
+            */}
+            <span className="text-white/85 font-medium">{projectName}</span> has 0 issues yet — that is correct, not
+            broken. Todero has not started work on it. This destination fills in as work begins.
           </p>
         </div>
       )}

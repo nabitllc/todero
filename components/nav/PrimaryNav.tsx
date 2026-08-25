@@ -60,13 +60,13 @@ export default function PrimaryNav({ destination, onSelectDestination, onOpenCha
           <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sm font-bold text-white shrink-0">T</div>
           <div className="min-w-0">
             <p className="text-white text-xs font-semibold leading-tight tracking-wide">Todero</p>
-            <p className="text-white/25 text-[9px] leading-tight">Mission Control</p>
+            <p className="text-white/60 text-xs leading-tight">Mission Control</p>
           </div>
         </div>
       </div>
 
       <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
-        <p className="px-2 mb-1 text-[9px] font-semibold uppercase tracking-widest text-white/20 select-none">Primary</p>
+        <p className="px-2 mb-1 text-xs font-semibold uppercase tracking-widest text-white/60 select-none">Primary</p>
         {DESTINATIONS.map(d => {
           const Icon = ICONS[d.id]
           const active = destination === d.id
@@ -87,8 +87,8 @@ export default function PrimaryNav({ destination, onSelectDestination, onOpenCha
               {badge && (
                 <span
                   className={[
-                    'text-[10px] font-mono font-medium rounded-full px-1.5 py-0.5 leading-none',
-                    badge.tone === 'amber' ? 'bg-amber-500 text-black' : 'text-white/40',
+                    'text-xs font-mono font-medium rounded-full px-1.5 py-0.5 leading-none',
+                    badge.tone === 'amber' ? 'bg-amber-500 text-black' : 'text-white/75',
                   ].join(' ')}
                 >
                   {badge.text}
@@ -103,30 +103,30 @@ export default function PrimaryNav({ destination, onSelectDestination, onOpenCha
         <button
           onClick={onOpenChat}
           aria-label="Chat (⌘J)"
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left border border-dashed border-white/15 text-white/55 hover:text-white hover:bg-white/[0.05] transition-colors"
+          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left border border-dashed border-white/15 text-white/70 hover:text-white hover:bg-white/[0.05] transition-colors"
         >
           <MessageSquare size={15} className="text-white/45" />
           <span className="text-[12.5px] font-medium flex-1 truncate">Chat</span>
-          <kbd className="text-[9.5px] font-mono text-white/35 border border-white/15 rounded px-1 py-0.5">⌘J</kbd>
+          <kbd className="text-xs font-mono text-white/60 border border-white/15 rounded px-1 py-0.5">⌘J</kbd>
         </button>
-        <p className="px-2.5 pt-1.5 text-[9.5px] leading-snug text-white/30">opens over whatever you are looking at, and carries it as context</p>
+        <p className="px-2.5 pt-1.5 text-xs leading-snug text-white/60">opens over whatever you are looking at, and carries it as context</p>
       </nav>
 
       <div className="px-3 py-3 border-t border-white/[0.07] shrink-0 space-y-1">
         {ollama ? (
           <div className="flex items-center gap-1.5" title="From /api/status">
             <span className={`w-1.5 h-1.5 rounded-full ${ollama.running ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
-            <span className="text-white/40 text-[10px] font-mono truncate">
+            <span className="text-white/75 text-xs font-mono truncate">
               {ollama.running ? (ollama.model ?? 'ollama running') : 'ollama offline'}
             </span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-            <span className="text-white/30 text-[10px] font-mono">status unknown</span>
+            <span className="text-white/60 text-xs font-mono">status unknown</span>
           </div>
         )}
-        {clock && <p className="text-white/20 text-[10px] font-mono">{clock}</p>}
+        {clock && <p className="text-white/60 text-xs font-mono">{clock}</p>}
       </div>
     </aside>
   )

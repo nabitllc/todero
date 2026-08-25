@@ -29,8 +29,7 @@ interface Props {
 export default function MobileNav({ destination, onSelectDestination, needsYou }: Props) {
   return (
     <nav
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-neutral-950 border-t border-white/10 grid grid-cols-6"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}
+      className="lg:hidden fixed bottom-0 pb-[env(safe-area-inset-bottom,16px)] left-0 right-0 z-50 bg-neutral-950 border-t border-white/10 grid grid-cols-6"
     >
       {DESTINATIONS.map(d => {
         const Icon = ICONS[d.id]
@@ -42,12 +41,12 @@ export default function MobileNav({ destination, onSelectDestination, needsYou }
             onClick={() => onSelectDestination(d.id)}
             aria-label={d.label}
             aria-current={active ? 'page' : undefined}
-            className={'relative flex flex-col items-center justify-center gap-0.5 py-2 min-w-0 text-xs transition-colors min-h-[44px] ' + (active ? 'text-white' : 'text-white/50')}
+            className={'relative flex flex-col items-center justify-center gap-0.5 py-2 min-w-0 text-xs transition-colors min-h-[44px] ' + (active ? 'text-white' : 'text-white/70')}
           >
             <Icon size={18} />
-            <span className="text-[9px]">{d.label}</span>
+            <span className="text-xs">{d.label}</span>
             {showBadge && (
-              <span className="absolute top-1 right-1/4 mono text-[8px] font-bold bg-amber-500 text-black rounded-full px-1 leading-tight">
+              <span className="absolute top-1 right-1/4 font-mono text-xs font-bold bg-amber-500 text-black rounded-full px-1 leading-tight">
                 {needsYou! > 9 ? '9+' : needsYou}
               </span>
             )}

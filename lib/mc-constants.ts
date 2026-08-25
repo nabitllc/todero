@@ -1,10 +1,16 @@
 // Shared constants for Mission Control
 // These were previously defined inline in page.tsx
 
-export const KEMUNI_START     = new Date('2026-03-21')
-export const KEMUNI_DEADLINE  = new Date('2026-04-20')
-export const VESPERA_DEADLINE = new Date('2026-03-31')
-export const VESPERA_START    = new Date('2026-03-22')
+// KEMUNI_START / KEMUNI_DEADLINE / VESPERA_START / VESPERA_DEADLINE were here.
+//
+// They were four hardcoded dates rendered on the landing screen as if they
+// were live sprint data, for two projects that are not this installation's.
+// Because they were constants and not a query, no project filter could remove
+// them, and by the time anyone looked they read "0 days left · 100% elapsed" —
+// the most prominent thing on the home screen was two dead countdowns.
+//
+// Deleted rather than updated. A sprint countdown renders from a row in the
+// sprints table or it does not render; see SprintCountdowns in OverviewTab.
 
 export function daysUntil(d: Date) { return Math.max(0, Math.ceil((d.getTime()-Date.now())/86400000)) }
 export function daysSince(d: Date) { return Math.floor((Date.now()-d.getTime())/86400000) }

@@ -72,7 +72,7 @@ export default function RunsView({ projectName }: { projectName?: string | null 
   }
 
   if (rows === null) {
-    return <div className="text-white/30 text-sm py-8 text-center">Loading runs…</div>
+    return <div className="text-white/60 text-sm py-8 text-center">Loading runs…</div>
   }
 
   if (rows.length === 0) {
@@ -81,9 +81,9 @@ export default function RunsView({ projectName }: { projectName?: string | null 
         <p className="text-white/70 text-sm font-medium">
           No runs recorded yet{projectName ? ` — ${projectName} has not had an agent dispatched to it` : ''}.
         </p>
-        <p className="text-white/40 text-xs max-w-md mx-auto leading-relaxed">
+        <p className="text-white/75 text-xs max-w-md mx-auto leading-relaxed">
           This will fill in the moment an agent is dispatched — every row comes straight from the
-          <code className="mx-1 text-white/55 font-mono">agent_runs</code>
+          <code className="mx-1 text-white/70 font-mono">agent_runs</code>
           table (agent, task, status, started/completed, tokens, cost). Nothing here is estimated.
           {projectName && ' Runs are agent-wide, not filtered by project — an agent works across every project it is assigned to.'}
         </p>
@@ -93,14 +93,14 @@ export default function RunsView({ projectName }: { projectName?: string | null 
 
   return (
     <div className="space-y-4">
-      <p className="text-white/40 text-[10.5px] font-mono">
+      <p className="text-white/75 text-xs font-mono">
         {rows.length} run{rows.length === 1 ? '' : 's'} · every number below is recorded, never estimated · step-level trace and per-step cost are not captured by this schema yet
         {projectName && ' · shown across every project, not filtered to ' + projectName}
       </p>
       <div className="border border-white/10 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/10 bg-white/[0.04] text-left text-white/40 text-xs">
+            <tr className="border-b border-white/10 bg-white/[0.04] text-left text-white/75 text-xs">
               <th className="px-3 py-2 font-medium">Agent</th>
               <th className="px-3 py-2 font-medium">Task</th>
               <th className="px-3 py-2 font-medium">Status</th>
@@ -118,13 +118,13 @@ export default function RunsView({ projectName }: { projectName?: string | null 
                   {r.error && <span className="ml-2 text-red-400 text-xs">· {r.error.slice(0, 60)}</span>}
                 </td>
                 <td className="px-3 py-2.5">
-                  <span className={`text-[10px] font-mono border rounded px-1.5 py-0.5 ${STATUS_TONE[r.status] ?? 'text-white/50 bg-white/5 border-white/10'}`}>
+                  <span className={`text-xs font-mono border rounded px-1.5 py-0.5 ${STATUS_TONE[r.status] ?? 'text-white/70 bg-white/5 border-white/10'}`}>
                     {r.status}
                   </span>
                 </td>
-                <td className="px-3 py-2.5 text-white/50 font-mono text-xs">{fmtDuration(r.started_at, r.completed_at)}</td>
-                <td className="px-3 py-2.5 text-right text-white/50 font-mono text-xs">{r.tokens_used ?? '—'}</td>
-                <td className="px-3 py-2.5 text-right text-white/50 font-mono text-xs">{r.cost_usd != null ? `$${r.cost_usd.toFixed(2)}` : '—'}</td>
+                <td className="px-3 py-2.5 text-white/70 font-mono text-xs">{fmtDuration(r.started_at, r.completed_at)}</td>
+                <td className="px-3 py-2.5 text-right text-white/70 font-mono text-xs">{r.tokens_used ?? '—'}</td>
+                <td className="px-3 py-2.5 text-right text-white/70 font-mono text-xs">{r.cost_usd != null ? `$${r.cost_usd.toFixed(2)}` : '—'}</td>
               </tr>
             ))}
           </tbody>
