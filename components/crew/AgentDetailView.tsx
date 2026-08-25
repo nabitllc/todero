@@ -93,14 +93,7 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
   async function togglePause() {
     setToggling(true)
     const nextPaused = !paused
-    const r = await fetchJson<{
-      ok: boolean
-      is_paused: boolean
-      message: string
-      error?: string
-      issue_unblocked?: boolean
-      still_blocked_by?: string | null
-    }>('/api/agent-pause', {
+    const r = await fetchJson<AgentPauseResponseBody>('/api/agent-pause', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent: agentId, paused: nextPaused }),
@@ -113,20 +106,16 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       return
     }
 
-    const body = r.data
     // The wave-4 defect recreated one layer up: a 200 body can still carry
     // ok:false (a write inside the route failed) or a non-null
-    // still_blocked_by (the agent really did un-pause, but the issue the
-    // loop breaker blocked is still blocked by something else). Reading
-    // only res.ok shows a full recovery in both cases — only body.ok===true
-    // may advance local state, and still_blocked_by must stay visible.
-    if (body.ok !== true) {
-      setPauseNotice({ text: body.error ? `${body.message} (${body.error})` : body.message, kind: 'error' })
-      return
-    }
-
-    setPaused(body.is_paused)
-    setPauseNotice(body.still_blocked_by ? { text: body.message, kind: 'warning' } : null)
+    // still_blocked_by (the agent's own flag cleared, but the issue it was
+    // blocking is still blocked by something else). resolvePauseOutcome is
+    // the single place that decides whether local state may advance —
+    // see lib/agent-pause-ui.ts, unit-tested directly since this repo's
+    // jest config has no DOM/render harness to exercise the component with.
+    const outcome = resolvePauseOutcome(r.data)
+    if (outcome.paused !== undefined) setPaused(outcome.paused)
+    setPauseNotice(outcome.notice)
   }
 
   if (!agent) {
