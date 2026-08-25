@@ -6,7 +6,7 @@ import {
   LayoutDashboard, BookOpen, Zap, Settings, PlayCircle,
   ChevronRight, X, RefreshCw, Clock, CheckCircle2, Code2,
   AlertCircle, FileText, Activity, BarChart3, DollarSign,
-  Edit3, Save, Pause, Plus, Heart
+  Edit3, Save, Pause, Plus, Heart, Trash2
 } from 'lucide-react'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, useApiData, type ApiError } from '@/hooks/useApiData'
@@ -37,6 +37,11 @@ interface Agent {
   liveness?: 'live' | 'stale' | 'idle' | 'never'
   lastSeenAt?: number | null
   livenessSource?: 'heartbeat' | 'none'
+  // 'registered' means this row exists only because it POSTed to
+  // /api/connect — no AGENTS.md names it. Only those rows can be hard-deleted
+  // from the "Remove" action below; an AGENTS.md-defined agent has no
+  // registration row for DELETE /api/agents/{id} to remove.
+  rosterSource?: string
 }
 
 interface Issue {
@@ -72,6 +77,12 @@ interface AgentRun {
 interface AgentDetailViewProps {
   agent: Agent
   onClose: () => void
+  /** Called after a successful hard delete, so the caller can drop this
+   *  agent from whatever roster state it is holding without waiting for the
+   *  next poll. Optional so older call sites still compile; when absent the
+   *  card still closes and the DELETE still lands, it just relies on the
+   *  next /api/agents poll to reflect it. */
+  onRemoved?: (agentId: string) => void
 }
 
 // ── Tab types ──────────────────────────────────────────────────────────────────
@@ -701,7 +712,7 @@ function BudgetTab({ agent }: { agent: Agent }) {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps) {
+export default function AgentDetailView({ agent, onClose, onRemoved }: AgentDetailViewProps) {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [isEditing, setIsEditing] = useState(false)
   // Result of the header's two write actions. A refused write shows the
@@ -710,6 +721,12 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
   // because the promise happened to resolve.
   const [actionError, setActionError] = useState<ApiError | null>(null)
   const [actionNote, setActionNote] = useState<string | null>(null)
+  // Two clicks to remove: the first arms it (button switches to "Confirm
+  // Remove"), the second actually sends the DELETE. Cheaper than a modal for
+  // a destructive-but-recoverable-by-reconnecting action, and it means no
+  // click can hard-delete a row by accident.
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [removing, setRemoving] = useState(false)
 
   // Reset edit mode on tab switch
   useEffect(() => {
@@ -750,6 +767,22 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
       `Heartbeat recorded at ${when} — ${agent.name} is ${r.data?.liveness ?? 'live'}` +
       (r.data?.warning ? ` (${r.data.warning})` : ''),
     )
+  }
+
+  // Permanent removal — only real for a self-registered agent, since
+  // DELETE /api/agents/{id} hard-deletes the `agent_registrations` row and
+  // an AGENTS.md-defined agent has no such row to delete.
+  async function handleRemove() {
+    if (!confirmingRemove) { setConfirmingRemove(true); return }
+    setActionError(null); setActionNote(null); setRemoving(true)
+    const r = await fetchJson<{ ok?: boolean; warning?: string | null }>(
+      `/api/agents/${encodeURIComponent(agent.id)}`,
+      { method: 'DELETE' },
+    )
+    setRemoving(false)
+    if (!r.ok) { setActionError(r.error); setConfirmingRemove(false); return }
+    onRemoved?.(agent.id)
+    onClose()
   }
 
   return (
@@ -793,6 +826,22 @@ export default function AgentDetailView({ agent, onClose }: AgentDetailViewProps
             <Button variant="ghost" size="sm" disabled>
               <Pause size={12} className="mr-1" /> Pause
             </Button>
+            {/* Only a self-registered agent (rosterSource 'registered') has a
+                row DELETE /api/agents/{id} can actually remove — an
+                AGENTS.md-defined agent has none, so the button does not even
+                render for it rather than offering an action that would 404. */}
+            {agent.rosterSource === 'registered' && (
+              <Button
+                variant={confirmingRemove ? 'danger' : 'ghost'}
+                size="sm"
+                onClick={handleRemove}
+                disabled={removing}
+                title="Hard-delete this agent's registration — the roster stops naming it at all"
+              >
+                <Trash2 size={12} className="mr-1" />
+                {removing ? 'Removing…' : confirmingRemove ? 'Confirm Remove' : 'Remove'}
+              </Button>
+            )}
             <Button variant="icon" onClick={onClose}>
               <X size={16} />
             </Button>

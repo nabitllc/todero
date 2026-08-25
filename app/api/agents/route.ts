@@ -294,17 +294,39 @@ function buildAgents(
  * `buildAgents()` uses below, so a registration-only agent is not held to a
  * different truth standard than a roster one.
  *
- * The heartbeat store is still the first choice for `lastSeenAt` — it is the
+ * The heartbeat store is the first choice for `lastSeenAt` — it is the
  * dedicated liveness table and the one every other row here reads — and
- * `reg.lastSeenAt` (now kept moving by recordHeartbeat() -> touchRegistration(),
+ * `reg.lastSeenAt` (kept moving by recordHeartbeat() -> touchRegistration(),
  * see lib/agent-heartbeats.ts) is the fallback for the gap right after POST
  * /api/connect, before this agent's first explicit heartbeat has landed in
  * that table.
+ *
+ * BUT: once `reg.status` reads 'offline' — i.e. `agent_registrations.
+ * last_seen_at` is already outside STALE_WINDOW_MS, which is exactly what a
+ * clean DELETE /api/connect backdates it to — the heartbeat store is no
+ * longer trusted on its own. DELETE /api/connect also calls clearHeartbeat()
+ * to erase that row in the same request, but the two writes are not one
+ * transaction: a host degraded to the `agent_memory` fallback for one store
+ * and not the other, or a request that failed partway, can leave a beat from
+ * moments before the disconnect still sitting there, inside LIVE_WINDOW_MS.
+ * Taking the OLDER of the two timestamps once the registration says offline
+ * means a leftover heartbeat can only ever make a disconnected agent look
+ * MORE offline, never resurrect it as live — a disconnect can never be
+ * silently undone by whichever store happened to answer first.
  */
 function buildRegistrationAgent(reg: AgentRegistration, state: RunState): AgentDto {
   const now = Date.now()
   const beat = state.heartbeats.get(reg.id) ?? null
-  const lastSeenAt = beat?.lastSeen ?? (state.livenessSource === 'none' ? null : reg.lastSeenAt)
+  const beatSeen = beat?.lastSeen ?? null
+  const regSeen = state.livenessSource === 'none' ? null : reg.lastSeenAt
+  const lastSeenAt =
+    reg.status === 'offline'
+      ? beatSeen === null
+        ? regSeen
+        : regSeen === null
+          ? beatSeen
+          : Math.min(beatSeen, regSeen)
+      : beatSeen ?? regSeen
   const liveness: Liveness = state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
   const isRunning = liveness === 'live'
   const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
@@ -440,9 +462,14 @@ export async function GET() {
       readHeartbeats(),
       // 4. Registered agents — the roster's second source. Its own liveness
       //    fields (last_seen_at, and the status derived from it) are kept
-      //    honest by recordHeartbeat()/rowToRegistration(); this route does
-      //    not recompute either, it only decides who from here is missing
-      //    from AGENTS.md and needs a row synthesized for them.
+      //    honest by recordHeartbeat()/rowToRegistration(). This route decides
+      //    who from here is missing from AGENTS.md and needs a row
+      //    synthesized for them — and buildRegistrationAgent() DOES recompute
+      //    that row's liveness rather than trusting either source alone: once
+      //    the registration reads 'offline' it floors `lastSeenAt` at the
+      //    OLDER of the registration's own timestamp and the heartbeat
+      //    store's, so a heartbeat left over from just before a disconnect
+      //    can never out-vote it. See that function's docstring.
       readRegistrations(),
     ])
     state.heartbeats = beats.data

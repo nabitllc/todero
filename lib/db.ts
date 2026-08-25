@@ -45,6 +45,7 @@
 
 import { DEFAULT_DB_PROVIDER, DB_ADAPTERS } from './db/adapters'
 import { DbConfigurationError } from './db/errors'
+import { ensureMigratedOnBoot } from './db/boot-migrate'
 
 export { DbConfigurationError }
 
@@ -258,6 +259,11 @@ function resolveAdapter(): DbAdapter {
         Object.keys(DB_ADAPTERS).join(', '),
     )
   }
+  // Boot-time migrations: the first call to db() applies whatever
+  // migrations/ has not yet been applied, so starting the app is enough —
+  // `npm run db:migrate` remains available for an operator who wants to run
+  // it deliberately, but is never required. See lib/db/boot-migrate.ts.
+  ensureMigratedOnBoot(DB_PROVIDER)
   cached = factory.create()
   return cached
 }

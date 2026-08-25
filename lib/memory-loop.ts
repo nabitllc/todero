@@ -30,6 +30,34 @@ import { VAULT_DIR } from './paths'
 
 export const PROMOTION_THRESHOLD = 3
 
+// Round-3 repair: the self_improving HOT-tier row is injected FIRST in
+// loadContextFromDB, and the 30_000-byte context cap in
+// app/api/run-agent/route.ts drops sections from the END when it overflows.
+// Before this fix, promoteHotPatterns() re-appended an identical
+// "#### Promoted <ts>" block on every pass over the same data — an
+// unboundedly duplicating self_improving block that silently evicted
+// long-term and daily memory a few passes in. MEMORY_BUDGET is the hard
+// ceiling this row is trimmed to (keeping the most recent blocks) so it can
+// never itself become the thing crowding everything else out.
+export const MEMORY_BUDGET = 8_000
+
+/**
+ * Raised instead of silently truncating when a single promotion block (the
+ * one being appended THIS pass) cannot fit inside MEMORY_BUDGET on its own.
+ * Per the "a guard written in the prompt is not a guard" rule: a comment
+ * saying "this is bounded" is not a bound unless something throws when the
+ * bound is violated.
+ */
+export class PromotionBlockTooLargeError extends Error {
+  constructor(agentId: string, blockBytes: number, budget: number) {
+    super(
+      `promoteHotPatterns(${agentId}): a single promotion block is ${blockBytes} bytes, ` +
+      `exceeding MEMORY_BUDGET=${budget} bytes on its own — refusing to silently truncate it`,
+    )
+    this.name = 'PromotionBlockTooLargeError'
+  }
+}
+
 export interface RunRecordInput {
   agentId: string
   taskKey: string
@@ -306,6 +334,14 @@ export interface PromotionSummary {
   rowsExamined: number
   hits: PatternHit[]
   promotedToHot: string[]
+  /**
+   * Hits that cleared the threshold this pass but were already present in
+   * the self_improving row's content (by phrase) from a prior pass — dropped
+   * before the HOT-tier write instead of re-appended, which is what makes a
+   * second promoteHotPatterns() call over unchanged data a no-op instead of
+   * a duplicate block.
+   */
+  alreadyPromoted: string[]
   proposals: ProposalResult[]
   /**
    * Set when the `agent_run_records` read itself failed (e.g. the table has
@@ -331,7 +367,7 @@ export interface PromotionSummary {
  */
 export async function promoteHotPatterns(agentId: string): Promise<PromotionSummary> {
   const summary: PromotionSummary = {
-    agentId, rowsExamined: 0, hits: [], promotedToHot: [], proposals: [],
+    agentId, rowsExamined: 0, hits: [], promotedToHot: [], alreadyPromoted: [], proposals: [],
   }
 
   const { data, error } = await db()
@@ -365,39 +401,64 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
   if (hits.length === 0) return summary
 
   const timestamp = new Date().toISOString()
-  const promotionText = hits
-    .map(h => `- **${h.phrase}** appeared ${h.count} times across ${agentId}'s corrections`)
-    .join('\n')
 
-  try {
-    // Deliberately NOT `.upsert(..., { onConflict: 'agent_id,memory_type,date_key' })`
-    // here: SQL treats every NULL as distinct from every other NULL, so a
-    // unique constraint that includes `date_key` never matches two rows that
-    // both have it NULL — which self_improving rows always do, this one
-    // included. An upsert against that target silently INSERTs a new row on
-    // every single run instead of merging into one, so promoteHotPatterns
-    // would grow an unbounded pile of near-duplicate HOT-tier rows rather
-    // than accumulating into the one the retrieval side reads. Select the
-    // row's id first and choose update vs. insert explicitly instead.
-    const existing = await db()
-      .from('agent_memory_files')
-      .select('id,content')
-      .eq('agent_id', agentId)
-      .eq('memory_type', 'self_improving')
-      .is('date_key', null)
-      .limit(1)
-    const existingRow = existing.data?.[0] as { id?: string; content?: string } | undefined
-    const priorContent = existingRow?.content ?? ''
+  // Deliberately NOT `.upsert(..., { onConflict: 'agent_id,memory_type,date_key' })`
+  // here: SQL treats every NULL as distinct from every other NULL, so a
+  // unique constraint that includes `date_key` never matches two rows that
+  // both have it NULL — which self_improving rows always do, this one
+  // included. An upsert against that target silently INSERTs a new row on
+  // every single run instead of merging into one, so promoteHotPatterns
+  // would grow an unbounded pile of near-duplicate HOT-tier rows rather
+  // than accumulating into the one the retrieval side reads. Select the
+  // row's id first and choose update vs. insert explicitly instead.
+  const existing = await db()
+    .from('agent_memory_files')
+    .select('id,content')
+    .eq('agent_id', agentId)
+    .eq('memory_type', 'self_improving')
+    .is('date_key', null)
+    .limit(1)
+  const existingRow = existing.data?.[0] as { id?: string; content?: string } | undefined
+  const priorContent = existingRow?.content ?? ''
+
+  // Round-3 repair: without this filter, every pass over the same data
+  // re-appended the same bullet under a fresh "#### Promoted <ts>" header —
+  // verified as two identical blocks after two runs with no new rows. Drop
+  // any hit whose phrase is already present in a prior promoted block
+  // instead of re-writing it.
+  const newHits = hits.filter(h => !priorContent.includes(`**${h.phrase}**`))
+  summary.alreadyPromoted = hits.filter(h => !newHits.includes(h)).map(h => h.phrase)
+
+  if (newHits.length > 0) {
+    const promotionText = newHits
+      .map(h => `- **${h.phrase}** appeared ${h.count} times across ${agentId}'s corrections`)
+      .join('\n')
+    const newBlock = `#### Promoted ${timestamp}\n${promotionText}\n`
+
+    const blockBytes = Buffer.byteLength(newBlock, 'utf8')
+    if (blockBytes > MEMORY_BUDGET) {
+      // Named error, not a silent truncation — a promotion block big enough
+      // to blow the entire budget on its own is a signal something upstream
+      // (an unbounded example, a runaway phrase) needs fixing, not clipping.
+      throw new PromotionBlockTooLargeError(agentId, blockBytes, MEMORY_BUDGET)
+    }
+
     const separator = priorContent && !priorContent.endsWith('\n') ? '\n' : ''
-    const updated = `${priorContent}${separator}\n#### Promoted ${timestamp}\n${promotionText}\n`
+    const combined = `${priorContent}${separator}\n${newBlock}`
+    const updated = trimToMemoryBudget(combined, MEMORY_BUDGET)
 
-    const { error: writeError } = existingRow?.id
-      ? await db().from('agent_memory_files').update({ content: updated, updated_at: timestamp }).eq('id', existingRow.id)
-      : await db().from('agent_memory_files').insert({ agent_id: agentId, memory_type: 'self_improving', date_key: null, content: updated, updated_at: timestamp })
-    if (!writeError) summary.promotedToHot = hits.map(h => h.phrase)
-  } catch {
-    // Best-effort — a failed HOT-tier write should not block the vault
-    // proposal below; the caller sees promotedToHot stay empty.
+    try {
+      const { error: writeError } = existingRow?.id
+        ? await db().from('agent_memory_files').update({ content: updated, updated_at: timestamp }).eq('id', existingRow.id)
+        : await db().from('agent_memory_files').insert({ agent_id: agentId, memory_type: 'self_improving', date_key: null, content: updated, updated_at: timestamp })
+      if (!writeError) summary.promotedToHot = newHits.map(h => h.phrase)
+    } catch (err) {
+      // Best-effort — a failed HOT-tier write should not block the vault
+      // proposal below; the caller sees promotedToHot stay empty. (Only DB
+      // failures land here: PromotionBlockTooLargeError is thrown above,
+      // outside this try, and always propagates.)
+      void err
+    }
   }
 
   for (const hit of hits) {
@@ -405,4 +466,28 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
   }
 
   return summary
+}
+
+/**
+ * Keep the self_improving row's most recent "#### Promoted " blocks and drop
+ * older ones from the front once the row exceeds `budget` bytes — the
+ * bounded half of the round-3 repair (idempotency alone stops the row from
+ * growing when nothing changed, but a long-running agent with genuinely new
+ * patterns every week still needs a ceiling).
+ */
+function trimToMemoryBudget(content: string, budget: number): string {
+  if (Buffer.byteLength(content, 'utf8') <= budget) return content
+
+  const blocks = content.split(/\n(?=#### Promoted )/).filter(b => b.trim().length > 0)
+  const kept: string[] = []
+  let total = 0
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i]
+    const joiner = kept.length > 0 ? 1 : 0
+    const size = Buffer.byteLength(block, 'utf8') + joiner
+    if (total + size > budget) break
+    kept.unshift(block)
+    total += size
+  }
+  return kept.join('\n')
 }

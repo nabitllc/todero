@@ -16,11 +16,15 @@ export const BASE = process.env.TODERO_URL ?? 'http://localhost:3000'
 const OWNER = 'mc-auth=kaos2026; mc-role=owner'
 
 /** GET/POST helper that never throws — a network failure is a result, not a crash. */
-export async function http(path, { method = 'GET', cookie = null, timeoutMs = 20000 } = {}) {
+export async function http(path, { method = 'GET', cookie = null, timeoutMs = 20000, body = null } = {}) {
   try {
     const res = await fetch(BASE + path, {
       method,
-      headers: cookie ? { cookie } : {},
+      headers: {
+        ...(cookie ? { cookie } : {}),
+        ...(body ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'manual',
     })

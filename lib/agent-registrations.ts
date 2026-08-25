@@ -242,6 +242,53 @@ export async function setRegistrationStatus(
 }
 
 /**
+ * Hard delete — the roster stops naming this agent at all, rather than just
+ * marking it offline. DELETE /api/connect (disconnect) leaves the row in
+ * place on purpose, since a re-POST to /api/connect should revive the same
+ * identity; this is the separate, explicit action for a test agent or a
+ * retired one that should stop appearing in the Crew tab and Office roster
+ * forever, exposed as "Remove" on a self-registered agent's card. Same
+ * primary-then-`agent_memory`-fallback path every other write here uses.
+ * No-op-with-a-reason when the agent was never registered — there is
+ * nothing to remove.
+ */
+export async function deleteRegistration(id: string): Promise<RegistrationResult<null>> {
+  if (!isDbConfigured()) {
+    return { data: null, store: null, warning: 'database not configured — agent registrations unavailable', error: null }
+  }
+  const existing = await readRegistration(id)
+  if (!existing.data) {
+    // `store: null` here (not `existing.store`, which is non-null whenever
+    // the READ itself succeeded, whether or not this id was in it) is what
+    // lets a caller tell "nothing was deleted" apart from "deleted", since
+    // this function's own `data` is always null even on success — it does
+    // not hand back the row it removed.
+    return { data: null, store: null, warning: existing.warning ?? `agent '${id}' is not registered`, error: existing.error }
+  }
+  try {
+    const primary = await db().from(REGISTRATIONS_TABLE).delete().eq('id', id)
+    if (!primary.error) {
+      return { data: null, store: REGISTRATIONS_TABLE, warning: null, error: null }
+    }
+    if (!isMissingTableError(primary.error)) {
+      return { data: null, store: null, warning: primary.error.message, error: primary.error }
+    }
+
+    const fallback = await db()
+      .from(REGISTRATIONS_FALLBACK_TABLE)
+      .delete()
+      .eq('agent_id', id)
+      .eq('key', REGISTRATIONS_FALLBACK_KEY)
+    if (fallback.error) {
+      return { data: null, store: null, warning: fallback.error.message, error: fallback.error }
+    }
+    return { data: null, store: REGISTRATIONS_FALLBACK_TABLE, warning: MIGRATION_WARNING, error: null }
+  } catch (e) {
+    return { data: null, store: null, warning: e instanceof Error ? e.message : String(e), error: null }
+  }
+}
+
+/**
  * Bump `last_seen_at` for a registered agent — called by
  * lib/agent-heartbeats.ts's recordHeartbeat() so the column means what it
  * says instead of freezing at whatever time POST /api/connect happened to

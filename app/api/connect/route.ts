@@ -22,8 +22,14 @@
 //
 //   DELETE /api/connect
 //     body: { connection_id } or { agent_id }
-//     -> 200 marks the agent 'offline' immediately, rather than waiting out
-//        the 10-minute heartbeat window.
+//     -> 200 marks the agent 'offline' immediately AND clears its recorded
+//        heartbeat, rather than waiting out the 10-minute heartbeat window.
+//        Clearing the heartbeat too is what keeps GET /api/agents from
+//        reading a still-fresh check-in and rendering a disconnected agent
+//        as "On duty" until that window ages out on its own. The row itself
+//        stays in `agent_registrations` (a later POST /api/connect revives
+//        the same identity) — for a permanent removal see
+//        DELETE /api/agents/{id}, which hard-deletes it.
 //
 // Re-POSTing is idempotent: it re-registers rather than erroring, matching
 // builderz's documented "re-registering resets status and refreshes
@@ -33,7 +39,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbUnavailableResponse } from '@/lib/db-http'
 import { resolveAgentIdentity } from '@/lib/agent-roster'
 import { registerAgent, readRegistrations, setRegistrationStatus } from '@/lib/agent-registrations'
-import { recordHeartbeat } from '@/lib/agent-heartbeats'
+import { recordHeartbeat, clearHeartbeat } from '@/lib/agent-heartbeats'
 
 const NO_STORE = { 'Cache-Control': 'no-store' } as const
 
@@ -182,8 +188,28 @@ export async function DELETE(req: NextRequest) {
     )
   }
 
+  // The registration row is now backdated 'offline', but the heartbeat this
+  // agent sent moments ago (connecting itself records one — see the POST
+  // handler above) is still sitting in `agent_heartbeats`/`agent_memory`,
+  // inside LIVE_WINDOW_MS. Left alone, GET /api/agents would keep reading
+  // THAT row for liveness and render this agent as "On duty" for up to ten
+  // more minutes after it explicitly disconnected. Clearing it here, in the
+  // same request, is what makes the disconnect visible on the very next
+  // poll instead of only after the heartbeat window ages out on its own.
+  // Best-effort: a failure to clear the heartbeat must not turn an otherwise
+  // successful disconnect into an error, since buildRegistrationAgent() in
+  // app/api/agents/route.ts also floors liveness at the registration's own
+  // (now backdated) last_seen_at as a second line of defense.
+  const heartbeatClear = await clearHeartbeat(agentId)
+
   return NextResponse.json(
-    { ok: true, agent_id: agentId, status: result.data.status, store: result.store, warning: result.warning },
+    {
+      ok: true,
+      agent_id: agentId,
+      status: result.data.status,
+      store: result.store,
+      warning: result.warning ?? heartbeatClear.warning,
+    },
     { headers: NO_STORE },
   )
 }

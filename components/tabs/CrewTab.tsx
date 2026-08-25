@@ -216,6 +216,7 @@ export default function CrewTab({
   agentModal,
   setAgentModal,
   projectFilter,
+  onAgentRemoved,
 }: {
   /** Why /api/agents failed, if it did. TOD-654: shown, not swallowed. */
   agentsError?: ApiError | null
@@ -230,6 +231,8 @@ export default function CrewTab({
   agentModal: any
   setAgentModal: (a: any) => void
   projectFilter?: string | null
+  /** See AgentsTab's prop of the same name — bubbled up one more level. */
+  onAgentRemoved?: (agentId: string) => void
 }) {
   const isOwner = userRole === 'owner' || userRole === 'god' || userRole === 'admin'
 
@@ -390,6 +393,7 @@ export default function CrewTab({
           agentModal={agentModal}
           setAgentModal={setAgentModal}
           projectFilter={projectFilter}
+          onAgentRemoved={onAgentRemoved}
         />
       </div>
 

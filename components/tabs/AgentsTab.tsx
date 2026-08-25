@@ -46,6 +46,7 @@ export default function AgentsTab({
   agentModal,
   setAgentModal,
   projectFilter,
+  onAgentRemoved,
 }: {
   displayAgents: any[]
   agentLiveStatus: (agentId: string) => { dot: 'green'|'amber'|'grey'; label: string }
@@ -59,6 +60,11 @@ export default function AgentsTab({
   agentModal: any
   setAgentModal: (a: any) => void
   projectFilter?: string | null
+  /** Bubbled up from AgentDetailView's "Remove" action so the roster state
+   *  held above this component drops the agent immediately, instead of
+   *  waiting for the next /api/agents poll. Optional so older call sites
+   *  still compile. */
+  onAgentRemoved?: (agentId: string) => void
 }) {
   // Prefer the envelope; fall back to the per-row copy for any caller that has
   // not been threaded through yet. Reading row[0] alone lost the warning in the
@@ -261,7 +267,7 @@ export default function AgentsTab({
 
               {/* Agent Detail View */}
               {agentModal && (
-                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} />
+                <AgentDetailView agent={agentModal} onClose={() => setAgentModal(null)} onRemoved={onAgentRemoved} />
               )}
             </div>
   )

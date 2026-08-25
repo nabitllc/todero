@@ -189,6 +189,51 @@ export async function recordHeartbeat(input: HeartbeatInput): Promise<HeartbeatR
 }
 
 /**
+ * Erase a recorded check-in on a clean disconnect. Called by DELETE
+ * /api/connect alongside setRegistrationStatus(id, 'offline') so the two
+ * stores that answer "is this agent alive?" move together in one request.
+ *
+ * Without this, `agent_heartbeats` (or its `agent_memory` fallback) keeps
+ * holding the agent's last real heartbeat — which is often only seconds old,
+ * since connecting itself records a beat (see POST /api/connect) — so it
+ * stays inside LIVE_WINDOW_MS/STALE_WINDOW_MS and GET /api/agents keeps
+ * reporting the agent as running for up to ten more minutes after it said
+ * goodbye. The disconnect would be recorded but never reach the surface the
+ * Crew tab and Office actually read.
+ *
+ * Same primary-then-`agent_memory`-fallback path recordHeartbeat() writes
+ * through: delete from the dedicated table first, and only try the fallback
+ * key/value row when that table does not exist. An agent with no row in
+ * either store is a harmless no-op — there is nothing to clear.
+ */
+export async function clearHeartbeat(agentId: string): Promise<HeartbeatResult<null>> {
+  if (!isDbConfigured()) {
+    return { data: null, store: null, warning: 'database not configured — nothing to clear', error: null }
+  }
+  try {
+    const primary = await db().from('agent_heartbeats').delete().eq('agent_id', agentId)
+    if (!primary.error) {
+      return { data: null, store: HEARTBEAT_TABLE, warning: null, error: null }
+    }
+    if (!isMissingTableError(primary.error)) {
+      return { data: null, store: null, warning: primary.error.message, error: primary.error }
+    }
+
+    const fallback = await db()
+      .from('agent_memory')
+      .delete()
+      .eq('agent_id', agentId)
+      .eq('key', HEARTBEAT_FALLBACK_KEY)
+    if (fallback.error) {
+      return { data: null, store: null, warning: fallback.error.message, error: fallback.error }
+    }
+    return { data: null, store: HEARTBEAT_FALLBACK_TABLE, warning: MIGRATION_WARNING, error: null }
+  } catch (e) {
+    return { data: null, store: null, warning: e instanceof Error ? e.message : String(e), error: null }
+  }
+}
+
+/**
  * Best-effort bridge into `agent_registrations.last_seen_at` so that column
  * means what it says instead of freezing at whatever time POST /api/connect
  * happened to run. A heartbeat from an agent that was never registered (only

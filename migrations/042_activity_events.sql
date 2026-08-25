@@ -1,5 +1,10 @@
 -- TOD-818: Activity events table
 -- Records issue lifecycle events for audit trail and analytics
+--
+-- NOTE (boot-migrations piece): renumbered from 011 -> 042 to resolve a
+-- collision with 011_inbox.sql. That file had to stay at 011 because
+-- 022_inbox_response_data_issue_fk.sql ALTERs the inbox table and must run
+-- after it; nothing later references activity_events, so this one moved.
 
 create table if not exists activity_events (
   id            uuid primary key default gen_random_uuid(),

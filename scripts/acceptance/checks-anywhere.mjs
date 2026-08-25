@@ -157,10 +157,24 @@ export const ANYWHERE_CHECKS = [
     async run() {
       const r = await http('/api/inbox', { cookie: OWNER })
       if (r.status !== 200) return no(`inbox list ${r.status}`)
-      // The regression this guards: approve used to 500. A 4xx for a bad id is
-      // correct; a 5xx means the write path is still broken.
-      const p = await http('/api/inbox?id=00000000-0000-0000-0000-000000000000&action=approve', { method: 'POST', cookie: OWNER })
-      return p.status < 500 ? ok(`approve path answers ${p.status}, not a 5xx`) : no(`approve still 5xx: ${p.body.slice(0, 120)}`)
+      // Approving is PATCH {id, status}, not POST — POST /api/inbox CREATES a
+      // request and requires a body. This check spent a whole session calling the
+      // wrong verb with no body, so req.json() threw and the route answered 500.
+      // It read as "the approve path is broken" when the approve path was fine.
+      // A grader that calls the wrong endpoint slanders working code.
+      // A well-formed request against an id that does not exist. The route must
+      // VALIDATE and refuse with a 4xx. Sending no body at all just makes
+      // req.json() throw, which is a 500 that says nothing about the write path —
+      // that mistake is what made this check read red for a whole session.
+      const p = await http('/api/inbox', {
+        method: 'PATCH', cookie: OWNER,
+        body: { id: '00000000-0000-0000-0000-000000000000', status: 'approved' },
+      })
+      // A bogus id must be refused with a 4xx. A 5xx means the write path itself
+      // is broken, which is the regression this actually guards.
+      return p.status < 500
+        ? ok(`approve path validates and answers ${p.status}, not a 5xx`)
+        : no(`approve write path 5xx: ${p.body.slice(0, 120)}`)
     },
   },
 

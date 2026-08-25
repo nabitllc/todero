@@ -1,5 +1,11 @@
 -- Connections table for storing encrypted integration credentials.
 -- Values are AES-256 encrypted at the application layer; never stored in plaintext.
+--
+-- NOTE (boot-migrations piece): renumbered from 035 -> 045 to resolve a
+-- collision with 035_clear_assignee_on_refined.sql, which landed first that
+-- day (2026-04-21 17:24 vs 19:24) and had no free slot to move into either.
+-- No later migration references the connections table, so nothing depended
+-- on this file's original position.
 
 CREATE TABLE IF NOT EXISTS connections (
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

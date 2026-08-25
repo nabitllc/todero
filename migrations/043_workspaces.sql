@@ -1,4 +1,10 @@
--- 013: Workspaces table for workspace settings (TOD-1603)
+-- Workspaces table for workspace settings (TOD-1603)
+--
+-- NOTE (boot-migrations piece): renumbered from 013 -> 043 to resolve a
+-- collision with 013_workspace_roles.sql. workspace_roles (TOD-906, landed
+-- 2026-04-13) predates this file (TOD-1603, landed 2026-04-22) and stayed at
+-- 013; neither table has a foreign key to the other, so no ordering
+-- constraint was broken by moving this one to the end.
 CREATE TABLE IF NOT EXISTS workspaces (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
