@@ -21,6 +21,7 @@ import { prepareWorktree, teardownWorktree } from './worktree'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 import { resolveBinary } from '../paths'
 import { finalizeRun } from './token-ledger'
+import { recordRunOnExit } from '../memory-loop'
 
 // Bare name by default: resolved through PATH at spawn time (`where`/`which`),
 // so a `claude` installed by npm -g, Homebrew, or the official installer all
@@ -170,6 +171,10 @@ export const claudeCodeRuntime: AgentRuntime = {
         durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
         taskId: opts.taskId ?? null,
       })
+      // memory-loop-write (round 2): the learning loop's write half had no
+      // caller anywhere in the running product — this is that caller, one
+      // agent_run_records row per dispatched run.
+      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
     }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
 
     // Schedule worktree teardown after the timeout window

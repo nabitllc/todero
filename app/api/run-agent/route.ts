@@ -90,10 +90,38 @@ async function loadContextFromDB(agentId: string): Promise<string> {
   // Bug fix: table was renamed agent_memory → agent_memory_files (agent_memory is the key-value store)
   const today = new Date().toISOString().slice(0, 10)
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-  const memRows = await selectRows<{ memory_type: string; date_key: string | null; content: string }>(
-    'agent_memory_files',
-    `agent_id=eq.global&or=(memory_type.in.(long_term,self_improving,corrections),and(memory_type.eq.daily,date_key.in.(${today},${yesterday})))&select=memory_type,date_key,content&order=updated_at.desc&limit=20`,
-  )
+  // memory-loop-write (round 2): two defects fixed together here, because
+  // fixing #1 alone would have hit #2.
+  //   1. This was hard-filtered to `agent_id=eq.global`, so the per-agent HOT
+  //      tier rows promoteHotPatterns() writes to `agent_id: agentId`
+  //      (lib/memory-loop.ts) landed on a key this query never read — the
+  //      header comment on memory-loop.ts asserted the opposite. Now scoped
+  //      to `agent_id IN (global, <this agent>)`, matching the sibling
+  //      agent_documents query just above, which already did this correctly.
+  //   2. The old single query string nested `and(memory_type.eq.daily,…)`
+  //      inside an `or=`, but this translator's `or()` only ever accepts a
+  //      FLAT list of column/op/value predicates (lib/db.ts's `DbPredicate`,
+  //      lib/db/query-params.ts's `parseOrPredicates`) — AND-inside-OR was
+  //      never supported. That combination throws `DbQueryParseError`
+  //      ("Invalid filter column \"and(memory_type\"") on every call, which
+  //      propagated unhandled out of this function and would 500 any
+  //      dispatch that reached it. Split into two flat queries (no nested
+  //      AND needed in either) and merge+re-sort in JS instead of asking the
+  //      string DSL for a shape it cannot express.
+  const agentMemoryScope = `or=(agent_id.eq.global,agent_id.eq.${agentId})`
+  const [hotAndLongTermRows, dailyRows] = await Promise.all([
+    selectRows<{ memory_type: string; date_key: string | null; content: string; updated_at?: string }>(
+      'agent_memory_files',
+      `${agentMemoryScope}&memory_type=in.(long_term,self_improving,corrections)&select=memory_type,date_key,content,updated_at&order=updated_at.desc&limit=20`,
+    ),
+    selectRows<{ memory_type: string; date_key: string | null; content: string; updated_at?: string }>(
+      'agent_memory_files',
+      `${agentMemoryScope}&memory_type=eq.daily&date_key=in.(${today},${yesterday})&select=memory_type,date_key,content,updated_at&order=updated_at.desc&limit=20`,
+    ),
+  ])
+  const memRows = [...hotAndLongTermRows, ...dailyRows]
+    .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+    .slice(0, 20)
 
   const sections: string[] = []
 

@@ -19,6 +19,7 @@ import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 import { resolveBinary } from '../paths'
+import { recordRunOnExit } from '../memory-loop'
 
 // Bare name: resolved through PATH at spawn time, so an npm -g install, a
 // Homebrew install and a Windows shim all work. CODEX_BIN overrides.
@@ -117,6 +118,8 @@ export const codexRuntime: AgentRuntime = {
     appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
     watchChildExit(result.pid, opts.logFile, () => {
       appendLog(opts.logFile, `[spawn-exit] agent=${opts.agentId} task=${opts.taskId ?? 'none'}`)
+      // memory-loop-write (round 2): one agent_run_records row per run.
+      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
     }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
 
     if (teardownPath) {

@@ -8,7 +8,7 @@
 // thin callers of the same function, so the two can never drift apart.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 import { promoteHotPatterns, type PromotionSummary } from '@/lib/memory-loop'
 
 export const dynamic = 'force-dynamic'
@@ -33,5 +33,16 @@ export async function POST(req: NextRequest) {
   for (const agentId of agents) {
     results.push(await promoteHotPatterns(agentId))
   }
+
+  // Round-2 repair: promoteHotPatterns() used to swallow a failed
+  // agent_run_records read into a clean `{ rowsExamined: 0 }` summary, so
+  // this route reported the same cheerful 200 whether nothing had happened
+  // yet or the table did not exist at all. Surface the first real DB error
+  // the same honest way GET /api/agent-run-records already does — a 424 for
+  // a missing table, a 500 for anything else — instead of a false "0 rows
+  // examined for a table that does not exist".
+  const failed = results.find(r => r.dbError)
+  if (failed?.dbError) return dbQueryErrorResponse(failed.dbError, 'agent_run_records')
+
   return NextResponse.json({ results })
 }

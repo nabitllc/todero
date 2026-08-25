@@ -23,6 +23,7 @@
 
 import { db, isDbConfigured, type DbError } from '@/lib/db'
 import { isMissingTableError } from '@/lib/db-http'
+import { classifyLiveness, STALE_WINDOW_MS } from '@/lib/agent-liveness'
 
 /** Dedicated table. Created by migrations/039_agent_registrations.sql. */
 export const REGISTRATIONS_TABLE = 'agent_registrations'
@@ -95,20 +96,37 @@ function toCapabilities(value: unknown): unknown[] {
   return []
 }
 
+/**
+ * DERIVED, not stored: 'connected' while inside STALE_WINDOW_MS of
+ * `lastSeenAt`, 'offline' past it. Before this, the row's own `status` column
+ * was returned verbatim — set to 'connected' once at registration and never
+ * revisited, so an agent whose heartbeats stopped silently kept reading
+ * 'connected' forever. Now GET /api/connect (and every AgentDto built from a
+ * registration) can never report a dead agent as live: the same
+ * classifyLiveness() thresholds lib/agent-heartbeats.ts already uses decide
+ * it, driven by the column recordHeartbeat() now actually keeps moving (see
+ * touchRegistration below).
+ */
+function deriveStatus(lastSeenAt: number, now = Date.now()): string {
+  const liveness = classifyLiveness(lastSeenAt, now)
+  return liveness === 'idle' || liveness === 'never' ? 'offline' : 'connected'
+}
+
 /** One `agent_registrations` row -> `AgentRegistration`, or null if unreadable. */
 function rowToRegistration(row: Record<string, unknown>): AgentRegistration | null {
   const id = toStringOrNull(row.id)
   const registeredAt = toEpochMs(row.registered_at)
   if (!id || registeredAt === null) return null
+  const lastSeenAt = toEpochMs(row.last_seen_at) ?? registeredAt
   return {
     id,
     name: toStringOrNull(row.name) ?? id,
     runtime: toStringOrNull(row.runtime) ?? 'unknown',
-    status: toStringOrNull(row.status) ?? 'offline',
+    status: deriveStatus(lastSeenAt),
     capabilities: toCapabilities(row.capabilities),
     connectionId: toStringOrNull(row.connection_id),
     registeredAt,
-    lastSeenAt: toEpochMs(row.last_seen_at) ?? registeredAt,
+    lastSeenAt,
   }
 }
 
@@ -141,9 +159,18 @@ function registrationToRow(reg: AgentRegistration): Record<string, unknown> {
   }
 }
 
-/** Shared write path: try the dedicated table, fall back to `agent_memory`. */
+/**
+ * Shared write path: try the dedicated table, fall back to `agent_memory`.
+ *
+ * The `.from()` calls below spell the table name out as a literal rather
+ * than using REGISTRATIONS_TABLE, for the same reason lib/agent-heartbeats.ts
+ * does (see its HEARTBEAT_TABLE comment): scripts/generate-required-tables.mjs
+ * derives lib/required-tables.generated.ts by scanning for `.from('<table>')`
+ * text, so a table referenced only through a constant silently drops out of
+ * /api/health's schema check.
+ */
 async function writeRegistration(reg: AgentRegistration): Promise<RegistrationResult<AgentRegistration | null>> {
-  const primary = await db().from(REGISTRATIONS_TABLE).upsert(registrationToRow(reg), { onConflict: 'id' })
+  const primary = await db().from('agent_registrations').upsert(registrationToRow(reg), { onConflict: 'id' })
   if (!primary.error) return { data: reg, store: REGISTRATIONS_TABLE, warning: null, error: null }
   if (!isMissingTableError(primary.error)) {
     return { data: null, store: null, warning: primary.error.message, error: primary.error }
@@ -193,6 +220,14 @@ export async function registerAgent(input: RegisterInput): Promise<RegistrationR
  * clean disconnect, rather than waiting 10 minutes for the heartbeat window
  * to expire. No-op-with-a-reason (`data: null`) when the agent was never
  * registered, since there is nothing to flip.
+ *
+ * `status` is now DERIVED from `lastSeenAt` on every read (see
+ * deriveStatus() / rowToRegistration() above) rather than trusted verbatim,
+ * so marking an agent 'offline' here must also push `lastSeenAt` outside
+ * STALE_WINDOW_MS — otherwise a clean disconnect moments after a heartbeat
+ * would still read back as 'connected' until the window aged out from under
+ * it on its own. A future heartbeat naturally revives it, since
+ * recordHeartbeat() bumps `lastSeenAt` back to now.
  */
 export async function setRegistrationStatus(
   id: string,
@@ -202,7 +237,49 @@ export async function setRegistrationStatus(
   if (!existing.data) {
     return { data: null, store: existing.store, warning: existing.warning ?? `agent '${id}' is not registered`, error: existing.error }
   }
-  return writeRegistration({ ...existing.data, status })
+  const lastSeenAt = status === 'offline' ? Date.now() - STALE_WINDOW_MS - 1 : existing.data.lastSeenAt
+  return writeRegistration({ ...existing.data, status, lastSeenAt })
+}
+
+/**
+ * Bump `last_seen_at` for a registered agent — called by
+ * lib/agent-heartbeats.ts's recordHeartbeat() so the column means what it
+ * says instead of freezing at whatever time POST /api/connect happened to
+ * run. Deliberately NOT a full writeRegistration(): a heartbeat should not
+ * have to read-modify-write the whole row (name/runtime/capabilities/status)
+ * just to move one timestamp, and an UPDATE on a row that does not exist is a
+ * harmless no-op (0 rows affected, no error) — exactly right for a heartbeat
+ * from an agent that was only ever named in AGENTS.md and never registered.
+ */
+export async function touchRegistration(
+  id: string,
+  lastSeenAtMs: number,
+): Promise<RegistrationResult<null>> {
+  if (!isDbConfigured()) {
+    return { data: null, store: null, warning: 'database not configured — agent registrations unavailable', error: null }
+  }
+  try {
+    const iso = new Date(lastSeenAtMs).toISOString()
+    const primary = await db().from('agent_registrations').update({ last_seen_at: iso }).eq('id', id)
+    if (!primary.error) {
+      return { data: null, store: REGISTRATIONS_TABLE, warning: null, error: null }
+    }
+    if (!isMissingTableError(primary.error)) {
+      return { data: null, store: null, warning: primary.error.message, error: primary.error }
+    }
+
+    // Pre-migration fallback keeps the whole record inside one JSON blob
+    // keyed by agent_id — there is no column to UPDATE in place, so this is
+    // a read-modify-write through the same writeRegistration() path
+    // everything else in this fallback uses. A registration that does not
+    // exist there either is a real no-op: nothing to touch.
+    const existing = await readRegistration(id)
+    if (!existing.data) return { data: null, store: existing.store, warning: existing.warning, error: existing.error }
+    const result = await writeRegistration({ ...existing.data, lastSeenAt: lastSeenAtMs })
+    return { data: null, store: result.store, warning: result.warning, error: result.error }
+  } catch (e) {
+    return { data: null, store: null, warning: e instanceof Error ? e.message : String(e), error: null }
+  }
 }
 
 /**
@@ -216,7 +293,7 @@ export async function readRegistrations(): Promise<RegistrationResult<Map<string
   }
 
   try {
-    const primary = await db().from(REGISTRATIONS_TABLE).select('id,name,runtime,status,capabilities,connection_id,registered_at,last_seen_at')
+    const primary = await db().from('agent_registrations').select('id,name,runtime,status,capabilities,connection_id,registered_at,last_seen_at')
     if (!primary.error) {
       const out = new Map<string, AgentRegistration>()
       for (const row of Array.isArray(primary.data) ? primary.data : []) {

@@ -9,6 +9,7 @@ import {
   type HeartbeatStore,
   type Liveness,
 } from '@/lib/agent-heartbeats'
+import { readRegistrations, type AgentRegistration } from '@/lib/agent-registrations'
 import { internalHeaders } from '@/lib/internal-auth'
 
 /**
@@ -29,8 +30,18 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const
  * no roster file at all, serve AGENT_META *as* the roster. Both made the API
  * report agents that no file on the host declares. AGENT_META is now strictly
  * display metadata for agents the roster names.
+ *
+ * Widened from the original 'agents-md' | 'none' now that `agent_registrations`
+ * is a second, independent source of "who exists": an agent that self-
+ * registered through POST /api/connect but is not named in any AGENTS.md
+ * (or vice versa) is real and must be reported, not silently dropped because
+ * it does not match the one source this type used to allow for.
+ *   'agents-md'  — every agent came from the roster file, no registrations
+ *   'registered' — every agent came from agent_registrations, no roster file
+ *   'both'       — at least one row from each source
+ *   'none'       — neither source had anything
  */
-type RosterSource = 'agents-md' | 'none'
+type RosterSource = 'agents-md' | 'registered' | 'both' | 'none'
 
 /**
  * Where "is this agent running?" was answered from.
@@ -274,15 +285,75 @@ function buildAgents(
   })
 }
 
+/**
+ * An AgentDto for a registration with no matching AGENTS.md row — the
+ * concrete thing this piece exists to make possible: an agent that only ever
+ * self-registered through POST /api/connect must be visible in the Crew tab
+ * and the Office roster, not invisible because it does not match the one
+ * source `buildAgents()` reads. Reuses the exact liveness derivation
+ * `buildAgents()` uses below, so a registration-only agent is not held to a
+ * different truth standard than a roster one.
+ *
+ * The heartbeat store is still the first choice for `lastSeenAt` — it is the
+ * dedicated liveness table and the one every other row here reads — and
+ * `reg.lastSeenAt` (now kept moving by recordHeartbeat() -> touchRegistration(),
+ * see lib/agent-heartbeats.ts) is the fallback for the gap right after POST
+ * /api/connect, before this agent's first explicit heartbeat has landed in
+ * that table.
+ */
+function buildRegistrationAgent(reg: AgentRegistration, state: RunState): AgentDto {
+  const now = Date.now()
+  const beat = state.heartbeats.get(reg.id) ?? null
+  const lastSeenAt = beat?.lastSeen ?? (state.livenessSource === 'none' ? null : reg.lastSeenAt)
+  const liveness: Liveness = state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
+  const isRunning = liveness === 'live'
+  const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
+  const capabilities = reg.capabilities.filter((c): c is string => typeof c === 'string')
+
+  return {
+    id: reg.id,
+    name: reg.name,
+    // Neutral display: AGENT_META has no entry for an agent no AGENTS.md
+    // names, and inventing one would be exactly the fabricated metadata this
+    // route was already rewritten once to stop doing for the roster itself.
+    emoji: '🔌',
+    role: 'self-registered',
+    model: reg.runtime,
+    active: isRunning,
+    status: isRunning ? 'active' : 'idle',
+    isRunning,
+    lastSeenAt,
+    liveness,
+    livenessSource: state.livenessSource,
+    nextRunTs: null,
+    modelShort: shortModelLabel(reg.runtime),
+    queue_filter: [],
+    color: '#6b7280',
+    desc: `runtime: ${reg.runtime}`,
+    capabilities,
+    floor: false,
+    workspace: null,
+    sessions: 0,
+    ago: agoMin,
+    lastUpdatedAt: lastSeenAt ?? reg.registeredAt,
+    currentTask: beat?.task ?? null,
+    workStartedAt: null,
+    rosterSource: 'registered',
+    rosterWarning: null,
+    rosterPath: null,
+  }
+}
+
 export async function GET() {
-  // AGENTS.md is the roster, and it is a host artifact: a fresh clone on
-  // another machine may have none, or AGENTS_MD_PATH may point somewhere that
-  // does not exist. Neither is a server fault, so neither is a 500 — the
-  // response is a 200 carrying an empty roster and a warning naming the path,
-  // which lets the UI say "no agents configured" instead of inventing some.
+  // AGENTS.md is one of two sources of "who exists" now — see RosterSource
+  // above. It is a host artifact: a fresh clone on another machine may have
+  // none, or AGENTS_MD_PATH may point somewhere that does not exist. Neither
+  // is a server fault, so neither is a 500 — the response is a 200 carrying
+  // an empty roster and a warning naming the path, which lets the UI say
+  // "no agents configured" instead of inventing some.
   const roster = loadAgentRoster()
   const parsedAgents: ParsedAgent[] = roster.agents
-  const rosterSource: RosterSource = roster.agents.length > 0 ? 'agents-md' : 'none'
+  const baseRosterSource: 'agents-md' | 'none' = roster.agents.length > 0 ? 'agents-md' : 'none'
   const rosterWarning = roster.warning
   const rosterPath = roster.path
 
@@ -297,9 +368,31 @@ export async function GET() {
     status = 200,
     heartbeatStore: HeartbeatStore | null = null,
     heartbeatWarning: string | null = null,
+    registrations: Map<string, AgentRegistration> = new Map(),
   ) => {
+    // Every registration that AGENTS.md does not already name — the union
+    // this piece was built for. An agent named in both sources renders once,
+    // as its roster row (display metadata from AGENT_META is real; a
+    // registration has none), so its heartbeat still drives that one row.
+    const rosterIds = new Set(parsedAgents.map((a) => a.id))
+    const registrationOnly = Array.from(registrations.values()).filter((r) => !rosterIds.has(r.id))
+
+    const agents: AgentDto[] = [
+      ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule),
+      ...registrationOnly.map((r) => buildRegistrationAgent(r, state)),
+    ]
+
+    const rosterSource: RosterSource =
+      parsedAgents.length > 0 && registrations.size > 0
+        ? 'both'
+        : parsedAgents.length > 0
+          ? 'agents-md'
+          : registrations.size > 0
+            ? 'registered'
+            : 'none'
+
     const body: AgentsResponse = {
-      agents: buildAgents(parsedAgents, rosterSource, rosterWarning, rosterPath, state, schedule),
+      agents,
       rosterSource,
       rosterWarning,
       rosterPath,
@@ -315,7 +408,9 @@ export async function GET() {
   // Unconfigured host: the roster is still real, so return it — with 503 and
   // the reason, never a bare empty 200. Liveness lives in the database, so
   // without one there is no liveness to report and `livenessSource` stays
-  // 'none': every agent reads "never checked in", not "Idle".
+  // 'none': every agent reads "never checked in", not "Idle". Registrations
+  // live in the same database, so an unconfigured host has none to union in
+  // either — `respond()`'s default empty map is correct here.
   if (!isDbConfigured()) {
     return respond(emptyRunState(), false, NO_KEY_ERROR(), 503)
   }
@@ -324,9 +419,9 @@ export async function GET() {
     const supabase = db()
     const state = emptyRunState()
 
-    // The heartbeat read and the two queries are independent, so they run
-    // together rather than stacking their round trips.
-    const [{ data: activeIssues }, { data: recentRuns }, beats] = await Promise.all([
+    // The heartbeat read, the registration read, and the two queries are all
+    // independent, so they run together rather than stacking their round trips.
+    const [{ data: activeIssues }, { data: recentRuns }, beats, registrations] = await Promise.all([
       // 1. Issues that are actively being worked on (in_progress, code_review)
       supabase
         .from('issues')
@@ -343,6 +438,12 @@ export async function GET() {
       // 3. Recorded heartbeats — the only source of "is this agent running?".
       //    Works for agents on any host, not just this one.
       readHeartbeats(),
+      // 4. Registered agents — the roster's second source. Its own liveness
+      //    fields (last_seen_at, and the status derived from it) are kept
+      //    honest by recordHeartbeat()/rowToRegistration(); this route does
+      //    not recompute either, it only decides who from here is missing
+      //    from AGENTS.md and needs a row synthesized for them.
+      readRegistrations(),
     ])
     state.heartbeats = beats.data
     state.livenessSource = beats.store === null ? 'none' : 'heartbeat'
@@ -383,7 +484,7 @@ export async function GET() {
       }
     }
 
-    return respond(state, true, null, 200, beats.store, beats.warning)
+    return respond(state, true, null, 200, beats.store, beats.warning, registrations.data)
   } catch (e) {
     // Never swallow. A host that cannot reach its database answers 503 with the
     // reason, and still shows the roster it does know about.

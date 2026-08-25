@@ -30,6 +30,13 @@
 
 import { db, isDbConfigured, type DbError } from '@/lib/db'
 import { isMissingTableError } from '@/lib/db-http'
+import { touchRegistration } from '@/lib/agent-registrations'
+// Liveness classification lives in lib/agent-liveness.ts — see that file's
+// header for why (agent-registrations.ts needs it too, and importing it back
+// from here would be circular now that this file imports agent-registrations.ts
+// above). Re-exported so every existing `from '@/lib/agent-heartbeats'` import
+// of these names keeps working unchanged.
+export { LIVE_WINDOW_MS, STALE_WINDOW_MS, classifyLiveness, type Liveness } from '@/lib/agent-liveness'
 
 /**
  * Dedicated heartbeat table. Created by migrations/037_agent_heartbeats.sql.
@@ -48,23 +55,8 @@ export const HEARTBEAT_FALLBACK_TABLE = 'agent_memory'
 /** `key` used for the fallback rows in `agent_memory`. */
 export const HEARTBEAT_FALLBACK_KEY = 'heartbeat'
 
-/** Under this age an agent is answering right now. */
-export const LIVE_WINDOW_MS = 60_000
-
-/** Under this age it checked in recently but has missed its last beats. */
-export const STALE_WINDOW_MS = 10 * 60_000
-
 /** Which table answered. `null` when neither could be read. */
 export type HeartbeatStore = typeof HEARTBEAT_TABLE | typeof HEARTBEAT_FALLBACK_TABLE
-
-/**
- * What the server knows about an agent's liveness.
- *   live   — checked in within LIVE_WINDOW_MS
- *   stale  — checked in within STALE_WINDOW_MS but not recently
- *   idle   — checked in at some point, but not for over STALE_WINDOW_MS
- *   never  — no heartbeat has ever been received for this agent
- */
-export type Liveness = 'live' | 'stale' | 'idle' | 'never'
 
 /** One recorded check-in. */
 export interface Heartbeat {
@@ -101,15 +93,6 @@ export interface HeartbeatResult<T> {
 const MIGRATION_WARNING =
   `Table '${HEARTBEAT_TABLE}' does not exist (run: npm run db:migrate) — ` +
   `heartbeats are being kept in '${HEARTBEAT_FALLBACK_TABLE}' instead.`
-
-/** How old a check-in is allowed to be before it stops meaning "running". */
-export function classifyLiveness(lastSeen: number | null, now = Date.now()): Liveness {
-  if (lastSeen === null) return 'never'
-  const age = now - lastSeen
-  if (age < LIVE_WINDOW_MS) return 'live'
-  if (age < STALE_WINDOW_MS) return 'stale'
-  return 'idle'
-}
 
 /** Epoch ms from whatever the column/JSON held, or null if it is unreadable. */
 function toEpochMs(value: unknown): number | null {
@@ -181,7 +164,10 @@ export async function recordHeartbeat(input: HeartbeatInput): Promise<HeartbeatR
   }
 
   const primary = await db().from('agent_heartbeats').upsert(heartbeatToRow(beat), { onConflict: 'agent_id' })
-  if (!primary.error) return { data: beat, store: HEARTBEAT_TABLE, warning: null, error: null }
+  if (!primary.error) {
+    await bumpRegistrationLastSeen(beat.agentId, beat.lastSeen)
+    return { data: beat, store: HEARTBEAT_TABLE, warning: null, error: null }
+  }
   if (!isMissingTableError(primary.error)) {
     return { data: null, store: null, warning: primary.error.message, error: primary.error }
   }
@@ -198,7 +184,25 @@ export async function recordHeartbeat(input: HeartbeatInput): Promise<HeartbeatR
   if (fallback.error) {
     return { data: null, store: null, warning: fallback.error.message, error: fallback.error }
   }
+  await bumpRegistrationLastSeen(beat.agentId, beat.lastSeen)
   return { data: beat, store: HEARTBEAT_FALLBACK_TABLE, warning: MIGRATION_WARNING, error: null }
+}
+
+/**
+ * Best-effort bridge into `agent_registrations.last_seen_at` so that column
+ * means what it says instead of freezing at whatever time POST /api/connect
+ * happened to run. A heartbeat from an agent that was never registered (only
+ * ever named in AGENTS.md) has nothing to bump — touchRegistration() is a
+ * quiet no-op in that case, not an error, and any failure here (including "no
+ * such agent") must never fail the heartbeat write itself, which already
+ * succeeded in the store above by the time this runs.
+ */
+async function bumpRegistrationLastSeen(agentId: string, lastSeen: number): Promise<void> {
+  try {
+    await touchRegistration(agentId, lastSeen)
+  } catch {
+    // Registration bookkeeping is best-effort; the heartbeat already landed.
+  }
 }
 
 function indexBeats(

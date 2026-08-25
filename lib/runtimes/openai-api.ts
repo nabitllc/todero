@@ -19,6 +19,7 @@ import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { LLM_BASE_URL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
 import type { LiveModelsResult } from '@/lib/llm-provider'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+import { recordRunOnExit } from '../memory-loop'
 
 // ---------------------------------------------------------------------------
 // Provider resolution - OpenAI-compatible, not OpenAI-only
@@ -620,6 +621,8 @@ export const openaiApiRuntime: AgentRuntime = {
       // tmpDir holds the prompt + runner; only safe to drop once the child
       // that reads them is gone.
       try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
+      // memory-loop-write (round 2): one agent_run_records row per run.
+      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
     }, { maxMinutes: 90 })
 
     return {

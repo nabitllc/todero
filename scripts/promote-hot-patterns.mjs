@@ -45,8 +45,19 @@ if (!memoryMod.ok) {
 }
 const { promoteHotPatterns, PROMOTION_THRESHOLD } = memoryMod.module
 
+let sawDbError = false
 for (const agentId of agents) {
   const summary = await promoteHotPatterns(agentId)
+
+  // Round-2 repair: a failed read of agent_run_records (e.g. the table has
+  // never been migrated) used to look identical to "0 rows, nothing to
+  // promote." Report the real cause instead of a false "0 examined".
+  if (summary.dbError) {
+    sawDbError = true
+    log(`${agentId}: agent_run_records read FAILED — ${summary.dbError.message}${summary.dbError.code ? ` (${summary.dbError.code})` : ''}`)
+    continue
+  }
+
   log(`${agentId}: ${summary.rowsExamined} failed/rejected run record(s) examined`)
 
   if (summary.rowsExamined < PROMOTION_THRESHOLD) {
@@ -75,4 +86,8 @@ for (const agentId of agents) {
   }
 }
 
+if (sawDbError) {
+  log('Done, with errors — see above.')
+  process.exit(1)
+}
 log('Done.')

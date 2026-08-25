@@ -21,7 +21,7 @@
     "guard:no-silent-empty": "node scripts/no-silent-empty.mjs"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.0.0"
   },
   "keywords": [],
   "author": "",

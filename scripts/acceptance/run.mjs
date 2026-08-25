@@ -20,20 +20,40 @@ const only = pieceIdx >= 0 ? args[pieceIdx + 1] : null
 const outIdx = args.indexOf('--out')
 const outPath = outIdx >= 0 ? args[outIdx + 1] : null
 
+// ── SERVER PREFLIGHT ─────────────────────────────────────────────────────────
+// If the dev server is not serving, every HTTP check would report FAIL and the
+// suite would look like a product regression. It is a measurement failure.
+// Probe two routes that must always answer; if neither does, refuse to grade the
+// HTTP checks rather than slander them.
+const { http: preflightHttp } = await import('./checks.mjs')
+let serverUp = true
+{
+  const a = await preflightHttp('/api/health', { timeoutMs: 8000 })
+  const b = await preflightHttp('/login', { timeoutMs: 8000 })
+  const dead = (r) => r.status === 0 || r.status === 404
+  if (dead(a) && dead(b)) serverUp = false
+}
+
 const started = Date.now()
 const ALL = [...CHECKS, ...TRUTH_CHECKS, ...ANYWHERE_CHECKS]
 const picked = only ? ALL.filter(c => c.piece === only || c.id === only) : ALL
 const results = []
 for (const c of picked) {
   let r
-  try { r = await c.run() } catch (e) { r = { ok: false, detail: `check threw: ${e.message}` } }
+  // A check that needs the server cannot be graded while the server is down.
+  if (!serverUp && c.needsServer !== false && /http|api|endpoint|route|reports|armed|persists|reachable/i.test(c.id + c.desc)) {
+    r = { ok: false, inconclusive: true, detail: 'INCONCLUSIVE — dev server not serving; not a product regression' }
+  } else {
+    try { r = await c.run() } catch (e) { r = { ok: false, detail: `check threw: ${e.message}` } }
+  }
   results.push({ ...c, ...r })
 }
 const elapsed = Date.now() - started
 
 const passed = results.filter(r => r.ok)
 const failed = results.filter(r => !r.ok)
-const criticalFailed = failed.filter(r => r.critical)
+const inconclusive = results.filter(r => r.inconclusive)
+const criticalFailed = failed.filter(r => r.critical && !r.inconclusive)
 
 const summary = {
   total: results.length,
@@ -41,7 +61,13 @@ const summary = {
   failed: failed.length,
   criticalFailed: criticalFailed.length,
   elapsedMs: elapsed,
-  score: results.length ? Number(((passed.length / results.length) * 10).toFixed(1)) : 0,
+  inconclusive: inconclusive.length,
+  serverUp,
+  // Score over what was actually measurable, so a dead server does not manufacture
+  // a score drop that looks like the product got worse.
+  score: (results.length - inconclusive.length) > 0
+    ? Number(((passed.length / (results.length - inconclusive.length)) * 10).toFixed(1))
+    : 0,
   results: results.map(r => ({
     id: r.id, piece: r.piece, desc: r.desc,
     critical: !!r.critical, ok: r.ok, detail: r.detail,

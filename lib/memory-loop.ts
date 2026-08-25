@@ -25,7 +25,7 @@
 
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { db } from './db'
+import { db, type DbError } from './db'
 import { VAULT_DIR } from './paths'
 
 export const PROMOTION_THRESHOLD = 3
@@ -72,58 +72,151 @@ export async function writeRunRecord(entry: RunRecordInput): Promise<string | nu
   }
 }
 
+export interface ExitRecordInput {
+  /** opts.agentId from the spawn — which agent this run was */
+  agentId: string
+  /** opts.taskId from the spawn — the issue's DB id, when the caller had one */
+  taskId?: string | null
+}
+
+/**
+ * Round-2 repair (was: nothing called writeRunRecord at all). Called from
+ * every runtime adapter's `watchChildExit` callback — the only place in the
+ * codebase a spawned run's process exit is actually observed — so every
+ * dispatched agent run produces exactly one `agent_run_records` row instead
+ * of recording nothing.
+ *
+ * `watchChildExit` only confirms the OS pid is gone (`process.kill(pid, 0)`
+ * failing); it does not capture a real exit code or signal, and it has no
+ * way to know whether the task's review ultimately passed. Those fields are
+ * therefore left unset here (not guessed) so `writeRunRecord`'s own
+ * defaults are what land, not a fabricated "this succeeded" — the only
+ * things filled in are read fresh from the issue row at the moment of exit:
+ * task_key, status, rejection_count, last_rejection_reason and
+ * reviewer_notes, which genuinely are known at that instant.
+ *
+ * Never throws and never fails the exit callback: a missing taskId (not
+ * every spawn attaches one) or a DB error means this exit produces no row —
+ * skipped and logged, not fabricated with a placeholder task_key.
+ */
+export async function recordRunOnExit(entry: ExitRecordInput): Promise<void> {
+  if (!entry.taskId) {
+    console.warn(`[memory-loop] no taskId on exit for agent=${entry.agentId} — skipping agent_run_records write`)
+    return
+  }
+  try {
+    const { data, error } = await db()
+      .from('issues')
+      .select('task_key,status,rejection_count,last_rejection_reason,reviewer_notes')
+      .eq('id', entry.taskId)
+      .limit(1)
+    if (error) {
+      console.warn(`[memory-loop] issue lookup failed for exit record (${entry.agentId}/${entry.taskId}): ${error.message}`)
+      return
+    }
+    const issue = ((data ?? [])[0] ?? undefined) as {
+      task_key?: string | null
+      status?: string | null
+      rejection_count?: number | null
+      last_rejection_reason?: string | null
+      reviewer_notes?: string | null
+    } | undefined
+
+    const taskKey = issue?.task_key ?? null
+    if (!taskKey) {
+      console.warn(`[memory-loop] issue ${entry.taskId} has no task_key — skipping exit record for ${entry.agentId} (agent_run_records.task_key is required)`)
+      return
+    }
+
+    const dbError = await writeRunRecord({
+      agentId: entry.agentId,
+      taskKey,
+      status: issue?.status ?? null,
+      rejectionCount: issue?.rejection_count ?? undefined,
+      rejectionReason: issue?.last_rejection_reason ?? null,
+      reviewerNotes: issue?.reviewer_notes ?? null,
+      // Genuinely unobservable from a pid-liveness watcher — explicit null,
+      // not a guessed 0 ("succeeded") or 1 ("failed").
+      exitStatus: null,
+    })
+    if (dbError) {
+      console.warn(`[memory-loop] writeRunRecord failed on exit for ${entry.agentId}/${taskKey}: ${dbError}`)
+    }
+  } catch (err) {
+    console.warn(`[memory-loop] recordRunOnExit failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 export interface PatternHit {
-  word: string
+  /** The recurring pattern itself — a normalized whole phrase, not a bare word (round-2 repair, see below). */
+  phrase: string
   count: number
   examples: string[]
 }
 
-// Same "significant word" heuristic as the original promote-hot-patterns.sh
-// (`[a-z]{4,}`) — a 4+ letter lowercase token — kept identical on purpose so
-// the promotion behaviour does not silently change while the transport does.
-const WORD_RE = /[a-z]{4,}/g
-const STOPWORDS = new Set([
-  'this', 'that', 'with', 'from', 'have', 'been', 'were', 'they', 'their',
-  'which', 'when', 'what', 'about', 'because', 'should', 'would', 'could',
-  'into', 'over', 'again', 'each', 'more', 'than', 'then', 'also', 'still',
-])
+// Round-2 repair: the promotion unit used to be a single 4+ letter word
+// (`[a-z]{4,}`, stopword-filtered), mirroring promote-hot-patterns.sh's
+// original `Counter(words).most_common(10)`. That meant one repeated
+// rejection SENTENCE — say "build failed before responding: timeout waiting
+// on step finish" — exploded into up to 10 independent word-level patterns
+// (build/failed/before/responding/timeout/waiting/step/finish/…), each
+// separately clearing the threshold and each drafting its OWN vault
+// proposal: seven duplicate proposals in Mich-Brain2/_pending/skill-updates/
+// for what a human reading them would recognise instantly as one recurring
+// complaint. The unit is now the whole normalized phrase — the same
+// rejection sentence, lowercased and punctuation-collapsed so trivial
+// formatting differences (a trailing period, doubled whitespace, different
+// capitalisation) still count as the same recurrence — so three occurrences
+// of the same sentence draft exactly one proposal.
+const MIN_PHRASE_LENGTH = 8
+
+/** Lowercase, strip punctuation, collapse whitespace — same sentence, same signature. */
+function normalizePhrase(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9\s]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
 
 /**
- * Group free-text rejection reasons / reviewer notes by repeated
- * significant word, mirroring the Counter(phrases).most_common(10) logic
- * `promote-hot-patterns.sh` used. Returns hits meeting `threshold`,
- * most frequent first, each carrying up to 3 example snippets so a proposal
- * can show its work instead of asserting a bare word.
+ * Group free-text rejection reasons / reviewer notes by repeated whole
+ * phrase (see round-2 comment above for why this replaced word-level
+ * grouping). Returns hits meeting `threshold`, most frequent first, each
+ * carrying up to 3 example snippets so a proposal can show its work instead
+ * of asserting a bare claim.
  */
 export function extractPatterns(
   texts: Array<{ text: string; example: string }>,
   threshold = PROMOTION_THRESHOLD,
 ): PatternHit[] {
-  const counts = new Map<string, { count: number; examples: string[] }>()
+  const counts = new Map<string, { count: number; examples: string[]; display: string }>()
   for (const { text, example } of texts) {
     if (!text) continue
-    const words = Array.from(
-      new Set((text.toLowerCase().match(WORD_RE) ?? []).filter(w => !STOPWORDS.has(w))),
-    )
-    for (const word of words) {
-      const entry = counts.get(word) ?? { count: 0, examples: [] }
-      entry.count += 1
-      if (entry.examples.length < 3 && example && !entry.examples.includes(example)) {
-        entry.examples.push(example)
-      }
-      counts.set(word, entry)
+    const signature = normalizePhrase(text)
+    if (signature.length < MIN_PHRASE_LENGTH) continue
+    const entry = counts.get(signature) ?? { count: 0, examples: [], display: text.trim() }
+    entry.count += 1
+    if (entry.examples.length < 3 && example && !entry.examples.includes(example)) {
+      entry.examples.push(example)
     }
+    counts.set(signature, entry)
   }
-  return Array.from(counts.entries())
-    .filter(([, v]) => v.count >= threshold)
-    .sort((a, b) => b[1].count - a[1].count)
+  return Array.from(counts.values())
+    .filter(v => v.count >= threshold)
+    .sort((a, b) => b.count - a.count)
     .slice(0, 10)
-    .map(([word, v]) => ({ word, count: v.count, examples: v.examples }))
+    .map(v => ({ phrase: v.display, count: v.count, examples: v.examples }))
 }
 
-/** Filesystem-safe slug for a pattern word, used in both filenames and dedupe checks. */
-function slugify(word: string): string {
-  return word.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+/**
+ * Filesystem-safe slug for a pattern phrase, used in both filenames and
+ * dedupe checks. Truncated — the unit promoted is now a whole sentence, not
+ * a single word, so an untruncated slug could run to hundreds of characters.
+ */
+function slugify(phrase: string): string {
+  return phrase
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/g, '')
 }
 
 export interface ProposalResult {
@@ -155,7 +248,7 @@ export function draftSkillProposal(
   }
 
   const outDir = join(VAULT_DIR, '_pending', 'skill-updates')
-  const slug = slugify(hit.word)
+  const slug = slugify(hit.phrase)
   const existing = existsSync(outDir)
     ? readdirSync(outDir).filter(f => f.includes(`${agentId}-${slug}`))
     : []
@@ -177,13 +270,13 @@ export function draftSkillProposal(
 
 **Source:** Todero \`promote-hot-patterns\` (memory-loop-write, TOD-489 repair)
 **Agent:** ${agentId}
-**Pattern:** \`${hit.word}\`
+**Pattern:** \`${hit.phrase}\`
 **Occurrences:** ${hit.count} (threshold: ${PROMOTION_THRESHOLD})
 **Drafted:** ${new Date().toISOString()}
 
 ## What Todero observed
 
-The word \`${hit.word}\` recurred ${hit.count} times across ${agentId}'s
+The phrase \`${hit.phrase}\` recurred ${hit.count} times across ${agentId}'s
 rejection reasons / reviewer notes — this repo's tuned threshold for "this is
 a pattern, not a coincidence."
 
@@ -214,6 +307,18 @@ export interface PromotionSummary {
   hits: PatternHit[]
   promotedToHot: string[]
   proposals: ProposalResult[]
+  /**
+   * Set when the `agent_run_records` read itself failed (e.g. the table has
+   * never been migrated onto this database). Round-2 repair: this used to
+   * be silently swallowed by `if (error || !data) return summary`, so a
+   * table that DOES NOT EXIST reported the exact same
+   * `{ rowsExamined: 0, hits: [] }` shape as "table exists, genuinely
+   * nothing to promote yet" — a false "0 rows examined" instead of the
+   * honest 424 `GET /api/agent-run-records` already gives for the same
+   * failure. The caller (POST /api/promote-hot-patterns) checks this field
+   * and returns the matching error response instead of a clean 200.
+   */
+  dbError?: DbError
 }
 
 /**
@@ -221,7 +326,8 @@ export interface PromotionSummary {
  * group by repeated pattern, and for every pattern clearing the threshold —
  * append it to the self_improving HOT tier (agent_memory_files) and draft a
  * vault proposal. Returns a summary rather than throwing so a caller (CLI or
- * HTTP) can report partial progress instead of an opaque failure.
+ * HTTP) can report partial progress instead of an opaque failure — but a
+ * failed *read* is reported via `dbError`, never disguised as "0 rows".
  */
 export async function promoteHotPatterns(agentId: string): Promise<PromotionSummary> {
   const summary: PromotionSummary = {
@@ -234,7 +340,11 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
     .eq('agent_id', agentId)
     .order('created_at', { ascending: false })
     .limit(500)
-  if (error || !data) return summary
+  if (error) {
+    summary.dbError = error
+    return summary
+  }
+  if (!data) return summary
 
   const rows = data as Array<{
     task_key: string; rejection_reason: string | null; reviewer_notes: string | null
@@ -256,7 +366,7 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
 
   const timestamp = new Date().toISOString()
   const promotionText = hits
-    .map(h => `- **${h.word}** appeared ${h.count} times across ${agentId}'s corrections`)
+    .map(h => `- **${h.phrase}** appeared ${h.count} times across ${agentId}'s corrections`)
     .join('\n')
 
   try {
@@ -284,7 +394,7 @@ export async function promoteHotPatterns(agentId: string): Promise<PromotionSumm
     const { error: writeError } = existingRow?.id
       ? await db().from('agent_memory_files').update({ content: updated, updated_at: timestamp }).eq('id', existingRow.id)
       : await db().from('agent_memory_files').insert({ agent_id: agentId, memory_type: 'self_improving', date_key: null, content: updated, updated_at: timestamp })
-    if (!writeError) summary.promotedToHot = hits.map(h => h.word)
+    if (!writeError) summary.promotedToHot = hits.map(h => h.phrase)
   } catch {
     // Best-effort — a failed HOT-tier write should not block the vault
     // proposal below; the caller sees promotedToHot stay empty.
