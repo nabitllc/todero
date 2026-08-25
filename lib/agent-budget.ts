@@ -538,12 +538,19 @@ async function stopRun(
 
   // Revert the issue to a state a human (or the main agent) triages — the
   // same shape lib/loop-breaker.ts uses for a paused agent, so this halt
-  // shows up wherever that one already does.
-  await db().from('issues').update({
+  // shows up wherever that one already does. Checked: the run row above is
+  // already marked stopped by this point, so a failure here specifically
+  // means the dispatch-gating block never landed — the issue looks stopped
+  // in agent_runs but stays pickable by the dispatcher. That must be logged
+  // as a failed stop, not swallowed as if the ceiling worked cleanly.
+  const { error: blockError } = await db().from('issues').update({
     is_blocked: true,
     blocked_by: `system:ceiling_stop:${ceiling}`,
     updated_at: now,
   }).eq('id', issue.id)
+  if (blockError) {
+    console.warn(`[agent-budget] ceiling stop '${ceiling}' for agent '${agentId}' could NOT set issues.is_blocked on ${issue.task_key ?? issue.id} (${blockError.message}) — the run is marked stopped but the issue remains dispatchable. Treat this as a FAILED stop, not a silent one.`)
+  }
 
   if (pid) {
     try {
@@ -554,7 +561,11 @@ async function stopRun(
     }
   }
 
-  await recordCeilingEvent(agentId, ceiling, reason, detail, issue.task_key)
+  await recordCeilingEvent(
+    agentId, ceiling, reason,
+    { ...detail, issue_blocked: !blockError, ...(blockError ? { issue_block_error: blockError.message } : {}) },
+    issue.task_key,
+  )
 }
 
 /**
@@ -580,7 +591,9 @@ async function recordCeilingEvent(
         detail,
         task_key: taskKey,
         halted_at: now,
-        message: `Agent '${agentId}' stopped by the ${ceiling} ceiling: ${reason}`,
+        message: detail.issue_blocked === false
+          ? `Agent '${agentId}' stopped by the ${ceiling} ceiling: ${reason} — FAILED to mark the issue is_blocked (${String(detail.issue_block_error ?? 'unknown error')}); it is still dispatchable.`
+          : `Agent '${agentId}' stopped by the ${ceiling} ceiling: ${reason}`,
       },
       status: 'pending',
     })

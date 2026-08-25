@@ -153,6 +153,15 @@
    "wave": 9,
    "evidence": "Post-MVP, added 25 Aug. Today authentication is three shared passwords and every record is global. For anyone else to run Todero for their own business, identity and per-tenant isolation have to be real. Deliberately after one project works well.",
    "goal_text": "Linear — sign in and see only your workspace. Anyone runs Todero for their own business and projects, isolated from everyone else."
+  },
+  {
+   "name": "Secrets & Credential Custody",
+   "baseline": 1,
+   "current": 1,
+   "goal": 9,
+   "wave": 6,
+   "evidence": "lib/encryption.ts implements AES-256-GCM and migrations/045 defines a connections table — but CONNECTIONS_ENCRYPTION_KEY is unset, only one route calls the utility, and that route 500d at session start. Meanwhile .env.local holds 16 plaintext secrets and a service_role key sat in 70 commits of history. The design exists; none of it runs.",
+   "goal_text": "Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only."
   }
  ]
 }

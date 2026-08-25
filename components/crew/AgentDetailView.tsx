@@ -8,6 +8,7 @@ import { AGENT_REGISTRY } from '@/lib/agent-capabilities'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import { resolveVaultBadge, type VaultBadgeInfo } from '@/lib/vault-badge'
+import { resolvePauseOutcome, type AgentPauseResponseBody } from '@/lib/agent-pause-ui'
 
 interface Issue {
   id: string
@@ -47,6 +48,12 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
   const [paused, setPaused] = useState(false)
   const [lastRun, setLastRun] = useState<number | null>(null)
   const [toggling, setToggling] = useState(false)
+  // TOD-2381 (wave-5, silent-write-failures): PATCH /api/agent-pause always
+  // answers 200, so res.ok alone cannot tell a real recovery from a write
+  // that failed (ok:false) or a still_blocked_by that means the agent
+  // un-paused but the issue it was blocking never became re-dispatchable.
+  // This banner is the only place either of those surfaces to the operator.
+  const [pauseNotice, setPauseNotice] = useState<{ text: string; kind: 'warning' | 'error' } | null>(null)
   // Brain2 vault manifest data for this id, when GET /api/agents' row names
   // one — same fetch this component already makes for lastUpdatedAt, just
   // reading a field it used to discard. Null for every id AGENT_REGISTRY
@@ -85,16 +92,41 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
 
   async function togglePause() {
     setToggling(true)
-    try {
-      const res = await fetch('/api/agent-pause', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent: agentId, paused: !paused }),
-      })
-      if (res.ok) setPaused(p => !p)
-    } finally {
-      setToggling(false)
+    const nextPaused = !paused
+    const r = await fetchJson<{
+      ok: boolean
+      is_paused: boolean
+      message: string
+      error?: string
+      issue_unblocked?: boolean
+      still_blocked_by?: string | null
+    }>('/api/agent-pause', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: agentId, paused: nextPaused }),
+    })
+    setToggling(false)
+
+    if (!r.ok) {
+      // HTTP-level failure (network / 4xx / 5xx) — nothing landed.
+      setPauseNotice({ text: `data unavailable — ${r.error.status} from /api/agent-pause: ${r.error.message}`, kind: 'error' })
+      return
     }
+
+    const body = r.data
+    // The wave-4 defect recreated one layer up: a 200 body can still carry
+    // ok:false (a write inside the route failed) or a non-null
+    // still_blocked_by (the agent really did un-pause, but the issue the
+    // loop breaker blocked is still blocked by something else). Reading
+    // only res.ok shows a full recovery in both cases — only body.ok===true
+    // may advance local state, and still_blocked_by must stay visible.
+    if (body.ok !== true) {
+      setPauseNotice({ text: body.error ? `${body.message} (${body.error})` : body.message, kind: 'error' })
+      return
+    }
+
+    setPaused(body.is_paused)
+    setPauseNotice(body.still_blocked_by ? { text: body.message, kind: 'warning' } : null)
   }
 
   if (!agent) {
@@ -149,18 +181,34 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
           <p className="text-white/50 text-sm mt-0.5">{agent.role}</p>
           <p className="text-white/30 text-xs mt-1">{agent.description}</p>
         </div>
-        <button
-          onClick={togglePause}
-          disabled={toggling}
-          aria-label={paused ? `Unpause ${agent.name}` : `Pause ${agent.name}`}
-          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-white/30 disabled:opacity-50 ${
-            paused
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-              : 'border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
-          }`}
-        >
-          {toggling ? '…' : paused ? 'Unpause' : 'Pause'}
-        </button>
+        <div className="flex flex-col items-end gap-1.5 shrink-0 max-w-[220px]">
+          <button
+            onClick={togglePause}
+            disabled={toggling}
+            aria-label={paused ? `Unpause ${agent.name}` : `Pause ${agent.name}`}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-white/30 disabled:opacity-50 ${
+              paused
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                : 'border-orange-500/40 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
+            }`}
+          >
+            {toggling ? '…' : paused ? 'Unpause' : 'Pause'}
+          </button>
+          {/* Persistent — a write that half-landed (still_blocked_by) or
+              failed outright (ok:false) must stay visible until the next
+              toggle, not flash and vanish like a toast would. */}
+          {pauseNotice && (
+            <p
+              role="alert"
+              data-testid="pause-notice"
+              className={`text-[10px] leading-snug text-right ${
+                pauseNotice.kind === 'error' ? 'text-red-400' : 'text-amber-400'
+              }`}
+            >
+              {pauseNotice.text}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Agent-specific metadata */}

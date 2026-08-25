@@ -45,7 +45,7 @@ async function writeMemoryValue(agentId: string, key: string, value: unknown): P
   }
 }
 
-function postDiscordAlert(content: string) {
+function postDiscordAlert(content: string): void {
   const token = process.env.DISCORD_BOT_TOKEN ?? ''
   if (!token) return
   void fetch(`https://discord.com/api/v10/channels/${DISCORD_ALERTS_CHANNEL}/messages`, {
@@ -118,7 +118,9 @@ export async function resetAgentFailures(agentId: string): Promise<void> {
 async function pauseAgent(agentId: string, issueId: string, issueTitle?: string): Promise<void> {
   const now = new Date().toISOString()
 
-  // Mark agent as paused in agent_memory
+  // Mark agent as paused in agent_memory. writeMemoryValue throws on a real
+  // write failure — let that propagate; a caller of recordAgentFailure
+  // catching it beats one believing the agent is paused when it isn't.
   await writeMemoryValue(agentId, 'is_paused', {
     paused: true,
     paused_at: now,
@@ -126,24 +128,39 @@ async function pauseAgent(agentId: string, issueId: string, issueTitle?: string)
     last_issue_id: issueId,
   })
 
-  // Mark the failing issue as is_blocked so main (KAOS) picks it up for triage
-  await db()
+  // Mark the failing issue as is_blocked so main (KAOS) picks it up for
+  // triage. Checked, not fire-and-forget: an unchecked failure here means
+  // the agent_memory row above says "paused" while the issue itself stays
+  // fully dispatchable — the exact silent half-write this piece exists to
+  // close. The Discord alert below states which of the two actually landed
+  // instead of asserting the issue was blocked unconditionally.
+  const { error: blockError } = await db()
     .from('issues')
     .update({ is_blocked: true, blocked_by: 'system:loop_breaker', updated_at: now })
     .eq('id', issueId)
+  const issueBlocked = !blockError
+  if (blockError) {
+    console.warn(`[loop-breaker] failed to mark issue ${issueId} is_blocked (${blockError.message}) — agent '${agentId}' is paused but the issue it was working is still dispatchable.`)
+  }
 
-  // Post to Discord #alerts — agent pauses are otherwise silent
+  // Post to Discord #alerts — agent pauses are otherwise silent. State what
+  // actually happened, not what was attempted.
   postDiscordAlert(
     `🛑 **Agent Paused — Loop Breaker**\n` +
     `Agent \`${agentId}\` paused after ${MAX_CONSECUTIVE_FAILURES} consecutive spawn failures.\n` +
     `Last issue: ${issueTitle ?? issueId}\n` +
-    `Issue marked \`is_blocked\` — main agent will triage.\n` +
+    (issueBlocked
+      ? `Issue marked \`is_blocked\` — main agent will triage.\n`
+      : `⚠️ Issue could NOT be marked \`is_blocked\` (${blockError?.message}) — it is still dispatchable even though the agent is paused. Needs manual triage.\n`) +
     `To un-pause: \`PATCH /api/agent-pause {"agent":"${agentId}","paused":false}\`\n` +
     `<@409194957098713088> please investigate.`
   )
 
-  // Create inbox request for human review (no timeout — human must un-pause)
-  await db().from('inbox').insert({
+  // Create inbox request for human review (no timeout — human must un-pause).
+  // Checked for the same reason as the issues.update above: a silent insert
+  // failure here means the human review this pause depends on never gets
+  // raised at all, and nothing else surfaces that it didn't.
+  const { error: inboxError } = await db().from('inbox').insert({
     agent: agentId,
     type: 'loop_breaker_pause',
     context: {
@@ -151,8 +168,12 @@ async function pauseAgent(agentId: string, issueId: string, issueTitle?: string)
       last_issue_id: issueId,
       last_issue_title: issueTitle ?? null,
       paused_at: now,
+      issue_blocked: issueBlocked,
       action_required: `Review agent '${agentId}' failures and un-pause via: PATCH /api/agent-pause body={"agent":"${agentId}","paused":false}`,
     },
     status: 'pending',
   })
+  if (inboxError) {
+    console.warn(`[loop-breaker] inbox insert failed for agent '${agentId}' (${inboxError.message}) — this pause will not appear for human review until someone notices the agent is stuck.`)
+  }
 }
