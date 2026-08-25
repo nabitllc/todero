@@ -807,7 +807,19 @@ export async function GET(req: NextRequest) {
   const taskKey = url.searchParams.get('task_key')
 
   if (taskKey) {
-    // AGGREGATE QUERY — no hub scope for task_key lookups (keys are globally unique)
+    // Task keys are globally unique, which made this look like a safe shortcut:
+    // no hub scope needed, straight to an admin client. It ran BEFORE every
+    // scope check below and returned the FULL row — description included — for
+    // any key, from any page. A row a Limiglow operator is refused on a list
+    // read was handed over in full by guessing its key.
+    //
+    // Uniqueness is why the lookup needs no filter to FIND the row. It is not a
+    // reason to let a scoped caller READ it.
+    const scope = req.headers.get('x-mc-project')
+    const crossProject = req.headers.get('x-mc-all-projects') === '1'
+    const allProjects = ['1', 'true', 'yes'].includes(
+      (url.searchParams.get('all_projects') ?? '').toLowerCase()
+    )
     const { data, error } = await createAdminClient()
       .from('issues')
       .select('*')
@@ -815,6 +827,11 @@ export async function GET(req: NextRequest) {
       .maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
+    if (scope && !crossProject && !allProjects && data.project !== scope) {
+      // 404, deliberately, not 403: a scoped caller should not be able to use
+      // this endpoint to discover which keys exist outside its own project.
+      return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
+    }
     return NextResponse.json(withIssueStatusCategory(data))
   }
 
@@ -900,7 +917,45 @@ export async function GET(req: NextRequest) {
     (url.searchParams.get('all_projects') ?? '').toLowerCase()
   )
   const resolvedScope = req.headers.get('x-mc-project')
-  const effectiveProject = projectParam || (allProjectsParam ? null : resolvedScope) || null
+  const crossProjectDestination = req.headers.get('x-mc-all-projects') === '1'
+
+  // The reasoning above was honest and still wrong in its conclusion. It
+  // declined to refuse an omitted scope because three acceptance checks call
+  // bare GET /api/issues and expect 200. But those are SCRIPTS, and a script
+  // can say what it means — they now pass all_projects=1, which is exactly the
+  // explicit opt-out this route already defined and then never required.
+  //
+  // Leaving it open meant the two halves of one seam answered the identical
+  // condition oppositely: no resolvable scope 400s on /api/db/issues and
+  // returned every project here — on the route EpicMapTab, ChatTab, IssuesTab,
+  // FeaturesTab, ProductBoardTab and ProjectsTab all read.
+  if (!resolvedScope && !allProjectsParam && !crossProjectDestination && !projectParam) {
+    return NextResponse.json(
+      {
+        error: 'unscoped_issues_read',
+        message:
+          'This issues query has no project scope. Request it from a /p/<project> screen, ' +
+          'or pass all_projects=1 to read across every project deliberately.',
+      },
+      { status: 400 },
+    )
+  }
+
+  // A resolved scope NARROWS; it is never overridden. `?project=` used to win
+  // outright, so a page scoped to Limiglow could ask for Todero's rows and get
+  // them. A mismatch is now refused rather than silently answered — answering
+  // it would make the address bar and the data disagree.
+  if (projectParam && resolvedScope && projectParam !== resolvedScope) {
+    return NextResponse.json(
+      {
+        error: 'project_outside_scope',
+        message: `This screen is scoped to "${resolvedScope}"; it cannot request "${projectParam}".`,
+      },
+      { status: 400 },
+    )
+  }
+
+  const effectiveProject = resolvedScope || projectParam || null
 
   // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
   const hub = businessIdParam ? getHubClient(businessIdParam) : null

@@ -31,7 +31,12 @@ interface ProjectRow {
 // projects exist.
 
 export default function ProjectsTab({ projectFilter }: { projectFilter?: string | null }) {
-  const { items, total, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0')
+  // all_projects=1 is deliberate and required: this table is the inventory of
+  // every project, so it is the one view that cannot by its own purpose be
+  // filtered to "the" project. It used to get every project by ACCIDENT —
+  // /api/issues widened whenever no scope was resolved — which is
+  // indistinguishable from nobody having thought about it. Now it asks.
+  const { items, total, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0&all_projects=1')
   const { items: projectRows } = useApiList<{ id?: string; name?: string; description?: string }>('/api/projects')
 
   // Counts are only meaningful once the issue list actually arrived — on a

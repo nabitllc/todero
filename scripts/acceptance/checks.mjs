@@ -71,7 +71,7 @@ export const CHECKS = [
     id: 'rbac-owner-reads', piece: 'rbac-permission-gate', critical: true,
     desc: 'owner can read the MC API',
     async run() {
-      const r = await http('/api/issues', { cookie: OWNER })
+      const r = await http('/api/issues?all_projects=1', { cookie: OWNER })
       return r.status === 200 ? ok('200') : no(`expected 200, got ${r.status}: ${r.body.slice(0, 120)}`)
     },
   },
@@ -79,7 +79,7 @@ export const CHECKS = [
     id: 'rbac-anon-denied-read', piece: 'rbac-permission-gate', critical: true,
     desc: 'anonymous CANNOT read the MC API',
     async run() {
-      const r = await http('/api/issues')
+      const r = await http('/api/issues?all_projects=1')
       return [401, 403].includes(r.status) ? ok(String(r.status)) : no(`expected 401/403, got ${r.status}`)
     },
   },
@@ -103,7 +103,7 @@ export const CHECKS = [
     id: 'rbac-role-not-self-asserted', piece: 'auth-session',
     desc: 'role cannot be self-asserted by an unsigned cookie',
     async run() {
-      const r = await http('/api/issues', { cookie: 'mc-role=owner' })
+      const r = await http('/api/issues?all_projects=1', { cookie: 'mc-role=owner' })
       return [401, 403].includes(r.status)
         ? ok(`forged role rejected (${r.status})`)
         : no(`a forged mc-role=owner cookie alone returned ${r.status} — role is self-asserted`)

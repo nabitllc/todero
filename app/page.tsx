@@ -724,9 +724,36 @@ export default function Home() {
     pushURL(name, destination, view, projectStays ? selectedProject : null)
   }, [selectedBusiness, selectedProject, destination, view, pushURL])
 
+  // cards-and-identity piece (Wave 6, build instruction 2): the left rail and
+  // the sidebar's project switcher both call this — one project-selection
+  // entry point, same shape as selectBusiness above. Deliberately never
+  // accepts null: "no destination renders until a project is selected" (the
+  // ProjectScopeProvider gate below) means offering an unscoped state here
+  // would strand the operator on that gate forever, since the auto-derivation
+  // effect only fills a null scope once, on cold load.
+  const selectProject = useCallback((name: string) => {
+    setSelectedProject(name)
+    pushURL(selectedBusiness, destination, view, name)
+  }, [selectedBusiness, destination, view, pushURL])
+
   return (
     <div className="min-h-screen flex bg-neutral-950">
-      <BusinessRail selected={selectedBusiness} onSelect={selectBusiness} onNew={() => setShowOnboarding(true)} refreshKey={businessRailRefresh} />
+      {/*
+        cards-and-identity piece (Wave 6, build instruction 2): this file
+        (BusinessRail.tsx) used to be exactly what its name says — a rail of
+        BUSINESS avatars ("T" for Todero). The owner's own words: "Left pane
+        is meant to be for each project... first character of the project
+        name, in this case the L." It now lists PROJECTS (real /api/projects
+        rows), one avatar each; the filename survives unchanged so the other
+        agent working this repo concurrently sees no churn on a file it also
+        touches indirectly (the DO-NOT-BREAK layout comment above references
+        it by name). Businesses are no longer rail furniture — "there is one
+        business and it earns no screen furniture" — the onManage callback
+        below routes the rail's "+" to Settings → Projects instead of opening
+        a business-onboarding wizard, since a project rail adding a BUSINESS
+        would be the same mismatch this rewrite exists to fix.
+      */}
+      <BusinessRail selected={selectedProject} onSelect={selectProject} onManage={() => goTo('settings', 'projects')} refreshKey={businessRailRefresh} />
       {showOnboarding && <OnboardingWizard onComplete={(name) => { selectBusiness(name); setShowOnboarding(false); setBusinessRailRefresh(k => k + 1) }} onClose={() => setShowOnboarding(false)} />}
 
       {/* SIDEBAR — TOD-2381: six destinations, replaces the flat 20-item SidebarNav */}
@@ -745,6 +772,9 @@ export default function Home() {
           model: Array.isArray(liveStatus.ollama.models) && liveStatus.ollama.models[0] ? liveStatus.ollama.models[0] : null,
         } : null}
         clock={clock}
+        project={selectedProject}
+        projects={Array.isArray(projects) ? projects.map((p: any) => ({ id: p.id, name: p.name })) : null}
+        onSelectProject={selectProject}
       />
 
       {/* MOBILE BOTTOM NAV — six destinations, no "more" menu (they all fit) */}
@@ -765,45 +795,20 @@ export default function Home() {
           onOpenInbox={() => setInboxOpen(true)}
         />
 
-        {/* Business + project context header */}
-        {selectedBusiness && (
-          <div className="px-4 md:px-6 py-3 border-b border-white/10 bg-[#0a0a0a]">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🏢</span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-white text-sm font-semibold truncate">{selectedBusiness}</h2>
-                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-white/10 text-white/50 font-medium">Business</span>
-                  {selectedProject && (
-                    <>
-                      <span className="text-white/20 text-xs">/</span>
-                      <h2 className="text-white text-sm font-semibold truncate">{selectedProject}</h2>
-                      <span className="text-xs px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-300 font-medium">Project</span>
-                    </>
-                  )}
-                </div>
-                {/*
-                  This line used to read "Every panel below is scoped to X only —
-                  never another project's issues", beside a hardcoded green
-                  "Active" pill that consulted nothing.
-
-                  Both were removed rather than reworded. The sentence asserted a
-                  data-integrity invariant the code does not enforce: eleven
-                  sibling queries reach the database proxy with no project clause,
-                  and two tabs accept the filter prop and ignore it. A claim like
-                  that is worse than a missing feature, because it teaches the
-                  operator to stop checking. It goes back when the scope is a
-                  query boundary rather than an optional prop — and not before.
-                */}
-                <p className="text-white/55 text-[11px] mt-0.5">
-                  {selectedProject
-                    ? `Scoped to ${selectedProject}. Some panels still read across projects — that is being fixed.`
-                    : `Viewing all ${selectedBusiness} data across destinations`}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+        {/*
+          cards-and-identity piece (Wave 6, build instruction 2): the
+          breadcrumb bar that used to live here is deleted, not reworded. Its
+          two jobs are now each owned by exactly one place: the Todero
+          wordmark lives in TopBar (top-left, unchanged by this piece), and
+          the project name + switcher live in PrimaryNav's header, above
+          "PRIMARY" (see the `project`/`projects`/`onSelectProject` props
+          passed to it above). "Business" and "Project" were developer words
+          on screen, and the line beneath them ("Scoped to X. Some panels
+          still read across projects — that is being fixed.") was stale
+          orchestration scaffolding asserting an invariant the UI itself does
+          not enforce — see the piece doc and this file's own scope-gate
+          comment below for where that enforcement actually lives now.
+        */}
 
         <main className="flex-1 px-4 md:px-6 py-5 pb-20 lg:pb-5 overflow-x-hidden">
           {/*
@@ -850,7 +855,7 @@ export default function Home() {
             }
           >
             {destination === 'now' && view === 'overview' && (
-              <OverviewTab globalSync={globalSync} syncing={syncing} liveStatus={liveStatus} sprintProjects={sprintProjects} projectsError={projectsError} onRetryProjects={loadProjects} onNavigate={navigate} projectFilter={selectedProject} />
+              <OverviewTab globalSync={globalSync} syncing={syncing} liveAgents={liveAgents} agentsError={agentsError} agentRunsData={agentRunsData} onNavigate={navigate} projectFilter={selectedProject} />
             )}
             {destination === 'now' && view === 'inbox' && <InboxTab />}
             {destination === 'now' && view === 'activity' && (

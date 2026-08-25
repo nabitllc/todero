@@ -95,13 +95,13 @@ export const TRUTH_CHECKS = [
       // actually hand over. That is testable at any dataset size, and it still
       // catches a silent 1000-row cap on a large one, which is the bug this
       // check was written for.
-      const head = await http('/api/issues?limit=1&include_archived=1', { cookie: OWNER })
+      const head = await http('/api/issues?limit=1&include_archived=1&all_projects=1', { cookie: OWNER })
       if (head.status !== 200) return no(`status ${head.status}`)
       let j; try { j = JSON.parse(head.body) } catch { return no('unparseable') }
       const total = j?.total ?? j?.meta?.total
       if (typeof total !== 'number') return no('no numeric total field — every count built on this is unverifiable')
 
-      const all = await http('/api/issues?limit=0&include_archived=1', { cookie: OWNER })
+      const all = await http('/api/issues?limit=0&include_archived=1&all_projects=1', { cookie: OWNER })
       if (all.status !== 200) return no(`full-list status ${all.status}`)
       let rows; try { const a = JSON.parse(all.body); rows = a?.data ?? a } catch { return no('unparseable full list') }
       if (!Array.isArray(rows)) return no('full list is not an array')
@@ -119,7 +119,7 @@ export const TRUTH_CHECKS = [
     id: 'issues-no-silent-truncation', piece: 'issues-pagination',
     desc: 'a truncated page says so',
     async run() {
-      const r = await http('/api/issues?limit=10', { cookie: OWNER })
+      const r = await http('/api/issues?limit=10&all_projects=1', { cookie: OWNER })
       if (r.status !== 200) return no(`status ${r.status}`)
       let j; try { j = JSON.parse(r.body) } catch { return no('unparseable') }
       const hasMore = j?.has_more ?? j?.hasMore ?? j?.meta?.has_more

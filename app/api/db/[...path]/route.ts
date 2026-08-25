@@ -94,7 +94,25 @@ function scopedParams(req: NextRequest, table: string, isWrite: boolean): URLSea
   // a malformed filter and 400'd the very call it was meant to allow.
   const wantsAllProjects = ALL_PROJECTS.test(params.get('all_projects') ?? '')
   params.delete('all_projects')
-  if (table !== 'issues' || isWrite) return params
+  if (table !== 'issues') return params
+
+  if (isWrite) {
+    // Writes used to return here untouched, and this endpoint echoes affected
+    // rows back — so PATCH was a fully unscoped READ channel for a table the
+    // same caller is refused on GET. `PATCH ?task_number=gte.0` matched every
+    // row in every project and handed them over, mutating them on the way.
+    //
+    // The original carve-out only ever justified dropping `archived_at`, and
+    // that part is right: forcing archived_at=is.null onto a write would make
+    // un-archiving impossible through this endpoint. It never justified
+    // dropping the project clause.
+    const writeScope = req.headers.get(SCOPE_HEADER)
+    if (writeScope) {
+      params.delete('project')
+      params.set('project', `eq.${writeScope}`)
+    }
+    return params
+  }
   const scope = req.headers.get(SCOPE_HEADER)
   if (!scope) {
     // FAIL CLOSED. This used to `return params` — i.e. an unresolvable scope
@@ -108,8 +126,20 @@ function scopedParams(req: NextRequest, table: string, isWrite: boolean): URLSea
     // boundary. Refusing costs a caller one explicit parameter; widening
     // silently costs the operator their trust in every number on the screen.
     if (wantsAllProjects) return params
-    // A destination the middleware identified as deliberately global.
-    if (req.headers.get(CROSS_PROJECT_HEADER) === '1') return params
+    // A destination the middleware identified as deliberately global — but that
+    // signal is keyed by DESTINATION, never by table, and it was justified for
+    // agent-level aggregates (agent_runs, agents, agent_cost_log) that span
+    // every project an agent touched. It was then handing out `issues` too.
+    //
+    // That is live in the UI, not a curl curiosity: SearchOverlay is mounted
+    // unconditionally, so Cmd-K pressed on the Fleet screen returned another
+    // project's backlog while the same keystroke on Work returned nothing. The
+    // same component, the same query, a different answer decided by which page
+    // the operator happened to be standing on.
+    //
+    // A Fleet screen has no business reading another project's issues. Widening
+    // `issues` now takes the explicit, deliberate opt-out above and nothing else.
+    if (table !== 'issues' && req.headers.get(CROSS_PROJECT_HEADER) === '1') return params
     return null
   }
   params.delete('project')

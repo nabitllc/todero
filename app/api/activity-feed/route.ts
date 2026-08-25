@@ -117,8 +117,29 @@ export async function GET(req: Request) {
   // missing: the caller can see it in the URL and reasonably concludes the
   // filter is applied. Nothing surfaced it because the other projects happened
   // to be archived — which is exactly the condition this wave stopped relying on.
-  const project = searchParams.get('project')
-  if (project) query = query.eq('project', project)
+  // The header, not the query param. Reading searchParams meant scope was a
+  // CLIENT PROP again — this route was clean only because ActivityFeed.tsx
+  // happens to pass one, and that prop is optional. Drop the prop and the route
+  // handed over every project. That is the exact sentence this wave exists to
+  // falsify, left standing on the route the piece named first.
+  const resolvedScope = req.headers.get('x-mc-project')
+  const crossProjectDestination = req.headers.get('x-mc-all-projects') === '1'
+  const wantsAllProjects = ['1', 'true', 'yes'].includes(
+    (searchParams.get('all_projects') ?? '').toLowerCase()
+  )
+  if (resolvedScope) {
+    query = query.eq('project', resolvedScope)
+  } else if (!wantsAllProjects && !crossProjectDestination) {
+    return NextResponse.json(
+      {
+        error: 'unscoped_issues_read',
+        message:
+          'This activity query has no project scope. Request it from a /p/<project> screen, ' +
+          'or pass all_projects=1 to read across every project deliberately.',
+      },
+      { status: 400 },
+    )
+  }
 
   if (actor) query = query.eq('assignee', actor)
   if (issueId) query = query.eq('id', issueId)
