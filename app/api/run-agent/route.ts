@@ -701,7 +701,19 @@ ${responseFields}
   if (config.workingStatus && config.pickupStatus !== config.workingStatus) {
     claimFields.status = config.workingStatus
   }
-  await db().from('issues').update(claimFields).eq('id', task.id)
+  const { error: claimError } = await db().from('issues').update(claimFields).eq('id', task.id)
+  if (claimError) {
+    // A failed claim must abort dispatch, not proceed — spawning the agent
+    // after this write silently failed means an agent_runs row and a spawned
+    // process both reference an issue the DB never actually marked in_progress:
+    // the WIP count and any other reader of `started_at`/`status` disagree
+    // with what's about to run.
+    console.error(`[run-agent] claim failed for ${task.task_key ?? task.id}: ${claimError.message}`)
+    return NextResponse.json(
+      { error: `Failed to claim issue ${task.task_key ?? task.id}: ${claimError.message}`, agent: agentId },
+      { status: 500 }
+    )
+  }
 
   // ── Step 7: Log agent_run ──
   const { data: agentRunRows } = await db()

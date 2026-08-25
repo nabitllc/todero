@@ -75,10 +75,27 @@ export async function POST(req: NextRequest) {
     // one agent's write failure doesn't abort the rest — but the failures
     // are collected and reported, not discarded, so `ok:true` never claims
     // every agent was actually paused when some upserts errored.
+    // Same is_paused object shape lib/loop-breaker.ts and PATCH /api/agent-pause
+    // write — isAgentPaused() reads `value.paused === true`, so a bare string
+    // 'true'/'false' here would read back as never-paused (a truthy string
+    // fails object-key access, not the boolean check) while the hub-level
+    // state above claims the pause succeeded.
+    const now = new Date().toISOString()
     const perAgentResults = await Promise.allSettled(
       HEARTBEAT_AGENTS.map(agentId =>
         db.from('agent_memory').upsert(
-          { agent_id: agentId, key: 'is_paused', value: paused ? 'true' : 'false' },
+          {
+            agent_id: agentId,
+            key: 'is_paused',
+            value: {
+              paused,
+              paused_at: paused ? now : null,
+              reason: paused ? (body.paused_by ? `hub pause by ${body.paused_by}` : 'hub pause') : null,
+              cleared_at: paused ? null : now,
+              cleared_by: paused ? null : (body.paused_by ?? 'hub'),
+            },
+            updated_at: now,
+          },
           { onConflict: 'agent_id,key' }
         )
       )

@@ -48,18 +48,29 @@ export async function POST(req: Request) {
     .from('businesses').insert({ name, type, owner: WORKSPACE_OWNER, status: 'active' }).select().single()
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 })
 
+  // Every write below is best-effort in the sense that a failure here
+  // shouldn't unwind the business already created — but it must not be
+  // invisible either. Collect failures and report them alongside the
+  // success message instead of a blanket "$name is ready!" that assumes
+  // sprint/task/agent all landed when one silently didn't.
+  const warnings: string[] = []
+
   // Create first sprint
   const today = new Date().toISOString().split('T')[0]
   const endDate = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
-  await supabase.from('sprints').insert({
+  const { error: sprintErr } = await supabase.from('sprints').insert({
     name: 'Sprint 1', project: name,
     goal: vision || 'Build something great',
     start_date: today, end_date: endDate, status: 'active'
   })
+  if (sprintErr) {
+    console.error(`[onboarding] sprint insert failed for business ${business?.id}: ${sprintErr.message}`)
+    warnings.push(`Sprint 1 was not created: ${sprintErr.message}`)
+  }
 
   // Create ONE first task (not 3 auto-generated ones)
   if (taskTitle) {
-    await supabase.from('issues').insert({
+    const { error: taskErr } = await supabase.from('issues').insert({
       title: taskTitle,
       type: 'task',
       priority: 'high',
@@ -69,11 +80,15 @@ export async function POST(req: Request) {
       description: taskDescription || vision || '',
       acceptance_criteria: `${taskTitle} is complete and reviewed.`,
     })
+    if (taskErr) {
+      console.error(`[onboarding] first task insert failed for business ${business?.id}: ${taskErr.message}`)
+      warnings.push(`First task "${taskTitle}" was not created: ${taskErr.message}`)
+    }
   }
 
   // Save agent config to agents table — with the model resolved above.
   if (agentName && agentModel && business?.id) {
-    await supabase.from('agents').insert({
+    const { error: agentErr } = await supabase.from('agents').insert({
       business_id: business.id,
       name: agentName,
       adapter: 'claude-code',
@@ -82,7 +97,17 @@ export async function POST(req: Request) {
       heartbeat_every: '4h',
       description: `First agent for ${name}`
     })
+    if (agentErr) {
+      console.error(`[onboarding] agent insert failed for business ${business?.id}: ${agentErr.message}`)
+      warnings.push(`Agent "${agentName}" was not created: ${agentErr.message}`)
+    }
   }
 
-  return NextResponse.json({ business, message: `${name} is ready!` })
+  return NextResponse.json({
+    business,
+    message: warnings.length === 0
+      ? `${name} is ready!`
+      : `${name} was created, but with ${warnings.length} problem(s) — see warnings.`,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  })
 }

@@ -8,7 +8,16 @@
 import { db } from '@/lib/db'
 const DISCORD_ALERTS_CHANNEL = '1485333335868834063'
 
-/** Read one `agent_memory` value, or null when absent or unreadable. */
+/**
+ * Read one `agent_memory` value, or null when the row is genuinely absent.
+ *
+ * Throws on a DB read error instead of returning null. A null return used to
+ * mean two different things — "no row" and "couldn't ask" — and callers like
+ * isAgentPaused() collapsed both to `false`. That fails OPEN: a DB hiccup
+ * while checking pause state handed work to an agent the loop breaker had
+ * paused. Callers that can legitimately treat "couldn't check" as "absent"
+ * must catch this explicitly and say so, not fall through silently.
+ */
 async function readMemoryValue<T>(agentId: string, key: string): Promise<T | null> {
   const { data, error } = await db()
     .from('agent_memory')
@@ -16,7 +25,9 @@ async function readMemoryValue<T>(agentId: string, key: string): Promise<T | nul
     .eq('agent_id', agentId)
     .eq('key', key)
     .limit(1)
-  if (error) return null
+  if (error) {
+    throw new Error(`[loop-breaker] agent_memory read failed for ${agentId}/${key}: ${error.message}`)
+  }
   return ((data ?? []) as Array<{ value: T }>)[0]?.value ?? null
 }
 
@@ -63,7 +74,13 @@ interface LoopBreakerState {
   last_issue_id?: string
 }
 
-/** Returns true if the agent has been paused by the loop breaker. */
+/**
+ * Returns true if the agent has been paused by the loop breaker.
+ *
+ * Propagates a DB read failure rather than swallowing it to `false` — a
+ * caller that cannot confirm an agent is unpaused must not dispatch work to
+ * it. Fail closed, not open.
+ */
 export async function isAgentPaused(agentId: string): Promise<boolean> {
   const value = await readMemoryValue<{ paused?: boolean }>(agentId, 'is_paused')
   return value?.paused === true
