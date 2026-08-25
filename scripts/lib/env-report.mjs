@@ -47,14 +47,34 @@ export function dropPlaceholderEnv() {
 
 /**
  * Database configuration, straight from the seam that owns it.
- * `{ ok, provider, missing[] }` — `missing` is named by `lib/db.ts` itself, so
- * this file never spells a vendor's variable names.
+ * `{ ok, provider, missing[], detail }` — `missing` is named by `lib/db.ts`
+ * itself, so this file never spells a vendor's variable names.
+ *
+ * Which variables count as required is therefore a per-provider question and
+ * always was: under `sqlite` there are none, which is exactly why a clone with
+ * no account can report zero missing required variables and mean it.
  */
 export async function databaseStatus() {
   const mod = await importTs('lib/db.ts')
   if (!mod.ok) return { ok: false, provider: 'unknown', missing: [], error: mod.reason }
   const missing = mod.module.dbMissingEnv()
-  return { ok: missing.length === 0, provider: mod.module.DB_PROVIDER, missing }
+  const provider = mod.module.DB_PROVIDER
+  return { ok: missing.length === 0, provider, missing, detail: await providerDetail(provider) }
+}
+
+/**
+ * One line naming where the data actually is, for the providers that can say
+ * so without a round trip. A provider name alone does not tell an operator
+ * which file is about to be read.
+ */
+async function providerDetail(provider) {
+  if (provider !== 'sqlite') return null
+  const mod = await importTs('lib/db/sqlite-adapter.ts')
+  if (!mod.ok) return null
+  const file = mod.module.sqlitePath()
+  const { existsSync, statSync } = await import('node:fs')
+  if (!existsSync(file)) return `${file}  (not created yet — run \`npm run db:migrate\`)`
+  return `${file}  (${statSync(file).size} bytes)`
 }
 
 /**
@@ -98,7 +118,7 @@ export async function requiredEnvReport() {
   const db = await databaseStatus()
   const missing = [...db.missing]
   if (isPlaceholder(process.env.LLM_BASE_URL)) missing.push('LLM_BASE_URL')
-  return { provider: db.provider, dbError: db.error, missing }
+  return { provider: db.provider, dbError: db.error, dbDetail: db.detail, missing }
 }
 
 /** Recommended variables that are unset or still a placeholder. */

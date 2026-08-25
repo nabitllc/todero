@@ -9,7 +9,30 @@
  *
  * The route reads the key at module scope, so the env var is cleared BEFORE
  * the module is required (next/jest loads .env.local into process.env).
+ *
+ * The provider is pinned to `supabase` throughout, because "no Supabase key"
+ * is only an unconfigured host for a host that uses Supabase. A checkout with
+ * no credentials at all resolves to the file-backed `sqlite` provider instead
+ * (lib/db/adapters.ts) and is genuinely configured — that is a different
+ * contract, covered by lib/__tests__/db-seam.test.ts.
  */
+
+/** Clear the key while forcing the Supabase provider; restore both after. */
+function withoutSupabaseKey<T>(run: () => T): T {
+  const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const savedProvider = process.env.TODERO_DB_PROVIDER
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY
+  process.env.TODERO_DB_PROVIDER = 'supabase'
+  jest.resetModules()
+  try {
+    return run()
+  } finally {
+    if (savedKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey
+    if (savedProvider === undefined) delete process.env.TODERO_DB_PROVIDER
+    else process.env.TODERO_DB_PROVIDER = savedProvider
+    jest.resetModules()
+  }
+}
 
 // Process listing is a real OS spawn; stub it so the test measures the
 // configuration contract, not powershell/ps latency.
@@ -35,18 +58,12 @@ type AgentsBody = {
 }
 
 async function getWithoutKey(): Promise<{ status: number; body: AgentsBody }> {
-  const saved = process.env.SUPABASE_SERVICE_ROLE_KEY
-  delete process.env.SUPABASE_SERVICE_ROLE_KEY
-  jest.resetModules()
-  try {
+  return withoutSupabaseKey(async () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const route = require('@/app/api/agents/route')
     const res = await route.GET()
     return { status: res.status, body: (await res.json()) as AgentsBody }
-  } finally {
-    if (saved !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = saved
-    jest.resetModules()
-  }
+  })
 }
 
 describe('GET /api/agents with SUPABASE_SERVICE_ROLE_KEY unset', () => {
@@ -74,18 +91,12 @@ describe('GET /api/agents with SUPABASE_SERVICE_ROLE_KEY unset', () => {
 
 describe('POST/PATCH /api/agents with SUPABASE_SERVICE_ROLE_KEY unset', () => {
   it('refuse writes with 503 rather than throwing', async () => {
-    const saved = process.env.SUPABASE_SERVICE_ROLE_KEY
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY
-    jest.resetModules()
-    try {
+    await withoutSupabaseKey(async () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const route = require('@/app/api/agents/route')
       const req = { json: async () => ({ agent_id: 'builder' }) } as Request
       expect((await route.POST(req)).status).toBe(503)
       expect((await route.PATCH(req)).status).toBe(503)
-    } finally {
-      if (saved !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = saved
-      jest.resetModules()
-    }
+    })
   })
 })

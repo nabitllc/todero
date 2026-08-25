@@ -166,6 +166,7 @@ async function reportEnv(placeholders) {
   heading('Environment')
   const report = await requiredEnvReport()
   row('db provider', report.provider)
+  if (report.dbDetail) row('db location', report.dbDetail)
   if (report.dbError) note(report.dbError)
 
   console.log(`  missing required env vars: ${report.missing.length}`)

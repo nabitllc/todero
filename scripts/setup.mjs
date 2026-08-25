@@ -17,9 +17,17 @@
 //   2. generate the auth secrets the template ships as placeholders, and print
 //      the login password — otherwise a fresh clone cannot even sign in
 //   3. probe the configured LLM endpoint and print the models it serves
-//   4. report exactly which database variables are missing, by name
-//   5. apply migrations when a direct connection string is configured, and
-//      print the manual step when it is not
+//   4. pick a database. If this checkout has credentials for a hosted one it
+//      keeps them; if it has none it pins the file-backed `sqlite` provider,
+//      which needs no server and no account
+//   5. apply the migrations for whichever provider that turned out to be
+//
+// Step 4 is the difference between a setup script and a setup instruction
+// sheet. Before it existed this command ended by naming two Supabase variables
+// as the reader's homework: `npm run setup` could not finish its own job, and a
+// clone that had just been "set up" answered 503 from every data route. A
+// stranger now reaches a working board with no account anywhere, and moving to
+// a hosted database later is filling in a variable, not a migration.
 //
 // It never overwrites a value a human has set, never prompts, and never fails
 // the command for an unconfigured integration — every gap is printed with the
@@ -32,7 +40,7 @@ import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { EOL } from 'node:os'
 
-import { REPO_ROOT } from './lib/ts-import.mjs'
+import { REPO_ROOT, importTs } from './lib/ts-import.mjs'
 import { loadEnvFiles, parseEnvText, isPlaceholder } from './lib/env-file.mjs'
 import { llmStatus, requiredEnvReport, dropPlaceholderEnv } from './lib/env-report.mjs'
 
@@ -200,8 +208,39 @@ async function checkLlm() {
   return status
 }
 
-// ── 3. Database variables ────────────────────────────────────────────────────
+// ── 3. Database ──────────────────────────────────────────────────────────────
 
+/**
+ * Set `key` to `value` in .env.local, whether the file has it live, commented
+ * out, or not at all — the same in-place rewrite `fillGeneratedSecrets` does,
+ * so the file keeps its section headings and its explanatory comments.
+ * Never touches a key that already has a real value.
+ */
+function setEnvValue(key, value) {
+  let text = readFileSync(ENV_FILE, 'utf8')
+  const present = parseEnvText(text)
+  if (!isPlaceholder(present[key])) return false
+
+  const assignment = `${key}=${value}`
+  const liveLine = new RegExp(`^${key}=.*$`, 'm')
+  const commentedLine = new RegExp(`^#\\s*${key}=.*$`, 'm')
+  if (liveLine.test(text)) text = text.replace(liveLine, assignment)
+  else if (commentedLine.test(text)) text = text.replace(commentedLine, assignment)
+  else text = text + EOL + assignment + EOL
+  writeFileSync(ENV_FILE, text)
+  process.env[key] = value
+  return true
+}
+
+/**
+ * Decide which database this install uses, and make that decision explicit in
+ * .env.local so it cannot drift later.
+ *
+ * `lib/db/adapters.ts` owns the rule (credentials present -> that host; nothing
+ * present -> the file-backed `sqlite` provider); this step only records what it
+ * resolved and reports what is still missing. Nothing here names a vendor's
+ * variables — they come back from the seam itself.
+ */
 async function checkDatabase() {
   step(3, 'Database')
   const report = await requiredEnvReport()
@@ -212,6 +251,19 @@ async function checkDatabase() {
     return report
   }
 
+  if (report.provider === 'sqlite') {
+    // Pin it. Resolution would pick sqlite again on its own, but writing it
+    // down means adding an unrelated variable later cannot silently move this
+    // install onto a database whose credentials nobody filled in.
+    if (setEnvValue('TODERO_DB_PROVIDER', 'sqlite')) {
+      line('no hosted database is configured — pinned TODERO_DB_PROVIDER=sqlite in .env.local')
+    }
+    line('one file, no server, no account. Nothing to fill in.')
+    bullet('Moving to a hosted database later: set the credentials in .env.local,')
+    line('   delete the TODERO_DB_PROVIDER line, and re-run `npm run setup`.')
+    return report
+  }
+
   const dbMissing = report.missing.filter(name => name !== 'LLM_BASE_URL')
   if (dbMissing.length === 0) {
     line('all required database variables are set')
@@ -219,18 +271,43 @@ async function checkDatabase() {
     line(`missing: ${dbMissing.join(', ')}`)
     bullet('Fill them in .env.local — .env.local.template says where each value comes from.')
     bullet('Prefer any plain Postgres? Set TODERO_DB_PROVIDER=postgres and DATABASE_URL instead.')
+    bullet('Want none of that? Delete those lines and re-run — Todero falls back to a local file.')
   }
   return report
 }
 
 // ── 4. Migrations ────────────────────────────────────────────────────────────
 
-function runMigrations() {
+/** Run `npm run db:migrate` in this checkout. Returns true on a clean exit. */
+function invokeMigrate() {
+  // On Windows `npm` is a .cmd shim, which Node will not spawn without a shell.
+  // The command is a fixed literal — nothing from the environment is spliced in.
+  const options = { cwd: REPO_ROOT, stdio: 'inherit', windowsHide: true }
+  const result =
+    process.platform === 'win32'
+      ? spawnSync('npm run db:migrate', { ...options, shell: true })
+      : spawnSync('npm', ['run', 'db:migrate'], options)
+  if (result.status === 0) return true
+  line(`db:migrate exited ${result.status ?? 'without a status'} — see the output above.`)
+  return false
+}
+
+async function runMigrations(report) {
   step(4, 'Migrations')
 
   const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
   if (!pkg.scripts?.['db:migrate']) {
     line('no `db:migrate` script in package.json — apply migrations/*.sql by hand, in filename order.')
+    return
+  }
+
+  if (report.provider === 'sqlite') {
+    line('creating the local database — `npm run db:migrate`')
+    if (!invokeMigrate()) return
+    const adapter = await importTs('lib/db/sqlite-adapter.ts')
+    const where = adapter.ok ? adapter.module.sqlitePath() : 'db.sqlite in this checkout'
+    line(`local database ready at ${where} — no account needed;`)
+    line('set Supabase or DATABASE_URL later to move hosts.')
     return
   }
 
@@ -243,18 +320,7 @@ function runMigrations() {
   }
 
   line('DATABASE_URL is set — running `npm run db:migrate`')
-  // On Windows `npm` is a .cmd shim, which Node will not spawn without a shell.
-  // The command is a fixed literal — nothing from the environment is spliced in.
-  const options = { cwd: REPO_ROOT, stdio: 'inherit', windowsHide: true }
-  const result =
-    process.platform === 'win32'
-      ? spawnSync('npm run db:migrate', { ...options, shell: true })
-      : spawnSync('npm', ['run', 'db:migrate'], options)
-  if (result.status === 0) {
-    line('migrations applied')
-  } else {
-    line(`db:migrate exited ${result.status ?? 'without a status'} — see the output above.`)
-  }
+  if (invokeMigrate()) line('migrations applied')
 }
 
 // ── 5. Summary ───────────────────────────────────────────────────────────────
@@ -266,7 +332,7 @@ function summary(llm, db) {
   const ready = llm.ok && dbMissing.length === 0
 
   if (ready) {
-    line('This host is configured. Start it:')
+    line(`This host is configured — database: ${db.provider}. Start it:`)
   } else {
     line('Todero will start, but these surfaces will report their own gap until fixed:')
     if (!llm.ok) bullet('chat + agent dispatch — no LLM endpoint answered')
@@ -289,6 +355,6 @@ console.log(`  node      ${process.version}`)
 ensureEnvFile()
 const llm = await checkLlm()
 const db = await checkDatabase()
-runMigrations()
+await runMigrations(db)
 summary(llm, db)
 console.log('')

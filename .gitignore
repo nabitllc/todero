@@ -39,3 +39,9 @@ coverage/
 # Stray local service-health snapshots from redirected script output
 st.json
 scripts/acceptance/.gate.lock
+
+# Local SQLite database — the zero-account default provider (lib/db/sqlite-adapter.ts)
+# and its write-ahead-log sidecars. This is machine-local data, never shared state.
+/db.sqlite
+/db.sqlite-wal
+/db.sqlite-shm

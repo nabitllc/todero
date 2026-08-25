@@ -1,20 +1,21 @@
 # Todero
 
-AI-run company OS. Next.js 14 + Supabase + TypeScript.
+AI-run company OS. Next.js 14 + TypeScript, on the database of your choice —
+a file on disk by default, hosted Postgres when you point it at one.
 
 **Live:** [https://kaos.nabit.work](https://kaos.nabit.work) (Cloudflare tunnel → `localhost:3000`)
 
 ## Quickstart
 
-Prerequisite: **Node 18+**. Nothing else — no Docker, no Homebrew, no
-platform-specific service manager. macOS, Linux and Windows all take the same
-four lines.
+Prerequisite: **Node 22.5+**. Nothing else — no Docker, no Homebrew, no
+database server, no account with anybody. macOS, Linux and Windows all take the
+same four lines, and the result is a working board with real data in it.
 
 ```bash
 git clone git@github.com:nabitllc/todero.git
 cd todero
 npm install
-npm run setup              # writes .env.local, probes your LLM + database
+npm run setup              # writes .env.local, probes your LLM, creates the database
 npm run dev                # serves on :3000
 ```
 
@@ -24,11 +25,16 @@ Open [http://localhost:3000](http://localhost:3000).
 `.env.local` (never overwriting an existing one), adds any variable a newer
 template introduced, **generates your login password and the other auth
 secrets and prints them**, asks your configured LLM endpoint which models it
-serves, names every database variable that is still unset, and applies
-migrations when a direct `DATABASE_URL` is configured. It never overwrites a
-value you set and it asks no questions, so it is safe to re-run at any time.
+serves, and then creates the database and applies every migration to it. It
+never overwrites a value you set and it asks no questions, so it is safe to
+re-run at any time.
 
-Then fill in `.env.local` and check the machine:
+There is no step where you go and sign up for something. A checkout with no
+credentials runs on `db.sqlite` in the repo root, through Node's own
+`node:sqlite` — a real database with the full schema, not a demo mode. Delete
+that file to start over.
+
+Then check the machine:
 
 ```bash
 npm run doctor
@@ -36,8 +42,9 @@ npm run doctor
 
 `doctor` reports the host platform, the paths and CLI binaries the app itself
 resolves, which agent runtimes are actually available, the live model list from
-`LLM_BASE_URL`, and every required variable that is missing — by name. It exits
-non-zero when the install cannot work, so it doubles as a CI gate.
+`LLM_BASE_URL`, which database provider is active and where its data lives, and
+every required variable that is missing — by name. It exits non-zero when the
+install cannot work, so it doubles as a CI gate. On a fresh clone it exits 0.
 
 ### Which LLM?
 
@@ -52,6 +59,23 @@ in the app names a vendor, so this is configuration and not a code change:
 
 For the local default: install [Ollama](https://ollama.com), then
 `ollama pull qwen2.5-coder:7b`.
+
+### Which database?
+
+One variable, three adapters, no code change. Left unset, Todero picks the
+first one whose credentials are present, and falls back to `sqlite`.
+
+| `TODERO_DB_PROVIDER` | Needs | Use it for |
+|---|---|---|
+| `sqlite` (default when nothing is set) | nothing | a clone, a laptop, a demo, CI |
+| `supabase` | `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | the hosted install |
+| `postgres` | `DATABASE_URL` | Neon / Vercel Postgres / RDS / a container |
+
+`npm run db:migrate` applies the right migrations for whichever one is active —
+`migrations/sqlite/` for the file, `migrations/` for a Postgres. Adding a fourth
+engine is one file under `lib/db/` plus one line in `lib/db/adapters.ts`; the
+seam in `lib/db.ts` is proven by `lib/__tests__/db-seam.test.ts`, which runs one
+identical query set through all three.
 
 ### Running it as a service
 
