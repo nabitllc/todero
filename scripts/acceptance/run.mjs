@@ -10,6 +10,7 @@
 
 import { CHECKS } from './checks.mjs'
 import { TRUTH_CHECKS } from './checks-truth.mjs'
+import { ANYWHERE_CHECKS } from './checks-anywhere.mjs'
 import { writeFile } from 'node:fs/promises'
 
 const args = process.argv.slice(2)
@@ -20,7 +21,7 @@ const outIdx = args.indexOf('--out')
 const outPath = outIdx >= 0 ? args[outIdx + 1] : null
 
 const started = Date.now()
-const ALL = [...CHECKS, ...TRUTH_CHECKS]
+const ALL = [...CHECKS, ...TRUTH_CHECKS, ...ANYWHERE_CHECKS]
 const picked = only ? ALL.filter(c => c.piece === only || c.id === only) : ALL
 const results = []
 for (const c of picked) {

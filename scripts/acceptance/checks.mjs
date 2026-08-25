@@ -38,8 +38,12 @@ export async function countMatches(dirs, pattern, exts = ['.ts', '.tsx']) {
     let entries
     try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
     for (const e of entries) {
-      if (e.name === 'node_modules' || e.name === '.next' || e.name === '.git') continue
+      if (e.name === 'node_modules' || e.name === '.git' || e.name.startsWith('.next')) continue
       const p = join(dir, e.name)
+      // The graders must never grade themselves: a check that greps for a bad
+      // pattern necessarily CONTAINS that pattern, and would report its own
+      // source as a defect. Two Wave 4 checks did exactly that on first run.
+      if (p.split('\\').join('/').includes('scripts/acceptance')) continue
       if (e.isDirectory()) { await walk(p); continue }
       if (exts.length && !exts.some(x => e.name.endsWith(x))) continue
       let txt
