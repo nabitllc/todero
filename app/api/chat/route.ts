@@ -2,6 +2,7 @@
 
 import { NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 export const runtime = 'nodejs'
 
@@ -25,6 +26,12 @@ function resolveModel(modelOverride?: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const encoder = new TextEncoder()
 
   const body = await req.json().catch(() => ({}))

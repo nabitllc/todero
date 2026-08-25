@@ -1,9 +1,16 @@
 // TOD-762: inbox_requests API route — GET list, POST create, PATCH resolve
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 /** GET /api/inbox?status=pending — list inbox requests */
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const url = new URL(req.url)
   const status = url.searchParams.get('status')
   const limit = Math.min(Number(url.searchParams.get('limit') ?? '50'), 200)
@@ -24,6 +31,12 @@ export async function GET(req: NextRequest) {
 
 /** POST /api/inbox — create approval request */
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json() as {
     agent?: string
     type?: string
@@ -55,6 +68,12 @@ export async function POST(req: NextRequest) {
 
 /** PATCH /api/inbox — resolve a request (approve / deny / explain) */
 export async function PATCH(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json() as {
     id?: string
     status?: string

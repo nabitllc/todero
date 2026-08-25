@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server'
 import { db, dbMissingEnv } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const MONTHLY_BUDGET_USD = 200
 const WARN_THRESHOLD = 0.20 // warn when <20% remaining
@@ -18,6 +19,12 @@ function parseBudgetFromPlan(plan: string): number {
 }
 
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const missing = dbMissingEnv()
   if (missing.length > 0) {
     return NextResponse.json(
@@ -55,9 +62,12 @@ export async function GET() {
       cache: 'no-store',
     })
     if (histRes.ok) {
-      const history: Array<{ date: string; cost: number; tokens: number }> = await histRes.json()
+      // TOD: kill-fake-infra-greens — cost-history now returns cost: null
+      // for days with no stored snapshot, not a fabricated 0. Treat null
+      // as "not counted" rather than folding it into the average as a zero.
+      const history: Array<{ date: string; cost: number | null; tokens: number | null }> = await histRes.json()
       sum7Days = history.reduce((acc, d) => acc + (d.cost ?? 0), 0)
-      activeDays = history.filter(d => d.cost > 0).length
+      activeDays = history.filter(d => (d.cost ?? 0) > 0).length
     }
   } catch {
     // Non-fatal — fall back to daily extrapolation

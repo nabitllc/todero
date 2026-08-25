@@ -4,10 +4,13 @@ import { db } from '@/lib/db'
 export type TaskStatus = 'backlog' | 'open' | 'in_progress' | 'code_review' | 'approved' | 'released' | 'completed' | 'closed'
 
 // INF-203: Cost trend sparkline data model
+// TOD: kill-fake-infra-greens — cost/tokens are null when no snapshot was
+// stored for that day. A day nothing measured must render as absent, not
+// as a fabricated $0.00 that looks identical to a real zero-spend day.
 export interface CostSnapshot {
   date: string
-  cost: number
-  tokens: number
+  cost: number | null
+  tokens: number | null
 }
 
 // INF-218: Kanban swimlane types

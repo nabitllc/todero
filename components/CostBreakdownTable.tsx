@@ -1,6 +1,8 @@
 'use client'
 import React, { useCallback, useEffect, useState } from 'react'
 import { ChevronUp, ChevronDown, Download } from 'lucide-react'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface CostBreakdownRow {
   project: string
@@ -59,7 +61,11 @@ export default function CostBreakdownTable() {
   const [preset, setPreset] = useState<'this-month' | 'last-30' | 'custom'>('this-month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
-  const [rows, setRows] = useState<CostBreakdownRow[]>([])
+  // null means "not loaded / load failed" — never coerced to [] on a
+  // failure, so the table can't render "No cost data for this period" over
+  // a permission error or a 500.
+  const [rows, setRows] = useState<CostBreakdownRow[] | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -71,14 +77,15 @@ export default function CostBreakdownTable() {
     const { from, to } = activeRange
     if (!from || !to) return
     setLoading(true)
-    try {
-      const params = new URLSearchParams({ from, to })
-      const res = await fetch(`/api/costs/breakdown?${params}`)
-      if (res.ok) {
-        const data: CostBreakdownRow[] = await res.json()
-        setRows(data)
-      }
-    } catch { /* ignore */ }
+    const params = new URLSearchParams({ from, to })
+    const r = await fetchJson<CostBreakdownRow[]>(`/api/costs/breakdown?${params}`)
+    if (r.ok) {
+      setRows(r.data)
+      setError(null)
+    } else {
+      setRows(null)
+      setError(r.error)
+    }
     setLoading(false)
   }, [activeRange.from, activeRange.to]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -86,17 +93,19 @@ export default function CostBreakdownTable() {
     fetch_()
   }, [fetch_])
 
-  const sorted = [...rows].sort((a, b) =>
+  const sorted = [...(rows ?? [])].sort((a, b) =>
     sortDir === 'desc' ? b.cost_usd - a.cost_usd : a.cost_usd - b.cost_usd
   )
 
-  const total = rows.reduce(
+  const total = (rows ?? []).reduce(
     (acc, r) => ({ cost_usd: acc.cost_usd + r.cost_usd, total_tokens: acc.total_tokens + r.total_tokens }),
     { cost_usd: 0, total_tokens: 0 }
   )
 
   return (
     <div>
+      {error && <ApiErrorBanner error={error} onRetry={fetch_} className="mb-4" />}
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex gap-1">
@@ -136,7 +145,7 @@ export default function CostBreakdownTable() {
 
         <button
           onClick={() => exportCSV(sorted, total)}
-          disabled={loading || rows.length === 0}
+          disabled={loading || !rows || rows.length === 0}
           className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-white/5 border border-white/10 text-white/50 hover:text-white/70 hover:bg-white/10 transition-all disabled:opacity-40"
           aria-label="Export CSV"
         >
@@ -168,6 +177,12 @@ export default function CostBreakdownTable() {
           <tbody>
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => <SkeletonRow key={i} />)
+            ) : rows === null ? (
+              <tr>
+                <td colSpan={4} className="px-3 py-10 text-center text-white/30">
+                  {error ? 'data unavailable' : 'loading…'}
+                </td>
+              </tr>
             ) : sorted.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-3 py-10 text-center text-white/30">
@@ -189,7 +204,7 @@ export default function CostBreakdownTable() {
               ))
             )}
           </tbody>
-          {!loading && rows.length > 0 && (
+          {!loading && rows && rows.length > 0 && (
             <tfoot>
               <tr className="border-t border-white/20 bg-white/[0.03]">
                 <td className="px-3 py-2 text-white font-medium" colSpan={2}>Total</td>

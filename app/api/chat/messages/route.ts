@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {
@@ -11,6 +12,12 @@ function getSupabase(): DbAdapter {
 
 // POST /api/chat/messages — insert a message and return assistant reply
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { conversation_id, role, content, model, id, image_url } = await req.json()
 
   const supabase = getSupabase()
@@ -32,6 +39,12 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/chat/messages — update a message field (e.g. bookmarked)
 export async function PATCH(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { id, bookmarked } = await req.json()
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const updates: Record<string, unknown> = {}
@@ -48,6 +61,12 @@ export async function PATCH(req: NextRequest) {
 // DELETE /api/chat/messages?conversation_id=X&after_ts=Y — delete messages with created_at >= Y
 // DELETE /api/chat/messages?conversation_id=X&clear=true — delete ALL messages in conversation
 export async function DELETE(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const url = new URL(req.url)
   const id = url.searchParams.get('id')
   const conversation_id = url.searchParams.get('conversation_id')

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const AGENT_ID = 'circuit-breaker'
 const TRIP_THRESHOLD = 5
@@ -46,6 +47,12 @@ async function writeState(db: ReturnType<typeof createAdminClient>, state: Break
 
 /** GET — return current circuit state for all providers */
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const db = createAdminClient()
   const state = await readState(db)
 
@@ -70,6 +77,12 @@ export async function GET() {
 
 /** POST — record a 5xx failure for a provider */
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json() as { provider?: string; error?: string }
   if (!body.provider) return NextResponse.json({ error: 'provider is required' }, { status: 400 })
 
@@ -122,6 +135,12 @@ export async function POST(req: NextRequest) {
 
 /** DELETE — reset a provider's counter (manual recovery) */
 export async function DELETE(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json() as { provider?: string }
   if (!body.provider) return NextResponse.json({ error: 'provider is required' }, { status: 400 })
 

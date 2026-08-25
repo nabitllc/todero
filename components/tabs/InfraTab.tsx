@@ -32,37 +32,52 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 // INF-204: Sparkline SVG component for 7-day cost trend
+// TOD: kill-fake-infra-greens — a day with no stored snapshot is `cost: null`,
+// not 0. Plotting null as 0 would draw a real-looking flat line through days
+// nothing measured, so the polyline breaks into separate segments around
+// gaps instead of running through them.
 function CostSparkline({ data }: { data: CostSnapshot[] }) {
-  if (!data || data.length < 2) return null
-  const costs = data.map(d => d.cost)
-  const max = Math.max(...costs, 0.01)
+  if (!data) return null
+  const known = data.filter((d): d is CostSnapshot & { cost: number } => d.cost !== null)
+  if (known.length < 2) return null
+  const max = Math.max(...known.map(d => d.cost), 0.01)
   const w = 180
   const h = 40
   const pad = 2
-  const points = costs.map((c, i) => {
-    const x = pad + (i / (costs.length - 1)) * (w - pad * 2)
-    const y = h - pad - (c / max) * (h - pad * 2)
-    return `${x},${y}`
+  // Build one or more polyline segments, breaking at each null.
+  const segments: string[][] = []
+  let current: string[] = []
+  data.forEach((d, i) => {
+    if (d.cost === null) {
+      if (current.length) segments.push(current)
+      current = []
+      return
+    }
+    const x = pad + (i / (data.length - 1)) * (w - pad * 2)
+    const y = h - pad - (d.cost / max) * (h - pad * 2)
+    current.push(`${x},${y}`)
   })
-  const lastCost = costs[costs.length - 1]
-  const prevCost = costs[costs.length - 2]
-  const trend = lastCost > prevCost ? '#ef4444' : lastCost < prevCost ? '#22c55e' : '#666'
+  if (current.length) segments.push(current)
+  const lastKnown = known[known.length - 1].cost
+  const prevKnown = known[known.length - 2].cost
+  const trend = lastKnown > prevKnown ? '#ef4444' : lastKnown < prevKnown ? '#22c55e' : '#666'
+  const lastPt = segments[segments.length - 1]?.[segments[segments.length - 1].length - 1]?.split(',')
   return (
     <div className="flex items-center gap-2">
       <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
-        <polyline
-          points={points.join(' ')}
-          fill="none"
-          stroke={trend}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {/* Dot on last point */}
-        {(() => {
-          const lastPt = points[points.length - 1].split(',')
-          return <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill={trend} />
-        })()}
+        {segments.map((seg, i) => (
+          <polyline
+            key={i}
+            points={seg.join(' ')}
+            fill="none"
+            stroke={trend}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+        {/* Dot on last known point */}
+        {lastPt && <circle cx={lastPt[0]} cy={lastPt[1]} r="3" fill={trend} />}
       </svg>
       <div className="text-[9px] text-white/30">
         {data.map(d => d.date.slice(5)).join(' · ')}
@@ -106,10 +121,15 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
             // account showing "$9.57 remaining" is exactly the fabrication this
             // tab used to run on.
             const orConnected = !!ls?.openrouter
-            const orRemaining = ls?.openrouter?.remaining ?? 0
-            const orLimit = ls?.openrouter?.limit ?? 0
+            // TOD: kill-fake-infra-greens — OpenRouter reports limit:null for
+            // any pay-as-you-go key. That must stay null through the UI, not
+            // get coerced to 0/10 — a coerced 0 would render "$X.XX / $0.00"
+            // and a coerced 10 would resurrect the fabricated "$9.57 / $10.00"
+            // this tab was rebuilt to stop showing.
+            const orLimit: number | null = typeof ls?.openrouter?.limit === 'number' ? ls.openrouter.limit : null
+            const orRemaining: number | null = typeof ls?.openrouter?.remaining === 'number' ? ls.openrouter.remaining : null
             const orUsed = ls?.openrouter?.used ?? 0
-            const orPct = orLimit > 0 ? Math.min(100, Math.round((orUsed / orLimit) * 100)) : 0
+            const orPct = orLimit !== null && orLimit > 0 ? Math.min(100, Math.round((orUsed / orLimit) * 100)) : 0
             const usageCost = ls?.usage?.totalCost ?? 0
             const usageTokens = ls?.usage?.totalTokens ?? 0
             const usageByModel: Record<string,number> = ls?.usage?.byModel ?? {}
@@ -267,12 +287,23 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                   </div>
                   {ls && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg" title="Live"/>}
                 </div>
-                {/* INF-204: 7-day cost trend sparkline */}
-                {costHistory.length > 0 && (
+                {/* INF-204: 7-day cost trend sparkline.
+                    TOD: kill-fake-infra-greens — a chart needs at least two
+                    measured days to draw a trend; anything less is not a
+                    trend, it's a guess dressed as one, so it falls through
+                    to the EmptyState below instead of rendering a
+                    real-looking flat line. */}
+                {costHistory.filter(d => d.cost !== null).length >= 2 ? (
                   <div className="mb-4 p-3 rounded-xl border border-white/5" style={{ background: '#0a0a0a' }}>
                     <p className="text-white/30 text-[9px] uppercase tracking-widest mb-2">7-Day Cost Trend</p>
                     <CostSparkline data={costHistory} />
                   </div>
+                ) : (
+                  !costHistoryError && costHistory.length > 0 && (
+                    <div className="mb-4">
+                      <EmptyState icon={Server} title="No cost snapshots recorded on this host" className="py-4" />
+                    </div>
+                  )
                 )}
                 <div className="space-y-2">
                   {Object.entries(usageByModel).sort((a,b)=>b[1]-a[1]).map(([model, cost])=>{
@@ -445,13 +476,28 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                       <div>
                         <p className="text-white/50 text-xs mb-1">Monthly credit</p>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-3xl font-bold text-white">${orRemaining.toFixed(2)}</span>
-                          <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
+                          {/* TOD: kill-fake-infra-greens — OpenRouter reports
+                              limit:null for pay-as-you-go keys (the common
+                              case). No limit means no denominator and no
+                              progress bar to fill against — showing "/ $0.00"
+                              or a fabricated ceiling is exactly the
+                              "$9.57 / $10.00" this tab was rebuilt to stop
+                              showing. */}
+                          {orLimit === null ? (
+                            <span className="text-3xl font-bold text-white">${orUsed.toFixed(2)}</span>
+                          ) : (
+                            <>
+                              <span className="text-3xl font-bold text-white">${(orRemaining ?? 0).toFixed(2)}</span>
+                              <span className="text-white/30 text-sm">/ ${orLimit.toFixed(2)}</span>
+                            </>
+                          )}
                         </div>
                       </div>
-                      <p className="text-white/30 text-xs">${orUsed.toFixed(3)} used · resets monthly</p>
+                      <p className="text-white/30 text-xs">
+                        {orLimit === null ? '$' + orUsed.toFixed(3) + ' used · no credit limit set on this key' : `$${orUsed.toFixed(3)} used · resets monthly`}
+                      </p>
                     </div>
-                    <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />
+                    {orLimit !== null && <Bar v={orPct} color="#3b82f6" bg="rgba(255,255,255,0.05)" />}
                   </>
                 ) : (
                   <div className="flex items-center gap-2">

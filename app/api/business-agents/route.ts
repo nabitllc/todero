@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 export async function GET(req: Request) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { searchParams } = new URL(req.url)
   const business_id = searchParams.get('business_id')
 
@@ -20,6 +27,12 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json()
   const { business_id, name, adapter, model, api_key_enc, heartbeat_every, description } = body
   if (!business_id || !name) return NextResponse.json({ error: 'business_id and name required' }, { status: 400 })

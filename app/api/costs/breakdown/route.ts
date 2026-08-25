@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertDbConfigured, db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function getSupabase() {
   // db() throws a DbConfigurationError naming the exact missing variables.
@@ -16,6 +17,12 @@ export interface CostBreakdownRow {
 
 // GET /api/costs/breakdown?from=2026-04-01&to=2026-04-30
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { searchParams } = req.nextUrl
   const from = searchParams.get('from')
   const to = searchParams.get('to')

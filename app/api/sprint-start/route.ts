@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 const SPRINT_START_CHANNEL = '1491991662757548144'
@@ -20,6 +21,12 @@ function postDiscord(channelId: string, content: string) {
 
 // ── POST /api/sprint-start ────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const body = await req.json()
     const { business_id, goal } = body

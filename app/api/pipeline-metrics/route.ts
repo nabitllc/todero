@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function supabaseAdmin() {
   return db()
@@ -29,6 +30,12 @@ function windowStart(window: Window): string {
 }
 
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const windowParam = (req.nextUrl.searchParams.get('window') ?? '7d') as Window
   if (windowParam !== '7d' && windowParam !== '30d') {
     return NextResponse.json({ error: 'window must be 7d or 30d' }, { status: 400 })

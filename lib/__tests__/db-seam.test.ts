@@ -5,6 +5,11 @@
  * neither the variable nor the file that needed it.
  */
 
+import { readFileSync } from 'fs'
+import { join } from 'path'
+import { PGlite } from '@electric-sql/pglite'
+import type { DbAdapterFactory } from '../db'
+
 const ENV_URL = 'NEXT_PUBLIC_SUPABASE_URL'
 const ENV_KEY = 'SUPABASE_SERVICE_ROLE_KEY'
 
@@ -194,3 +199,443 @@ describe('session actor', () => {
       .toBeUndefined()
   })
 })
+
+// ─── One query set, two providers ────────────────────────────────────────────
+//
+// A seam is only worth having if a SECOND adapter can satisfy it without
+// re-implementing the first one's wire format. This suite is the proof: one
+// list of `DbQueryBuilder` calls, run through both registered providers.
+//
+//   postgres — `lib/db/pg-adapter.ts`. Compiles every call to a parameterised
+//              SQL statement and runs it on a real Postgres (PGlite, in-process)
+//              built from this repo's own `migrations/*.sql`.
+//   supabase — the hosted adapter. Translates the same calls into its HTTP
+//              query layer; `restBridge()` below replays those requests against
+//              the SAME physical Postgres, parsing them with the app's own
+//              `lib/db/query-params.ts`. So both legs read and write real rows
+//              in a real database — neither leg is a fixture.
+//
+// A method only one of them can express fails this suite. That is the guard
+// against `DbQueryBuilder` quietly re-growing one vendor's query dialect.
+
+/** Migrations that stand on their own — enough schema for the whole query set. */
+const MIGRATION_SEED: ReadonlyArray<{ file: string; upTo?: string }> = [
+  { file: '016_agent_documents.sql' },
+  { file: '035_connections_table.sql' },
+  // Only the part before this marker. The rest of 021 alters `issues`, whose
+  // base DDL predates this migrations directory (it was created in the hosted
+  // vendor's dashboard) and so cannot be replayed from the repo.
+  { file: '021_issue_sequences.sql', upTo: '-- 3. UNIQUE constraint' },
+]
+
+async function seededPostgres(): Promise<PGlite> {
+  const pg = await PGlite.create()
+  for (const { file, upTo } of MIGRATION_SEED) {
+    const sql = readFileSync(join(__dirname, '..', '..', 'migrations', file), 'utf8')
+    await pg.exec(upTo ? sql.slice(0, sql.indexOf(upTo)) : sql)
+  }
+  return pg
+}
+
+/** The `SqlExecutor` the postgres adapter needs, backed by in-process Postgres. */
+function pgliteExecutor(pg: PGlite) {
+  return {
+    async query(text: string, values: readonly unknown[]) {
+      const result = await pg.query(text, values as unknown[])
+      const rows = result.rows as Array<Record<string, unknown>>
+      return { rows, rowCount: result.affectedRows ?? rows.length }
+    },
+  }
+}
+
+type QueryParams = typeof import('../db/query-params')
+
+/** Body + status for one bridged response. */
+function respond(body: string | null, status: number, headers: Record<string, string> = {}) {
+  return new Response(body, { status, headers: { 'Content-Type': 'application/json', ...headers } })
+}
+
+/**
+ * Answers the hosted adapter's HTTP requests out of the same Postgres the
+ * postgres adapter is using. Deliberately built from shipped code —
+ * `query-params.ts` parses the request, `pg-adapter.ts` executes it — so the
+ * test harness cannot accidentally be more capable than the app.
+ */
+function restBridge(pgFactory: DbAdapterFactory, qp: QueryParams) {
+  return async (input: string, init: RequestInit = {}): Promise<Response> => {
+    const url = new URL(String(input))
+    const headers = new Headers(init.headers)
+    const method = (init.method ?? 'GET').toUpperCase()
+    const prefer = headers.get('Prefer') ?? ''
+    const accept = headers.get('Accept') ?? ''
+    const params = url.searchParams
+    const adapter = pgFactory.create()
+    const path = url.pathname.replace(/^.*\/rest\/v1\//, '')
+
+    if (path.startsWith('rpc/')) {
+      const args = init.body ? JSON.parse(String(init.body)) : {}
+      const rpcResult = await adapter.rpc(path.slice(4), args)
+      if (rpcResult.error) return respond(JSON.stringify(rpcResult.error), 400)
+      return respond(JSON.stringify(rpcResult.data), 200)
+    }
+
+    const shape = qp.readQueryShape(params)
+    const wantsRows = method === 'GET' || prefer.includes('return=representation')
+    const wantsCount = /count=(exact|planned|estimated)/.test(prefer)
+    const body = init.body ? JSON.parse(String(init.body)) : undefined
+    let builder = adapter.from(path)
+
+    if (method === 'GET' || method === 'HEAD') {
+      builder = builder.select(shape.select, {
+        ...(wantsCount ? { count: 'exact' as const } : {}),
+        head: method === 'HEAD',
+      })
+      builder = qp.applyFilters(builder, params)
+      builder = qp.applyShaping(builder, params)
+    } else if (method === 'POST') {
+      builder = prefer.includes('resolution=merge-duplicates')
+        ? builder.upsert(body, shape.onConflict ? { onConflict: shape.onConflict } : undefined)
+        : builder.insert(body)
+      if (wantsRows) builder = builder.select(shape.select)
+    } else if (method === 'PATCH') {
+      builder = qp.applyFilters(builder.update(body), params)
+      if (wantsRows) builder = builder.select(shape.select)
+    } else if (method === 'DELETE') {
+      builder = qp.applyFilters(builder.delete(), params)
+      if (wantsRows) builder = builder.select(shape.select)
+    } else {
+      return respond(JSON.stringify({ message: `unsupported method ${method}` }), 405)
+    }
+
+    const result = await builder
+    if (result.error) return respond(JSON.stringify(result.error), 400)
+
+    const range: Record<string, string> = wantsCount
+      ? { 'Content-Range': `0-0/${result.count ?? 0}` }
+      : {}
+    if (method === 'HEAD') return respond(null, 200, range)
+
+    const rows = Array.isArray(result.data)
+      ? result.data
+      : result.data == null
+        ? []
+        : [result.data]
+
+    if (accept.includes('application/vnd.pgrst.object+json')) {
+      if (rows.length !== 1) {
+        return respond(
+          JSON.stringify({
+            code: 'PGRST116',
+            details: `Results contain ${rows.length} rows, application/vnd.pgrst.object+json requires 1 row`,
+            hint: null,
+            message: 'JSON object requested, multiple (or no) rows returned',
+          }),
+          406,
+          range,
+        )
+      }
+      return respond(JSON.stringify(rows[0]), 200, range)
+    }
+
+    if (!wantsRows) return respond('', method === 'POST' ? 201 : 204, range)
+    return respond(JSON.stringify(rows), 200, range)
+  }
+}
+
+describe.each(['postgres', 'supabase'] as const)(
+  'the same query set through the %s adapter',
+  provider => {
+    let seam: typeof import('../db')
+    let adapter: import('../db').DbAdapter
+    let pg: PGlite
+    let realFetch: typeof globalThis.fetch
+
+    const previous = {
+      provider: process.env.TODERO_DB_PROVIDER,
+      url: process.env[ENV_URL],
+      key: process.env[ENV_KEY],
+      database: process.env.DATABASE_URL,
+    }
+
+    beforeAll(async () => {
+      pg = await seededPostgres()
+
+      process.env.TODERO_DB_PROVIDER = provider
+      process.env.DATABASE_URL = 'postgresql://seam-test/in-process'
+      process.env[ENV_URL] = 'https://seam.test'
+      process.env[ENV_KEY] = 'seam-test-key'
+
+      let pgAdapter: typeof import('../db/pg-adapter')
+      let queryParams: QueryParams
+      jest.isolateModules(() => {
+        /* eslint-disable @typescript-eslint/no-var-requires */
+        pgAdapter = require('../db/pg-adapter')
+        queryParams = require('../db/query-params')
+        seam = require('../db')
+        /* eslint-enable @typescript-eslint/no-var-requires */
+      })
+
+      pgAdapter!.setSqlExecutor(pgliteExecutor(pg))
+      realFetch = globalThis.fetch
+      globalThis.fetch = restBridge(
+        pgAdapter!.pgAdapterFactory,
+        queryParams!,
+      ) as unknown as typeof globalThis.fetch
+
+      adapter = seam.db()
+      expect(adapter.provider).toBe(provider)
+      expect(adapter.missingEnv()).toEqual([])
+    })
+
+    afterAll(async () => {
+      globalThis.fetch = realFetch
+      await pg.close()
+      if (previous.provider === undefined) delete process.env.TODERO_DB_PROVIDER
+      else process.env.TODERO_DB_PROVIDER = previous.provider
+      if (previous.database === undefined) delete process.env.DATABASE_URL
+      else process.env.DATABASE_URL = previous.database
+      if (previous.url === undefined) delete process.env[ENV_URL]
+      else process.env[ENV_URL] = previous.url
+      if (previous.key === undefined) delete process.env[ENV_KEY]
+      else process.env[ENV_KEY] = previous.key
+    })
+
+    it('inserts rows and returns them when asked', async () => {
+      const { data, error } = await adapter
+        .from('agent_documents')
+        .insert([
+          { agent_id: 'kaos', doc_type: 'soul', slug: 'soul', content: 'kaos soul' },
+          { agent_id: 'kaos', doc_type: 'heartbeat', slug: 'hb', content: 'kaos heartbeat' },
+          { agent_id: 'global', doc_type: 'agents', slug: 'agents', content: 'shared handbook' },
+          { agent_id: 'builder', doc_type: 'soul', slug: 'soul', content: 'builder soul' },
+        ])
+        .select()
+
+      expect(error).toBeNull()
+      expect(data).toHaveLength(4)
+      expect(data.map((row: Record<string, unknown>) => row.agent_id).sort()).toEqual([
+        'builder',
+        'global',
+        'kaos',
+        'kaos',
+      ])
+    })
+
+    it('insert without select() reports no rows, exactly like the other provider', async () => {
+      const { data, error } = await adapter
+        .from('connections')
+        .insert({ workspace_id: 'w1', type: 'github', encrypted_value: 'x' })
+      expect(error).toBeNull()
+      expect(data).toBeNull()
+    })
+
+    // This is the live query from app/api/agents/[id]/files/route.ts, verbatim.
+    it('runs a disjunction expressed as predicates, not as grammar', async () => {
+      const { data, error } = await adapter
+        .from('agent_documents')
+        .select('agent_id, doc_type, content')
+        .or([
+          { column: 'agent_id', op: 'eq', value: 'kaos' },
+          { column: 'agent_id', op: 'eq', value: 'global' },
+        ])
+        .in('doc_type', ['soul', 'heartbeat', 'agents'])
+        .order('doc_type', { ascending: true })
+
+      expect(error).toBeNull()
+      expect(data.map((row: Record<string, unknown>) => `${row.agent_id}/${row.doc_type}`)).toEqual([
+        'global/agents',
+        'kaos/heartbeat',
+        'kaos/soul',
+      ])
+      // The disjunction really excluded the third agent.
+      expect(data).toHaveLength(3)
+    })
+
+    it('filters with eq, neq, like, ilike and is', async () => {
+      const eq = await adapter.from('agent_documents').select('slug').eq('agent_id', 'builder')
+      expect(eq.error).toBeNull()
+      expect(eq.data).toHaveLength(1)
+
+      const neq = await adapter.from('agent_documents').select('agent_id').neq('agent_id', 'kaos')
+      expect(neq.data.map((r: Record<string, unknown>) => r.agent_id).sort()).toEqual([
+        'builder',
+        'global',
+      ])
+
+      const like = await adapter.from('agent_documents').select('content').like('content', 'kaos%')
+      expect(like.data).toHaveLength(2)
+
+      const ilike = await adapter.from('agent_documents').select('content').ilike('content', 'KAOS%')
+      expect(ilike.data).toHaveLength(2)
+
+      const isNull = await adapter.from('agent_documents').select('slug').is('updated_by', null)
+      expect(isNull.data).toHaveLength(4)
+    })
+
+    it('negates a comparison, including a negated list', async () => {
+      const notIn = await adapter
+        .from('agent_documents')
+        .select('doc_type')
+        .not('doc_type', 'in', ['soul', 'heartbeat'])
+      expect(notIn.error).toBeNull()
+      expect(notIn.data.map((r: Record<string, unknown>) => r.doc_type)).toEqual(['agents'])
+
+      const notNull = await adapter
+        .from('agent_documents')
+        .select('slug')
+        .not('updated_at', 'is', null)
+      expect(notNull.data).toHaveLength(4)
+    })
+
+    it('orders, limits and windows the result', async () => {
+      const ordered = await adapter
+        .from('agent_documents')
+        .select('agent_id, slug')
+        .order('agent_id', { ascending: true })
+        .order('slug', { ascending: true })
+      expect(ordered.data.map((r: Record<string, unknown>) => r.agent_id)).toEqual([
+        'builder',
+        'global',
+        'kaos',
+        'kaos',
+      ])
+
+      const limited = await adapter
+        .from('agent_documents')
+        .select('agent_id')
+        .order('agent_id', { ascending: true })
+        .limit(2)
+      expect(limited.data).toHaveLength(2)
+
+      const windowed = await adapter
+        .from('agent_documents')
+        .select('agent_id')
+        .order('agent_id', { ascending: true })
+        .range(1, 2)
+      expect(windowed.data.map((r: Record<string, unknown>) => r.agent_id)).toEqual([
+        'global',
+        'kaos',
+      ])
+    })
+
+    it('counts rows, with and without fetching them', async () => {
+      const counted = await adapter
+        .from('agent_documents')
+        .select('*', { count: 'exact' })
+        .eq('agent_id', 'kaos')
+      expect(counted.count).toBe(2)
+      expect(counted.data).toHaveLength(2)
+
+      const headOnly = await adapter
+        .from('agent_documents')
+        .select('*', { count: 'exact', head: true })
+      expect(headOnly.count).toBe(4)
+    })
+
+    it('matches on several columns at once', async () => {
+      const { data, error } = await adapter
+        .from('agent_documents')
+        .select('content')
+        .match({ agent_id: 'kaos', doc_type: 'soul' })
+      expect(error).toBeNull()
+      expect(data).toEqual([{ content: 'kaos soul' }])
+    })
+
+    it('resolves exactly one row, or says why it could not', async () => {
+      const one = await adapter
+        .from('agent_documents')
+        .select('content')
+        .eq('agent_id', 'builder')
+        .single()
+      expect(one.error).toBeNull()
+      expect(one.data).toEqual({ content: 'builder soul' })
+
+      const none = await adapter
+        .from('agent_documents')
+        .select('content')
+        .eq('agent_id', 'nobody')
+        .single()
+      expect(none.data).toBeNull()
+      expect(none.error?.code).toBe('PGRST116')
+
+      const maybe = await adapter
+        .from('agent_documents')
+        .select('content')
+        .eq('agent_id', 'nobody')
+        .maybeSingle()
+      expect(maybe.error).toBeNull()
+      expect(maybe.data).toBeNull()
+    })
+
+    it('updates rows and returns what changed', async () => {
+      const { data, error } = await adapter
+        .from('agent_documents')
+        .update({ content: 'kaos soul v2', updated_by: 'michael' })
+        .eq('agent_id', 'kaos')
+        .eq('doc_type', 'soul')
+        .select('content, updated_by')
+      expect(error).toBeNull()
+      expect(data).toEqual([{ content: 'kaos soul v2', updated_by: 'michael' }])
+    })
+
+    it('upserts on a named conflict target', async () => {
+      const merged = await adapter
+        .from('agent_documents')
+        .upsert(
+          { agent_id: 'kaos', doc_type: 'soul', slug: 'soul', content: 'kaos soul v3' },
+          { onConflict: 'agent_id,doc_type,slug' },
+        )
+        .select('content')
+      expect(merged.error).toBeNull()
+      expect(merged.data).toEqual([{ content: 'kaos soul v3' }])
+
+      const total = await adapter.from('agent_documents').select('*', { count: 'exact', head: true })
+      expect(total.count).toBe(4)
+    })
+
+    it('attaches a related table without an embedded-select dialect', async () => {
+      // The UPDATE above fired the migration's history trigger, so there is a
+      // real child row pointing at a real parent.
+      const { data, error } = await adapter
+        .from('agent_document_history')
+        .select('content, document_id')
+        .join({
+          table: 'agent_documents',
+          columns: ['agent_id', 'doc_type'],
+          localColumn: 'document_id',
+        })
+      expect(error).toBeNull()
+      expect(data.length).toBeGreaterThan(0)
+      expect(data[0].agent_documents).toEqual({ agent_id: 'kaos', doc_type: 'soul' })
+    })
+
+    it('calls a stored procedure defined by a migration', async () => {
+      const first = await adapter.rpc('next_issue_number', { p_prefix: 'TOD' })
+      expect(first.error).toBeNull()
+      expect(Number(first.data)).toBe(1)
+
+      const second = await adapter.rpc('next_issue_number', { p_prefix: 'TOD' })
+      expect(Number(second.data)).toBe(2)
+    })
+
+    it('deletes rows and returns them', async () => {
+      const deleted = await adapter
+        .from('agent_documents')
+        .delete()
+        .eq('agent_id', 'builder')
+        .select('agent_id')
+      expect(deleted.error).toBeNull()
+      expect(deleted.data).toEqual([{ agent_id: 'builder' }])
+
+      const left = await adapter.from('agent_documents').select('*', { count: 'exact', head: true })
+      expect(left.count).toBe(3)
+    })
+
+    it('reports a database error instead of throwing it', async () => {
+      const { data, error } = await adapter.from('table_that_does_not_exist').select('*')
+      expect(data).toBeNull()
+      expect(error).not.toBeNull()
+      expect(String(error?.message)).toMatch(/table_that_does_not_exist/)
+    })
+  },
+)

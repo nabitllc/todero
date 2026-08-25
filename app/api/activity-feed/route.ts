@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { assertDbConfigured, db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function getSupabase() {
   // db() throws a DbConfigurationError naming the exact missing variables.
@@ -65,6 +66,12 @@ function describeTransition(title: string, status: string, resolution_type?: str
 }
 
 export async function GET(req: Request) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   let supabase
   try {
     supabase = getSupabase()

@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 // POST /api/agents/[id]/pause — toggle pause state
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const { id } = params
     const body = await req.json()
@@ -33,6 +40,12 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const { id } = params
     const supabase = db()

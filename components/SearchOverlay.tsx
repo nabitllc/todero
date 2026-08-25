@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, X } from 'lucide-react'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface SearchOverlayProps {
   open: boolean
@@ -19,12 +21,16 @@ interface SearchResult {
 
 export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverlayProps) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResult[]>([])
+  // null means "not searched yet / search failed" — never coerced to [] on
+  // a failure, so the overlay can't render "No results found" over a
+  // permission error or a 500.
+  const [results, setResults] = useState<SearchResult[] | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (open) { setQuery(''); setResults([]); setTimeout(() => inputRef.current?.focus(), 50) }
+    if (open) { setQuery(''); setResults(null); setError(null); setTimeout(() => inputRef.current?.focus(), 50) }
   }, [open])
 
   useEffect(() => {
@@ -35,18 +41,21 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
   }, [open, onClose])
 
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return }
+    if (!query.trim()) { setResults(null); setError(null); return }
     const timeout = setTimeout(async () => {
       setLoading(true)
-      try {
-        const encoded = encodeURIComponent('%' + query + '%')
-        const res = await fetch(
-          dbUrl('issues?or=(title.ilike.' + encoded + ',task_key.ilike.' + encoded + ')&order=updated_at.desc&limit=15&select=task_key,title,status'),
-          { headers: dbRestHeaders() }
-        )
-        const data = await res.json()
-        if (Array.isArray(data)) setResults(data)
-      } catch { /* ignore */ }
+      const encoded = encodeURIComponent('%' + query + '%')
+      const r = await fetchJson<SearchResult[]>(
+        dbUrl('issues?or=(title.ilike.' + encoded + ',task_key.ilike.' + encoded + ')&order=updated_at.desc&limit=15&select=task_key,title,status'),
+        { headers: dbRestHeaders() }
+      )
+      if (r.ok) {
+        setResults(r.data)
+        setError(null)
+      } else {
+        setResults(null)
+        setError(r.error)
+      }
       setLoading(false)
     }, 300)
     return () => clearTimeout(timeout)
@@ -65,8 +74,11 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
         </div>
         <div className="max-h-[300px] overflow-y-auto">
           {loading && <div className="px-4 py-3 text-xs text-white/25">Searching...</div>}
-          {!loading && query && results.length === 0 && <div className="px-4 py-6 text-center text-xs text-white/25">No results found</div>}
-          {results.map(r => (
+          {!loading && error && <div className="px-2 py-2"><ApiErrorBanner error={error} /></div>}
+          {!loading && !error && query && results !== null && results.length === 0 && (
+            <div className="px-4 py-6 text-center text-xs text-white/25">No results found</div>
+          )}
+          {(results ?? []).map(r => (
             <button key={r.task_key} onClick={() => { onNavigate('board'); onClose() }} className="w-full text-left px-4 py-2.5 hover:bg-white/[0.04] transition-colors border-b border-white/[0.03] flex items-center gap-3">
               <span className="text-[10px] font-mono text-white/30 shrink-0">{r.task_key}</span>
               <span className="text-xs text-white/60 truncate flex-1">{r.title}</span>

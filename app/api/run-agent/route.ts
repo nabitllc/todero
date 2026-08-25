@@ -26,6 +26,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { db } from '@/lib/db'
 import { applyFilters, applyShaping, readQueryShape } from '@/lib/db/query-params'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 /**
  * Run one of the queue's filter strings through the database seam.
@@ -213,6 +214,12 @@ async function dryRunReport(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   // Dry run first: it resolves and reports, it never spawns.
   if (req.nextUrl.searchParams.get('dryRun') === '1') {
     return dryRunReport(req)
@@ -834,6 +841,12 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
 
 // GET /api/run-agent — status/heartbeat for all queue lanes
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const REQUIRED_PERMISSION = 'agents:read' as const
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {

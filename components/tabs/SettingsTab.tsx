@@ -4,8 +4,11 @@ import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, readApiError, type ApiError } from '@/hooks/useApiData'
 import { RefreshCw } from 'lucide-react'
 import { StatusDot } from '@/components/ui/StatusDot'
-import { THEMES, THEME_IDS } from '@/lib/theme'
-import type { ThemeId } from '@/lib/theme'
+// TOD: kill-fake-infra-greens — imports the client-safe constants module, not
+// lib/theme.ts, which pulls in lib/db.ts's postgres adapter (Node-only `pg`,
+// needs `fs`) and broke the client bundle for every route on this host.
+import { THEMES, THEME_IDS } from '@/lib/theme-constants'
+import type { ThemeId } from '@/lib/theme-constants'
 import CostBreakdownTable from '@/components/CostBreakdownTable'
 
 interface UsageData {

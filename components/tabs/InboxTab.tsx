@@ -1,7 +1,9 @@
 'use client'
 // TOD-1043: Inbox tab — Pending + Historic sub-views with Approve/Deny/Explain actions
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useState } from 'react'
+import { useApiList, fetchJson, type ApiError } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface InboxEntry {
   id: string
@@ -125,38 +127,36 @@ function ActionModal({ entry, action, onClose, onSubmit }: {
 
 export default function InboxTab() {
   const [view, setView] = useState<'pending' | 'historic'>('pending')
-  const [entries, setEntries] = useState<InboxEntry[]>([])
-  const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ entry: InboxEntry; action: 'approved' | 'denied' | 'explained' } | null>(null)
+  const [actionError, setActionError] = useState<ApiError | null>(null)
 
-  const fetchEntries = useCallback(async () => {
-    const status = view === 'pending' ? '?status=pending' : ''
-    const res = await fetch(`/api/inbox${status}`)
-    if (res.ok) {
-      const data = await res.json()
-      setEntries(Array.isArray(data) ? data : [])
-    }
-    setLoading(false)
-  }, [view])
+  // `items` stays null on a failed fetch — never coerced to [] — so a 403/500
+  // renders the error banner instead of a lying "No pending requests".
+  const { items, error, loading, refetch } = useApiList<InboxEntry>(
+    view === 'pending' ? '/api/inbox?status=pending' : '/api/inbox',
+  )
 
-  useEffect(() => {
-    setLoading(true)
-    fetchEntries()
+  // Poll the pending view every 10s. Skipped entirely while a fetch is
+  // erroring so we don't hammer a broken endpoint.
+  React.useEffect(() => {
     if (view !== 'pending') return
-    const iv = setInterval(fetchEntries, 10000)
+    const iv = setInterval(refetch, 10000)
     return () => clearInterval(iv)
-  }, [view, fetchEntries])
+  }, [view, refetch])
 
   const resolve = async (entry: InboxEntry, action: 'approved' | 'denied' | 'explained', responseData?: unknown) => {
-    await fetch('/api/inbox', {
+    const r = await fetchJson('/api/inbox', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: entry.id, status: action, resolved_by: 'michael', response_data: responseData }),
     })
     setModal(null)
-    fetchEntries()
+    if (!r.ok) { setActionError(r.error); return }
+    setActionError(null)
+    refetch()
   }
 
+  const entries = items ?? []
   const historic = entries.filter(e => e.status !== 'pending')
   const pending = entries.filter(e => e.status === 'pending')
   const displayed = view === 'pending' ? pending : historic
@@ -193,13 +193,17 @@ export default function InboxTab() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-        {loading && <p className="text-white/30 text-xs py-8 text-center">Loading…</p>}
-        {!loading && displayed.length === 0 && (
+        {actionError && (
+          <ApiErrorBanner error={actionError} onRetry={() => setActionError(null)} />
+        )}
+        {error && <ApiErrorBanner error={error} onRetry={refetch} />}
+        {!error && loading && <p className="text-white/30 text-xs py-8 text-center">Loading…</p>}
+        {!error && !loading && displayed.length === 0 && (
           <div className="py-12 text-center">
             <p className="text-white/30 text-sm">{view === 'pending' ? 'No pending requests' : 'No history yet'}</p>
           </div>
         )}
-        {displayed.map(entry => (
+        {!error && displayed.map(entry => (
           <div
             key={entry.id}
             className="rounded-xl border border-white/[0.07] bg-[#0f0f0f] p-4"

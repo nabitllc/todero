@@ -5,6 +5,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Bell, Bot, ArrowRightLeft, Rocket, X, CheckCheck } from 'lucide-react'
 import { AGENT_DISPLAY } from '@/lib/mc-constants'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Notification {
   id: string
@@ -28,64 +30,60 @@ function timeAgo(date: Date): string {
 }
 
 export default function NotificationBell() {
-  const [notifications, setNotifications] = useState<Notification[]>([])
+  // null means "not loaded / load failed" — never coerced to [] on a
+  // failure, so the panel can't render "No notifications yet" over a
+  // permission error or a 500.
+  const [notifications, setNotifications] = useState<Notification[] | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
   const fetchNotifications = useCallback(async () => {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const headers = dbRestHeaders()
+
+    const [notifRes, runsRes] = await Promise.all([
+      // 1. Notifications table (status_change events from issue PATCH)
+      fetchJson<any[]>(dbUrl(`notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`), { headers }),
+      // 2. Agent completions + errors from agent_runs
+      fetchJson<any[]>(dbUrl(`agent_runs?select=id,agent_id,task_title,status,started_at,finished_at&status=in.(completed,done,error)&finished_at=gte.${since}&order=finished_at.desc&limit=20`), { headers }),
+    ])
+
+    // Never fall through to `Array.isArray(x) ? x : []` on a failed leg — a
+    // non-ok response leaves `notifications` null so the bell can't render
+    // an empty inbox over a permission error or a 500.
+    if (!notifRes.ok) { setError(notifRes.error); setNotifications(null); return }
+    if (!runsRes.ok) { setError(runsRes.error); setNotifications(null); return }
+
     const items: Notification[] = []
-
-    // 1. Notifications table (status_change events from issue PATCH)
-    try {
-      const res = await fetch(
-        dbUrl(`notifications?select=*&created_at=gte.${since}&order=created_at.desc&limit=30`),
-        { headers }
-      )
-      const rows = await res.json()
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const isRelease = r.title?.includes('→ released')
-          const isApproved = r.title?.includes('→ approved')
-          const isReview = r.title?.includes('→ code_review') || r.title?.includes('→ product_review')
-          items.push({
-            id: `ntf-${r.id}`,
-            type: isRelease ? 'deploy' : 'status_change',
-            title: r.title || 'Status change',
-            detail: r.body || '',
-            timestamp: new Date(r.created_at),
-            colorClass: isRelease ? 'text-violet-400' : isApproved ? 'text-emerald-400' : isReview ? 'text-blue-400' : 'text-zinc-500',
-            read: r.read,
-            dbId: r.id,
-          })
-        }
-      }
-    } catch { /* ignore */ }
-
-    // 2. Agent completions + errors from agent_runs
-    try {
-      const res = await fetch(
-        dbUrl(`agent_runs?select=id,agent_id,task_title,status,started_at,finished_at&status=in.(completed,done,error)&finished_at=gte.${since}&order=finished_at.desc&limit=20`),
-        { headers }
-      )
-      const rows = await res.json()
-      if (Array.isArray(rows)) {
-        for (const r of rows) {
-          const agent = AGENT_DISPLAY[r.agent_id]
-          const isError = r.status === 'error'
-          items.push({
-            id: `ar-${r.id}`,
-            type: 'agent_completion',
-            title: `${agent?.emoji || '🤖'} ${agent?.name || r.agent_id} ${isError ? 'failed' : 'completed'}`,
-            detail: (r.task_title || 'Task').slice(0, 60),
-            timestamp: new Date(r.finished_at || r.started_at),
-            colorClass: isError ? 'text-red-400' : 'text-emerald-400',
-            read: false,
-          })
-        }
-      }
-    } catch { /* ignore */ }
+    for (const r of notifRes.data) {
+      const isRelease = r.title?.includes('→ released')
+      const isApproved = r.title?.includes('→ approved')
+      const isReview = r.title?.includes('→ code_review') || r.title?.includes('→ product_review')
+      items.push({
+        id: `ntf-${r.id}`,
+        type: isRelease ? 'deploy' : 'status_change',
+        title: r.title || 'Status change',
+        detail: r.body || '',
+        timestamp: new Date(r.created_at),
+        colorClass: isRelease ? 'text-violet-400' : isApproved ? 'text-emerald-400' : isReview ? 'text-blue-400' : 'text-zinc-500',
+        read: r.read,
+        dbId: r.id,
+      })
+    }
+    for (const r of runsRes.data) {
+      const agent = AGENT_DISPLAY[r.agent_id]
+      const isError = r.status === 'error'
+      items.push({
+        id: `ar-${r.id}`,
+        type: 'agent_completion',
+        title: `${agent?.emoji || '🤖'} ${agent?.name || r.agent_id} ${isError ? 'failed' : 'completed'}`,
+        detail: (r.task_title || 'Task').slice(0, 60),
+        timestamp: new Date(r.finished_at || r.started_at),
+        colorClass: isError ? 'text-red-400' : 'text-emerald-400',
+        read: false,
+      })
+    }
 
     // Sort by timestamp desc, deduplicate by title+timestamp proximity
     items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
@@ -98,6 +96,7 @@ export default function NotificationBell() {
       return true
     })
     setNotifications(deduped.slice(0, 40))
+    setError(null)
   }, [])
 
   // Fetch on mount and every 30s
@@ -128,11 +127,11 @@ export default function NotificationBell() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mark_all_read: true }),
       })
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      setNotifications(prev => prev ? prev.map(n => ({ ...n, read: true })) : prev)
     } catch { /* ignore */ }
   }
 
-  const unreadCount = notifications.filter(n => !n.read).length
+  const unreadCount = (notifications ?? []).filter(n => !n.read).length
 
   const typeIcon = (type: Notification['type']) => {
     if (type === 'agent_completion') return <Bot size={12} className="shrink-0" />
@@ -185,7 +184,11 @@ export default function NotificationBell() {
 
           {/* List */}
           <div className="flex-1 overflow-y-auto">
-            {notifications.length === 0 ? (
+            {error ? (
+              <div className="px-2 py-2"><ApiErrorBanner error={error} onRetry={fetchNotifications} /></div>
+            ) : notifications === null ? (
+              <div className="px-4 py-8 text-center text-white/25 text-xs">Loading…</div>
+            ) : notifications.length === 0 ? (
               <div className="px-4 py-8 text-center text-white/25 text-xs">No notifications yet</div>
             ) : (
               notifications.map(n => (

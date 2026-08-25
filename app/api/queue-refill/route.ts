@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const MC_API = process.env.NEXT_PUBLIC_APP_URL
   ? `${process.env.NEXT_PUBLIC_APP_URL}/api/issues`
@@ -31,6 +32,12 @@ const LANES = [
 ]
 
 export async function POST(_req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const supabase = db()
   const promoted: string[] = []
   const errors: string[] = []
@@ -110,6 +117,12 @@ export async function POST(_req: NextRequest) {
 
 // GET — status check (used by agent-kicker.sh to decide whether to run)
 export async function GET(_req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const supabase = db()
   const lanes: Record<string, { open: number; refined: number }> = {}
 

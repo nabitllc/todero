@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
 import type { DbJoin } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 /**
  * Each project carries the name of the business it belongs to. Declared as a
@@ -14,6 +15,11 @@ const BUSINESS_NAME: DbJoin = {
 }
 
 export async function GET(req: Request) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { searchParams } = new URL(req.url)
   const business_id = searchParams.get('business_id')
 
@@ -39,6 +45,11 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { business_id, name, description, repo_url } = await req.json()
   if (!business_id || !name) return NextResponse.json({ error: 'business_id and name required' }, { status: 400 })
   const hub = getHubClient(business_id)

@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function isAuthorized(req: Request): boolean {
   const authHeader = req.headers.get('authorization')
@@ -43,6 +44,12 @@ interface RefinedIssue {
 }
 
 export async function GET(req: Request) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }

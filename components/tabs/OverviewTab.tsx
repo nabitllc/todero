@@ -635,29 +635,42 @@ function useProjectIssueTotals(names: readonly string[]): Record<string, number 
   return totals
 }
 
-interface LiveStatusPayload { openrouter?: { remaining?: number } }
+type ServiceState = 'ok' | 'degraded' | 'down' | 'unknown'
+interface ServiceReading { status: ServiceState; note: string; checkedAt: string }
+interface LiveStatusPayload { services?: Record<string, ServiceReading> }
+
+const SERVICE_STATE_COLOR: Record<ServiceState, string> = {
+  ok: '#10b981',
+  degraded: '#f59e0b',
+  down: '#ef4444',
+  unknown: '#71717a',
+}
+
+const SUBSCRIPTION_TILES: Array<{ key: string; name: string; icon: string }> = [
+  { key: 'claude', name: 'Claude', icon: '🧠' },
+  { key: 'vercel', name: 'Vercel', icon: '▲' },
+  { key: 'openrouter', name: 'OpenRouter', icon: '🔀' },
+  { key: 'braveSearch', name: 'Brave Search', icon: '🦁' },
+]
 
 /**
- * INF-66: Subscriptions & Balances. The OpenRouter figure used to fall back to a
- * hardcoded `$9.57` whenever /api/status was unavailable, so a refused status
- * call rendered as a confident balance. The panel now polls the endpoint itself:
- * on a non-ok response it shows the failure instead of the tiles, and when the
- * balance is genuinely absent it says so rather than inventing one.
+ * INF-66 / TOD: kill-fake-infra-greens. This panel used to hardcode three
+ * subscriptions ("Claude Pro $20/mo · Active", "Vercel Pro · Renews Apr 24",
+ * "Brave Search · Renews Apr 21") that were never read from anywhere — literal
+ * strings sitting next to a real OpenRouter balance, telling the operator three
+ * confident lies beside one honest number. Every tile here now reads its
+ * status and note straight off `services`, the same object /api/status hands
+ * to the Infra tab: 'unknown' renders its real reason (e.g. "no
+ * OPENROUTER_API_KEY configured on this host"), never a fabricated plan/price.
  */
 function SubscriptionsPanel({ liveStatus }: { liveStatus: LiveStatusPayload | null }) {
   const { data, error, refetch } = useApiData<LiveStatusPayload>('/api/status')
-  const remaining = liveStatus?.openrouter?.remaining ?? data?.openrouter?.remaining
-  const tiles = [
-    { name: 'Claude Pro', note: '$20/mo · Active', color: '#a855f7', icon: '🧠' },
-    { name: 'Vercel Pro', note: '$20/mo · Renews Apr 24', color: '#ffffff', icon: '▲' },
-    {
-      name: 'OpenRouter',
-      note: typeof remaining === 'number' ? `$${remaining.toFixed(2)} remaining` : 'balance unknown',
-      color: typeof remaining !== 'number' ? '#71717a' : remaining < 2 ? '#ef4444' : '#10b981',
-      icon: '🔀',
-    },
-    { name: 'Brave Search', note: 'API · Renews Apr 21', color: '#f59e0b', icon: '🦁' },
-  ]
+  const services: Record<string, ServiceReading> = liveStatus?.services ?? data?.services ?? {}
+  const tiles = SUBSCRIPTION_TILES.map(({ key, name, icon }) => {
+    const svc = services[key]
+    const status: ServiceState = svc?.status ?? 'unknown'
+    return { name, icon, note: svc?.note ?? 'not checked this request', color: SERVICE_STATE_COLOR[status], status }
+  })
   return (
     <PanelCard icon="💳" title="Subscriptions & Balances">
       {error ? <ApiErrorBanner error={error} onRetry={refetch} /> : (
@@ -907,18 +920,14 @@ export default function OverviewTab({
                      0 blockers" card for every project before the first fetch,
                      and left it there for good when the bundle never booted. */
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                    {(['Vespera','Kemuni','Infrastructure','Todero'] as const).map(projName => (
+                    {PROGRESS_PROJECTS.map(projName => (
                       <div key={projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
                         <div className="flex items-center gap-2 mb-3">
                           <span className="text-white text-xs font-semibold truncate">{projName}</span>
                         </div>
-                        <div className="flex items-baseline gap-1 mb-2">
+                        <div className="flex items-baseline gap-1 mb-3">
                           <span className="text-2xl font-bold tabular-nums text-white/30">&mdash;</span>
-                          <span className="text-white/30 text-[10px]">done</span>
-                          <span className="ml-auto"><Pending w="w-8" /></span>
-                        </div>
-                        <div className="w-full rounded-full h-1.5 mb-3 overflow-hidden" style={{ background: '#1a1a1a' }}>
-                          <div className="h-1.5 w-1/3 rounded-full bg-white/10 animate-pulse" />
+                          <span className="text-white/30 text-[10px]">total issues</span>
                         </div>
                         <PendingRows rows={3} />
                       </div>
@@ -926,7 +935,7 @@ export default function OverviewTab({
                   </div>
                 ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                  {(['Vespera','Kemuni','Infrastructure','Todero'] as const).map(projName => {
+                  {PROGRESS_PROJECTS.map(projName => {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
                     const proj = sprintProjects.find((p: any) => p.supabaseProject === projName || p.name?.includes(projName))
                     if (!proj) return null

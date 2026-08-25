@@ -1,8 +1,14 @@
 // INF-210: Deploy history log — API routes
 import { NextRequest, NextResponse } from 'next/server'
 import { listDeploys, insertDeploy, updateDeploy } from '@/lib/deploy-history'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 export async function GET(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const project = req.nextUrl.searchParams.get('project') ?? undefined
   const limit = Number(req.nextUrl.searchParams.get('limit')) || 50
   const { data, error } = await listDeploys({ project, limit })
@@ -11,6 +17,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json()
   const { project, branch, commit_sha, commit_message, status, source, url, triggered_by, duration_ms, error_message, finished_at } = body
 
@@ -34,6 +45,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json()
   const { id, ...fields } = body
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })

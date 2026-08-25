@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { hasPermission } from '@/lib/rbac-types'
 import type { Role } from '@/lib/rbac-types'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function getSupabase() {
   return createAdminClient()
@@ -27,6 +28,11 @@ function getRoleFromCookie(req: NextRequest): Role | null {
 // ── GET — list members ────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:read')) {
     return NextResponse.json({ error: 'Forbidden: roles:read permission required' }, { status: 403 })
@@ -47,6 +53,11 @@ export async function GET(req: NextRequest) {
 // ── POST — add member ─────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:admin')) {
     return NextResponse.json({ error: 'Forbidden: owner role required to manage workspace members' }, { status: 403 })
@@ -87,6 +98,11 @@ export async function POST(req: NextRequest) {
 // ── PATCH — change role ───────────────────────────────────────────────────────
 
 export async function PATCH(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:admin')) {
     return NextResponse.json({ error: 'Forbidden: owner role required to manage workspace members' }, { status: 403 })
@@ -129,6 +145,11 @@ export async function PATCH(req: NextRequest) {
 // ── DELETE — remove member ────────────────────────────────────────────────────
 
 export async function DELETE(req: NextRequest) {
+  // Name the missing credential in the body rather than letting a
+  // DbConfigurationError escape as a bare 500 with nothing in it.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const role = getRoleFromCookie(req)
   if (!role || !hasPermission(role, 'roles:admin')) {
     return NextResponse.json({ error: 'Forbidden: owner role required to manage workspace members' }, { status: 403 })

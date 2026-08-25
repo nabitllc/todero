@@ -1,11 +1,18 @@
 // Auto-title via OpenRouter.
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? ''
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1'
 
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { conversationId, firstUserMessage } = await req.json().catch(() => ({}))
   if (!conversationId || !firstUserMessage) {
     return NextResponse.json({ error: 'conversationId and firstUserMessage required' }, { status: 400 })

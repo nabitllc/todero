@@ -4,6 +4,7 @@ import { fetchJsonOrThrow } from '@/lib/fetch-json'
 import { promisify } from 'util'
 import fs from 'fs'
 import { db, isDbConfigured } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const promisifyExec = promisify
 
@@ -77,6 +78,12 @@ async function claudeTotals(): Promise<{ totalTokens: number; totalCost: number;
 }
 
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   if (cache && Date.now() - cache.ts < CACHE_TTL) {
     return NextResponse.json(cache.data)
   }

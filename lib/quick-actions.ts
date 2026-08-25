@@ -1,6 +1,13 @@
 // INF-206: Quick-action floating button — schema, types, and data layer
 import { db, type DbAdapter } from '@/lib/db'
 
+// TOD: kill-fake-infra-greens — client-safe types/defaults moved to
+// lib/quick-actions-constants.ts (see that file for why); re-exported here so
+// existing server-side callers see no change. New client code should import
+// lib/quick-actions-constants directly rather than through this file.
+export type { QuickActionType, QuickAction } from '@/lib/quick-actions-constants'
+export { DEFAULT_QUICK_ACTIONS } from '@/lib/quick-actions-constants'
+import { DEFAULT_QUICK_ACTIONS, type QuickAction } from '@/lib/quick-actions-constants'
 
 // Lazy-init: avoids crashing at build time when the database credentials aren't
 // set (CI). First call throws if still missing. (TOD-2296)
@@ -11,31 +18,6 @@ function getSupabase(): DbAdapter {
   }
   return _supabase
 }
-
-// ── Types ──────────────────────────────────────────────────────────────────
-
-export type QuickActionType = 'create_issue' | 'start_chat' | 'run_agent' | 'navigate' | 'custom'
-
-export interface QuickAction {
-  id: string
-  label: string
-  icon: string
-  action_type: QuickActionType
-  payload: Record<string, unknown>
-  sort_order: number
-  enabled: boolean
-  created_at: string
-}
-
-// ── Default quick actions (no DB needed for v1) ────────────────────────────
-
-export const DEFAULT_QUICK_ACTIONS: Omit<QuickAction, 'id' | 'created_at'>[] = [
-  { label: 'New Issue',     icon: '📝', action_type: 'create_issue', payload: {},                       sort_order: 0, enabled: true },
-  { label: 'New Chat',      icon: '💬', action_type: 'start_chat',   payload: {},                       sort_order: 1, enabled: true },
-  { label: 'Run Builder',   icon: '🔨', action_type: 'run_agent',    payload: { agent: 'builder' },     sort_order: 2, enabled: true },
-  { label: 'Go to Board',   icon: '📋', action_type: 'navigate',     payload: { tab: 'board' },         sort_order: 3, enabled: true },
-  { label: 'Go to Infra',   icon: '⚙️', action_type: 'navigate',     payload: { tab: 'infra' },         sort_order: 4, enabled: true },
-]
 
 // ── Data layer (persisted actions — optional, falls back to defaults) ──────
 

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 /** One `agent_memory` key/value row. */
 type MemoryRow = { value: Record<string, unknown> }
@@ -25,6 +26,12 @@ async function readMemory(agentId: string, key: string): Promise<Record<string, 
 
 /** GET /api/agent-pause?agent=<agentId> — returns pause state for the agent */
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const agentId = req.nextUrl.searchParams.get('agent')
   if (!agentId) {
     return NextResponse.json({ error: 'Missing ?agent= parameter' }, { status: 400 })
@@ -51,6 +58,12 @@ export async function GET(req: NextRequest) {
  *  Pausing  (paused=true):  manually sets is_paused flag (for maintenance use)
  */
 export async function PATCH(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json().catch(() => ({})) as Record<string, unknown>
   const agentId = body.agent as string | undefined
   const paused = body.paused as boolean | undefined

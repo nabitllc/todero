@@ -162,9 +162,18 @@ export async function GET() {
   // ── OpenRouter ──
   if (openrouter.status === 'fulfilled' && openrouter.value?.data) {
     const d = openrouter.value.data
-    const limit = d.limit ?? 10
+    // TOD: kill-fake-infra-greens — OpenRouter returns limit:null for any
+    // pay-as-you-go key (the common case). `?? 10` invented a fabricated
+    // $10.00 ceiling for exactly that key, which is how this route used to
+    // manufacture "$9.57 / $10.00" out of thin air. A missing limit means
+    // no limit is set, not "$10", so it stays null all the way to the UI.
+    const limit: number | null = typeof d.limit === 'number' ? d.limit : null
     const used = d.usage ?? 0
-    result.openrouter = { used: +used.toFixed(3), limit, remaining: +(limit - used).toFixed(3) }
+    result.openrouter = {
+      used: +used.toFixed(3),
+      limit,
+      remaining: limit === null ? null : +(limit - used).toFixed(3),
+    }
   } else {
     result.openrouter = null
   }
@@ -221,7 +230,12 @@ export async function GET() {
     openrouter: !OPENROUTER_KEY
       ? reading('unknown', 'no OPENROUTER_API_KEY configured on this host')
       : result.openrouter
-        ? reading('ok', `$${result.openrouter.remaining.toFixed(2)} remaining`)
+        ? reading(
+            'ok',
+            result.openrouter.limit === null
+              ? `$${result.openrouter.used.toFixed(2)} used · no credit limit set on this key`
+              : `$${result.openrouter.remaining.toFixed(2)} of $${result.openrouter.limit.toFixed(2)} remaining`
+          )
         : reading('down', 'key configured but the balance check failed'),
 
     telegram: telegramReading.status === 'fulfilled' ? telegramReading.value : reading('unknown', 'probe did not run'),

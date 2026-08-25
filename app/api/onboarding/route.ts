@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 /**
  * Who owns a workspace created by the onboarding wizard.
@@ -17,6 +18,12 @@ function getSupabase(): DbAdapter {
 }
 
 export async function POST(req: Request) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { name, type, vision, agentName, model, apiKey, taskTitle, taskDescription } = await req.json()
   if (!name || !type) return NextResponse.json({ error: 'name and type required' }, { status: 400 })
 

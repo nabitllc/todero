@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { assertDbConfigured, db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 function getSupabase() {
   // db() throws a DbConfigurationError naming the exact missing variables.
@@ -29,6 +30,12 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const { id } = await params
   const member = HUMAN_MEMBERS[id]
   if (!member) {

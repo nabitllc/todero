@@ -2,6 +2,7 @@
 // Uses agent_memory table so agent-kicker and run-agent can read pause state.
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const AGENT_ID = 'system'
 const KEY = 'hub_pause'
@@ -19,6 +20,12 @@ interface PauseValue {
 
 /** GET — read current pause state */
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const db = createAdminClient()
     const { data, error } = await db
@@ -52,6 +59,12 @@ export async function GET() {
  *  agent-kicker reads the run-agent response paused field, which reads from agent_memory
  */
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   try {
     const body = await req.json() as { paused?: boolean; paused_by?: string }
     const paused = Boolean(body.paused)

@@ -71,17 +71,41 @@ describe('query-string → seam translation', () => {
     ])
   })
 
-  it('negates a value list without losing its members', () => {
+  it('negates a value list as an array, not a parenthesised string', () => {
     expect(translate('status=not.in.(completed,released,closed)')).toEqual([
-      ['not', 'status', 'in', '(completed,released,closed)'],
+      ['not', 'status', 'in', ['completed', 'released', 'closed']],
     ])
   })
 
-  it('passes an or() group through as one predicate', () => {
-    expect(translate('or=(blocked_by.not.is.null,is_blocked.eq.true)&status=eq.open')).toEqual([
+  it('turns an or() group into predicates, so no adapter has to parse grammar', () => {
+    expect(translate('or=(assignee.eq.kaos,assignee.eq.global)&status=eq.open')).toEqual([
       ['eq', 'status', 'open'],
-      ['or', 'blocked_by.not.is.null,is_blocked.eq.true'],
+      [
+        'or',
+        [
+          { column: 'assignee', op: 'eq', value: 'kaos' },
+          { column: 'assignee', op: 'eq', value: 'global' },
+        ],
+      ],
     ])
+  })
+
+  it('reads every operator an or() term may carry', () => {
+    expect(translate('or=(sprint.is.null,doc_type.in.(soul,agents),content.ilike.kaos%25)')).toEqual([
+      [
+        'or',
+        [
+          { column: 'sprint', op: 'is', value: null },
+          { column: 'doc_type', op: 'in', value: ['soul', 'agents'] },
+          { column: 'content', op: 'ilike', value: 'kaos%' },
+        ],
+      ],
+    ])
+  })
+
+  it('refuses an or() term that is not column.operator.value', () => {
+    expect(() => translate('or=(blocked_by)')).toThrow(DbQueryParseError)
+    expect(() => translate('or=(blocked_by.bogus.1)')).toThrow(DbQueryParseError)
   })
 
   it('splits multi-column ordering and reads its modifiers', () => {

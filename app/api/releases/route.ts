@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const RELEASE_CHANNEL = '1492003782605930560' // #release-notes
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN!
@@ -40,6 +41,12 @@ function postDiscord(content: string) {
 
 // ── POST /api/releases ────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   let body: {
     pr_number?: number
     pr_url?: string
@@ -125,6 +132,12 @@ export async function POST(req: NextRequest) {
 
 // ── GET /api/releases ─────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const limit = Number(req.nextUrl.searchParams.get('limit')) || 20
   const sb = supabaseAdmin()
   const { data, error } = await sb.from('releases')

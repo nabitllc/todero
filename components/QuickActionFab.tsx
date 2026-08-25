@@ -1,8 +1,11 @@
 // INF-208: Quick-action floating button — UI component
 'use client'
 import React, { useState, useRef, useEffect } from 'react'
-import { DEFAULT_QUICK_ACTIONS } from '@/lib/quick-actions'
-import type { QuickActionType } from '@/lib/quick-actions'
+// TOD: kill-fake-infra-greens — imports the client-safe constants module, not
+// lib/quick-actions.ts, which pulls in lib/db.ts's postgres adapter
+// (Node-only `pg`, needs `fs`) and broke the client bundle for every route.
+import { DEFAULT_QUICK_ACTIONS } from '@/lib/quick-actions-constants'
+import type { QuickActionType } from '@/lib/quick-actions-constants'
 
 interface QuickActionFabProps {
   onNavigate: (tab: string) => void

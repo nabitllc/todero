@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {
@@ -11,6 +12,12 @@ function getSupabase(): DbAdapter {
 
 // GET /api/notifications — list recent notifications (newest first)
 export async function GET(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const url = new URL(req.url)
   const unreadOnly = url.searchParams.get('unread') === 'true'
   const limit = Math.min(Number(url.searchParams.get('limit') ?? '50'), 100)
@@ -30,6 +37,12 @@ export async function GET(req: NextRequest) {
 
 // POST /api/notifications — create a notification
 export async function POST(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json()
   const { type, title, body: notifBody, issue_key, issue_id, actor } = body
 
@@ -49,6 +62,12 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/notifications — mark notifications as read
 export async function PATCH(req: NextRequest) {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const body = await req.json()
   const { ids, mark_all_read } = body
 

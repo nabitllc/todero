@@ -14,6 +14,7 @@ import { spawnSync } from 'child_process'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { isDarwin } from '@/lib/paths'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 const NO_KEY_ERROR = () => `${dbStatusMessage()} — automation run history unavailable`
 
@@ -175,6 +176,12 @@ function checkLaunchdLoaded(label: string): boolean {
 }
 
 export async function GET() {
+  // The database is either configured or it is not — say which, in the body.
+  // A DbConfigurationError left to escape becomes a bare 500 with nothing in
+  // it, and an empty 200 is worse: it looks like real, empty data.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
+
   const results: AutomationItem[] = []
   const warnings: string[] = []
   const schedulerParts: string[] = []

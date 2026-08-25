@@ -379,24 +379,26 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   // ── Real session task counts for leaderboard ─────────────────────────────
   useEffect(()=>{
     const fetchRealCounts=async()=>{
-      try{
-        const res=await fetch('/api/status');
-        const data=await res.json();
-        // Use recentActivity to count tasks per agent in timeframe windows
-        const activity:any[]=data.recentActivity||[];
-        const now=Date.now();
-        const counts:Record<string,{h24:number,d7:number}>={};
-        const agentIds=['main','scout','ops','kemuni-sme','vespera-sme'];
-        agentIds.forEach(id=>{ counts[id]={h24:0,d7:0}; });
-        activity.forEach((entry:any)=>{
-          const id=entry.agentId;
-          if(!counts[id]) return;
-          const agoMs=(entry.ago||0)*60*1000;
-          if(agoMs < 86400000) counts[id].h24++;
-          if(agoMs < 604800000) counts[id].d7++;
-        });
-        setRealTaskCounts(counts);
-      }catch(e){}
+      const r=await fetchJson<any>('/api/status');
+      // A non-ok response must not fall through to a zero-filled counts
+      // object — that reads as "no tasks in the last 24h/7d" for every
+      // agent, indistinguishable from a genuinely idle office.
+      if(!r.ok){ setPollError('leaderboard', r.error); return; }
+      setPollError('leaderboard', null);
+      const data=r.data;
+      // Use recentActivity to count tasks per agent in timeframe windows
+      const activity:any[]=data?.recentActivity||[];
+      const counts:Record<string,{h24:number,d7:number}>={};
+      const agentIds=['main','scout','ops','kemuni-sme','vespera-sme'];
+      agentIds.forEach(id=>{ counts[id]={h24:0,d7:0}; });
+      activity.forEach((entry:any)=>{
+        const id=entry.agentId;
+        if(!counts[id]) return;
+        const agoMs=(entry.ago||0)*60*1000;
+        if(agoMs < 86400000) counts[id].h24++;
+        if(agoMs < 604800000) counts[id].d7++;
+      });
+      setRealTaskCounts(counts);
     };
     fetchRealCounts();
     const t=setInterval(fetchRealCounts,30000);

@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
+import { dbUnavailableResponse } from '@/lib/db-http'
 
 export async function GET(
   _req: NextRequest,
@@ -12,6 +13,10 @@ export async function GET(
   if (!/^[a-z0-9-]+$/.test(id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }
+
+  // Empty documents and an unconfigured database are different facts. Say which.
+  const unavailable = dbUnavailableResponse()
+  if (unavailable) return unavailable
 
   try {
     const db = createAdminClient()

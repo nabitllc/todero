@@ -3,6 +3,8 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { X, Inbox } from 'lucide-react'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface InboxEntry {
   id: string
@@ -135,17 +137,24 @@ interface InboxDrawerProps {
 
 export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawerProps) {
   const [view, setView] = useState<'pending' | 'historic'>('pending')
-  const [entries, setEntries] = useState<InboxEntry[]>([])
+  // null means "not loaded / load failed" — never coerced to [] on a
+  // failure, so the drawer can't render "No pending requests" over a
+  // permission error or a 500.
+  const [entries, setEntries] = useState<InboxEntry[] | null>(null)
+  const [error, setError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<{ entry: InboxEntry; action: 'approved' | 'denied' | 'explained' } | null>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
 
   const fetchEntries = useCallback(async () => {
     const status = view === 'pending' ? '?status=pending' : ''
-    const res = await fetch(`/api/inbox${status}`)
-    if (res.ok) {
-      const data = await res.json()
-      setEntries(Array.isArray(data) ? data : [])
+    const r = await fetchJson<InboxEntry[]>(`/api/inbox${status}`)
+    if (r.ok) {
+      setEntries(r.data)
+      setError(null)
+    } else {
+      setEntries(null)
+      setError(r.error)
     }
     setLoading(false)
   }, [view])
@@ -184,8 +193,8 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
     fetchEntries()
   }
 
-  const historic = entries.filter(e => e.status !== 'pending')
-  const pending = entries.filter(e => e.status === 'pending')
+  const historic = (entries ?? []).filter(e => e.status !== 'pending')
+  const pending = (entries ?? []).filter(e => e.status === 'pending')
   const displayed = view === 'pending' ? pending : historic
 
   if (!open) return null
@@ -250,12 +259,15 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
           {loading && <p className="text-white/30 text-xs py-8 text-center">Loading…</p>}
-          {!loading && displayed.length === 0 && (
+          {!loading && error && (
+            <ApiErrorBanner error={error} onRetry={fetchEntries} />
+          )}
+          {!loading && !error && entries !== null && displayed.length === 0 && (
             <div className="py-12 text-center">
               <p className="text-white/30 text-sm">{view === 'pending' ? 'No pending requests' : 'No history yet'}</p>
             </div>
           )}
-          {displayed.map(entry => (
+          {!error && displayed.map(entry => (
             <div
               key={entry.id}
               className="rounded-xl border border-white/[0.07] bg-[#0f0f0f] p-4"
