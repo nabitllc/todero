@@ -12,11 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dbUnavailableResponse } from '@/lib/db-http'
-<<<<<<< Updated upstream
 import { getAgentBudget, setAgentBudget, getSpendUsd, getCeilingStatus, RUN_PERIOD_MS, STALE_RUN_CUTOFF_MS } from '@/lib/agent-budget'
-=======
-import { getAgentBudget, setAgentBudget, getSpendUsd, RUN_PERIOD_MS, STALE_RUN_CUTOFF_MS } from '@/lib/agent-budget'
->>>>>>> Stashed changes
 
 export async function GET(
   _req: NextRequest,
@@ -28,7 +24,6 @@ export async function GET(
   const agentId = params.id
   const budget = await getAgentBudget(agentId)
 
-<<<<<<< Updated upstream
   // Same staleness filter and the same `count: 'exact'` mode
   // checkDispatchCeilings (lib/agent-budget.ts) uses, not `.select('id')`
   // with the array length as a stand-in count. Those diverged two ways: (1)
@@ -42,24 +37,6 @@ export async function GET(
   // `.select('id')` would on a host with more matching rows than that.
   const staleCutoff = new Date(Date.now() - STALE_RUN_CUTOFF_MS).toISOString()
   const [{ count: runningNow }, { count: runningTotalAllAgents }, { count: runsInLast24h }] = await Promise.all([
-=======
-  // Exact counts (`count: 'exact', head: true`), not `.select('id')` read
-  // into an array: an unbounded select silently caps at PostgREST's 1000-row
-  // page, so on this host — 67,591 agent_runs rows stuck at status='running'
-  // — every `.length` here used to report exactly 1000, a page size
-  // masquerading as a measurement, not the true count. And the SAME
-  // `STALE_RUN_CUTOFF_MS` dead-row filter checkDispatchCeilings/
-  // checkInFlightCeilings apply, so this route's overConcurrency verdict
-  // reads the identical rows the enforcement path counts — it cannot report
-  // a ceiling breach (or clearance) the code that actually stops runs
-  // disagrees with.
-  const staleCutoff = new Date(Date.now() - STALE_RUN_CUTOFF_MS).toISOString()
-  const [
-    { count: runningForAgent },
-    { count: runningTotal },
-    { count: runsInPeriod },
-  ] = await Promise.all([
->>>>>>> Stashed changes
     db().from('agent_runs').select('id', { count: 'exact', head: true }).eq('agent_id', agentId).eq('status', 'running').gte('started_at', staleCutoff),
     db().from('agent_runs').select('id', { count: 'exact', head: true }).eq('status', 'running').gte('started_at', staleCutoff),
     db().from('token_ledger').select('id', { count: 'exact', head: true }).eq('agent_id', agentId).gte('spawned_at', new Date(Date.now() - RUN_PERIOD_MS).toISOString()),
@@ -101,7 +78,6 @@ export async function GET(
       source: budget.source,
     },
     spend: {
-<<<<<<< Updated upstream
       runningNow: runningNow ?? 0,
       runningTotalAllAgents: runningTotalAllAgents ?? 0,
       runsInLast24h: runsInLast24h ?? 0,
@@ -110,15 +86,6 @@ export async function GET(
       overConcurrency: (runningNow ?? 0) >= budget.maxConcurrentPerAgent,
       overRunCount: (runsInLast24h ?? 0) >= budget.maxRunsPerPeriod,
       overDollarBudget: budget.limitUsd != null && spendUsd != null && spendUsd >= budget.limitUsd,
-=======
-      runningNow: runningForAgent ?? 0,
-      runningTotalAllAgents: runningTotal ?? 0,
-      runsInLast24h: runsInPeriod ?? 0,
-      spendUsdThisPeriod: spendUsd,
-      overConcurrency: (runningForAgent ?? 0) >= budget.maxConcurrentPerAgent,
-      overRunCount: (runsInPeriod ?? 0) >= budget.maxRunsPerPeriod,
-      overDollarBudget: budget.limitUsd != null && spendUsd >= budget.limitUsd,
->>>>>>> Stashed changes
     },
     overCeiling: ceiling.allowed ? null : { ceiling: ceiling.ceiling, reason: ceiling.reason, detail: ceiling.detail },
   })
