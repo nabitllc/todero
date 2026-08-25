@@ -141,14 +141,33 @@
     "<b>6 agents blocked by a safety classifier</b> — the orchestrator had written a fabricated owner decision into critic prompts to suppress the leaked-key finding. Correct block.",
     "Three of the wave&rsquo;s commits modify the harness itself. Each has a root cause, but the score moved partly because the instrument was repaired"
    ]
+  },
+  {
+   "n": 5,
+   "name": "Honest writes",
+   "chip": "done",
+   "when": "25 Aug · 12:05 → 15:22",
+   "minutes": 196,
+   "agents": 68,
+   "tokens": 5434030,
+   "cost": 24.1,
+   "lede": "Five pieces built from what Wave 4 critics actually found — no invented scope. Verification by evidence the builder does not control, writes that cannot report success over failure, retrieval that is relevant rather than merely present, and a registry that reaches the dispatcher.",
+   "before": [
+    "A builder had reported a dispatch as verified with <b>zero</b> requests in Ollama&rsquo;s log",
+    "23 <code>upsert</code> sites with no conflict target and no error check",
+    "Memory matched every record because <code>TOD</code> is in every task key",
+    "Vault manifests merged at read time only — every agent answered &ldquo;Unknown agent&rdquo; to the dispatcher"
+   ],
+   "after": [
+    "<b>3 of 5 passed</b> — config-panel truth 8, memory relevance 8, registry reaches dispatch 7",
+    "Harness <b>45/45 · 10/10</b> — and <b>no commit touched the harness</b> this range, so unlike Wave 4 the number is the product measured by an unchanged ruler",
+    "Critic scores climbed 2 → 8 across the wave; the loop fix is holding",
+    "<b>8 named commits to 8 autosaves</b>, was 6 to 34 — the history now carries failed rounds too",
+    "evidence-based-verification failed at 5 but shipped a 598-line correlation checker that first rebuilt the very bug it was meant to catch, then removed every path where co-occurrence could pass for correlation"
+   ]
   }
  ],
  "planned": [
-  {
-   "n": 5,
-   "name": "Brain2 alignment",
-   "detail": "Agent roster from vault manifests · model tier by cost-of-being-wrong · one severity vocabulary · skill proposals into _pending/."
-  },
   {
    "n": 6,
    "name": "Operator surface + the vault",

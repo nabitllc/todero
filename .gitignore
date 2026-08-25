@@ -46,3 +46,6 @@ scripts/acceptance/.gate.lock
 /db.sqlite-wal
 /db.sqlite-shm
 .next-critic/
+
+# Stray crash-log fragments from harness runs
+output.txt

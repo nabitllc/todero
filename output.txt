@@ -1,6 +1,0 @@
-
-
-  0/0 passing  (0ms)
-  harness score: 0/10
-
-Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94
