@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dbUnavailableResponse } from '@/lib/db-http'
-import { getAgentBudget, setAgentBudget, getSpendUsd, RUN_PERIOD_MS } from '@/lib/agent-budget'
+import { getAgentBudget, setAgentBudget, getSpendUsd, getCeilingStatus, RUN_PERIOD_MS, STALE_RUN_CUTOFF_MS } from '@/lib/agent-budget'
 
 export async function GET(
   _req: NextRequest,
@@ -24,10 +24,22 @@ export async function GET(
   const agentId = params.id
   const budget = await getAgentBudget(agentId)
 
-  const [{ data: runningForAgent }, { data: runningTotal }, { data: runsInPeriod }] = await Promise.all([
-    db().from('agent_runs').select('id').eq('agent_id', agentId).eq('status', 'running'),
-    db().from('agent_runs').select('id').eq('status', 'running'),
-    db().from('token_ledger').select('id').eq('agent_id', agentId).gte('spawned_at', new Date(Date.now() - RUN_PERIOD_MS).toISOString()),
+  // Same staleness filter and the same `count: 'exact'` mode
+  // checkDispatchCeilings (lib/agent-budget.ts) uses, not `.select('id')`
+  // with the array length as a stand-in count. Those diverged two ways: (1)
+  // an unfiltered `.select('id')` counts every agent_runs row ever stuck at
+  // status='running' (67,592+ on this host — see lib/agent-budget.ts's own
+  // comment on the same bug, one table over) as "running now", which made
+  // `overConcurrency` true for agents the dispatch path would happily accept;
+  // (2) `count: 'exact'` asks the adapter for a real COUNT(*) instead of
+  // materializing rows, so this panel does not silently cap at whatever page
+  // size the adapter defaults to (PostgREST's default is 1000) the way a bare
+  // `.select('id')` would on a host with more matching rows than that.
+  const staleCutoff = new Date(Date.now() - STALE_RUN_CUTOFF_MS).toISOString()
+  const [{ count: runningNow }, { count: runningTotalAllAgents }, { count: runsInLast24h }] = await Promise.all([
+    db().from('agent_runs').select('id', { count: 'exact', head: true }).eq('agent_id', agentId).eq('status', 'running').gte('started_at', staleCutoff),
+    db().from('agent_runs').select('id', { count: 'exact', head: true }).eq('status', 'running').gte('started_at', staleCutoff),
+    db().from('token_ledger').select('id', { count: 'exact', head: true }).eq('agent_id', agentId).gte('spawned_at', new Date(Date.now() - RUN_PERIOD_MS).toISOString()),
   ])
 
   const periodStart = budget.period === 'monthly'
@@ -35,7 +47,24 @@ export async function GET(
     : budget.period === 'run'
       ? new Date(Date.now() - RUN_PERIOD_MS).toISOString()
       : new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).toISOString()
-  const spendUsd = await getSpendUsd(agentId, periodStart)
+
+  // getSpendUsd now throws on a genuine read error instead of returning 0
+  // (lib/agent-budget.ts) — surfaced here as `spendError` rather than a
+  // spend that reads as real zero.
+  let spendUsd: number | null = null
+  let spendError: string | null = null
+  try {
+    spendUsd = await getSpendUsd(agentId, periodStart)
+  } catch (err) {
+    spendError = err instanceof Error ? err.message : String(err)
+  }
+
+  // Same evaluation checkDispatchCeilings runs before a real run starts,
+  // read-only here (no inbox write — see getCeilingStatus's doc comment).
+  // This is the "over ceiling — <reason>" badge the roster and this panel
+  // both show, computed once instead of re-derived per surface from raw
+  // spend/run numbers that could drift out of sync with the enforcement path.
+  const ceiling = await getCeilingStatus(agentId)
 
   return NextResponse.json({
     agentId,
@@ -49,14 +78,16 @@ export async function GET(
       source: budget.source,
     },
     spend: {
-      runningNow: (runningForAgent ?? []).length,
-      runningTotalAllAgents: (runningTotal ?? []).length,
-      runsInLast24h: (runsInPeriod ?? []).length,
+      runningNow: runningNow ?? 0,
+      runningTotalAllAgents: runningTotalAllAgents ?? 0,
+      runsInLast24h: runsInLast24h ?? 0,
       spendUsdThisPeriod: spendUsd,
-      overConcurrency: (runningForAgent ?? []).length >= budget.maxConcurrentPerAgent,
-      overRunCount: (runsInPeriod ?? []).length >= budget.maxRunsPerPeriod,
-      overDollarBudget: budget.limitUsd != null && spendUsd >= budget.limitUsd,
+      spendError,
+      overConcurrency: (runningNow ?? 0) >= budget.maxConcurrentPerAgent,
+      overRunCount: (runsInLast24h ?? 0) >= budget.maxRunsPerPeriod,
+      overDollarBudget: budget.limitUsd != null && spendUsd != null && spendUsd >= budget.limitUsd,
     },
+    overCeiling: ceiling.allowed ? null : { ceiling: ceiling.ceiling, reason: ceiling.reason, detail: ceiling.detail },
   })
 }
 

@@ -13,7 +13,7 @@
 //   detached+stdio+unref gives us everything nohup/disown/</dev/null did, on
 //   every platform, with no shell and therefore no quoting.
 
-import { existsSync, writeFileSync, mkdtempSync, unlinkSync, rmSync } from 'fs'
+import { existsSync, writeFileSync, mkdtempSync, unlinkSync, rmSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
@@ -125,6 +125,17 @@ export const claudeCodeRuntime: AgentRuntime = {
     if (opts.bypassPermissions !== false) argv.push('--permission-mode', 'bypassPermissions')
     if (opts.model) argv.push('--model', opts.model)
     argv.push('--print')
+    // TOD-2381 (agent-budget-stop) round 3: `--output-format json` is what
+    // makes the ledger closable with real numbers. Plain `--print` writes only
+    // the model's final text to the log — nothing token-shaped for
+    // parseClaudeJsonOutput() below to read, which is why finalizeRun()'s one
+    // real call site (the [spawn-exit] handler further down) previously could
+    // never pass inputTokens/outputTokens/costUsd: there was nothing in the
+    // log to compute them from. No other consumer parses this log file as a
+    // human transcript today (grepped for readers before adding this — see
+    // this piece's PR notes), so trading raw text for one JSON object costs
+    // nothing currently reachable.
+    argv.push('--output-format', 'json')
 
     // The prompt goes in on stdin, not argv: Windows caps a command line at
     // ~32k characters and Todero prompts routinely exceed that. `claude --print`
@@ -165,11 +176,15 @@ export const claudeCodeRuntime: AgentRuntime = {
       // succeeded": watchChildExit polls pid liveness, it does not see the
       // real exit code, so this is honestly the coarsest signal available
       // without a bigger rewrite of spawnDetached's child.on('exit') plumbing.
+      const parsed = parseClaudeJsonOutput(opts.logFile)
       finalizeRun({
         logFile: opts.logFile,
         status: 'completed',
         durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
         taskId: opts.taskId ?? null,
+        inputTokens: parsed?.inputTokens,
+        outputTokens: parsed?.outputTokens,
+        costUsd: parsed?.costUsd,
       })
       // memory-loop-write (round 2): the learning loop's write half had no
       // caller anywhere in the running product — this is that caller, one
@@ -200,6 +215,57 @@ export const claudeCodeRuntime: AgentRuntime = {
       runtime: 'claude-code',
     }
   },
+}
+
+/**
+ * TOD-2381 (agent-budget-stop) round 3: the ledger's actual closing numbers.
+ *
+ * `claude --print --output-format json` writes exactly one JSON object to
+ * stdout when the process finishes — this log file's tail, after the
+ * `[spawn-start]` header lines this adapter writes before launching. Its
+ * documented shape includes `total_cost_usd` and a `usage` object with
+ * `input_tokens` / `output_tokens` (the same fields the Messages API's own
+ * `usage` object uses) plus cache token counts. This is deliberately the
+ * ONLY place in the codebase that parses this log file's content — reading
+ * it as anything other than "did the spawn produce the completion JSON we
+ * asked for" is out of scope.
+ *
+ * Best-effort: a process that never reached `--output-format json`'s
+ * completion line (crashed, killed mid-run, an older `claude` binary that
+ * does not support the flag) leaves nothing valid to parse. That degrades to
+ * exactly the pre-existing behavior — finalizeRun() still closes the row with
+ * status/duration, just without token/cost numbers — never a thrown error
+ * that could break the exit-watcher's cleanup.
+ */
+function parseClaudeJsonOutput(logFile: string): { inputTokens?: number; outputTokens?: number; costUsd?: number } | null {
+  let text: string
+  try {
+    text = readFileSync(logFile, 'utf8')
+  } catch {
+    return null
+  }
+  // The header block ends at the "---" marker this adapter itself writes
+  // (see the `[spawn-start] ---` line above); everything after it is the
+  // child process's own stdout+stderr. Falling back to the first `{` in the
+  // whole file if that marker is somehow absent, rather than giving up.
+  const markerIdx = text.indexOf('[spawn-start] ---\n')
+  const tail = markerIdx >= 0 ? text.slice(markerIdx + '[spawn-start] ---\n'.length) : text
+  const firstBrace = tail.indexOf('{')
+  const lastBrace = tail.lastIndexOf('}')
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) return null
+  try {
+    const parsed = JSON.parse(tail.slice(firstBrace, lastBrace + 1)) as {
+      total_cost_usd?: number
+      usage?: { input_tokens?: number; output_tokens?: number }
+    }
+    const result: { inputTokens?: number; outputTokens?: number; costUsd?: number } = {}
+    if (typeof parsed.usage?.input_tokens === 'number') result.inputTokens = parsed.usage.input_tokens
+    if (typeof parsed.usage?.output_tokens === 'number') result.outputTokens = parsed.usage.output_tokens
+    if (typeof parsed.total_cost_usd === 'number') result.costUsd = parsed.total_cost_usd
+    return Object.keys(result).length > 0 ? result : null
+  } catch {
+    return null
+  }
 }
 
 function extractTaskKeyFromBranch(branch: string | null | undefined): string | null {

@@ -249,18 +249,45 @@ function migratePostgresAsync(): void {
 /**
  * Called once from `lib/db.ts`'s `resolveAdapter()`, before the adapter for
  * `provider` is created — i.e. on the first real use of the database seam.
- * No-op during `next build`; no-op for `supabase` (see module comment).
- * Never throws — a failure here must not be the reason `db()` breaks in a
- * way its own, more specific configuration errors don't already cover.
+ * No-op during `next build`. Never throws — a failure here must not be the
+ * reason `db()` breaks in a way its own, more specific configuration errors
+ * don't already cover.
+ *
+ * TOD-2381 round 3: this used to gate the direct-Postgres migration path on
+ * `provider === 'postgres'` only, which meant a `supabase`-provider install
+ * (every hosted install this repo has, including the one this piece was
+ * developed against) could NEVER self-heal at boot — `agent_budgets` and the
+ * agent_runs ceiling columns stayed unmigrated forever, silently, no matter
+ * how many times the server restarted. That contradicts this file's own
+ * module comment and `scripts/db-migrate.mjs`'s, both of which already say
+ * migrations run over a DIRECT Postgres connection "regardless of which
+ * adapter serves the app's own queries" — supabase's PostgREST layer fronts
+ * the exact same physical Postgres a DATABASE_URL would reach, it just has no
+ * DDL grammar of its own to run this file's SQL through. So the direct-
+ * Postgres migration path now runs whenever DATABASE_URL is present, full
+ * stop, independent of which provider `TODERO_DB_PROVIDER` resolved to — the
+ * same "is DATABASE_URL set" test `lib/db/adapters.ts`'s `detectProvider()`
+ * already uses for provider selection, applied here to migrations instead.
+ * An install with `supabase` credentials but no DATABASE_URL (the concrete
+ * case this round found, and the reason this piece's own end-to-end
+ * demonstration could not be completed on this instance — see knownGaps)
+ * still cannot self-heal: there is no DDL path over PostgREST, and none of
+ * `SUPABASE_SERVICE_ROLE_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` is a Postgres
+ * credential. That is a real, unavoidable gap this file cannot close on its
+ * own — closing it needs an operator to add DATABASE_URL (Supabase dashboard
+ * -> Settings -> Database -> Connection string), same as `npm run db:migrate`
+ * has always required for a supabase-provider install.
  */
 export function ensureMigratedOnBoot(provider: string): void {
   if (isBuildPhase()) return
   try {
     if (provider === 'sqlite') {
       migrateSqliteSync()
-    } else if (provider === 'postgres') {
-      migratePostgresAsync()
     }
+    // Independent of `provider`: any install with DATABASE_URL set gets the
+    // direct-Postgres migration path, sqlite included (sqlite never sets
+    // DATABASE_URL, so this is a no-op there) — see the comment above.
+    migratePostgresAsync()
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(

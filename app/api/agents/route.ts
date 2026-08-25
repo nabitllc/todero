@@ -11,6 +11,7 @@ import {
 } from '@/lib/agent-heartbeats'
 import { readRegistrations, type AgentRegistration } from '@/lib/agent-registrations'
 import { internalHeaders } from '@/lib/internal-auth'
+import { getCeilingStatus, type CeilingName } from '@/lib/agent-budget'
 
 /**
  * Asked of the seam, never of the environment. This route used to read the
@@ -87,6 +88,15 @@ type AgentDto = {
   rosterSource: RosterSource
   rosterWarning: string | null
   rosterPath: string | null
+  /**
+   * TOD-2381 (agent-budget-stop): the same over-ceiling verdict
+   * `checkDispatchCeilings` would give this agent right now, read-only
+   * (`getCeilingStatus` — never writes an inbox/agent_memory row for a mere
+   * roster poll). Null when the agent is within every ceiling. Piece brief
+   * #3: "An agent that is over budget is marked as such in the roster with
+   * the reason visible" — this is that field.
+   */
+  overCeiling: { ceiling: CeilingName; reason: string } | null
 }
 
 /** Live run state: issue/run history from the database, plus recorded heartbeats. */
@@ -383,7 +393,7 @@ export async function GET() {
   // every response branch below, success or failure alike.
   const schedule = await fetchVerifiedAgentSchedule()
 
-  const respond = (
+  const respond = async (
     state: RunState,
     configured: boolean,
     error: string | null,
@@ -403,6 +413,24 @@ export async function GET() {
       ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule),
       ...registrationOnly.map((r) => buildRegistrationAgent(r, state)),
     ]
+
+    // TOD-2381 round 3: over-ceiling flag per agent, only when the database
+    // is actually reachable (`configured`) — an unconfigured/error path has
+    // no database to ask and every agent should just render with no flag
+    // rather than a second, unrelated error. Best-effort per agent: one
+    // ceiling check throwing must never take down the whole roster response.
+    if (configured) {
+      await Promise.all(agents.map(async (a) => {
+        try {
+          const result = await getCeilingStatus(a.id)
+          a.overCeiling = result.allowed ? null : { ceiling: result.ceiling as CeilingName, reason: result.reason ?? '' }
+        } catch {
+          a.overCeiling = null
+        }
+      }))
+    } else {
+      for (const a of agents) a.overCeiling = null
+    }
 
     const rosterSource: RosterSource =
       parsedAgents.length > 0 && registrations.size > 0
