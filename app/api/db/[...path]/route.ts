@@ -43,6 +43,82 @@ const READABLE_TABLES = new Set([
 /** Subset of the above the browser may also write to. */
 const WRITABLE_TABLES = new Set(['issues', 'notifications', 'inbox'])
 
+// ─── scope-reaches-the-server ────────────────────────────────────────────────
+//
+// A fresh critic un-archived one issue and watched it reappear on nine
+// surfaces: every one of them read `issues` through this proxy with a hand-
+// rolled query string that may or may not have remembered to add
+// `project=eq.<x>&archived_at=is.null` itself. That is a filter spread across
+// N call sites, which is a filter the (N+1)th call site forgets — silently,
+// because the failure mode is "the row just shows up", not an error.
+//
+// middleware.ts resolves the caller's scope (from this request's own path, or
+// failing that, its Referer — see that file's block comment) and stamps it on
+// this header. This route reads ONLY that header for scope, never the query
+// string the client sent — see `scopedParams` below.
+const SCOPE_HEADER = 'x-mc-project'
+const CROSS_PROJECT_HEADER = 'x-mc-all-projects'
+
+/**
+ * Every READ of the `issues` table through this proxy is scoped HERE, ONCE,
+ * regardless of what the caller's own query string asked for — this is the
+ * fix that lets the client call sites become correct WITHOUT being edited.
+ * `project=eq.<scoped>` and `archived_at=is.null` are injected
+ * UNCONDITIONALLY whenever a scope is resolvable: any client-supplied
+ * `project`/`archived_at` for THIS table is deleted first, so a caller cannot
+ * un-scope itself by asking directly, or by adding a second value for the
+ * same key.
+ *
+ * Writes are deliberately NOT touched: a write already targets one row
+ * (`id=eq.<id>`), not a query boundary, and forcing `archived_at=is.null`
+ * onto a write would make it impossible to ever un-archive a row through this
+ * endpoint — the row's `archived_at` is NOT null right up until the very
+ * write that clears it.
+ *
+ * When no scope is resolvable (no `/p/<slug>` anywhere in this request's own
+ * path or its Referer), the query passes through unfiltered, exactly as
+ * before this piece. That is not a leak: it is the same "genuinely nothing to
+ * scope by" case documented on GET /api/issues, and it is what acceptance
+ * item 2 (the counterfactual) tests directly — the SAME read, without a
+ * resolvable scope, must still return an archived-and-restored row, proving
+ * this clause is what excludes it in the scoped case, not the archive itself.
+ */
+/** `all_projects=1|true|yes` — the deliberate, documented cross-project opt-out. */
+const ALL_PROJECTS = /^(1|true|yes)$/i
+
+/** Returns null when an issues read has no resolvable scope and did not ask for one. */
+function scopedParams(req: NextRequest, table: string, isWrite: boolean): URLSearchParams | null {
+  const params = new URLSearchParams(req.nextUrl.searchParams)
+  // Read it, then strip it: everything left in `params` is treated as a
+  // PostgREST filter downstream, and `all_projects=1` is not one — it parsed as
+  // a malformed filter and 400'd the very call it was meant to allow.
+  const wantsAllProjects = ALL_PROJECTS.test(params.get('all_projects') ?? '')
+  params.delete('all_projects')
+  if (table !== 'issues' || isWrite) return params
+  const scope = req.headers.get(SCOPE_HEADER)
+  if (!scope) {
+    // FAIL CLOSED. This used to `return params` — i.e. an unresolvable scope
+    // meant "every project", which is the behaviour the whole piece exists to
+    // remove. It made the boundary only as strong as the Referer header: with
+    // no referer, a strict Referrer-Policy, a script, or any page without a
+    // /p/<slug> segment, the request fell fully open and returned another
+    // project's rows. Verified before this change — no referer returned TOD-1.
+    //
+    // A boundary that holds only in the common case is a default, not a
+    // boundary. Refusing costs a caller one explicit parameter; widening
+    // silently costs the operator their trust in every number on the screen.
+    if (wantsAllProjects) return params
+    // A destination the middleware identified as deliberately global.
+    if (req.headers.get(CROSS_PROJECT_HEADER) === '1') return params
+    return null
+  }
+  params.delete('project')
+  params.delete('archived_at')
+  params.set('project', `eq.${scope}`)
+  params.set('archived_at', 'is.null')
+  return params
+}
+
 function isAuthenticated(req: NextRequest): boolean {
   const auth = req.cookies.get('mc-auth')?.value
   if (!auth) return false
@@ -114,7 +190,18 @@ async function handle(req: NextRequest, segments: string[]): Promise<NextRespons
     return NextResponse.json({ error: `Read-only through this endpoint: ${table}` }, { status: 403 })
   }
 
-  const params = req.nextUrl.searchParams
+  const params = scopedParams(req, table, isWrite)
+  if (params === null) {
+    return NextResponse.json(
+      {
+        error: 'unscoped_issues_read',
+        message:
+          'This issues query has no project scope. Navigate from a /p/<project> screen, ' +
+          'or pass all_projects=1 to read across every project deliberately.',
+      },
+      { status: 400 },
+    )
+  }
   const shape = readQueryShape(params)
 
   let result: DbResult

@@ -818,7 +818,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(withIssueStatusCategory(data))
   }
 
-  const cacheKey = url.search
+  // scope-reaches-the-server: the result for an identical query string now
+  // also depends on the caller's resolved scope (see `effectiveProject`
+  // below) — the same `?limit=0` from a Limiglow-scoped tab and a Todero-
+  // scoped tab must not share a cache entry, or whichever populated it first
+  // wins for both until the 30s TTL expires.
+  const cacheKey = url.search + '|' + (req.headers.get('x-mc-project') ?? '')
   const cached = issuesCache.get(cacheKey)
   if (cached && Date.now() - cached.ts < ISSUES_CACHE_TTL) {
     return NextResponse.json(cached.data)
@@ -863,6 +868,39 @@ export async function GET(req: NextRequest) {
   const businessIdParam = url.searchParams.get('business_id')
   const assigneeParam = url.searchParams.get('assignee')
   const statusParam = url.searchParams.get('status')
+
+  // ─── scope-reaches-the-server ───────────────────────────────────────────
+  //
+  // "GET /api/issues without a project should not silently mean 'all
+  // projects'." Plain "refuse when omitted" was tried first and rejected: it
+  // breaks `rbac-owner-reads` and the `issues-paginated` / no-truncation
+  // checks in scripts/acceptance/checks*.mjs, all of which call bare
+  // `GET /api/issues` with only an auth cookie — no project, no page context
+  // — and correctly expect 200. Those calls are genuinely scope-blind (a
+  // script, not a page); refusing them would be wrong, not honest.
+  //
+  // The actual bug was narrower: callers that DO have a scope (a browser tab
+  // sitting on a `/p/<slug>` page) sent no `project=` and got everything
+  // anyway, because nothing here read the ONE signal that WAS available —
+  // middleware.ts's resolved scope, stamped on `x-mc-project` (from this
+  // request's own path, or its Referer; see that file's block comment).
+  // `?project=` explicit still wins outright; a resolved scope is now used
+  // exactly as if the caller had passed it. `?all_projects=1` is the explicit
+  // opt-out for a caller that wants every project on purpose even though a
+  // scope was resolvable — read but ignored on purpose otherwise, it exists
+  // so a future caller can say "yes, all of them" instead of that being
+  // indistinguishable from "nobody thought about it".
+  //
+  // ProjectsTab (settings/projects) and the Fleet/Runs aggregates are
+  // deliberately cross-project (build instruction 4) — middleware.ts never
+  // resolves a scope for those destinations in the first place (see its
+  // `isCrossProjectDestination`), so they fall through to "no header, all
+  // projects" here without this route needing to know their names.
+  const allProjectsParam = ['1', 'true', 'yes'].includes(
+    (url.searchParams.get('all_projects') ?? '').toLowerCase()
+  )
+  const resolvedScope = req.headers.get('x-mc-project')
+  const effectiveProject = projectParam || (allProjectsParam ? null : resolvedScope) || null
 
   // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
   const hub = businessIdParam ? getHubClient(businessIdParam) : null
@@ -912,7 +950,7 @@ export async function GET(req: NextRequest) {
     let q = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS, { count: 'exact' })
     if (!includeArchived) q = q.is('archived_at', null)
     if (hub) q = q.eq('business_id', hub.businessId)
-    if (projectParam) q = q.eq('project', projectParam)
+    if (effectiveProject) q = q.eq('project', effectiveProject)
     if (assigneeParam) q = q.eq('assignee', assigneeParam)
     if (statusParam) q = q.eq('status', statusParam)
     if (parentIdParam) q = q.eq('parent_id', parentIdParam)
