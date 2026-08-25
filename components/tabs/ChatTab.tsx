@@ -1,11 +1,13 @@
 'use client'
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import IssuePreviewCard from '@/components/IssuePreviewCard'
 import AgentSelector from '@/components/AgentSelector'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, formatApiError, type ApiError } from '@/hooks/useApiData'
+import { useAgentRoster } from '@/hooks/useAgentRoster'
+import { agentDisplay } from '@/lib/agents-config'
 
 // Chat types
 interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string }
@@ -127,12 +129,6 @@ const FILE_TYPE_GROUPS = [
   { label: 'Any text',   accept: '*' },
 ]
 
-const AGENT_BADGE_MAP: Record<string, string> = {
-  'main': '🧠',
-  'kemuni-sme': '🚀',
-  'vespera-sme': '🖤',
-  'scout': '🔍',
-}
 
 const PROJECT_TAG_COLORS: Record<string, string> = {
   'Kemuni': '#3b82f6',
@@ -353,14 +349,29 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
 
-  const AGENT_OPTIONS = [
-    { id: 'main', label: '🧠 KAOS', desc: 'Chief of Staff' },
-    { id: 'kemuni-sme', label: '🚀 Kemuni SME', desc: 'Kemuni Specialist' },
-    { id: 'vespera-sme', label: '🖤 Vespera SME', desc: 'Vespera Specialist' },
-    { id: 'scout', label: '🔍 Scout', desc: 'Research Agent' },
-    { id: 'ops', label: '⚙️ Ops', desc: 'Operations Agent' },
-  ]
-  const currentAgent = AGENT_OPTIONS.find(a => a.id === selectedAgent) || AGENT_OPTIONS[0]
+  // The @-mention list, the "send to" list and the handoff labels all come
+  // from the host's AGENTS.md via GET /api/agents. This used to be a literal
+  // of five agents — a different lie from the thirteen the agent picker beside
+  // it was importing, and both disagreed with the sixteen the API serves, so
+  // `@security` could not be mentioned while `@infra-sme` could. An empty
+  // roster yields an empty list here, which correctly renders no dropdown at
+  // all rather than a menu of invented recipients.
+  const { agents: rosterAgents, byId: rosterById } = useAgentRoster()
+  // Chat-row avatar. The module-level AGENT_BADGE_MAP this replaces knew four
+  // agents and handed every other one KAOS's 🧠, so a conversation with the
+  // Tester was labelled as a conversation with the orchestrator.
+  const agentBadgeFor = useCallback(
+    (id: string) => rosterById[id]?.emoji ?? agentDisplay(id).emoji,
+    [rosterById],
+  )
+  const AGENT_OPTIONS = useMemo(
+    () => rosterAgents.map(a => ({ id: a.id, label: `${a.emoji} ${a.name}`, desc: a.role })),
+    [rosterAgents],
+  )
+  // No `|| AGENT_OPTIONS[0]`: a selected id the roster does not name must show
+  // as itself, not be silently rewritten to whoever happens to be first.
+  const currentAgent = AGENT_OPTIONS.find(a => a.id === selectedAgent)
+    ?? { id: selectedAgent, label: agentDisplay(selectedAgent).name, desc: agentDisplay(selectedAgent).role }
 
   // Slash command definitions
   const SLASH_COMMANDS = [
@@ -1458,7 +1469,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   title={c.title}
                   className={'w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition-all ' +
                     (activeChat === c.id ? 'bg-white/10' : 'bg-[#0f0f0f] hover:bg-white/10')}>
-                  {AGENT_BADGE_MAP[c.agent_id || 'main'] || '💬'}
+                  {c.agent_id ? agentBadgeFor(c.agent_id) : '💬'}
                 </button>
               ))}
             </div>
@@ -1575,7 +1586,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                         const preview = searchMode === 'messages'
                           ? searchResults.find(r => r.conversation_id === c.id)?.content.slice(0, 60)
                           : lastMsg ? stripMarkdownPreview(lastMsg.content) : ''
-                        const agentBadge = AGENT_BADGE_MAP[c.agent_id || 'main'] || '🧠'
+                        const agentBadge = agentBadgeFor(c.agent_id ?? 'main')
                         const projColor = c.project ? PROJECT_TAG_COLORS[c.project] : null
                         const highlightedPreview = searchMode === 'messages' && preview && search.length >= 3
                           ? (() => {
@@ -1987,7 +1998,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                     <div
                       className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm mt-0.5"
                       style={{ background: msg.role === 'user' ? '#1e1e1e' : '#3b82f620' }}>
-                      {msg.role === 'user' ? '👤' : (AGENT_BADGE_MAP[msgAgent] || '🧠')}
+                      {msg.role === 'user' ? '👤' : agentBadgeFor(msgAgent)}
                     </div>
 
                     {/* Bubble */}

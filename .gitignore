@@ -1,5 +1,9 @@
 node_modules/
-.next/
+# Any Next build output, whatever distDir a verification build chose.
+# A glob, not a list: agents pick their own dir names to avoid clobbering the
+# dev server, and .next-ac3 (123MB) got committed because the ignore named only
+# the one dir this session happened to use.
+.next*/
 .env*.local
 .vercel
 *.log
@@ -31,4 +35,6 @@ coverage/
 .idea/
 *.swp
 *.swo
-.next-verify/
+
+# Stray local service-health snapshots from redirected script output
+st.json

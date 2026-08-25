@@ -5,6 +5,8 @@ import { Button, Input, Select, EmptyState } from '@/components/ui'
 import { TypeBadge, PriorityBadge, StatusBadge, Badge } from '@/components/ui'
 import { List } from 'lucide-react'
 import { useApiList } from '@/hooks/useApiData'
+import { useAgentRoster } from '@/hooks/useAgentRoster'
+import { agentDisplay } from '@/lib/agents-config'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
@@ -17,14 +19,11 @@ interface Issue {
 
 const STATUS_OPTIONS = ['backlog','defined','open','in_progress','code_review','product_review','approved','completed','released','closed']
 const PRIORITY_OPTIONS = ['critical','high','medium','low']
-const ASSIGNEE_OPTIONS = ['main','builder','tester','scout','ops','kemuni-sme','vespera-sme']
-
-const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
-  main:{emoji:'🧠',name:'KAOS'}, builder:{emoji:'🔨',name:'Builder'},
-  tester:{emoji:'🧪',name:'Tester'}, scout:{emoji:'🔍',name:'Scout'},
-  ops:{emoji:'⚙️',name:'Ingo'}, 'kemuni-sme':{emoji:'🚀',name:'Kemuni SME'},
-  'vespera-sme':{emoji:'🖤',name:'Vespera SME'},
-}
+// Assignees come from the host's AGENTS.md via GET /api/agents. The literal
+// seven-id ASSIGNEE_OPTIONS this replaces meant nine rostered agents —
+// designer, ux, po, deployer, auditor, security, growth, content, community —
+// could never be picked in the UI even though the API accepts them, and an
+// issue already assigned to one rendered as a bare id with no name.
 
 type SortKey = 'task_key'|'type'|'title'|'status'|'priority'|'assignee'|'sprint'
 type SortDir = 'asc'|'desc'
@@ -37,6 +36,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
     return `/api/issues?${params.toString()}`
   }, [projectFilter])
   const { items, total, error: fetchError, loading, refetch, setItems } = useApiList<Issue>(endpoint)
+  const { agents: rosterAgents, byId: rosterById } = useAgentRoster()
   const issues = items ?? []
   // Optimistic updates always run after a successful load, so treating a null
   // (never-loaded) list as empty here is safe and keeps call sites simple.
@@ -254,7 +254,7 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                   <StatusBadge value={issue.status} />
                   <PriorityBadge value={issue.priority ?? ''} />
                   <span className="text-[10px] text-white/40">
-                    {issue.assignee ? (ASSIGNEE_MAP[issue.assignee]?.emoji??'') + ' ' + (ASSIGNEE_MAP[issue.assignee]?.name??issue.assignee) : '—'}
+                    {issue.assignee ? `${rosterById[issue.assignee]?.emoji ?? agentDisplay(issue.assignee).emoji} ${rosterById[issue.assignee]?.name ?? agentDisplay(issue.assignee).name}` : '—'}
                   </span>
                   <span className="text-[10px] text-white/40 font-mono">{issue.sprint??'—'}</span>
                 </div>
@@ -284,7 +284,13 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                         <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">Assignee</span>
                         <Select value={editFields.assignee??''} onChange={e => setEditFields(f=>({...f,assignee:e.target.value}))} className="text-xs rounded-lg px-2 py-1.5">
                           <option value="" className="bg-[#0f0f0f] text-white">Unassigned</option>
-                          {ASSIGNEE_OPTIONS.map(a => <option key={a} value={a} className="bg-[#0f0f0f] text-white">{ASSIGNEE_MAP[a]?.name??a}</option>)}
+                          {rosterAgents.map(a => <option key={a.id} value={a.id} className="bg-[#0f0f0f] text-white">{a.name}</option>)}
+                          {/* An assignee already on the issue that this host's roster does not
+                              declare stays selectable, so opening the editor cannot silently
+                              reassign the issue to whoever happens to be first in the list. */}
+                          {editFields.assignee && !rosterById[editFields.assignee] && (
+                            <option value={editFields.assignee} className="bg-[#0f0f0f] text-white">{editFields.assignee} (not in roster)</option>
+                          )}
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">

@@ -111,6 +111,15 @@ export function middleware(req: NextRequest) {
     }
   }
 
+  // Real App Router pages that must NOT be swallowed by the SPA rewrite below.
+  // /crew/<id> is server-rendered and decides agent-vs-human from the host's
+  // AGENTS.md; rewriting it to / meant the deep link silently served the
+  // dashboard instead, so the page could never be reached — or checked.
+  const SERVER_ROUTED_PREFIXES = ['/crew/']
+  if (SERVER_ROUTED_PREFIXES.some(p => pathname.startsWith(p))) {
+    return NextResponse.next()
+  }
+
   // SPA routing: rewrite all client paths to / so page.tsx handles routing via pushState
   if (pathname !== '/' && !pathname.includes('.')) {
     return NextResponse.rewrite(new URL('/', req.url))

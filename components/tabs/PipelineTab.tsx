@@ -5,6 +5,7 @@ import { EmptyState, Button } from '@/components/ui'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { useAgentRoster } from '@/hooks/useAgentRoster'
 
 const HEADERS = { ...dbRestHeaders(), 'Content-Type': 'application/json' }
 
@@ -20,12 +21,11 @@ const STAGE_HEX: Record<PipelineStage, string> = {
   Merged: '#10b981',
 }
 
-const AGENTS = [
-  { id: 'main', emoji: '🧠' },
-  { id: 'builder', emoji: '🔨' },
-  { id: 'tester', emoji: '🧪' },
-  { id: 'scout', emoji: '🔍' },
-]
+// Which agents can appear on the pipeline board is answered by the host's
+// AGENTS.md via GET /api/agents, not by a literal. The four-entry array this
+// replaces meant an issue in progress with designer, ops, po, deployer or any
+// of the other rostered agents left its stage room showing no one working it.
+type PipelineAgent = { id: string; emoji: string }
 
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
 
@@ -46,6 +46,7 @@ const COLUMN_OPTIONS: { label: string; status: string; color: string }[] = [
 ]
 
 export default function PipelineTab({ projectFilter }: { projectFilter?: string | null }) {
+  const { agents: rosterAgents } = useAgentRoster()
   // TOD-2368 round 3: null means "not loaded / load failed" — never coerced
   // to [] on a failure, so the board and the "N items" counter cannot paint
   // a confident empty state over a 403/500. See fetchIssues() below.
@@ -191,10 +192,10 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 
   // Find which agents are in which stage
   const agentStageMap = useMemo(() => {
-    const map: Record<PipelineStage, typeof AGENTS> = {
+    const map: Record<PipelineStage, PipelineAgent[]> = {
       Backlog: [], Definition: [], Building: [], Testing: [], "UX Review": [], "PR Queue": [], Merged: []
     }
-    for (const agent of AGENTS) {
+    for (const agent of rosterAgents) {
       const agentIssue = (issues ?? []).find(i => i.assignee === agent.id && i.status === 'in_progress')
       if (agentIssue) {
         const children = childrenMap[agentIssue.id]
@@ -203,7 +204,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       }
     }
     return map
-  }, [issues, childrenMap])
+  }, [issues, childrenMap, rosterAgents])
 
   const buildingWIP = stageMap.Building.features.length + stageMap.Building.issues.length
 
