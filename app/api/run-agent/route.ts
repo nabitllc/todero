@@ -20,6 +20,9 @@ import { getDefaultRuntime, getRuntimeByName, listRuntimes } from '@/lib/runtime
 import { recordSpawn } from '@/lib/runtimes/token-ledger'
 import { logAgentCost } from '@/lib/agent-cost-log'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
+import { CONFIG_DIR, LOG_DIR, TODERO_DIR as TODERO_ROOT, resolveBinary } from '@/lib/paths'
+import { existsSync, mkdirSync } from 'fs'
+import { join } from 'path'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 // Lazy-init: avoids crashing at build time when env vars aren't set (CI).
@@ -34,9 +37,16 @@ function getSupaKey(): string {
 }
 function getHeaders() { const k = getSupaKey(); return { 'apikey': k, 'Authorization': `Bearer ${k}`, 'Content-Type': 'application/json' } }
 
-const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
-const WORKSPACE = '/Users/kemuniagent/todero/config'
-const TODERO_DIR = '/Users/kemuniagent/todero'
+// Machine-portable paths. These used to name one developer's Mac home
+// directory, so every dispatch on any other host died before the first HTTP
+// call: the spawn cwd did not exist and the log path was unwritable.
+//   TODERO_DIR         repo root used as the agent working dir
+//   TODERO_CONFIG_DIR  agent config/memory dir
+//   TODERO_LOG_DIR     where per-run agent logs land (under os.tmpdir())
+//   CLAUDE_BIN         claude CLI path or name (resolved on PATH)
+const TODERO_DIR = TODERO_ROOT
+const WORKSPACE = CONFIG_DIR
+const CLAUDE_BIN = resolveBinary(process.env.CLAUDE_BIN ?? 'claude') ?? 'claude'
 const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low']
 const MAX_REJECTION_CYCLES = 3
 
@@ -119,7 +129,29 @@ async function loadContextFromDB(agentId: string): Promise<string> {
   return combined
 }
 
+
+// ── SAFETY GUARD (owner directive, 2026-08-24) ───────────────────────────────
+// Todero must not autonomously dispatch agents while it is itself being rebuilt.
+// Claude builds Todero; Todero does not build Todero. This guard is ON by
+// default and must be explicitly opted out of via TODERO_DISPATCH_ENABLED=1.
+// Rationale: /api/cron/queue-refill and /api/cron/watchdog pull real backlog
+// tasks and spawn `claude --permission-mode bypassPermissions`, with a watcher
+// that self-kicks this endpoint when the child exits. On this host that only
+// failed because /bin/bash is absent — a protection we are actively removing.
+function dispatchDisabled(): boolean {
+  return process.env.TODERO_DISPATCH_ENABLED !== '1'
+}
+const DISPATCH_BLOCKED_BODY = {
+  error: 'Agent dispatch is disabled on this instance.',
+  code: 'DISPATCH_DISABLED',
+  hint: 'Set TODERO_DISPATCH_ENABLED=1 to allow Todero to spawn agents. Intentionally off while Todero is under reconstruction.',
+}
+
 export async function POST(req: NextRequest) {
+  if (dispatchDisabled()) {
+    return NextResponse.json(DISPATCH_BLOCKED_BODY, { status: 503 })
+  }
+
   const REQUIRED_PERMISSION = 'agents:spawn' as const
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
@@ -621,7 +653,10 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     selfChain,
   ].join('\n')
 
-  const logFile = `/tmp/agent-${agentId}-${Date.now()}.log`
+  // Log dir is created lazily so an unwritable temp surfaces here rather than
+  // as a spawn ENOENT. The location comes from lib/paths so every writer agrees.
+  mkdirSync(LOG_DIR, { recursive: true })
+  const logFile = join(LOG_DIR, `agent-${agentId}-${Date.now()}.log`)
 
   // TOD-793: Dispatch via the runtime adapter registry.
   // Runtime selection priority:
@@ -714,6 +749,16 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
     date: new Date().toISOString().slice(0, 10),
   }).catch(() => { /* best-effort */ })
 
+  // Only name a log that is really on disk. Returning a path the adapter never
+  // opened is what let a failed dispatch read as a successful one.
+  const spawnLogFile = spawnResult.logFile ?? logFile
+  const logFileExists = (() => {
+    try { return existsSync(spawnLogFile) } catch { return false }
+  })()
+
+  // A dispatch that never started is a server-side failure, not a 200. The
+  // caller (and the queue kicker) must be able to tell those apart by status
+  // code alone.
   return NextResponse.json({
     ok: spawnResult.ok,
     agent: agentId,
@@ -727,12 +772,14 @@ This issue was manually blocked. Read implementation_notes and tester_notes for 
       branch,
     },
     spawned: spawnResult.ok,
+    pid: spawnResult.pid ?? null,
     spawnError: spawnResult.error,
-    logFile,
+    command: spawnResult.command,
+    ...(logFileExists ? { logFile: spawnLogFile } : { logFile: null, logFileMissing: spawnLogFile }),
     wip: (wipIssues?.length ?? 0) + 1,
     wipLimit: config.wipLimit,
     remaining: readyTasks.length - 1,
-  })
+  }, { status: spawnResult.ok ? 200 : 500 })
 }
 
 // GET /api/run-agent — status/heartbeat for all queue lanes

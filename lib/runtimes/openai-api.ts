@@ -11,11 +11,48 @@
 // - Tool-use loop (supportsTools=true) — exposes read_file + run_bash tools
 // - Model map: sonnet→gpt-4o, opus→o3, haiku→gpt-4o-mini
 
-import { spawn } from 'child_process'
-import { writeFileSync, appendFileSync, mkdtempSync, rmSync } from 'fs'
+import { writeFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
+import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+
+// ---------------------------------------------------------------------------
+// Provider resolution - OpenAI-compatible, not OpenAI-only
+// ---------------------------------------------------------------------------
+//
+// The endpoint used to be the literal hostname `api.openai.com`, so pointing
+// Todero at Ollama / LM Studio / OpenRouter / Azure required editing this file.
+// Any server speaking the OpenAI chat-completions shape now works by setting
+// LLM_BASE_URL (e.g. http://localhost:11434/v1 for Ollama).
+
+export interface ProviderConfig {
+  /** Base URL including the version segment, e.g. https://api.openai.com/v1 */
+  baseUrl: string
+  /** Bearer token. Local servers ignore it, so it may be a placeholder. */
+  apiKey: string
+  /** True when the endpoint is on this machine and needs no credential. */
+  isLocal: boolean
+}
+
+export function resolveProvider(): ProviderConfig {
+  const baseUrl = (
+    process.env.LLM_BASE_URL ??
+    process.env.OPENAI_BASE_URL ??
+    'https://api.openai.com/v1'
+  ).replace(/[/]+$/, '')
+
+  let isLocal = false
+  try {
+    const host = new URL(baseUrl).hostname
+    isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0'
+  } catch {
+    isLocal = false
+  }
+
+  const apiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? (isLocal ? 'local' : '')
+  return { baseUrl, apiKey, isLocal }
+}
 
 // ---------------------------------------------------------------------------
 // Model mapping
@@ -175,13 +212,19 @@ export async function runOpenAIToolUseLoop(opts: ToolUseLoopOpts): Promise<ToolU
 
 function defaultCallApi(apiKey: string, body: object): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const https = require('https') as typeof import('https')
+    const { baseUrl } = resolveProvider()
+    const url = new URL(`${baseUrl}/chat/completions`)
+    const transport = url.protocol === 'http:'
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      ? (require('http') as typeof import('http'))
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      : (require('https') as typeof import('https'))
     const data = JSON.stringify(body)
-    const req = https.request(
+    const req = transport.request(
       {
-        hostname: 'api.openai.com',
-        path: '/v1/chat/completions',
+        hostname: url.hostname,
+        port: url.port || undefined,
+        path: url.pathname + url.search,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -194,7 +237,7 @@ function defaultCallApi(apiKey: string, body: object): Promise<unknown> {
         res.on('data', (chunk) => { raw += chunk })
         res.on('end', () => {
           try { resolve(JSON.parse(raw)) }
-          catch { reject(new Error(`Failed to parse OpenAI response: ${raw.slice(0, 200)}`)) }
+          catch { reject(new Error(`Failed to parse response from ${baseUrl}: ${raw.slice(0, 200)}`)) }
         })
       }
     )
@@ -233,15 +276,18 @@ function defaultExecuteTool(name: string, args: Record<string, unknown>): string
 // Implements the same tool-use loop as runOpenAIToolUseLoop, reading config from env vars.
 const RUNNER_SCRIPT = [
   "'use strict'",
+  'const http = require("http")',
   'const https = require("https")',
   'const fs = require("fs")',
   'const cp = require("child_process")',
-  'const API_KEY = process.env.OPENAI_API_KEY',
+  'const API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || ""',
+  'const BASE_URL = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/[/]+$/, "")',
   'const MODEL = process.env.OPENAI_MODEL || "gpt-4o"',
   'const PROMPT_F = process.env.PROMPT_FILE',
   'const LOG_F = process.env.LOG_FILE',
   'const MAX_ITER = parseInt(process.env.MAX_ITER || "20", 10)',
-  'if (!API_KEY) { process.stderr.write("[openai-api] OPENAI_API_KEY not set\\n"); process.exit(1) }',
+  'const ENDPOINT = new URL(BASE_URL + "/chat/completions")',
+  'const TRANSPORT = ENDPOINT.protocol === "http:" ? http : https',
   'if (!PROMPT_F) { process.stderr.write("[openai-api] PROMPT_FILE not set\\n"); process.exit(1) }',
   'if (!LOG_F) { process.stderr.write("[openai-api] LOG_FILE not set\\n"); process.exit(1) }',
   'const prompt = fs.readFileSync(PROMPT_F, "utf8")',
@@ -254,7 +300,7 @@ const RUNNER_SCRIPT = [
   'function callApi(body) {',
   '  return new Promise(function(resolve, reject) {',
   '    const data = JSON.stringify(body)',
-  '    const req = https.request({ hostname: "api.openai.com", path: "/v1/chat/completions", method: "POST",',
+  '    const req = TRANSPORT.request({ hostname: ENDPOINT.hostname, port: ENDPOINT.port || undefined, path: ENDPOINT.pathname, method: "POST",',
   '      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + API_KEY, "Content-Length": Buffer.byteLength(data) }',
   '    }, function(res) {',
   '      let raw = ""',
@@ -270,6 +316,7 @@ const RUNNER_SCRIPT = [
   '  return "Unknown tool: " + name',
   '}',
   'async function main() {',
+  '  fs.appendFileSync(LOG_F, "[openai-api] provider=" + BASE_URL + " model=" + MODEL + " prompt_bytes=" + prompt.length + "\\n")',
   '  const messages = [{ role: "user", content: prompt }]',
   '  for (let iter = 1; iter <= MAX_ITER; iter++) {',
   '    const resp = await callApi({ model: MODEL, messages: messages, tools: TOOLS, tool_choice: "auto" })',
@@ -304,17 +351,25 @@ export const openaiApiRuntime: AgentRuntime = {
   supportsTools: true,
 
   async isAvailable(): Promise<boolean> {
-    const key = process.env.OPENAI_API_KEY
-    return typeof key === 'string' && key.length > 0
+    // A local OpenAI-compatible server (Ollama, LM Studio) needs no credential;
+    // a hosted one does. Either way this runtime has no binary dependency.
+    const { apiKey, isLocal } = resolveProvider()
+    return isLocal || apiKey.length > 0
   },
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult> {
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) {
-      return { ok: false, error: 'OPENAI_API_KEY not set', runtime: 'openai-api' }
+    const provider = resolveProvider()
+    if (!provider.apiKey && !provider.isLocal) {
+      return {
+        ok: false,
+        error: `no API key for ${provider.baseUrl} - set LLM_API_KEY (or OPENAI_API_KEY), or point LLM_BASE_URL at a local server`,
+        runtime: 'openai-api',
+      }
     }
 
-    const model = mapModel(opts.model)
+    // LLM_MODEL wins when set: a local server has its own model names
+    // (qwen2.5-coder:7b), which the opus/sonnet/haiku aliases cannot express.
+    const model = process.env.LLM_MODEL ?? mapModel(opts.model)
 
     let tmpDir: string
     try {
@@ -346,7 +401,7 @@ export const openaiApiRuntime: AgentRuntime = {
     try {
       writeFileSync(
         opts.logFile,
-        `[spawn-start] ${new Date().toISOString()} agentId=${opts.agentId} model=${model}\n` +
+        `[spawn-start] ${new Date().toISOString()} agentId=${opts.agentId} model=${model} provider=${provider.baseUrl}\n` +
         `[spawn-start] prompt bytes: ${opts.prompt.length}\n` +
         `[spawn-start] ---\n`
       )
@@ -354,47 +409,47 @@ export const openaiApiRuntime: AgentRuntime = {
       console.warn(`[openai-api] failed to write spawn marker: ${err instanceof Error ? err.message : String(err)}`)
     }
 
-    const logFileEsc = JSON.stringify(opts.logFile)
-    const runnerFileEsc = JSON.stringify(runnerFile)
-    const workingDirEsc = JSON.stringify(opts.workingDir)
-    const script =
-      `set -e\ncd ${workingDirEsc}\n` +
-      `nohup node ${runnerFileEsc} >> ${logFileEsc} 2>&1 </dev/null &\n` +
-      `CHILD=$!\ndisown $CHILD || true\n` +
-      `echo "[spawn-ok] child_pid=$CHILD" >> ${logFileEsc}\n`
+    // No shell at all. `process.execPath` rather than the bare name 'node': the
+    // Next.js server is itself a node process, so the binary is guaranteed to
+    // exist and to be the version the runner was written against. A host with
+    // no POSIX shell (every Windows box) is no longer a blocker.
+    const result = spawnDetached(process.execPath, [runnerFile], opts.logFile, {
+      cwd: opts.workingDir,
+      env: {
+        ...process.env,
+        LLM_BASE_URL: provider.baseUrl,
+        LLM_API_KEY: provider.apiKey,
+        OPENAI_API_KEY: provider.apiKey,
+        OPENAI_MODEL: model,
+        PROMPT_FILE: promptFile,
+        LOG_FILE: opts.logFile,
+      },
+    })
 
-    try {
-      const child = spawn('/bin/bash', ['-c', script], {
-        detached: true,
-        stdio: 'ignore',
-        env: {
-          ...process.env,
-          OPENAI_API_KEY: apiKey,
-          OPENAI_MODEL: model,
-          PROMPT_FILE: promptFile,
-          LOG_FILE: opts.logFile,
-        },
-      })
-      child.unref()
-
-      return {
-        ok: true,
-        command: `nohup node ${runnerFile} [model=${model}]`,
-        runtime: 'openai-api',
-      }
-    } catch (err: unknown) {
-      try {
-        appendFileSync(
-          opts.logFile,
-          `\n[spawn-failure] ${new Date().toISOString()} ${err instanceof Error ? err.message : String(err)}\n`
-        )
-      } catch { /* ignore */ }
+    if (!result.ok) {
       try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
       return {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: result.error ?? 'spawn failed',
+        logFile: result.logFile,
+        command: result.command,
         runtime: 'openai-api',
       }
+    }
+
+    appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
+    watchChildExit(result.pid, opts.logFile, () => {
+      // tmpDir holds the prompt + runner; only safe to drop once the child
+      // that reads them is gone.
+      try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
+    }, { maxMinutes: 90 })
+
+    return {
+      ok: true,
+      pid: result.pid,
+      logFile: result.logFile,
+      command: `node ${runnerFile} [provider=${provider.baseUrl} model=${model}]`,
+      runtime: 'openai-api',
     }
   },
 }

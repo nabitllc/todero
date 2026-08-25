@@ -45,9 +45,23 @@ export default function AgentsTab({
   setAgentModal: (a: any) => void
   projectFilter?: string | null
 }) {
+  // /api/agents stamps every row with where the roster came from. When it fell
+  // back to the built-in list the UI must say so — otherwise a host with no
+  // AGENTS.md looks identical to one with a real roster.
+  const rosterSource: string | undefined = liveAgents?.[0]?.rosterSource
+  const rosterWarning: string | null = liveAgents?.[0]?.rosterWarning ?? null
+
   return (
             <div className="space-y-6">
               {liveAgents && <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/30 text-[10px]">Live agent data · {displayAgents.length} agents</span></div>}
+              {rosterSource === 'builtin' && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                  <span className="text-amber-300 text-[11px] font-medium shrink-0">Built-in roster</span>
+                  <span className="text-white/60 text-[10px] leading-relaxed">
+                    {rosterWarning ?? 'No AGENTS.md found on this host.'} Showing the built-in agent list — set TODERO_AGENTS_MD to point at a real roster.
+                  </span>
+                </div>
+              )}
               {displayAgents.length === 0 && <EmptyStateUI icon={Users} title="No agents registered yet" />}
 
               {/* Lead agent card */}

@@ -6,6 +6,7 @@ import { Kanban, Search, X, ClipboardList, Bug, Wrench, SearchIcon, Lock } from 
 import { Chip } from '@/lib/mc-atoms'
 import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issues'
 import { KanbanCard } from '@/components/KanbanCard'
+import { readApiError, formatApiError } from '@/hooks/useApiData'
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -206,6 +207,9 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   const [tasks, setTasks]         = useState<Task[]>([])
   const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState<string|null>(null)
+  // Write failures (create / update / delete / drag) surface here instead of
+  // being swallowed by a bare `if (res.ok)`.
+  const [actionError, setActionError] = useState<string|null>(null)
   const [dragId, setDragId]       = useState<string|null>(null)
   const [editTask, setEditTask]   = useState<Task|null>(null)
   const [newTask, setNewTask]     = useState<Partial<Task>|null>(null)
@@ -286,12 +290,12 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         const d = await res.json()
         setTasks(Array.isArray(d) ? d : d?.data ?? [])
       } else {
-        let msg = `Failed to load issues (HTTP ${res.status})`
-        try { const e = await res.json(); if (e?.error) msg = e.error } catch {}
-        setLoadError(msg)
+        setTasks([])
+        setLoadError(formatApiError(await readApiError(res, '/api/issues')))
       }
     } catch (e: any) {
-      setLoadError(e?.message ?? 'Network error — could not reach /api/issues')
+      setTasks([])
+      setLoadError(formatApiError({ status: 0, endpoint: '/api/issues', message: e?.message ?? 'could not reach the server' }))
     } finally {
       setLoading(false)
     }
@@ -301,49 +305,100 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
 
   // Auto-refresh removed — use the ↻ button to refresh manually (saves ~1.9 GB/day egress)
 
-  const createTask = async (t: Partial<Task>) => {
-    const res = await fetch('/api/issues', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
-    if (res.ok) { const d = await res.json(); setTasks(prev => [d, ...prev]); setNewTask(null) }
+  // Toast helper — one place so every write failure reads the same.
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const raiseActionError = useCallback((msg: string) => {
+    setActionError(msg)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setActionError(null), 8000)
+  }, [])
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
+
+  /** Turn a failed response (or a thrown fetch) into the shared error sentence. */
+  const describeFailure = async (resOrErr: Response | unknown, endpoint: string): Promise<string> => {
+    if (resOrErr instanceof Response) return formatApiError(await readApiError(resOrErr, endpoint))
+    return formatApiError({
+      status: 0,
+      endpoint,
+      message: resOrErr instanceof Error ? resOrErr.message : 'could not reach the server',
+    })
   }
 
-  const updateTask = async (id: string, fields: Partial<Task>) => {
-    const res = await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, ...fields}) })
-    if (res.ok) { const d = await res.json(); setTasks(prev => prev.map(t => t.id===id ? d : t)); setEditTask(null) }
+  const createTask = async (t: Partial<Task>): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/issues', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(t) })
+      if (!res.ok) { raiseActionError(await describeFailure(res, '/api/issues')); return false }
+      const d = await res.json(); setTasks(prev => [d, ...prev]); setNewTask(null); return true
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues')); return false
+    }
   }
 
-  const deleteTask = async (id: string) => {
-    const res = await fetch(`/api/issues?id=${id}`, { method:'DELETE' })
-    if (res.ok) { setTasks(prev => prev.filter(t => t.id!==id)); setConfirmDelete(null); setEditTask(null) }
+  const updateTask = async (id: string, fields: Partial<Task>): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, ...fields}) })
+      if (!res.ok) { raiseActionError(await describeFailure(res, '/api/issues')); return false }
+      const d = await res.json(); setTasks(prev => prev.map(t => t.id===id ? d : t)); setEditTask(null); return true
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues')); return false
+    }
+  }
+
+  const deleteTask = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/issues?id=${id}`, { method:'DELETE' })
+      if (!res.ok) { raiseActionError(await describeFailure(res, '/api/issues')); return false }
+      setTasks(prev => prev.filter(t => t.id!==id)); setConfirmDelete(null); setEditTask(null); return true
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues')); return false
+    }
   }
 
   const closeTask = async (id: string) => {
+    const previous = tasks.find(t => t.id === id)
     setTasks(prev => prev.map(t => t.id===id ? {...t, status:'closed'} : t))
     setClosedConfirm(id)
     setTimeout(() => setClosedConfirm(prev => prev===id ? null : prev), 2000)
-    await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
+    try {
+      const res = await fetch('/api/issues', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, status:'closed'}) })
+      if (!res.ok) {
+        raiseActionError(await describeFailure(res, '/api/issues'))
+        setClosedConfirm(prev => prev===id ? null : prev)
+        if (previous) setTasks(prev => prev.map(t => t.id===id ? previous : t))
+      }
+    } catch (e) {
+      raiseActionError(await describeFailure(e, '/api/issues'))
+      setClosedConfirm(prev => prev===id ? null : prev)
+      if (previous) setTasks(prev => prev.map(t => t.id===id ? previous : t))
+    }
   }
 
-  const handleDrop = (colId: string) => {
+  const handleDrop = async (colId: string) => {
     if (!dragId) return
+    const id = dragId
     const col = BOARD_COLUMNS.find(c => c.id === colId)
     const status = col?.statuses[0] ?? colId
-    updateTask(dragId, { status })
-    setTasks(prev => prev.map(t => t.id===dragId ? {...t, status} : t))
+    // Snapshot before the optimistic move so a rejected PATCH can snap the
+    // card back to the column it came from instead of leaving a lie on screen.
+    const previous = tasks.find(t => t.id === id)
     setDragId(null)
+    setTasks(prev => prev.map(t => t.id===id ? {...t, status} : t))
+    const ok = await updateTask(id, { status })
+    if (!ok && previous) setTasks(prev => prev.map(t => t.id===id ? previous : t))
   }
 
-  const handleResolutionSelect = (resolutionType: string) => {
+  const handleResolutionSelect = async (resolutionType: string) => {
     if (!resolutionPending) return
     const { taskId, source, editFields } = resolutionPending
-    if (source === 'edit' && editFields) {
-      updateTask(taskId, { ...editFields, status: 'completed', resolution_type: resolutionType })
-      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...editFields, status: 'completed', resolution_type: resolutionType } : t))
-    } else {
-      updateTask(taskId, { status: 'completed', resolution_type: resolutionType })
-      setTasks(prev => prev.map(t => t.id===taskId ? { ...t, status: 'completed', resolution_type: resolutionType } : t))
-    }
+    const previous = tasks.find(t => t.id === taskId)
+    const patch: Partial<Task> = source === 'edit' && editFields
+      ? { ...editFields, status: 'completed', resolution_type: resolutionType }
+      : { status: 'completed', resolution_type: resolutionType }
+    setTasks(prev => prev.map(t => t.id===taskId ? { ...t, ...patch } : t))
     setResolutionPending(null)
     setEditTask(null)
+    const ok = await updateTask(taskId, patch)
+    if (!ok && previous) setTasks(prev => prev.map(t => t.id===taskId ? previous : t))
   }
 
   // ESC key closes detail panel
@@ -611,6 +666,22 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
           </div>
         )}
       </div>
+
+      {/* Write-failure toast — a rejected PATCH/POST/DELETE must be visible.
+          Sits above the mobile bottom nav (which owns `fixed bottom-0`). */}
+      {actionError && (
+        <div
+          role="alert"
+          data-testid="board-action-toast"
+          className="fixed bottom-20 lg:bottom-4 right-4 z-[60] max-w-sm rounded-xl border border-red-500/40 bg-[#1a0f0f] px-4 py-3 shadow-xl flex items-start gap-3"
+        >
+          <span aria-hidden="true" className="text-red-400 text-sm shrink-0 leading-5">⚠️</span>
+          <p className="flex-1 min-w-0 text-red-400 text-xs break-words leading-5">{actionError}</p>
+          <button onClick={() => setActionError(null)} aria-label="Dismiss error" className="shrink-0 text-red-400/60 hover:text-red-400">
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* TOD-654: Truthful error state — never silently show empty board on fetch failure */}
       {loadError && (

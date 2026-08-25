@@ -14,12 +14,17 @@
 // Cursor defers model choice to user configuration by default. We pass the
 // alias through and let Cursor resolve it.
 
-import { exec } from 'child_process'
-import { existsSync } from 'fs'
+import { mkdtempSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
+import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+import { resolveBinary } from '../paths'
 
-const CURSOR_BIN = process.env.CURSOR_BIN ?? '/opt/homebrew/bin/cursor-agent'
+// Bare name: resolved through PATH at spawn time. CURSOR_BIN overrides with an
+// explicit path (the Homebrew prefix it used to assume exists on one OS only).
+const CURSOR_BIN = process.env.CURSOR_BIN ?? 'cursor-agent'
 
 function mapModel(alias: 'opus' | 'sonnet' | 'haiku' | undefined): string {
   // Cursor accepts provider-qualified model strings. Map our aliases to the
@@ -42,7 +47,7 @@ export const cursorRuntime: AgentRuntime = {
 
   async isAvailable() {
     try {
-      return existsSync(CURSOR_BIN)
+      return resolveBinary(CURSOR_BIN) !== null
     } catch {
       return false
     }
@@ -66,36 +71,65 @@ export const cursorRuntime: AgentRuntime = {
       )
     }
 
-    const escapedPrompt = opts.prompt.replace(/'/g, "'\\''")
     const model = mapModel(opts.model)
-    const permissionFlag = opts.bypassPermissions !== false ? '--force' : ''
 
-    const cmd = `cd ${effectiveWorkingDir} && `
-      + `nohup ${CURSOR_BIN} ${permissionFlag} --model ${model} --print '${escapedPrompt}' `
-      + `> ${opts.logFile} 2>&1 < /dev/null & disown`
-
+    // Prompt on stdin - `cursor-agent --print` reads it there when no positional
+    // prompt is given. Removes the single-quote escaping that broke on any
+    // prompt containing a quote, and the 32k argv cap on Windows.
+    let promptFile: string
     try {
-      exec(cmd, { timeout: 5000 })
-
-      if (teardownPath) {
-        setTimeout(() => {
-          const tr = teardownWorktree(teardownPath!)
-          if (!tr.ok) console.warn(`[cursor] worktree teardown failed: ${tr.error}`)
-        }, WORKTREE_TEARDOWN_MINUTES * 60 * 1000).unref()
-      }
-
-      return {
-        ok: true,
-        command: cmd.slice(0, 200) + '…',
-        runtime: 'cursor',
-      }
-    } catch (err: unknown) {
+      const tmp = mkdtempSync(join(tmpdir(), `todero-cursor-${opts.agentId}-`))
+      promptFile = join(tmp, 'prompt.txt')
+      writeFileSync(promptFile, opts.prompt, { encoding: 'utf8' })
+    } catch (err) {
       if (teardownPath) teardownWorktree(teardownPath)
       return {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: `failed to write prompt file: ${err instanceof Error ? err.message : String(err)}`,
         runtime: 'cursor',
       }
+    }
+
+    const argv: string[] = []
+    if (opts.bypassPermissions !== false) argv.push('--force')
+    argv.push('--model', model, '--print')
+
+    const result = spawnDetached(CURSOR_BIN, argv, opts.logFile, {
+      cwd: effectiveWorkingDir,
+      env: process.env,
+      stdinFile: promptFile,
+    })
+
+    if (!result.ok) {
+      if (teardownPath) teardownWorktree(teardownPath)
+      return {
+        ok: false,
+        error: result.error ?? 'spawn failed',
+        logFile: result.logFile,
+        command: result.command,
+        runtime: 'cursor',
+      }
+    }
+
+    appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
+    watchChildExit(result.pid, opts.logFile, () => {
+      appendLog(opts.logFile, `[spawn-exit] agent=${opts.agentId} task=${opts.taskId ?? 'none'}`)
+    }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
+
+    if (teardownPath) {
+      const captured = teardownPath
+      setTimeout(() => {
+        const tr = teardownWorktree(captured)
+        if (!tr.ok) console.warn(`[cursor] worktree teardown failed: ${tr.error}`)
+      }, WORKTREE_TEARDOWN_MINUTES * 60 * 1000).unref()
+    }
+
+    return {
+      ok: true,
+      pid: result.pid,
+      logFile: result.logFile,
+      command: result.command,
+      runtime: 'cursor',
     }
   },
 }

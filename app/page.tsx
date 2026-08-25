@@ -303,9 +303,14 @@ export default function Home() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  // Replace initial history entry so back works correctly
+  // Replace initial history entry so back works correctly.
+  // Must describe the URL that was actually loaded: seeding it from the initial
+  // `tab` state (always 'overview' on mount) rewrote deep links like /issues
+  // back to "/", which then made the hydration effect above resolve the tab as
+  // 'overview'. Keep the path, only attach the state object.
   useEffect(() => {
-    window.history.replaceState({ biz: selectedBusiness, tab }, '', buildPath(selectedBusiness, tab))
+    const { tab: t, business } = parseURL()
+    window.history.replaceState({ biz: business, tab: t }, '', window.location.pathname + window.location.search)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

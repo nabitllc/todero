@@ -1,6 +1,8 @@
 'use client'
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { PROJECT_PREFIX } from '@/lib/constants'
+import { useApiList } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
   id: string
@@ -28,40 +30,42 @@ const PROJECT_META: Record<string, { description: string; emoji: string }> = {
 const KNOWN_PROJECTS = Object.keys(PROJECT_PREFIX)
 
 export default function ProjectsTab({ projectFilter }: { projectFilter?: string | null }) {
-  const [rows, setRows] = useState<ProjectRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const { items, error, loading, refetch } = useApiList<Issue>('/api/issues?limit=0')
 
-  useEffect(() => {
-    fetch('/api/issues?limit=0')
-      .then(r => r.json())
-      .then((data: any) => {
-        const issues: Issue[] = Array.isArray(data) ? data : data?.data ?? []
-        const projects = projectFilter ? [projectFilter] : KNOWN_PROJECTS
-
-        const built: ProjectRow[] = projects.map(name => {
-          const matching = issues.filter(i => i.project === name)
-          const open = matching.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
-          const meta = PROJECT_META[name] ?? { description: '', emoji: '📦' }
-          return {
-            name,
-            key: PROJECT_PREFIX[name] ?? '—',
-            description: meta.description,
-            emoji: meta.emoji,
-            issueCount: matching.length,
-            openCount: open,
-          }
-        })
-
-        setRows(built)
-      })
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false))
-  }, [projectFilter])
+  // Counts are only meaningful once the issue list actually arrived — on a
+  // failed load we render the banner instead of a table full of zeroes.
+  const issues = items ?? []
+  const projects = projectFilter ? [projectFilter] : KNOWN_PROJECTS
+  const rows: ProjectRow[] = items === null ? [] : projects.map(name => {
+    const matching = issues.filter(i => i.project === name)
+    const open = matching.filter(i => i.status && !['backlog', 'closed', 'cancelled'].includes(i.status)).length
+    const meta = PROJECT_META[name] ?? { description: '', emoji: '📦' }
+    return {
+      name,
+      key: PROJECT_PREFIX[name] ?? '—',
+      description: meta.description,
+      emoji: meta.emoji,
+      issueCount: matching.length,
+      openCount: open,
+    }
+  })
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48 text-white/30 text-sm">
         Loading projects…
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-white font-semibold text-base">Projects</h2>
+          <span className="text-white/30 text-xs">data unavailable</span>
+        </div>
+        <ApiErrorBanner error={error} onRetry={refetch} />
       </div>
     )
   }

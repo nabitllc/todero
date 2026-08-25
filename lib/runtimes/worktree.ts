@@ -21,8 +21,8 @@
 // - If an agent crashes, the worktree is left behind for forensics and GC'd
 //   after 24h by a janitor script
 //
-// LAYOUT
-//   ~/agent-worktrees/
+// LAYOUT (root comes from WORKTREE_ROOT in lib/paths — OS temp dir by default)
+//   <WORKTREE_ROOT>/
 //     builder-TOD-792-1775843900/      (active)
 //     tester-TOD-796-1775843800/       (completed — will be GC'd)
 //     ABANDONED/                       (failed spawns, manually archived)
@@ -119,10 +119,12 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
       ? opts.branch
       : `feat/${opts.agentId}-${safeKey.toLowerCase()}-${timestamp}`
 
-    // Make sure the repo is on main and up-to-date before branching off
-    // (We don't pull — that's the 7am/7pm window's job — just stay on main)
-    // Best-effort: a dirty tree or a detached HEAD is not a reason to abort.
-    git(['checkout', 'main'], { timeout: 10_000 })
+    // NOTE (2026-08-24): this used to run `git checkout main` in the shared
+    // checkout first. That is the very thing worktrees exist to avoid — it
+    // switches the branch out from under whoever is working in the repo, and it
+    // did exactly that during a multi-agent session. `git worktree add … main`
+    // resolves `main` as a revision without touching the current HEAD, so the
+    // checkout is both unnecessary and unsafe.
 
     // Guard: if a worktree for this branch already exists, reuse it instead of
     // creating a second one. Two worktrees on the same branch corrupt node_modules
@@ -172,10 +174,26 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
     const srcNodeModules = join(REPO_ROOT, 'node_modules')
     const dstNodeModules = join(worktreePath, 'node_modules')
     if (existsSync(srcNodeModules) && !existsSync(dstNodeModules)) {
-      try {
-        symlinkSync(srcNodeModules, dstNodeModules, 'dir')
-      } catch (err) {
-        console.warn(`[worktree] node_modules symlink failed: ${err instanceof Error ? err.message : String(err)}`)
+      // On Windows a 'dir' symlink needs SeCreateSymbolicLink (admin or
+      // Developer Mode) and fails EPERM for a normal user; a 'junction' is the
+      // unprivileged equivalent for directories. Try the portable form first,
+      // then the junction, and only warn if both are refused.
+      const linkTypes: Array<'dir' | 'junction'> = process.platform === 'win32'
+        ? ['junction', 'dir']
+        : ['dir']
+      let linked = false
+      let lastErr = ''
+      for (const type of linkTypes) {
+        try {
+          symlinkSync(srcNodeModules, dstNodeModules, type)
+          linked = true
+          break
+        } catch (err) {
+          lastErr = err instanceof Error ? err.message : String(err)
+        }
+      }
+      if (!linked) {
+        console.warn(`[worktree] node_modules link failed (agent must npm install): ${lastErr}`)
       }
     }
 

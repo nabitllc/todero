@@ -1,8 +1,10 @@
 'use client'
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import FeatureCard from './FeatureCard'
 import { Button, EmptyState, Badge } from '@/components/ui'
 import { Map } from 'lucide-react'
+import { useApiList } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
   id: string; title: string; description?: string; status: string;
@@ -49,24 +51,18 @@ function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: 
 }
 
 export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIssues?: (featureId: string, featureName: string) => void; projectFilter?: string | null }) {
-  const [issues, setIssues] = useState<Issue[]>([])
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string|null>(null)
+  const endpoint = useMemo(() => {
+    const params = new URLSearchParams()
+    if (projectFilter) params.set('project', projectFilter)
+    params.set('limit', '0')
+    return `/api/issues?${params.toString()}`
+  }, [projectFilter])
+  const { items, error: fetchError, loading, refetch } = useApiList<Issue>(endpoint)
+  const issues = items ?? []
   const [projFilters, setProjFilters] = useState<string[]>([])
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [limit, setLimit] = useState(100)
-
-  useEffect(() => {
-    const params = new URLSearchParams()
-    if (projectFilter) params.set('project', projectFilter)
-    params.set('limit', '0')
-    const qs = params.toString()
-    fetch(`/api/issues${qs ? `?${qs}` : ''}`).then(r => r.json()).then(d => {
-      setIssues(Array.isArray(d) ? d : d?.data ?? [])
-      setFetchError(null)
-    }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false))
-  }, [projectFilter])
 
   const features = issues.filter(i => i.type === 'feature')
   const allFiltered = features.filter(f => {
@@ -106,11 +102,12 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
 
   if (fetchError) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <p className="text-red-400 text-sm">{fetchError}</p>
-        <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); const p = new URLSearchParams(); if (projectFilter) p.set('project', projectFilter); p.set('limit', '0'); const q = p.toString(); fetch(`/api/issues${q ? `?${q}` : ''}`).then(r => r.json()).then(d => { setIssues(Array.isArray(d) ? d : d?.data ?? []) }).catch(() => setFetchError('Failed to load features')).finally(() => setLoading(false)) }}>
-          Retry
-        </Button>
+      <div className="space-y-5">
+        <div>
+          <h2 className="text-base font-medium text-white">Features</h2>
+          <p className="text-xs text-white/40 mt-0.5">data unavailable</p>
+        </div>
+        <ApiErrorBanner error={fetchError} onRetry={refetch} />
       </div>
     )
   }

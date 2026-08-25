@@ -1,9 +1,11 @@
 'use client'
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button, Input, Select, EmptyState } from '@/components/ui'
 import { TypeBadge, PriorityBadge, StatusBadge, Badge } from '@/components/ui'
 import { List } from 'lucide-react'
+import { useApiList } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface Issue {
   id: string; title: string; description?: string; status: string;
@@ -28,9 +30,17 @@ type SortKey = 'task_key'|'type'|'title'|'status'|'priority'|'assignee'|'sprint'
 type SortDir = 'asc'|'desc'
 
 export default function IssuesTab({ projectFilter }: { projectFilter?: string | null }) {
-  const [issues, setIssues] = useState<Issue[]>([])
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string|null>(null)
+  const endpoint = useMemo(() => {
+    const params = new URLSearchParams()
+    if (projectFilter) params.set('project', projectFilter)
+    params.set('limit', '0')
+    return `/api/issues?${params.toString()}`
+  }, [projectFilter])
+  const { items, error: fetchError, loading, refetch, setItems } = useApiList<Issue>(endpoint)
+  const issues = items ?? []
+  // Optimistic updates always run after a successful load, so treating a null
+  // (never-loaded) list as empty here is safe and keeps call sites simple.
+  const setIssues = (update: (prev: Issue[]) => Issue[]) => setItems(prev => update(prev ?? []))
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('task_key')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -40,17 +50,6 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
-
-  useEffect(() => {
-    const params = new URLSearchParams()
-    if (projectFilter) params.set('project', projectFilter)
-    params.set('limit', '0')
-    const qs = params.toString()
-    fetch(`/api/issues${qs ? `?${qs}` : ''}`).then(r=>r.json()).then(d => {
-      setIssues(Array.isArray(d) ? d : d?.data ?? [])
-      setFetchError(null)
-    }).catch(() => setFetchError('Failed to load issues')).finally(()=>setLoading(false))
-  }, [projectFilter])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -154,7 +153,11 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
               <Badge label={projectFilter} className="bg-blue-500/20 text-blue-400 border border-blue-500/30" />
             )}
           </div>
-          <p className="text-xs text-white/40 mt-0.5">{filtered.length} issues{selected.size > 0 ? ` · ${selected.size} selected` : ''}</p>
+          <p className="text-xs text-white/40 mt-0.5">
+            {fetchError
+              ? 'data unavailable'
+              : `${filtered.length} issues${selected.size > 0 ? ` · ${selected.size} selected` : ''}`}
+          </p>
         </div>
         <div className="relative max-w-xs flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25 z-10" />
@@ -191,15 +194,12 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
           </div>
         )}
         {fetchError && (
-          <div className="flex flex-col items-center py-8 gap-3">
-            <p className="text-red-400 text-sm">{fetchError}</p>
-            <Button variant="secondary" size="sm" onClick={() => { setFetchError(null); setLoading(true); fetch('/api/issues?limit=0').then(r=>r.json()).then(d => { setIssues(Array.isArray(d)?d:d?.data??[]); setFetchError(null) }).catch(()=>setFetchError('Failed to load issues')).finally(()=>setLoading(false)) }}>
-              Retry
-            </Button>
+          <div className="p-3">
+            <ApiErrorBanner error={fetchError} onRetry={refetch} />
           </div>
         )}
 
-        {!loading && (
+        {!loading && !fetchError && (
           <div className="overflow-x-auto">
             {/* Header */}
             <div className="hidden md:grid md:grid-cols-[32px_80px_70px_1fr_100px_80px_90px_90px] gap-2 px-4 py-2.5 border-b border-white/10 bg-white/3">

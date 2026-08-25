@@ -43,9 +43,9 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'michael': null,
 }
 
-const CLAUDE_BIN = '/Users/kemuniagent/.local/bin/claude'
-const WORKSPACE = '/Users/kemuniagent/todero/config'
-const TODERO_DIR = '/Users/kemuniagent/todero'
+// (No CLAUDE_BIN/WORKSPACE/TODERO_DIR constants here any more: this route stopped
+// spawning the CLI directly when activateAgentAsync moved to /api/run-agent, and
+// the leftovers pinned Todero to one Mac. Host paths live in lib/paths.ts.)
 
 function activateAgentAsync(assignee: string, taskKey: string, title: string, status: string, _issueId?: string) {
   const agentId = ASSIGNEE_AGENT_MAP[assignee]

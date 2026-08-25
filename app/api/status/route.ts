@@ -1,14 +1,44 @@
 // Agent activity is sourced from the agent_runs table.
 import { NextResponse } from 'next/server'
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { createAdminClient } from '@/lib/hub-client'
+import { firstExistingPath, isDarwin, isWindows } from '@/lib/paths'
 
 const OPENROUTER_KEY = process.env.OPENROUTER_KEY || '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'
 const N8N_KEY = process.env.N8N_API_KEY || ''
 
+/**
+ * Where the Vercel CLI keeps its auth token. The CLI uses xdg-app-paths, so the
+ * directory differs per OS - there is no single literal to read. VERCEL_TOKEN
+ * short-circuits the lookup entirely on hosts with no CLI installed.
+ */
+function vercelAuthPath(): string | null {
+  const home = os.homedir()
+  const candidates: Array<string | undefined> = [
+    process.env.VERCEL_AUTH_FILE,
+    process.env.XDG_CONFIG_HOME
+      ? path.join(process.env.XDG_CONFIG_HOME, 'com.vercel.cli', 'auth.json')
+      : undefined,
+  ]
+  if (isDarwin) {
+    candidates.push(path.join(home, 'Library', 'Application Support', 'com.vercel.cli', 'auth.json'))
+  } else if (isWindows) {
+    if (process.env.APPDATA) candidates.push(path.join(process.env.APPDATA, 'com.vercel.cli', 'auth.json'))
+    if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, 'com.vercel.cli', 'auth.json'))
+  } else {
+    candidates.push(path.join(home, '.config', 'com.vercel.cli', 'auth.json'))
+  }
+  return firstExistingPath(candidates)
+}
+
 function getVercelToken(): string | null {
+  if (process.env.VERCEL_TOKEN) return process.env.VERCEL_TOKEN
+  const authPath = vercelAuthPath()
+  if (!authPath) return null
   try {
-    const raw = fs.readFileSync('/Users/kemuniagent/Library/Application Support/com.vercel.cli/auth.json', 'utf-8')
+    const raw = fs.readFileSync(authPath, 'utf-8')
     const data = JSON.parse(raw)
     if (data.token) return data.token
     if (data.tokens && typeof data.tokens === 'object') {

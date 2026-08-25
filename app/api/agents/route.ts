@@ -1,80 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { readFileSync } from 'fs'
-import { join } from 'path'
+import { processListCommand } from '@/lib/paths'
+import { AGENT_META, parseAgentsFromMd, type ParsedAgent } from '@/lib/agent-roster'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 const SUPABASE_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
-// Maps agent IDs to UI display metadata — emoji, color, capabilities, floor, queue_filter
-// model and role are sourced from AGENTS.md; values here serve as fallback only
-const AGENT_META: Record<string, { name: string; emoji: string; role: string; color: string; capabilities: string[]; floor: boolean; model: string; queue_filter: string[] }> = {
-  'main':        { name: 'KAOS',        emoji: '🧠', role: 'Chief Orchestrator',   color: '#6b7280', capabilities: ['Orchestration', 'Memory', 'Strategy', 'Comms', 'Delegation'], floor: true,  model: 'claude-sonnet-4-6', queue_filter: [] },
-  'scout':       { name: 'Scout',       emoji: '🔍', role: 'Research Agent',        color: '#a855f7', capabilities: ['Web Research', 'Summarization', 'Trends'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: ['open'] },
-  'ops':         { name: 'Ingo',        emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true,                  model: 'claude-haiku-4-5',  queue_filter: ['open'] },
-  'kemuni-sme':  { name: 'Kemuni SME',  emoji: '🚀', role: 'Kemuni Product Expert', color: '#3b82f6', capabilities: ['Product Strategy', 'Kemuni', 'PropTech'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: [] },
-  'vespera-sme': { name: 'Vespera SME', emoji: '🖤', role: 'Vespera Product Expert', color: '#ec4899', capabilities: ['Product Strategy', 'Vespera', 'Community'], floor: true,                model: 'claude-sonnet-4-6', queue_filter: [] },
-  'builder':     { name: 'Builder',     emoji: '🔨', role: 'Coding Agent',           color: '#f59e0b', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true,     model: 'claude-sonnet-4-6', queue_filter: ['open'] },
-  'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true,     model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
-  'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true,                model: 'claude-haiku-4-5',  queue_filter: ['approved'] },
-  'ux':          { name: 'UX Designer',     emoji: '🎨', role: 'UX & Design Agent',       color: '#ec4899', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false, model: 'claude-sonnet-4-6', queue_filter: [] },
-  'designer':    { name: 'Designer',        emoji: '🖌️', role: 'Design Review Agent',     color: '#d946ef', capabilities: ['Design System', 'UI Review', 'Visual QA', 'Accessibility'], floor: false, model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
-  'po':          { name: 'Product Owner',   emoji: '📋', role: 'Product Owner',            color: '#f59e0b', capabilities: ['PRDs', 'Backlog Grooming', 'Sprint Facilitation', 'DoR'], floor: false,  model: 'claude-sonnet-4-6', queue_filter: ['defined'] },
-  'growth':      { name: 'Growth',          emoji: '📈', role: 'Growth Strategist',        color: '#10b981', capabilities: ['Monetization', 'GTM', 'Pricing', 'LATAM'], floor: false,           model: 'claude-sonnet-4-6', queue_filter: [] },
-  'security':    { name: 'Security',        emoji: '🔐', role: 'Security Auditor',         color: '#ef4444', capabilities: ['OWASP', 'Auth Review', 'RLS Audit', 'CVE Scanning'], floor: false,   model: 'claude-sonnet-4-6', queue_filter: [] },
-  'community':   { name: 'Community Mgr',   emoji: '🖤', role: 'Community Manager',        color: '#a78bfa', capabilities: ['Social Content', 'Brand Voice', 'Colombia Goth'], floor: false,      model: 'claude-sonnet-4-6', queue_filter: [] },
-  'content':     { name: 'Content Creator', emoji: '✍️', role: 'Content Creator',          color: '#60a5fa', capabilities: ['Blog', 'SEO', 'Email', 'Help Docs'], floor: false,                  model: 'claude-sonnet-4-6', queue_filter: [] },
-  'auditor':     { name: 'Auditor',     emoji: '🔎', role: 'System Truth Enforcer',  color: '#ef4444', capabilities: ['Drift Detection', 'Config Audit', 'Task Hygiene'], floor: true,            model: 'claude-sonnet-4-6', queue_filter: ['released'] },
-}
 
-interface ParsedAgent {
-  id: string
-  name: string
-  role: string
-  model: string
-}
-
-// Parse the Agent Roster table from kaos-config/AGENTS.md at request time.
-// This is the authoritative source for id, name, role, and model.
-const AGENTS_MD_PATH = join(process.env.HOME ?? '/Users/kemuniagent', 'kaos-config', 'AGENTS.md')
-
-function parseAgentsFromMd(): ParsedAgent[] {
-  const content = readFileSync(AGENTS_MD_PATH, 'utf-8')
-  const lines = content.split('\n')
-  const headerIdx = lines.findIndex(l => /\|\s*Agent\s*\|\s*Model\s*\|\s*Notes\s*\|/i.test(l))
-  if (headerIdx === -1) throw new Error('Agent Roster table not found in AGENTS.md')
-  const agents: ParsedAgent[] = []
-  // Skip header + separator
-  for (let i = headerIdx + 2; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line.startsWith('|')) break
-    const cols = line.split('|').map(c => c.trim()).filter(Boolean)
-    if (cols.length < 3) continue
-    const [agentCol, modelCol, notesCol] = cols
-    // "main (KAOS)" → id="main", name="KAOS"; "builder" → id="builder", name="Builder"
-    const parenMatch = agentCol.match(/^(.+?)\s*\((.+?)\)$/)
-    const id = parenMatch ? parenMatch[1].trim().toLowerCase() : agentCol.toLowerCase()
-    const name = parenMatch ? parenMatch[2].trim() : agentCol.charAt(0).toUpperCase() + agentCol.slice(1)
-    agents.push({ id, name, role: notesCol, model: modelCol })
+/**
+ * Every running process's command line. `ps aux | grep ...` is a POSIX-only
+ * pipeline, so the command comes from lib/paths; a host where the lookup fails
+ * simply reports no running agents rather than breaking the endpoint.
+ */
+async function listProcessCommandLines(): Promise<string[]> {
+  const { command, args } = processListCommand()
+  try {
+    const { stdout } = await execFileAsync(command, args, {
+      timeout: 5000,
+      maxBuffer: 8 * 1024 * 1024,
+      windowsHide: true,
+    })
+    return stdout.split(/\r?\n/).filter(Boolean)
+  } catch {
+    return []
   }
-  if (agents.length === 0) throw new Error('No agents parsed from AGENTS.md roster table')
-  return agents
 }
 
 export async function GET() {
-  // Parse AGENTS.md first — fail fast with 500 if it can't be read/parsed
-  let parsedAgents: ParsedAgent[]
+  // AGENTS.md is the preferred roster, but it is a host artifact: a fresh clone
+  // on another machine may have none. Missing/unparseable is not a server error
+  // — fall back to the built-in registry and say so via `rosterSource`.
+  let parsedAgents: ParsedAgent[] = []
+  let rosterSource: 'agents-md' | 'builtin' = 'builtin'
+  let rosterWarning: string | null = null
   try {
     parsedAgents = parseAgentsFromMd()
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: `Failed to parse AGENTS.md: ${e.message}` },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
-    )
+    rosterSource = 'agents-md'
+  } catch (e) {
+    rosterWarning = e instanceof Error ? e.message : String(e)
   }
 
   try {
@@ -137,15 +104,15 @@ export async function GET() {
     // 3. Check for running claude CLI agent processes (real-time detection)
     // Only match spawned agent sessions, NOT the main Claude Desktop session
     const runningAgents = new Set<string>()
-    try {
-      const { stdout } = await execAsync(
-        'ps aux | grep "[c]laude" | grep -v "Claude.app" | grep -v "disclaimer" | grep -v "ShipIt"',
-        { timeout: 3000 }
-      )
-      const lines = stdout.trim().split('\n').filter(Boolean)
-      for (const line of lines) {
-        // Only match lines that contain explicit agent identifiers (from spawn commands)
+    {
+      const processLines = await listProcessCommandLines()
+      for (const line of processLines) {
         const lower = line.toLowerCase()
+        // Skip everything that is not a spawned CLI agent — the desktop app and
+        // its installer helpers used to be filtered out by chained greps.
+        if (!lower.includes('claude')) continue
+        if (lower.includes('claude.app') || lower.includes('disclaimer') || lower.includes('shipit')) continue
+        // Only match lines that contain explicit agent identifiers (from spawn commands)
         if (lower.includes('you are builder') || lower.includes('agent builder')) runningAgents.add('builder')
         else if (lower.includes('you are tester') || lower.includes('agent tester')) runningAgents.add('tester')
         else if (lower.includes('you are ops') || lower.includes('agent ops')) runningAgents.add('ops')
@@ -154,13 +121,17 @@ export async function GET() {
         else if (lower.includes('you are designer') || lower.includes('agent designer')) runningAgents.add('designer')
         else if (lower.includes('you are po') || lower.includes('agent po')) runningAgents.add('po')
       }
-    } catch { /* no agent processes running */ }
+    }
 
     // 4. Build agent list:
     //    - AGENTS.md roster is authoritative for id/name/role/model
     //    - AGENT_META provides emoji/color/capabilities/floor/queue_filter overrides
     //    - Agents in AGENT_META but not in AGENTS.md are deprecated (active=false)
-    const agentMdIds = new Set(parsedAgents.map(a => a.id))
+    //    - With no AGENTS.md on this host, AGENT_META *is* the roster, so every
+    //      registered agent stays eligible instead of all reading as deprecated
+    const agentMdIds = rosterSource === 'agents-md'
+      ? new Set(parsedAgents.map(a => a.id))
+      : new Set(Object.keys(AGENT_META))
     const allIdSet = new Set([...parsedAgents.map(a => a.id), ...Object.keys(AGENT_META)])
     const allIds = Array.from(allIdSet)
 
@@ -215,6 +186,10 @@ export async function GET() {
         lastUpdatedAt: lastTs,
         currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : null,
         workStartedAt: issue?.startedAt ?? null,
+        // Where id/name/role/model came from, so the UI never implies a roster
+        // file exists when it does not.
+        rosterSource,
+        rosterWarning,
       }
     })
 

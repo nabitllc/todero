@@ -1,7 +1,7 @@
 // ── Cross-platform path + binary resolution ────────────────────────────────
-// TOD: Todero used to hardcode `/Users/kemuniagent/todero` and `/opt/homebrew`,
-// which made the app a one-Mac appliance. Everything that needs a filesystem
-// location or an external binary should come through here instead.
+// Todero used to hardcode one developer's Mac home directory and the Homebrew
+// prefix, which made the app a one-Mac appliance. Everything that needs a
+// filesystem location or an external binary should come through here instead.
 //
 // SERVER ONLY: this module imports node builtins (os/path/fs/child_process), so
 // it must never be pulled into a client component bundle.
@@ -65,8 +65,8 @@ export const CONFIG_DIR: string =
   process.env.TODERO_CONFIG_DIR ?? path.join(TODERO_DIR, 'config')
 
 /**
- * Where Todero writes logs. Defaults under the OS temp dir (NOT the literal
- * '/tmp', which does not exist on Windows). Override with TODERO_LOG_DIR.
+ * Where Todero writes logs. Defaults under the OS temp dir - never the literal
+ * POSIX temp root, which does not exist on Windows. Override with TODERO_LOG_DIR.
  */
 export const LOG_DIR: string =
   process.env.TODERO_LOG_DIR ?? path.join(os.tmpdir(), 'todero-logs')
@@ -86,7 +86,7 @@ const binaryCache = new Map<string, string | null>()
  * installed. An explicit path (contains a separator) is existence-checked
  * directly; a bare name is looked up on PATH the way a shell would
  * (`where` on Windows, `which` elsewhere).
- * Never throws, never guesses a Homebrew/`/usr/local` prefix.
+ * Never throws, never guesses a Homebrew or system-local prefix.
  */
 export function resolveBinary(name: string): string | null {
   const key = String(name ?? '').trim()
@@ -167,4 +167,14 @@ export function processListCommand(): { command: string; args: string[] } {
     }
   }
   return { command: 'ps', args: ['-eo', 'pid,etime,command'] }
+}
+
+/**
+ * Absolute path to a POSIX shell, or null on a host that has none (Windows).
+ * Callers that still build shell scripts must check this instead of assuming a
+ * fixed location - that assumption is why every dispatch died on Windows.
+ */
+export function resolvePosixShell(): string | null {
+  if (isWindows) return null
+  return resolveBinary(process.env.TODERO_SHELL ?? 'bash')
 }

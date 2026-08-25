@@ -1,7 +1,9 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useMemo, useState } from 'react'
 import type { Task } from '@/lib/issues'
+import { useApiList } from '@/hooks/useApiData'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -155,25 +157,14 @@ export function StartSprintButton({ className = '' }: { className?: string }) {
 // ── Main Tab ───────────────────────────────────────────────────────────────────
 
 export default function ProductBoardTab({ projectFilter }: { projectFilter?: string | null }) {
-  const [issues, setIssues] = useState<Task[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const fetchIssues = useCallback(async () => {
-    try {
-      const params = new URLSearchParams()
-      if (projectFilter) params.set('project', projectFilter)
-      params.set('limit', '0')
-      const qs = params.toString()
-      const res = await fetch(`/api/issues${qs ? `?${qs}` : ''}`)
-      if (res.ok) {
-        const d = await res.json()
-        setIssues(Array.isArray(d) ? d : d?.data ?? [])
-      }
-    } catch { /* ignore */ }
-    finally { setLoading(false) }
+  const endpoint = useMemo(() => {
+    const params = new URLSearchParams()
+    if (projectFilter) params.set('project', projectFilter)
+    params.set('limit', '0')
+    return `/api/issues?${params.toString()}`
   }, [projectFilter])
-
-  useEffect(() => { fetchIssues() }, [fetchIssues])
+  const { items, error, loading, refetch } = useApiList<Task>(endpoint)
+  const issues = items ?? []
 
   // Next sprint time: 7am tomorrow (or today if it's before 7am)
   const nextSprintLabel = (() => {
@@ -217,7 +208,11 @@ export default function ProductBoardTab({ projectFilter }: { projectFilter?: str
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-white font-semibold text-base">Product Board</h1>
-          <p className="text-white/30 text-xs mt-0.5">{sprints.filter(Boolean).length} sprint{sprints.filter(Boolean).length !== 1 ? 's' : ''} · {issues.length} total issues</p>
+          <p className="text-white/30 text-xs mt-0.5">
+            {error
+              ? 'data unavailable'
+              : `${sprints.filter(Boolean).length} sprint${sprints.filter(Boolean).length !== 1 ? 's' : ''} · ${issues.length} total issues`}
+          </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-[10px] text-white/30">{nextSprintLabel}</span>
@@ -226,7 +221,9 @@ export default function ProductBoardTab({ projectFilter }: { projectFilter?: str
       </div>
 
       {/* Sprint sections */}
-      {sprints.length === 0 ? (
+      {error ? (
+        <ApiErrorBanner error={error} onRetry={refetch} />
+      ) : sprints.length === 0 ? (
         <div className="rounded-xl border border-white/10 px-4 py-8 text-center text-white/30 text-sm" style={{ background: '#080808' }}>
           No issues found
         </div>

@@ -1,7 +1,7 @@
-// ── Agent roster ────────────────────────────────────────────────────────────
+// Agent roster
 // The roster is read from AGENTS.md when the host has one, and falls back to
 // the built-in registry below when it does not. Kept out of the route file so
-// the parsing is unit-testable — a Next.js route module may only export the
+// the parsing is unit-testable: a Next.js route module may only export the
 // HTTP verbs.
 //
 // SERVER ONLY: reads the filesystem.
@@ -81,7 +81,7 @@ export function resolveAgentIdentity(agentCol: string): { id: string; name: stri
 }
 
 // Parse the Agent Roster table from AGENTS.md at request time. This is the
-// authoritative source for id, name, role, and model when the file exists.
+// authoritative source for id, name, role and model when the file exists.
 // The file lives in a host-dependent place, so the path comes from lib/paths
 // (TODERO_AGENTS_MD) rather than one developer's home directory.
 //
@@ -92,8 +92,7 @@ export function parseAgentsFromMd(): ParsedAgent[] {
   const mdPath = resolveAgentsMdPath()
   if (!mdPath) throw new Error('No AGENTS.md found on this host (set TODERO_AGENTS_MD)')
 
-  const lines = readFileSync(mdPath, 'utf-8').split('
-')
+  const lines = readFileSync(mdPath, 'utf-8').split('\n')
   const headerIdx = lines.findIndex(l => {
     if (!/^\s*\|/.test(l)) return false
     const cols = l.split('|').map(c => c.trim()).filter(Boolean)

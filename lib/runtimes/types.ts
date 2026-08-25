@@ -45,6 +45,12 @@ export interface AgentSpawnResult {
   pid?: number
   /** The underlying command that was executed, for debugging */
   command?: string
+  /**
+   * Log file the child's stdout+stderr are being appended to. Adapters return
+   * the path they actually opened, so callers never advertise a log that was
+   * never created.
+   */
+  logFile?: string
   /** Error message if ok === false */
   error?: string
   /** Name of the adapter that handled this spawn */

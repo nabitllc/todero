@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 import { createAdminClient } from '@/lib/hub-client'
+import { isDarwin } from '@/lib/paths'
 
 interface AutomationItem {
   id: string
@@ -60,25 +61,29 @@ export async function GET() {
   } catch { /* vercel.json unavailable */ }
 
   // ── LaunchAgents from ~/Library/LaunchAgents/ ─────────────────────────────
-  try {
-    const laDir = path.join(homedir(), 'Library', 'LaunchAgents')
-    const files = fs.readdirSync(laDir).filter(f => f.startsWith('work.nabit.') && f.endsWith('.plist'))
-    for (const file of files) {
-      const label = file.replace('.plist', '')
-      const name = parsePlistLabel(label)
-      results.push({
-        id: `la-${name}`,
-        name,
-        time: '—',
-        days: 'scheduled',
-        source: 'launchagent',
-        status: 'active',
-        desc: `LaunchAgent: ${label}`,
-        lastRunAtMs: null,
-        lastRunStatus: null,
-      })
-    }
-  } catch { /* LaunchAgents dir unavailable */ }
+  // launchd is macOS-only. On Linux/Windows there is nothing to enumerate, so
+  // skip the read entirely instead of relying on readdirSync throwing ENOENT.
+  if (isDarwin) {
+    try {
+      const laDir = path.join(homedir(), 'Library', 'LaunchAgents')
+      const files = fs.readdirSync(laDir).filter(f => f.startsWith('work.nabit.') && f.endsWith('.plist'))
+      for (const file of files) {
+        const label = file.replace('.plist', '')
+        const name = parsePlistLabel(label)
+        results.push({
+          id: `la-${name}`,
+          name,
+          time: '—',
+          days: 'scheduled',
+          source: 'launchagent',
+          status: 'active',
+          desc: `LaunchAgent: ${label}`,
+          lastRunAtMs: null,
+          lastRunStatus: null,
+        })
+      }
+    } catch { /* LaunchAgents dir unavailable */ }
+  }
 
   // ── Recent agent_runs — enrich with last run data ─────────────────────────
   try {

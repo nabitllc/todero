@@ -5,11 +5,14 @@
 
 import fs from 'fs'
 import path from 'path'
+// Relative (not '@/lib/paths') so `npx ts-node` resolves it without the Next.js
+// path aliases.
+import { CONFIG_DIR, TODERO_DIR } from '../../lib/paths'
 
 const SUPA_URL = 'https://twthgapiouiqhavrcnry.supabase.co'
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-const CONFIG = '/Users/kemuniagent/todero/config'
-const TODERO = '/Users/kemuniagent/todero'
+const CONFIG = CONFIG_DIR
+const TODERO = TODERO_DIR
 
 if (!SUPA_KEY) {
   console.error('SUPABASE_SERVICE_ROLE_KEY is required')

@@ -328,6 +328,10 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [showFileBrowser, setShowFileBrowser] = useState(false)
   const [fileBrowserPath, setFileBrowserPath] = useState('')
   const [fileBrowserEntries, setFileBrowserEntries] = useState<{name:string;isDir:boolean;path:string}[]>([])
+  // Unconfigured host / unreadable path must be visible, not disguised as an
+  // empty folder. Holds the server's real message plus the workspace it tried.
+  const [fileBrowserError, setFileBrowserError] = useState<string|null>(null)
+  const [fileBrowserWorkspace, setFileBrowserWorkspace] = useState<string|null>(null)
   // NEW: Image URL input
   const [showImageUrlInput, setShowImageUrlInput] = useState(false)
   const [imageUrlDraft, setImageUrlDraft] = useState('')
@@ -591,8 +595,15 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     if (!showFileBrowser) return
     fetch(`/api/files?path=${encodeURIComponent(fileBrowserPath)}`)
       .then(r => r.json())
-      .then(data => { if (Array.isArray(data)) setFileBrowserEntries(data) })
-      .catch(() => {})
+      .then(d => {
+        setFileBrowserEntries(d.entries ?? [])
+        setFileBrowserWorkspace(d.workspace ?? null)
+        setFileBrowserError(d.error ?? null)
+      })
+      .catch(e => {
+        setFileBrowserEntries([])
+        setFileBrowserError(String(e))
+      })
   }, [showFileBrowser, fileBrowserPath])
 
   // Fetch agent activity when sidebar tab switches to heartbeats
@@ -2687,7 +2698,15 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
               </div>
             </div>
             <div className="flex-1 overflow-y-auto py-1">
-              {fileBrowserEntries.length === 0 ? (
+              {fileBrowserError ? (
+                <div className="mx-3 my-3 rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2.5">
+                  <p className="text-red-300 text-xs font-medium">{fileBrowserError}</p>
+                  {fileBrowserWorkspace && (
+                    <p className="text-[10px] text-white/50 font-mono break-all mt-1.5">{fileBrowserWorkspace}</p>
+                  )}
+                  <p className="text-[10px] text-white/40 mt-1.5">Set TODERO_WORKSPACE_DIR</p>
+                </div>
+              ) : fileBrowserEntries.length === 0 ? (
                 <p className="text-white/30 text-xs px-4 py-3">Empty directory</p>
               ) : (
                 fileBrowserEntries.map(entry => (
@@ -2703,6 +2722,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                         if (data.content !== undefined) {
                           setSelectedFile({ name: entry.name, content: data.content })
                           setShowFileBrowser(false)
+                        } else {
+                          // Don't swallow it — an unreadable file looked like a no-op click.
+                          setFileBrowserError(data.error ?? `Could not read ${entry.name}`)
                         }
                       }
                     }}

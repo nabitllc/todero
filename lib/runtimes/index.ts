@@ -17,6 +17,7 @@ import codexRuntime from './codex'
 import cursorRuntime from './cursor'
 import { openaiApiRuntime } from './openai-api'
 import type { AgentRuntime, RuntimeRegistration } from './types'
+import { assertDispatchEnabled } from '../dispatch-guard'
 
 const REGISTRY: RuntimeRegistration[] = [
   { runtime: claudeCodeRuntime, priority: 100 },
@@ -30,6 +31,7 @@ const REGISTRY: RuntimeRegistration[] = [
  * Returns null if the named runtime isn't registered or isn't available.
  */
 export async function getRuntimeByName(name: string): Promise<AgentRuntime | null> {
+  assertDispatchEnabled()
   const entry = REGISTRY.find(r => r.runtime.name === name)
   if (!entry) return null
   if (!(await entry.runtime.isAvailable())) return null
@@ -42,6 +44,7 @@ export async function getRuntimeByName(name: string): Promise<AgentRuntime | nul
  * available runtime.
  */
 export async function getDefaultRuntime(): Promise<AgentRuntime> {
+  assertDispatchEnabled()
   // Env override
   const envName = process.env.TODERO_RUNTIME
   if (envName) {
