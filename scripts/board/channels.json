@@ -106,7 +106,7 @@
    "current": 1,
    "goal": 8,
    "evidence": "Untouched. Every deep link still collapses to Overview, and the agent detail page at /crew/[id] remains unreachable dead code. Scheduled for Wave 6.",
-   "goal_text": "LangSmith — every trace has a URL you can bookmark and share. Linear — any view is a link. No screen unreachable, no deep link collapsing to Overview.",
+   "goal_text": "Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.",
    "wave": 6
   },
   {
@@ -114,8 +114,8 @@
    "baseline": 0,
    "current": 0,
    "goal": 9,
-   "evidence": "Untouched. Inbox approve still returns 500, so the product still cannot record a human decision. Scheduled for Wave 4.",
-   "goal_text": "Grok Bot — works end to end while you are away and surfaces only when it needs your approval. Alex Finn — a morning brief on your phone with what needs you.",
+   "evidence": "Untouched. Inbox approve is reachable but nothing distinguishes urgency: the Overview shows “Needs your attention 5” as a flat list, so a blocked release and an FYI look identical. Slack solved this fifteen years ago with unread vs mention vs thread-participant, and it is the single most transferable idea in the comparator set.",
+   "goal_text": "Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.",
    "wave": 4
   },
   {
@@ -134,7 +134,7 @@
    "goal": 9,
    "wave": 7,
    "evidence": "New scope, added 25 Aug. Todero must not only build a project but operate it — the first real test is answering customers on WhatsApp and on the site. Nothing exists: no conversation store, no draft-approve-send path, no channel integration beyond outbound Discord/Telegram alerts.",
-   "goal_text": "Grok Bot — works while you are away and surfaces only what needs you. Todero drafts the customer reply, you approve from your phone, Todero sends."
+   "goal_text": "Slack — a reply threads instead of drowning the channel. Grok Bot — drafts while you are away, surfaces only what needs approval. You approve; Todero sends."
   },
   {
    "name": "Commerce Operations",
@@ -162,6 +162,15 @@
    "wave": 6,
    "evidence": "lib/encryption.ts implements AES-256-GCM and migrations/045 defines a connections table — but CONNECTIONS_ENCRYPTION_KEY is unset, only one route calls the utility, and that route 500d at session start. Meanwhile .env.local holds 16 plaintext secrets and a service_role key sat in 70 commits of history. The design exists; none of it runs.",
    "goal_text": "Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only."
+  },
+  {
+   "name": "Search & Findability",
+   "baseline": 1,
+   "current": 1,
+   "goal": 8,
+   "wave": 6,
+   "evidence": "Unmeasured until now, and a real gap: 2,440 issues live in one project and the ⌘K overlay shipped a service_role key to every browser while querying a hardcoded project ref. Finding a specific issue, run or conversation is currently guesswork.",
+   "goal_text": "Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list."
   }
  ]
 }

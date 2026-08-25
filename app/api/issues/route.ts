@@ -344,21 +344,40 @@ function resolveActorType(actor: string | null | undefined): 'agent' | 'human' {
   return KNOWN_AGENT_IDS.has(actor) ? 'agent' : 'human'
 }
 
-function recordActivityEvent(
+// Round-4 fix: this used to be `void … .then(() => {})` — a fire-and-forget
+// insert whose error nobody ever read. On this install `activity_events`
+// doesn't exist (see /api/health), so EVERY call silently failed on every
+// issue operation and every caller reported success anyway. Now awaited and
+// honest: callers collect {ok, error} and surface it as `_warning` on the
+// response instead of a bare 200 that implies the event was recorded.
+async function recordActivityEvent(
   issueId: string,
   issueKey: string | null | undefined,
   eventType: string,
   actor: string | null | undefined,
   metadata: Record<string, unknown>
-) {
-  void getSupabase().from('activity_events').insert({
+): Promise<{ ok: boolean; error: string | null }> {
+  const { error } = await getSupabase().from('activity_events').insert({
     issue_id: issueId,
     issue_key: issueKey ?? null,
     event_type: eventType,
     actor: actor ?? null,
     actor_type: resolveActorType(actor),
     metadata,
-  }).then(() => {}) // fire-and-forget
+  })
+  if (error) {
+    console.warn(`[activity-event] ${eventType} on ${issueKey ?? issueId} not recorded:`, error.message)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true, error: null }
+}
+
+/** Folds a batch of recordActivityEvent() outcomes into one `_warning` string, or null if all ok. */
+function activityEventWarning(outcomes: Array<{ ok: boolean; error: string | null }>): string | null {
+  const failed = outcomes.filter(o => !o.ok)
+  if (failed.length === 0) return null
+  const uniqueErrors = Array.from(new Set(failed.map(f => f.error ?? 'unknown error')))
+  return `activity event not recorded — ${uniqueErrors.join('; ')}`
 }
 
 // ── Hierarchy validation ──────────────────────────────────────────────────────
@@ -1201,15 +1220,18 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // ── TOD-818: record issue_created event ──
+  // Round-4: awaited so a failed write (e.g. activity_events missing on this
+  // install) is known before the response is built, not discarded.
+  const postActivityOutcomes: Array<{ ok: boolean; error: string | null }> = []
   if (data) {
     const actor = (body.transitioned_by ?? body.assignee ?? null) as string | null
-    recordActivityEvent(data.id, data.task_key, 'issue_created', actor, {
+    postActivityOutcomes.push(await recordActivityEvent(data.id, data.task_key, 'issue_created', actor, {
       status: data.status,
       assignee: data.assignee,
       project: data.project,
       type: data.type,
       priority: data.priority,
-    })
+    }))
   }
 
   // Post to #0-created on every new issue. DO NOT REMOVE.
@@ -1240,6 +1262,7 @@ export async function POST(req: NextRequest) {
 
   // Q4: If a child issue is created under a feature in feature_review → revert to underway.
   // Means the feature has open work remaining; PO or agent created a gap-filling child.
+  const postCascadeFailures: string[] = []
   if (data && parent_id) {
     const { data: parentFeature } = await getSupabase()
       .from('issues')
@@ -1247,11 +1270,15 @@ export async function POST(req: NextRequest) {
       .eq('id', parent_id as string)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'feature_review') {
-      await getSupabase()
+      const { error: revertError } = await getSupabase()
         .from('issues')
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', parent_id as string)
-      console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
+      if (revertError) {
+        postCascadeFailures.push(`feature ${parent_id} NOT reverted feature_review→underway: ${revertError.message}`)
+      } else {
+        console.log(`[auto-revert] Feature ${parent_id} reverted feature_review→underway (new child ${data.task_key} created)`)
+      }
     }
   }
 
@@ -1259,20 +1286,40 @@ export async function POST(req: NextRequest) {
   // Warn if bug is created without environment field
   const responseData = withIssueStatusCategory(data)
   issuesCache.clear()
+
+  const postActivityWarning = activityEventWarning(postActivityOutcomes)
+  const extraFields: Record<string, unknown> = {}
+  if (postActivityWarning) extraFields._warning = postActivityWarning
+  if (postCascadeFailures.length > 0) extraFields.cascade_failures = postCascadeFailures
+
   if ((type ?? 'task') === 'bug' && !body.environment) {
     return NextResponse.json({
       ...responseData,
-      _warning: 'Bug created without "environment" field. Set it before moving to refined (required for backlog→refined).',
+      ...extraFields,
+      _warning: [extraFields._warning, 'Bug created without "environment" field. Set it before moving to refined (required for backlog→refined).']
+        .filter(Boolean).join(' | '),
     })
   }
 
-  return NextResponse.json(responseData)
+  return NextResponse.json(
+    Object.keys(extraFields).length > 0 ? { ...responseData, ...extraFields } : responseData,
+  )
 }
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
   const dbGate = dbUnavailableResponse()
   if (dbGate) return dbGate
+
+  // Round-4 fix: every cascade write below used to be `void (async () => {…})()`
+  // or an unchecked `.update()` — fired, never awaited, error never read. This
+  // route reported a clean 200 while, e.g., the very unblock a loop_breaker
+  // approval depends on silently failed. Every cascade site now awaits its
+  // write, checks `error`, and — on failure — pushes a human-readable line
+  // here instead of logging the success message. Surfaced as `cascade_failures`
+  // on the response so the operator sees "TOD-x was NOT unblocked" rather than
+  // inferring it from a missing side effect.
+  const cascadeFailures: string[] = []
 
   const callerRole = await resolveCallerRole(req)
   if (callerRole !== null) {
@@ -1344,16 +1391,20 @@ export async function PATCH(req: NextRequest) {
     const { data: resetData, error: resetErr } = await resetQ.select().single()
     if (resetErr) return NextResponse.json({ error: resetErr.message }, { status: 500 })
     // TOD-818: record status_changed for backlog reset
+    let resetActivityWarning: string | null = null
     if (resetData && before) {
-      recordActivityEvent(
+      const outcome = await recordActivityEvent(
         resetData.id as string,
         (resetData.task_key ?? before.task_key ?? null) as string | null,
         'status_changed',
         transitionedBy ?? null,
         { old_status: before.status, new_status: 'backlog' }
       )
+      resetActivityWarning = activityEventWarning([outcome])
     }
-    return NextResponse.json(resetData)
+    return NextResponse.json(
+      resetActivityWarning ? { ...resetData, _warning: resetActivityWarning } : resetData,
+    )
   }
 
   if (fields.status === 'in_progress') {
@@ -1939,36 +1990,56 @@ export async function PATCH(req: NextRequest) {
 
   // ── Close agent_runs on status change ──
   // When an issue status changes, any running agent_run for this task is done.
+  // Round-4: was `void (async () => {…})()` — fired and forgotten. Now awaited
+  // and its error checked, so a failed close is reported rather than leaving a
+  // phantom "running" agent_run nobody knows failed to close.
   if (fields.status && fields.status !== before?.status && id) {
-    void (async () => {
-      await createAdminClient()
+    try {
+      const { error: closeRunError } = await createAdminClient()
         .from('agent_runs')
         .update({ status: 'completed', finished_at: new Date().toISOString() })
         .eq('task_id', id as string)
         .eq('status', 'running')
-    })()
+      if (closeRunError) {
+        cascadeFailures.push(`agent_runs for ${before?.task_key ?? id} NOT closed: ${closeRunError.message}`)
+      }
+    } catch (err) {
+      cascadeFailures.push(`agent_runs for ${before?.task_key ?? id} NOT closed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // ── Downstream unblock: clear is_blocked on issues waiting for this one ──
   // When an issue reaches a terminal/completion status, any issue with blocked_by=this.id
   // is no longer blocked. Covers: closed, released, approved, completed.
+  // Round-4: was `void (async () => {…})()` with the inner `.update()`'s error
+  // never read — the exact class of defect (agent_memory upsert whose error was
+  // discarded) the loop_breaker_pause fix in app/api/inbox/route.ts addressed,
+  // left standing here at the MC API itself.
   const UNBLOCKING_STATUSES = new Set(['closed', 'released', 'approved', 'completed'])
   if (fields.status && UNBLOCKING_STATUSES.has(fields.status as string) && id) {
-    void (async () => {
-      const { data: blockedDeps } = await createAdminClient()
+    try {
+      const { data: blockedDeps, error: findBlockedError } = await createAdminClient()
         .from('issues')
         .select('id, task_key')
         .eq('blocked_by', id as string)
         .eq('is_blocked', true)
-      if (blockedDeps && blockedDeps.length > 0) {
-        await createAdminClient()
+      if (findBlockedError) {
+        cascadeFailures.push(`downstream unblock for ${before?.task_key ?? id} NOT attempted: ${findBlockedError.message}`)
+      } else if (blockedDeps && blockedDeps.length > 0) {
+        const { error: unblockError } = await createAdminClient()
           .from('issues')
           .update({ is_blocked: false, blocked_by: null, updated_at: new Date().toISOString() })
           .eq('blocked_by', id as string)
-        const unblocked = blockedDeps.map(i => i.task_key).join(', ')
-        console.log(`[unblock-downstream] ${before?.task_key ?? id} → ${fields.status}: unblocked ${unblocked}`)
+        const affected = blockedDeps.map(i => i.task_key).join(', ')
+        if (unblockError) {
+          cascadeFailures.push(`${affected} NOT unblocked (blocked_by ${before?.task_key ?? id}): ${unblockError.message}`)
+        } else {
+          console.log(`[unblock-downstream] ${before?.task_key ?? id} → ${fields.status}: unblocked ${affected}`)
+        }
       }
-    })()
+    } catch (err) {
+      cascadeFailures.push(`downstream unblock for ${before?.task_key ?? id} failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   // Auto-promote feature from defined→underway when ANY child moves to open or beyond.
@@ -1980,11 +2051,15 @@ export async function PATCH(req: NextRequest) {
       .eq('id', data.parent_id)
       .maybeSingle()
     if (parentFeature?.type === 'feature' && parentFeature.status === 'defined') {
-      await getSupabase()
+      const { error: promoteError } = await getSupabase()
         .from('issues')
         .update({ status: 'underway', updated_at: new Date().toISOString() })
         .eq('id', data.parent_id)
-      console.log(`[auto-promote] Feature ${parentFeature.id} promoted defined→underway (child moved to ${fields.status})`)
+      if (promoteError) {
+        cascadeFailures.push(`feature ${parentFeature.id} NOT promoted defined→underway: ${promoteError.message}`)
+      } else {
+        console.log(`[auto-promote] Feature ${parentFeature.id} promoted defined→underway (child moved to ${fields.status})`)
+      }
     }
   }
 
@@ -2005,13 +2080,17 @@ export async function PATCH(req: NextRequest) {
       const allClosed = siblings && siblings.length > 0 &&
         siblings.every(c => c.status === 'closed')
       if (allClosed) {
-        await getSupabase()
+        const { error: promoteError } = await getSupabase()
           .from('issues')
           .update({ status: 'feature_review', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
-        console.log(`[auto-promote] Feature ${parentFeature.id} promoted underway→feature_review (all children closed)`)
-        // selfChain kicks PO to confirm feature completion
-        selfChainOnStatus('feature_review')
+        if (promoteError) {
+          cascadeFailures.push(`feature ${parentFeature.id} NOT promoted underway→feature_review: ${promoteError.message}`)
+        } else {
+          console.log(`[auto-promote] Feature ${parentFeature.id} promoted underway→feature_review (all children closed)`)
+          // selfChain kicks PO to confirm feature completion
+          selfChainOnStatus('feature_review')
+        }
       }
     }
   }
@@ -2032,11 +2111,15 @@ export async function PATCH(req: NextRequest) {
       const allIdle = siblings && siblings.length > 0 &&
         siblings.every(c => ['backlog', 'refined', 'defined'].includes(c.status as string))
       if (allIdle) {
-        await getSupabase()
+        const { error: revertError } = await getSupabase()
           .from('issues')
           .update({ status: 'defined', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
-        console.log(`[auto-revert] Feature ${parentFeature.id} reverted underway→defined (all children idle)`)
+        if (revertError) {
+          cascadeFailures.push(`feature ${parentFeature.id} NOT reverted underway→defined: ${revertError.message}`)
+        } else {
+          console.log(`[auto-revert] Feature ${parentFeature.id} reverted underway→defined (all children idle)`)
+        }
       }
     }
   }
@@ -2075,12 +2158,21 @@ export async function PATCH(req: NextRequest) {
       .update({ status: parentCompletionStatus, updated_at: new Date().toISOString() })
       .eq('id', before.parent_id)
     if (hubScope) parentUpdateQ = parentUpdateQ.eq('business_id', hubScope.businessId)
-    const { data: parentData } = await parentUpdateQ.select().single()
-    if (parentData) notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
+    const { data: parentData, error: parentUpdateError } = await parentUpdateQ.select().single()
+    if (parentUpdateError) {
+      cascadeFailures.push(`parent ${before.parent_id} NOT moved to ${parentCompletionStatus}: ${parentUpdateError.message}`)
+    } else if (parentData) {
+      notifyDiscord({ ...parentData, resolution_type: parentData.resolution_type ?? 'code_change' })
+    }
   }
 
   if (isNewFailure && before?.assignee === 'ux' && before?.parent_id && data) {
     const uxNotes = (data.description ?? '').slice(0, 300)
+    // Round-4: give the fix task a real task_key the same way POST does, and
+    // check the insert's error instead of firing it blind — an un-checked
+    // insert here means a failed UX review silently produces no fix task at
+    // all, with nothing in the response to say so.
+    const uxFixIdentity = await prepareIssueIdentity('Mission Control')
     const uxFixTaskData = {
       title: `UX Fix: ${before.title ?? data.title}`,
       description: `UX review failed. Fix the following:\n\n${uxNotes}`,
@@ -2092,9 +2184,13 @@ export async function PATCH(req: NextRequest) {
       sprint: new Date().toISOString().split('T')[0],
       parent_id: before.parent_id,
       severity: 'S2',
+      ...uxFixIdentity,
       ...(before?.business_id ? { business_id: before.business_id } : {}),
     }
-    await createAdminClient().from('issues').insert(uxFixTaskData)
+    const { error: uxFixInsertError } = await createAdminClient().from('issues').insert(uxFixTaskData)
+    if (uxFixInsertError) {
+      cascadeFailures.push(`UX fix task for ${before?.task_key ?? data.task_key} NOT created: ${uxFixInsertError.message}`)
+    }
   }
 
   if (isCompletedIssueStatus(fields.status) && data?.parent_id) {
@@ -2118,7 +2214,10 @@ export async function PATCH(req: NextRequest) {
           .update({ status: 'wrapped', updated_at: new Date().toISOString() })
           .eq('id', data.parent_id)
         if (hubScope) epicUpdateQ = epicUpdateQ.eq('business_id', hubScope.businessId)
-        await epicUpdateQ
+        const { error: epicWrapError } = await epicUpdateQ
+        if (epicWrapError) {
+          cascadeFailures.push(`epic ${data.parent_id} NOT wrapped: ${epicWrapError.message}`)
+        }
       }
     }
   }
@@ -2137,21 +2236,29 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── TOD-631: In-app notifications on status transitions ──
+  // Round-4: was fire-and-forget `.then(() => {})` — error never read.
   if (fields.status && before?.status && fields.status !== before.status && data) {
     const taskKey = data.task_key ?? before.task_key ?? ''
     const title = data.title ?? before.title ?? ''
     const actor = (fields.transitioned_by ?? data.transitioned_by ?? 'system') as string
-    getSupabase().from('notifications').insert({
+    const { error: notifError } = await getSupabase().from('notifications').insert({
       type: 'status_change',
       title: `${taskKey} → ${fields.status}`,
       body: title,
       issue_key: taskKey,
       issue_id: data.id,
       actor,
-    }).then(() => {}) // fire-and-forget
+    })
+    if (notifError) {
+      cascadeFailures.push(`in-app notification for ${taskKey} NOT recorded: ${notifError.message}`)
+    }
   }
 
   // ── TOD-818: Activity event capture ──────────────────────────────────────────
+  // Round-4: each recordActivityEvent() call is now awaited and its outcome
+  // collected; a failure surfaces as `_warning` on the response instead of
+  // being discarded by the old fire-and-forget insert.
+  const patchActivityOutcomes: Array<{ ok: boolean; error: string | null }> = []
   if (data && before) {
     const issueId = data.id as string
     const issueKey = (data.task_key ?? before.task_key ?? null) as string | null
@@ -2159,18 +2266,18 @@ export async function PATCH(req: NextRequest) {
 
     // status_changed
     if (fields.status && before.status && fields.status !== before.status) {
-      recordActivityEvent(issueId, issueKey, 'status_changed', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'status_changed', actor, {
         old_status: before.status,
         new_status: fields.status,
-      })
+      }))
     }
 
     // assignee_changed
     if (fields.assignee && before.assignee && fields.assignee !== before.assignee) {
-      recordActivityEvent(issueId, issueKey, 'assignee_changed', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'assignee_changed', actor, {
         old_assignee: before.assignee,
         new_assignee: fields.assignee,
-      })
+      }))
     }
 
     // comment_added — treat non-empty implementation_notes changes as comments
@@ -2178,9 +2285,9 @@ export async function PATCH(req: NextRequest) {
       fields.implementation_notes &&
       fields.implementation_notes !== before.implementation_notes
     ) {
-      recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
         field: 'implementation_notes',
-      })
+      }))
     }
 
     // reviewer_notes change
@@ -2188,14 +2295,22 @@ export async function PATCH(req: NextRequest) {
       fields.reviewer_notes &&
       fields.reviewer_notes !== before.reviewer_notes
     ) {
-      recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
+      patchActivityOutcomes.push(await recordActivityEvent(issueId, issueKey, 'comment_added', actor, {
         field: 'reviewer_notes',
-      })
+      }))
     }
   }
 
   issuesCache.clear()
-  return NextResponse.json(data ? withIssueStatusCategory(data) : data)
+
+  const patchActivityWarning = activityEventWarning(patchActivityOutcomes)
+  if (!data) {
+    return NextResponse.json(data)
+  }
+  const patchResponse: Record<string, unknown> = withIssueStatusCategory(data)
+  if (patchActivityWarning) patchResponse._warning = patchActivityWarning
+  if (cascadeFailures.length > 0) patchResponse.cascade_failures = cascadeFailures
+  return NextResponse.json(patchResponse)
 }
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
