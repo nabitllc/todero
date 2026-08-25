@@ -16,12 +16,32 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { readFileSync, existsSync } from 'fs'
-import { db } from '@/lib/db'
+import { db, DB_ERROR, type DbError } from '@/lib/db'
 import { dbUnavailableResponse } from '@/lib/db-http'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 import { parseOpenAiTrace } from '@/lib/runtimes/openai-api'
 
 const RAW_TAIL_CHARS = 4000
+
+const COLUMNS_WITH_LOG_FILE =
+  'id,agent_id,task_id,task_title,status,started_at,finished_at,log_file,tokens_used,cost_usd'
+const COLUMNS_WITHOUT_LOG_FILE =
+  'id,agent_id,task_id,task_title,status,started_at,finished_at,tokens_used,cost_usd'
+
+/**
+ * True when `error` is PostgREST/Postgres telling us `agent_runs.log_file`
+ * itself doesn't exist — i.e. this instance has not run
+ * migrations/046_agent_runs_log_file.sql (and, per boot-migrate.ts's own
+ * comment, a supabase-provider install with no DATABASE_URL never can at
+ * boot). Matched by SQLSTATE 42703 first; the message-text fallback covers
+ * whatever the sqlite/pg adapters that don't populate `code` say instead
+ * (e.g. sqlite: "no such column: log_file"; PostgREST: "column
+ * agent_runs.log_file does not exist").
+ */
+function isMissingLogFileColumn(error: DbError): boolean {
+  if (error.code === DB_ERROR.UNDEFINED_COLUMN) return true
+  return /log_file/i.test(error.message) && /column|no such/i.test(error.message)
+}
 
 export async function GET(req: NextRequest) {
   const unavailable = dbUnavailableResponse()
@@ -39,21 +59,45 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: '?runId=<agent_runs.id> is required' }, { status: 400 })
   }
 
-  const { data, error } = await db()
+  let { data, error } = await db()
     .from('agent_runs')
-    .select('id,agent_id,task_id,task_title,status,started_at,finished_at,log_file,tokens_used,cost_usd')
+    .select(COLUMNS_WITH_LOG_FILE)
     .eq('id', runId)
     .limit(1)
+
+  // Live Supabase installs with no DATABASE_URL can never self-heal this
+  // column at boot (lib/db/boot-migrate.ts's own comment explains why:
+  // PostgREST has no DDL grammar). Rather than 500 for every run on such an
+  // instance, retry the same lookup without the unmigrated column and say so
+  // in the response instead of pretending the run doesn't exist.
+  let logFileColumnMissing = false
+  if (error && isMissingLogFileColumn(error)) {
+    logFileColumnMissing = true
+    ;({ data, error } = await db()
+      .from('agent_runs')
+      .select(COLUMNS_WITHOUT_LOG_FILE)
+      .eq('id', runId)
+      .limit(1))
+  }
   if (error) {
     return NextResponse.json({ error: `run lookup failed: ${error.message}` }, { status: 500 })
   }
   const run = (data ?? [])[0] as {
     id: string; agent_id: string; task_id: string | null; task_title: string | null
     status: string | null; started_at: string | null; finished_at: string | null
-    log_file: string | null; tokens_used: number | null; cost_usd: number | null
+    log_file?: string | null; tokens_used: number | null; cost_usd: number | null
   } | undefined
   if (!run) {
     return NextResponse.json({ error: `no agent_runs row with id ${runId}` }, { status: 404 })
+  }
+
+  if (logFileColumnMissing) {
+    return NextResponse.json({
+      run: { ...run, log_file: null },
+      steps: [],
+      totals: { tokensIn: 0, tokensOut: 0, costUsd: 0, toolCalls: 0 },
+      note: 'log_file column not migrated — run `npm run db:migrate` with DATABASE_URL',
+    })
   }
 
   if (!run.log_file) {

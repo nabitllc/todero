@@ -76,7 +76,13 @@ export function recordSpawn(entry: TokenLedgerEntry): void {
 
 export interface CompletionEntry {
   logFile: string
-  status: 'completed' | 'failed' | 'killed'
+  // 'max_iterations' | 'running' | 'unknown' are openai-api.ts's ParsedTrace
+  // statuses, passed through as-is (see lib/runtimes/openai-api.ts's
+  // finalizeRun call) rather than collapsed to 'completed' — a run that hit
+  // the iteration cap or never wrote a run_end trace line is not the same
+  // thing as one that finished, and this column is what the trace endpoint
+  // and the agent_runs safety-net update both report back as ground truth.
+  status: 'completed' | 'failed' | 'killed' | 'max_iterations' | 'running' | 'unknown'
   exitCode?: number | null
   exitSignal?: string | null
   durationSec?: number | null

@@ -719,7 +719,12 @@ export const openaiApiRuntime: AgentRuntime = {
       const parsed = parseOpenAiTrace(opts.logFile, model)
       finalizeRun({
         logFile: opts.logFile,
-        status: parsed.status === 'completed' ? 'completed' : parsed.status === 'failed' ? 'failed' : 'completed',
+        // Record what the trace actually reported — 'max_iterations',
+        // 'running' (process died without a run_end line) and 'unknown' (no
+        // trace lines at all) are all real, distinct outcomes, not synonyms
+        // for 'completed'. Collapsing them used to make every non-crashed
+        // run read as a success even when the agent never finished the task.
+        status: parsed.status,
         durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
         taskId: opts.taskId ?? null,
         inputTokens: parsed.totals.tokensIn || undefined,

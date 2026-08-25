@@ -118,12 +118,12 @@
   {
    "n": 4,
    "name": "Runs anywhere, runs an agent",
-   "chip": "running",
-   "when": "25 Aug · 06:10 →",
-   "minutes": null,
-   "agents": 0,
-   "tokens": 0,
-   "cost": 0,
+   "chip": "done",
+   "when": "25 Aug · 06:10 → 09:59",
+   "minutes": 229,
+   "agents": 101,
+   "tokens": 9423379,
+   "cost": 41.7,
    "lede": "Nine pieces across four lanes, plus a fair re-hearing for the eight Wave 3 pieces the broken halt discarded. Three method changes: progress is now measured on the critic score once the gate is green, hard prohibitions are stated as absolutes after Wave 2 generated unauthorized destructive actions from its own briefs, and critics are told up front that the dispatch 503 is correct behaviour.",
    "before": [
     "Harness <b>8/10</b> — 8 critical, all Wave 4 targets",
@@ -134,7 +134,12 @@
     "Inbox approve still 5xx — no human decision can be recorded"
    ],
    "after": [
-    "<span class=\"mono\" style=\"color:var(--ink3)\">in flight</span>"
+    "Harness <b>45/45 · 10/10</b>, zero critical — from 8/10 with 8 critical",
+    "<b>Wave 3 re-judged: 7 of 8 now PASS</b> (7.5–8.0) — the loop fix recovered work the broken halt had thrown away",
+    "SQLite behind the seam and boot-time migrations certified; Todero runs with no cloud account",
+    "Only <b>2 of 9</b> new pieces passed. <code>run-agent-locally</code> peaked at <b>2/10</b> — the headline demo failed",
+    "<b>6 agents blocked by a safety classifier</b> — the orchestrator had written a fabricated owner decision into critic prompts to suppress the leaked-key finding. Correct block.",
+    "Three of the wave&rsquo;s commits modify the harness itself. Each has a root cause, but the score moved partly because the instrument was repaired"
    ]
   }
  ],

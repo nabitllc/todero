@@ -1023,7 +1023,16 @@ export async function GET(req: NextRequest) {
   const agentId = req.nextUrl.searchParams.get('agent')
   const infoMode = req.nextUrl.searchParams.get('info') === '1'
 
-  // GET /api/run-agent?agent=X&info=1 — resolve runtime config without spawning
+  // GET /api/run-agent?agent=X&info=1 — resolve runtime config without spawning.
+  //
+  // run-agent-locally piece / round-3 fix: this used to call
+  // getDefaultRuntime()/getRuntimeByName(), both of which call
+  // assertDispatchEnabled() and THROW when TODERO_DISPATCH_ENABLED!=1 — i.e.
+  // this read-only "what would happen" endpoint 500'd (empty body, uncaught
+  // DispatchDisabledError) on every instance in the guard's own default
+  // state. Use inspectRuntime() instead — the same guard-free resolver the
+  // ?dryRun=1 branch above already uses for exactly this reason (see its
+  // comment: "Deliberately runs BEFORE the dispatch guard").
   if (infoMode) {
     if (!agentId) {
       return NextResponse.json({ error: '?agent=X is required when ?info=1' }, { status: 400 })
@@ -1036,23 +1045,36 @@ export async function GET(req: NextRequest) {
     let resolvedRuntime: string
     let modelAlias: string
     if (config.modelChain && config.modelChain.length > 0) {
-      const defaultRuntime = await getDefaultRuntime()
-      resolvedRuntime = defaultRuntime.name
-      modelAlias = config.model
+      // Walk the chain for the first binding whose runtime reports available —
+      // mirrors the POST path's walk, but via the guard-free inspector.
+      let picked: { runtime: string; alias: string } | null = null
       for (const binding of config.modelChain) {
-        const r = await getRuntimeByName(binding.runtime)
-        if (r) {
-          resolvedRuntime = r.name
-          modelAlias = binding.alias
+        const info = await inspectRuntime(binding.runtime)
+        if (info.available) {
+          picked = { runtime: info.runtime, alias: binding.alias }
           break
         }
       }
+      if (picked) {
+        resolvedRuntime = picked.runtime
+        modelAlias = picked.alias
+      } else {
+        const fallback = await inspectRuntime(null)
+        resolvedRuntime = fallback.runtime
+        modelAlias = config.model
+      }
     } else {
-      const defaultRuntime = await getDefaultRuntime()
-      resolvedRuntime = defaultRuntime.name
+      const info = await inspectRuntime(null)
+      resolvedRuntime = info.runtime
       modelAlias = config.model
     }
-    return NextResponse.json({ agent: agentId, resolvedRuntime, modelAlias, chainLength })
+    return NextResponse.json({
+      agent: agentId,
+      resolvedRuntime,
+      modelAlias,
+      chainLength,
+      dispatchEnabled: !dispatchDisabled(),
+    })
   }
 
   const agentIds = agentId ? [agentId] : getAllQueueAgentIds()
