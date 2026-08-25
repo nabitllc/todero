@@ -151,7 +151,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <a href="#channels">Channels<i>0/19 cleared</i></a>
   <a href="#waves">Waves<i>8 run</i></a>
   <a href="#next">What's next<i>3 queued</i></a>
-  <a href="#harness">Harness<i>44/45</i></a>
+  <a href="#harness">Harness<i>45/45</i></a>
   <a href="#decisions">Decisions<i>0 open</i></a>
   <a href="#method">Method</a>
   <a href="#ledger">Ledger<i>~$149</i></a>
@@ -342,18 +342,18 @@ section{margin-top:42px;scroll-margin-top:16px}
           <span class="wn">Wave 6</span>
           <span class="wname">Operator surface</span>
           <span class="chip cleared">complete</span>
-          <span class="wwhen">25 Aug · 16:05 → running</span>
+          <span class="wwhen">25 Aug · 16:05 → running (3 rounds)</span>
         </div>
-        <p class="wlede">Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” So this wave is scored against &lt;code>design/Nav.dc.html&lt;/code> and its six sibling artboards — a spec that is a file, not a description — and it loops until critics agree the running app matches it.</p>
+        <p class="wlede">Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder's summary. Three rounds so far: 4/10, 5/10, third being scored.</p>
         <div class="spend">
-          <span><i>time</i>0m</span>
-          <span><i>agents</i>1</span>
+          <span><i>time</i>3h 10m</span>
+          <span><i>agents</i>6</span>
           <span><i>tokens</i>—</span>
           <span><i>est. cost</i>—</span>
         </div>
         <div class="ba">
-          <div><div class="balab before">Before</div><ul><li>Twenty nav entries plus a divider, appended one at a time from the OpenClaw lineage — never designed</li><li><code>projectFilter={selectedBusiness}</code> — what every tab receives as its project filter is the <b>business</b>, so selecting one project selects everything</li><li>Sprint cards for Vespera and Kemuni rendered from <b>hardcoded constants</b>, not queries — no filter could ever remove them</li><li>Chat is a destination you navigate away to, losing the screen you were asking about</li></ul></div>
-          <div class="aft"><div class="balab after">After</div><ul><li>Six destinations — Now, Work, Fleet, Runs, Memory, Settings — plus Chat as a ⌘J overlay</li><li>Nothing deleted: all twenty tab ids must still resolve, as a tab, a filter or a redirect</li><li>Two tabs split deliberately: Calendar (due dates to Work, job timing to Settings) and Infra (signal to Now, detail to Settings)</li><li>Limiglow has zero issues and that is correct — every empty state must name it and read as “nothing yet”, never as breakage</li></ul></div>
+          <div><div class="balab before">Before</div><ul><li>Twenty nav entries plus a divider, appended one at a time — never designed</li><li><code>projectFilter={selectedBusiness}</code> — every tab's “project filter” was the <b>business</b>, so selecting one project selected everything</li><li>Vespera and Kemuni sprint cards rendered from <b>hardcoded date constants</b>, expired, reading “0 days left · 100% elapsed” on the landing screen</li><li>Today's Standup was a <b>400 on every load</b> — a predicate inside <code>or()</code> could not be negated</li></ul></div>
+          <div class="aft"><div class="balab after">After</div><ul><li><b>Six destinations</b> + Chat as a ⌘J overlay; all six fit a phone bottom bar with no “more” menu</li><li>Scope enforced at the <b>seam</b> — middleware stamps it, the proxy injects it. All <b>18 exempted client call sites became correct without being edited</b>, which is the test of the right layer</li><li>An unresolvable scope now <b>refuses</b> rather than widening; forged headers and cross-origin referers refused</li><li>Round 1 shipped a sentence asserting scoping the code did not do; round 2's guard promised enforcement it did not perform; the harness itself carried a <b>literal backspace byte</b> where a <code></code> belonged. All three found and fixed — the instruments now get checked before their verdicts are believed</li><li>Landing screen reads “Limiglow has 0 issues yet — that is correct, not broken”, “No active sprint for Limiglow”, “No recent activity”</li></ul></div>
         </div>
       </div>
       <div class="wave done" id="wave-5.5">
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 405ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 627ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -567,9 +567,9 @@ section{margin-top:42px;scroll-margin-top:16px}
           <summary><span class="gname">agent-roster-truth</span><span class="gcount">1/1</span></summary>
           <div class="chk ok"><span class="cid">no-invented-agent-fallback</span><span class="cdet">no hardcoded roster fallback</span></div>
         </details>
-        <details class="grp crit" open>
-          <summary><span class="gname">issues-pagination</span><span class="gcount">1/2</span></summary>
-          <div class="chk crit"><span class="cid">issues-paginated</span><span class="cdet">total=0 — still capped or undercounting</span></div>
+        <details class="grp ok">
+          <summary><span class="gname">issues-pagination</span><span class="gcount">2/2</span></summary>
+          <div class="chk ok"><span class="cid">issues-paginated</span><span class="cdet">total=1 matches 1 rows actually returned</span></div>
           <div class="chk ok"><span class="cid">issues-no-silent-truncation</span><span class="cdet">has_more=false</span></div>
         </details>
         <details class="grp ok">
@@ -706,8 +706,8 @@ section{margin-top:42px;scroll-margin-top:16px}
 <section id="ledger">
   <div class="shead"><h2>Ledger</h2><div class="note">What the program has cost</div></div>
   <div class="spend" style="margin-top:12px">
-    <span><i>wall clock</i>19h 40m</span>
-    <span><i>agents</i>329</span>
+    <span><i>wall clock</i>22h 50m</span>
+    <span><i>agents</i>334</span>
     <span><i>subagent tokens</i>32.67M</span>
     <span><i>est. cost</i>~$149</span>
     <span><i>waves</i>8</span>

@@ -194,23 +194,24 @@
    "n": 6,
    "name": "Operator surface",
    "chip": "in flight",
-   "when": "25 Aug · 16:05 → running",
-   "minutes": 0,
-   "agents": 1,
+   "when": "25 Aug · 16:05 → running (3 rounds)",
+   "minutes": 190,
+   "agents": 6,
    "tokens": 0,
    "cost": 0.0,
-   "lede": "Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” So this wave is scored against <code>design/Nav.dc.html</code> and its six sibling artboards — a spec that is a file, not a description — and it loops until critics agree the running app matches it.",
+   "lede": "Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder's summary. Three rounds so far: 4/10, 5/10, third being scored.",
    "before": [
-    "Twenty nav entries plus a divider, appended one at a time from the OpenClaw lineage — never designed",
-    "<code>projectFilter={selectedBusiness}</code> — what every tab receives as its project filter is the <b>business</b>, so selecting one project selects everything",
-    "Sprint cards for Vespera and Kemuni rendered from <b>hardcoded constants</b>, not queries — no filter could ever remove them",
-    "Chat is a destination you navigate away to, losing the screen you were asking about"
+    "Twenty nav entries plus a divider, appended one at a time — never designed",
+    "<code>projectFilter={selectedBusiness}</code> — every tab's “project filter” was the <b>business</b>, so selecting one project selected everything",
+    "Vespera and Kemuni sprint cards rendered from <b>hardcoded date constants</b>, expired, reading “0 days left · 100% elapsed” on the landing screen",
+    "Today's Standup was a <b>400 on every load</b> — a predicate inside <code>or()</code> could not be negated"
    ],
    "after": [
-    "Six destinations — Now, Work, Fleet, Runs, Memory, Settings — plus Chat as a ⌘J overlay",
-    "Nothing deleted: all twenty tab ids must still resolve, as a tab, a filter or a redirect",
-    "Two tabs split deliberately: Calendar (due dates to Work, job timing to Settings) and Infra (signal to Now, detail to Settings)",
-    "Limiglow has zero issues and that is correct — every empty state must name it and read as “nothing yet”, never as breakage"
+    "<b>Six destinations</b> + Chat as a ⌘J overlay; all six fit a phone bottom bar with no “more” menu",
+    "Scope enforced at the <b>seam</b> — middleware stamps it, the proxy injects it. All <b>18 exempted client call sites became correct without being edited</b>, which is the test of the right layer",
+    "An unresolvable scope now <b>refuses</b> rather than widening; forged headers and cross-origin referers refused",
+    "Round 1 shipped a sentence asserting scoping the code did not do; round 2's guard promised enforcement it did not perform; the harness itself carried a <b>literal backspace byte</b> where a <code>\b</code> belonged. All three found and fixed — the instruments now get checked before their verdicts are believed",
+    "Landing screen reads “Limiglow has 0 issues yet — that is correct, not broken”, “No active sprint for Limiglow”, “No recent activity”"
    ]
   }
  ],
