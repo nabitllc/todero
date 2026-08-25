@@ -61,7 +61,10 @@ if (pct < 90) soft.push(`overall ${passed}/${all.length} (${pct}%) — want 90%+
 // and a server-only import pulled into a client bundle type-checks fine and then
 // breaks every route at runtime. That exact bug happened here (lib/theme.ts).
 try {
-  await exec('npx', ['next', 'build'], { cwd: process.cwd(), timeout: 480000, shell: true })
+  await exec('npx', ['next', 'build'], {
+    cwd: process.cwd(), timeout: 480000, shell: true,
+    env: { ...process.env, TODERO_DIST_DIR: '.next-verify' },
+  })
 } catch (e) {
   const out = String(e.stdout || '') + String(e.stderr || e.message)
   const line = out.split('\n').filter(l => /error|failed|Error:/i.test(l))[0] || 'build failed'

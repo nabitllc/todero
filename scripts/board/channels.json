@@ -1,0 +1,122 @@
+{
+ "goalAvg": 8.9,
+ "channels": [
+  {
+   "name": "Identity, Auth & Access Control",
+   "baseline": 0.5,
+   "current": 6,
+   "goal": 8,
+   "evidence": "All five authorization checks pass: owner reads 200, anonymous read 401, anonymous DELETE 401, a forged mc-role cookie 401. Held back from the goal because authentication is still three shared passwords that double as their own session tokens — no users, no logout, no rate limiting.",
+   "goal_text": "builderz-labs — per-agent API keys and viewer/operator/admin roles over real sessions, replacing three shared passwords that double as their own tokens.",
+   "wave": null
+  },
+  {
+   "name": "Work Management API (MC API)",
+   "baseline": 2,
+   "current": 6,
+   "goal": 9,
+   "evidence": "The 1,000-row cap is gone: the API now reports total=3,071 with a has_more flag, so counts can be true for the first time. Lifecycle validation and enumerated status gates were always real. Short of goal because no UI surface renders the total yet.",
+   "goal_text": "Linear's issue list — server-side paging with an exact total, so no screen ever shows a number computed from a truncated slice.",
+   "wave": null
+  },
+  {
+   "name": "Portability & Host Independence",
+   "baseline": 0.5,
+   "current": 5,
+   "goal": 9,
+   "evidence": "Zero hardcoded macOS paths remain in app/ or lib/, no /bin/bash spawn, and five core routes that used to 500 on this Windows host now return 200. Still far from goal: no SQLite adapter, so cloud Supabase remains a hard requirement, and there is no proven clone-to-running path.",
+   "goal_text": "builderz-labs — SQLite and one start command, no Redis, Postgres or Docker. Clone it, run it, working app on any OS with no cloud account.",
+   "wave": null
+  },
+  {
+   "name": "LLM Provider Independence",
+   "baseline": 1,
+   "current": 5,
+   "goal": 9,
+   "evidence": "The base-URL seam exists and Todero now reports two available runtimes against the local Ollama, which serves three tool-capable models. Blocked from goal by 66 remaining OpenRouter references — chat still routes to a cloud host the owner has ruled out.",
+   "goal_text": "LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.",
+   "wave": null
+  },
+  {
+   "name": "Agent Visualization Fidelity",
+   "baseline": 3,
+   "current": 4,
+   "goal": 9,
+   "evidence": "The fabricated meetings and canned minutes are gone. But critics found the canvas still advances a progress bar on a frame timer to 95%, and discards the live/stale/ended distinction it already computes. State is still inferred, not observed from hook events.",
+   "goal_text": "pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.",
+   "wave": 6
+  },
+  {
+   "name": "Data Layer & Schema Management",
+   "baseline": 0.5,
+   "current": 3,
+   "goal": 9,
+   "evidence": "The author’s Supabase project ref is no longer a compile-time constant anywhere. But three tables still do not exist, three routes still 500, there is still no migration runner, and five migration prefixes still collide.",
+   "goal_text": "builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.",
+   "wave": 4
+  },
+  {
+   "name": "Observability & Honest Reporting",
+   "baseline": 1,
+   "current": 3,
+   "goal": 9,
+   "evidence": "Status now reports unknown and checkedAt instead of asserting green, and the hardcoded ok literals are gone from the Infra tab. Critics found the same fake greens surviving on every other surface, plus an unmeasured cost chart on the very screen that was de-faked. Still zero per-run tracing.",
+   "goal_text": "Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.",
+   "wave": null
+  },
+  {
+   "name": "Work Management UI",
+   "baseline": 1,
+   "current": 3,
+   "goal": 9,
+   "evidence": "A shared fetch hook exists and no component parses a body without checking res.ok. But critics found the hook throws away the response envelope, so the true total never reaches a screen, and PipelineTab was never converted and still renders the exact lie the work targeted.",
+   "goal_text": "Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.",
+   "wave": 6
+  },
+  {
+   "name": "Agent Fleet Operations",
+   "baseline": 0.5,
+   "current": 2,
+   "goal": 9,
+   "evidence": "The roster endpoint returns 200 instead of 500. Everything else is unchanged: nine hardcoded-fallback references still invent agents when the fetch fails, there is no registration protocol or heartbeat, and dispatch is deliberately blocked pending an enforceable ceiling.",
+   "goal_text": "builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.",
+   "wave": 4
+  },
+  {
+   "name": "Run Safety & Enforcement",
+   "baseline": 0,
+   "current": 2,
+   "goal": 9,
+   "evidence": "A hard dispatch guard now exists and is verified blocking: Todero cannot spawn agents at all. That is safety by prohibition, not by governance. No concurrency cap, no wall clock, no no-progress halt, no run counter, and the ledger still has zero finalized rows.",
+   "goal_text": "Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.",
+   "wave": 4
+  },
+  {
+   "name": "Learning & Memory Loop",
+   "baseline": 1,
+   "current": 1,
+   "goal": 9,
+   "evidence": "Untouched so far. The write half exists from TOD-489 but is dead off macOS; the retrieval half was never built and context is injected uncapped and unranked. Scheduled for Wave 4.",
+   "goal_text": "Hermes Agent — records what it tried and failed after each task, retrieves it on similar ones by FTS5, and caps in-context memory so overflow errors instead of truncating.",
+   "wave": 4
+  },
+  {
+   "name": "Navigation & Deep Linking",
+   "baseline": 1,
+   "current": 1,
+   "goal": 8,
+   "evidence": "Untouched. Every deep link still collapses to Overview, and the agent detail page at /crew/[id] remains unreachable dead code. Scheduled for Wave 6.",
+   "goal_text": "LangSmith — every trace has a URL you can bookmark and share. Linear — any view is a link. No screen unreachable, no deep link collapsing to Overview.",
+   "wave": 6
+  },
+  {
+   "name": "Approval & Human-in-the-loop",
+   "baseline": 0,
+   "current": 0,
+   "goal": 9,
+   "evidence": "Untouched. Inbox approve still returns 500, so the product still cannot record a human decision. Scheduled for Wave 4.",
+   "goal_text": "Grok Bot — works end to end while you are away and surfaces only when it needs your approval. Alex Finn — a morning brief on your phone with what needs you.",
+   "wave": 4
+  }
+ ]
+}

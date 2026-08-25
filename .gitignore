@@ -31,3 +31,4 @@ coverage/
 .idea/
 *.swp
 *.swo
+.next-verify/

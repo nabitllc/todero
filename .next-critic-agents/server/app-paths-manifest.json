@@ -1,0 +1,16 @@
+{
+  "/api/inbox/route": "app/api/inbox/route.js",
+  "/api/health/route": "app/api/health/route.js",
+  "/login/page": "app/login/page.js",
+  "/api/activity-feed/route": "app/api/activity-feed/route.js",
+  "/api/db/[...path]/route": "app/api/db/[...path]/route.js",
+  "/page": "app/page.js",
+  "/api/agents/route": "app/api/agents/route.js",
+  "/api/businesses/route": "app/api/businesses/route.js",
+  "/api/issues/route": "app/api/issues/route.js",
+  "/api/automations/route": "app/api/automations/route.js",
+  "/api/status/route": "app/api/status/route.js",
+  "/api/memory/route": "app/api/memory/route.js",
+  "/api/roles/route": "app/api/roles/route.js",
+  "/api/projects/route": "app/api/projects/route.js"
+}
