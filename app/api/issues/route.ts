@@ -883,7 +883,23 @@ export async function GET(req: NextRequest) {
     'deployer_status','deployer_notes',
     'worked_by','transitioned_by','acceptance_criteria',
     'business_id','resolution_type',
+    // archived_at/archived_reason are read on EVERY request, including the
+    // default one, because the archive filter below is applied here in the
+    // query layer. A caller must be able to tell an archived row from a live
+    // one; before this, the column existed in the database and was simply
+    // absent from every response, which reads as "nothing is archived".
+    'archived_at','archived_reason',
   ].join(',')
+
+  // Archived rows are hidden by default and reachable with ?include_archived=1.
+  //
+  // The filter belongs HERE, in the one place the issues query is built, and
+  // not at each call site: a filter scattered across callers is a filter a new
+  // caller forgets, and the failure mode is silent — history quietly reappears
+  // on a board that is supposed to show one project.
+  const includeArchived = ['1', 'true', 'yes'].includes(
+    (url.searchParams.get('include_archived') ?? '').toLowerCase()
+  )
   const parentIdParam = url.searchParams.get('parent_id')
 
   // Rebuildable per batch: PostgREST/Supabase caps a single request's rows at
@@ -894,6 +910,7 @@ export async function GET(req: NextRequest) {
   // them itself instead of trusting a single response to be complete.
   function buildQuery() {
     let q = baseClient.from('issues').select(fullFields ? '*' : SELECT_COLS, { count: 'exact' })
+    if (!includeArchived) q = q.is('archived_at', null)
     if (hub) q = q.eq('business_id', hub.businessId)
     if (projectParam) q = q.eq('project', projectParam)
     if (assigneeParam) q = q.eq('assignee', assigneeParam)
