@@ -603,10 +603,6 @@ function ProjectBreakdownBars({ project }: { project: string }) {
   )
 }
 
-// Per-Project Progress Reports card iterates these four fixed names — see
-// PROGRESS_PROJECTS below.
-const PROGRESS_PROJECTS = ['Vespera', 'Kemuni', 'Infrastructure', 'Todero'] as const
-
 /**
  * TOD-2368 round 3: the Per-Project Progress card used to read `proj.taskCounts`,
  * a field `/api/projects` never sends (that endpoint returns bare project rows —
@@ -627,9 +623,10 @@ function useProjectIssueTotals(names: readonly string[]): Record<string, number 
       return [name, res.ok && typeof res.data.total === 'number' ? res.data.total : null] as const
     })).then(entries => { if (!cancelled) setTotals(Object.fromEntries(entries)) })
     return () => { cancelled = true }
-    // `key` is the stable, primitive form of `names` (a literal constant array
-    // at every call site) — depending on it instead of the array avoids
-    // re-fetching every render on a fresh array identity.
+    // `key` is the stable, primitive form of `names` — depending on it
+    // instead of the array avoids re-fetching every render on a fresh array
+    // identity (the caller derives `names` from sprintProjects, so it is a
+    // new array reference on every render even when the contents match).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
   return totals
@@ -827,7 +824,12 @@ export default function OverviewTab({
 }) {
   const [sprintRunning, setSprintRunning] = useState(false)
   const [sprintToast, setSprintToast] = useState<{text: string; ok: boolean} | null>(null)
-  const projectIssueTotals = useProjectIssueTotals(PROGRESS_PROJECTS)
+  // Names come from the real /api/projects rows this component was handed —
+  // never a hand-written list. Before sprintProjects has answered, this is
+  // `[]`, so the totals hook simply has nothing to fetch yet.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
+  const liveProjectNames = (sprintProjects ?? []).map((p: any) => p.name).filter((n): n is string => !!n)
+  const projectIssueTotals = useProjectIssueTotals(liveProjectNames)
 
   const handleRunSprint = async () => {
     setSprintRunning(true)
@@ -987,15 +989,16 @@ export default function OverviewTab({
                 {projectsError ? (
                   <ApiErrorBanner error={projectsError} onRetry={onRetryProjects} />
                 ) : sprintProjects === null ? (
-                  /* Unanswered: an em-dash per figure and a skeleton bar. The
-                     previous seed printed a full, confident "0% done · 0/0 ·
-                     0 blockers" card for every project before the first fetch,
-                     and left it there for good when the bundle never booted. */
+                  /* Unanswered: names are not known yet -- they come from
+                     /api/projects, which has not replied -- so these skeleton
+                     cards carry no name text. Filling the slot with a guessed
+                     name is the exact defect this card was rebuilt to remove;
+                     four is a neutral placeholder count, not a claim. */
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                    {PROGRESS_PROJECTS.map(projName => (
-                      <div key={projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
+                    {[0, 1, 2, 3].map(i => (
+                      <div key={i} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
                         <div className="flex items-center gap-2 mb-3">
-                          <span className="text-white text-xs font-semibold truncate">{projName}</span>
+                          <span className="w-20 h-3 rounded bg-white/10 animate-pulse" />
                         </div>
                         <div className="flex items-baseline gap-1 mb-3">
                           <span className="text-2xl font-bold tabular-nums text-white/30">&mdash;</span>
@@ -1005,18 +1008,19 @@ export default function OverviewTab({
                       </div>
                     ))}
                   </div>
+                ) : sprintProjects.length === 0 ? (
+                  <p className="text-white/30 text-xs">No projects yet -- this card fills in once one exists.</p>
                 ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                  {PROGRESS_PROJECTS.map(projName => {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows
-                    const proj = sprintProjects.find((p: any) => p.supabaseProject === projName || p.name?.includes(projName))
-                    if (!proj) return null
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped project rows */}
+                  {sprintProjects.map((proj: any) => {
+                    const projName: string = proj.name
                     // Real count from useProjectIssueTotals's per-project head-style
-                    // call, never the fabricated `proj.taskCounts` (a field
+                    // call, never the fabricated proj.taskCounts (a field
                     // /api/projects never sends). Null means "not measured yet / the
                     // fetch failed", rendered as an em-dash, never as 0.
                     const total: number | null = projectIssueTotals[projName] ?? null
-                    // /api/projects carries no `deadline` field on real rows — guard
+                    // /api/projects carries no deadline field on real rows -- guard
                     // against Invalid Date/NaN instead of printing "NaNd left".
                     const dlRaw = proj.deadline
                     const dl = dlRaw ? new Date(dlRaw) : null
@@ -1028,12 +1032,15 @@ export default function OverviewTab({
                       : '—'
                     const pColor = proj.color ?? '#6b7280'
                     return (
-                      <div key={projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
+                      <div key={proj.id ?? projName} className="rounded-2xl border border-white/10 p-4 bg-[#0f0f0f]">
                         <div className="flex items-center gap-2 mb-3">
-                          <span className="text-lg">{proj.emoji}</span>
+                          {/* No emoji map keyed by name: /api/projects sends no
+                              emoji field, so a neutral dot stands in for every
+                              real project rather than a hand-written table. */}
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: pColor }} />
                           <span className="text-white text-xs font-semibold truncate">{projName}</span>
                         </div>
-                        {/* Total issues \u2014 a real count, not a % computed from data
+                        {/* Total issues -- a real count, not a % computed from data
                             this call doesn't have. The done/in-progress/open
                             breakdown is genuinely measured just below, by
                             ProjectBreakdownBars, which fetches every row. */}

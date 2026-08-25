@@ -1,11 +1,13 @@
 'use client'
 import React, { useState } from 'react'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
-import type { ApiError } from '@/hooks/useApiData'
+import { useApiList, type ApiError } from '@/hooks/useApiData'
 import { pColor } from '@/lib/mc-constants'
 import { Chip } from '@/lib/mc-atoms'
 import { StatusDot, Button, EmptyState } from '@/components/ui'
 import { Zap } from 'lucide-react'
+
+interface ProjectRow { name: string }
 
 interface AutomationsTabProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped cron rows
@@ -19,6 +21,12 @@ interface AutomationsTabProps {
 export default function AutomationsTab({ displayCrons, cronsError, cronsMeta }: AutomationsTabProps) {
   const [autoProjectFilter, setAutoProjectFilter] = useState<string|null>(null)
   const [cronModal, setCronModal] = useState<any>(null)
+  // Filter pills used to be a hand-written five-name array — an operator
+  // could click a filter for a project that did not exist. Pills now come
+  // from the intersection of GET /api/projects (the only source that knows
+  // which projects exist) and the projects that actually have automations.
+  const { items: liveProjects } = useApiList<ProjectRow>('/api/projects')
+  const liveProjectNames = new Set((liveProjects ?? []).map(p => p.name))
 
   return (
     <div className="space-y-5">
@@ -43,9 +51,13 @@ export default function AutomationsTab({ displayCrons, cronsError, cronsMeta }: 
           ))}
         </div>
       )}
-      {/* Project filter */}
+      {/* Project filter — pills are the real project names present in this
+          host's automations (liveProjectNames guards against a cron carrying
+          a stale/typo'd project string from an old config). While
+          /api/projects hasn't answered yet, `liveProjectNames` is empty, so
+          only "All" shows — never a guessed list filling the gap. */}
       <div className="flex items-center gap-2 flex-wrap">
-        {['All', 'Infrastructure', 'Vespera', 'Kemuni', 'Todero'].map(pf => {
+        {['All', ...Array.from(new Set(displayCrons.map((c:any) => c.project).filter((p: string) => p && liveProjectNames.has(p))))].map(pf => {
           const count = pf === 'All' ? displayCrons.length : displayCrons.filter((c:any) => c.project === pf).length
           if (pf !== 'All' && count === 0) return null
           return (

@@ -12,7 +12,8 @@ interface Issue {
   parent_id?: string; task_key?: string; acceptance_criteria?: string;
 }
 
-const PROJECTS = ['Vespera', 'Kemuni', 'Todero', 'Infrastructure']
+interface ProjectRow { name: string }
+
 const STATUSES = ['backlog', 'open', 'in_progress', 'code_review', 'product_review', 'approved', 'completed', 'released', 'closed']
 
 function FeaturesMultiSelect({ label, options, selected, onToggle, displayFn }: {
@@ -59,6 +60,11 @@ export default function FeaturesTab({ onViewIssues, projectFilter }: { onViewIss
   }, [projectFilter])
   const { items, error: fetchError, loading, refetch } = useApiList<Issue>(endpoint)
   const issues = items ?? []
+  // Project filter options come from GET /api/projects — the only table
+  // that knows which projects exist — never a hand-written list. While it
+  // is loading, the "Project" multi-select has no options yet.
+  const { items: liveProjects } = useApiList<ProjectRow>('/api/projects')
+  const PROJECTS = (liveProjects ?? []).map(p => p.name).filter(Boolean)
   const [projFilters, setProjFilters] = useState<string[]>([])
   const [statusFilters, setStatusFilters] = useState<string[]>([])
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})

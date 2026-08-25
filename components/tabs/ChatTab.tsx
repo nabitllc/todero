@@ -142,13 +142,18 @@ const FILE_TYPE_GROUPS = [
 ]
 
 
-const PROJECT_TAG_COLORS: Record<string, string> = {
-  'Kemuni': '#3b82f6',
-  'Vespera': '#a855f7',
-  'Infrastructure': '#6b7280',
-  'General': '#10b981',
-}
-const PROJECT_CYCLE = [null, 'Kemuni', 'Vespera', 'Infrastructure', 'General'] as const
+/**
+ * TOD (no-invented-projects): this used to be PROJECT_TAG_COLORS, a
+ * four-name table (Kemuni/Vespera/Infrastructure, plus a "General" that was
+ * never actually assigned to any conversation — a category invented purely
+ * to fill the map) and PROJECT_CYCLE, a hardcoded button that let an
+ * operator tag a conversation with a project that did not exist. Every
+ * project a conversation can be tagged with now comes from the live
+ * `liveProjectNames` list (GET /api/projects) built inside the component;
+ * see its declaration below. One neutral color stands in for every real
+ * project — no per-name table.
+ */
+const PROJECT_TAG_DEFAULT_COLOR = '#3b82f6'
 
 const PROMPT_TEMPLATES = [
   { label: '🗺️ Plan a feature', text: 'Help me plan a new feature for Kemuni. The feature is: ' },

@@ -100,6 +100,16 @@ export async function GET(req: Request) {
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
+  // This route reaches the raw db proxy, not GET /api/issues (which already
+  // hides archived rows by default). Without this filter an archived issue
+  // — e.g. "TOD-1 CRITIC probe epic" — shows up in Recent Activity as if it
+  // were live. Excluded at the query, not filtered out of the response,
+  // per the no-invented-projects piece.
+  const includeArchived =
+    (searchParams.get('include_archived') ?? '').toLowerCase() === '1' ||
+    (searchParams.get('include_archived') ?? '').toLowerCase() === 'true'
+  if (!includeArchived) query = query.is('archived_at', null)
+
   if (actor) query = query.eq('assignee', actor)
   if (issueId) query = query.eq('id', issueId)
   if (statusFilter) query = query.in('status', statusFilter)
