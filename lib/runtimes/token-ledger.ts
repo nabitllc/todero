@@ -4,7 +4,7 @@
 // suppresses). Runtime-agnostic: Claude Code, Codex, Cursor and OpenAI API
 // adapters all write to the same table.
 
-import { db, type DbError } from '@/lib/db'
+import { db, DB_ERROR, type DbError } from '@/lib/db'
 
 let tableMissingWarned = false
 
@@ -16,6 +16,33 @@ function isMissingTable(error: DbError): boolean {
     (error.code != null && MISSING_TABLE_CODES.has(error.code))
     || /does not exist|could not find the table/i.test(error.message)
   )
+}
+
+// evidence-based-verification (round 3): the four upstream-correlation
+// columns migrations/054_ledger_upstream_correlation.sql adds
+// (provider_response_id, provider_model, upstream_started_at,
+// upstream_finished_at). Same degrade pattern as
+// `isMissingLogFileColumn` in app/api/run-agent/trace/route.ts, copied here
+// because the failure mode is worse for THIS write: PostgREST rejects the
+// ENTIRE update when even one column in the payload is unrecognized (proven
+// live — PATCH /api/db/inbox with a bogus column returns HTTP 400
+// PGRST204), so on an unmigrated Supabase install every finalizeRun() call
+// that tries to set these four columns was silently losing completed_at,
+// status, input_tokens, output_tokens and cost_usd too. Matched by SQLSTATE
+// 42703 (a direct-Postgres install, e.g. the `postgres` adapter) or PGRST204
+// (PostgREST's "column not in schema cache" — the `supabase` adapter, which
+// is this repo's actual default per lib/db/adapters.ts) naming one of the
+// four columns in the error message.
+const CORRELATION_COLUMNS = [
+  'provider_response_id',
+  'provider_model',
+  'upstream_started_at',
+  'upstream_finished_at',
+] as const
+
+function isMissingCorrelationColumn(error: DbError): boolean {
+  if (error.code !== DB_ERROR.UNDEFINED_COLUMN && error.code !== 'PGRST204') return false
+  return CORRELATION_COLUMNS.some((col) => error.message.includes(col))
 }
 
 export interface TokenLedgerEntry {
@@ -162,7 +189,44 @@ export function finalizeRun(entry: CompletionEntry): void {
         }
       }
 
-      await db().from('token_ledger').update(updatePayload).eq('id', row.id)
+      // evidence-based-verification (round 3): this used to fire-and-forget
+      // (`await ...update(...)` with the result discarded) — no error check,
+      // no log. On the owner's actual Supabase install, migration 054 has
+      // never applied (PostgREST has no DDL grammar — see
+      // lib/db/boot-migrate.ts's own comment), so this update always errored
+      // and PostgREST's all-or-nothing rejection meant completed_at, status,
+      // input_tokens, output_tokens and cost_usd were being silently lost on
+      // EVERY openai-api run, forever, with nothing anywhere saying so.
+      let { error: updateError } = await db().from('token_ledger').update(updatePayload).eq('id', row.id)
+
+      if (updateError && isMissingCorrelationColumn(updateError)) {
+        // Retry the write with all four correlation columns dropped — not
+        // just the one named in the error — because PostgREST rejects the
+        // WHOLE update when any one column in the payload is unrecognized,
+        // so a partial drop would just fail again on the next column.
+        const {
+          provider_response_id: _prid,
+          provider_model: _pmodel,
+          upstream_started_at: _ustart,
+          upstream_finished_at: _ufinish,
+          ...withoutCorrelation
+        } = updatePayload
+        withoutCorrelation.metadata = {
+          ...(typeof withoutCorrelation.metadata === 'object' && withoutCorrelation.metadata !== null
+            ? (withoutCorrelation.metadata as Record<string, unknown>)
+            : {}),
+          upstream_correlation_unavailable: 'columns not migrated: run npm run db:migrate with DATABASE_URL',
+        }
+        const retry = await db().from('token_ledger').update(withoutCorrelation).eq('id', row.id)
+        updateError = retry.error
+        if (updateError) {
+          console.warn(
+            `[token-ledger:finalizeRun] update failed even after dropping correlation columns: ${updateError.message.slice(0, 200)}`,
+          )
+        }
+      } else if (updateError) {
+        console.warn(`[token-ledger:finalizeRun] update failed: ${updateError.message.slice(0, 200)}`)
+      }
 
       if (entry.taskId) {
         await db()

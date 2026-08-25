@@ -347,6 +347,37 @@ export async function verifyLiveDispatch(runId, opts = {}) {
 
   const hasUpstream = Boolean(row.provider_response_id && row.upstream_started_at && row.upstream_finished_at)
   if (!hasUpstream) {
+    // Round 3: lib/runtimes/token-ledger.ts's finalizeRun() now checks the
+    // error PostgREST returns when it rejects the update that would have set
+    // these four columns (SQLSTATE 42703 / PGRST204, naming one of
+    // migrations/054_ledger_upstream_correlation.sql's columns — proven live:
+    // PostgREST rejects the WHOLE update when one column in the payload is
+    // unrecognized), retries WITHOUT them so completed_at/status/tokens/cost
+    // still land, and leaves this marker in metadata so the rejection is
+    // distinguishable from a run that simply hasn't happened yet. Before this
+    // marker existed, both cases looked identical here — missing columns —
+    // and this branch reported NOT-YET for a write that had actually been
+    // REJECTED. That is exactly the bug this round exists to close.
+    const metadata =
+      row.metadata && typeof row.metadata === 'object'
+        ? row.metadata
+        : (() => { try { return JSON.parse(row.metadata) } catch { return null } })()
+    const migrationMarker =
+      metadata && typeof metadata.upstream_correlation_unavailable === 'string'
+        ? metadata.upstream_correlation_unavailable
+        : null
+
+    if (migrationMarker) {
+      return {
+        status: 'NOT-MIGRATED',
+        detail:
+          `token_ledger row ${runId} completed, but its upstream-correlation columns were REJECTED by ` +
+          `the database — not merely absent, and never merely "not yet happened": ${migrationMarker}. ` +
+          `Apply migrations/054_ledger_upstream_correlation.sql (npm run db:migrate with DATABASE_URL) ` +
+          `to this install before this run can be verified.`,
+        evidence: { ledger: ledgerRes, row },
+      }
+    }
     if (row.status === 'spawned') {
       return {
         status: 'NOT-YET',
@@ -358,9 +389,9 @@ export async function verifyLiveDispatch(runId, opts = {}) {
       status: 'FAIL',
       detail:
         `token_ledger row ${runId} has status="${row.status}" but no ` +
-        `provider_response_id/upstream_started_at/upstream_finished_at — either ` +
-        `migrations/054_ledger_upstream_correlation.sql has not been applied to this database, or ` +
-        `the run failed before it made a single model call`,
+        `provider_response_id/upstream_started_at/upstream_finished_at, and no ` +
+        `metadata.upstream_correlation_unavailable marker either — either this run predates round 3's ` +
+        `finalizeRun() fix, or the run failed before it made a single model call`,
       evidence: { ledger: ledgerRes, row },
     }
   }
