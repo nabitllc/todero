@@ -5,7 +5,8 @@
  * neither the variable nor the file that needed it.
  */
 
-import { readFileSync } from 'fs'
+import { readFileSync, unlinkSync } from 'fs'
+import { tmpdir } from 'os'
 import { join } from 'path'
 import { PGlite } from '@electric-sql/pglite'
 import type { DbAdapterFactory } from '../db'
@@ -25,13 +26,19 @@ function loadSeam() {
 }
 
 describe('lib/db seam', () => {
-  const original = { url: process.env[ENV_URL], key: process.env[ENV_KEY] }
+  const original = {
+    url: process.env[ENV_URL],
+    key: process.env[ENV_KEY],
+    database: process.env.DATABASE_URL,
+  }
 
   afterEach(() => {
     if (original.url === undefined) delete process.env[ENV_URL]
     else process.env[ENV_URL] = original.url
     if (original.key === undefined) delete process.env[ENV_KEY]
     else process.env[ENV_KEY] = original.key
+    if (original.database === undefined) delete process.env.DATABASE_URL
+    else process.env.DATABASE_URL = original.database
     delete process.env.TODERO_DB_PROVIDER
   })
 
@@ -58,12 +65,46 @@ describe('lib/db seam', () => {
   })
 
   it('names every missing variable at once', () => {
+    // Pinned, because with NOTHING set the seam no longer resolves to this
+    // provider at all — see the zero-configuration test below.
+    process.env.TODERO_DB_PROVIDER = 'supabase'
     delete process.env[ENV_URL]
     delete process.env[ENV_KEY]
     const seam = loadSeam()
     expect(seam.dbMissingEnv()).toEqual([ENV_URL, ENV_KEY])
     expect(seam.dbStatusMessage()).toContain(ENV_URL)
     expect(seam.dbStatusMessage()).toContain(ENV_KEY)
+  })
+
+  // The clone-to-running promise, at the level of the seam: a checkout with no
+  // credentials of any kind must still resolve to a usable database, or
+  // `npm run setup` cannot finish and every data route answers 503.
+  it('falls back to the file-backed provider when nothing at all is configured', () => {
+    delete process.env[ENV_URL]
+    delete process.env[ENV_KEY]
+    delete process.env.DATABASE_URL
+    const seam = loadSeam()
+    expect(seam.DB_PROVIDER).toBe('sqlite')
+    expect(seam.dbMissingEnv()).toEqual([])
+    expect(seam.isDbConfigured()).toBe(true)
+  })
+
+  it('does not mistake a template placeholder for a configured host', () => {
+    process.env[ENV_URL] = 'https://YOUR_PROJECT.supabase.co'
+    delete process.env[ENV_KEY]
+    delete process.env.DATABASE_URL
+    expect(loadSeam().DB_PROVIDER).toBe('sqlite')
+  })
+
+  it('keeps a configured host on its own provider', () => {
+    process.env[ENV_URL] = 'https://example.test'
+    process.env[ENV_KEY] = 'test-key'
+    expect(loadSeam().DB_PROVIDER).toBe('supabase')
+
+    delete process.env[ENV_URL]
+    delete process.env[ENV_KEY]
+    process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/todero'
+    expect(loadSeam().DB_PROVIDER).toBe('postgres')
   })
 
   it('rejects an unknown provider by name', () => {
@@ -342,12 +383,32 @@ function restBridge(pgFactory: DbAdapterFactory, qp: QueryParams) {
   }
 }
 
-describe.each(['postgres', 'supabase'] as const)(
+/**
+ * The `sqlite` leg's schema, from the file `npm run setup` applies on a clone
+ * with no account anywhere: `migrations/sqlite/000_baseline.sql`. File-backed,
+ * not `:memory:`, because that is the mode the app actually runs in.
+ */
+function seededSqlite(): string {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
+  const file = join(
+    tmpdir(),
+    `todero-seam-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`,
+  )
+  const seed = new DatabaseSync(file)
+  seed.exec(readFileSync(join(__dirname, '..', '..', 'migrations', 'sqlite', '000_baseline.sql'), 'utf8'))
+  seed.close()
+  return file
+}
+
+describe.each(['postgres', 'supabase', 'sqlite'] as const)(
   'the same query set through the %s adapter',
   provider => {
     let seam: typeof import('../db')
     let adapter: import('../db').DbAdapter
-    let pg: PGlite
+    let pg: PGlite | null = null
+    let sqliteFile: string | null = null
+    let sqliteMod: typeof import('../db/sqlite-adapter') | null = null
     let realFetch: typeof globalThis.fetch
 
     const previous = {
@@ -355,9 +416,27 @@ describe.each(['postgres', 'supabase'] as const)(
       url: process.env[ENV_URL],
       key: process.env[ENV_KEY],
       database: process.env.DATABASE_URL,
+      sqlite: process.env.TODERO_SQLITE_PATH,
     }
 
     beforeAll(async () => {
+      if (provider === 'sqlite') {
+        sqliteFile = seededSqlite()
+        process.env.TODERO_DB_PROVIDER = 'sqlite'
+        process.env.TODERO_SQLITE_PATH = sqliteFile
+        jest.isolateModules(() => {
+          /* eslint-disable @typescript-eslint/no-var-requires */
+          sqliteMod = require('../db/sqlite-adapter')
+          seam = require('../db')
+          /* eslint-enable @typescript-eslint/no-var-requires */
+        })
+        adapter = seam.db()
+        expect(adapter.provider).toBe('sqlite')
+        // The whole point of this provider: nothing to configure.
+        expect(adapter.missingEnv()).toEqual([])
+        return
+      }
+
       pg = await seededPostgres()
 
       process.env.TODERO_DB_PROVIDER = provider
@@ -388,8 +467,18 @@ describe.each(['postgres', 'supabase'] as const)(
     })
 
     afterAll(async () => {
-      globalThis.fetch = realFetch
-      await pg.close()
+      if (realFetch) globalThis.fetch = realFetch
+      if (pg) await pg.close()
+      if (sqliteFile) {
+        sqliteMod?.closeSqlite()
+        for (const suffix of ['', '-wal', '-shm']) {
+          try {
+            unlinkSync(sqliteFile + suffix)
+          } catch {
+            // already gone, or still held open on Windows — a temp file either way
+          }
+        }
+      }
       if (previous.provider === undefined) delete process.env.TODERO_DB_PROVIDER
       else process.env.TODERO_DB_PROVIDER = previous.provider
       if (previous.database === undefined) delete process.env.DATABASE_URL
@@ -398,6 +487,8 @@ describe.each(['postgres', 'supabase'] as const)(
       else process.env[ENV_URL] = previous.url
       if (previous.key === undefined) delete process.env[ENV_KEY]
       else process.env[ENV_KEY] = previous.key
+      if (previous.sqlite === undefined) delete process.env.TODERO_SQLITE_PATH
+      else process.env.TODERO_SQLITE_PATH = previous.sqlite
     })
 
     it('inserts rows and returns them when asked', async () => {

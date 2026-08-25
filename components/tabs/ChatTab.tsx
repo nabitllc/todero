@@ -10,10 +10,22 @@ import { useAgentRoster } from '@/hooks/useAgentRoster'
 import { agentDisplay } from '@/lib/agents-config'
 
 // Chat types
-interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string }
+/** `persistError` is set when the message is on screen but is NOT in the
+ *  database — the /api/chat/messages POST failed, or /api/chat reported a
+ *  `persistError` frame for the assistant reply. It is rendered inline and
+ *  never cleared on its own, because the alternative (staying silent) means
+ *  the message simply disappears on the next reload with no explanation. */
+interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string; persistError?: string }
 interface ChatConversation { id: string; title: string; model: string; messages: ChatMessage[]; createdAt: number; updatedAt: number; pinned?: boolean; project?: string|null; agent_id?: string; system_prompt?: string|null; forked_from?: string|null }
 
 // MC-157: Auto-scroll lock indicator types
+/** One entry from /api/chat/models. The two context windows are kept apart
+ *  on purpose: `servedContextLength` is what the loaded slot will accept and
+ *  is the only figure the budget meter may use; `trainedContextLength` is the
+ *  window the weights were trained with and is background only. Either can be
+ *  absent, and absent means unknown — never fill one in from the other. */
+interface LiveModel { id: string; servedContextLength?: number; trainedContextLength?: number }
+
 interface ScrollLockState {
   locked: boolean            // true = user scrolled up, auto-scroll paused
   missedMessages: number     // count of new messages since lock engaged
@@ -114,7 +126,7 @@ function stripMarkdownPreview(text: string): string {
 }
 
 // The model list is deliberately NOT hardcoded here. Owner directive: local
-// Ollama only, no OpenRouter/cloud vendor menu. The dropdown is populated at
+// Ollama only, no cloud vendor menu. The dropdown is populated at
 // runtime from a live GET of ${LLM_BASE_URL}/models (proxied through
 // /api/chat/models — see that route and lib/llm-provider.ts), so whatever is
 // actually pulled on this host is what a user can pick. See the
@@ -258,7 +270,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // hardcoded vendor list: whatever is actually pulled on this host is what
   // shows up here, and a failed load is shown as an explicit error naming
   // the URL that failed, not silently swallowed into an empty dropdown.
-  const [liveModels, setLiveModels] = useState<{ id: string; contextLength?: number }[]>([])
+  const [liveModels, setLiveModels] = useState<LiveModel[]>([])
   const [defaultModelId, setDefaultModelId] = useState<string | null>(null)
   const [modelsError, setModelsError] = useState<ApiError | null>(null)
   const [modelsLoading, setModelsLoading] = useState(true)
@@ -433,7 +445,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // visible error naming the URL, not an empty/frozen select.
   const loadLiveModels = useCallback(() => {
     setModelsLoading(true)
-    fetchJson<{ base_url: string; default_model: string | null; models: { id: string; contextLength?: number }[] }>('/api/chat/models')
+    fetchJson<{ base_url: string; default_model: string | null; models: LiveModel[] }>('/api/chat/models')
       .then(res => {
         if (!res.ok) {
           setModelsError(res.error)
@@ -826,30 +838,31 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // for storing as provenance on conversations/messages, and for looking up
   // that model's own measured context window below.
   const resolvedModelId = selectedModel !== 'default' ? selectedModel : (defaultModelId || 'unknown')
-  // TOD: local-model-only chat context — no hardcoded context ceiling. This
-  // comes only from /api/chat/models, which reads it live off Ollama's own
-  // /api/show for the selected model. undefined means the endpoint didn't
-  // report one — render "unknown", not a guessed number.
-  const activeContextLength = liveModels.find(m => m.id === resolvedModelId)?.contextLength
+  // TOD: local-model-only chat context — the budget denominator is the
+  // window the server has ACTUALLY loaded for this model (`servedContextLength`,
+  // read off Ollama's /api/ps), never the window the weights were trained
+  // with. Those differ by 8x on this host — 4096 served vs 32768 trained —
+  // and it is the served figure a conversation gets truncated against. Showing
+  // the trained one would advertise headroom the runtime will not honour.
+  const activeModel = liveModels.find(m => m.id === resolvedModelId)
+  const servedContextLength = activeModel?.servedContextLength
 
   // Feature 15: context budget
-  // TOD: local-model-only chat context — thresholds are percentages of the
-  // model's own measured window (activeContextLength, from /api/show), not
-  // a flat token count calibrated against a vendor ceiling nobody measured.
-  // When the endpoint reports no context length, there is no denominator
-  // and no safe threshold to color against — render the estimate plain,
-  // never a fake fraction.
+  // Thresholds are percentages of the served window. When the model is not
+  // loaded yet, /api/ps does not list it and there is no denominator at all —
+  // render the estimate plain and say the window is unknown. Substituting the
+  // trained number here is exactly the pretence this meter exists to avoid.
   const contextTokenEstimate = activeConv
     ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4)
     : 0
-  const contextUsagePct = activeContextLength ? contextTokenEstimate / activeContextLength : null
+  const contextUsagePct = servedContextLength ? contextTokenEstimate / servedContextLength : null
   const contextTokenColor = contextUsagePct === null
     ? 'text-white/30'
     : contextUsagePct > 0.85 ? 'text-red-500' : contextUsagePct > 0.6 ? 'text-yellow-500' : 'text-white/30'
   const formatTok = (n: number) => n >= 1000 ? `~${(n / 1000).toFixed(1)}k` : `~${n}`
-  const contextTokenLabel = activeContextLength
-    ? `${formatTok(contextTokenEstimate)} / ${formatTok(activeContextLength)} tokens`
-    : `${formatTok(contextTokenEstimate)} tokens (context size unknown)`
+  const contextTokenLabel = servedContextLength
+    ? `${formatTok(contextTokenEstimate)} / ${formatTok(servedContextLength)} tokens (served)`
+    : `${formatTok(contextTokenEstimate)} tokens · context window unknown until the model loads`
 
   // Cmd+K / arrow-key nav wired up after helpers defined (see below)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -896,19 +909,40 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     setActiveChat(filteredChats[sidebarFocusIdx].id)
   }, [sidebarFocusIdx])
 
-  const persistMessage = async (convId: string, msg: ChatMessage) => {
-    await fetch('/api/chat/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: msg.id,
-        conversation_id: convId,
-        role: msg.role,
-        content: msg.content,
-        model: msg.model || null,
-        image_url: msg.image_url || null,
-      }),
-    })
+  /** Writes one message to the database. Returns `null` on success, or the
+   *  reason it did not save. The result is not optional to look at: an ignored
+   *  failure here is a message that is on screen now and gone after reload. */
+  const persistMessage = async (convId: string, msg: ChatMessage): Promise<string | null> => {
+    try {
+      const res = await fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: msg.id,
+          conversation_id: convId,
+          role: msg.role,
+          content: msg.content,
+          model: msg.model || null,
+          image_url: msg.image_url || null,
+        }),
+      })
+      if (res.ok) return null
+      const body = await res.json().catch(() => null)
+      return `${msg.role} message was not saved to chat_messages: ${body?.error || `${res.status} from /api/chat/messages`}`
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      return `${msg.role} message was not saved to chat_messages: ${detail}`
+    }
+  }
+
+  /** Attach a persist failure to the message it belongs to, so the warning
+   *  renders next to the text that is at risk rather than as a floating toast. */
+  const markPersistError = (convId: string, msgId: string, reason: string) => {
+    setChats(prev => prev.map(c =>
+      c.id === convId
+        ? { ...c, messages: c.messages.map(m => m.id === msgId ? { ...m, persistError: reason } : m) }
+        : c
+    ))
   }
 
   const copyMessage = (id: string, content: string) => {
@@ -946,7 +980,8 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     )
     setChats(updatedChats)
 
-    await persistMessage(convToUse.id, userMsg)
+    const userPersistError = await persistMessage(convToUse.id, userMsg)
+    if (userPersistError) markPersistError(convToUse.id, userMsg.id, userPersistError)
     if (isFirstMsg) {
       await fetch('/api/chat/conversations', {
         method: 'PATCH',
@@ -1024,6 +1059,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
             if (parsed.error) {
               setChatError(parsed.error)
               break
+            }
+            // The reply streamed but the server could not write it to
+            // chat_messages. Keep the text on screen AND say so — otherwise
+            // the message silently disappears on the next load.
+            if (parsed.persistError) {
+              markPersistError(convToUse.id, streamMsgId, parsed.persistError)
+              continue
             }
             if (parsed.done) {
               finalId = parsed.id || streamMsgId
@@ -1346,7 +1388,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       id: newId,
       title: newTitle,
       model: conv.model,
-      messages: messagesToCopy.map(m => ({ ...m, id: 'msg-fork-' + Date.now() + Math.random().toString(36).slice(2) })),
+      // A fork is a fresh write, so the copy starts without the source's
+      // persist warning — it earns its own below if the write fails.
+      messages: messagesToCopy.map(m => ({ ...m, id: 'msg-fork-' + Date.now() + Math.random().toString(36).slice(2), persistError: undefined })),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       pinned: false,
@@ -1363,12 +1407,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: newId, title: newTitle, model: conv.model, agent_id: conv.agent_id, forked_from: conv.id }),
     })
+    // Same rule as a normal send: a copy that did not reach the database is
+    // marked on the message itself rather than left to disappear on reload.
     for (const m of newConv.messages) {
-      await fetch('/api/chat/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: m.id, conversation_id: newId, role: m.role, content: m.content, model: m.model || null }),
-      })
+      const err = await persistMessage(newId, m)
+      if (err) markPersistError(newId, m.id, err)
     }
   }
 
@@ -1741,12 +1784,27 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       {/* CENTER: CHAT AREA */}
       <div className="flex-1 flex flex-col min-w-0 relative" style={{background:'#080808'}}>
         {!activeConv ? (
-          <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center px-6">
             <div className="text-center">
               <div className="text-5xl mb-4">💬</div>
               <p className="text-white/40 text-sm font-medium">No conversation selected</p>
               <p className="text-white/20 text-xs mt-1">Click "New Chat" to start</p>
             </div>
+            {/* A dead model endpoint has to be visible before the user types a
+                first message, not only once a conversation exists — otherwise
+                "No conversation selected" reads as a working, idle app. The
+                server message names the endpoint that failed. */}
+            {modelsError && (
+              <div className="mt-6 max-w-lg w-full rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-center">
+                <p className="text-[11px] text-red-400 break-words">⚠️ {modelsError.message}</p>
+                <button
+                  type="button"
+                  onClick={loadLiveModels}
+                  className="mt-1 text-[10px] text-red-300/80 underline hover:text-red-200">
+                  retry
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -2092,6 +2150,18 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                               : <MarkdownMessage content={msg.content} />
                             }
                           </div>
+                          {/* This message is on screen but not in the database.
+                              It will be gone after a reload, so the warning is
+                              persistent rather than a toast, and it names the
+                              reason the write failed. */}
+                          {msg.persistError && (
+                            <div className={
+                              'mt-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 ' +
+                              (msg.role === 'user' ? 'text-right' : 'text-left')
+                            }>
+                              <p className="text-[11px] text-red-400 break-words">⚠️ {msg.persistError} — it will not be here after a reload.</p>
+                            </div>
+                          )}
                           {/* NEW: Approval flow buttons */}
                           {msg.role === 'assistant' && /\/approve\s+(allow-once|allow-always|deny)/i.test(msg.content) && !approvalUsed[msg.id] && (
                             <div className="flex gap-2 mt-2 flex-wrap">
@@ -2500,13 +2570,21 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                     local model server is down, this renders an explicit,
                     named error instead of a frozen or empty dropdown. */}
                 {modelsError ? (
+                  // The server's own message leads with the URL that failed
+                  // ("http://localhost:11434/v1 is unreachable — …"), so it is
+                  // rendered verbatim rather than replaced with a generic
+                  // "unavailable": the operator needs to see WHICH endpoint is
+                  // down. Never hidden on small screens — an error the user
+                  // cannot see is the same as no error at all.
                   <button
                     type="button"
                     onClick={loadLiveModels}
                     disabled={isSending}
-                    title={formatApiError(modelsError)}
-                    className="hidden sm:flex items-center gap-1 px-1.5 py-1 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-400 shrink-0 disabled:opacity-50">
-                    ⚠️ models unavailable — retry
+                    title={`${formatApiError(modelsError, 'model list unavailable')} — click to retry`}
+                    className="flex items-center gap-1 px-1.5 py-1 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-400 shrink-0 disabled:opacity-50 max-w-[16rem] sm:max-w-[22rem]">
+                    <span aria-hidden="true">⚠️</span>
+                    <span className="truncate">{modelsError.message}</span>
+                    <span className="shrink-0 underline">retry</span>
                   </button>
                 ) : (
                   <select

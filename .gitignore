@@ -38,3 +38,4 @@ coverage/
 
 # Stray local service-health snapshots from redirected script output
 st.json
+scripts/acceptance/.gate.lock

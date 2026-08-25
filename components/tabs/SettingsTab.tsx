@@ -13,7 +13,7 @@ import CostBreakdownTable from '@/components/CostBreakdownTable'
 
 interface UsageData {
   supabase: { dbBytes: number | null; dbLimitBytes: number; plan: string; lastChecked: string }
-  // Owner directive: no OpenRouter, no cloud LLM. This is a live read of
+  // Owner directive: no hosted LLM gateway, no cloud LLM. This is a live read of
   // ${LLM_BASE_URL}/models made fresh for the request — baseUrl/models come
   // straight off that response, never a hardcoded roster or a fabricated plan.
   localLlm: { baseUrl: string; models: string[]; ok: boolean; error: string | null; lastChecked: string }
@@ -263,7 +263,7 @@ export default function SettingsTab() {
             className="text-[10px] text-blue-400/70 hover:text-blue-400 mt-1 inline-block">claude.ai/settings</a>
         </ServiceCard>
 
-        {/* Local LLM — owner directive: no OpenRouter, no cloud LLM. Every
+        {/* Local LLM — owner directive: no hosted LLM gateway, no cloud LLM. Every
             field below is a live read of ${LLM_BASE_URL}/models made for
             this request. On failure there is nothing measured to caption or
             timestamp — no plan string, no "checked Ns ago" — just the URL

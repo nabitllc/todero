@@ -25,6 +25,15 @@ export async function GET() {
   return NextResponse.json({
     base_url: LLM_BASE_URL,
     default_model: LLM_DEFAULT_MODEL || live.models[0].id,
-    models: live.models,
+    // Two distinct windows, deliberately not collapsed into one number: the
+    // client meters against `servedContextLength` (what the loaded slot will
+    // actually accept) and may only mention `trainedContextLength` as
+    // background. A model that is not loaded reports served as absent —
+    // which the UI must render as unknown, never as the trained figure.
+    models: live.models.map(m => ({
+      id: m.id,
+      servedContextLength: m.servedContextLength,
+      trainedContextLength: m.trainedContextLength,
+    })),
   })
 }

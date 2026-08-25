@@ -1,12 +1,12 @@
 // Chat streaming backend — routes through the LLM_BASE_URL seam (Ollama by
-// default on this machine). No OpenRouter, no other vendor SDK, no cloud
+// default on this machine). No hosted gateway, no other vendor SDK, no cloud
 // fallback: whatever answers at LLM_BASE_URL is the only place this route
 // ever sends a prompt. See lib/llm-provider.ts.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
-import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels } from '@/lib/llm-provider'
+import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
 
 export const runtime = 'nodejs'
 
@@ -54,14 +54,15 @@ export async function POST(req: NextRequest) {
   }
 
   const requestedModel = modelOverride && modelOverride !== 'default' ? modelOverride : (LLM_DEFAULT_MODEL || live.models[0].id)
-  const knownIds = new Set(live.models.map(m => m.id))
-  if (!knownIds.has(requestedModel)) {
+  // `ollama/qwen2.5-coder:7b` and `qwen2.5-coder:7b` both resolve; a prefix
+  // naming a provider that is not the configured one does not.
+  const model = resolveModelId(requestedModel, live.models.map(m => m.id))
+  if (!model) {
     return NextResponse.json(
       { error: `unknown model "${requestedModel}" — not present in ${LLM_BASE_URL}/models`, id: requestedModel },
       { status: 400 },
     )
   }
-  const model = requestedModel
 
   let upstream: Response
   try {
@@ -122,32 +123,55 @@ export async function POST(req: NextRequest) {
         return
       }
 
-      // Save assistant message to Supabase
+      // ── Persist the assistant reply ───────────────────────────────────────
+      // `chat_messages.id` is a TEXT PRIMARY KEY with no default
+      // (migrations/000_baseline_schema.sql:191), so the id has to be supplied
+      // here exactly as /api/chat/messages requires it from the client. It was
+      // omitted, and the failure was swallowed by a bare `catch {}`, so every
+      // assistant reply streamed fine and then vanished on reload with nothing
+      // said. A write that did not happen is not allowed to look like one that
+      // did: the stream still finishes (the user keeps the text on screen) but
+      // it carries a `persistError` frame naming what was lost and why, which
+      // ChatTab renders under the message.
       let savedId: string | undefined
+      let persistError: string | undefined
       if (conversationId && fullContent) {
+        const assistantId = `msg-${Date.now()}`
         try {
           const db = createAdminClient()
-          const { data } = await db
+          const { error } = await db
             .from('chat_messages')
             .insert({
+              id: assistantId,
               conversation_id: conversationId,
               role: 'assistant',
               content: fullContent,
               model,
               created_at: new Date().toISOString(),
             })
-            .select('id')
-            .single()
-          savedId = data?.id
+          if (error) {
+            persistError = `assistant reply was not saved to chat_messages: ${error.message}`
+          } else {
+            savedId = assistantId
 
-          // Update conversation updated_at
-          await db
-            .from('chat_conversations')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', conversationId)
-        } catch { /* non-fatal — message still streamed */ }
+            // Update conversation updated_at
+            const { error: convError } = await db
+              .from('chat_conversations')
+              .update({ updated_at: new Date().toISOString() })
+              .eq('id', conversationId)
+            if (convError) {
+              persistError = `assistant reply was saved, but chat_conversations.updated_at was not: ${convError.message}`
+            }
+          }
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err)
+          persistError = `assistant reply was not saved to chat_messages: ${detail}`
+        }
       }
 
+      if (persistError) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ persistError })}\n\n`))
+      }
       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, id: savedId })}\n\n`))
       controller.close()
     },

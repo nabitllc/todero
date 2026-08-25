@@ -7,6 +7,16 @@
 // stranger can run this on every clone, every deploy, and after every pull,
 // and it only ever does the delta.
 //
+// WHICH DIRECTORY IT APPLIES depends on the provider `lib/db.ts` resolves —
+// this file never decides that for itself:
+//
+//   sqlite            -> migrations/sqlite/*.sql, into the one file the
+//                        `sqlite` adapter opens. No server, no connection
+//                        string, no account; this is what a fresh clone with
+//                        no credentials gets, and what makes `npm run setup`
+//                        able to finish its own job.
+//   postgres/supabase -> migrations/*.sql over DATABASE_URL, as below.
+//
 // Migrations always run over a DIRECT Postgres connection (`DATABASE_URL`),
 // regardless of which adapter `lib/db.ts` picked for the app's own queries.
 // That is deliberate: the `supabase` adapter talks to Postgres through an
@@ -33,9 +43,13 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { importTs } from './lib/ts-import.mjs'
+import { databaseStatus } from './lib/env-report.mjs'
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = join(__dirname, '..')
 const MIGRATIONS_DIR = join(REPO_ROOT, 'migrations')
+const SQLITE_MIGRATIONS_DIR = join(MIGRATIONS_DIR, 'sqlite')
 
 // ─── .env.local / .env loader ──────────────────────────────────────────────
 //
@@ -149,7 +163,105 @@ function contextAroundPosition(sql, position) {
   return { line, snippet }
 }
 
+/** Migration filenames in a directory, in the order they must be applied. */
+function migrationFiles(dir) {
+  return readdirSync(dir)
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+}
+
+/**
+ * Apply migrations/sqlite/*.sql to the file the `sqlite` adapter opens.
+ *
+ * Same ledger, same "only ever the delta" behaviour and same refusal to record
+ * a file that did not apply as the Postgres path below — the engine is the only
+ * difference. `node:sqlite` ships inside Node, so this needs nothing installed.
+ */
+async function migrateSqlite() {
+  const { DatabaseSync } = await import('node:sqlite')
+
+  const adapter = await importTs('lib/db/sqlite-adapter.ts')
+  if (!adapter.ok) {
+    fail(`could not read the sqlite adapter to find the database file — ${adapter.reason}`)
+    return
+  }
+  const file = adapter.module.sqlitePath()
+
+  let files
+  try {
+    files = migrationFiles(SQLITE_MIGRATIONS_DIR)
+  } catch {
+    fail(`no ${SQLITE_MIGRATIONS_DIR} directory in this checkout — nothing to apply.`)
+    return
+  }
+  if (files.length === 0) {
+    console.log('[db:migrate] no .sql files found in migrations/sqlite/ — nothing to do.')
+    return
+  }
+
+  const db = new DatabaseSync(file)
+  try {
+    db.exec('PRAGMA foreign_keys = ON')
+    db.exec(
+      'CREATE TABLE IF NOT EXISTS schema_migrations (' +
+        '  filename   TEXT PRIMARY KEY,' +
+        "  applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))" +
+        ')',
+    )
+    const applied = new Set(
+      db.prepare('SELECT filename FROM schema_migrations').all().map(r => r.filename),
+    )
+
+    let ranCount = 0
+    for (const name of files) {
+      if (applied.has(name)) continue
+      const sql = readFileSync(join(SQLITE_MIGRATIONS_DIR, name), 'utf8')
+      process.stdout.write(`[db:migrate] applying sqlite/${name} ... `)
+      try {
+        db.exec('BEGIN')
+        db.exec(sql)
+        db.prepare('INSERT INTO schema_migrations (filename) VALUES (?)').run(name)
+        db.exec('COMMIT')
+        console.log('ok')
+        ranCount++
+      } catch (err) {
+        try {
+          db.exec('ROLLBACK')
+        } catch {
+          /* nothing was open */
+        }
+        console.log('FAILED')
+        fail(
+          `sqlite/${name} did not apply — rolled back, NOT recorded as applied.\n` +
+            `  ${err instanceof Error ? err.message : String(err)}\n` +
+            `  Fix the SQL in migrations/sqlite/${name} and re-run \`npm run db:migrate\`.`,
+        )
+        return
+      }
+    }
+
+    if (ranCount === 0) {
+      console.log(
+        `[db:migrate] up to date — ${files.length} sqlite migration(s) already applied, 0 new.`,
+      )
+    } else {
+      console.log(`[db:migrate] applied ${ranCount} new sqlite migration(s) to ${file}.`)
+    }
+  } finally {
+    db.close()
+  }
+}
+
 async function main() {
+  // Which schema to apply is the seam's decision, not this script's. On a
+  // clone with no credentials that resolves to `sqlite`, which is the whole
+  // reason `npm run setup` can now finish without an account.
+  const status = await databaseStatus()
+  if (status.provider === 'sqlite') {
+    await migrateSqlite()
+    return
+  }
+
   const databaseUrl = (process.env.DATABASE_URL ?? '').trim()
   if (!databaseUrl) {
     fail(missingDatabaseUrlMessage())

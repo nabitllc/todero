@@ -18,12 +18,34 @@
 // Exit 0 = shippable. Exit 1 = not yet.
 
 import { execFile } from 'node:child_process'
+import fs from 'node:fs'
 import { promisify } from 'node:util'
 import { CHECKS, http } from './checks.mjs'
 import { TRUTH_CHECKS } from './checks-truth.mjs'
 
 const exec = promisify(execFile)
 const quiet = process.argv.includes('--quiet')
+
+// ── single-runner lock ──────────────────────────────────────────────────────
+// Two gates running at once both build into .next-verify and clobber each other,
+// which surfaces as a phantom blocker — the same collision that took the dev
+// server down, reintroduced between the background monitor and a manual run.
+// An overlapping run reports INCONCLUSIVE and exits 2. It must never report a
+// regression, because it did not measure one.
+const LOCK = 'scripts/acceptance/.gate.lock'
+const STALE_MS = 15 * 60 * 1000
+try {
+  const st = fs.statSync(LOCK)
+  if (Date.now() - st.mtimeMs < STALE_MS) {
+    console.log('INCONCLUSIVE - another gate run is in progress')
+    process.exit(2)
+  }
+  fs.unlinkSync(LOCK)   // stale — a previous run died
+} catch { /* no lock, carry on */ }
+fs.writeFileSync(LOCK, String(process.pid))
+const releaseLock = () => { try { fs.unlinkSync(LOCK) } catch {} }
+process.on('exit', releaseLock)
+process.on('SIGINT', () => { releaseLock(); process.exit(130) })
 
 // Checks that must ALL pass — the ones where failure makes a test drive pointless.
 const MUST_PASS = new Set([

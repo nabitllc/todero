@@ -8,8 +8,20 @@
 // Everything a caller supplies is either an identifier — validated against a
 // strict pattern and double-quoted — or a bound parameter. Values are never
 // interpolated into the statement text.
+//
+// TWO DIALECTS, ONE COMPILER
+//   `SqlDialect` is the only concession to a second engine. Both `postgres`
+//   and `sqlite` speak the same clause grammar for everything the seam can
+//   express; they disagree on five mechanical points — placeholder syntax,
+//   case-insensitive LIKE, list membership, the `count(*)` cast, and whether
+//   `DEFAULT` may appear inside a VALUES tuple — and each is handled below
+//   where it occurs. Nothing else in the seam or in the adapters duplicates a
+//   SELECT/INSERT/UPDATE/DELETE builder.
 
 import type { DbComparison, DbPredicate, DbRow } from '../db'
+
+/** SQL engine a statement is being compiled for. */
+export type SqlDialect = 'postgres' | 'sqlite'
 
 /** A statement ready for `client.query(text, values)`. */
 export interface SqlStatement {
@@ -49,6 +61,8 @@ export interface PgQuerySpec {
   onConflict: string[] | null
   ignoreDuplicates: boolean
   head: boolean
+  /** Engine to compile for. Absent means `postgres` — the original behaviour. */
+  dialect?: SqlDialect
 }
 
 /** Thrown when a call cannot be expressed as SQL. Names the offending part. */
@@ -82,12 +96,16 @@ export function columnList(columns: string): string {
     .join(', ')
 }
 
-/** Collects bound values and hands back the `$n` placeholder for each. */
+/**
+ * Collects bound values and hands back this dialect's placeholder for each —
+ * `$n` on Postgres, `?` on SQLite. Values still never reach the statement text.
+ */
 class Params {
   readonly values: unknown[] = []
+  constructor(private readonly dialect: SqlDialect = 'postgres') {}
   bind(value: unknown): string {
     this.values.push(value)
-    return `$${this.values.length}`
+    return this.dialect === 'sqlite' ? '?' : `$${this.values.length}`
   }
 }
 
@@ -99,6 +117,8 @@ const BINARY_OPERATORS: Record<Exclude<DbComparison, 'is' | 'in' | 'contains'>, 
   lt: '<',
   lte: '<=',
   like: 'LIKE',
+  // SQLite's LIKE is already ASCII-case-insensitive and has no ILIKE keyword,
+  // so `ilike` compiles to plain LIKE there — same result, one keyword less.
   ilike: 'ILIKE',
 }
 
@@ -107,10 +127,40 @@ const BINARY_OPERATORS: Record<Exclude<DbComparison, 'is' | 'in' | 'contains'>, 
  * an array; anything else is bound as jsonb text, which is how the callers that
  * use it (JSON columns) mean it.
  */
-function containsPredicate(column: string, value: unknown, params: Params): string {
+function containsPredicate(
+  column: string,
+  value: unknown,
+  params: Params,
+  dialect: SqlDialect,
+): string {
+  if (dialect === 'sqlite') return sqliteContainsPredicate(column, value, params)
   if (Array.isArray(value)) return `${ident(column)} @> ${params.bind(value)}`
   const json = typeof value === 'string' ? value : JSON.stringify(value)
   return `${ident(column)} @> ${params.bind(json)}::jsonb`
+}
+
+/**
+ * `contains` on SQLite, where the column holds JSON text rather than a native
+ * array or jsonb (see migrations/sqlite/000_baseline.sql). Every element the
+ * caller named must appear in the stored array — the same "is this a superset?"
+ * question `@>` asks. Object containment is not expressible this way and says
+ * so rather than answering wrongly.
+ */
+function sqliteContainsPredicate(column: string, value: unknown, params: Params): string {
+  const wanted =
+    Array.isArray(value) ? value : typeof value === 'string' || typeof value === 'number' ? [value] : null
+  if (wanted === null) {
+    throw new SqlCompileError(
+      `"contains" against an object is not expressible on SQLite (column "${column}"). ` +
+        `Pass the array of elements that must be present instead.`,
+    )
+  }
+  if (wanted.length === 0) return 'TRUE'
+  const list = wanted.map(v => params.bind(v)).join(', ')
+  return (
+    `(SELECT count(DISTINCT "value") FROM json_each(${ident(column)}) ` +
+    `WHERE "value" IN (${list})) = ${wanted.length}`
+  )
 }
 
 function isPredicate(column: string, value: unknown): string {
@@ -123,10 +173,10 @@ function isPredicate(column: string, value: unknown): string {
 }
 
 /** One `column <op> value` comparison as a SQL predicate. */
-function predicateSql(predicate: DbPredicate, params: Params): string {
+function predicateSql(predicate: DbPredicate, params: Params, dialect: SqlDialect): string {
   const { column, op, value } = predicate
   if (op === 'is') return isPredicate(column, value)
-  if (op === 'contains') return containsPredicate(column, value, params)
+  if (op === 'contains') return containsPredicate(column, value, params, dialect)
   if (op === 'in') {
     if (!Array.isArray(value)) {
       throw new SqlCompileError(
@@ -134,9 +184,15 @@ function predicateSql(predicate: DbPredicate, params: Params): string {
       )
     }
     if (value.length === 0) return 'FALSE'
+    // Postgres binds the whole list as one array parameter; SQLite has no array
+    // type, so each element becomes its own placeholder in an IN list.
+    if (dialect === 'sqlite') {
+      return `${ident(column)} IN (${value.map(v => params.bind(v)).join(', ')})`
+    }
     return `${ident(column)} = ANY(${params.bind(value)})`
   }
-  const operator = BINARY_OPERATORS[op]
+  const raw = BINARY_OPERATORS[op]
+  const operator = dialect === 'sqlite' && raw === 'ILIKE' ? 'LIKE' : raw
   if (!operator) throw new SqlCompileError(`Unsupported comparison "${op}" on column "${column}".`)
   // `eq`/`neq` against null must become IS [NOT] NULL — `= NULL` is never true.
   if (value === null && (op === 'eq' || op === 'neq')) {
@@ -145,14 +201,14 @@ function predicateSql(predicate: DbPredicate, params: Params): string {
   return `${ident(column)} ${operator} ${params.bind(value)}`
 }
 
-function whereSql(parts: readonly WherePart[], params: Params): string {
+function whereSql(parts: readonly WherePart[], params: Params, dialect: SqlDialect): string {
   if (parts.length === 0) return ''
   const rendered = parts.map(part => {
     if (part.kind === 'or') {
       if (part.predicates.length === 0) return 'FALSE'
-      return `(${part.predicates.map(p => predicateSql(p, params)).join(' OR ')})`
+      return `(${part.predicates.map(p => predicateSql(p, params, dialect)).join(' OR ')})`
     }
-    const sql = predicateSql(part.predicate, params)
+    const sql = predicateSql(part.predicate, params, dialect)
     return part.negated ? `NOT (${sql})` : sql
   })
   return ` WHERE ${rendered.join(' AND ')}`
@@ -168,9 +224,12 @@ function orderSql(order: readonly OrderPart[]): string {
   return ` ORDER BY ${parts.join(', ')}`
 }
 
-function windowSql(spec: PgQuerySpec, params: Params): string {
+function windowSql(spec: PgQuerySpec, params: Params, dialect: SqlDialect): string {
   let sql = ''
+  // SQLite has no bare OFFSET: it is only legal as part of a LIMIT clause, so
+  // an offset without a limit needs the "unbounded" sentinel LIMIT -1.
   if (spec.limit !== null) sql += ` LIMIT ${params.bind(spec.limit)}`
+  else if (spec.offset !== null && dialect === 'sqlite') sql += ' LIMIT -1'
   if (spec.offset !== null) sql += ` OFFSET ${params.bind(spec.offset)}`
   return sql
 }
@@ -188,18 +247,27 @@ function returningSql(spec: PgQuerySpec): string {
   return spec.returning ? ` RETURNING ${columnList(spec.columns)}` : ''
 }
 
-function compileInsert(spec: PgQuerySpec, params: Params): string {
+function compileInsert(spec: PgQuerySpec, params: Params, dialect: SqlDialect): string {
   const columns = insertColumns(spec.rows)
   if (columns.length === 0) throw new SqlCompileError(`Nothing to insert into "${spec.table}".`)
   // A key absent from one row of a batch becomes DEFAULT, not NULL — that is
   // what the column's own default is for, and it keeps `created_at`-style
-  // columns working on partial rows.
-  const tuples = spec.rows.map(
-    row =>
-      `(${columns
-        .map(column => (column in row ? params.bind(row[column]) : 'DEFAULT'))
-        .join(', ')})`,
-  )
+  // columns working on partial rows. SQLite has no DEFAULT keyword inside a
+  // VALUES tuple, so the sqlite adapter splits a ragged batch into one
+  // statement per distinct key set before it gets here; reaching this throw
+  // means that split did not happen.
+  const tuples = spec.rows.map(row => {
+    const missing = columns.filter(column => !(column in row))
+    if (dialect === 'sqlite' && missing.length > 0) {
+      throw new SqlCompileError(
+        `SQLite cannot insert DEFAULT inside a VALUES tuple: rows for "${spec.table}" ` +
+          `disagree on the columns ${missing.join(', ')}. Group rows by key set first.`,
+      )
+    }
+    return `(${columns
+      .map(column => (column in row ? params.bind(row[column]) : 'DEFAULT'))
+      .join(', ')})`
+  })
   return (
     `INSERT INTO ${ident(spec.table)} (${columns.map(ident).join(', ')}) ` +
     `VALUES ${tuples.join(', ')}`
@@ -225,7 +293,8 @@ function conflictSql(spec: PgQuerySpec): string {
 
 /** Compile the query the builder described into one parameterised statement. */
 export function compile(spec: PgQuerySpec): SqlStatement {
-  const params = new Params()
+  const dialect = spec.dialect ?? 'postgres'
+  const params = new Params(dialect)
   let text: string
 
   switch (spec.verb) {
@@ -233,16 +302,16 @@ export function compile(spec: PgQuerySpec): SqlStatement {
       const projection = spec.head ? '1' : columnList(spec.columns)
       text =
         `SELECT ${projection} FROM ${ident(spec.table)}` +
-        whereSql(spec.where, params) +
+        whereSql(spec.where, params, dialect) +
         orderSql(spec.order) +
-        windowSql(spec, params)
+        windowSql(spec, params, dialect)
       break
     }
     case 'insert':
-      text = compileInsert(spec, params) + returningSql(spec)
+      text = compileInsert(spec, params, dialect) + returningSql(spec)
       break
     case 'upsert':
-      text = compileInsert(spec, params) + conflictSql(spec) + returningSql(spec)
+      text = compileInsert(spec, params, dialect) + conflictSql(spec) + returningSql(spec)
       break
     case 'update': {
       const patch = spec.patch ?? {}
@@ -251,12 +320,15 @@ export function compile(spec: PgQuerySpec): SqlStatement {
       const assignments = columns.map(c => `${ident(c)} = ${params.bind(patch[c])}`).join(', ')
       text =
         `UPDATE ${ident(spec.table)} SET ${assignments}` +
-        whereSql(spec.where, params) +
+        whereSql(spec.where, params, dialect) +
         returningSql(spec)
       break
     }
     case 'delete':
-      text = `DELETE FROM ${ident(spec.table)}` + whereSql(spec.where, params) + returningSql(spec)
+      text =
+        `DELETE FROM ${ident(spec.table)}` +
+        whereSql(spec.where, params, dialect) +
+        returningSql(spec)
       break
     default:
       throw new SqlCompileError(`Unsupported verb "${String(spec.verb)}".`)
@@ -271,9 +343,13 @@ export function compile(spec: PgQuerySpec): SqlStatement {
  * count must ignore both.
  */
 export function compileCount(spec: PgQuerySpec): SqlStatement {
-  const params = new Params()
+  const dialect = spec.dialect ?? 'postgres'
+  const params = new Params(dialect)
+  // SQLite's count(*) is already an integer and has no `::` cast syntax.
+  const projection = dialect === 'sqlite' ? 'count(*) AS count' : 'count(*)::int AS count'
   return {
-    text: `SELECT count(*)::int AS count FROM ${ident(spec.table)}${whereSql(spec.where, params)}`,
+    text:
+      `SELECT ${projection} FROM ${ident(spec.table)}` + whereSql(spec.where, params, dialect),
     values: params.values,
   }
 }
@@ -287,7 +363,18 @@ export function compileRpc(fn: string, args: DbRow | undefined): SqlStatement {
 }
 
 /** Primary-key columns of a table — the default conflict target for upsert. */
-export function compilePrimaryKeyLookup(table: string): SqlStatement {
+export function compilePrimaryKeyLookup(
+  table: string,
+  dialect: SqlDialect = 'postgres',
+): SqlStatement {
+  // SQLite keeps this in a table-valued pragma rather than a catalogue join.
+  // `pk` is the 1-based position within the key, 0 for non-key columns.
+  if (dialect === 'sqlite') {
+    return {
+      text: 'SELECT "name" AS "column" FROM pragma_table_info(?) WHERE "pk" > 0 ORDER BY "pk"',
+      values: [table],
+    }
+  }
   return {
     text:
       'SELECT a.attname AS column FROM pg_index i ' +

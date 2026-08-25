@@ -137,7 +137,7 @@ export async function GET() {
   }
 
   // --- Local LLM ---
-  // Owner directive: no OpenRouter, no cloud LLM. This is a live probe run for
+  // Owner directive: no hosted LLM gateway, no cloud LLM. This is a live probe run for
   // this request — baseUrl and models come straight off the response, and a
   // failed probe names the URL and the exact reason rather than showing a
   // fabricated plan/balance for a vendor Todero doesn't use.

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
-import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels } from '@/lib/llm-provider'
+import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
 
 export async function POST(req: NextRequest) {
   // The database is either configured or it is not — say which, in the body.
@@ -26,7 +26,17 @@ export async function POST(req: NextRequest) {
       { status: 502 },
     )
   }
-  const model = LLM_DEFAULT_MODEL && live.models.some(m => m.id === LLM_DEFAULT_MODEL) ? LLM_DEFAULT_MODEL : live.models[0].id
+  // A configured LLM_MODEL that the endpoint does not report is a
+  // misconfiguration worth saying out loud — quietly titling with a different
+  // model is the same silent-substitution lie the chat route rejects.
+  const ids = live.models.map(m => m.id)
+  const model = LLM_DEFAULT_MODEL ? resolveModelId(LLM_DEFAULT_MODEL, ids) : ids[0]
+  if (!model) {
+    return NextResponse.json(
+      { error: `unknown model "${LLM_DEFAULT_MODEL}" — not present in ${LLM_BASE_URL}/models`, id: LLM_DEFAULT_MODEL },
+      { status: 400 },
+    )
+  }
 
   try {
     const res = await fetch(`${LLM_BASE_URL}/chat/completions`, {

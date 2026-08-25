@@ -9,12 +9,14 @@
 // - No binary dependency — just the env var OPENAI_API_KEY
 // - Single-shot (supportsSessions=false) — spawns a Node subprocess per task
 // - Tool-use loop (supportsTools=true) — exposes read_file + run_bash tools
-// - Model map: sonnet→gpt-4o, opus→o3, haiku→gpt-4o-mini
+// - Model ids come from a live GET of ${LLM_BASE_URL}/models — there is no
+//   vendor alias table, so an unresolvable tier is reported by name
 
 import { writeFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
+import { fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 
 // ---------------------------------------------------------------------------
@@ -22,12 +24,12 @@ import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 // ---------------------------------------------------------------------------
 //
 // The endpoint used to be the literal hostname `api.openai.com`, so pointing
-// Todero at Ollama / LM Studio / OpenRouter / Azure required editing this file.
+// Todero at Ollama / LM Studio / a hosted gateway / Azure required editing this file.
 // Any server speaking the OpenAI chat-completions shape now works by setting
 // LLM_BASE_URL (e.g. http://localhost:11434/v1 for Ollama).
 
 export interface ProviderConfig {
-  /** Base URL including the version segment, e.g. https://api.openai.com/v1 */
+  /** Base URL including the version segment, e.g. http://localhost:11434/v1 */
   baseUrl: string
   /** Bearer token. Local servers ignore it, so it may be a placeholder. */
   apiKey: string
@@ -35,12 +37,31 @@ export interface ProviderConfig {
   isLocal: boolean
 }
 
+/** Thrown when no LLM endpoint is configured. Names the missing env var. */
+export class ProviderConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProviderConfigError'
+  }
+}
+
+/**
+ * There is deliberately NO default base URL. It used to fall back to
+ * `https://api.openai.com/v1`, so an operator who never configured anything
+ * got a silent cloud endpoint (and an inscrutable 401) instead of being told
+ * which variable they had not set. An unset LLM_BASE_URL is a configuration
+ * error, by name.
+ */
 export function resolveProvider(): ProviderConfig {
-  const baseUrl = (
-    process.env.LLM_BASE_URL ??
-    process.env.OPENAI_BASE_URL ??
-    'https://api.openai.com/v1'
-  ).replace(/[/]+$/, '')
+  const configured = (process.env.LLM_BASE_URL ?? process.env.OPENAI_BASE_URL ?? '').trim()
+  if (!configured) {
+    throw new ProviderConfigError(
+      'LLM_BASE_URL is not set — no LLM endpoint is configured. Set LLM_BASE_URL ' +
+      '(e.g. http://localhost:11434/v1 for Ollama) in .env.local. There is no ' +
+      'default: a missing value must not quietly become a cloud vendor.',
+    )
+  }
+  const baseUrl = configured.replace(/[/]+$/, '')
 
   let isLocal = false
   try {
@@ -58,13 +79,39 @@ export function resolveProvider(): ProviderConfig {
 // Model mapping
 // ---------------------------------------------------------------------------
 
-function mapModel(alias: 'opus' | 'sonnet' | 'haiku' | undefined): string {
-  switch (alias) {
-    case 'opus':  return 'o3'
-    case 'haiku': return 'gpt-4o-mini'
-    case 'sonnet':
-    default:      return 'gpt-4o'
+/**
+ * Resolve an agent's model tier against the roster the configured endpoint
+ * actually reports (`GET ${LLM_BASE_URL}/models`).
+ *
+ * This used to be a static map — `sonnet` became `gpt-4o` whether or not the
+ * configured endpoint had ever heard of it, which is the same silent
+ * substitution the chat route was fixed to stop doing. Now the only ids that
+ * can come out of here are ids the live roster contains, in this order:
+ *
+ *   1. `LLM_MODEL_<TIER>` (e.g. LLM_MODEL_SONNET) — per-tier override
+ *   2. `LLM_MODEL` — the single-model setup most local hosts use
+ *   3. the tier name itself, if the endpoint happens to serve a model by that name
+ *
+ * Returns null when nothing matches — including when the endpoint is
+ * unreachable — so the caller reports the tier by name instead of guessing.
+ */
+export async function mapModel(
+  alias: 'opus' | 'sonnet' | 'haiku' | undefined,
+): Promise<string | null> {
+  const live = await fetchLiveModels()
+  if (!live.ok) return null
+  const ids = live.models.map(m => m.id)
+  const candidates = [
+    alias ? process.env[`LLM_MODEL_${alias.toUpperCase()}`] : undefined,
+    process.env.LLM_MODEL,
+    alias,
+  ]
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const hit = resolveModelId(candidate, ids)
+    if (hit) return hit
   }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -281,8 +328,13 @@ const RUNNER_SCRIPT = [
   'const fs = require("fs")',
   'const cp = require("child_process")',
   'const API_KEY = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || ""',
-  'const BASE_URL = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/[/]+$/, "")',
-  'const MODEL = process.env.OPENAI_MODEL || "gpt-4o"',
+  'const BASE_URL = (process.env.LLM_BASE_URL || "").replace(/[/]+$/, "")',
+  'const MODEL = process.env.OPENAI_MODEL || ""',
+  // No cloud default for either. The parent already refused to spawn without
+  // both, so reaching here unset means the env was tampered with in between —
+  // say which one is missing rather than dialling api.openai.com with "gpt-4o".
+  'if (!BASE_URL) { process.stderr.write("[openai-api] LLM_BASE_URL not set\n"); process.exit(1) }',
+  'if (!MODEL) { process.stderr.write("[openai-api] OPENAI_MODEL not set\n"); process.exit(1) }',
   'const PROMPT_F = process.env.PROMPT_FILE',
   'const LOG_F = process.env.LOG_FILE',
   'const MAX_ITER = parseInt(process.env.MAX_ITER || "20", 10)',
@@ -353,12 +405,28 @@ export const openaiApiRuntime: AgentRuntime = {
   async isAvailable(): Promise<boolean> {
     // A local OpenAI-compatible server (Ollama, LM Studio) needs no credential;
     // a hosted one does. Either way this runtime has no binary dependency.
-    const { apiKey, isLocal } = resolveProvider()
-    return isLocal || apiKey.length > 0
+    // No endpoint configured at all means unavailable — spawn() is the one
+    // that reports WHICH variable is missing, since only it has somewhere to
+    // put the message.
+    try {
+      const { apiKey, isLocal } = resolveProvider()
+      return isLocal || apiKey.length > 0
+    } catch {
+      return false
+    }
   },
 
   async spawn(opts: AgentSpawnOptions): Promise<AgentSpawnResult> {
-    const provider = resolveProvider()
+    let provider: ProviderConfig
+    try {
+      provider = resolveProvider()
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        runtime: 'openai-api',
+      }
+    }
     if (!provider.apiKey && !provider.isLocal) {
       return {
         ok: false,
@@ -367,9 +435,21 @@ export const openaiApiRuntime: AgentRuntime = {
       }
     }
 
-    // LLM_MODEL wins when set: a local server has its own model names
-    // (qwen2.5-coder:7b), which the opus/sonnet/haiku aliases cannot express.
-    const model = process.env.LLM_MODEL ?? mapModel(opts.model)
+    // Resolved against the endpoint's own live roster. An id nothing on the
+    // roster matches is reported by name here rather than swapped for a model
+    // from a vendor the operator never configured.
+    const tier = opts.model ?? 'default'
+    const model = await mapModel(opts.model)
+    if (!model) {
+      return {
+        ok: false,
+        error:
+          `cannot resolve a model for tier "${tier}" against ${provider.baseUrl}/models — ` +
+          `set LLM_MODEL${opts.model ? ` (or LLM_MODEL_${opts.model.toUpperCase()})` : ''} ` +
+          `to an id that endpoint reports`,
+        runtime: 'openai-api',
+      }
+    }
 
     let tmpDir: string
     try {

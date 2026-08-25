@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
 import { dbUnavailableResponse } from '@/lib/db-http'
+import { resolveConfiguredModel } from '@/lib/llm-provider'
 
 /**
  * Who owns a workspace created by the onboarding wizard.
@@ -26,6 +27,19 @@ export async function POST(req: Request) {
 
   const { name, type, vision, agentName, model, apiKey, taskTitle, taskDescription } = await req.json()
   if (!name || !type) return NextResponse.json({ error: 'name and type required' }, { status: 400 })
+
+  // Validated BEFORE the first write. The wizard's model used to default to
+  // `anthropic/claude-sonnet-4-6`, stamping every first agent with a model the
+  // install could not reach; rejecting it later would leave an orphan business
+  // and sprint behind, so the check happens while nothing has been created yet.
+  let agentModel: string | null = null
+  if (agentName) {
+    const resolved = await resolveConfiguredModel(model)
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error, id: resolved.id }, { status: resolved.status })
+    }
+    agentModel = resolved.model
+  }
 
   const supabase = getSupabase()
 
@@ -57,13 +71,13 @@ export async function POST(req: Request) {
     })
   }
 
-  // Save agent config to agents table
-  if (agentName && business?.id) {
+  // Save agent config to agents table — with the model resolved above.
+  if (agentName && agentModel && business?.id) {
     await supabase.from('agents').insert({
       business_id: business.id,
       name: agentName,
       adapter: 'claude-code',
-      model: model || 'anthropic/claude-sonnet-4-6',
+      model: agentModel,
       api_key_enc: apiKey || null,
       heartbeat_every: '4h',
       description: `First agent for ${name}`

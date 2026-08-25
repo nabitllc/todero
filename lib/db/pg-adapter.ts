@@ -15,6 +15,12 @@
 // `lib/__tests__/db-seam.test.ts` drives this adapter against a real Postgres
 // created from the repo's own `migrations/*.sql`, running the identical query
 // set it runs through the hosted adapter.
+//
+// The builder below (`SqlQueryBuilder`) is exported because it is not
+// Postgres-specific: it accumulates seam calls and hands them to `pg-sql.ts`,
+// which can emit either dialect. `lib/db/sqlite-adapter.ts` reuses it with a
+// different `SqlFlavour` and a different executor, so there is exactly one
+// implementation of the seam's verbs over SQL, not one per engine.
 
 import type { Pool } from 'pg'
 import type {
@@ -40,6 +46,7 @@ import {
   compilePrimaryKeyLookup,
   compileRpc,
   type PgQuerySpec,
+  type SqlDialect,
   type WherePart,
 } from './pg-sql'
 
@@ -133,13 +140,18 @@ const NO_ROWS = 'PGRST116'
 
 const primaryKeys = new Map<string, string[]>()
 
-async function primaryKeyColumns(exec: SqlExecutor, table: string): Promise<string[]> {
-  const cached = primaryKeys.get(table)
+async function primaryKeyColumns(
+  exec: SqlExecutor,
+  table: string,
+  dialect: SqlDialect,
+): Promise<string[]> {
+  const key = `${dialect}:${table}`
+  const cached = primaryKeys.get(key)
   if (cached) return cached
-  const stmt = compilePrimaryKeyLookup(table)
+  const stmt = compilePrimaryKeyLookup(table, dialect)
   const result = await exec.query(stmt.text, stmt.values)
   const columns = result.rows.map(row => String(row.column))
-  primaryKeys.set(table, columns)
+  primaryKeys.set(key, columns)
   return columns
 }
 
@@ -147,7 +159,33 @@ async function primaryKeyColumns(exec: SqlExecutor, table: string): Promise<stri
 
 type RowMode = 'many' | 'single' | 'maybeSingle'
 
-class PgQueryBuilder implements DbQueryBuilder {
+/**
+ * The handful of things that differ between two SQL engines, so that ONE
+ * builder can serve both. `lib/db/sqlite-adapter.ts` passes its own; leaving it
+ * out gives the Postgres behaviour this file has always had.
+ *
+ * Everything else — every verb, filter, modifier and row-count expectation
+ * below — is engine-independent, which is the whole reason a second SQL
+ * adapter is a flavour and not a second copy of this class.
+ */
+export interface SqlFlavour {
+  dialect: SqlDialect
+  /**
+   * True when a batch insert whose rows disagree on their column set must be
+   * split into one statement per key set (SQLite cannot say DEFAULT inside a
+   * VALUES tuple; Postgres can).
+   */
+  splitRaggedInserts?: boolean
+  /**
+   * Driver error → the seam's envelope, including the `DB_ERROR` codes
+   * `lib/db.ts` guarantees. Defaults to the node-postgres mapping below.
+   */
+  toDbError?(cause: unknown): DbError
+}
+
+const POSTGRES: SqlFlavour = { dialect: 'postgres' }
+
+export class SqlQueryBuilder implements DbQueryBuilder {
   private readonly spec: PgQuerySpec
   private readonly joins: DbJoin[] = []
   private countMode: DbSelectOptions['count'] = null
@@ -157,6 +195,7 @@ class PgQueryBuilder implements DbQueryBuilder {
     private readonly exec: SqlExecutor,
     private readonly adapter: () => DbAdapter,
     table: string,
+    private readonly flavour: SqlFlavour = POSTGRES,
   ) {
     this.spec = {
       table,
@@ -172,6 +211,7 @@ class PgQueryBuilder implements DbQueryBuilder {
       onConflict: null,
       ignoreDuplicates: false,
       head: false,
+      dialect: flavour.dialect,
     }
   }
 
@@ -313,10 +353,33 @@ class PgQueryBuilder implements DbQueryBuilder {
     return this.run().then(onfulfilled, onrejected)
   }
 
+  /**
+   * Rows for one INSERT/upsert statement, as batches. Normally one batch —
+   * every row goes in a single multi-VALUES statement. On an engine that
+   * cannot say DEFAULT inside a VALUES tuple, rows that disagree on their
+   * column set are grouped so each statement's tuples all name the same
+   * columns, and the columns a group omits fall to their own defaults.
+   */
+  private insertBatches(): DbRow[][] {
+    if (!this.flavour.splitRaggedInserts || this.spec.rows.length < 2) return [this.spec.rows]
+    const groups = new Map<string, DbRow[]>()
+    for (const row of this.spec.rows) {
+      const key = Object.keys(row).sort().join(' ')
+      const group = groups.get(key)
+      if (group) group.push(row)
+      else groups.set(key, [row])
+    }
+    return Array.from(groups.values())
+  }
+
   private async run(): Promise<DbResult> {
     try {
       if (this.spec.verb === 'upsert' && !this.spec.onConflict) {
-        this.spec.onConflict = await primaryKeyColumns(this.exec, this.spec.table)
+        this.spec.onConflict = await primaryKeyColumns(
+          this.exec,
+          this.spec.table,
+          this.flavour.dialect,
+        )
       }
 
       const isRead = this.spec.verb === 'select'
@@ -324,10 +387,18 @@ class PgQueryBuilder implements DbQueryBuilder {
       let count: number | null = null
 
       if (!(isRead && this.spec.head)) {
-        const statement = compile(this.spec)
-        const executed = await this.exec.query(statement.text, statement.values)
-        rows = executed.rows
-        if (!isRead) count = executed.rowCount
+        const batches = isRead ? [this.spec.rows] : this.insertBatches()
+        const allRows = this.spec.rows
+        for (const batch of batches) {
+          this.spec.rows = batch
+          const statement = compile(this.spec)
+          const executed = await this.exec.query(statement.text, statement.values)
+          rows = rows.concat(executed.rows)
+          // Left null when the driver reports no row count, exactly as before —
+          // only a real number ever contributes to the total.
+          if (!isRead && executed.rowCount !== null) count = (count ?? 0) + executed.rowCount
+        }
+        this.spec.rows = allRows
       }
 
       if (this.countMode) {
@@ -351,7 +422,8 @@ class PgQueryBuilder implements DbQueryBuilder {
       return this.shape(joined, rows)
     } catch (cause) {
       if (cause instanceof DbConfigurationError) throw cause
-      return { data: null, error: toDbError(cause), count: null, status: 400 }
+      const map = this.flavour.toDbError ?? toDbError
+      return { data: null, error: map(cause), count: null, status: 400 }
     }
   }
 
@@ -384,7 +456,7 @@ export const pgAdapterFactory: DbAdapterFactory = {
     const adapter: DbAdapter = {
       provider: 'postgres',
       missingEnv: pgMissingEnv,
-      from: (table: string) => new PgQueryBuilder(executor(), () => adapter, table),
+      from: (table: string) => new SqlQueryBuilder(executor(), () => adapter, table),
       rpc: async (fn: string, params?: DbRow): Promise<DbResult> => {
         const exec = executor()
         try {

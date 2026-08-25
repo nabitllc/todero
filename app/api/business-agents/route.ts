@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
+import { resolveConfiguredModel } from '@/lib/llm-provider'
 
 export async function GET(req: Request) {
   // The database is either configured or it is not — say which, in the body.
@@ -36,13 +37,20 @@ export async function POST(req: Request) {
   const body = await req.json()
   const { business_id, name, adapter, model, api_key_enc, heartbeat_every, description } = body
   if (!business_id || !name) return NextResponse.json({ error: 'business_id and name required' }, { status: 400 })
+  // Same rule as /api/onboarding: an agent may only be stamped with a model
+  // the configured endpoint reports. The old `|| 'anthropic/claude-sonnet-4-6'`
+  // wrote a cloud id into every agent created without an explicit model.
+  const resolved = await resolveConfiguredModel(model)
+  if (!resolved.ok) {
+    return NextResponse.json({ error: resolved.error, id: resolved.id }, { status: resolved.status })
+  }
   const hub = getHubClient(business_id)
   const { data, error } = await hub.client.from('agents')
     .insert({
       business_id,
       name,
       adapter: adapter || 'claude-code',
-      model: model || 'anthropic/claude-sonnet-4-6',
+      model: resolved.model,
       api_key_enc,
       heartbeat_every: heartbeat_every || '4h',
       description
