@@ -91,12 +91,12 @@
   {
    "n": 3,
    "name": "Truth",
-   "chip": "running",
-   "when": "25 Aug · 00:05 →",
-   "minutes": 135,
-   "agents": 69,
-   "tokens": 6250000,
-   "cost": 27.7,
+   "chip": "done",
+   "when": "25 Aug · 00:05 → 02:37",
+   "minutes": 152,
+   "agents": 72,
+   "tokens": 7295640,
+   "cost": 32.3,
    "lede": "Nothing in the product may assert something untrue. Eight pieces, and a changed method: a deterministic harness now gates every piece, and a frontier critic only runs once the script is green. Checks are written by the orchestrator, never by the builder being graded.",
    "before": [
     "Harness <b>18/29</b> — 4 critical failures",
@@ -106,12 +106,12 @@
     "Tabs rendered <code>0</code> over a 403"
    ],
    "after": [
-    "Harness <b>29/29 · 10/10</b>, zero critical",
-    "<b>Ship gate PASSED</b> — chat streams from local qwen on Windows",
-    "True total reported: <b>3,071</b> with a has_more flag",
-    "Status reports <code>unknown</code> and <code>checkedAt</code>; fabricated meetings deleted",
-    "No component parses a body without checking <code>res.ok</code>",
-    "But <b>0 of 21 critic verdicts passed</b> — the script is green, the judgement is not"
+    "Harness <b>29/29 · 10/10</b>, zero critical — from 19/29",
+    "<b>Ship gate PASSED</b> — chat streams from local qwen on Windows, no cloud key",
+    "True total <b>3,071</b> with has_more · fabricated meetings, fake greens and invented crons deleted",
+    "<b>0 of 8 pieces passed their critic</b> — 7 halted on a bug in my loop, not on the work",
+    "The halt measured harness failures, which go flat at zero — so it read a green gate as stagnation and discarded the critic rounds",
+    "Untracked 123MB of committed build output the wave&rsquo;s own report caught"
    ]
   }
  ],
