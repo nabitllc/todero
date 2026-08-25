@@ -34,7 +34,8 @@
     ".next/types/**/*.ts",
     "**/*.ts",
     "**/*.tsx",
-    ".next-critic-agents/types/**/*.ts"
+    ".next-critic-agents/types/**/*.ts",
+    ".next-critic2/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

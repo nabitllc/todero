@@ -111,32 +111,12 @@ function stripMarkdownPreview(text: string): string {
     .slice(0, 60)
 }
 
-const AGENT_MODEL_MAP: Record<string, string> = {
-  'main': 'Claude Max',
-  'kemuni-sme': 'Claude Max',
-  'vespera-sme': 'Claude Max',
-  'scout': 'Gemma 3 4B (local)',
-}
-
-// Model options available in chat (agent default or per-message override).
-// Grouped by provider with context window sizes.
-const MODEL_OPTIONS: { id: string; label: string; desc: string; provider: string; ctx?: string }[] = [
-  { id: 'default',                       label: '⚡ Agent default',          desc: 'Use the selected agent\'s default model', provider: 'System' },
-  // Anthropic
-  { id: 'anthropic/claude-sonnet-4-6',   label: '🟣 Claude Sonnet 4.6',     desc: 'Best for complex tasks',     provider: 'Anthropic', ctx: '200k' },
-  { id: 'anthropic/claude-haiku-4-5',    label: '🔵 Claude Haiku 4.5',      desc: 'Fast, lightweight',          provider: 'Anthropic', ctx: '200k' },
-  { id: 'anthropic/claude-opus-4-6',     label: '🔶 Claude Opus 4.6',       desc: 'Most powerful',              provider: 'Anthropic', ctx: '200k' },
-  // OpenRouter
-  { id: 'openrouter/auto',               label: '🔀 OpenRouter auto',        desc: 'Best available via OpenRouter', provider: 'OpenRouter' },
-  { id: 'openrouter/google/gemini-2.5-pro', label: '🔷 Gemini 2.5 Pro',     desc: 'Google flagship',            provider: 'OpenRouter', ctx: '1M' },
-  { id: 'openrouter/deepseek/deepseek-r1', label: '🧩 DeepSeek R1',         desc: 'Reasoning model',            provider: 'OpenRouter', ctx: '128k' },
-  { id: 'openrouter/meta-llama/llama-4-maverick', label: '🦙 Llama 4 Maverick', desc: 'Open weights',          provider: 'OpenRouter', ctx: '1M' },
-  { id: 'openrouter/qwen/qwen3-235b-a22b', label: '🌐 Qwen3 235B',         desc: 'MoE reasoning',              provider: 'OpenRouter', ctx: '128k' },
-  // Ollama (local)
-  { id: 'ollama/gemma3:4b',              label: '🟢 Gemma 3 4B',            desc: 'Private, free, offline',     provider: 'Ollama', ctx: '128k' },
-]
-
-const MODEL_PROVIDERS = Array.from(new Set(MODEL_OPTIONS.map(m => m.provider)))
+// The model list is deliberately NOT hardcoded here. Owner directive: local
+// Ollama only, no OpenRouter/cloud vendor menu. The dropdown is populated at
+// runtime from a live GET of ${LLM_BASE_URL}/models (proxied through
+// /api/chat/models — see that route and lib/llm-provider.ts), so whatever is
+// actually pulled on this host is what a user can pick. See the
+// `liveModels` / `defaultModelId` state below.
 
 // Expanded file type groups
 const FILE_TYPE_GROUPS = [
@@ -277,6 +257,15 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [renamingTitle, setRenamingTitle] = useState<string|null>(null)
   const [selectedAgent, setSelectedAgent] = useState<string>('main')
   const [selectedModel, setSelectedModel] = useState<string>('default')
+  // Live model roster from /api/chat/models (a same-origin proxy of a live
+  // GET against ${LLM_BASE_URL}/models — see lib/llm-provider.ts). Never a
+  // hardcoded vendor list: whatever is actually pulled on this host is what
+  // shows up here, and a failed load is shown as an explicit error naming
+  // the URL that failed, not silently swallowed into an empty dropdown.
+  const [liveModels, setLiveModels] = useState<{ id: string }[]>([])
+  const [defaultModelId, setDefaultModelId] = useState<string | null>(null)
+  const [modelsError, setModelsError] = useState<ApiError | null>(null)
+  const [modelsLoading, setModelsLoading] = useState(true)
   const [showFileTypePicker, setShowFileTypePicker] = useState(false)
   const fileTypePickerRef = useRef<HTMLDivElement>(null)
   const [sidebarFocusIdx, setSidebarFocusIdx] = useState<number>(-1)
@@ -428,6 +417,28 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
         }
       })
   }, [chatsReload])
+
+  // Live model roster — the model dropdown has no hardcoded contents. If the
+  // local LLM endpoint is down (e.g. Ollama stopped), this surfaces as a
+  // visible error naming the URL, not an empty/frozen select.
+  const loadLiveModels = useCallback(() => {
+    setModelsLoading(true)
+    fetchJson<{ base_url: string; default_model: string | null; models: { id: string }[] }>('/api/chat/models')
+      .then(res => {
+        if (!res.ok) {
+          setModelsError(res.error)
+          setLiveModels([])
+          setDefaultModelId(null)
+          setModelsLoading(false)
+          return
+        }
+        setModelsError(null)
+        setLiveModels(res.data.models || [])
+        setDefaultModelId(res.data.default_model)
+        setModelsLoading(false)
+      })
+  }, [])
+  useEffect(() => { loadLiveModels() }, [loadLiveModels])
 
   // Persist active chat to localStorage whenever it changes
   useEffect(() => {
@@ -675,7 +686,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
     } else if (cmd === '/clear') {
       await clearChat(activeConv.id)
     } else if (cmd === '/status') {
-      const mdl = AGENT_MODEL_MAP[selectedAgent] || 'Claude Max'
+      const mdl = agentModelLabel
       const tokEst = activeConv ? Math.round(activeConv.messages.reduce((sum, m) => sum + m.content.length, 0) / 4) : 0
       const tokLabel = tokEst >= 1000 ? `~${(tokEst/1000).toFixed(1)}k / 200k tokens` : `~${tokEst} / 200k tokens`
       const statusMsg: ChatMessage = {
@@ -970,7 +981,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       })
 
       if (!res.ok || !res.body) {
-        setChatError('Gateway error — could not stream response')
+        // /api/chat returns a real 400 (not a 200-wrapped SSE error) when
+        // the requested model id isn't in the live LLM_BASE_URL/models list
+        // — surface that exact message rather than a generic gateway string.
+        const body = await res.json().catch(() => null)
+        setChatError(body?.error || `${res.status} from /api/chat — could not stream response`)
         setLoading(false)
         setIsSending(false)
         return
@@ -1398,8 +1413,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
 
   const groupedChats = groupChatsByDate(filteredChats)
 
-  // Feature 8: model label
-  const agentModelLabel = AGENT_MODEL_MAP[selectedAgent] || 'Claude Max'
+  // Feature 8: model label — the model that will actually answer this
+  // message, not a per-agent vendor claim. An explicit override shows its id
+  // verbatim; otherwise this shows whatever /api/chat/models reported as the
+  // live default, or an honest loading/unavailable state — never a guess.
+  const agentModelLabel = selectedModel !== 'default'
+    ? selectedModel
+    : modelsLoading ? 'checking…' : modelsError ? 'model list unavailable' : (defaultModelId || 'no model configured')
 
   // NEW: Send last assistant message to another agent
   const sendToAgent = async (targetAgentId: string) => {
@@ -1793,12 +1813,6 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                     <span className="text-white/30">·</span>
                     <span style={{color:'#818cf8'}}>{agentModelLabel}</span>
                   </span>
-                  {selectedModel !== 'default' && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-medium"
-                      style={{background:'#0f1a0f',borderColor:'#1a3a1a',color:'#34d399'}}>
-                      {MODEL_OPTIONS.find(m=>m.id===selectedModel)?.label.replace(/^[^ ]+ /,'') || selectedModel}
-                    </span>
-                  )}
                   {activeConv.messages.length > 0 && (
                     <span className={`text-[9px] tabular-nums ${contextTokenColor}`}>{contextTokenLabel}</span>
                   )}
@@ -2503,23 +2517,33 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
                   }}
                 />
 
-                {/* Model selector */}
-                <select
-                  value={selectedModel}
-                  onChange={e => setSelectedModel(e.target.value)}
-                  disabled={isSending}
-                  className="hidden sm:block px-1.5 py-1 rounded-lg bg-[#0f0f0f] border border-white/10 text-[10px] text-white/40 shrink-0 outline-none focus:border-white/20 disabled:opacity-50 cursor-pointer"
-                  title="Select model">
-                  {MODEL_PROVIDERS.map(provider => (
-                    <optgroup key={provider} label={provider}>
-                      {MODEL_OPTIONS.filter(m => m.provider === provider).map(m => (
-                        <option key={m.id} value={m.id} title={m.desc}>
-                          {m.label}{m.ctx ? ` (${m.ctx})` : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
+                {/* Model selector — populated from a live GET of the LLM
+                    endpoint's /models (proxied via /api/chat/models, see
+                    lib/llm-provider.ts). No hardcoded vendor list: if the
+                    local model server is down, this renders an explicit,
+                    named error instead of a frozen or empty dropdown. */}
+                {modelsError ? (
+                  <button
+                    type="button"
+                    onClick={loadLiveModels}
+                    disabled={isSending}
+                    title={formatApiError(modelsError)}
+                    className="hidden sm:flex items-center gap-1 px-1.5 py-1 rounded-lg bg-red-500/10 border border-red-500/30 text-[10px] text-red-400 shrink-0 disabled:opacity-50">
+                    ⚠️ models unavailable — retry
+                  </button>
+                ) : (
+                  <select
+                    value={selectedModel}
+                    onChange={e => setSelectedModel(e.target.value)}
+                    disabled={isSending || modelsLoading}
+                    className="hidden sm:block px-1.5 py-1 rounded-lg bg-[#0f0f0f] border border-white/10 text-[10px] text-white/40 shrink-0 outline-none focus:border-white/20 disabled:opacity-50 cursor-pointer"
+                    title={modelsLoading ? 'Loading models…' : 'Live model list from the configured LLM_BASE_URL'}>
+                    <option value="default">⚡ Agent default{defaultModelId ? ` (${defaultModelId})` : modelsLoading ? ' (loading…)' : ''}</option>
+                    {liveModels.map(m => (
+                      <option key={m.id} value={m.id}>{m.id}</option>
+                    ))}
+                  </select>
+                )}
 
                 {/* Send-to-agent button */}
                 {showSendToAgent !== undefined && (

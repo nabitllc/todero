@@ -117,6 +117,15 @@
    "evidence": "Untouched. Inbox approve still returns 500, so the product still cannot record a human decision. Scheduled for Wave 4.",
    "goal_text": "Grok Bot — works end to end while you are away and surfaces only when it needs your approval. Alex Finn — a morning brief on your phone with what needs you.",
    "wave": 4
+  },
+  {
+   "name": "Pipeline Fidelity",
+   "baseline": 2,
+   "current": 3,
+   "goal": 9,
+   "wave": 6,
+   "evidence": "Swim lanes are real — BoardTab has together/business/feature/sprint — but there is no lane by agent, the one that matters for a fleet. And the Pipeline cannot reflect true state by construction: 7 invented display stages against 11 real lifecycle statuses, with column membership decided by ad-hoc conditions in the render. It also hardcodes a 4-agent array and filters on a status string absent from the lifecycle module.",
+   "goal_text": "Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through."
   }
  ]
 }

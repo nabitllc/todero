@@ -11,6 +11,7 @@ import {
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { fetchJson, useApiData, type ApiError } from '@/hooks/useApiData'
 import { dbUrl } from '@/lib/db/browser'
+import { estimateModelRateUsd } from '@/lib/model-rates'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Agent {
@@ -591,14 +592,12 @@ function BudgetTab({ agent }: { agent: Agent }) {
       })
   }, [agent.id])
 
-  // Calculate projected monthly cost
+  // Calculate projected monthly cost. Rate table lives in lib/agent-cost-log
+  // — an unrecognized model (any local Ollama tag included) rates 0 rather
+  // than a guessed cloud number.
   const heartbeatEvery = config?.heartbeat?.everyMinutes ?? 60
   const avgTokens = 2000
-  const modelRates: Record<string, number> = {
-    'claude-haiku-4-5': 0.80,
-    'claude-sonnet-4-6': 3.00,
-  }
-  const rate = modelRates[agent.model] ?? 3.00
+  const rate = estimateModelRateUsd(agent.model)
   const projected = ((1440 / heartbeatEvery) * 30 * avgTokens / 1_000_000 * rate).toFixed(2)
 
   function saveBudgetLimit() {
