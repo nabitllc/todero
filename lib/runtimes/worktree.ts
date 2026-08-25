@@ -28,12 +28,54 @@
 //     ABANDONED/                       (failed spawns, manually archived)
 
 import { mkdirSync, existsSync, symlinkSync, writeFileSync, readdirSync, statSync, rmSync } from 'fs'
-import { execSync } from 'child_process'
-import { join, dirname } from 'path'
-import { homedir } from 'os'
+import { spawnSync } from 'child_process'
+import { join } from 'path'
+import { TODERO_DIR, WORKTREE_ROOT } from '../paths'
 
-const WORKTREE_ROOT = process.env.AGENT_WORKTREE_ROOT ?? join(homedir(), 'agent-worktrees')
-const REPO_ROOT = process.env.TODERO_REPO_ROOT ?? join(homedir(), 'todero')
+// The repo these worktrees are cut from is *this* checkout. It used to be
+// `join(homedir(), 'todero')`, which does not exist on any host but one — and a
+// non-existent cwd is what turned every code-agent spawn into
+// "spawnSync cmd.exe ENOENT" before the spawn helper was ever reached.
+const REPO_ROOT = process.env.TODERO_REPO_ROOT ?? TODERO_DIR
+
+export interface GitResult {
+  ok: boolean
+  stdout: string
+  stderr: string
+  error?: string
+}
+
+/**
+ * Run one git command with an argv array and no shell.
+ *
+ * execSync('git checkout main', …) hands the string to cmd.exe on Windows and
+ * /bin/sh elsewhere — two different quoting dialects, and on this machine an
+ * ENOENT for cmd.exe itself. spawnSync with shell:false skips the shell
+ * entirely, so paths with spaces and branch names with slashes need no quoting.
+ */
+function git(args: string[], opts: { cwd?: string; timeout?: number } = {}): GitResult {
+  const result = spawnSync('git', args, {
+    cwd: opts.cwd ?? REPO_ROOT,
+    shell: false,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: opts.timeout ?? 30_000,
+  })
+  const stdout = result.stdout ?? ''
+  const stderr = result.stderr ?? ''
+  if (result.error) {
+    return { ok: false, stdout, stderr, error: result.error.message }
+  }
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      stdout,
+      stderr,
+      error: `git ${args[0]} exited ${result.status}: ${(stderr || stdout).trim().slice(0, 300)}`,
+    }
+  }
+  return { ok: true, stdout, stderr }
+}
 
 export interface WorktreePrepareOpts {
   agentId: string
@@ -79,19 +121,15 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
 
     // Make sure the repo is on main and up-to-date before branching off
     // (We don't pull — that's the 7am/7pm window's job — just stay on main)
-    try {
-      execSync('git checkout main', { cwd: REPO_ROOT, stdio: 'pipe', timeout: 10_000 })
-    } catch {
-      // ignore — might be a clean repo or a stash is in the way
-    }
+    // Best-effort: a dirty tree or a detached HEAD is not a reason to abort.
+    git(['checkout', 'main'], { timeout: 10_000 })
 
     // Guard: if a worktree for this branch already exists, reuse it instead of
     // creating a second one. Two worktrees on the same branch corrupt node_modules
     // symlinks and cause ENOTEMPTY failures on next npm install.
-    try {
-      const existingWorktrees = execSync('git worktree list --porcelain', {
-        cwd: REPO_ROOT, stdio: 'pipe',
-      }).toString()
+    {
+      const listed = git(['worktree', 'list', '--porcelain'], { timeout: 10_000 })
+      const existingWorktrees = listed.ok ? listed.stdout : ''
       const branchLine = `branch refs/heads/${branchName}`
       if (existingWorktrees.includes(branchLine)) {
         // Extract the path of the existing worktree for this branch
@@ -106,29 +144,27 @@ export function prepareWorktree(opts: WorktreePrepareOpts): WorktreePrepareResul
           }
         }
       }
-    } catch {
-      // If listing fails, proceed with creation — worst case we get an error at add
+      // If listing failed we just proceed with creation — worst case `git
+      // worktree add` reports the collision itself.
     }
 
     // Check if the branch already exists locally
-    let branchExistsLocal = false
-    try {
-      execSync(`git show-ref --verify --quiet refs/heads/${branchName}`, {
-        cwd: REPO_ROOT, stdio: 'pipe',
-      })
-      branchExistsLocal = true
-    } catch {
-      branchExistsLocal = false
-    }
+    const branchExistsLocal = git(
+      ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`],
+      { timeout: 10_000 }
+    ).ok
 
     // Create the worktree
     // - If branch exists, use `git worktree add <path> <branch>`
     // - If not, use `git worktree add -b <branch> <path> main`
-    const worktreeCmd = branchExistsLocal
-      ? `git worktree add ${JSON.stringify(worktreePath)} ${JSON.stringify(branchName)}`
-      : `git worktree add -b ${JSON.stringify(branchName)} ${JSON.stringify(worktreePath)} main`
+    const worktreeArgs = branchExistsLocal
+      ? ['worktree', 'add', worktreePath, branchName]
+      : ['worktree', 'add', '-b', branchName, worktreePath, 'main']
 
-    execSync(worktreeCmd, { cwd: REPO_ROOT, stdio: 'pipe', timeout: 30_000 })
+    const added = git(worktreeArgs, { timeout: 60_000 })
+    if (!added.ok) {
+      return { ok: false, error: added.error ?? 'git worktree add failed' }
+    }
 
     // Symlink node_modules from main repo so `npm run build` works without reinstall.
     // node_modules is append-only from the worktree's perspective (agent never `npm install`s
@@ -205,22 +241,19 @@ export function teardownWorktree(worktreePath: string): { ok: boolean; error?: s
   try {
     if (!existsSync(worktreePath)) return { ok: true }
     // Ask git to remove the worktree cleanly (deletes the dir and prunes the entry)
-    try {
-      execSync(`git worktree remove --force ${JSON.stringify(worktreePath)}`, {
-        cwd: REPO_ROOT, stdio: 'pipe', timeout: 30_000,
-      })
-    } catch (err) {
+    const removed = git(['worktree', 'remove', '--force', worktreePath], { timeout: 30_000 })
+    if (!removed.ok) {
       // Fallback: force delete the directory and prune
-      console.warn(`[worktree] git worktree remove failed, falling back to rm: ${err instanceof Error ? err.message : String(err)}`)
+      console.warn(`[worktree] git worktree remove failed, falling back to rm: ${removed.error}`)
       try {
         rmSync(worktreePath, { recursive: true, force: true })
-        execSync('git worktree prune', { cwd: REPO_ROOT, stdio: 'pipe', timeout: 10_000 })
       } catch (err2) {
         return {
           ok: false,
           error: err2 instanceof Error ? err2.message : String(err2),
         }
       }
+      git(['worktree', 'prune'], { timeout: 10_000 })
     }
     return { ok: true }
   } catch (err) {
