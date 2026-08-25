@@ -136,19 +136,27 @@ if [[ -n "$AGENT_ID" && -n "$TASK_KEY" ]]; then
     rm -f "$RETRIEVE_ERR_FILE"
     exit 2
   else
-    # Any other non-zero exit means the retrieval subprocess itself could not
-    # complete cleanly — a usage error, a crash, an unhandled failure. This is
-    # NOT the same thing as "searched and found nothing relevant" (that's the
-    # RETRIEVE_EXIT -eq 0, empty-$RETRIEVED branch above). Print the real
-    # diagnostic instead of discarding it (the old `2>/dev/null` here is
-    # exactly what hid the previous failure from whoever had to debug it),
-    # but DEGRADE rather than abort the whole spawn: a context document
-    # that's merely missing retrieved memory is still usable by the agent
-    # that spawns with it, whereas a document truncated before
-    # "# End Workspace Context" is not.
+    # Any other non-zero exit means the retrieve-context.mjs *process* itself
+    # could not complete cleanly — a usage error, a crash, an unhandled
+    # exception. This is NOT the same outcome as "searched and found nothing
+    # relevant" (RETRIEVE_EXIT -eq 0, empty-$RETRIEVED, handled above) and it
+    # is NOT the "run-record store unavailable" outcome either — that one no
+    # longer signals through the exit code at all: retrieve-context.mjs exits
+    # 0 for it and writes its own honest sentence to stdout (see
+    # `availability === 'unavailable'` there), so it is already caught by the
+    # RETRIEVE_EXIT -eq 0 branch above via a non-empty $RETRIEVED. Nothing
+    # ever sets RETRIEVE_EXIT to a value that means "store unavailable", so a
+    # branch here that claimed that was dead code that could never fire for
+    # the case it named — deleted. What legitimately reaches this branch is a
+    # genuine subprocess failure, so print the real diagnostic instead of
+    # discarding it (the old `2>/dev/null` here is exactly what hid the
+    # previous failure from whoever had to debug it), but DEGRADE rather than
+    # abort the whole spawn: a context document that's merely missing
+    # retrieved memory is still usable by the agent that spawns with it,
+    # whereas a document truncated before "# End Workspace Context" is not.
     echo "retrieve-context.mjs exited ${RETRIEVE_EXIT} — diagnostic follows:" >&2
     cat "$RETRIEVE_ERR_FILE" >&2
-    echo "_(retrieval unavailable — the run-record store could not be searched; this is NOT \"no relevant records\")_"
+    echo "_(retrieval script failed — retrieve-context.mjs exited ${RETRIEVE_EXIT}; see diagnostic above, not \"no relevant records\")_"
   fi
   rm -f "$RETRIEVE_ERR_FILE"
   echo ""

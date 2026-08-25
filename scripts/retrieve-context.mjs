@@ -66,11 +66,20 @@ if (!agentId || !taskKey) {
         // itself could not be reached (sqlite file/FTS table missing, postgres
         // table missing, a query error), so nothing was actually observed. A
         // caller reading this as a clean negative would be trusting a search
-        // that never happened.
+        // that never happened. This distinction must survive on STDOUT, not
+        // just stderr — spawn-context.sh (and anything else composing agent
+        // context) only reads stdout, so if the honest wording lived only in
+        // the stderr diagnostic below, every caller would still see empty
+        // stdout and fall back to "no past run record ranked relevant to this
+        // task", which is exactly the false negative this piece exists to kill.
         console.error(
           `[retrieve-context] ${agentId}/${taskKey}: RETRIEVAL UNAVAILABLE — the ${result.engine} store could not be ` +
             `searched (${result.unavailableReason ?? 'unknown reason'}). This is NOT "no relevant records found"; it is ` +
             `"nothing was observed". Proceeding with no injected context.`,
+        )
+        process.stdout.write(
+          `_(retrieval unavailable — the ${result.engine} store could not be searched: ` +
+            `${result.unavailableReason ?? 'unknown reason'}; this is NOT "no relevant records")_\n`,
         )
       } else if (result.text) {
         process.stdout.write(result.text + '\n')
@@ -84,10 +93,15 @@ if (!agentId || !taskKey) {
         // `scannedWindowRows` records it was able to look at — an older,
         // genuinely relevant record may sit past that window and this run
         // never saw it. Reporting a bounded scan as a completed search is the
-        // exact defect this piece exists to close.
+        // exact defect this piece exists to close. Same stdout-vs-stderr
+        // reasoning as the unavailable branch above: the caveat must be on
+        // the channel spawn-context.sh actually reads.
         console.error(
           `[retrieve-context] ${agentId}/${taskKey}: no relevant records found in the ${result.scannedWindowRows} ` +
             `most recent run records (${result.engine} search, bounded — older records were not scanned and may contain a match)`,
+        )
+        process.stdout.write(
+          `_(no match inside the ${result.scannedWindowRows} most recent run records — older records were not scanned)_\n`,
         )
       } else {
         console.error(`[retrieve-context] ${agentId}/${taskKey}: no relevant past run records found (${result.engine} search)`)
