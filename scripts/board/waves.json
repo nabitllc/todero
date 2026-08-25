@@ -114,14 +114,31 @@
     "The halt measured harness failures, which go flat at zero — so it read a green gate as stagnation and discarded the critic rounds",
     "Untracked 123MB of committed build output the wave&rsquo;s own report caught"
    ]
-  }
- ],
- "planned": [
+  },
   {
    "n": 4,
    "name": "Runs anywhere, runs an agent",
-   "detail": "SQLite behind the db seam · boot-time migrations · agent registration and heartbeat · the Hermes memory loop · supervisor-enforced ceilings · one real task on local qwen, end to end."
-  },
+   "chip": "running",
+   "when": "25 Aug · 06:10 →",
+   "minutes": null,
+   "agents": 0,
+   "tokens": 0,
+   "cost": 0,
+   "lede": "Nine pieces across four lanes, plus a fair re-hearing for the eight Wave 3 pieces the broken halt discarded. Three method changes: progress is now measured on the critic score once the gate is green, hard prohibitions are stated as absolutes after Wave 2 generated unauthorized destructive actions from its own briefs, and critics are told up front that the dispatch 503 is correct behaviour.",
+   "before": [
+    "Harness <b>8/10</b> — 8 critical, all Wave 4 targets",
+    "No SQLite adapter — cloud Supabase is still required to run",
+    "5 colliding migration prefixes; no ordered runner has ever run",
+    "<code>POST /api/connect</code> does not exist — no fleet registration",
+    "Memory injected uncapped and unranked; ledger never closes a row",
+    "Inbox approve still 5xx — no human decision can be recorded"
+   ],
+   "after": [
+    "<span class=\"mono\" style=\"color:var(--ink3)\">in flight</span>"
+   ]
+  }
+ ],
+ "planned": [
   {
    "n": 5,
    "name": "Brain2 alignment",
