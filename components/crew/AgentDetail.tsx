@@ -1,5 +1,7 @@
 'use client'
 import React, { useState, useEffect } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import { Clock, Activity, CheckCircle2, AlertCircle, Code2, Power, PowerOff } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -57,17 +59,22 @@ function priorityDot(p: string) {
 // ── Component ──────────────────────────────────────────────────────────────────
 export default function AgentDetail({ agent, onToggleActive }: AgentDetailProps) {
   const [issues, setIssues] = useState<Issue[]>([])
+  // TOD-654: distinguishes "no issues" from "the issue query was refused".
+  const [issuesError, setIssuesError] = useState<ApiError | null>(null)
   const [loadingIssues, setLoadingIssues] = useState(true)
   const [toggling, setToggling] = useState(false)
 
   const isActive = agent.status !== 'paused' && agent.status !== 'inactive'
 
   useEffect(() => {
-    fetch(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
-      .then(r => r.json())
-      .then((data: any) => setIssues(Array.isArray(data) ? data : data?.data ?? []))
-      .catch(() => {})
-      .finally(() => setLoadingIssues(false))
+    fetchJson<Issue[] | { data?: Issue[] }>(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
+      .then(r => {
+        if (!r.ok) { setIssuesError(r.error); setIssues([]); setLoadingIssues(false); return }
+        setIssuesError(null)
+        const data = r.data
+        setIssues(Array.isArray(data) ? data : data?.data ?? [])
+        setLoadingIssues(false)
+      })
   }, [agent.id])
 
   async function handleToggle() {
@@ -166,8 +173,10 @@ export default function AgentDetail({ agent, onToggleActive }: AgentDetailProps)
       {/* Assigned issues */}
       <div>
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Assigned Issues</p>
-        {loadingIssues && <p className="text-white/20 text-xs">Loading…</p>}
-        {!loadingIssues && activeIssues.length === 0 && (
+        {/* TOD-654: a refused issue query is stated, not shown as "no issues". */}
+        {issuesError && <ApiErrorBanner error={issuesError} />}
+        {loadingIssues && !issuesError && <p className="text-white/20 text-xs">Loading…</p>}
+        {!loadingIssues && !issuesError && activeIssues.length === 0 && (
           <p className="text-white/20 text-xs italic">No active issues.</p>
         )}
         <div className="space-y-1.5">

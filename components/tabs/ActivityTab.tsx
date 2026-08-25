@@ -4,21 +4,36 @@ import { AGENT_DISPLAY } from '@/lib/mc-constants'
 import { Button, EmptyState, Badge, PriorityBadge } from '@/components/ui'
 import { Radio } from 'lucide-react'
 import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows, unchanged from caller
 function AttentionAndShipped({ agents }: { agents: any[] }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
   const [data, setData] = React.useState<{attention:any[];shipped:any[]}>({attention:[],shipped:[]})
+  const [error, setError] = React.useState<ApiError | null>(null)
+  const [reload, setReload] = React.useState(0)
   React.useEffect(() => {
-    const h = dbRestHeaders()
-    fetch(`${dbRestBase()}/rest/v1/issues?status=in.(code_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`, {headers: h as any})
-      .then(r => r.json()).then(d => {
-        if (Array.isArray(d)) setData(prev => ({...prev, attention: d}))
-      }).catch(() => {})
-    fetch(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`, {headers: h as any})
-      .then(r => r.json()).then(d => {
+    const h = dbRestHeaders() as Record<string, string>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+    fetchJson<any[]>(`${dbRestBase()}/rest/v1/issues?status=in.(code_review,open)&priority=in.(critical,high)&limit=10&select=task_key,title,status,priority,assignee,updated_at`, {headers: h})
+      .then(res => {
+        if (!res.ok) { setError(res.error); return }
+        setError(null)
+        if (Array.isArray(res.data)) setData(prev => ({...prev, attention: res.data}))
+      })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+    fetchJson<any[]>(`${dbRestBase()}/rest/v1/issues?status=in.(completed,released,closed)&limit=10&order=updated_at.desc&select=task_key,title,assignee,updated_at,resolution_type`, {headers: h})
+      .then(res => {
+        if (!res.ok) { setError(res.error); return }
+        setError(null)
         const today = new Date(); today.setHours(0,0,0,0)
-        if (Array.isArray(d)) setData(prev => ({...prev, shipped: d.filter((i: any) => new Date(i.updated_at) >= today)}))
-      }).catch(() => {})
-  }, [])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+        if (Array.isArray(res.data)) setData(prev => ({...prev, shipped: res.data.filter((i: any) => new Date(i.updated_at) >= today)}))
+      })
+  }, [reload])
+  // A refused query must be visible, not collapse this block to nothing.
+  if (error) return <ApiErrorBanner error={error} onRetry={() => setReload(n => n + 1)} />
   if (!data.attention.length && !data.shipped.length) return null
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -54,21 +69,36 @@ function AttentionAndShipped({ agents }: { agents: any[] }) {
   )
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- feed entries are untyped JSON from several sources */
 interface ActivityTabProps {
   liveStatus: any
   statusAt: number
   setLiveStatus: (d: any) => void
   setStatusAt: (t: number) => void
-  issueActivity: any[]
+  /** null = the issue-activity query failed or has not finished. */
+  issueActivity: any[] | null
+  /** Why the issue-activity query failed, if it did. */
+  activityError?: ApiError | null
+  onRetryActivity?: () => void
+  /** Why /api/status failed, if it did. */
+  statusError?: ApiError | null
+  onRetryStatus?: () => void
   displayAgents: any[]
   projectFilter?: string | null
 }
 
 export default function ActivityTab({
-  liveStatus, statusAt, setLiveStatus, setStatusAt, issueActivity, displayAgents, projectFilter
+  liveStatus, statusAt, setLiveStatus, setStatusAt, issueActivity,
+  activityError, onRetryActivity, statusError, onRetryStatus,
+  displayAgents, projectFilter
 }: ActivityTabProps) {
   const [activityFilter, setActivityFilter] = useState<'all'|'issue'|'agent'|'pr'>('all')
   const [activityLimit, setActivityLimit] = useState(100)
+  const [syncError, setSyncError] = useState<ApiError | null>(null)
+  // TOD-654: a failed load leaves this null. `?? []` is only ever applied after
+  // the error branch below has already returned, never instead of it.
+  const issueItemsSafe: any[] = issueActivity ?? []
+  const liveStatusError = syncError ?? statusError ?? null
 
   return (
     <div className="space-y-5">
@@ -76,9 +106,11 @@ export default function ActivityTab({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-medium text-white">📡 Activity Feed</h2>
-          {liveStatus?.recentActivity?.length > 0 && (
-            <p className="text-xs text-white/50 mt-0.5">{(liveStatus.recentActivity?.length ?? 0) + issueActivity.length} entries</p>
-          )}
+          {liveStatusError || activityError ? (
+            <p className="text-xs text-red-400 mt-0.5">data unavailable</p>
+          ) : liveStatus?.recentActivity?.length > 0 ? (
+            <p className="text-xs text-white/50 mt-0.5">{(liveStatus.recentActivity?.length ?? 0) + issueItemsSafe.length} entries</p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {statusAt > 0 && (()=>{
@@ -92,12 +124,23 @@ export default function ActivityTab({
           })()}
           <Button variant="secondary" size="sm"
             onClick={() => {
-              fetch('/api/status').then(r => r.json()).then(d => { setLiveStatus(d); setStatusAt(Date.now()) }).catch(() => {})
+              if (onRetryStatus) { setSyncError(null); onRetryStatus(); return }
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+              fetchJson<any>('/api/status').then(r => {
+                if (!r.ok) { setSyncError(r.error); return }
+                setSyncError(null); setLiveStatus(r.data); setStatusAt(Date.now())
+              })
             }}>
             Sync
           </Button>
         </div>
       </div>
+
+      {/* TOD-654: refused loads are stated, never rendered as an empty feed. */}
+      {liveStatusError && (
+        <ApiErrorBanner error={liveStatusError} onRetry={onRetryStatus ? () => { setSyncError(null); onRetryStatus() } : undefined} />
+      )}
+      {activityError && <ApiErrorBanner error={activityError} onRetry={onRetryActivity} />}
 
       {/* Filter bar */}
       <div className="flex items-center gap-2">
@@ -111,12 +154,14 @@ export default function ActivityTab({
 
       {(()=>{
         const agentItems = (liveStatus?.recentActivity ?? []).map((e: any) => ({...e, type: e.type || 'agent'}))
-        const issueItems = issueActivity
+        const issueItems = issueItemsSafe
         let allItems: any[] = []
         if (activityFilter === 'all') allItems = [...agentItems, ...issueItems].sort((a,b) => (a.ago ?? 999) - (b.ago ?? 999))
         else if (activityFilter === 'agent') allItems = agentItems
         else if (activityFilter === 'issue') allItems = issueItems
         else allItems = agentItems.filter((e: any) => e.channel?.includes('PR') || e.desc?.toLowerCase().includes('pr ') || e.desc?.toLowerCase().includes('pull'))
+        // Never claim "no activity" while a source of that activity is refused.
+        if (liveStatusError || activityError) return null
         if(allItems.length === 0) return <EmptyState icon={Radio} title={activityFilter === 'all' ? 'No activity runs recorded yet' : `No ${activityFilter} activity found`} />
         const items = allItems.slice(0, activityLimit)
         const grouped: Record<string, any[]> = {}
@@ -161,7 +206,7 @@ export default function ActivityTab({
       })()}
 
       {/* Load more */}
-      {((liveStatus?.recentActivity?.length ?? 0) + issueActivity.length) > activityLimit && (
+      {((liveStatus?.recentActivity?.length ?? 0) + issueItemsSafe.length) > activityLimit && (
         <Button variant="secondary" size="sm" onClick={() => setActivityLimit(prev => prev + 100)} className="w-full justify-center">
           Load 100 more
         </Button>

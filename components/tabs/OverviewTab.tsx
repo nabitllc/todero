@@ -11,7 +11,7 @@ import { readApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
 // TOD-654 follow-up: the Overview is the app's front door, and every panel on it
-// used to `.then(r => r.json())` without checking `res.ok`. A 403/500 body parses
+// used to parse every response body without checking `res.ok`. A 403/500 body parses
 // into an object, `Array.isArray(...)` says false, and the panel quietly rendered
 // "P0 Bugs 0" / "Nothing shipped" / "No blockers" over a refused request. Every
 // fetch below now goes through `fetchJson`, which keeps the failure, and every

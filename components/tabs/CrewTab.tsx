@@ -4,6 +4,8 @@
 // Members and Viewers see read-only list.
 
 import React, { useEffect, useState, useCallback } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
 import { Users, ShieldCheck, Eye, UserCog, Plus, Trash2, RefreshCw, AlertCircle } from 'lucide-react'
 import AgentsTab from '@/components/tabs/AgentsTab'
 import MemberDetailView from '@/components/tabs/MemberDetailView'
@@ -202,6 +204,7 @@ function MemberRow({
 // ── CrewTab ───────────────────────────────────────────────────────────────────
 
 export default function CrewTab({
+  agentsError,
   userRole,
   currentIdentity,
   displayAgents,
@@ -213,6 +216,8 @@ export default function CrewTab({
   setAgentModal,
   projectFilter,
 }: {
+  /** Why /api/agents failed, if it did. TOD-654: shown, not swallowed. */
+  agentsError?: ApiError | null
   userRole: string | null
   currentIdentity: string | null
   displayAgents: any[]
@@ -284,6 +289,7 @@ export default function CrewTab({
 
   return (
     <div className="space-y-8">
+      {agentsError && <ApiErrorBanner error={agentsError} />}
       {/* ── Role reference ──────────────────────────────────────────────── */}
       <div>
         <h2 className="text-white/70 text-xs font-semibold uppercase tracking-wider mb-3">

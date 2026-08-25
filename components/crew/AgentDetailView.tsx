@@ -5,6 +5,8 @@
 import React, { useState, useEffect } from 'react'
 import { AGENT_QUEUE_CONFIGS } from '@/lib/agent-queue'
 import { AGENT_REGISTRY } from '@/lib/agent-capabilities'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 
 interface Issue {
   id: string
@@ -35,32 +37,41 @@ function statusColor(s: string) {
 export default function AgentDetailView({ agentId }: { agentId: string }) {
   const agent = AGENT_REGISTRY[agentId as keyof typeof AGENT_REGISTRY]
   const queueConfig = AGENT_QUEUE_CONFIGS[agentId]
-  const [issues, setIssues] = useState<Issue[]>([])
+  // TOD-654: null = the query failed or has not finished. Never [] on a
+  // non-ok response, or this view prints "No active issues assigned." over a 403.
+  const [issues, setIssues] = useState<Issue[] | null>(null)
+  const [issuesError, setIssuesError] = useState<ApiError | null>(null)
+  const [agentsError, setAgentsError] = useState<ApiError | null>(null)
+  const [reload, setReload] = useState(0)
   const [paused, setPaused] = useState(false)
   const [lastRun, setLastRun] = useState<number | null>(null)
   const [toggling, setToggling] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/issues?assignee=${encodeURIComponent(agentId)}`)
-      .then(r => r.json())
-      .then(d => setIssues(Array.isArray(d?.data ?? d) ? (d?.data ?? d) : []))
-      .catch(() => {})
+    fetchJson<{ data?: Issue[] } | Issue[]>(`/api/issues?assignee=${encodeURIComponent(agentId)}`)
+      .then(r => {
+        if (!r.ok) { setIssuesError(r.error); setIssues(null); return }
+        setIssuesError(null)
+        const d = r.data
+        const rows = Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []
+        setIssues(rows)
+      })
 
-    fetch(`/api/agent-pause?agent=${encodeURIComponent(agentId)}`)
-      .then(r => r.json())
-      .then(d => setPaused(d.is_paused === true))
-      .catch(() => {})
+    fetchJson<{ is_paused?: boolean }>(`/api/agent-pause?agent=${encodeURIComponent(agentId)}`)
+      .then(r => { if (r.ok) setPaused(r.data?.is_paused === true) })
 
     // Envelope-or-array: /api/agents returns { agents, configured, error }.
-    fetch('/api/agents')
-      .then(r => r.json())
-      .then((body: any) => {
-        const agents: any[] = Array.isArray(body) ? body : Array.isArray(body?.agents) ? body.agents : []
-        const found = agents.find(a => a.id === agentId)
-        if (found?.lastUpdatedAt) setLastRun(found.lastUpdatedAt)
-      })
-      .catch(() => {})
-  }, [agentId])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- envelope or bare array
+    fetchJson<any>('/api/agents').then(r => {
+      if (!r.ok) { setAgentsError(r.error); return }
+      setAgentsError(null)
+      const body = r.data
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
+      const agents: any[] = Array.isArray(body) ? body : Array.isArray(body?.agents) ? body.agents : []
+      const found = agents.find(a => a.id === agentId)
+      if (found?.lastUpdatedAt) setLastRun(found.lastUpdatedAt)
+    })
+  }, [agentId, reload])
 
   async function togglePause() {
     setToggling(true)
@@ -80,12 +91,15 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
     return <p className="text-white/40 text-sm p-8">Agent &quot;{agentId}&quot; not found.</p>
   }
 
-  const activeIssues = issues.filter(i => ['open', 'in_progress', 'code_review'].includes(i.status))
+  const activeIssues = (issues ?? []).filter(i => ['open', 'in_progress', 'code_review'].includes(i.status))
   const eligibleStatuses = queueConfig ? [queueConfig.pickupStatus] : []
   const extraFilters = queueConfig?.extraFilters ?? ''
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      {/* TOD-654: refused loads are stated before anything claims emptiness. */}
+      {issuesError && <ApiErrorBanner error={issuesError} onRetry={() => setReload(n => n + 1)} />}
+      {agentsError && <ApiErrorBanner error={agentsError} onRetry={() => setReload(n => n + 1)} />}
       {/* Header */}
       <div className="flex items-center gap-4 p-5 rounded-2xl border border-white/10 bg-[#0f0f0f]">
         <div
@@ -149,10 +163,14 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       {/* Assigned issues */}
       <div>
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">
-          Assigned Issues ({activeIssues.length} active)
+          Assigned Issues ({issues === null ? 'data unavailable' : `${activeIssues.length} active`})
         </p>
         {activeIssues.length === 0 ? (
-          <p className="text-white/20 text-xs italic px-1">No active issues assigned.</p>
+          issuesError
+            ? <p className="text-red-400 text-xs px-1">data unavailable</p>
+            : issues === null
+              ? <p className="text-white/20 text-xs italic px-1">Loading…</p>
+              : <p className="text-white/20 text-xs italic px-1">No active issues assigned.</p>
         ) : (
           <div className="space-y-2">
             {activeIssues.slice(0, 10).map(issue => (
@@ -173,7 +191,11 @@ export default function AgentDetailView({ agentId }: { agentId: string }) {
       {/* Activity feed — most recently updated issues */}
       <div>
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Recent Activity</p>
-        {issues.length === 0 ? (
+        {issuesError ? (
+          <ApiErrorBanner error={issuesError} onRetry={() => setReload(n => n + 1)} />
+        ) : issues === null ? (
+          <p className="text-white/20 text-xs italic px-1">Loading…</p>
+        ) : issues.length === 0 ? (
           <p className="text-white/20 text-xs italic px-1">No recent activity.</p>
         ) : (
           <div className="divide-y divide-white/5 rounded-xl border border-white/10 overflow-hidden">

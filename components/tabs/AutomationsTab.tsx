@@ -1,20 +1,26 @@
 'use client'
 import React, { useState } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
 import { pColor } from '@/lib/mc-constants'
 import { Chip } from '@/lib/mc-atoms'
 import { StatusDot, Button, EmptyState } from '@/components/ui'
 import { Zap } from 'lucide-react'
 
 interface AutomationsTabProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped cron rows
   displayCrons: any[]
+  /** Why /api/automations failed, if it did. TOD-654: shown, not swallowed. */
+  cronsError?: ApiError | null
 }
 
-export default function AutomationsTab({ displayCrons }: AutomationsTabProps) {
+export default function AutomationsTab({ displayCrons, cronsError }: AutomationsTabProps) {
   const [autoProjectFilter, setAutoProjectFilter] = useState<string|null>(null)
   const [cronModal, setCronModal] = useState<any>(null)
 
   return (
     <div className="space-y-5">
+      {cronsError && <ApiErrorBanner error={cronsError} />}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-base font-medium text-white">Automations</h2>

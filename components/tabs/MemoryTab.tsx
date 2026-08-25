@@ -15,7 +15,8 @@ export interface MemFile {
   filename: string
   label: string
   date: string
-  kb: number
+  /** The route formats this with toFixed(1), so it arrives as a string. */
+  kb: string | number
   words: number
   group: 'today' | 'yesterday' | 'week' | 'month' | 'older'
   entries: MemEntry[]

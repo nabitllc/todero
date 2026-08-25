@@ -1,19 +1,27 @@
 'use client'
 import React, { useState, useEffect } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import AgentOffice from '@/components/AgentOffice'
 import { dbRestBase, dbRestHeaders } from '@/lib/db/browser'
 
 function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, {taskTitle:string; startedAt:string|null; status:string}> }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
   const [runs, setRuns] = useState<any[]>([])
+  const [runsError, setRunsError] = useState<ApiError | null>(null)
   const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     const fetchRuns = () => {
-      fetch(`${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`, {
-        headers: dbRestHeaders()
-      }).then(r => r.json()).then(data => {
-        if (Array.isArray(data)) setRuns(data)
-      }).catch(() => {})
+      const url = `${dbRestBase()}/rest/v1/agent_runs?select=agent_id,task_title,status,started_at,tokens_used&order=started_at.desc&limit=20`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped PostgREST rows
+      fetchJson<any[]>(url, { headers: dbRestHeaders() }).then(res => {
+        // TOD-654: a refused query keeps the banner up instead of showing
+        // "no runs" as though the office were simply idle.
+        if (!res.ok) { setRunsError(res.error); setRuns([]); return }
+        setRunsError(null)
+        if (Array.isArray(res.data)) setRuns(res.data)
+      })
     }
     fetchRuns()
     // Slowed from 30s → 120s to reduce egress; office activity is not time-critical
@@ -53,6 +61,7 @@ function OfficeActivityPanel({ agentRunsData }: { agentRunsData: Record<string, 
             <span className="text-[10px] font-semibold uppercase tracking-widest text-white/50">Subagent Activity</span>
             <button onClick={() => setCollapsed(true)} className="text-white/30 hover:text-white/70 text-xs">▶</button>
           </div>
+          {runsError && <ApiErrorBanner error={runsError} />}
 
           {/* Active */}
           {activeRuns.length > 0 && (

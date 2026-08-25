@@ -2,6 +2,7 @@
 // TOD-723: Left-rail circular hub icons with active indicator
 
 import React, { useEffect, useState } from 'react'
+import { fetchJson } from '@/hooks/useApiData'
 
 interface Business { id: string; name: string; type: string; status: string }
 
@@ -20,12 +21,10 @@ export default function HubRail({ selected, onSelect, refreshKey }: HubRailProps
   const [businesses, setBusinesses] = useState<Business[]>([])
 
   useEffect(() => {
-    fetch('/api/businesses')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setBusinesses(data.filter((b: Business) => b.status === 'active'))
-      })
-      .catch(() => {})
+    fetchJson<Business[]>('/api/businesses').then(r => {
+      // TOD-654: never clear the rail on a refused request — keep what we had.
+      if (r.ok && Array.isArray(r.data)) setBusinesses(r.data.filter((b: Business) => b.status === 'active'))
+    })
   }, [refreshKey])
 
   return (

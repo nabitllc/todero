@@ -106,3 +106,16 @@ export async function fetchJsonOrNull<T>(endpoint: string, init?: RequestInit): 
   const r = await fetchJson<T>(endpoint, init)
   return r.ok ? r.data : null
 }
+
+/**
+ * `fetchJson` for `Promise.allSettled` fan-out (server routes): a non-ok
+ * response rejects, so the caller's existing `status === 'fulfilled'` check
+ * keeps meaning "this upstream actually answered with data". Without this a
+ * 401 body from an upstream API arrives as a fulfilled value and gets read as
+ * though it were a real reading.
+ */
+export async function fetchJsonOrThrow<T>(endpoint: string, init?: RequestInit): Promise<T> {
+  const r = await fetchJson<T>(endpoint, init)
+  if (!r.ok) throw new Error(formatApiError(r.error, 'upstream unavailable'))
+  return r.data
+}

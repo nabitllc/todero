@@ -1,5 +1,7 @@
 // Agent activity is sourced from the agent_runs table.
 import { NextResponse } from 'next/server'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- upstream third-party payloads are untyped JSON; readers below null-check every field
+import { fetchJsonOrThrow } from '@/lib/fetch-json'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -55,19 +57,22 @@ function getVercelToken(): string | null {
 export async function GET() {
   const [openrouter, ollama, n8n, vercel] = await Promise.allSettled([
     // OpenRouter
-    fetch('https://openrouter.ai/api/v1/auth/key', {
+    // TOD-654: fetchJsonOrThrow rejects on a non-ok upstream, so the
+    // `status === 'fulfilled'` checks below cannot mistake a 401 error body
+    // for a real reading.
+    fetchJsonOrThrow<any>('https://openrouter.ai/api/v1/auth/key', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
       cache: 'no-store',
-    }).then(r => r.json()),
+    }),
 
     // Ollama
-    fetch('http://localhost:11434/api/tags', { cache: 'no-store' }).then(r => r.json()),
+    fetchJsonOrThrow<any>('http://localhost:11434/api/tags', { cache: 'no-store' }),
 
     // n8n — retired but kept for backwards compat; will always fail
-    N8N_KEY ? fetch('http://localhost:5678/api/v1/workflows', {
+    N8N_KEY ? fetchJsonOrThrow<any>('http://localhost:5678/api/v1/workflows', {
       headers: { 'X-N8N-API-KEY': N8N_KEY },
       cache: 'no-store',
-    }).then(r => r.json()) : Promise.reject('n8n retired'),
+    }) : Promise.reject('n8n retired'),
 
     // Vercel
     (async () => {

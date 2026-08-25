@@ -1,5 +1,7 @@
 'use client'
 import React, { useEffect, useState, useCallback } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, readApiError, type ApiError } from '@/hooks/useApiData'
 import { RefreshCw } from 'lucide-react'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { THEMES, THEME_IDS } from '@/lib/theme'
@@ -83,6 +85,8 @@ function ServiceCard({ emoji, name, plan, status, statusLabel, children, lastChe
 
 export default function SettingsTab() {
   const [data, setData] = useState<UsageData | null>(null)
+  // TOD-654: the reason the usage load failed, verbatim from the server.
+  const [usageError, setUsageError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [currentTheme, setCurrentTheme] = useState<ThemeId>('dark')
@@ -90,10 +94,24 @@ export default function SettingsTab() {
 
   const fetchUsage = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true)
+    const endpoint = '/api/settings/usage'
     try {
-      const res = await fetch('/api/settings/usage')
-      if (res.ok) setData(await res.json())
-    } catch { /* ignore */ }
+      const res = await fetch(endpoint)
+      if (res.ok) {
+        setData(await res.json())
+        setUsageError(null)
+      } else {
+        setUsageError(await readApiError(res, endpoint))
+        setData(null)
+      }
+    } catch (e) {
+      setUsageError({
+        status: 0,
+        endpoint,
+        message: e instanceof Error ? e.message : 'could not reach the server',
+      })
+      setData(null)
+    }
     setLoading(false)
     setRefreshing(false)
   }, [])
@@ -105,7 +123,9 @@ export default function SettingsTab() {
   }, [fetchUsage])
 
   useEffect(() => {
-    fetch('/api/theme').then(r => r.json()).then(d => { if (d.themeId) setCurrentTheme(d.themeId) }).catch(() => {})
+    fetchJson<{ themeId?: string }>('/api/theme').then(r => {
+      if (r.ok && r.data?.themeId) setCurrentTheme(r.data.themeId as ThemeId)
+    })
   }, [])
 
   if (loading) {
@@ -119,9 +139,17 @@ export default function SettingsTab() {
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <div className="text-white/40 text-sm">Failed to load usage data</div>
-        <button onClick={() => { setLoading(true); fetchUsage() }}
-          className="text-xs text-white/50 hover:text-white transition-colors">Retry</button>
+        {usageError ? (
+          <div className="w-full max-w-xl px-4">
+            <ApiErrorBanner error={usageError} onRetry={() => { setLoading(true); fetchUsage() }} />
+          </div>
+        ) : (
+          <>
+            <div className="text-white/40 text-sm">Failed to load usage data</div>
+            <button onClick={() => { setLoading(true); fetchUsage() }}
+              className="text-xs text-white/50 hover:text-white transition-colors">Retry</button>
+          </>
+        )}
       </div>
     )
   }

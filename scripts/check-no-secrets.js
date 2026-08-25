@@ -18,11 +18,17 @@ const path = require('path')
 
 const REPO = path.resolve(__dirname, '..')
 
-/** Literals that must never appear in tracked source. */
+/**
+ * Literals that must never appear in tracked source.
+ *
+ * Each needle is assembled from fragments so that this file is not itself a hit
+ * for the thing it is looking for — otherwise every grep for the banned string
+ * finds the scanner and the count is never zero.
+ */
 const PATTERNS = [
-  { needle: 'twthgapiouiqhavrcnry', why: "one operator's database project ref" },
-  { needle: 'eyJhbGciOi', why: 'JWT header — a credential, not configuration' },
-  { needle: 'service_' + 'role', why: 'full-privilege key name in a value or URL' },
+  { needle: 'twthgapio' + 'uiqhavrcnry', why: "one operator's database project ref" },
+  { needle: 'eyJhbGc' + 'iOi', why: 'JWT header — a credential, not configuration' },
+  { needle: 'service' + '_role', why: 'full-privilege key name in a value or URL' },
 ]
 
 /** Paths where a match is expected and harmless. */

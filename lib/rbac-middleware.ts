@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasPermission } from './rbac-types'
 import type { Role, Permission } from './rbac-types'
 
 const KNOWN_ROLES: readonly Role[] = ['owner', 'member', 'viewer', 'god', 'admin', 'tron', 'defaultbot']
@@ -115,26 +116,32 @@ export function withPermission(requiredPermission: Permission) {
       )
     }
 
-    // Query role_permissions table — deny if no row exists for (role, permission)
-    const supabase = getSupabase()
-    const { data } = await supabase
-      .from('role_permissions')
-      .select('permission')
-      .eq('role', role)
-      .eq('permission', requiredPermission)
-      .maybeSingle()
+    // ROLE_PERMISSIONS in rbac-types.ts is the source of truth: the same data the
+    // role_permissions migration seeds, but present on a host that has never run
+    // that migration. Without this, a fresh install answers 403 to its own owner.
+    if (hasPermission(role, requiredPermission)) return null
 
-    if (!data) {
-      return NextResponse.json(
-        {
-          error: `Forbidden: role '${role}' lacks permission '${requiredPermission}'`,
-          required: requiredPermission,
-          role,
-        },
-        { status: 403 },
-      )
+    // The table may GRANT beyond the static matrix, but it is never the only
+    // gate — an absent or unreachable table denies nothing by itself.
+    try {
+      const { data } = await getSupabase()
+        .from('role_permissions')
+        .select('permission')
+        .eq('role', role)
+        .eq('permission', requiredPermission)
+        .maybeSingle()
+      if (data) return null
+    } catch {
+      // Table missing or database unreachable — the static matrix already decided.
     }
 
-    return null
+    return NextResponse.json(
+      {
+        error: `Forbidden: role '${role}' lacks permission '${requiredPermission}'`,
+        required: requiredPermission,
+        role,
+      },
+      { status: 403 },
+    )
   }
 }

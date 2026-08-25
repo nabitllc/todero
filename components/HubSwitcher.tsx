@@ -4,6 +4,7 @@
 // Mobile: rendered in More menu (TOD-1197)
 
 import React, { useState, useEffect, useRef } from 'react'
+import { fetchJson } from '@/hooks/useApiData'
 import { ChevronDown, Plus, Check } from 'lucide-react'
 
 interface Business { id: string; name: string; type: string; status: string }
@@ -26,12 +27,10 @@ export default function HubSwitcher({ selected, onSelect, onNew, refreshKey }: H
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetch('/api/businesses')
-      .then(r => r.json())
-      .then(data => {
-        if (Array.isArray(data)) setBusinesses(data.filter((b: Business) => b.status === 'active'))
-      })
-      .catch(() => {})
+    fetchJson<Business[]>('/api/businesses').then(r => {
+      // TOD-654: never clear the switcher on a refused request.
+      if (r.ok && Array.isArray(r.data)) setBusinesses(r.data.filter((b: Business) => b.status === 'active'))
+    })
   }, [refreshKey])
 
   // Close on outside click

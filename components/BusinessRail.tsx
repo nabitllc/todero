@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { fetchJson } from '@/hooks/useApiData'
 import { Plus } from 'lucide-react'
 
 interface Business { id: string; name: string; type: string; status: string }
@@ -28,11 +29,12 @@ export default function BusinessRail({ selected, onSelect, onNew, refreshKey }: 
   useEffect(() => {
     setLoading(true)
     setFetchError(false)
-    fetch('/api/businesses')
-      .then(r => r.json())
-      .then(setBusinesses)
-      .catch(() => setFetchError(true))
-      .finally(() => setLoading(false))
+    // TOD-654: a non-ok response is an error, not an empty business list.
+    fetchJson<Business[]>('/api/businesses').then(r => {
+      if (!r.ok) { setFetchError(true); setBusinesses([]); setLoading(false); return }
+      setBusinesses(Array.isArray(r.data) ? r.data : [])
+      setLoading(false)
+    })
   }, [refreshKey])
 
   return (

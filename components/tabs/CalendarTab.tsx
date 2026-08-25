@@ -1,5 +1,7 @@
 'use client'
 import React, { useState } from 'react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import type { ApiError } from '@/hooks/useApiData'
 import { Dot, Chip, SH } from '@/lib/mc-atoms'
 import { pColor, fmtMins, CRONS } from '@/lib/mc-constants'
 
@@ -7,6 +9,7 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
 export default function CalendarTab({
   calendarIssues,
+  calendarError,
   sprintProjects,
   calendarView,
   setCalendarView,
@@ -16,7 +19,11 @@ export default function CalendarTab({
   setCronModal,
   projectFilter,
 }: {
-  calendarIssues: any[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
+  // TOD-654: null means the query failed or has not finished, never "no issues".
+  calendarIssues: any[] | null
+  /** Why the due-date query failed, if it did. */
+  calendarError?: ApiError | null
   sprintProjects: any[]
   calendarView: 'week' | 'month'
   setCalendarView: (v: 'week' | 'month') => void
@@ -70,6 +77,9 @@ export default function CalendarTab({
 
             return (
             <div className="space-y-5">
+              {/* TOD-654: a refused due-date query is stated, not drawn as an
+                  empty calendar full of days with nothing scheduled. */}
+              {calendarError && <ApiErrorBanner error={calendarError} />}
               {/* View toggle */}
               <div className="flex items-center justify-between">
                 <SH icon="📅">Calendar</SH>

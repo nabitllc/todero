@@ -4,6 +4,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import IssuePreviewCard from '@/components/IssuePreviewCard'
 import AgentSelector from '@/components/AgentSelector'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, formatApiError, type ApiError } from '@/hooks/useApiData'
 
 // Chat types
 interface ChatMessage { id: string; role: 'user'|'assistant'; content: string; model?: string; ts?: number; attachments?: string[]; image_url?: string; bookmarked?: boolean; agent_id?: string }
@@ -256,6 +258,10 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
 
 export default function ChatTab({ selectedBusiness }: { selectedBusiness?: string | null }) {
   const [chats, setChats] = useState<ChatConversation[]>([])
+  // TOD-654: distinguishes "the server refused" from "you have no chats".
+  const [chatsError, setChatsError] = useState<ApiError | null>(null)
+  const [chatsLoaded, setChatsLoaded] = useState(false)
+  const [chatsReload, setChatsReload] = useState(0)
   const [activeChat, setActiveChat] = useState<string|null>(null)
   const [search, setSearch] = useState('')
   const [inputVal, setInputVal] = useState('')
@@ -339,6 +345,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   const [sidebarTab, setSidebarTab] = useState<'mine'|'heartbeats'>('mine')
   const [ocSessions, setOcSessions] = useState<any[]>([])
   const [ocLoading, setOcLoading] = useState(false)
+  const [ocError, setOcError] = useState<ApiError | null>(null)
   // NEW: Send-to-agent dropdown
   const [showSendToAgent, setShowSendToAgent] = useState(false)
   const sendToAgentRef = useRef<HTMLDivElement>(null)
@@ -384,9 +391,14 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // Load chats from Supabase on mount, restore active chat from localStorage
   useEffect(() => {
     const savedActiveChat = typeof window !== 'undefined' ? localStorage.getItem('mc-active-chat') : null
-    fetch('/api/chat/conversations')
-      .then(r => r.json())
-      .then(data => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped conversation rows
+    fetchJson<any[]>('/api/chat/conversations')
+      .then(res => {
+        // TOD-654: a 403/500 must not leave `chats` at [] and print "No chats yet".
+        if (!res.ok) { setChatsError(res.error); setChatsLoaded(true); return }
+        setChatsError(null)
+        setChatsLoaded(true)
+        const data = res.data
         if (Array.isArray(data)) {
           const normalized: ChatConversation[] = data.map((c: any) => ({
             id: c.id,
@@ -415,8 +427,7 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
           }
         }
       })
-      .catch(() => {})
-  }, [])
+  }, [chatsReload])
 
   // Persist active chat to localStorage whenever it changes
   useEffect(() => {
@@ -593,27 +604,35 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
   // NEW: Load file browser entries when path changes
   useEffect(() => {
     if (!showFileBrowser) return
-    fetch(`/api/files?path=${encodeURIComponent(fileBrowserPath)}`)
-      .then(r => r.json())
-      .then(d => {
-        setFileBrowserEntries(d.entries ?? [])
-        setFileBrowserWorkspace(d.workspace ?? null)
-        setFileBrowserError(d.error ?? null)
-      })
-      .catch(e => {
+    const endpoint = `/api/files?path=${encodeURIComponent(fileBrowserPath)}`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped directory listing
+    fetchJson<any>(endpoint).then(res => {
+      if (!res.ok) {
         setFileBrowserEntries([])
-        setFileBrowserError(String(e))
-      })
+        setFileBrowserWorkspace(null)
+        setFileBrowserError(formatApiError(res.error))
+        return
+      }
+      const d = res.data
+      setFileBrowserEntries(d?.entries ?? [])
+      setFileBrowserWorkspace(d?.workspace ?? null)
+      setFileBrowserError(d?.error ?? null)
+    })
   }, [showFileBrowser, fileBrowserPath])
 
   // Fetch agent activity when sidebar tab switches to heartbeats
   useEffect(() => {
     if (sidebarTab === 'mine') return
     setOcLoading(true)
-    fetch('/api/status').then(r => r.json()).then(data => {
-      const activity: any[] = data.recentActivity || []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+    fetchJson<any>('/api/status').then(res => {
+      if (!res.ok) { setOcError(res.error); setOcSessions([]); setOcLoading(false); return }
+      setOcError(null)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped activity rows
+      const activity: any[] = res.data?.recentActivity || []
       setOcSessions(activity)
-    }).catch(() => {}).finally(() => setOcLoading(false))
+      setOcLoading(false)
+    })
   }, [sidebarTab])
 
   // Auto-grow textarea
@@ -1257,11 +1276,13 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ conversationId, firstUserMessage }),
-    }).then(r => r.json()).then(data => {
-      if (data.title) {
-        setChats(prev => prev.map(c => c.id === conversationId ? { ...c, title: data.title } : c))
+    }).then(async res => {
+      if (!res.ok) return
+      const data = await res.json().catch(() => null) as { title?: string } | null
+      if (data?.title) {
+        setChats(prev => prev.map(c => c.id === conversationId ? { ...c, title: data.title as string } : c))
       }
-    }).catch(() => {})
+    })
   }
 
   // Feature 18: export helpers
@@ -1520,7 +1541,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
 
             {/* Grouped Chats */}
             <div className="flex-1 overflow-y-auto px-2 py-2">
-              {filteredChats.length === 0 ? (
+              {chatsError ? (
+                <div className="px-2 py-3"><ApiErrorBanner error={chatsError} onRetry={() => setChatsReload(n => n + 1)} /></div>
+              ) : !chatsLoaded ? (
+                <p className="text-white/20 text-xs px-3 py-4">Loading chats…</p>
+              ) : filteredChats.length === 0 ? (
                 <p className="text-white/20 text-xs px-3 py-4">No chats yet</p>
               ) : (
                 groupedChats.map(group => (
@@ -1627,8 +1652,9 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
             {/* Heartbeats tab content */}
             {sidebarTab === 'heartbeats' && (
               <div className="flex-1 overflow-y-auto">
+                {ocError && <div className="p-3"><ApiErrorBanner error={ocError} /></div>}
                 {ocLoading && <div className="p-4 text-center text-white/30 text-xs">Loading…</div>}
-                {!ocLoading && (() => {
+                {!ocLoading && !ocError && (() => {
                   const items = ocSessions.filter(s => s.action === 'cron' || s.channel?.includes('Cron'))
                   if (items.length === 0) return <div className="p-4 text-center text-white/30 text-xs">No sessions found</div>
                   return items.map((s: any, i: number) => (
@@ -1662,7 +1688,11 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
               <button onClick={() => setMobileSidebarOpen(false)} className="w-7 h-7 flex items-center justify-center text-white/50 hover:text-white transition-colors text-sm rounded-lg hover:bg-white/10">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto px-2 py-2">
-              {filteredChats.length === 0 ? (
+              {chatsError ? (
+                <div className="px-2 py-3"><ApiErrorBanner error={chatsError} onRetry={() => setChatsReload(n => n + 1)} /></div>
+              ) : !chatsLoaded ? (
+                <p className="text-white/20 text-xs px-3 py-4">Loading chats…</p>
+              ) : filteredChats.length === 0 ? (
                 <p className="text-white/20 text-xs px-3 py-4">No chats yet</p>
               ) : (
                 filteredChats.map(c => (

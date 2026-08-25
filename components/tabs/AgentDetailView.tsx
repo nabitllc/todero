@@ -8,6 +8,8 @@ import {
   AlertCircle, FileText, Activity, BarChart3, DollarSign,
   Edit3, Save, Pause, Plus, Heart
 } from 'lucide-react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Agent {
@@ -114,28 +116,36 @@ function SimpleMarkdown({ content }: { content: string }) {
 
 // ── Tab: Dashboard ────────────────────────────────────────────────────────────
 function DashboardTab({ agent }: { agent: Agent }) {
-  const [issues, setIssues] = useState<Issue[]>([])
+  // TOD-654: null = failed/not loaded. Never [] on a non-ok response.
+  const [issues, setIssues] = useState<Issue[] | null>(null)
+  const [issuesError, setIssuesError] = useState<ApiError | null>(null)
+  const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
-      .then(r => r.json())
-      .then((data: any) => {
+    setLoading(true)
+    fetchJson<Issue[] | { data?: Issue[] }>(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
+      .then(r => {
+        if (!r.ok) { setIssuesError(r.error); setIssues(null); setLoading(false); return }
+        setIssuesError(null)
+        const data = r.data
         setIssues(Array.isArray(data) ? data : data?.data ?? [])
+        setLoading(false)
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [agent.id])
+  }, [agent.id, reload])
 
-  const inProgress = issues.filter(i => i.status === 'in_progress').length
-  const inReview   = issues.filter(i => i.status === 'code_review').length
-  const open       = issues.filter(i => i.status === 'open').length
-  const active     = issues.filter(i => ['in_progress','code_review','open'].includes(i.status))
+  const loaded     = issues ?? []
+  const inProgress = loaded.filter(i => i.status === 'in_progress').length
+  const inReview   = loaded.filter(i => i.status === 'code_review').length
+  const open       = loaded.filter(i => i.status === 'open').length
+  const active     = loaded.filter(i => ['in_progress','code_review','open'].includes(i.status))
 
   const isRunning = agent.status === 'running'
 
   return (
     <div className="space-y-5">
+      {/* TOD-654: a refused issue query is stated, never rendered as 0 counts. */}
+      {issuesError && <ApiErrorBanner error={issuesError} onRetry={() => setReload(n => n + 1)} />}
       {/* Live Run indicator */}
       <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
         isRunning
@@ -218,6 +228,7 @@ function DashboardTab({ agent }: { agent: Agent }) {
 // ── Tab: Instructions ─────────────────────────────────────────────────────────
 function InstructionsTab({ agent }: { agent: Agent }) {
   const [files, setFiles] = useState<AgentFiles | null>(null)
+  const [filesError, setFilesError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeFile, setActiveFile] = useState<'soul' | 'heartbeat' | 'agents'>('soul')
   const [isEditing, setIsEditing] = useState(false)
@@ -225,11 +236,13 @@ function InstructionsTab({ agent }: { agent: Agent }) {
   const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
-    fetch(`/api/agents/${agent.id}/files`)
-      .then(r => r.json())
-      .then(setFiles)
-      .catch(() => setFiles({ soul: '', heartbeat: '', agents: '' }))
-      .finally(() => setLoading(false))
+    fetchJson<AgentFiles>(`/api/agents/${agent.id}/files`)
+      .then(r => {
+        if (!r.ok) { setFilesError(r.error); setFiles(null); setLoading(false); return }
+        setFilesError(null)
+        setFiles(r.data)
+        setLoading(false)
+      })
   }, [agent.id])
 
   // Reset edit mode on file tab switch
@@ -275,6 +288,7 @@ function InstructionsTab({ agent }: { agent: Agent }) {
 
   return (
     <div className="space-y-4">
+      {filesError && <ApiErrorBanner error={filesError} />}
       <div className="flex items-center gap-2">
         <div className="flex gap-2 flex-1">
           {tabs.map(t => (
@@ -328,13 +342,18 @@ function InstructionsTab({ agent }: { agent: Agent }) {
 
 // ── Tab: Skills ───────────────────────────────────────────────────────────────
 function SkillsTab({ agent }: { agent: Agent }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped skill rows
   const [skills, setSkills] = useState<any[]>([])
+  const [skillsError, setSkillsError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/status')
-      .then(r => r.json())
-      .then((data: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+    fetchJson<any>('/api/status')
+      .then(r => {
+        if (!r.ok) { setSkillsError(r.error); setSkills([]); setLoading(false); return }
+        setSkillsError(null)
+        const data = r.data
         const agentSkills = data?.skills ?? data?.agents?.skills ?? []
         if (Array.isArray(agentSkills)) {
           setSkills(agentSkills)
@@ -342,6 +361,7 @@ function SkillsTab({ agent }: { agent: Agent }) {
           // Fallback: parse skills from the capabilities of the agent
           setSkills(agent.capabilities.map(c => ({ name: c, description: '', location: '' })))
         }
+        setLoading(false)
       })
       .catch(() => {
         setSkills(agent.capabilities.map(c => ({ name: c, description: '', location: '' })))
@@ -354,6 +374,7 @@ function SkillsTab({ agent }: { agent: Agent }) {
 
   return (
     <div className="space-y-4">
+      {skillsError && <ApiErrorBanner error={skillsError} />}
       <div>
         <p className="text-white/30 text-[10px] uppercase tracking-wider mb-2">Built-in Capabilities</p>
         <div className="space-y-2">
@@ -393,19 +414,24 @@ function SkillsTab({ agent }: { agent: Agent }) {
 
 // ── Tab: Configuration ────────────────────────────────────────────────────────
 function ConfigurationTab({ agent }: { agent: Agent }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent config row
   const [config, setConfig] = useState<any>(null)
+  const [configError, setConfigError] = useState<ApiError | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/status')
-      .then(r => r.json())
-      .then((data: any) => {
-        const agentsList: any[] = data?.agents?.agents ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+    fetchJson<any>('/api/status')
+      .then(r => {
+        if (!r.ok) { setConfigError(r.error); setConfig(null); setLoading(false); return }
+        setConfigError(null)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
+        const agentsList: any[] = r.data?.agents?.agents ?? []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
         const found = agentsList.find((a: any) => a.id === agent.id)
         setConfig(found ?? null)
+        setLoading(false)
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
   }, [agent.id])
 
   const heartbeatCfg = config?.heartbeat ?? {}
@@ -423,7 +449,8 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
 
   return (
     <div className="space-y-3">
-      {loading && <p className="text-white/20 text-xs">Loading…</p>}
+      {configError && <ApiErrorBanner error={configError} />}
+      {loading && !configError && <p className="text-white/20 text-xs">Loading…</p>}
       {rows.map(r => (
         <div key={r.label} className="flex flex-col gap-0.5 rounded-lg px-3 py-2.5 border border-white/10 bg-[#0f0f0f]">
           <p className="text-white/30 text-[10px] uppercase tracking-wider">{r.label}</p>
@@ -535,17 +562,22 @@ function RunsTab({ agent }: { agent: Agent }) {
 // ── Tab: Budget ───────────────────────────────────────────────────────────────
 function BudgetTab({ agent }: { agent: Agent }) {
   const [budgetLimit, setBudgetLimit] = useState('')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent config row
   const [config, setConfig] = useState<any>(null)
+  const [budgetError, setBudgetError] = useState<ApiError | null>(null)
 
   useEffect(() => {
-    fetch('/api/status')
-      .then(r => r.json())
-      .then((data: any) => {
-        const agentsList: any[] = data?.agents?.agents ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+    fetchJson<any>('/api/status')
+      .then(r => {
+        if (!r.ok) { setBudgetError(r.error); setConfig(null); return }
+        setBudgetError(null)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
+        const agentsList: any[] = r.data?.agents?.agents ?? []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped agent rows
         const found = agentsList.find((a: any) => a.id === agent.id)
         setConfig(found ?? null)
       })
-      .catch(() => {})
   }, [agent.id])
 
   // Calculate projected monthly cost
@@ -570,6 +602,7 @@ function BudgetTab({ agent }: { agent: Agent }) {
 
   return (
     <div className="space-y-5">
+      {budgetError && <ApiErrorBanner error={budgetError} />}
       <p className="text-white/50 text-xs font-semibold uppercase tracking-wider">Budget &amp; Token Usage</p>
 
       {/* Stat cards */}

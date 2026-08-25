@@ -1,5 +1,6 @@
 "use client";
 import { useState, useCallback } from "react";
+import { fetchJson, formatApiError } from '@/hooks/useApiData'
 import { ALL_AGENTS, ORCHESTRATOR_ID, DEPENDENCIES, AGENT_TASKS } from './officeConstants';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -69,6 +70,8 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
   const [lbTimeframe, setLbTimeframe] = useState<'session' | '24h' | '7d'>('session');
   const [panelTimeframe, setPanelTimeframe] = useState<'session' | '24h' | '7d'>('session');
   const [sessionLog, setSessionLog] = useState<any[]>([]);
+  // TOD-654: why the session-log fetch failed, shown next to the button.
+  const [logError, setLogError] = useState<string | null>(null);
   const [loadingLog, setLoadingLog] = useState(false);
 
   const openConfig = (ag: any) => {
@@ -260,15 +263,23 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
               <div className="mt-1.5">
                 <button onClick={() => {
                   setLoadingLog(true);
-                  fetch(`/api/status`).then(r => r.json()).then(data => {
-                    const activity: any[] = data.recentActivity || [];
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wide health payload
+                  fetchJson<any>('/api/status').then(res => {
+                    if (!res.ok) { setLogError(formatApiError(res.error)); setSessionLog([]); setLoadingLog(false); return }
+                    setLogError(null);
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped activity rows
+                    const activity: any[] = res.data?.recentActivity || [];
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped activity rows
                     const agentLogs = activity.filter((a: any) => a.agentId === detail.id).slice(0, 10);
                     setSessionLog(agentLogs);
                     setLoadingLog(false);
-                  }).catch(() => { setSessionLog([]); setLoadingLog(false); });
+                  });
                 }} className="bg-[#1a1a1a] border border-white/10 rounded-lg text-[#a29bfe] px-2.5 py-1 text-[10px] cursor-pointer font-[inherit] w-full focus:outline-none focus:ring-2 focus:ring-white/30">
                   {loadingLog ? "Loading…" : "View Session Log"}
                 </button>
+                {logError && (
+                  <p className="mt-1.5 text-red-400 text-[10px] break-words">{logError}</p>
+                )}
                 {sessionLog.length > 0 && (
                   <div className="mt-1.5 max-h-[150px] overflow-y-auto bg-[#080808] border border-white/10 rounded-lg px-1.5 py-1">
                     {sessionLog.map((entry: any, i: number) => (

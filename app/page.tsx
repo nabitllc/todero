@@ -146,6 +146,7 @@ export default function Home() {
   const [projectsError, setProjectsError] = useState<ApiError | null>(null)
   const [activityError, setActivityError] = useState<ApiError | null>(null)
   const [calendarError, setCalendarError] = useState<ApiError | null>(null)
+  const [activityReload, setActivityReload] = useState(0)
   const [agoSec, setAgoSec] = useState<number>(0)
   const [liveAgents, setLiveAgents] = useState<typeof ALL_AGENTS | null>(null)
   const [liveCrons, setLiveCrons] = useState<typeof CRONS | null>(null)
@@ -390,7 +391,6 @@ export default function Home() {
     window.addEventListener('mc-chat-unread', h); return () => window.removeEventListener('mc-chat-unread', h)
   }, [])
 
-  const [activityReload, setActivityReload] = useState(0)
   const [statusCountdown, setStatusCountdown] = useState(30)
   const fetchStatus = loadStatus
   const fetchAgentsAndCrons = useCallback(() => { loadAgents(); loadCrons() }, [loadAgents, loadCrons])

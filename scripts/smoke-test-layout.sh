@@ -49,5 +49,14 @@ else
   echo "⚠️  Header not found"
 fi
 
+# Check 6 (TOD-654): no tab may render an empty state over a non-ok response.
+echo ""
+if bash "$(dirname "$0")/no-silent-empty.sh"; then
+  echo "✅ Honest-error guard passed"
+else
+  echo "❌ Honest-error guard FAILED — see scripts/no-silent-empty.sh"
+  exit 1
+fi
+
 echo ""
 echo "✅ Smoke test complete"

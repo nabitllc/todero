@@ -4,6 +4,8 @@ import { Dot, Chip, Bar, SH } from '@/lib/mc-atoms'
 import type { CostSnapshot } from '@/lib/issues'
 import { Button, EmptyState } from '@/components/ui'
 import { Server, Rocket } from 'lucide-react'
+import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { fetchJson, type ApiError } from '@/hooks/useApiData'
 
 interface DeployRecord {
   id: string
@@ -69,28 +71,35 @@ function CostSparkline({ data }: { data: CostSnapshot[] }) {
   )
 }
 
-export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefresh }: {
+export default function InfraTab({ liveStatus, statusError, agoSec, statusCountdown, onRefresh }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- /api/status is a wide untyped health payload
   liveStatus: any
+  /** Why /api/status failed, if it did. TOD-654: shown, never papered over. */
+  statusError?: ApiError | null
   agoSec: number
   statusCountdown: number
   onRefresh: () => void
 }) {
-            const [deploys, setDeploys] = useState<DeployRecord[]>([])
-            const [deploysLoaded, setDeploysLoaded] = useState(false)
+            const [deploys, setDeploys] = useState<DeployRecord[] | null>(null)
+            const [deploysError, setDeploysError] = useState<ApiError | null>(null)
             // INF-204: 7-day cost history for sparkline
             const [costHistory, setCostHistory] = useState<CostSnapshot[]>([])
+            const [costHistoryError, setCostHistoryError] = useState<ApiError | null>(null)
+            const [reload, setReload] = useState(0)
 
             useEffect(() => {
-              fetch('/api/deploy-history?limit=20')
-                .then(r => r.json())
-                .then(d => { if (Array.isArray(d)) setDeploys(d); setDeploysLoaded(true) })
-                .catch(() => setDeploysLoaded(true))
+              fetchJson<DeployRecord[]>('/api/deploy-history?limit=20').then(r => {
+                if (!r.ok) { setDeploysError(r.error); setDeploys(null); return }
+                setDeploysError(null)
+                setDeploys(Array.isArray(r.data) ? r.data : [])
+              })
               // INF-204: fetch cost history
-              fetch('/api/settings/cost-history')
-                .then(r => r.json())
-                .then(d => { if (Array.isArray(d)) setCostHistory(d) })
-                .catch(() => {})
-            }, [])
+              fetchJson<CostSnapshot[]>('/api/settings/cost-history').then(r => {
+                if (!r.ok) { setCostHistoryError(r.error); setCostHistory([]); return }
+                setCostHistoryError(null)
+                if (Array.isArray(r.data)) setCostHistory(r.data)
+              })
+            }, [reload])
             const ls = liveStatus
             const orRemaining = ls?.openrouter?.remaining ?? 9.57
             const orLimit = ls?.openrouter?.limit ?? 10
@@ -111,11 +120,14 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
 
             // TOD-768: circuit breaker state
             const [cbState, setCbState] = useState<Record<string, {tripped: boolean; consecutive_failures: number; last_error?: string; tripped_at?: string}>>({})
+            const [cbError, setCbError] = useState<ApiError | null>(null)
             const fetchCb = useCallback(() => {
-              fetch('/api/circuit-breaker')
-                .then(r => r.ok ? r.json() : null)
-                .then(d => { if (d?.providers) setCbState(d.providers) })
-                .catch(() => {})
+              fetchJson<{ providers?: Record<string, {tripped: boolean; consecutive_failures: number; last_error?: string; tripped_at?: string}> }>('/api/circuit-breaker')
+                .then(r => {
+                  if (!r.ok) { setCbError(r.error); setCbState({}); return }
+                  setCbError(null)
+                  if (r.data?.providers) setCbState(r.data.providers)
+                })
             }, [])
             useEffect(() => { fetchCb() }, [fetchCb])
             const cbProviders = Object.entries(cbState)
@@ -136,17 +148,24 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
 
             return (
             <div className="space-y-5">
+              {/* TOD-654: /api/status refused => say so. The service tiles below
+                  are derived from that payload, so they would otherwise render
+                  their hardcoded fallbacks as if they were live readings. */}
+              {statusError && <ApiErrorBanner error={statusError} onRetry={onRefresh} />}
+              {cbError && <ApiErrorBanner error={cbError} onRetry={fetchCb} />}
+              {costHistoryError && <ApiErrorBanner error={costHistoryError} onRetry={() => setReload(n => n + 1)} />}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <SH icon="\ud83d\udd0c">Services</SH>
                 <div className="flex items-center gap-2 sm:gap-3 mb-4 flex-wrap">
                   {ls && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 anim-pg"/><span className="text-white/20 text-[10px]">Updated {agoSec}s ago</span></>}
-                  {!ls && <span className="text-yellow-600 text-[10px]">Loading\u2026</span>}
+                  {!ls && statusError && <span className="text-red-400 text-[10px]">data unavailable</span>}
+                  {!ls && !statusError && <span className="text-yellow-600 text-[10px]">Loading\u2026</span>}
                   <span className="text-white/20 text-[10px] font-mono tabular-nums" title="Auto-refresh countdown">\u21bb {statusCountdown}s</span>
                   <Button variant="secondary" size="sm" onClick={()=>{onRefresh()}}>Refresh</Button>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {liveInfra.map(svc=>(
+                {(ls ? liveInfra : []).map(svc=>(
                   <div key={svc.name} className="rounded-xl p-3 md:p-4 border border-white/10 flex items-start gap-3 card-glow" style={{background:'#0f0f0f'}}>
                     <Dot status={svc.status} />
                     <div>
@@ -218,20 +237,21 @@ export default function InfraTab({ liveStatus, agoSec, statusCountdown, onRefres
                       </div>
                     )
                   })}
-                  {Object.keys(usageByModel).length === 0 && <EmptyState icon={Server} title="No session data yet" className="py-4" />}
+                  {!statusError && Object.keys(usageByModel).length === 0 && <EmptyState icon={Server} title="No session data yet" className="py-4" />}
                 </div>
               </div>
 
               <SH icon="\ud83d\ude80">Deploy History</SH>
               <div className="rounded-2xl border border-white/10 overflow-hidden" style={{background:'#0f0f0f'}}>
-                {!deploysLoaded && <div className="px-5 py-4 text-white/30 text-xs">Loading deploys…</div>}
-                {deploysLoaded && deploys.length === 0 && <EmptyState icon={Rocket} title="No deploys recorded yet" className="py-6" />}
-                {deploys.map((d, i) => {
+                {deploysError && <div className="px-5 py-4"><ApiErrorBanner error={deploysError} onRetry={() => setReload(n => n + 1)} /></div>}
+                {!deploysError && deploys === null && <div className="px-5 py-4 text-white/30 text-xs">Loading deploys…</div>}
+                {!deploysError && deploys?.length === 0 && <EmptyState icon={Rocket} title="No deploys recorded yet" className="py-6" />}
+                {(deploys ?? []).map((d, i) => {
                   const ago = Math.round((Date.now() - new Date(d.created_at).getTime()) / 60000)
                   const agoLabel = ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.round(ago/60)}h ago` : `${Math.round(ago/1440)}d ago`
                   const dur = d.duration_ms ? `${(d.duration_ms/1000).toFixed(1)}s` : null
                   return (
-                    <div key={d.id} className={'flex items-center gap-3 px-4 md:px-5 py-3 ' + (i < deploys.length - 1 ? 'border-b border-white/10' : '')}>
+                    <div key={d.id} className={'flex items-center gap-3 px-4 md:px-5 py-3 ' + (i < (deploys?.length ?? 0) - 1 ? 'border-b border-white/10' : '')}>
                       <Dot status={d.status === 'ready' ? 'ok' : d.status === 'error' ? 'warn' : d.status === 'building' ? 'scheduled' : 'planned'} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">

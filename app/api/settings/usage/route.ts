@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- upstream third-party payloads are untyped JSON; readers below null-check every field
+import { fetchJsonOrThrow } from '@/lib/fetch-json'
 import { promisify } from 'util'
 import fs from 'fs'
 import { dbRestBase } from '@/lib/db/rest'
@@ -38,7 +40,9 @@ export async function GET() {
 
   const [supabaseDb, openrouter, cfKaos, discordBot] = await Promise.allSettled([
     // 1. Supabase DB size via REST RPC
-    fetch(`${dbRestBase()}/rest/v1/rpc/pg_database_size_bytes`, {
+    // TOD-654: a non-ok upstream rejects instead of handing back its error
+    // body, which the readers below would otherwise treat as a real number.
+    fetchJsonOrThrow<any>(`${dbRestBase()}/rest/v1/rpc/pg_database_size_bytes`, {
       method: 'POST',
       headers: {
         apikey: SUPABASE_KEY,
@@ -47,13 +51,13 @@ export async function GET() {
       },
       body: JSON.stringify({}),
       cache: 'no-store',
-    }).then(r => r.json()).catch(() => null),
+    }).catch(() => null),
 
     // 2. OpenRouter balance
-    fetch('https://openrouter.ai/api/v1/auth/key', {
+    fetchJsonOrThrow<any>('https://openrouter.ai/api/v1/auth/key', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
       cache: 'no-store',
-    }).then(r => r.json()),
+    }),
 
     // 3. Cloudflare tunnel - kaos.nabit.work
     fetch('https://kaos.nabit.work', {
