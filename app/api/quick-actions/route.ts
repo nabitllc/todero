@@ -1,6 +1,7 @@
 // INF-207: Quick-action floating button — API routes
 import { NextRequest, NextResponse } from 'next/server'
 import { listQuickActions, upsertQuickAction } from '@/lib/quick-actions'
+import { dbQueryErrorResponse } from '@/lib/db-http'
 
 export async function GET() {
   const actions = await listQuickActions()
@@ -23,6 +24,6 @@ export async function POST(req: NextRequest) {
     sort_order: sort_order ?? 99,
     enabled: enabled ?? true,
   })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'quick_actions')
   return NextResponse.json(data)
 }

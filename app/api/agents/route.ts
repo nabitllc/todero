@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
+import { dbQueryErrorResponse } from '@/lib/db-http'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { processListCommand } from '@/lib/paths'
@@ -392,7 +393,7 @@ export async function POST(req: NextRequest) {
       { agent_id, key: 'capability_registry', value },
       { onConflict: 'agent_id,key' }
     )
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'agent_memory')
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
@@ -431,7 +432,7 @@ export async function PATCH(req: NextRequest) {
       { agent_id, key: 'capability_registry', value: JSON.stringify(merged) },
       { onConflict: 'agent_id,key' }
     )
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'agent_memory')
     return NextResponse.json({ ok: true, data: merged })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })

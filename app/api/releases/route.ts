@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 const RELEASE_CHANNEL = '1492003782605930560' // #release-notes
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN!
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
     },
   }).select().maybeSingle()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'releases')
 
   // Discord
   const now = new Date().toLocaleString('en-US', {
@@ -144,6 +144,6 @@ export async function GET(req: NextRequest) {
     .select('*')
     .order('created_at', { ascending: false })
     .limit(limit)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'releases')
   return NextResponse.json(data)
 }

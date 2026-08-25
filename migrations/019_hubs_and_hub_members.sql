@@ -29,6 +29,7 @@ begin
 end;
 $$;
 
+drop trigger if exists trg_hubs_updated_at on hubs;
 create trigger trg_hubs_updated_at
   before update on hubs
   for each row execute procedure set_hubs_updated_at();

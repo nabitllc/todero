@@ -1,7 +1,6 @@
 "use client";
 import { useState, useCallback } from "react";
 import { fetchJson, formatApiError } from '@/hooks/useApiData'
-import { ALL_AGENTS, ORCHESTRATOR_ID, DEPENDENCIES } from './officeConstants';
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 export interface OfficeSidebarProps {
@@ -212,7 +211,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
         {!sidebarCollapsed && detail && (
           <div className="flex-shrink-0 border-b border-white/10 overflow-y-auto max-h-[45%]">
             <div className="sticky top-0 bg-[#080808] z-[1] flex items-center justify-between px-3 py-1 border-b border-white/10">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">AGENT DETAIL{detail.id === ORCHESTRATOR_ID ? " 👑" : ""}</span>
+              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">AGENT DETAIL{detail.isOrchestrator ? " 👑" : ""}</span>
               <div className="flex gap-1">
                 <button onClick={() => { setSelectedId(null); setDetail(null); }} className="bg-transparent border-none text-white/50 cursor-pointer text-xs font-[inherit] p-0 focus:outline-none focus:ring-2 focus:ring-white/30 rounded-lg">✕</button>
               </div>
@@ -292,7 +291,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
             </div>
 
             {/* KAOS-specific: read-only exec terminal (MC-18) */}
-            {detail && detail.id === ORCHESTRATOR_ID && (
+            {detail && detail.isOrchestrator && (
               <div className="border-t border-white/10 px-3 py-2">
                 <div className="text-xs text-white/50 uppercase tracking-widest font-medium mb-1">EXEC OUTPUT</div>
                 <div className="bg-[#080808] border border-white/10 rounded-lg px-2 py-1.5 max-h-[180px] overflow-y-auto font-mono">
@@ -345,7 +344,7 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
                 <div className="max-h-[200px] overflow-y-auto">
                   {waterfall.length === 0 && <div className="px-3 py-3 text-white/30 text-[11px] text-center leading-relaxed">Completions appear when agents finish work.</div>}
                   {waterfall.map((wf: any) => {
-                    const ag = ALL_AGENTS.find(a => a.id === wf.agentId);
+                    const ag = roster.find(a => a.id === wf.agentId);
                     if (!ag) return null;
                     return (
                       <div key={wf.id} className="px-3 py-1 border-b border-white/10">
@@ -412,28 +411,13 @@ export default function OfficeSidebar(props: OfficeSidebarProps) {
             )}
           </div>
 
-          {/* ▶ DEPENDENCY CHAINS */}
-          <div>
-            <div onClick={() => togglePanel("deps")} className="px-3 py-1.5 border-b border-white/10 cursor-pointer flex items-center justify-between bg-[#0f0f0f] select-none">
-              <span className="text-xs text-white/50 uppercase tracking-widest font-medium">{openPanels.has("deps") ? "▼" : "▶"} DEPENDENCY CHAINS</span>
-              <span className="text-[9px] text-white/30">{Object.keys(DEPENDENCIES).length}</span>
-            </div>
-            {openPanels.has("deps") && (
-              <div className="max-h-[180px] overflow-y-auto p-3">
-                {Object.entries(DEPENDENCIES).map(([src, dsts]) => {
-                  const srcAg = roster.find(a => a.id === src);
-                  if (!srcAg) return null;
-                  return (
-                    <div key={src} className="mb-1 px-2 py-1 bg-[#1a1a1a] rounded-lg border text-[10px]" style={{ borderColor: srcAg.color + "22" }}>
-                      <span className="font-bold" style={{ color: srcAg.color }}>{srcAg.emoji} {srcAg.name}</span>
-                      <span className="text-white/50"> → </span>
-                      {dsts.map(d => { const dag = roster.find(a => a.id === d); return dag ? <span key={d} className="mr-1.5" style={{ color: dag.color }}>{dag.emoji} {dag.name}</span> : null; })}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* TOD (agent-roster-truth): the "DEPENDENCY CHAINS" panel used to
+              render a hardcoded reporting hierarchy (main → scout/kemuni-sme/
+              vespera-sme, …) for whatever ids happened to still be in the
+              roster — a static org chart presented as observed structure.
+              There is no real dependency/reporting graph in /api/agents (or
+              anywhere else) yet, so the panel is gone rather than kept
+              showing an assumed hierarchy dressed as data. */}
         </div>{/* end expandable panels */}
 
         {/* Stats bar */}

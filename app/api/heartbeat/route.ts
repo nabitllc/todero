@@ -15,7 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 export async function PATCH(req: NextRequest) {
   // The database is either configured or it is not — say which, in the body.
@@ -51,7 +51,7 @@ export async function PATCH(req: NextRequest) {
   const { error } = await query.in('status', ['in_progress', 'code_review', 'refined', 'approved', 'released'])
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, 'issues')
   }
 
   return NextResponse.json({ ok: true, heartbeat_at: now })

@@ -66,7 +66,9 @@ describe('GET /api/agents with SUPABASE_SERVICE_ROLE_KEY unset', () => {
     const { body } = await getWithoutKey()
     expect(Array.isArray(body.agents)).toBe(true)
     expect(body.agents.length).toBeGreaterThan(0)
-    expect(['agents-md', 'builtin']).toContain(body.rosterSource)
+    // 'builtin' is gone: the roster is AGENTS.md or it is empty. This host has
+    // one, so an unconfigured database must not cost the operator the roster.
+    expect(body.rosterSource).toBe('agents-md')
   })
 })
 

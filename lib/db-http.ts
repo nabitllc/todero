@@ -90,3 +90,20 @@ export function missingTableResponse(table: string): NextResponse {
     { status: 424 },
   )
 }
+
+/**
+ * The one place every route should hand a `DbError` from a `.from(table)`
+ * query. Named-and-actionable when the cause is a missing table
+ * (`missingTableResponse`); a plain 500 with the driver's own message for
+ * anything else. Before this helper existed, ~25 route files each
+ * hand-wrote `if (isMissingTableError(error)) return missingTableResponse(t)
+ * else return NextResponse.json({error: error.message}, {status:500})`
+ * inline at every call site — easy to add a new query and forget the
+ * missing-table branch, which is exactly how routes ended up leaking the
+ * raw PostgREST "schema cache" string. Call this instead:
+ *   if (error) return dbQueryErrorResponse(error, TABLE)
+ */
+export function dbQueryErrorResponse(error: DbError, table: string): NextResponse {
+  if (isMissingTableError(error)) return missingTableResponse(table)
+  return NextResponse.json({ error: error.message }, { status: 500 })
+}

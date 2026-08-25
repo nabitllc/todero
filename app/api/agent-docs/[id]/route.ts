@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse, isMissingTableError, missingTableResponse } from '@/lib/db-http'
 
 // Opt out of static prerender — route reads DB at request time. (TOD-2296)
 export const dynamic = 'force-dynamic'
@@ -28,7 +28,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .select('*')
     .eq('id', params.id)
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 })
+  if (error) {
+    if (isMissingTableError(error)) return missingTableResponse('agent_documents')
+    return NextResponse.json({ error: error.message }, { status: 404 })
+  }
   return NextResponse.json(data)
 }
 
@@ -52,6 +55,6 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'agent_documents')
   return NextResponse.json(data)
 }

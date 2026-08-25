@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 // POST /api/agents/[id]/pause — toggle pause state
 export async function POST(
@@ -28,7 +28,7 @@ export async function POST(
         { onConflict: 'agent_id,key' }
       )
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'agent_memory')
     return NextResponse.json({ ok: true, paused })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

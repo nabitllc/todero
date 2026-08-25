@@ -157,7 +157,9 @@ export const CHECKS = [
     id: 'core-routes-no-500', piece: 'cross-platform-paths', critical: true,
     desc: 'core routes do not 500 on this (non-Mac) host',
     async run() {
-      const routes = ['/api/status', '/api/files', '/api/automations', '/api/health', '/api/projects']
+      // /api/health is excluded deliberately: it is SUPPOSED to answer 503 when the
+      // schema is incomplete. That is the honest signal, not a fault.
+      const routes = ['/api/status', '/api/files', '/api/automations', '/api/projects']
       const bad = []
       for (const p of routes) {
         const r = await http(p, { cookie: OWNER })

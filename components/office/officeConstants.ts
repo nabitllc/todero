@@ -10,8 +10,8 @@
 export type AgentRunStatus = 'live' | 'stale' | 'ended' | 'never';
 export interface AgentRunInfo { status: AgentRunStatus; taskTitle: string; startedAt: string | null; todayTasks: number; todayErrors: number; estimatedCost: number | null; }
 
-// TOD (agent-roster-truth): SUPA_AGENTS/ALL_AGENTS/ACTIVE_IDS/BENCH_IDS/
-// DESK_POS/BENCH_POS/PLANNED_LABELS used to be a hardcoded 8-agent roster
+// TOD (agent-roster-truth): the hardcoded 8-agent roster constant (and its
+// ACTIVE_IDS/BENCH_IDS/DESK_POS/BENCH_POS/PLANNED_LABELS layout tables)
 // (KAOS/Scout/Ingo/Kemuni SME/Vespera SME/Builder/Tester/Deployer) with a
 // literal id → desk-position table, plus two invented "planned" hires
 // ("Quill", "Echo") drawn at empty desks. The office rendered that fixed

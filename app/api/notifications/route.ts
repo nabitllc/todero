@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   if (unreadOnly) query = query.eq('read', false)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'notifications')
   return NextResponse.json(data)
 }
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'notifications')
   return NextResponse.json(data, { status: 201 })
 }
 
@@ -76,7 +76,7 @@ export async function PATCH(req: NextRequest) {
       .from('notifications')
       .update({ read: true })
       .eq('read', false)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'notifications')
     return NextResponse.json({ ok: true })
   }
 
@@ -89,6 +89,6 @@ export async function PATCH(req: NextRequest) {
     .update({ read: true })
     .in('id', ids)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'notifications')
   return NextResponse.json({ ok: true })
 }

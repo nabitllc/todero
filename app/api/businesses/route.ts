@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {
@@ -18,7 +18,7 @@ export async function GET() {
   if (unavailable) return unavailable
 
   const { data, error } = await getSupabase().from('businesses').select('*').order('name')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'businesses')
   return NextResponse.json(data)
 }
 
@@ -32,6 +32,6 @@ export async function POST(req: Request) {
   const body = await req.json()
   const { name, type, owner, status } = body
   const { data, error } = await getSupabase().from('businesses').insert({ name, type, owner, status }).select().single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'businesses')
   return NextResponse.json(data)
 }

@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET ?? 'kaos-internal-2026'
 
@@ -68,7 +68,7 @@ export async function PATCH(
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, 'agent_runs')
   }
 
   return NextResponse.json(data)

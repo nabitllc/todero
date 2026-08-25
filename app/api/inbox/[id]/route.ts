@@ -1,7 +1,7 @@
 // TOD-1038: GET /api/inbox/:id — single inbox request lookup
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 /** GET /api/inbox/:id — fetch single request by id */
 export async function GET(
@@ -30,7 +30,7 @@ export async function GET(
     if (error.code === 'PGRST116') {
       return NextResponse.json({ error: 'not found' }, { status: 404 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, 'inbox')
   }
 
   return NextResponse.json(data)

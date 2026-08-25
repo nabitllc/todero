@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { encrypt } from '@/lib/encryption'
-import { dbUnavailableResponse, isMissingTableError, missingTableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 const TABLE = 'connections'
 
@@ -31,10 +31,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error } = await query.order('created_at', { ascending: false })
-  if (error) {
-    if (isMissingTableError(error)) return missingTableResponse(TABLE)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
 
   return NextResponse.json(data)
 }
@@ -85,10 +82,7 @@ export async function POST(req: NextRequest) {
     .select('id, workspace_id, type, metadata, status, created_at')
     .single()
 
-  if (error) {
-    if (isMissingTableError(error)) return missingTableResponse(TABLE)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
 
   return NextResponse.json(data, { status: 201 })
 }
@@ -109,10 +103,7 @@ export async function DELETE(req: NextRequest) {
   const sb = supabaseAdmin()
   const { error } = await sb.from('connections').delete().eq('id', id)
 
-  if (error) {
-    if (isMissingTableError(error)) return missingTableResponse(TABLE)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return dbQueryErrorResponse(error, TABLE)
 
   return NextResponse.json({ ok: true })
 }

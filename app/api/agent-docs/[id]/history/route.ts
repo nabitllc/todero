@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 // Opt out of static prerender — route reads DB at request time. (TOD-2296)
 export const dynamic = 'force-dynamic'
@@ -24,6 +24,6 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .order('changed_at', { ascending: false })
     .limit(50)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'agent_document_history')
   return NextResponse.json({ history: data })
 }

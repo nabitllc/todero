@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 export async function GET(req: Request) {
   // The database is either configured or it is not — say which, in the body.
@@ -15,14 +15,14 @@ export async function GET(req: Request) {
   if (business_id) {
     const hub = getHubClient(business_id)
     const { data, error } = await hub.client.from('agents').select('*').eq('business_id', hub.businessId).order('created_at')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'agents')
     return NextResponse.json(data)
   }
 
   // AGGREGATE QUERY: intentionally cross-hub, no business_id scope
   const db = createAdminClient()
   const { data, error } = await db.from('agents').select('*').order('created_at')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'agents')
   return NextResponse.json(data)
 }
 
@@ -48,6 +48,6 @@ export async function POST(req: Request) {
       description
     })
     .select().single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'agents')
   return NextResponse.json(data)
 }

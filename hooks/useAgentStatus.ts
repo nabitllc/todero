@@ -3,7 +3,6 @@
 // Handles Supabase agent_runs polling and board task polling.
 
 import { useEffect } from 'react';
-import { SUPA_AGENTS } from '@/components/office/officeConstants';
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser';
 import { readApiError, formatApiError, type ApiError } from '@/lib/fetch-json';
 import type { AgentRunInfo, AgentRunStatus } from '@/components/office/officeConstants';
@@ -87,9 +86,12 @@ export async function fetchAgentRuns(): Promise<Record<string, AgentRunInfo>> {
     }
     result[aid] = { status: st, taskTitle: (latest.task_title || '').slice(0, 35), startedAt: latest.started_at, todayTasks, todayErrors, estimatedCost };
   }
-  for (const id of SUPA_AGENTS) {
-    if (!result[id]) result[id] = { status: 'never', taskTitle: '', startedAt: null, todayTasks: 0, todayErrors: 0, estimatedCost: null };
-  }
+  // TOD (agent-roster-truth): this used to backfill a 'never' entry for a
+  // hardcoded 8-agent list (SUPA_AGENTS) so every "known" agent always had a
+  // row, whether or not it was in the real roster. Deleted with the rest of
+  // that fallback — every caller already treats a *missing* key the same way
+  // it treats an explicit 'never' status, so no entry is the honest answer
+  // for an agent nothing here was told to expect.
   return result;
 }
 

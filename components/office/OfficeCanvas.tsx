@@ -246,27 +246,30 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         if(!simRef.current?.agents) return;
         const agents=simRef.current.agents;
         const taskMap:Record<string,string>=data.agentCurrentTask||{};
+        // TOD (agent-roster-truth): "sub-agent of the orchestrator" used to
+        // mean "agentId === 'main'" and a hardcoded 4-id SUB_AGENT_MAP —
+        // wrong the moment the real roster's orchestrator isn't literally
+        // named 'main', or has a fifth agent. Both now resolve against the
+        // roster that was actually loaded (agents, from initAgents()).
+        const orchId = agents.find((a:any)=>a.isOrchestrator)?.id
         // Count active sub-agents from recentActivity
         const activity: any[] = data.recentActivity || []
         const activeSubagents = activity.filter((a: any) =>
-          a.agentId === 'main' &&
+          a.agentId === orchId &&
           (a.action === 'delegate' || a.channel?.includes('Sub-agent')) &&
           a.ago != null && a.ago < 10
         ).length
         subagentCountRef.current = activeSubagents
 
-        // MC-45: Build subagent sessions from active agent_runs (non-main agents working recently)
+        // MC-45: Build subagent sessions from active agent_runs (any real,
+        // non-orchestrator roster agent working recently — not a fixed list).
         const liveRuns = liveRunsRef.current
         const subSessions: typeof subagentSessionsRef.current = []
-        const SUB_AGENT_MAP: Record<string,{name:string;emoji:string;color:string}> = {
-          builder:{name:'Builder',emoji:'🔨',color:'#0984E3'}, tester:{name:'Tester',emoji:'🧪',color:'#E84393'},
-          deployer:{name:'Deployer',emoji:'🚀',color:'#00CEC9'}, scout:{name:'Scout',emoji:'🔍',color:'#00B894'},
-        }
         for (const [aid, info] of Object.entries(liveRuns)) {
-          if (aid === 'main' || !info || info.status !== 'live') continue
-          const meta = SUB_AGENT_MAP[aid]
+          if (aid === orchId || !info || info.status !== 'live') continue
+          const meta = agents.find((a:any)=>a.id===aid&&!a.isOrchestrator)
           if (meta) {
-            subSessions.push({ id: aid, ...meta, task: info.taskTitle, startedAt: info.startedAt ? new Date(info.startedAt).getTime() : Date.now() })
+            subSessions.push({ id: aid, name: meta.name, emoji: meta.emoji, color: meta.color, task: info.taskTitle, startedAt: info.startedAt ? new Date(info.startedAt).getTime() : Date.now() })
           }
         }
         subagentSessionsRef.current = subSessions
@@ -786,6 +789,16 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       {pollErrorList.length > 0 && (
         <div className="absolute top-3 left-3 z-20 w-[calc(100%-1.5rem)] max-w-md space-y-2">
           {pollErrorList.map((err, i) => <ApiErrorBanner key={i} error={err} />)}
+        </div>
+      )}
+      {/* TOD (agent-roster-truth): a genuinely empty roster is drawn as an
+          empty office, not silently filled with a fabricated cast. */}
+      {rosterState === 'empty' && pollErrorList.length === 0 && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+          <div className="text-center text-white/40 text-sm">
+            <div className="mb-1">No agents configured</div>
+            <div className="text-white/25 text-xs">/api/agents returned zero agents</div>
+          </div>
         </div>
       )}
     </div>

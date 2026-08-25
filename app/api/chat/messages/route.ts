@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     .from('chat_messages')
     .insert({ id, conversation_id, role, content, model, image_url: image_url || null })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'chat_messages')
 
   // Update conversation updated_at
   await supabase
@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest) {
     .from('chat_messages')
     .update(updates)
     .eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'chat_messages')
   return NextResponse.json({ ok: true })
 }
 
@@ -79,7 +79,7 @@ export async function DELETE(req: NextRequest) {
       .from('chat_messages')
       .delete()
       .eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'chat_messages')
     return NextResponse.json({ ok: true })
   }
 
@@ -93,7 +93,7 @@ export async function DELETE(req: NextRequest) {
       .from('chat_messages')
       .delete()
       .eq('conversation_id', conversation_id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'chat_messages')
     return NextResponse.json({ ok: true })
   }
 
@@ -105,6 +105,6 @@ export async function DELETE(req: NextRequest) {
     .delete()
     .eq('conversation_id', conversation_id)
     .gte('created_at', new Date(parseInt(after_ts)).toISOString())
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'chat_messages')
   return NextResponse.json({ ok: true })
 }

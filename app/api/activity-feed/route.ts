@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { assertDbConfigured, db } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 function getSupabase() {
   // db() throws a DbConfigurationError naming the exact missing variables.
@@ -107,7 +107,7 @@ export async function GET(req: Request) {
   const { data, error } = await query
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, 'issues')
   }
 
   const now = Date.now()

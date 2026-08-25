@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db, dbMissingEnv } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 export async function GET() {
   // The database is either configured or it is not — say which, in the body.
@@ -24,7 +24,7 @@ export async function GET() {
     .order('name')
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return dbQueryErrorResponse(error, 'milestones')
   }
   return NextResponse.json(data ?? [])
 }

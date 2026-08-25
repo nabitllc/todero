@@ -2,7 +2,7 @@
 // Uses agent_memory table so agent-kicker and run-agent can read pause state.
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 const AGENT_ID = 'system'
 const KEY = 'hub_pause'
@@ -36,7 +36,7 @@ export async function GET() {
       .single()
 
     if (error && error.code !== 'PGRST116') {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return dbQueryErrorResponse(error, 'agent_memory')
     }
 
     const val = data?.value

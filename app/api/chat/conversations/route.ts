@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {
@@ -24,14 +24,14 @@ export async function GET() {
     .select('*')
     .order('updated_at', { ascending: false })
 
-  if (convErr) return NextResponse.json({ error: convErr.message }, { status: 500 })
+  if (convErr) return dbQueryErrorResponse(convErr, 'chat_conversations')
 
   const { data: msgs, error: msgErr } = await supabase
     .from('chat_messages')
     .select('*')
     .order('created_at', { ascending: true })
 
-  if (msgErr) return NextResponse.json({ error: msgErr.message }, { status: 500 })
+  if (msgErr) return dbQueryErrorResponse(msgErr, 'chat_messages')
 
   const result = (convs || []).map(conv => ({
     ...conv,
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     .insert({ id, title, model })
     .select()
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'chat_conversations')
   return NextResponse.json(data)
 }
 
@@ -75,7 +75,7 @@ export async function PATCH(req: NextRequest) {
     .eq('id', id)
     .select()
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'chat_conversations')
   return NextResponse.json(data)
 }
 
@@ -90,6 +90,6 @@ export async function DELETE(req: NextRequest) {
   const id = new URL(req.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { error } = await getSupabase().from('chat_conversations').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'chat_conversations')
   return NextResponse.json({ ok: true })
 }

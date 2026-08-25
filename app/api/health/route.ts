@@ -6,6 +6,7 @@ import { listRuntimes } from '@/lib/runtimes'
 import { listWorktrees } from '@/lib/runtimes/worktree'
 import { db, type DbResult } from '@/lib/db'
 import { checkRequiredTables } from '@/lib/required-tables'
+import { isMissingTableError } from '@/lib/db-http'
 
 /**
  * Bound a query so a hung database cannot hold the health check open. Rejects
@@ -22,16 +23,6 @@ function withTimeout(query: PromiseLike<DbResult>, ms: number): Promise<DbResult
 
 export async function GET() {
   const result: Record<string, unknown> = { ok: true, ts: new Date().toISOString() }
-
-  // Tracks a hard infrastructure failure (unreachable database, thrown
-  // exception) as distinct from `result.ok` — `result.ok` is the full,
-  // honest picture (it also goes false when the schema is incomplete), but
-  // the HTTP status only escalates to 503 for the hard case. A reachable
-  // database with a pending migration is a real problem the body reports in
-  // full (`ok:false`, `missing`, `fix`), just not one that should make this
-  // host's core routes look like they are 500ing — that signal is reserved
-  // for the database actually being down.
-  let hardFailure = false
 
   const dbStart = Date.now()
   try {
@@ -51,14 +42,21 @@ export async function GET() {
         released:   rows.filter(r => r.status === 'released').length,
         backlog:    rows.filter(r => r.status === 'backlog').length,
       }
+    } else if (isMissingTableError(error)) {
+      // The connection itself is fine — the schema just hasn't been
+      // migrated onto it yet. Report it the same honest, named way every
+      // other route does (which table + the fix), never the vendor's raw
+      // "schema cache" string. The full missing-table list still comes from
+      // the schema preflight below; this just keeps this probe itself from
+      // misreporting a missing table as a dead connection.
+      result.ok = false
+      result.db = { reachable: true, latencyMs: dbLatency, missingTable: 'issues', fix: 'npm run db:migrate' }
     } else {
       result.ok = false
-      hardFailure = true
       result.db = { reachable: false, latencyMs: dbLatency, error: error.message }
     }
   } catch (e) {
     result.ok = false
-    hardFailure = true
     result.db = { reachable: false, error: e instanceof Error ? e.message : String(e) }
   }
 
@@ -128,8 +126,13 @@ export async function GET() {
     result.worktrees = { count: worktrees.length, agents: worktrees.map(w => w.agentId) }
   } catch {}
 
+  // 503 whenever the body says ok:false, full stop — a reachable database
+  // with a pending migration is still a broken deploy, and an uptime probe /
+  // load balancer / readiness gate reads the status code, not the JSON body.
+  // A green 200 over a body admitting missing tables would tell every
+  // machine consumer this host is fine when it is not.
   return NextResponse.json(result, {
-    status: hardFailure ? 503 : 200,
+    status: result.ok === false ? 503 : 200,
     headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
   })
 }

@@ -11,9 +11,15 @@
 
 import { db, isDbConfigured } from '@/lib/db'
 import { isMissingTableError } from '@/lib/db-http'
+import { GENERATED_REQUIRED_TABLES } from '@/lib/required-tables.generated'
 
-/** Tables that must exist before the routes that depend on them can work. */
-export const REQUIRED_TABLES = ['connections', 'deploy_history', 'workspace_members'] as const
+/**
+ * Tables that must exist before the routes that depend on them can work.
+ * Sourced from `lib/required-tables.generated.ts` (regenerate with
+ * `npm run generate:required-tables`) — every table any route actually
+ * queries, not a hand-picked subset that quietly drifts from the code.
+ */
+export const REQUIRED_TABLES = GENERATED_REQUIRED_TABLES
 
 export type RequiredTable = (typeof REQUIRED_TABLES)[number]
 

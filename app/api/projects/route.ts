@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
 import type { DbJoin } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
 
 /**
  * Each project carries the name of the business it belongs to. Declared as a
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
       .join(BUSINESS_NAME)
       .eq('business_id', hub.businessId)
       .order('name')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return dbQueryErrorResponse(error, 'projects')
     return NextResponse.json(data)
   }
 
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     .select('*')
     .join(BUSINESS_NAME)
     .order('name')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'projects')
   return NextResponse.json(data)
 }
 
@@ -56,6 +56,6 @@ export async function POST(req: Request) {
   const { data, error } = await hub.client.from('projects')
     .insert({ business_id, name, description, repo_url, status: 'active' })
     .select().single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return dbQueryErrorResponse(error, 'projects')
   return NextResponse.json(data)
 }

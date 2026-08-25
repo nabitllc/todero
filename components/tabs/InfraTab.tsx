@@ -377,6 +377,15 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                         <span className="text-white/30 ml-auto">{health.db?.reachable ? `${health.db.latencyMs ?? '?'}ms` : (health.db?.error ?? 'unreachable')}</span>
                       </div>
                       <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
+                        <Dot status={Array.isArray(health.missing) && health.missing.length > 0 ? 'degraded' : 'ok'} sm />
+                        <span className="text-white/60">Schema</span>
+                        <span className="text-white/30 ml-auto">
+                          {Array.isArray(health.missing) && health.missing.length > 0
+                            ? `${health.missing.length} table(s) missing`
+                            : 'up to date'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2">
                         <Dot status={Array.isArray(health.runtimes) && health.runtimes.length > 0 ? 'ok' : 'unknown'} sm />
                         <span className="text-white/60">Runtimes</span>
                         <span className="text-white/30 ml-auto">{Array.isArray(health.runtimes) ? health.runtimes.length : 0} registered</span>
@@ -392,6 +401,14 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
                         <span className="text-white/30 ml-auto truncate max-w-[10rem]">{health.lastHeartbeat?.timestamp ?? health.lastHeartbeat?.time ?? 'none recorded'}</span>
                       </div>
                     </div>
+                    {Array.isArray(health.missing) && health.missing.length > 0 && (
+                      <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
+                        <p className="text-amber-300/80">
+                          Missing table{health.missing.length > 1 ? 's' : ''}: {health.missing.join(', ')}
+                        </p>
+                        <p className="text-white/40 mt-1 font-mono">{health.fix ?? 'npm run db:migrate'}</p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
