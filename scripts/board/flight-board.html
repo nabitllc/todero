@@ -158,12 +158,12 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Wave</span><span class="v">3</span></div>
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">8.7 → 6.2 → 9.3 → 10</span></div>
-  <div class="kv"><span class="k">Channels</span><span class="v mono">0.9 → 6.8 (goal 8.9)</span></div>
+  <div class="kv"><span class="k">Channels</span><span class="v mono">0.7 → 5.8 (goal 8.9)</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
 
 <nav class="index" aria-label="Contents">
-  <a href="#channels">1 · Channels<i>1/18 cleared · avg 6.8/8.9</i></a>
+  <a href="#channels">1 · Channels<i>1/23 cleared · avg 5.8/8.9</i></a>
   <a href="#waves">2 · Waves<i>12 run, newest first</i></a>
   <a href="#next">3 · What's next<i>3 queued</i></a>
   <a href="#decisions">4 · Decisions<i>all answered</i></a>
@@ -173,7 +173,7 @@ section{margin-top:42px;scroll-margin-top:16px}
 </nav>
 
 <section id="channels">
-  <div class="shead"><h2>1 · Channels</h2><div class="note">Sorted by distance from goal · 1 of 18 scored channels cleared</div></div>
+  <div class="shead"><h2>1 · Channels</h2><div class="note">Sorted by distance from goal · 1 of 23 scored channels cleared</div></div>
   <p class="lede"><b>Scope moved on 25 Aug.</b> Todero is no longer only a build tool — it must also run the project it built: customers, orders, conversations. Three channels were added for that, and one for the post-MVP multi-tenant goal. All four start at zero, so the honest effect is that the finish line got further away, not closer.<br><br>Solid bar is where Todero is now; the ghost behind it is where it started; the pin is the goal it has to meet or beat. Each goal names the tool and the feature it is measured against. <b>These are judged</b>, not measured — a fresh blind panel re-scores every scored channel at each wave boundary. 1 channel is EXEMPT by owner decision and is shown but not counted.</p>
   <div class="grid">
       <div class="card">
@@ -502,6 +502,66 @@ section{margin-top:42px;scroll-margin-top:16px}
         <details class="eviD"><summary>Full evidence <b>[+2.0]</b></summary><div class="gap">The Office states '0 of 30 agents report a workspace folder — the positions on the floor below are decorative', computed from the field so the wording self-corrects if agents ever report one. That is the honest version of a surface that previously implied position meant something. Held back: GET /api/tasks 404s on every poll from two independent pollers, 30s and 60s, and the roster still lists Kemuni SME and Vespera SME — agents for projects that do not exist.</div></details>
       </div>
       <div class="card">
+        <div class="head"><span class="cname">Mobile Fidelity</span><span class="chip building">wave 11</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:40%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">4.0<i>/8</i></span>
+        </div>
+        <div class="goal"><span class="glab">Goal</span> Linear on a phone — every destination usable one-handed, nothing clipped, nothing that needs a mouse. The surface the owner actually reads this on.</div>
+        <div class="nextstep"><span class="glab">Next</span> Drive the six destinations at 375px and report what is clipped, unreachable or needs a hover — starting with the surfaces added since the layout guard was written.</div>
+        <div class="prog">          <div class="wrow">
+            <span class="wtag">W11</span>
+            <span class="wdelta up">+4</span>
+            <ul><li>Layout foundations guarded by the smoke test after repeated breakage</li><li>16 tab components carry responsive breakpoints</li><li>Nobody has ever used it on a phone and reported back</li></ul>
+          </div></div>
+        <details class="eviD"><summary>Full evidence <b>[+4.0]</b></summary><div class="gap">The layout foundations are real and defended: MobileNav carries lg:hidden, PrimaryNav carries hidden lg:flex, the two breakpoints must match, and scripts/smoke-test-layout.sh asserts all of it on every run after the responsive layout broke repeatedly. Sixteen tab components carry sm:/md: breakpoints. What has never happened is anyone USING it on a phone and reporting back — no channel has ever scored it, no critic has been asked to, and subagents have no browser at all. Starts at 4 on the strength of the guarded layout, and no higher because the layout not breaking is a different claim from the product being usable one-handed. The owner reads the flight board from his phone daily and gave eight pieces of feedback on it in one message; the app itself has had no equivalent pass.</div></details>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">First-run &amp; Hub Setup</span><span class="chip building">wave 11</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:30%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">3.0<i>/8</i></span>
+        </div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — create or join a hub and be working in it. The owner's words: "allow to create/join different hubs (similar to Paperclip)".</div>
+        <div class="nextstep"><span class="glab">Next</span> Walk it: a fresh clone to a named hub with a project and a first issue, without reading the source. Whatever stops you is the piece.</div>
+        <div class="prog">          <div class="wrow">
+            <span class="wtag">W11</span>
+            <span class="wdelta up">+3</span>
+            <ul><li>OnboardingWizard exists; /api/businesses has 6 callers; one hub row</li><li>GET /api/onboarding answers 405</li><li>The path from fresh clone to working hub has never been walked</li></ul>
+          </div></div>
+        <details class="eviD"><summary>Full evidence <b>[+3.0]</b></summary><div class="gap">Measured: components/OnboardingWizard.tsx exists, /api/businesses has SIX callers across the product, and one hub row exists — so a hub can be reached. But GET /api/onboarding answers 405, and the whole path from a fresh clone to a working hub with a project in it has never been walked by anyone. This is deliberately NOT Multi-tenancy, which is exempt: that channel is about ISOLATION — seeing only your own data — and this one is about a new person getting to a working hub at all. They can be answered separately and the exempt one does not block this. Starts at 3 because the wizard and the routes are real and partly wired.</div></details>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Live Agent Control</span><span class="chip building">wave 11</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:30%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">3.0<i>/9</i></span>
+        </div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — pause or terminate ANY agent at ANY time, and a hub-wide stop. The control is in the request path, outside the agent, so it cannot be reasoned past.</div>
+        <div class="nextstep"><span class="glab">Next</span> Wire /api/hub-pause to a control an operator can actually reach, and decide whether terminate exists at all — a pause an agent ignores is a setting, and there is nothing to escalate to.</div>
+        <div class="prog">          <div class="wrow">
+            <span class="wtag">W11</span>
+            <span class="wdelta up">+3</span>
+            <ul><li>Found while comparing against Paperclip: pause routes exist, nothing scores them</li><li>hub-pause answers 200 with ZERO callers in the product</li><li>No terminate route of any kind</li></ul>
+          </div></div>
+        <details class="eviD"><summary>Full evidence <b>[+3.0]</b></summary><div class="gap">MEASURED 2026-08-26 while answering the owner's question about Paperclip gaps. This is the third of the three capabilities BRIEF.md records for Paperclip, and it is the only one with no channel. The mechanism partly EXISTS and nothing judges it: GET /api/agent-pause?agent=builder answers 200 with a real is_paused/paused_at/paused_reason shape, /api/hub-pause answers 200 — and has ZERO callers anywhere in components/ or app/, so the hub-wide stop cannot be reached from the product at all. /api/circuit-breaker answers 200. There is NO terminate route of any kind: a running agent can be paused in principle and never killed. Starts at 3, not 0, because the routes are real and answer correctly; it is not higher because the one control an operator would reach for in an emergency is unreachable, and because Run Safety's automatic ceilings have never been observed firing either — so today there is no control over a running agent that has been watched working.</div></details>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Cost Attribution</span><span class="chip building">wave 11</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:20%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">2.0<i>/8</i></span>
+        </div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — a per-agent budget the run is charged against. LangSmith — drill from a cost number to the run and the step that caused it.</div>
+        <div class="nextstep"><span class="glab">Next</span> Make one real run write one real ledger row, then make the breakdown attribute it to the run and step that caused it. Until a run happens there is nothing to attribute.</div>
+        <div class="prog">          <div class="wrow">
+            <span class="wtag">W11</span>
+            <span class="wdelta up">+2</span>
+            <ul><li>token-ledger.ts exists; the ledger and agent_runs both hold ZERO rows</li><li>costs/breakdown answers 200 with [] — honest, and empty</li><li>Run Safety's per-agent budgets have nothing to spend against</li></ul>
+          </div></div>
+        <details class="eviD"><summary>Full evidence <b>[+2.0]</b></summary><div class="gap">The plumbing exists and has never carried anything. lib/runtimes/token-ledger.ts is real; the ledger holds ZERO rows and agent_runs holds ZERO rows, so GET /api/costs/breakdown answers 200 with an empty array — correctly, since there is nothing to report. Run Safety's goal names 'budgets per agent, and at the limit they stop', and a budget with no ledger to spend against is a number that can never be exceeded. Starts at 2 rather than 0 because the module and the endpoint are written and answer honestly. The case for this being its own channel rather than part of Observability: Observability is about whether a number on screen traces to a real query, and this is about whether the number EXISTS. The board's own spend figure was stale in three places until today for exactly that reason — nothing was accumulating it.</div></details>
+      </div>
+      <div class="card">
         <div class="head"><span class="cname">Multi-tenancy &amp; Identity</span><span class="chip untouched">exempt — post-MVP</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:10%"></div><div class="pin" style="left:80%"></div></div>
@@ -511,6 +571,21 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="nextstep"><span class="glab">Next</span> EXEMPT by owner decision. The trigger for un-exempting is Todero hosting a second customer's business alongside Limiglow.</div>
         <div class="prog">          <div class="wrow"><span class="wtag">—</span><span class="wdelta flat">±0</span><ul><li>Not itemised per wave before Wave 6.</li></ul></div></div>
         <details class="eviD"><summary>Full evidence <b>[+1.0]</b></summary><div class="gap">EXEMPT BY OWNER DECISION, 2026-08-26. Two standing orders contradicted: 'the loop ends when every channel clears its goal' and 'multi-tenancy is post-MVP, skip it'. This channel sits at 1/8 and was being skipped every wave while the completion condition counted it — so the loop was running toward a finish line it had already been told to make unreachable. Done is now 18 of 18 SCORED channels. This one is still shown, with its real number, because an exemption you can see is honest and a deleted row is not. IF THIS EVER CHANGES: Todero hosting a second customer's business alongside Limiglow is the trigger, and it is the one channel whose absence is invisible until the day it is catastrophic — schema, scoping, and every guard.</div></details>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Durability &amp; Recovery</span><span class="chip building">wave 11</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:0%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">0.0<i>/8</i></span>
+        </div>
+        <div class="goal"><span class="glab">Goal</span> Any serious self-hosted tool — a backup you can restore from, taken without stopping the app, and an export that outlives the tool itself.</div>
+        <div class="nextstep"><span class="glab">Next</span> A backup that can be taken while the app is running, and a restore proven by actually restoring into an empty directory and reading the data back.</div>
+        <div class="prog">          <div class="wrow">
+            <span class="wtag">W11</span>
+            <span class="wdelta flat">±0</span>
+            <ul><li>Found by asking what nineteen channels were not looking at</li><li>No backup, restore or export route or script exists at all</li><li>One 1.3 MB file holds every issue, order, conversation and run record</li></ul>
+          </div></div>
+        <details class="eviD"><summary>Full evidence <b>[=]</b></summary><div class="gap">ZERO COVERAGE, measured: no backup, restore or export route anywhere under app/api, no backup or restore script under scripts/, and nineteen channels that never looked. Todero is ONE FILE — db.sqlite, 1,288 KB today — holding every issue, conversation, order and run record. For something whose stated job is to run a business, losing that file is unrecoverable and nothing in the program notices. This is the only new channel starting at a true zero, and it is the one with the clearest claim to being a SHIP BLOCKER rather than a gap: every other channel makes the product better, this one is the difference between a bad day and starting again. Note the schema already survives a fresh clone — migrations run at first access — so what is missing is the DATA, not the structure.</div></details>
       </div>
   </div>
 </section>
@@ -790,7 +865,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 243ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 554ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -825,8 +900,8 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">issues-pagination</span><span class="gcount">2/2</span></summary>
-          <div class="chk ok"><span class="cid">issues-paginated</span><span class="cdet">total=1 matches 1 rows actually returned</span></div>
-          <div class="chk ok"><span class="cid">issues-no-silent-truncation</span><span class="cdet">has_more=false</span></div>
+          <div class="chk ok"><span class="cid">issues-paginated</span><span class="cdet">total=12 matches 12 rows actually returned</span></div>
+          <div class="chk ok"><span class="cid">issues-no-silent-truncation</span><span class="cdet">has_more=true</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">schema-migrations</span><span class="gcount">3/3</span></summary>

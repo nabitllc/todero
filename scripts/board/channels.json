@@ -456,6 +456,111 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Live Agent Control",
+      "baseline": 0,
+      "current": 3,
+      "goal": 9,
+      "wave": 11,
+      "goal_text": "Paperclip — pause or terminate ANY agent at ANY time, and a hub-wide stop. The control is in the request path, outside the agent, so it cannot be reasoned past.",
+      "evidence": "MEASURED 2026-08-26 while answering the owner's question about Paperclip gaps. This is the third of the three capabilities BRIEF.md records for Paperclip, and it is the only one with no channel. The mechanism partly EXISTS and nothing judges it: GET /api/agent-pause?agent=builder answers 200 with a real is_paused/paused_at/paused_reason shape, /api/hub-pause answers 200 — and has ZERO callers anywhere in components/ or app/, so the hub-wide stop cannot be reached from the product at all. /api/circuit-breaker answers 200. There is NO terminate route of any kind: a running agent can be paused in principle and never killed. Starts at 3, not 0, because the routes are real and answer correctly; it is not higher because the one control an operator would reach for in an emergency is unreachable, and because Run Safety's automatic ceilings have never been observed firing either — so today there is no control over a running agent that has been watched working.",
+      "next": "Wire /api/hub-pause to a control an operator can actually reach, and decide whether terminate exists at all — a pause an agent ignores is a setting, and there is nothing to escalate to.",
+      "progress": [
+        {
+          "wave": 11,
+          "delta": 3,
+          "did": [
+            "Found while comparing against Paperclip: pause routes exist, nothing scores them",
+            "hub-pause answers 200 with ZERO callers in the product",
+            "No terminate route of any kind"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Durability & Recovery",
+      "baseline": 0,
+      "current": 0,
+      "goal": 8,
+      "wave": 11,
+      "goal_text": "Any serious self-hosted tool — a backup you can restore from, taken without stopping the app, and an export that outlives the tool itself.",
+      "evidence": "ZERO COVERAGE, measured: no backup, restore or export route anywhere under app/api, no backup or restore script under scripts/, and nineteen channels that never looked. Todero is ONE FILE — db.sqlite, 1,288 KB today — holding every issue, conversation, order and run record. For something whose stated job is to run a business, losing that file is unrecoverable and nothing in the program notices. This is the only new channel starting at a true zero, and it is the one with the clearest claim to being a SHIP BLOCKER rather than a gap: every other channel makes the product better, this one is the difference between a bad day and starting again. Note the schema already survives a fresh clone — migrations run at first access — so what is missing is the DATA, not the structure.",
+      "next": "A backup that can be taken while the app is running, and a restore proven by actually restoring into an empty directory and reading the data back.",
+      "progress": [
+        {
+          "wave": 11,
+          "delta": 0,
+          "did": [
+            "Found by asking what nineteen channels were not looking at",
+            "No backup, restore or export route or script exists at all",
+            "One 1.3 MB file holds every issue, order, conversation and run record"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Cost Attribution",
+      "baseline": 0,
+      "current": 2,
+      "goal": 8,
+      "wave": 11,
+      "goal_text": "Paperclip — a per-agent budget the run is charged against. LangSmith — drill from a cost number to the run and the step that caused it.",
+      "evidence": "The plumbing exists and has never carried anything. lib/runtimes/token-ledger.ts is real; the ledger holds ZERO rows and agent_runs holds ZERO rows, so GET /api/costs/breakdown answers 200 with an empty array — correctly, since there is nothing to report. Run Safety's goal names 'budgets per agent, and at the limit they stop', and a budget with no ledger to spend against is a number that can never be exceeded. Starts at 2 rather than 0 because the module and the endpoint are written and answer honestly. The case for this being its own channel rather than part of Observability: Observability is about whether a number on screen traces to a real query, and this is about whether the number EXISTS. The board's own spend figure was stale in three places until today for exactly that reason — nothing was accumulating it.",
+      "next": "Make one real run write one real ledger row, then make the breakdown attribute it to the run and step that caused it. Until a run happens there is nothing to attribute.",
+      "progress": [
+        {
+          "wave": 11,
+          "delta": 2,
+          "did": [
+            "token-ledger.ts exists; the ledger and agent_runs both hold ZERO rows",
+            "costs/breakdown answers 200 with [] — honest, and empty",
+            "Run Safety's per-agent budgets have nothing to spend against"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "First-run & Hub Setup",
+      "baseline": 0,
+      "current": 3,
+      "goal": 8,
+      "wave": 11,
+      "goal_text": "Paperclip — create or join a hub and be working in it. The owner's words: \"allow to create/join different hubs (similar to Paperclip)\".",
+      "evidence": "Measured: components/OnboardingWizard.tsx exists, /api/businesses has SIX callers across the product, and one hub row exists — so a hub can be reached. But GET /api/onboarding answers 405, and the whole path from a fresh clone to a working hub with a project in it has never been walked by anyone. This is deliberately NOT Multi-tenancy, which is exempt: that channel is about ISOLATION — seeing only your own data — and this one is about a new person getting to a working hub at all. They can be answered separately and the exempt one does not block this. Starts at 3 because the wizard and the routes are real and partly wired.",
+      "next": "Walk it: a fresh clone to a named hub with a project and a first issue, without reading the source. Whatever stops you is the piece.",
+      "progress": [
+        {
+          "wave": 11,
+          "delta": 3,
+          "did": [
+            "OnboardingWizard exists; /api/businesses has 6 callers; one hub row",
+            "GET /api/onboarding answers 405",
+            "The path from fresh clone to working hub has never been walked"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Mobile Fidelity",
+      "baseline": 0,
+      "current": 4,
+      "goal": 8,
+      "wave": 11,
+      "goal_text": "Linear on a phone — every destination usable one-handed, nothing clipped, nothing that needs a mouse. The surface the owner actually reads this on.",
+      "evidence": "The layout foundations are real and defended: MobileNav carries lg:hidden, PrimaryNav carries hidden lg:flex, the two breakpoints must match, and scripts/smoke-test-layout.sh asserts all of it on every run after the responsive layout broke repeatedly. Sixteen tab components carry sm:/md: breakpoints. What has never happened is anyone USING it on a phone and reporting back — no channel has ever scored it, no critic has been asked to, and subagents have no browser at all. Starts at 4 on the strength of the guarded layout, and no higher because the layout not breaking is a different claim from the product being usable one-handed. The owner reads the flight board from his phone daily and gave eight pieces of feedback on it in one message; the app itself has had no equivalent pass.",
+      "next": "Drive the six destinations at 375px and report what is clipped, unreachable or needs a hover — starting with the surfaces added since the layout guard was written.",
+      "progress": [
+        {
+          "wave": 11,
+          "delta": 4,
+          "did": [
+            "Layout foundations guarded by the smoke test after repeated breakage",
+            "16 tab components carry responsive breakpoints",
+            "Nobody has ever used it on a phone and reported back"
+          ]
+        }
+      ]
     }
   ]
 }
