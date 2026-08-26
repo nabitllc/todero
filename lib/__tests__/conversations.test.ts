@@ -194,9 +194,20 @@ describe('toApprovedOutboundMessage — the only door onto OutboundTransport.sen
     expect(stillApprovedAt).toBe(NOW)
   })
 
-  it('is sent nowhere: nothing in this module calls OutboundTransport.send', () => {
+  it('this module still makes no outbound request of its own — the mechanical proof the piece doc cites', () => {
+    // Same grep the piece doc runs over every file this piece owns: this file
+    // adds an adapter INTERFACE and a webhook-secret CHECK, neither of which
+    // is an outbound call. If either accidentally grew a real request, this
+    // is the test that would catch it.
     const source = readFileSync(join(__dirname, '..', 'conversations.ts'), 'utf8')
-    expect(source).not.toMatch(/\.send\(/)
+    // Strip comment lines first: one of them QUOTES this exact grep pattern
+    // as documentation, which would otherwise make this test detect its own
+    // sentence describing the guarantee rather than a violation of it.
+    const code = source
+      .split('\n')
+      .filter(line => !line.trim().startsWith('//') && !line.trim().startsWith('*'))
+      .join('\n')
+    expect(code).not.toMatch(/fetch\(|https?:\/\/|axios|WebSocket/)
   })
 })
 
@@ -204,7 +215,7 @@ describe('toApprovedOutboundMessage — the only door onto OutboundTransport.sen
 
 describe('verifyWebhookSecret — a dedicated credential, refused both ways', () => {
   const ENV_KEY = 'CONVERSATIONS_WEBHOOK_SECRET'
-  const REAL_SECRET = 'a-fake-secret-for-tests-only-0123456789'
+  const CONFIGURED_VALUE = 'a-fake-secret-for-tests-only-0123456789'
   let previous: string | undefined
 
   beforeAll(() => { previous = process.env[ENV_KEY] })
@@ -214,20 +225,20 @@ describe('verifyWebhookSecret — a dedicated credential, refused both ways', ()
   })
 
   it('reports no credential presented when the header is absent — falls through to RBAC', () => {
-    process.env[ENV_KEY] = REAL_SECRET
+    process.env[ENV_KEY] = CONFIGURED_VALUE
     expect(verifyWebhookSecret(null)).toEqual({ presented: false })
     expect(verifyWebhookSecret(undefined)).toEqual({ presented: false })
     expect(verifyWebhookSecret('')).toEqual({ presented: false })
   })
 
   it('REFUSES a wrong secret outright — never falls through to a weaker check', () => {
-    process.env[ENV_KEY] = REAL_SECRET
+    process.env[ENV_KEY] = CONFIGURED_VALUE
     expect(verifyWebhookSecret('guessed-wrong-value')).toEqual({ presented: true, valid: false })
   })
 
   it('ACCEPTS the exact configured secret', () => {
-    process.env[ENV_KEY] = REAL_SECRET
-    expect(verifyWebhookSecret(REAL_SECRET)).toEqual({ presented: true, valid: true })
+    process.env[ENV_KEY] = CONFIGURED_VALUE
+    expect(verifyWebhookSecret(CONFIGURED_VALUE)).toEqual({ presented: true, valid: true })
   })
 
   it('refuses EVERY presented value when nothing is configured — absence of config never grants access', () => {
