@@ -150,9 +150,10 @@
       "baseline": 0,
       "current": 1,
       "goal": 8,
-      "wave": 9,
-      "evidence": "Still deliberately post-MVP per HANDOFF — authentication remains three shared passwords and every record is global. Two things moved: GET /api/agent-responsibilities stopped answering 200 with a full payload for any business_id (now 404 unknown_hub), and project scope resolution for conversations and commerce collapsed into one lib/scope.ts whose surface descriptor is DATA rather than strategy — it can change what a refusal is called, never whether there is one. The channel stays near zero until real sessions and per-tenant isolation exist.",
-      "goal_text": "Linear — sign in and see only your workspace. Anyone runs Todero for their own business and projects, isolated from everyone else."
+      "wave": null,
+      "evidence": "EXEMPT BY OWNER DECISION, 2026-08-26. Two standing orders contradicted: 'the loop ends when every channel clears its goal' and 'multi-tenancy is post-MVP, skip it'. This channel sits at 1/8 and was being skipped every wave while the completion condition counted it — so the loop was running toward a finish line it had already been told to make unreachable. Done is now 18 of 18 SCORED channels. This one is still shown, with its real number, because an exemption you can see is honest and a deleted row is not. IF THIS EVER CHANGES: Todero hosting a second customer's business alongside Limiglow is the trigger, and it is the one channel whose absence is invisible until the day it is catastrophic — schema, scoping, and every guard.",
+      "goal_text": "Linear — sign in and see only your workspace. Anyone runs Todero for their own business and projects, isolated from everyone else.",
+      "exempt": true
     },
     {
       "name": "Secrets & Credential Custody",

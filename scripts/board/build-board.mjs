@@ -54,12 +54,22 @@ const T = waves.waves.reduce((a, w) => ({
   cost: a.cost + w.cost, minutes: a.minutes + (w.minutes ?? 0),
 }), { agents: 0, tokens: 0, cost: 0, minutes: 0 })
 
-const cur = channels.channels.reduce((s, c) => s + c.current, 0) / channels.channels.length
-const base = channels.channels.reduce((s, c) => s + c.baseline, 0) / channels.channels.length
-const cleared = channels.channels.filter(c => c.current >= c.goal).length
+// TOD-2476: the owner ruled Multi-tenancy & Identity formally EXEMPT, because
+// "the loop ends when every channel clears its goal" and "multi-tenancy is
+// post-MVP, skip it" were two standing orders that contradicted — the loop was
+// running toward a finish line it had already been told to make unreachable.
+// An exempt channel is out of the average and out of the denominator. It is
+// still RENDERED, with its real number, so the exemption is visible rather than
+// hidden by deletion.
+const scored = channels.channels.filter(c => !c.exempt)
+const exemptCount = channels.channels.length - scored.length
+const cur = scored.reduce((s, c) => s + c.current, 0) / scored.length
+const base = scored.reduce((s, c) => s + c.baseline, 0) / scored.length
+const cleared = scored.filter(c => c.current >= c.goal).length
 
 // ── channel cards ───────────────────────────────────────────────────────────
 const chipFor = (c) => {
+  if (c.exempt) return ['untouched', 'exempt — post-MVP']
   if (c.current >= c.goal) return ['cleared', 'goal cleared']
   if (c.wave) return ['building', `wave ${c.wave}`]
   if (c.current === c.baseline) return ['untouched', 'not started']
@@ -282,7 +292,7 @@ section{margin-top:42px;scroll-margin-top:16px}
 </div>
 
 <nav class="index">
-  <a href="#channels">Channels<i>${cleared}/${channels.channels.length} cleared</i></a>
+  <a href="#channels">Channels<i>${cleared}/${scored.length} cleared</i></a>
   <a href="#waves">Waves<i>${waves.waves.length} run</i></a>
   <a href="#next">What's next<i>${waves.planned.length} queued</i></a>
   <a href="#harness">Harness<i>${harness.passed}/${harness.total}</i></a>
@@ -292,8 +302,8 @@ section{margin-top:42px;scroll-margin-top:16px}
 </nav>
 
 <section id="channels">
-  <div class="shead"><h2>Channels</h2><div class="note">Sorted by distance from goal · ${cleared} of ${channels.channels.length} cleared</div></div>
-  <p class="lede"><b>Scope moved on 25 Aug.</b> Todero is no longer only a build tool — it must also run the project it built: customers, orders, conversations. Three channels were added for that, and one for the post-MVP multi-tenant goal. All four start at zero, so the honest effect is that the finish line got further away, not closer.<br><br>Solid bar is where Todero is now; the ghost behind it is where it started; the pin is the goal it has to meet or beat. Each goal names the tool and the feature it is measured against. <b>These are judged</b>, not measured — a fresh blind panel re-scores all ${channels.channels.length} at Wave 8, and that is the number that decides whether the program loops.</p>
+  <div class="shead"><h2>Channels</h2><div class="note">Sorted by distance from goal · ${cleared} of ${scored.length} scored channels cleared</div></div>
+  <p class="lede"><b>Scope moved on 25 Aug.</b> Todero is no longer only a build tool — it must also run the project it built: customers, orders, conversations. Three channels were added for that, and one for the post-MVP multi-tenant goal. All four start at zero, so the honest effect is that the finish line got further away, not closer.<br><br>Solid bar is where Todero is now; the ghost behind it is where it started; the pin is the goal it has to meet or beat. Each goal names the tool and the feature it is measured against. <b>These are judged</b>, not measured — a fresh blind panel re-scores every scored channel at each wave boundary. ${exemptCount} channel is EXEMPT by owner decision and is shown but not counted.</p>
   <div class="grid">
 ${cards}
   </div>
@@ -368,5 +378,5 @@ await writeFile(join(here, 'last-published.json'), JSON.stringify({
 }, null, 1))
 console.log(`board written → ${outPath}`)
 console.log(`  harness ${harness.passed}/${harness.total} (${harness.score}/10, ${harness.criticalFailed} critical)`)
-console.log(`  channels ${base.toFixed(1)} → ${cur.toFixed(1)} / ${channels.goalAvg} · ${cleared} cleared`)
+console.log(`  channels ${base.toFixed(1)} → ${cur.toFixed(1)} / ${channels.goalAvg} · ${cleared}/${scored.length} cleared`)
 console.log(`  spend ${tok(T.tokens)} tok · ~${money(T.cost)} · ${T.agents} agents`)

@@ -193,7 +193,7 @@
     {
       "n": 6,
       "name": "Operator surface",
-      "chip": "in flight",
+      "chip": "done",
       "when": "25 Aug · 16:05 → 26 Aug · 04:00 (fan-out wave)",
       "minutes": 190,
       "agents": 18,
@@ -226,23 +226,103 @@
         "It also found five of six Settings views <b>unlinkable</b> — including the credential card added hours earlier, sitting at the one URL that could not be reloaded",
         "Three guards were each proven to FAIL when they should, which none could do before. <code>no-unscoped-issues</code> could not fail at all: it picked an ARCHIVED probe row, so the archive clause hid it before the scope clause ever ran"
       ]
+    },
+    {
+      "n": 7,
+      "name": "Seams and custody",
+      "chip": "done",
+      "when": "26 Aug · 08:00 → 13:30",
+      "minutes": 330,
+      "agents": 12,
+      "tokens": 0,
+      "cost": 0,
+      "lede": "Five builders on disjoint files, then critics. Channel average <b>6.16 → 6.89</b>, and <b>Search &amp; Findability became the first channel to clear its goal</b>. The wave's real lesson was that a green gate proves very little: three defects were invisible to <code>tsc</code>, to 1,085 passing tests, to a 45/45 acceptance harness and to all eight guards, and a browser found every one of them in about four minutes.",
+      "before": [
+        "An issue had no URL — the palette could not open one, and <code>querySelectorAll('a')</code> returned <b>0</b> on the entire Work → List screen",
+        "<code>npm install</code> failed on a machine with no C++ toolchain — <code>gyp ERR! find VS</code> — which is where a new user stops",
+        "<code>npm run doctor</code> printed “OK — this host can run Todero.” and exited 0 against a <b>corrupted database</b> and a <b>dead Postgres</b>",
+        "Settings rendered “🗄️ Supabase — 0% used — Free Tier — 952.0 KB / 500.0 MB” on an install running <b>SQLite</b>",
+        "A Discord credential added through Settings governed <b>one of nine</b> send paths; the other eight read a process-wide env var",
+        "<code>is_blocked=eq.false</code> matched <b>zero rows</b> on the live host — silently disarming the WIP ceilings for eight of nine agent-queue lanes"
+      ],
+      "after": [
+        "<code>/p/&lt;slug&gt;/i/&lt;key&gt;</code> opens an issue and survives a reload; Work → List went 0 → 4 anchors, Board 0 → 1",
+        "The lockfile fix plus a test that fails loudly, because a plain <code>npm install</code> silently strips the field back out",
+        "Doctor exits <b>1</b> naming <code>PRAGMA quick_check</code> and <code>ECONNREFUSED</code> — verified red-then-green by the orchestrator, not taken on report",
+        "“🗄️ SQLite — No size limit — Local file — no vendor size limit — 952.0 KB”",
+        "One sender module. Counting the call sites took three tries: a builder said seven, I said eight, the truth was <b>nine</b>",
+        "Fixed at the seam, keyed off the declared column type, proven on both dialects — plus a <b>ninth guard</b> for the class"
+      ],
+      "quotes": [
+        "A doctor that says healthy when the patient is not is worse than no doctor — and that rule had a violation inside the one tool whose entire job is honesty."
+      ]
+    },
+    {
+      "n": 8,
+      "name": "The board goes down",
+      "chip": "done",
+      "when": "26 Aug · 13:40 → 14:47 (workflow: 10 lanes × 3 stages)",
+      "minutes": 69,
+      "agents": 30,
+      "tokens": 5422694,
+      "cost": 0,
+      "lede": "Thirty agents, ten lanes, zero errors. Ten fresh critics with a mutation-test budget scored ten pieces at <b>4, 5, 5, 5, 6, 6, 6, 6, 7, 8</b> and found <b>42 fabrications</b> — against a board that had most of those channels at 7 or 8. Channel average <b>6.89 → 6.47</b>. <b>Nothing regressed; the judging got honest.</b> Every score I had raised came from a builder's own account of its own work.",
+      "before": [
+        "A test named “never returns the agent transcript or the server log path” <b>passed while the endpoint returned both</b> — it asserted on a stub whose row never contained those keys",
+        "Three tests had been red for the <b>entire program</b>; eight waves of gate reports, all mine, said “5 known failures” and moved on",
+        "A run had no address at all — <code>buildPath</code> erased the <code>/r/&lt;id&gt;</code> milliseconds after load, so a run URL worked on a click and never on a reload",
+        "The identity piece: “the two things it is claimed to protect both fall over” — <b>4/10</b>, the worst of ten, on the channel that guards access",
+        "One builder had been <b>hung for five hours</b> holding four files — the same agent that ran <code>git stash pop</code> and took every route to 500"
+      ],
+      "after": [
+        "The leak test now reads back the recorded query argument; that mutant and five others that had survived the previous round were killed by name",
+        "<code>agents-route</code> and <code>agents-unconfigured</code> are <b>fixed</b> — it took a standing instruction to explain them rather than route around them. 1,163 → <b>1,967 passing</b>, one known failure left",
+        "A run permalink survives a reload. The lane could not apply its own seam, so it shipped <b>a test that was red on purpose</b> whose failure message printed the entire diff",
+        "Six channels taken DOWN on measured evidence, and a rule adopted: <b>no channel rises on a builder's self-report</b>",
+        "Killed. The waves had been narrow because of it, not because five was the right number"
+      ],
+      "quotes": [
+        "One of those two numbers was wrong, and it was mine.",
+        "A permanently red test is a test nobody reads. Once something is “known”, it stops being a question."
+      ]
+    },
+    {
+      "n": 9,
+      "name": "Judge, build, judge again",
+      "chip": "in flight",
+      "when": "26 Aug · 15:00 → (workflow: 10 lanes × 3 stages)",
+      "minutes": null,
+      "agents": 30,
+      "tokens": 0,
+      "cost": 0,
+      "lede": "Wave 8's repair rounds were <b>never judged</b> — a builder said it fixed the gap and nothing checked. So this wave runs <b>judge → build → verify</b>: stage 1 judges what wave 8 left, stage 2 builds against that verdict, and stage 3 re-judges what stage 2 built, hunting the pattern this program keeps finding — a gap closed in one place and a weaker version of it introduced somewhere else.",
+      "before": [
+        "Ten channels carrying critic verdicts that no second pass had confirmed",
+        "The humaniser is “a whitelist masquerading as a rule, and none of its guards can tell” — seven fabrications in one lane",
+        "Tests that cover the pure helpers and never the components that consume them",
+        "The safety ceilings have still never been <b>watched firing</b>"
+      ],
+      "after": [
+        "in flight"
+      ],
+      "quotes": []
     }
   ],
   "planned": [
     {
-      "n": 7,
-      "name": "First managed project — Amazoniico/Limiglow",
-      "detail": "Fulfilment first: order in, pack-and-ship instructions out to the employee in Colombia. Then order intake against sandbox keys. Then the ads agent as propose→approve→execute under a platform-set cap. Then the storefront and the Limiglow rebrand. Daily business brief to Michael and his partner. Blocked on the repo URL."
+      "n": 10,
+      "name": "Paperclip.ing feature study",
+      "detail": "Find a feature Paperclip.ing has that would make a big impact in Todero, build our version, loop until ours scores higher — the owner's standing instruction for when the queue empties."
     },
     {
-      "n": 8,
-      "name": "Judgment",
-      "detail": "Fresh blind re-score of every channel. Loop back into whichever scored lowest."
+      "n": 11,
+      "name": "The supervised dispatch window",
+      "detail": "One window, owner present, Limiglow only, short wall-clock cap — enough to watch a concurrency ceiling and a no-progress halt actually fire. Decided 26 Aug; needs the owner to say when. Not an unattended enablement."
     },
     {
-      "n": 9,
-      "name": "Post-MVP — multi-tenant",
-      "detail": "Real identity, sign-in, per-tenant isolation. Anyone runs Todero for their own business. Deliberately last: one project has to work well first."
+      "n": 12,
+      "name": "Multi-tenancy",
+      "detail": "EXEMPT by owner decision and out of the scoring. The trigger for un-exempting it is Todero hosting a second customer's business alongside Limiglow."
     }
   ]
 }
