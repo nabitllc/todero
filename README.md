@@ -7,9 +7,15 @@ a file on disk by default, hosted Postgres when you point it at one.
 
 ## Quickstart
 
-Prerequisite: **Node 22+** (`better-sqlite3`'s own requirement). Nothing else — no Docker, no Homebrew, no
-database server, no account with anybody. macOS, Linux and Windows all take the
-same four lines, and the result is a working board with real data in it.
+Prerequisite: **Node 22+** (`better-sqlite3`'s own requirement). No Docker, no
+Homebrew, no database server, and **no account with anybody** — there is no step
+where you go and sign up for something. macOS, Linux and Windows all take the
+same commands. The result is a running app on an **empty** board: the schema is
+real and complete, but a fresh clone ships no seed data, so every tab starts at
+zero rows until you create something.
+
+One caveat before you start, because it bites on Windows: see
+[If `npm install` fails](#if-npm-install-fails) below.
 
 ```bash
 git clone git@github.com:nabitllc/todero.git
@@ -29,18 +35,46 @@ serves, and then creates the database and applies every migration to it. It
 never overwrites a value you set and it asks no questions, so it is safe to
 re-run at any time.
 
-There is no step where you go and sign up for something. A checkout with no
-credentials runs on `db.sqlite` in the repo root, through `better-sqlite3` —
-a real database with the full schema, not a demo mode. Delete that file to
-start over.
+A checkout with no credentials runs on `db.sqlite` in the repo root, through
+`better-sqlite3` — a real database with the full schema, not a demo mode.
+Delete that file to start over.
 
-`better-sqlite3` ships prebuilt binaries for common platform/ABI pairs
-(macOS, Linux glibc and musl, Windows — x64 and arm64), so on those hosts
-`npm install` needs no compiler. On an uncommon host — FreeBSD, 32-bit, or a
-Node ABI newer than the last published prebuild — `npm install` compiles it
-from source instead, which needs a C++ toolchain (the usual `node-gyp`
-prerequisites: Python 3, a C++ compiler, and on Windows the Visual Studio
-Build Tools).
+### If `npm install` fails
+
+On a host with **no C++ toolchain** — which is the normal state of a Windows
+machine — `npm install` currently fails like this:
+
+```
+npm error path node_modules/better-sqlite3
+npm error command C:\Windows\system32\cmd.exe /d /s /c node-gyp rebuild
+npm error gyp ERR! find VS  Could not find any Visual Studio installation to use
+```
+
+Install this instead, and carry on with `npm run setup`:
+
+```bash
+npm install --ignore-scripts
+```
+
+**You should not need a compiler for this.** Installing the Visual Studio
+Build Tools would also get you past it — node-gyp would find them and build the
+module — but that is several GB to produce a binary you already have.
+`better-sqlite3` ships a working prebuilt binary for your platform *inside its
+own npm tarball* and sets `gypfile: false` to tell npm not to build it. npm
+honours that when it resolves the package from the registry, but
+`package-lock.json` (v3) has no field to record it — so on the lockfile path,
+which is what `npm install` and `npm ci` both take in a clone, npm falls back
+to "this package has a `binding.gyp`, therefore compile it" and runs
+`node-gyp rebuild` on a package that asked it not to. `--ignore-scripts`
+simply declines that build and uses the binary that was already there.
+
+The flag is safe in this repo: no package in the tree needs an install script
+to be usable, and it is install-time only — `predev`, `prestart` and the
+`prebuild` guards all still run when you invoke those scripts.
+
+`npm run doctor` verifies the result by opening a database and running a query,
+so if the binding is missing or built for a different Node it tells you which,
+and what to run.
 
 Then check the machine:
 
@@ -48,11 +82,13 @@ Then check the machine:
 npm run doctor
 ```
 
-`doctor` reports the host platform, the paths and CLI binaries the app itself
-resolves, which agent runtimes are actually available, the live model list from
-`LLM_BASE_URL`, which database provider is active and where its data lives, and
-every required variable that is missing — by name. It exits non-zero when the
-install cannot work, so it doubles as a CI gate. On a fresh clone it exits 0.
+`doctor` reports the host platform, whether the compiled `better-sqlite3`
+binding actually loads and answers a query, the paths and CLI binaries the app
+itself resolves, which agent runtimes are actually available, the live model
+list from `LLM_BASE_URL`, which database provider is active and where its data
+lives, and every required variable that is missing — by name. It exits non-zero
+when the install cannot work, so it doubles as a CI gate. On a fresh clone it
+exits 0.
 
 ### Which LLM?
 

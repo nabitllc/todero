@@ -19,6 +19,7 @@
 
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 
 import { REPO_ROOT, importTs } from './lib/ts-import.mjs'
@@ -56,6 +57,97 @@ function reportHost(envFiles) {
   row('repo', REPO_ROOT)
   row('env files', envFiles.length > 0 ? envFiles.join(', ') : 'none — run `npm run setup`')
   if (envFiles.length === 0) problems.push('no .env.local — run `npm run setup`')
+}
+
+// ── Native modules ───────────────────────────────────────────────────────────
+
+/**
+ * Does `better-sqlite3` actually load and run a query on this host?
+ *
+ * This is the one dependency in the tree with a compiled binary, and it is the
+ * whole `sqlite` provider — the provider a clone with no account gets. When its
+ * binding does not load, every data route answers 503 and `npm run db:migrate`
+ * cannot create the database.
+ *
+ * Doctor used to be *green* in exactly that state: `requiredEnvReport()` still
+ * resolves the provider name from the environment without touching the driver,
+ * so doctor printed `db provider  sqlite`, `missing required env vars: 0`,
+ * `OK — this host can run Todero.` and exited 0 — while `/api/health` on the
+ * same checkout returned `{"ok":false,"db":{"reachable":false,…}}`. The only
+ * hint was a raw `Require stack:` dump that `lib/db/boot-migrate.ts` printed
+ * into the middle of the Environment section. That is the fake green this file
+ * exists to catch, so it is now caught by opening a database rather than by
+ * asking the environment a question.
+ *
+ * Requiring the module is not enough on its own: `better-sqlite3` resolves its
+ * `.node` binary lazily, so the failure surfaces on first construction. This
+ * opens an in-memory database and round-trips one row.
+ */
+function probeBetterSqlite3() {
+  const require_ = createRequire(import.meta.url)
+  let version = null
+  try {
+    version = require_('better-sqlite3/package.json').version
+  } catch {
+    return { ok: false, kind: 'absent', version: null, error: null }
+  }
+  try {
+    const Database = require_('better-sqlite3')
+    const db = new Database(':memory:')
+    try {
+      db.exec('CREATE TABLE doctor_probe (n INTEGER)')
+      db.prepare('INSERT INTO doctor_probe VALUES (?)').run(1)
+      const back = db.prepare('SELECT n FROM doctor_probe').get()
+      if (!back || back.n !== 1) {
+        return { ok: false, kind: 'wrong-answer', version, error: 'probe row did not read back' }
+      }
+    } finally {
+      db.close()
+    }
+    return { ok: true, kind: 'ok', version, error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // An ABI mismatch and an absent binary need different remedies, and the
+    // difference is invisible unless doctor names it: the first is "you
+    // changed Node", the second is "npm compiled instead of using the
+    // prebuild that shipped in the tarball".
+    const abi = /NODE_MODULE_VERSION|different Node\.js version|ERR_DLOPEN_FAILED/i.test(message)
+    return { ok: false, kind: abi ? 'abi' : 'binding', version, error: message }
+  }
+}
+
+function reportNativeModules() {
+  heading('Native modules')
+  const probe = probeBetterSqlite3()
+
+  if (probe.ok) {
+    row('better-sqlite3', `${probe.version}   binding loads, in-memory query OK`)
+    return probe
+  }
+
+  if (probe.kind === 'absent') {
+    row('better-sqlite3', 'not installed')
+    note('node_modules/better-sqlite3 is missing — run `npm install` first.')
+    return probe
+  }
+
+  row('better-sqlite3', `${probe.version}   BINDING WILL NOT LOAD`)
+  // First line only: the raw error is a multi-line require stack, and the
+  // point of doctor is to be readable where the stack trace was not.
+  note(String(probe.error).split('\n')[0])
+  if (probe.kind === 'abi') {
+    note(`built for a different Node than this one (${process.version}).`)
+    note('Recover with:  npm rebuild better-sqlite3')
+  } else {
+    note('The prebuilt binary is not there. npm runs `node-gyp rebuild` on this')
+    note('package when installing from package-lock.json — the lockfile has no')
+    note("field for the package's own `gypfile: false` — so on a host with no")
+    note('C++ toolchain the install fails and leaves the module unusable.')
+    note('Recover with:  npm install --ignore-scripts')
+    note('(that flag is safe here: the prebuilt binary ships inside the tarball,')
+    note(' and no package in this tree needs an install script to be usable.)')
+  }
+  return probe
 }
 
 // ── Resolved paths ───────────────────────────────────────────────────────────
@@ -207,10 +299,25 @@ const envFiles = loadEnvFiles(REPO_ROOT)
 const placeholders = dropPlaceholderEnv()
 
 reportHost(envFiles)
+// Before anything that opens a database: if the driver will not load, every
+// section below reports a symptom of this one cause, so name the cause first.
+const native = reportNativeModules()
 const paths = await reportPaths()
 const llm = await reportLlm()
 const availableRuntimes = await reportRuntimes(paths, llm)
 const env = await reportEnv(placeholders)
+
+// The driver only decides whether this host works when it is the driver this
+// host uses. On a Postgres or Supabase install a broken better-sqlite3 is
+// reported above and stays news rather than a verdict — but `npm run db:migrate`
+// against a local file would still fail, so it is never silent.
+if (!native.ok && env.provider === 'sqlite') {
+  problems.push(
+    native.kind === 'absent'
+      ? 'better-sqlite3 is not installed, and it is the active database driver — run `npm install`'
+      : 'better-sqlite3 will not load, and it is the active database driver — every data route will answer 503',
+  )
+}
 
 heading('Summary')
 if (problems.length === 0) {
@@ -227,4 +334,6 @@ console.log('')
 // reported but does not fail the command — a missing Discord token is news,
 // not a broken install.
 const dbNotCreated = Boolean(env.dbDetail && env.dbDetail.includes('not created yet'))
-process.exitCode = env.missing.length > 0 || dbNotCreated || availableRuntimes === 0 ? 1 : 0
+const driverBroken = !native.ok && env.provider === 'sqlite'
+process.exitCode =
+  env.missing.length > 0 || dbNotCreated || driverBroken || availableRuntimes === 0 ? 1 : 0

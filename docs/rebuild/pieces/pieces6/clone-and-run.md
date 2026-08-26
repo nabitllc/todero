@@ -196,16 +196,24 @@ working prebuild for this exact platform.
 
 This is **not in this piece's ownership** (`package.json` and its lockfile
 belong to another builder this session). The fix belongs to whoever owns
-dependency management. Three options, cheapest first:
+dependency management. Candidates, none of them verified here beyond what is
+noted:
 
-1. **A repo-root `.npmrc`** — but **not** `ignore-scripts=true`. That would
+1. **A repo-root `.npmrc` with `ignore-scripts=true`** — *rejected.* It would
    also disable `prepare`, `predev`, `prestart` and, critically, `prebuild`,
    which is where `check:secrets` and `guard:no-silent-empty` run. Disabling
-   the guards to fix an install is exactly the trade this rebuild refuses.
-2. **Pin `better-sqlite3` to a version whose tarball needs no `binding.gyp`**,
-   or vendor the prebuild.
-3. **Upgrade npm** past the version that ignores `gypfile` on the lockfile
-   path, and record the minimum in `engines`.
+   the guards to fix an install is exactly the trade this rebuild refuses. The
+   `--ignore-scripts` *flag* is fine precisely because it is install-time only;
+   the config setting is not the same thing.
+2. **Move `better-sqlite3` to a driver with no `binding.gyp` at all** — Node's
+   built-in `node:sqlite` is the obvious candidate on Node 22+, and would
+   delete this failure mode rather than document it. Cost: it is a different
+   API, so `lib/db/sqlite-adapter.ts` changes. Not attempted here.
+3. **Vendor the prebuilt binary** and skip the resolution entirely.
+4. **A newer npm may record or honour `gypfile` on the lockfile path.** This
+   was *not* checked — the only npm available here is 11.16.0, and every
+   measurement above is against that one. Anyone taking this option should
+   confirm it before recording a minimum in `engines`.
 
 Until one of those lands, the README documents the failure and the exact
 recovery command, so a newcomer is told rather than left in a gyp stack trace.
@@ -216,18 +224,70 @@ recovery command, so a newcomer is told rather than left in a gyp stack trace.
 
 `npm run doctor` runs *after* `npm install`, so it can never prevent the
 failure above. What it can do — and now does — is recognise its aftermath.
-Before this piece, a checkout whose `better-sqlite3` native binding was
-missing or ABI-mismatched produced this from doctor:
+
+**Doctor was reporting a fake green in exactly that state**, which is the
+failure mode its own header says it exists to prevent. Measured in the trial
+clone with `node_modules/better-sqlite3/prebuilds/` removed — the state a
+failed `npm install` leaves behind:
 
 ```
-  db provider     unknown
-                  Could not locate the bindings file. Tried: …
+Environment
+───────────
+[boot-migrate] boot migration failed: Cannot find module '…better_sqlite3.node'
+Require stack:
+- …\node_modules\better-sqlite3\lib\binding.js
+- …\lib\db\boot-migrate.ts
+  db provider     sqlite
+  db location     …\db.sqlite  (843776 bytes)
+  missing required env vars: 0
+
+Summary
+───────
+  OK — this host can run Todero.
+
+=== EXIT 0 ===
 ```
 
-— a message about a bindings file, in a section about databases, with no
-statement of what to do. Now doctor tests the binding directly, before it
-tries to use it, and says which of the two situations it is in and the exact
-command out. See the `Native modules` section of `scripts/doctor.mjs`.
+It said **OK** and **exited 0**. The same checkout, at the same moment:
+
+```
+$ curl /api/health
+{"ok":false,"db":{"reachable":false,"error":"Cannot find module '…better_sqlite3.node'"}}
+```
+
+The app could not read a single row. The only signal doctor gave was a raw
+`Require stack:` dump printed by `lib/db/boot-migrate.ts` into the middle of
+an unrelated section — and it was printed *above* the reassuring lines, so it
+read as noise before a pass.
+
+The cause is that `requiredEnvReport()` resolves the provider *name* from the
+environment without ever touching the driver. Asking the environment a
+question cannot detect a broken binary. Doctor now opens an in-memory database
+and round-trips a row instead — a `require` alone is not enough, because
+`better-sqlite3` resolves its `.node` file lazily on first construction.
+
+Three states, all measured after the change:
+
+| State of `node_modules/better-sqlite3` | `Native modules` says | Exit |
+|---|---|---|
+| healthy | `13.0.3   binding loads, in-memory query OK` | **0** |
+| present, `prebuilds/` removed | `13.0.3   BINDING WILL NOT LOAD` + the npm/lockfile explanation + `Recover with: npm install --ignore-scripts` | **1** |
+| directory absent | `not installed` + "run `npm install` first" | **1** |
+
+A fourth case — a binding built for a different Node ABI — is detected
+separately (`NODE_MODULE_VERSION` / `ERR_DLOPEN_FAILED`) and gets the
+different remedy it needs, `npm rebuild better-sqlite3`, because "you changed
+Node" and "npm compiled instead of using the prebuild" do not have the same
+fix. That branch is written but was **not** reproduced on this host; the other
+three were.
+
+The printed recovery command was verified rather than assumed: from the
+`not installed` state, running the exact string doctor prints returned doctor
+to `binding loads, in-memory query OK`, exit 0.
+
+Failing is scoped to when it matters: a broken driver only fails doctor when
+`sqlite` is the *active* provider. On a Postgres or Supabase install it is
+reported and stays news.
 
 ## What the README got wrong, and now does not
 
