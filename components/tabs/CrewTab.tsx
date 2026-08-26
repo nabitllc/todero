@@ -22,14 +22,22 @@
 //    heartbeat store that could not be read. `never` is now a claim the
 //    server earned by reading the store and finding nothing.
 //
-// 3. The legacy AgentsTab grid is no longer rendered HERE. It renders its own
-//    liveness words from GET /api/agents' 60-second `live | stale | idle`
+// 3. The legacy AgentsTab grid is no longer rendered. It words the same
+//    timestamp with GET /api/agents' 60-second `live | stale | idle`
 //    vocabulary (lib/agent-liveness.ts), and two roster renderings on one
-//    screen wording the same timestamp differently is exactly the confusion
-//    this piece is meant to remove. AgentsTab itself is untouched and other
-//    surfaces still use it; its agent detail modal (AgentDetailView, which
-//    carries the pause/remove/heartbeat controls) is mounted directly from
-//    here so nothing was lost with it.
+//    screen disagreeing about the same heartbeat is exactly the confusion
+//    this piece exists to remove.
+//
+//    Being precise about the consequence rather than reassuring about it:
+//    CrewTab was AgentsTab's ONLY caller, so components/tabs/AgentsTab.tsx is
+//    now unrendered (app/page.tsx still imports its `RosterMeta` type). The
+//    file is untouched — it is not this piece's to delete — but everything it
+//    put on screen had to be carried over here, and is: the agent detail
+//    modal it hosted (AgentDetailView, with the pause/remove/heartbeat
+//    controls) is mounted at the bottom of this file, and the three envelope
+//    warnings it rendered — roster, vault registry, and vault-sync-not-
+//    persisted — are rendered by RosterCard below. If something else it did
+//    is missing, that is a defect in this piece, not an intended trim.
 //
 // 4. The Run control is DISABLED with the dispatch reason, never armed and
 //    then refused. lib/dispatch-guard.ts is untouched: this asks the server
@@ -77,10 +85,58 @@ interface RosterRowData {
 interface AgentsEnvelope {
   agents: RosterRowData[]
   rosterPath: string | null
+  rosterWarning: string | null
   vaultPath: string | null
+  /** Why the Brain2 vault contributed no rows — the ROSTER half of the sync. */
+  vaultWarning: string | null
+  /** Whether those manifests reached `agent_manifests` — the DISPATCH half. */
+  vaultSync?: { source: string; persisted: boolean; warning: string | null } | null
   livenessSource: 'heartbeat' | 'none'
   heartbeatStore: string | null
   heartbeatWarning: string | null
+}
+
+/**
+ * The envelope-level warnings AgentsTab used to render. They are facts about
+ * a SOURCE, not about any one row, so they survive an empty roster — which is
+ * the one case they matter most in. Carried over here because CrewTab was
+ * AgentsTab's only caller; dropping them would have made a host with an
+ * unreadable vault, or one whose manifests silently fail to persist, look
+ * exactly like a healthy one.
+ */
+function EnvelopeWarnings({ env }: { env: AgentsEnvelope | null }) {
+  if (!env) return null
+  const notices: { key: string; label: string; text: string; tone: string }[] = []
+  if (env.rosterWarning) {
+    notices.push({ key: 'roster', label: 'Roster', text: env.rosterWarning, tone: 'border-amber-500/40 bg-amber-500/10 text-amber-300' })
+  }
+  if (env.vaultWarning) {
+    notices.push({
+      key: 'vault',
+      label: env.vaultPath ? 'Brain2 registry' : 'Brain2 registry not read',
+      text: env.vaultWarning,
+      tone: 'border-purple-500/40 bg-purple-500/10 text-purple-300',
+    })
+  }
+  if (env.vaultSync?.warning) {
+    notices.push({
+      key: 'vault-sync',
+      label: 'Vault manifests not persisted',
+      text: env.vaultSync.warning,
+      tone: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+    })
+  }
+  if (notices.length === 0) return null
+  return (
+    <div className="space-y-1.5 mb-2">
+      {notices.map(n => (
+        <div key={n.key} className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${n.tone}`}>
+          <span className="text-[11px] font-medium shrink-0">{n.label}</span>
+          <span className="text-white/60 text-[10px] leading-relaxed break-all">{n.text}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 const ROSTER_QUERY = '/api/agents'
@@ -234,6 +290,9 @@ function RosterCard({
     </>
   )
 
+  const hasNotices = Boolean(env?.rosterWarning || env?.vaultWarning || env?.vaultSync?.warning)
+  const emptyMessage = `No agent is declared in ${env?.rosterPath ?? 'this host’s AGENTS.md'}, no Brain2 manifest was found in ${env?.vaultPath ?? 'the vault registry'}, and no agent has self-registered — so this fleet has no roster.`
+
   if (error) {
     return (
       <Card id="fleet-roster" title="Which agents exist, and which are alive?" source={source}>
@@ -251,16 +310,19 @@ function RosterCard({
       // the first line of the body rather than the header, because the header
       // truncates and a truncated "…· 1 live" is worse than no breakdown.
       metric={loaded ? { value: summary.registered, label: 'registered' } : undefined}
+      // Card renders `empty.message` INSTEAD of children, so an empty roster
+      // would swallow the source warnings below — and an empty roster is the
+      // case those warnings exist to explain. When there is a warning to
+      // show, the empty sentence moves into the body next to it instead.
       empty={
-        loaded && rows.length === 0
-          ? {
-              active: true,
-              message: `No agent is declared in ${env?.rosterPath ?? 'this host’s AGENTS.md'}, no Brain2 manifest was found in ${env?.vaultPath ?? 'the vault registry'}, and no agent has self-registered — so this fleet has no roster.`,
-            }
+        loaded && rows.length === 0 && !hasNotices
+          ? { active: true, message: emptyMessage }
           : undefined
       }
     >
-      <p className="font-mono text-[11px] text-white/60 mb-2">{fleetHeadline(summary)}</p>
+      <EnvelopeWarnings env={env} />
+      {loaded && rows.length === 0 && <p className="text-white/45 text-xs">{emptyMessage}</p>}
+      {rows.length > 0 && <p className="font-mono text-[11px] text-white/60 mb-2">{fleetHeadline(summary)}</p>}
       {env?.heartbeatWarning && (
         <p className="text-amber-300/80 text-[11px] leading-relaxed mb-2 break-words">{env.heartbeatWarning}</p>
       )}

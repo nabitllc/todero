@@ -3,6 +3,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import type { DbAdapter, DbRow } from '@/lib/db'
 import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
+import {
+  EFFECT_TYPES,
+  approvalTarget,
+  auditRowForOutcome,
+  auditRowForRefusal,
+  issueRefsToResolve,
+  preflightDecision,
+  resolveRowProject,
+  scopeToProject,
+  type ApprovalRow,
+} from '@/lib/approvals'
 
 // ── Round-3 fix: a decision with no consequence is theatre ──────────────────
 //
@@ -123,7 +134,12 @@ const INBOX_EFFECTS: Record<string, InboxEffectHandler> = {
       if (findError) throw new Error(findError.message)
       const issue = (issueRows as Array<{ id: string; task_key: string | null; blocked_by: string | null }> | null)?.[0]
       if (!issue) {
-        return { effect: 'agent_unpause', ok: true, detail: `agent '${agentId}' un-paused (issue ${lastIssueId} not found — nothing to unblock)` }
+        // `preflightDecision()` in lib/approvals.ts already refuses this case
+        // with a 409 before anything is written, so reaching here means the
+        // issue was deleted BETWEEN that check and this write. Either way it
+        // must not report ok:true — "un-paused (nothing to unblock)" was the
+        // exact silent success the approval-surface piece exists to remove.
+        return { effect: 'agent_unpause', ok: false, detail: `agent '${agentId}' un-paused, but issue ${lastIssueId} no longer exists — it was deleted mid-decision, so nothing was unblocked and the agent has nothing to pick up` }
       }
       const issueLabel = issue.task_key ?? issue.id
       // Guard on blocked_by so we never clear a block some other system
@@ -174,7 +190,10 @@ const INBOX_EFFECTS: Record<string, InboxEffectHandler> = {
       if (findError) throw new Error(findError.message)
       const issueId = (issues as Array<{ id: string }> | null)?.[0]?.id
       if (!issueId) {
-        return { effect: 'ceiling_clear', ok: true, detail: `ceiling marker cleared (issue ${taskKey} not found — nothing to unblock)` }
+        // Same reasoning as loop_breaker_pause above: the preflight refuses a
+        // vanished target with a 409, so this branch is the mid-decision race
+        // only — and it reports ok:false, never a clean success over a no-op.
+        return { effect: 'ceiling_clear', ok: false, detail: `ceiling marker cleared, but issue ${taskKey} no longer exists — it was deleted mid-decision, so nothing was unblocked` }
       }
       const { error: clearError } = await db.from('issues')
         .update({ is_blocked: false, blocked_by: null, updated_at: now })
@@ -185,6 +204,103 @@ const INBOX_EFFECTS: Record<string, InboxEffectHandler> = {
       return { effect: 'ceiling_clear', ok: false, detail: `clear failed: ${err instanceof Error ? err.message : String(err)}` }
     }
   },
+}
+
+// ── The registry and the descriptions must not drift ───────────────────────
+//
+// `lib/approvals.ts` is what the UI reads to label a button ("Approve —
+// un-pause builder and unblock TOD-9001") and what `preflightDecision()`
+// consults to decide whether approving is even permitted. This file is what
+// actually dispatches. If the two key sets ever disagree, either a button
+// promises an effect that cannot run, or an effect that exists is refused as
+// unregistered. Both are silent until someone clicks. Fail at module load
+// instead — this throws when the route file is first imported, which surfaces
+// as an immediate 500 on /api/inbox rather than a wrong answer later.
+{
+  const dispatchable = Object.keys(INBOX_EFFECTS).sort().join(',')
+  const described = [...EFFECT_TYPES].sort().join(',')
+  if (dispatchable !== described) {
+    throw new Error(
+      `inbox effect registry drift: app/api/inbox/route.ts dispatches [${dispatchable}] ` +
+      `but lib/approvals.ts describes [${described}]. Every dispatchable type must be describable, ` +
+      `and every describable type must be dispatchable — otherwise a button promises what nothing will do.`,
+    )
+  }
+}
+
+// ── Placing a request in a project ─────────────────────────────────────────
+//
+// `inbox` has no project column (migrations/011_inbox.sql). A request is
+// placed by `context.project` if it carries one, otherwise by the project of
+// the issue it points at. This builds the id/task_key -> project map that
+// `lib/approvals.ts`'s pure resolver needs, with ONE query per key shape.
+// A row that resolves to nothing stays unresolvable — see scopeToProject().
+async function projectsForRows(
+  db: DbAdapter,
+  rows: readonly ApprovalRow[],
+): Promise<{ map: Map<string, string>; error: { message: string; code?: string } | null }> {
+  const map = new Map<string, string>()
+  const { ids, taskKeys } = issueRefsToResolve(rows)
+  if (ids.length === 0 && taskKeys.length === 0) return { map, error: null }
+
+  if (ids.length > 0) {
+    const { data, error } = await db.from('issues').select('id, task_key, project').in('id', ids)
+    if (error) return { map, error }
+    for (const r of (data ?? []) as Array<{ id?: string; task_key?: string; project?: string }>) {
+      if (r.project && r.id) map.set(r.id, r.project)
+      if (r.project && r.task_key) map.set(r.task_key, r.project)
+    }
+  }
+  if (taskKeys.length > 0) {
+    const { data, error } = await db.from('issues').select('id, task_key, project').in('task_key', taskKeys)
+    if (error) return { map, error }
+    for (const r of (data ?? []) as Array<{ id?: string; task_key?: string; project?: string }>) {
+      if (r.project && r.id) map.set(r.id, r.project)
+      if (r.project && r.task_key) map.set(r.task_key, r.project)
+    }
+  }
+  return { map, error: null }
+}
+
+/**
+ * Does the issue this decision would touch still exist?
+ *
+ * `null` means "there was nothing to look up" — the request points at no
+ * issue at all — which is different from "the issue is gone" (`false`) and is
+ * why `preflightDecision()` takes a tri-state rather than a boolean.
+ */
+async function lookupIssueTarget(
+  db: DbAdapter,
+  row: ApprovalRow,
+): Promise<{ issueExists: boolean | null; issueRef: string | null }> {
+  const target = approvalTarget(row)
+  if (!target.needsIssue) return { issueExists: null, issueRef: null }
+  if (target.issueId) {
+    const { data, error } = await db.from('issues').select('id').eq('id', target.issueId).limit(1)
+    // A failed lookup is NOT proof the issue exists. Fail closed: report it
+    // as missing so the approval is refused rather than let through on an
+    // error we could not read.
+    if (error) return { issueExists: false, issueRef: `${target.issueId} (lookup failed: ${error.message})` }
+    return { issueExists: ((data as unknown[] | null)?.length ?? 0) > 0, issueRef: target.issueId }
+  }
+  if (target.taskKey) {
+    const { data, error } = await db.from('issues').select('id').eq('task_key', target.taskKey).limit(1)
+    if (error) return { issueExists: false, issueRef: `${target.taskKey} (lookup failed: ${error.message})` }
+    return { issueExists: ((data as unknown[] | null)?.length ?? 0) > 0, issueRef: target.taskKey }
+  }
+  return { issueExists: null, issueRef: null }
+}
+
+/**
+ * Append one row to `approval_decisions`. Best effort by design: the audit
+ * write must never turn a decision that already happened into an HTTP error.
+ * What it must never do is fail SILENTLY — the failure comes back so the
+ * caller can put it in the response's `_warning`, where the operator sees it.
+ */
+async function recordDecision(db: DbAdapter, auditRow: Record<string, unknown>): Promise<string | null> {
+  const { error } = await db.from('approval_decisions').insert(auditRow)
+  if (!error) return null
+  return `decision NOT written to the audit trail: ${error.message} (run: npm run db:migrate)`
 }
 
 /**
@@ -221,7 +337,23 @@ async function runInboxEffect(
   }
 }
 
-/** GET /api/inbox?status=pending — list inbox requests */
+/**
+ * GET /api/inbox?status=pending[&project=Limiglow] — list inbox requests.
+ *
+ * TWO RESPONSE SHAPES, and the split is load-bearing:
+ *
+ *   no `project` -> a bare JSON array, byte-identical to what this route
+ *     returned before the approval-surface piece. Four consumers this piece
+ *     does not own read it that way (app/page.tsx's pending badge,
+ *     components/InboxDrawer.tsx, components/SidebarNav.tsx,
+ *     components/tabs/OverviewTab.tsx's deliberately fleet-wide "Needs you"
+ *     leg). Changing the unscoped shape would break all four.
+ *
+ *   `project=X` -> `{ data, total, has_more, scope }`, where `scope` reports
+ *     how many rows matched, how many belong to another project, and how
+ *     many could not be placed at all. A row that cannot be placed is
+ *     EXCLUDED, never shown "just in case" — see scopeToProject().
+ */
 export async function GET(req: NextRequest) {
   // The database is either configured or it is not — say which, in the body.
   // A DbConfigurationError left to escape becomes a bare 500 with nothing in
@@ -232,6 +364,18 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const status = url.searchParams.get('status')
   const limit = Math.min(Number(url.searchParams.get('limit') ?? '50'), 200)
+  const projectParam = url.searchParams.get('project')
+
+  // `?project=` with an empty value is a caller bug — most likely a template
+  // that interpolated a null scope. Answering the whole fleet for it would
+  // be exactly the silent widening this piece exists to prevent, so it is a
+  // 400 that says which parameter was empty.
+  if (projectParam !== null && !projectParam.trim()) {
+    return NextResponse.json(
+      { error: 'project= was given but empty. Omit the parameter for a fleet-wide list, or pass a project name.' },
+      { status: 400 },
+    )
+  }
 
   const db = createAdminClient()
   let query = db
@@ -244,7 +388,22 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return dbQueryErrorResponse(error, 'inbox')
-  return NextResponse.json(data)
+
+  if (projectParam === null) return NextResponse.json(data)
+
+  const rows = (data ?? []) as ApprovalRow[]
+  const { map, error: lookupError } = await projectsForRows(db, rows)
+  // A failed issue lookup means nothing can be placed. Say so instead of
+  // returning a confidently-empty scoped list.
+  if (lookupError) return dbQueryErrorResponse(lookupError, 'issues')
+
+  const scoped = scopeToProject(rows, projectParam.trim(), map)
+  return NextResponse.json({
+    data: scoped.rows,
+    total: scoped.rows.length,
+    has_more: rows.length >= limit,
+    scope: scoped.scope,
+  })
 }
 
 /** POST /api/inbox — create approval request */
@@ -325,28 +484,107 @@ export async function PATCH(req: NextRequest) {
     )
   }
 
+  const db = createAdminClient()
+  const decidedBy = body.resolved_by ?? 'user'
+  const decidedAt = new Date().toISOString()
+
+  // ── Read before writing ─────────────────────────────────────────────────
+  // The row is fetched, not updated-and-returned, because the decision has to
+  // be allowed BEFORE anything is written. The old code UPDATE'd first, then
+  // discovered the target was gone, then reported a clean success anyway.
+  const { data: currentRow, error: readError } = await db
+    .from('inbox')
+    .select('*')
+    .eq('id', body.id)
+    .single()
+
+  if (readError) {
+    // A well-formed request against an id that does not exist must be a 4xx,
+    // not a 500 — `.single()` reports "0 rows" the same way whether the
+    // predicate matched nothing or (in principle) too much.
+    if (readError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'inbox request not found' }, { status: 404 })
+    }
+    return dbQueryErrorResponse(readError, 'inbox')
+  }
+
+  const requestRow = currentRow as ApprovalRow
+
+  // ── Fail closed ─────────────────────────────────────────────────────────
+  // Three refusals, all of which previously read as clean successes:
+  //   * the issue this approval would unblock has been deleted
+  //   * the request type has no effect anything can dispatch
+  //   * the request was already decided, and a second PATCH would overwrite
+  //     the first decision and its author
+  // A refusal writes NOTHING to `inbox` — the request stays pending — and
+  // writes one `approval_decisions` row so the attempt is not a silence.
+  const targetLookup = await lookupIssueTarget(db, requestRow)
+  const preflight = preflightDecision({
+    row: requestRow,
+    decision: body.status,
+    lookup: targetLookup,
+  })
+
+  // Placing the request in a project, for the audit row. Best effort: an
+  // unplaceable request records project=null rather than a guess.
+  const { map: projectMap } = await projectsForRows(db, [requestRow])
+  const requestProject = resolveRowProject(requestRow, projectMap)
+
+  if (!preflight.ok) {
+    const auditWarning = await recordDecision(db, auditRowForRefusal({
+      row: requestRow,
+      decision: body.status,
+      refusal: preflight,
+      humanInput: body.response_data,
+      project: requestProject,
+      decidedBy,
+      decidedAt,
+    }) as unknown as Record<string, unknown>)
+    return NextResponse.json(
+      {
+        error: preflight.reason,
+        code: preflight.code,
+        inbox_id: requestRow.id,
+        // The request is deliberately untouched — say so, or the operator has
+        // to guess whether their click half-landed.
+        request_status: requestRow.status,
+        ...(auditWarning ? { _warning: auditWarning } : {}),
+      },
+      { status: preflight.httpStatus },
+    )
+  }
+
   // The decision itself — who, when, what status — always persists via
   // status/resolved_by/resolved_at, which have existed since migration 011.
   const updates: Record<string, unknown> = {
     status: body.status,
-    resolved_by: body.resolved_by ?? 'user',
-    resolved_at: new Date().toISOString(),
+    resolved_by: decidedBy,
+    resolved_at: decidedAt,
   }
 
-  const db = createAdminClient()
+  // `.eq('status', 'pending')` is the concurrency half of the ALREADY_RESOLVED
+  // guard above: two operators clicking at once would both pass the preflight
+  // read, and without this predicate the second write would still overwrite
+  // the first decision. With it, the loser matches zero rows and gets the
+  // same 409 as anyone else arriving late.
   const { data: decidedRow, error: decideError } = await db
     .from('inbox')
     .update(updates)
     .eq('id', body.id)
+    .eq('status', 'pending')
     .select()
     .single()
 
   if (decideError) {
-    // A well-formed request against an id that does not exist must be a 4xx,
-    // not a 500 — `.single()` reports "0 rows" the same way whether the
-    // predicate matched nothing or (in principle) too much.
     if (decideError.code === 'PGRST116') {
-      return NextResponse.json({ error: 'inbox request not found' }, { status: 404 })
+      return NextResponse.json(
+        {
+          error: 'This request stopped being pending between reading it and deciding it — someone else decided it first. Nothing was overwritten.',
+          code: 'ALREADY_RESOLVED',
+          inbox_id: requestRow.id,
+        },
+        { status: 409 },
+      )
     }
     return dbQueryErrorResponse(decideError, 'inbox')
   }
@@ -359,6 +597,21 @@ export async function PATCH(req: NextRequest) {
   // threw) is what gets persisted as response_data, never the human-typed
   // reason alone.
   const outcome = await runInboxEffect(db, decidedRow as DbRow, body.status, body.response_data)
+
+  // ── The append-only record ─────────────────────────────────────────────
+  // `inbox` holds current state and is overwritable; this is the row that
+  // survives. `outcome` is derived from what the effect REPORTED — an effect
+  // that came back `ok:false` records `failed`, not `applied`, so an
+  // approval that did not take effect cannot read back later as one that did.
+  const auditWarning = await recordDecision(db, auditRowForOutcome({
+    row: requestRow,
+    decision: body.status,
+    effect: outcome,
+    humanInput: body.response_data,
+    project: requestProject,
+    decidedBy,
+    decidedAt,
+  }) as unknown as Record<string, unknown>)
 
   let { data, error } = await db
     .from('inbox')
@@ -410,9 +663,18 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (error) return dbQueryErrorResponse(error, 'inbox')
-  return NextResponse.json(
+
+  // Two independent things can degrade without failing the decision: the
+  // response_data column being absent, and the audit insert failing. Both
+  // are reported; neither is allowed to be silent.
+  const warnings = [
     responseDataDropped
-      ? { ...data, _warning: 'response_data not persisted — database schema is missing that column (run: npm run db:migrate)' }
-      : data,
+      ? 'response_data not persisted — database schema is missing that column (run: npm run db:migrate)'
+      : null,
+    auditWarning,
+  ].filter((w): w is string => !!w)
+
+  return NextResponse.json(
+    warnings.length > 0 ? { ...data, _warning: warnings.join(' · ') } : data,
   )
 }

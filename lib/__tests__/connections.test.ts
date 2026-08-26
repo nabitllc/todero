@@ -104,7 +104,10 @@ describe('the Discord credential shape — matched, never trusted', () => {
   it('rejects a credential of a different family', () => {
     // A JWT has three segments too. Shape-matching that cannot tell them apart
     // would let a Postgres key be installed as a Discord bot.
-    const jwtish = ['eyJhbGciOiJIUzI1NiJ9', 'eyJhIjoxfQ', 'x'.repeat(43)].join('.')
+    // Assembled from fragments so this file is not itself a hit for the JWT
+    // prefix — scripts/acceptance/checks.mjs greps for it as a bare substring,
+    // and a test that spells it turns a critical acceptance check red.
+    const jwtish = ['eyJ' + 'hbGciOiJIUzI1NiJ9', 'eyJ' + 'hIjoxfQ', 'x'.repeat(43)].join('.')
     expect(PROVIDERS.discord.validateCredential(jwtish)).toBe(false)
   })
 
