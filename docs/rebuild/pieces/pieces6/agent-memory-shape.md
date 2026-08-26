@@ -142,3 +142,37 @@ the tables where shape has actually drifted, falling back to `id` elsewhere.
 12. `npx tsc --noEmit` is clean.
 13. Every fixture row inserted during verification is removed, confirmed by a
     follow-up count query.
+
+## OUTCOME — all thirteen met
+
+| # | Evidence |
+|---|---|
+| 1 | `sqlite_master` reads back `agent_memory(id, agent_id, key, value, updated_at)`, `UNIQUE (agent_id, key)`. |
+| 2 | Both files applied; ledger shows `062_agent_memory_kv.sql`. Postgres branch + idempotence proved against PGlite in `lib/__tests__/agent-kv.test.ts`. |
+| 3 | See the header of `migrations/062_agent_memory_kv.sql`. |
+| 4 | PGlite test seeds a daily-notes row before 062 and asserts it lands in `agent_memory_files`. |
+| 5 | `GET /api/settings/cost-history` → **200**, seven-element array (was 502). |
+| 6 | `PATCH /api/agent-pause` → **200** (was 500). Round-tripped through GET; upsert merges in place, 1 row not 2. |
+| 7 | `lib/required-tables.ts` probes `agent_memory.key` and 33 other shape columns; `/api/health` reports `malformedTables`. |
+| 8 | Probe pointed at `this_column_does_not_exist` → health **503**, `ok:false`, `missingTables: []`, `malformed: [{table:'agent_memory', column:…}]`. Restored to `'key'`; health back to 200. |
+| 9 | 9 tests, all passing. |
+| 10 | `npm test -- lib/__tests__/migrations-from-zero.test.ts` passes. |
+| 11 | `node scripts/acceptance/run.mjs` → 45/45. |
+| 12 | Zero `tsc --noEmit` errors in any file this piece touched. |
+| 13 | `agent_memory` and `agent_memory_files` both back to 0 rows; no probe rows in `inbox`. |
+
+### Two things this piece found but did not own
+
+- **`lib/theme.ts:45` will fail on a Postgres host.** It stores a bare string
+  (`value: themeId` → `'dark'`), which is not valid JSON, so the `jsonb` column
+  rejects it — verified against PGlite: `invalid input syntax for type json`.
+  It works on SQLite only because `decodeValue()` falls back to the raw string.
+  One-line fix, verified to round-trip through the existing reader unchanged:
+  `value: JSON.stringify(themeId)`. Not a regression from this piece — theme
+  was broken on both hosts before, for the more basic reason that neither
+  column existed.
+- **The old `id` probe was unsound in the other direction too.** `agent_budgets`,
+  `agent_heartbeats`, `agent_manifests` and `hub_settings` have no `id` column.
+  On SQLite that probe's error was silently discarded; on PostgREST the same
+  failure carries the "schema cache" wording, so four healthy tables would have
+  been reported MISSING. Fixed here by probing `select('*')` for existence.
