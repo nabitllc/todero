@@ -107,6 +107,66 @@ function ServiceCard({ emoji, name, plan, status, statusLabel, children, lastChe
   )
 }
 
+
+/**
+ * TOD-2481. Sign-out was an ENDPOINT WITH NO CALLER.
+ *
+ * Measured: DELETE /api/auth answers 200 with two expiring Set-Cookie headers,
+ * and zero files under app/ or components/ called it. No "sign out" string
+ * appeared in any .tsx in the repo. `mc-auth` is httpOnly, so browser JS cannot
+ * clear it either — an operator on a shared machine had no way to end their
+ * session from inside the product at all.
+ *
+ * Placed in Settings rather than the nav on purpose: CLAUDE.md marks
+ * PrimaryNav/MobileNav as layout-critical with a smoke test over them, and this
+ * control is not worth reopening that.
+ */
+function SignOutButton() {
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+  return (
+    <div className="rounded-xl border border-white/10 p-4">
+      <div className="text-sm font-semibold text-white/80">Session</div>
+      <p className="mt-1 text-xs text-white/40">
+        Ends this session on this device and returns to the login screen. The
+        session cookie is httpOnly, so this is the only way to clear it from
+        inside the product.
+      </p>
+      {failed && (
+        <p className="mt-2 text-xs text-red-400" role="alert">
+          Sign-out failed: {failed}. You are still signed in.
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true)
+          setFailed(null)
+          try {
+            const res = await fetch('/api/auth', { method: 'DELETE' })
+            if (!res.ok) {
+              // Say so rather than navigating to /login and LOOKING signed out
+              // while the cookie is still live — that is the dishonest failure
+              // this codebase keeps finding.
+              setFailed(`HTTP ${res.status}`)
+              setBusy(false)
+              return
+            }
+            window.location.href = '/login'
+          } catch (e) {
+            setFailed(e instanceof Error ? e.message : 'could not reach the server')
+            setBusy(false)
+          }
+        }}
+        className="mt-3 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/70 hover:bg-white/5 disabled:opacity-50"
+      >
+        {busy ? 'Signing out…' : 'Sign out'}
+      </button>
+    </div>
+  )
+}
+
 export default function SettingsTab() {
   const [data, setData] = useState<UsageData | null>(null)
   // TOD-654: the reason the usage load failed, verbatim from the server.
@@ -208,6 +268,11 @@ export default function SettingsTab() {
 
   return (
     <div>
+      {/* TOD-2481: sign-out, which had no caller anywhere in the product. */}
+      <div className="mb-8">
+        <SignOutButton />
+      </div>
+
       {/* INF-223: Theme selector */}
       <div className="mb-8">
         <h2 className="text-sm font-semibold text-white mb-1">Appearance</h2>

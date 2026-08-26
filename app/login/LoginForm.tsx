@@ -2,6 +2,10 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui'
 import { Input } from '@/components/ui'
+// TOD-2481: the SAME function the no-JS path already uses. Deliberately not a
+// second implementation — an open redirect survived its first fix in this repo
+// precisely because two code paths disagreed about what "safe" meant.
+import { safeReturnPath } from '@/app/api/auth-form/return-path'
 
 interface Props {
   from: string
@@ -27,7 +31,13 @@ export default function LoginForm({ from, error: initialError }: Props) {
       // On mobile, the push→refresh sequence leaves Next.js router in a
       // pending state before hydration completes, making the app non-interactive.
       // A hard redirect guarantees a clean, fully-hydrated page load.
-      window.location.href = from
+      // TOD-2481: `from` arrives from searchParams and is attacker-controlled.
+      // MEASURED before the fix: GET /login?from=https%3A%2F%2Fevil.example.com
+      // %2Fphish delivers evil.example.com/phish into this page, and this line
+      // then navigated to it on the SUCCESS branch of a real login — handing the
+      // operator to another site at the exact moment they are most likely to
+      // trust the page, having just typed a password into it.
+      window.location.href = safeReturnPath(from, window.location.origin)
     } else {
       setError(true)
       setLoading(false)
