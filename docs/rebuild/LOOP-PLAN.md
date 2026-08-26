@@ -254,6 +254,31 @@ how a green wave ships a broken app:
 
 Only then do the per-piece critics' verdicts mean anything about the product.
 
+## The board's shape is the owner's spec, not mine
+
+Owner feedback, 2026-08-26, after reading it on his phone. Every one of these is
+a standing requirement, not a one-off tidy:
+
+1. **Short and easy to read.** The long evidence paragraph now lives behind a
+   collapsed `<details>` on each channel card. Nothing was deleted.
+2. **Rebuilt and republished at the END OF EVERY WAVE.** Not when it occurs to
+   me. He commented twice that the wave log was stale, and he was right both
+   times — I had been updating `channels.json` and never `waves.json`.
+3. **A table of contents at the top**, numbered to match the section headings.
+4. **Every fact appears ONCE.** The spend figure was in three places and stale in
+   all of them. It is in the Ledger and nowhere else.
+5. **Each channel carries: title, status, score, goal, and PROGRESS BY WAVE** —
+   short bullets of what was worked on, what the next step toward the goal is,
+   and what that wave moved the score by. `channels.json` grew `next` and
+   `progress: [{wave, delta, did[]}]` for this.
+6. **Keep the wave format**, append one entry per wave.
+7. **Decisions and Harness collapse.** Decisions opens itself when something is
+   awaiting him; Harness opens itself only when it is failing.
+8. **No trailing Ledger duplicate** of what the header already says.
+
+`scripts/board/build-board.mjs` is the only thing that writes the board. If a new
+fact needs to appear, it appears in exactly one section.
+
 ## Decisions for the owner go on the BOARD, not into chat
 
 Owner instruction, 2026-08-26: *"Add Decisions needed by me to Flight Board and

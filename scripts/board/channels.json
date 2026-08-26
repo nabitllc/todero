@@ -8,7 +8,20 @@
       "goal": 8,
       "evidence": "UP ONE, AND THE EVIDENCE IS MINE RATHER THAN A BUILDER'S — the rule is that no channel rises on a self-report, and this rises on measurements I took over real HTTP. Wave 9's verify critic found the lane's own work had not moved middleware at all ('unchanged this wave', md5 confirmed), so the escalation it reported was still live. I reproduced it: a READ-ONLY credential deleted a real issue FIVE ways — mc-role=owner 200, god 200, notarole 200, and THE COOKIE OMITTED ENTIRELY 200, a fail-open documented nowhere and reached only AFTER the session gate had admitted a human. The same forgery worked one route down on the db proxy, and that suite's own control test ENSHRINED it by asserting a forged viewer could still write a neighbouring table. And a successful login assigned an attacker-controlled `from` to window.location — verified live, evil.example.com/phish delivered into the page — at the moment an operator has just typed a password and most trusts the screen. All closed, all re-measured after: five variants 403, proxy 403, owner still 200. Sign-out existed as an endpoint with NO CALLER and now has one. WHAT KEEPS IT AT 6: `mc-auth` IS the password, so the session check is an unthrottled oracle — 30 wrong cookie values gave 30 immediate 401s while /api/auth throttles the same password to 10 per window, a ~220x differential in favour of the door with no lock. That needs the credential to stop being the password, which is a schema change, not a middleware edit.",
       "goal_text": "builderz-labs — per-agent API keys and viewer/operator/admin roles over real sessions, replacing three shared passwords that double as their own tokens.",
-      "wave": 9
+      "wave": 9,
+      "next": "mc-auth IS the password, so the session check is an unthrottled oracle — 30 wrong values, 30 immediate 401s, while /api/auth throttles to 10 per window. Needs the credential to stop being the password: a schema change.",
+      "progress": [
+        {
+          "wave": 9,
+          "delta": 1,
+          "did": [
+            "A read-only credential could delete anything FIVE ways — role cookie omitted entirely was a pass",
+            "Same forgery one route down on the db proxy; that suite's own control test enshrined it",
+            "A login assigned an attacker-controlled return path to window.location",
+            "Sign-out was an endpoint with no caller"
+          ]
+        }
+      ]
     },
     {
       "name": "Work Management API (MC API)",
@@ -17,7 +30,19 @@
       "goal": 9,
       "evidence": "The code-review lifecycle completes AND the bug lifecycle is unblocked. `environment` was required by a validator and was not a column, so a bug moving defined->open answered 400 without it and 500 with it — every bug in this installation was stuck, in both directions, and the Bug Details panel read \"No bug details provided\" on every bug ever opened. Now 200 with the fields stored. A body carrying the phantom column returns 422 NAMING the real columns rather than 500, which matters because lib/agent-queue.ts still instructs the Tester agent to send it — the outage was one agent run from returning. The MC API also no longer routes work to agents that do not exist. Held back: limit=0 still means every matching row and two callers use it to read one integer, and the API still returns raw CHECK constraint text for an invalid enum value.",
       "goal_text": "Linear's issue list — server-side paging with an exact total, so no screen ever shows a number computed from a truncated slice.",
-      "wave": null
+      "wave": null,
+      "next": "DELETE /api/issues?id= has NO project scope of any kind — any session that can write can delete any row in any project.",
+      "progress": [
+        {
+          "wave": 9,
+          "delta": 0,
+          "did": [
+            "A Fleet page could read EVERY project — a header meaning 'this is a cross-project screen' was read as 'may see every project'",
+            "Blast radius was every filter, not one parameter",
+            "A 30s cache was consulted BEFORE the predicate, so the fix was bypassable for 30s at a time"
+          ]
+        }
+      ]
     },
     {
       "name": "Portability & Host Independence",
@@ -26,7 +51,18 @@
       "goal": 9,
       "evidence": "npm install really was broken, on the owner's own primary goal, at step one. This host genuinely has no C++ toolchain, so a fresh copy failed the way a new user's would: gyp ERR! find VS. Not simulated. The builder traced the cause into npm's arborist source rather than guessing — the synthetic node-gyp rebuild step gates on pkg.gypfile !== false, and lockfileVersion 3 has no slot for gypfile, so resolving from the lockfile always reads undefined there whatever better-sqlite3's own manifest says. With the field added: install exit 0, npm ci exit 0, prebuilt binary used, no build directory. The better half is the durability gap it then found — a plain npm install silently strips that field back out on its next write — so there is a test, and I proved it myself by removing the field and watching it fail BY NAME, then restoring. A full clone-to-running trial was run TWICE from fresh copies: install, setup, doctor, dev, /api/health, login, an unauthenticated 401, then an authenticated create and read. HELD BACK: macOS and Linux are unverified, npm run build and npm start were not exercised (build is forbidden on this host), and a genuinely reachable Postgres was never tested — only the dead-endpoint path.",
       "goal_text": "builderz-labs — SQLite and one start command, no Redis, Postgres or Docker. Clone it, run it, working app on any OS with no cloud account.",
-      "wave": 7
+      "wave": 7,
+      "next": "macOS and Linux unverified; npm run build/start never exercised; a genuinely reachable Postgres never tested.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 1,
+          "did": [
+            "npm install FAILED on a machine with no C++ toolchain — where a new user stops",
+            "Cause traced into npm's arborist; lockfile fix plus a test, because npm strips the field back out"
+          ]
+        }
+      ]
     },
     {
       "name": "LLM Provider Independence",
@@ -35,7 +71,25 @@
       "goal": 9,
       "evidence": "This channel carried a FALSE evidence string for several waves: \"66 remaining references — chat still routes to a cloud host the owner has ruled out\". A builder measured it and both halves are wrong. Live code across app/lib/components/hooks contains ZERO references to the ruled-out provider, comments stripped or not. Chat routes to LLM_BASE_URL, which is http://localhost:11434/v1 — proven live rather than read: a cloud model id returns 400 naming the local endpoint it is not present in, and a local qwen2.5-coder id returns 200 with an SSE stream. The model list is proxied from that endpoint, so it is live rather than hardcoded, and a new test locks the dangerous shape — an unreachable or empty roster must error naming the URL and must NOT fall back to a constant. The provider is genuinely a base URL: selection is an env var, resolveProvider refuses to default to a cloud host, and tiers resolve against the live roster rather than a static map. A new guard derives its banned set from the \"Never X\" bullets in HANDOFF.md rather than carrying its own list. Held back: two migration CHECK constraints still ADMIT a ruled-out connection type on a legacy table with no callers, and two CLI runtimes map tiers to hardcoded vendor ids because their provider is a binary, not a base URL — there is no seam to move them onto.",
       "goal_text": "LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.",
-      "wave": null
+      "wave": null,
+      "next": "The kind field is on the wire from /api/onboarding and /api/business-agents and has NO consumer.",
+      "progress": [
+        {
+          "wave": 8,
+          "delta": 0,
+          "did": [
+            "A parse failure collapsed into an empty model list — a wrong server looked identical to an empty Ollama",
+            "Fixed in one file, found still live one file over"
+          ]
+        },
+        {
+          "wave": 10,
+          "delta": 0,
+          "did": [
+            "Badge now derives from the failure kind rather than saying 'Unreachable' for everything"
+          ]
+        }
+      ]
     },
     {
       "name": "Agent Visualization Fidelity",
@@ -44,7 +98,24 @@
       "goal": 9,
       "evidence": "The Office states '0 of 30 agents report a workspace folder — the positions on the floor below are decorative', computed from the field so the wording self-corrects if agents ever report one. That is the honest version of a surface that previously implied position meant something. Held back: GET /api/tasks 404s on every poll from two independent pollers, 30s and 60s, and the roster still lists Kemuni SME and Vespera SME — agents for projects that do not exist.",
       "goal_text": "pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.",
-      "wave": 6
+      "wave": 6,
+      "next": "Every character's pose still derives from agent_runs rather than from hook events, and the Office ignores the heartbeat liveness /api/agents already publishes.",
+      "progress": [
+        {
+          "wave": 8,
+          "delta": 0,
+          "did": [
+            "The speech bubble was pinned by readFileSync + toContain — a grep dressed as a test"
+          ]
+        },
+        {
+          "wave": 10,
+          "delta": 0,
+          "did": [
+            "A tripwire left by its lane now fires: jsdom has landed, so the DOM suite it was waiting for can be written"
+          ]
+        }
+      ]
     },
     {
       "name": "Data Layer & Schema Management",
@@ -53,7 +124,18 @@
       "goal": 9,
       "evidence": "Migration 066 restores four columns that a live validator required and the schema did not have — environment, steps_to_reproduce, expected_behavior, actual_behavior — and DELIBERATELY does not add test_status, with both halves of that reasoning in the migration comment. The evidence for the split was measured, not argued: across 3,078 production rows in the Supabase export the stored test_status disagreed with the derived value on 372 of them, 12.1 percent, with passed sitting on rows whose tester and designer were both still pending. A stored duplicate of a derived value that was already wrong one time in eight. A new no-phantom-columns guard compares every column named in live code against the LIVE schema and is proven in both directions across writes, filters, selects and query strings — and states in its own header the case it would NOT catch, which is the interface declaration where this defect lived longest. WAVE 6 KEPT THIS AT 8 RATHER THAN RAISING IT, because a dialect asymmetry sat in the seam the whole time: an equality filter on a schema-declared BOOLEAN column bound a string, which Postgres infers correctly for free and SQLite never matches. Every Postgres-run test passed. The seam's two-dialect discipline is exactly what this channel scores, and it had a hole only the host a fresh clone actually runs could see. WAVE 7 closed the gap the previous fix could not reach and added a ninth guard for the class. Three columns are declared boolean in postgres and plain INTEGER in their sqlite twins, so the type-keyed hook was blind to them; no filter targets them today, so what existed was a trap whose trigger was 'somebody writes an ordinary filter'. The builder chose a curated override map over rebuilding two hot-path tables that every live agent-runtime wrapper writes to continuously, and deliberately did NOT leave a migration file on disk where an unattended db:migrate could pick it up before a maintenance window exists. I proved the new guard both ways myself, and — because this repo has twice shipped a guard that ran nowhere — confirmed the smoke test exits 1 with a gap planted and 0 without. Also measured this wave: the eq coercion works INSIDE an or(...) clause, which a critic had flagged as possibly a separate parse path.",
       "goal_text": "builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.",
-      "wave": 7
+      "wave": 7,
+      "next": "Three boolean-meaning columns are declared INTEGER in sqlite; a curated override covers them, a table rebuild is the real fix and needs a maintenance window.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 0,
+          "did": [
+            "An eq filter on a BOOLEAN column bound a string — Postgres infers it for free, SQLite never matches",
+            "Fixed at the seam plus a ninth guard for the class, proven both ways"
+          ]
+        }
+      ]
     },
     {
       "name": "Observability & Honest Reporting",
@@ -62,7 +144,26 @@
       "goal": 9,
       "evidence": "DOWN ONE. Wave 9's verify critic went back to scripts/doctor.mjs — THE FIRST THING AN OPERATOR ON A NEW MACHINE RUNS — and found it still misreporting, after this channel was credited for making it unable to fake a green. It exits 1 correctly on a corrupt database and a dead Postgres, which I verified myself; that part holds. What the critic found is a different surface of the same tool still asserting more than it measured. Also this wave, and it is why the number moves rather than holding: a seam suite carrying this channel's guarantee went 4 PASSED / 4 TOTAL with the defect COMPLETELY RESTORED — every failure arm back to the word 'unreachable' — because three of its four assertions were source greps. The live half was on screen too: Settings rendered 'Unreachable' for an endpoint answering HTTP 200 with the wrong shape, sending an operator to restart a server that was already running. Both fixed, the second with a behavioural suite that fails on the exact mutation the grep survives. A channel about honest reporting cannot hold a score set by checks that could not tell a fix from its defect.",
       "goal_text": "Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.",
-      "wave": 9
+      "wave": 9,
+      "next": "lib/llm-provider silently defaulted a parse failure to an empty model list — fixed — but doctor.mjs still asserts more than it measures on another surface.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 0,
+          "did": [
+            "doctor printed 'OK' and exited 0 against a corrupt database and a dead Postgres",
+            "Now exits 1 naming quick_check and ECONNREFUSED"
+          ]
+        },
+        {
+          "wave": 10,
+          "delta": -1,
+          "did": [
+            "A seam suite reported 4/4 GREEN with its defect fully restored — three assertions were source greps",
+            "Settings said 'Unreachable' for an endpoint answering HTTP 200 with the wrong shape"
+          ]
+        }
+      ]
     },
     {
       "name": "Work Management UI",
@@ -71,7 +172,24 @@
       "goal": 9,
       "evidence": "WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 5/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. The critic's sentence is the finding: the tests test the pure helpers, never the components that consume them — so the piece's headline behaviour is unpinned. That is the same shape as the seam defect found in wave 7, where mutating one line destroyed a feature in the browser while every gate stayed byte-identical green. Pure-logic coverage that looks thorough is exactly what makes a component-level gap invisible.",
       "goal_text": "Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.",
-      "wave": 8
+      "wave": 8,
+      "next": "Tests cover the pure helpers and not the components that consume them. jsdom landed at wave 10, so this is now fixable.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 0,
+          "did": [
+            "The board disabled send-to-backlog for the owner with a reason the server contradicts"
+          ]
+        },
+        {
+          "wave": 8,
+          "delta": -1,
+          "did": [
+            "Verify critic: the headline behaviour is unpinned — helpers tested, components not"
+          ]
+        }
+      ]
     },
     {
       "name": "Agent Fleet Operations",
@@ -80,7 +198,18 @@
       "goal": 9,
       "evidence": "WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 6/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. THE REAL WIN HERE IS NOT THE SCORE. Three of the five 'known failures' that had been red for the ENTIRE program — agents-route and agents-unconfigured — are fixed. Every gate report I have written said '5 known failures' and moved past them, including my own, for eight waves. A permanently red test is a test nobody reads, and it took a standing instruction to find out why rather than to route around it. Only spawn-live remains, and it is a genuine environment dependency. The channel still drops one point: the critic found the single new wire field this piece exists to add is computed in a place that does not make it trustworthy.",
       "goal_text": "builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.",
-      "wave": 8
+      "wave": 8,
+      "next": "currentTaskLabel is on the wire on all 28 rows and consumed by five surfaces — whether the provenance it claims is always true has not been re-judged.",
+      "progress": [
+        {
+          "wave": 9,
+          "delta": 0,
+          "did": [
+            "Fixed agents-route and agents-unconfigured — red for the ENTIRE program, past eight waves of gate reports saying '5 known failures'",
+            "currentTask was ambiguous; currentTaskLabel carries where the value came from"
+          ]
+        }
+      ]
     },
     {
       "name": "Run Safety & Enforcement",
@@ -89,7 +218,26 @@
       "goal": 9,
       "evidence": "DOWN ONE, and it is the verify critic's finding rather than mine: A DISPATCHED AGENT CAN TURN OFF ITS OWN WALL-CLOCK CEILING, AND NOTHING NOTICES. Alongside it: `checkInFlightCeilings` has exactly ONE caller and there is no supervisor-side trigger, so the enforcement exists and effectively nothing runs it. That is the same shape as the defect this channel was raised for last wave — an eq filter matching zero rows so a ceiling whose count always read 0 never fired — one level up. A ceiling an agent can disable is not a ceiling; it is a setting. The scheduled sweep landed this wave and is real, but a sweep whose subject can opt out is not enforcement. lib/dispatch-guard.ts and TODERO_DISPATCH_ENABLED remain untouched and both acceptance checks pass. Watching a ceiling fire against a real dispatch run is the owner's supervised window, planned wave 11 and never to be run unattended.",
       "goal_text": "Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.",
-      "wave": 9
+      "wave": 9,
+      "next": "A DISPATCHED AGENT CAN TURN OFF ITS OWN WALL-CLOCK CEILING and nothing notices. A ceiling its subject can disable is a setting.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 1,
+          "did": [
+            "is_blocked=eq.false matched ZERO rows on the live host — WIP ceilings silently disarmed for 8 of 9 lanes",
+            "Fixed at the seam, proven on both dialects"
+          ]
+        },
+        {
+          "wave": 9,
+          "delta": -1,
+          "did": [
+            "Verify critic: checkInFlightCeilings has exactly one caller, no supervisor-side trigger",
+            "Scheduled sweep landed — but a sweep whose subject can opt out is not enforcement"
+          ]
+        }
+      ]
     },
     {
       "name": "Learning & Memory Loop",
@@ -98,7 +246,18 @@
       "goal": 9,
       "evidence": "The chain was already built — my briefing said 'nothing populates the store' and that was WRONG, the ninth wrong briefing this session; all four runtime adapters already called the exit hook and 37 tests were green. What was true is that the table held zero rows, so it had never been EXERCISED. A critic reproduced it end to end with its own vocabulary: real API transitions setting rejection_count by the app's own rule, a real spawn, a real row written on process exit, then retrieval on a task key that never existed, matching on FTS5 vocabulary alone. It also built a PGlite harness nobody had run and proved the Postgres keyword-overlap fallback is REAL, not a stub, with an explicit incomplete-scan flag so a bounded scan cannot masquerade as a complete search — it scored that as BEATING the competitor, which is SQLite-only. THE GAP IT FOUND: the exit hook never selected the issue title, so every lifecycle row carried a null title — and both engines index that field. A run finishing CLEANLY, with no rejection, wrote a row whose only searchable content was a task key the ranker deliberately strips: an unsearchable record. Fixed and pinned by a test that retrieves a clean run by title alone. A budget overflow now surfaces as 503 with its token numbers instead of an unstructured 500, with the claim reverted so an issue does not sit claimed with nothing running. HELD BACK: what was attempted, whether it succeeded, and the exit status are still null on every lifecycle row — deferred deliberately, since no real exit code is available at that call site — so a record says what was rejected, not what was tried. And the loop never closes automatically here because dispatch is off by owner directive.",
       "goal_text": "Hermes Agent — records what it tried and failed after each task, retrieves it on similar ones by FTS5, and caps in-context memory so overflow errors instead of truncating.",
-      "wave": 6
+      "wave": 6,
+      "next": "Filling `attempted` HALVES retrieval reach and nobody has measured it. The four production call sites had zero coverage.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 2,
+          "did": [
+            "The chain was already built — my briefing said otherwise and was wrong",
+            "The gap was one column: recordRunOnExit never selected `title`, so a clean run wrote an unsearchable record"
+          ]
+        }
+      ]
     },
     {
       "name": "Navigation & Deep Linking",
@@ -107,7 +266,34 @@
       "goal": 8,
       "evidence": "WAVE 8: a RUN now has a URL that survives a reload, which was the exact clause holding this below goal — the goal text names 'LangSmith: every trace has a URL' and an individual run had no address at all. Before the fix, buildPath emitted [p, <slug>, 'runs'] and erased the /r/<id> milliseconds after load, so a run URL worked on a click and never on a reload. The lane could not apply the seam itself, so it SHIPPED A TEST SUITE THAT WAS RED ON PURPOSE and whose failure message printed the entire diff — incompleteness moved out of prose and into the gate, where it cannot be forgotten. I applied it; all four pass. HELD AT 7 rather than raised, because the same critic found a leak test that COULD NOT FAIL: it widened the selected columns to include the agent transcript and the server log path, the suite reported 50 passed / 50 total, and the live endpoint then returned both at HTTP 200. The repair killed that mutant and five others that had survived the previous round, including an anchor test that passed when the anchor was a span. None of that has been re-judged.",
       "goal_text": "Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.",
-      "wave": 8
+      "wave": 8,
+      "next": "An individual RUN still has no address. Runs has one view and no per-run URL — the goal text names 'every trace has a URL'.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 2,
+          "did": [
+            "/p/<slug>/i/<key> opens an issue and survives a reload",
+            "Work→List 0→4 anchors, Board 0→1",
+            "Guard that protects it moved into a pure function 35 tests can reach"
+          ]
+        },
+        {
+          "wave": 8,
+          "delta": 0,
+          "did": [
+            "A run permalink survives a reload — seam shipped as a test that printed its own diff",
+            "A leak test was found that could not fail: it asserted on a stub while the endpoint returned a transcript"
+          ]
+        },
+        {
+          "wave": 9,
+          "delta": 0,
+          "did": [
+            "goTo clears the overlay; closing no longer pushes history; a bad key says 'not found'"
+          ]
+        }
+      ]
     },
     {
       "name": "Approval & Human-in-the-loop",
@@ -116,7 +302,18 @@
       "goal": 9,
       "evidence": "UP ONE, on the same measured basis. Wave 9's verify critic named it exactly: 'the approval decision has TWO writers and only one of them was gated.' A session holding only the read-only password could approve an agent's request by naming itself owner in a cookie — the write reached the database as {status:approved, resolved_by:definitely-not-a-human-bot}. Closed both ways: `inbox` came out of the proxy's writable set, AND the proxy's own gate now derives the role from the credential, because removing one table does not fix the class. Verified live: forged viewer 403 on inbox and on notifications, real owner 200. HELD AT 6: the critic's judge-stage finding that the piece's headline property — 'the role IS provable' — was false in the running app is only partly answered. The gate is fixed; whether every approval path attributes its actor honestly has not been re-judged.",
       "goal_text": "Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.",
-      "wave": 9
+      "wave": 9,
+      "next": "Whether every approval path attributes its actor honestly has not been re-judged. The gate is fixed; the claim is not verified.",
+      "progress": [
+        {
+          "wave": 9,
+          "delta": 1,
+          "did": [
+            "The approval decision had TWO writers and only one was gated",
+            "inbox removed from the proxy's writable set AND the proxy's gate now derives role from the credential"
+          ]
+        }
+      ]
     },
     {
       "name": "Pipeline Fidelity",
@@ -125,7 +322,24 @@
       "goal": 9,
       "wave": 8,
       "evidence": "WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 6/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. SEVEN FABRICATIONS, the most of any lane, and the headline one is structural: the humaniser is a whitelist masquerading as a rule, and none of its guards can tell. So raw database text can still reach the operator through any refusal nobody happened to think of — and the whole point of this channel is that it never does. A whitelist is only as good as the imagination of whoever wrote it, and it reports full coverage either way.",
-      "goal_text": "Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through."
+      "goal_text": "Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through.",
+      "next": "The humaniser is a whitelist masquerading as a rule — it covers refusals someone thought of and reports full coverage either way.",
+      "progress": [
+        {
+          "wave": 8,
+          "delta": -1,
+          "did": [
+            "Seven fabrications, the most of any lane"
+          ]
+        },
+        {
+          "wave": 9,
+          "delta": 0,
+          "did": [
+            "Verify critic: the humaniser now over-eats the repo's own sentences on the read path"
+          ]
+        }
+      ]
     },
     {
       "name": "Customer Conversations",
@@ -134,7 +348,18 @@
       "goal": 9,
       "wave": 7,
       "evidence": "The transport SEAM exists; the transport does not, and that is deliberate — the provider is an open decision on this board and no agent was allowed to pick one. What landed: a provider-agnostic inbound webhook with its OWN dedicated credential, idempotency (a real provider retries, and a repeat delivery now answers 200 duplicate with the original row instead of creating a second customer message), an outbound adapter interface with ZERO implementations that refuses an unapproved draft both at runtime and by type, and reply-level threading inside a conversation — migration 070, both dialects. The builder re-measured all four 'already good' claims instead of assuming them, including re-running the approve-gate CHECK constraint in both dialects and the draft-cannot-approve-its-own 201-then-403 against the live server. It also found a structural limit and refused to work around it: middleware gated every /api/* route on a session or the GENERAL internal secret before any handler ran, so its dedicated credential was correct and still unreachable without also knowing Todero's general secret. It wrote the diff and left the shared file alone. I applied it only after measuring all three refusals myself — no auth 401 from middleware, wrong secret 401 from the route saying 'refused, not passed through to any other check', and an UNCONFIGURED secret still refusing rather than becoming a bypass. Card verified in a browser: 'Who is waiting on a reply? / 0 awaiting approval' with the query printed. HELD BACK: no provider, so an outbox that cannot send is still a draft folder; and the VALID webhook path is proven at the route level only — the env var is unset here and restarting the server is forbidden.",
-      "goal_text": "Slack — a reply threads instead of drowning the channel. Grok Bot — drafts while you are away, surfaces only what needs approval. You approve; Todero sends."
+      "goal_text": "Slack — a reply threads instead of drowning the channel. Grok Bot — drafts while you are away, surfaces only what needs approval. You approve; Todero sends.",
+      "next": "No provider. An outbox that cannot send is a draft folder, and choosing a transport is the owner's call.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 2,
+          "did": [
+            "Inbound webhook shape, idempotency, an outbound adapter with ZERO implementations",
+            "Its dedicated credential was unreachable until middleware learned to let its own check run"
+          ]
+        }
+      ]
     },
     {
       "name": "Commerce Operations",
@@ -143,7 +368,25 @@
       "goal": 8,
       "wave": 8,
       "evidence": "WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 6/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. Partial fulfilment landed with migration 074 in both dialects, which was the named gap against Shopify — a missing OBJECT rather than a missing report. The critic then found an unchecked error path at app/api/commerce/orders/route.ts:810, which is the THIRD unchecked database error found in this one route family across three waves. The pattern is not carelessness; it is that this codebase's db seam returns errors as values rather than throwing, so forgetting one is silent and looks exactly like success.",
-      "goal_text": "Shopify admin — orders, catalog and inventory as first-class objects you can act on, not a dashboard that only reports what happened."
+      "goal_text": "Shopify admin — orders, catalog and inventory as first-class objects you can act on, not a dashboard that only reports what happened.",
+      "next": "Three unchecked database errors have been found in this one route family across three waves — the db seam returns errors as VALUES, so forgetting one is silent.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 2,
+          "did": [
+            "Inventory adjust lost 18 of 20 concurrent decrements — the original 'zero conflicts' measurement was curl processes that never overlapped",
+            "A DOUBLE SHIP was found while fixing it: two requests could both pass the transition check"
+          ]
+        },
+        {
+          "wave": 8,
+          "delta": -1,
+          "did": [
+            "A third unchecked error found at orders/route.ts"
+          ]
+        }
+      ]
     },
     {
       "name": "Multi-tenancy & Identity",
@@ -153,7 +396,9 @@
       "wave": null,
       "evidence": "EXEMPT BY OWNER DECISION, 2026-08-26. Two standing orders contradicted: 'the loop ends when every channel clears its goal' and 'multi-tenancy is post-MVP, skip it'. This channel sits at 1/8 and was being skipped every wave while the completion condition counted it — so the loop was running toward a finish line it had already been told to make unreachable. Done is now 18 of 18 SCORED channels. This one is still shown, with its real number, because an exemption you can see is honest and a deleted row is not. IF THIS EVER CHANGES: Todero hosting a second customer's business alongside Limiglow is the trigger, and it is the one channel whose absence is invisible until the day it is catastrophic — schema, scoping, and every guard.",
       "goal_text": "Linear — sign in and see only your workspace. Anyone runs Todero for their own business and projects, isolated from everyone else.",
-      "exempt": true
+      "exempt": true,
+      "next": "EXEMPT by owner decision. The trigger for un-exempting is Todero hosting a second customer's business alongside Limiglow.",
+      "progress": []
     },
     {
       "name": "Secrets & Credential Custody",
@@ -162,7 +407,27 @@
       "goal": 9,
       "wave": 7,
       "evidence": "Custody stopped being decorative. The operator could add a Discord credential to a hub and see it stored, and exactly ONE of the app's send paths consulted it — every other notification came from a process-wide env var. Counting it took three tries: a builder reported seven direct env reads, I corrected it to eight after grepping myself, and the next builder found NINE across seven files, because status/route.ts has two and everyone had counted it as one. All nine now resolve through lib/discord-sender.ts, which wraps resolveHubDiscord, keeps the env var as a documented fallback, and refuses BY NAME when neither exists. One site had been doing console.error('message dropped') — a silent drop from the operator's side, since nobody watching the app ever learned it had not gone. Two sites deliberately do NOT thread a hub id because none is in scope there, and the code says so rather than implying resolution it does not do. I read the app/api/issues/route.ts diff line by line myself — it has broken production twice this session — and it touches postDiscord and notifyWatchers and nothing else; grepping it for isOwnerActor, KAOS_ROLES, scope, transition, validator, permission, backlog and archived returns one hit, the word 'scoped' inside a new comment. HELD BACK HARD: the OpenRouter key is still live in origin/main's history until the owner rotates it. And only ENV custody was exercised live — stored/encrypted custody could not be, since the encryption key is unset in this process.",
-      "goal_text": "Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only."
+      "goal_text": "Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only.",
+      "next": "The OpenRouter key is still live in origin/main's history until it is rotated. Only env custody has been exercised; stored/encrypted custody has not.",
+      "progress": [
+        {
+          "wave": 6,
+          "delta": 5,
+          "did": [
+            "A live API key sat in FOUR TRACKED files — three guards agreed not to look there",
+            "config/ untracked and gitignored; scanner widened to the whole tree",
+            "A probe disproved the fix's own comment — git grep skips ignored paths even when tracked"
+          ]
+        },
+        {
+          "wave": 7,
+          "delta": 1,
+          "did": [
+            "Custody governed ONE of NINE send paths — the count took three tries to get right",
+            "All nine now resolve through one module"
+          ]
+        }
+      ]
     },
     {
       "name": "Search & Findability",
@@ -171,7 +436,26 @@
       "goal": 8,
       "wave": 7,
       "evidence": "CLEARED. Enter opens the issue itself rather than landing on a destination default, results open in context over the surface that would otherwise list them, and the modifiers narrow to the one you meant. A critic scored in: as BEATING Slack — it validates against all 16 real statuses, names them all on failure, and fires ZERO network requests on a bad value, where Slack simply returns nothing. before: had been a shape regex that accepted 9999-99-99 and 2026-13-45, issued a live query and rendered results under 'issues matching this filter'; calendar-impossible dates are refused now. from: was case-sensitive and unvalidated, so a capitalised name returned 'no issue matches', indistinguishable from 'that person has no issues'. And the filters now live in the URL via replaceState, which was the remaining half of Linear's 'any view is a link' — they had been held in the palette's local state and lost on close. Every verb the palette offers was executed against the live API: 9 offered all PATCH 200, all 6 withheld ones genuinely refuse, and withheld moves now show their real reason instead of vanishing. WHAT KEEPS IT AT 8 RATHER THAN HIGHER: from: is case-insensitive but still not validated against the real assignee roster, so a name that does not exist reads as a person with no work — Slack will not let you type a non-existent user without seeing it. That is the one place this still loses.",
-      "goal_text": "Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list."
+      "goal_text": "Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list.",
+      "next": "CLEARED. Only remaining loss to Slack: from: is case-insensitive but not validated against the roster, so a name that does not exist reads as a person with no work.",
+      "progress": [
+        {
+          "wave": 7,
+          "delta": 3,
+          "did": [
+            "Enter opens the issue itself, not a destination default",
+            "in: validates all 16 statuses, 0 network calls on a bad value — beats Slack",
+            "before: rejects calendar-impossible dates; from: case-insensitive"
+          ]
+        },
+        {
+          "wave": 9,
+          "delta": 0,
+          "did": [
+            "Filters now live in the URL — a filtered view is shareable"
+          ]
+        }
+      ]
     }
   ]
 }

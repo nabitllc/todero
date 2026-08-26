@@ -81,14 +81,27 @@ const cards = [...channels.channels]
     const [cls, label] = chipFor(c)
     const d = c.current - c.baseline
     const dtxt = d > 0 ? `+${d.toFixed(1)}` : d === 0 ? '=' : d.toFixed(1)
+    // TOD-2487: progress BY WAVE, in bullets, with what that wave moved the
+    // score by — the owner's request. The long evidence paragraph moves into a
+    // collapsed <details> so the card stays readable and nothing is lost.
+    const prog = (c.progress ?? []).slice().sort((a, b) => b.wave - a.wave)
+    const progHtml = prog.length
+      ? prog.map(w => `          <div class="wrow">
+            <span class="wtag">W${w.wave}</span>
+            <span class="wdelta ${w.delta > 0 ? 'up' : w.delta < 0 ? 'down' : 'flat'}">${w.delta > 0 ? `+${w.delta}` : w.delta < 0 ? `${w.delta}` : '±0'}</span>
+            <ul>${w.did.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+          </div>`).join('\n')
+      : `          <div class="wrow"><span class="wtag">—</span><span class="wdelta flat">±0</span><ul><li>Not itemised per wave before Wave 6.</li></ul></div>`
     return `      <div class="card">
         <div class="head"><span class="cname">${esc(c.name)}</span><span class="chip ${cls}">${esc(label)}</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:${c.baseline * 10}%"></div><div class="fill" style="width:${c.current * 10}%"></div><div class="pin" style="left:${c.goal * 10}%"></div></div>
           <span class="mnum">${c.current.toFixed(1)}<i>/${c.goal}</i></span>
         </div>
-        <div class="gap"><b>[${dtxt}]</b> ${esc(c.evidence)}</div>
         <div class="goal"><span class="glab">Goal</span> ${esc(c.goal_text)}</div>
+        <div class="nextstep"><span class="glab">Next</span> ${esc(c.next ?? 'Not yet named.')}</div>
+        <div class="prog">${progHtml}</div>
+        <details class="eviD"><summary>Full evidence <b>[${dtxt}]</b></summary><div class="gap">${esc(c.evidence)}</div></details>
       </div>`
   }).join('\n')
 
@@ -217,6 +230,22 @@ section{margin-top:42px;scroll-margin-top:16px}
 .wwhen{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink3);margin-left:auto}
 @media(max-width:640px){.wwhen{margin-left:0;width:100%}}
 .wlede{margin:7px 0 0;color:var(--ink2);font-size:13.5px;max-width:74ch}
+.nextstep{font-size:12.5px;line-height:1.5;color:var(--ink2);margin-top:8px}
+.prog{margin-top:10px;border-top:1px solid var(--soft);padding-top:8px}
+.wrow{display:grid;grid-template-columns:34px 34px 1fr;gap:8px;align-items:start;padding:4px 0}
+.wtag{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:700;color:var(--ink3);padding-top:2px}
+.wdelta{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:700;padding-top:2px}
+.wdelta.up{color:#4ade80}.wdelta.down{color:#f87171}.wdelta.flat{color:var(--ink3)}
+.wrow ul{margin:0;padding-left:14px}
+.wrow li{font-size:12px;line-height:1.5;color:var(--ink2);margin-bottom:2px}
+.eviD{margin-top:8px}
+.eviD summary{cursor:pointer;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);user-select:none}
+.eviD summary:hover{color:var(--ink2)}
+.eviD .gap{margin-top:8px}
+.ssum{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.ssum::-webkit-details-marker{display:none}
+.ssum h2{display:inline}
+.ssum .note{font-size:12px;color:var(--ink3)}
 .spend{display:flex;flex-wrap:wrap;gap:1px;background:var(--soft);border:1px solid var(--soft);border-radius:3px;margin-top:12px;overflow:hidden}
 .spend span{background:var(--panel);padding:8px 14px;font-family:"IBM Plex Mono",monospace;font-size:14px;font-weight:600;flex:1;min-width:96px}
 .spend i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);font-weight:400;margin-bottom:2px}
@@ -287,22 +316,21 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">${waves.harnessHistory.filter(h => h.score).map(h => h.score).join(' → ')}</span></div>
   <div class="kv"><span class="k">Channels</span><span class="v mono">${base.toFixed(1)} → ${cur.toFixed(1)} (goal ${channels.goalAvg})</span></div>
-  <div class="kv"><span class="k">Spent</span><span class="v mono">${tok(T.tokens)} tok · ~${money(T.cost)}</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
 
-<nav class="index">
-  <a href="#channels">Channels<i>${cleared}/${scored.length} cleared</i></a>
-  <a href="#waves">Waves<i>${waves.waves.length} run</i></a>
-  <a href="#next">What's next<i>${waves.planned.length} queued</i></a>
-  <a href="#harness">Harness<i>${harness.passed}/${harness.total}</i></a>
-  <a href="#decisions">Decisions<i>${openCount} open</i></a>
-  <a href="#method">Method</a>
-  <a href="#ledger">Ledger<i>~${money(T.cost)}</i></a>
+<nav class="index" aria-label="Contents">
+  <a href="#channels">1 · Channels<i>${cleared}/${scored.length} cleared · avg ${cur.toFixed(1)}/${channels.goalAvg}</i></a>
+  <a href="#waves">2 · Waves<i>${waves.waves.length} run, newest first</i></a>
+  <a href="#next">3 · What's next<i>${waves.planned.length} queued</i></a>
+  <a href="#decisions">4 · Decisions<i>${openCount ? `${openCount} awaiting you` : 'all answered'}</i></a>
+  <a href="#harness">5 · Harness<i>${harness.passed}/${harness.total}</i></a>
+  <a href="#method">6 · Method<i>how a piece is certified</i></a>
+  <a href="#ledger">7 · Ledger<i>${tok(T.tokens)} tok · ${T.agents} agents</i></a>
 </nav>
 
 <section id="channels">
-  <div class="shead"><h2>Channels</h2><div class="note">Sorted by distance from goal · ${cleared} of ${scored.length} scored channels cleared</div></div>
+  <div class="shead"><h2>1 · Channels</h2><div class="note">Sorted by distance from goal · ${cleared} of ${scored.length} scored channels cleared</div></div>
   <p class="lede"><b>Scope moved on 25 Aug.</b> Todero is no longer only a build tool — it must also run the project it built: customers, orders, conversations. Three channels were added for that, and one for the post-MVP multi-tenant goal. All four start at zero, so the honest effect is that the finish line got further away, not closer.<br><br>Solid bar is where Todero is now; the ghost behind it is where it started; the pin is the goal it has to meet or beat. Each goal names the tool and the feature it is measured against. <b>These are judged</b>, not measured — a fresh blind panel re-scores every scored channel at each wave boundary. ${exemptCount} channel is EXEMPT by owner decision and is shown but not counted.</p>
   <div class="grid">
 ${cards}
@@ -310,33 +338,35 @@ ${cards}
 </section>
 
 <section id="waves">
-  <div class="shead"><h2>Waves</h2><div class="note">Newest first. No fixed round count.</div></div>
+  <div class="shead"><h2>2 · Waves</h2><div class="note">Newest first. No fixed round count.</div></div>
 ${waveBlocks}
 </section>
 
 <section id="next">
-  <div class="shead"><h2>What's next</h2><div class="note">Queued, in order</div></div>
+  <div class="shead"><h2>3 · What's next</h2><div class="note">Queued, in order</div></div>
   <div style="margin-top:10px">
 ${plannedBlocks}
   </div>
 </section>
 
 <section id="harness">
-  <div class="shead"><h2>Harness</h2><div class="note">Measured, not judged · <code>node scripts/acceptance/run.mjs</code></div></div>
+  <details${harness.passed === harness.total ? '' : ' open'}><summary class="ssum"><h2>5 · Harness</h2><span class="note">${harness.passed}/${harness.total} · ${harness.passed === harness.total ? 'all green' : 'FAILING'}</span></summary>
   <p class="lede">Every acceptance criterion as an executable check, written before the work and never by the builder graded against it. Runs in seconds, so it runs after every piece — which is what catches a regression in the round it happens. Groups with a failure are open; the rest are collapsed.</p>
   <div style="margin-top:6px">
 ${groups}
   </div>
+  </details>
 </section>
 
 <section id="decisions">
-  <div class="shead"><h2>Decisions</h2><div class="note">${openCount} awaiting your veto</div></div>
+  <details${openCount ? ' open' : ''}><summary class="ssum"><h2>4 · Decisions</h2><span class="note">${openCount ? `${openCount} awaiting you` : 'all answered — nothing blocking'}</span></summary>
   <p class="lede">Design calls I have made rather than asked about, so the work can continue — each with the reasoning and the tradeoff, so you can overrule one cheaply. A decision that lands changes the design canvas too; the two must never disagree.</p>
 ${decisionBlocks}
+  </details>
 </section>
 
 <section id="method">
-  <div class="shead"><h2>Method</h2><div class="note">How a piece gets certified</div></div>
+  <div class="shead"><h2>6 · Method</h2><div class="note">How a piece gets certified</div></div>
   <div class="method">
     <p><b>Cheap checks first.</b> A piece is built, then the deterministic harness runs. Only when the script is green does a frontier critic look at it — and it judges only what a script cannot: whether the result is honest, and whether it beats the named comparator. Wave 2 skipped this layer and spent frontier tokens answering questions <code>curl</code> could have answered.</p>
     <p><b>The grader is written by the orchestrator.</b> Never by the builder being graded. A loop optimises whatever signal it is given, and a builder that writes its own check learns to write one it already passes.</p>
@@ -346,7 +376,7 @@ ${decisionBlocks}
 </section>
 
 <section id="ledger">
-  <div class="shead"><h2>Ledger</h2><div class="note">What the program has cost</div></div>
+  <div class="shead"><h2>7 · Ledger</h2><div class="note">What the program has cost</div></div>
   <div class="spend" style="margin-top:12px">
     <span><i>wall clock</i>${mins(T.minutes)}</span>
     <span><i>agents</i>${T.agents}</span>
