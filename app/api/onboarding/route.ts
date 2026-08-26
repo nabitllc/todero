@@ -37,7 +37,11 @@ export async function POST(req: Request) {
   if (agentName) {
     const resolved = await resolveConfiguredModel(model)
     if (!resolved.ok) {
-      return NextResponse.json({ error: resolved.error, id: resolved.id }, { status: resolved.status })
+      // Same as /api/business-agents: `kind` distinguishes a transient outage
+      // from a misconfigured LLM_BASE_URL. The wizard is the first screen a
+      // new operator sees and the likeliest place for that URL to be wrong,
+      // so dropping it here cost the most.
+      return NextResponse.json({ error: resolved.error, id: resolved.id, kind: resolved.kind }, { status: resolved.status })
     }
     agentModel = resolved.model
   }

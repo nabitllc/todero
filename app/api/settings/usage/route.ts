@@ -5,7 +5,7 @@ import fs from 'fs'
 import { db, isDbConfigured } from '@/lib/db'
 import { sqlitePath } from '@/lib/db/sqlite-adapter'
 import { dbUnavailableResponse } from '@/lib/db-http'
-import { LLM_BASE_URL, fetchLiveModels } from '@/lib/llm-provider'
+import { LLM_BASE_URL, fetchLiveModels, type LiveModelsFailureKind } from '@/lib/llm-provider'
 import { resolveDiscordToken } from '@/lib/discord-sender'
 
 const promisifyExec = promisify
@@ -36,12 +36,22 @@ function getSessionCosts(sessionsPaths: string[]) {
 /**
  * fetchLiveModels() returns one prose error string shaped differently per
  * failure mode ("<url> is unreachable — <detail>" for a network failure,
- * "<url>/models responded <status>: <text>" for a bad response). Pull out
- * just the reason so the card can show the fixed `unreachable — <url> —
- * <reason>` shape without repeating the URL twice.
+ * "<url>/models responded <status>: <text>" for a bad response, and for a
+ * wrong-API 200 a multi-sentence explanation that itself contains em-dashes).
+ * Pull out just the reason so the card can show `<lead> — <url> — <reason>`
+ * without repeating the URL twice. The lead word comes from the seam's own
+ * `kind`, NOT from this function — see the GET handler below.
  */
 function reasonFrom(url: string, error: string): string {
-  const dash = error.lastIndexOf(' — ')
+  // FIRST separator, not the last: everything after the first em-dash is
+  // the reason. Only the leading "<url>" / "<url>/models" is redundant.
+  //
+  // This was `lastIndexOf`, which kept only the text after the FINAL em-dash.
+  // The not-openai-compatible message legitimately carries two, so the card
+  // reduced the single commonest misconfiguration (a base URL missing its
+  // /v1 suffix) to "set LLM_BASE_URL to <url>/v1." with the explanation of
+  // what was actually wrong deleted.
+  const dash = error.indexOf(' — ')
   if (dash !== -1) return error.slice(dash + 3)
   const prefix = `${url}/models `
   if (error.startsWith(prefix)) return error.slice(prefix.length)
@@ -191,7 +201,7 @@ export async function GET() {
   // this request — baseUrl and models come straight off the response, and a
   // failed probe names the URL and the exact reason rather than showing a
   // fabricated plan/balance for a vendor Todero doesn't use.
-  let localLlmResult: { baseUrl: string; models: string[]; ok: boolean; error: string | null; lastChecked: string }
+  let localLlmResult: { baseUrl: string; models: string[]; ok: boolean; error: string | null; kind?: LiveModelsFailureKind; lastChecked: string }
   if (localLlmProbe.status === 'fulfilled' && localLlmProbe.value.ok) {
     localLlmResult = { baseUrl: LLM_BASE_URL, models: localLlmProbe.value.models.map(m => m.id), ok: true, error: null, lastChecked: now }
   } else {
@@ -203,7 +213,24 @@ export async function GET() {
     } else {
       reason = 'unknown error'
     }
-    localLlmResult = { baseUrl: LLM_BASE_URL, models: [], ok: false, error: `unreachable — ${LLM_BASE_URL} — ${reason}`, lastChecked: now }
+    // The lead word is the seam’s verdict, not an assumption. An endpoint
+    // that answered 401, or answered 200 with HTML, is not unreachable.
+    //
+    // A REJECTED probe gets no kind at all: fetchLiveModels() catches every
+    // network failure itself and returns `kind: 'unreachable'` for it, so a
+    // rejection here is an internal fault of unknown shape. Calling that
+    // "unreachable" would be the same invented diagnosis this whole change
+    // exists to delete, one layer up.
+    const kind: LiveModelsFailureKind | undefined =
+      localLlmProbe.status === 'fulfilled' && !localLlmProbe.value.ok
+        ? localLlmProbe.value.kind
+        : undefined
+    const lead =
+      kind === 'unreachable' ? 'unreachable'
+        : kind === 'error-status' ? 'error response'
+          : kind === 'not-openai-compatible' ? 'not an OpenAI-compatible endpoint'
+            : 'probe failed'
+    localLlmResult = { baseUrl: LLM_BASE_URL, models: [], ok: false, error: `${lead} — ${LLM_BASE_URL} — ${reason}`, ...(kind ? { kind } : {}), lastChecked: now }
   }
 
   // --- Cloudflare tunnels ---

@@ -52,11 +52,22 @@
 //        only runs inside a request THE AGENT CHOSE TO MAKE, which means the
 //        one failure mode lib/dispatch-guard.ts names by name — a detached
 //        watcher that stops beating — was structurally exempt from it.
-//   sweepInFlightCeilings  <- POST /api/heartbeat/sweep, and (seam, see
-//        lib/__tests__/agent-budget-sweep-seam.test.ts) /api/cron/watchdog.
+//   sweepInFlightCeilings  <- POST /api/heartbeat/sweep, and GET
+//        /api/cron/watchdog (wired; the seam that asked for it,
+//        lib/__tests__/agent-budget-sweep-seam.test.ts, is now green).
 //        Same evaluation, on a supervisor timer, for every running row in
 //        the window whether or not a beat arrived. This is the trigger that
 //        makes "enforced by the supervisor" true of a silent agent too.
+//        HONEST CAVEAT, and it is the whole reason this list exists: being
+//        called by the watchdog only makes the sweep as scheduled as the
+//        WATCHDOG is. vercel.json's `crons` runs /api/cron/watchdog every 30
+//        min ON A VERCEL DEPLOYMENT. On this host there is no such timer:
+//        scripts/agent-kicker.sh is the local :00/:30 driver and its watchdog
+//        call (line 33) sends no x-todero-internal header, so middleware.ts's
+//        blanket /api/ gate answers it 401 before the route runs — verified by
+//        curl today. Wiring the sweep to the watchdog was the missing half;
+//        the local kicker's missing header is the other half, and it is not
+//        this module's file to fix.
 //
 // Keep this list honest. A comment asserting a call site that cannot execute
 // is the same defect class as a ceiling that cannot fire.

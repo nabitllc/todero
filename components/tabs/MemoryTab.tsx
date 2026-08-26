@@ -17,8 +17,15 @@
 //   * the artboard's "seen 4×" is pattern recurrence computed only inside
 //     promoteHotPatterns(), which WRITES. A render must not trigger it, so the
 //     per-row `rejection_count` column is shown under its own name instead;
-//   * `agent_run_records` has no free-text column for what WORKED. The boolean
-//     `succeeded` is shown and the missing text is stated.
+//   * (pieces9 seam 2) this note used to read "`agent_run_records` has no
+//     free-text column for what WORKED". That stopped being true when
+//     summarizeExit() (lib/runtimes/exit-evidence.ts) started populating
+//     `attempted` at process exit: it is machine text, not a human summary,
+//     but it carries the runtime, the child's OS exit code, the run's own
+//     terminal status, its turn count and the tools it invoked — each stamped
+//     with where it came from. `succeeded` / `failed` / `exit_status` are the
+//     observed outcome; `rejection_reason` and `reviewer_notes` are still
+//     human text and are absent on most rows.
 
 import React from 'react'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
@@ -56,11 +63,25 @@ interface RunRecord {
   rejection_count: number | null
   rejection_reason: string | null
   reviewer_notes: string | null
+  /**
+   * The child process's REAL OS exit code, or null when the exit moment never
+   * observed one (migrations/040_agent_run_records.sql:29). Written by
+   * summarizeExit() via recordRunOnExit(); the hardest single fact on the row,
+   * and until pieces9 seam 2 it was not on this type at all, so it never
+   * reached a screen.
+   */
+  exit_status: number | null
   created_at: string | null
 }
 
 interface SkillDoc { agent_id: string; slug: string; content: string | null }
 
+// The pieces9 seam diff asked for `exit_status` to be added to this query's
+// select list. There is no select list to add it to: this is the app route, not
+// a PostgREST URL, and app/api/agent-run-records/route.ts:39 reads
+// `.select('*')`. So exit_status was already arriving on every row of the
+// response and was being dropped by RunRecord's type alone. Verified by reading
+// that route, not assumed.
 const RECORDS_QUERY = '/api/agent-run-records?limit=100'
 const SKILLS_QUERY = 'agent_documents?select=agent_id,slug,content&doc_type=eq.skill&order=slug.asc&limit=200'
 
@@ -113,8 +134,8 @@ export default function MemoryTab({ memFiles, error, onRetry, openMem, setOpenMe
         source={
           <>
             GET {RECORDS_QUERY} · table agent_run_records (id, task_key, attempted, rejection_reason, reviewer_notes,
-            rejection_count, succeeded, created_at) · the endpoint returns no total, so this is the 100 most recent rows,
-            not a count of the store
+            rejection_count, succeeded, failed, exit_status, status, created_at) · the endpoint returns no total, so this
+            is the 100 most recent rows, not a count of the store
           </>
         }
         empty={{
@@ -140,22 +161,41 @@ export default function MemoryTab({ memFiles, error, onRetry, openMem, setOpenMe
                   <span className="font-mono text-[10px] text-white/45">{relativeTime(r.created_at) || 'created_at is null'}</span>
                 </div>
                 <Field label="ATTEMPTED" tone="text-white/50" value={r.attempted} missing="agent_run_records.attempted is null for this row" />
-                <Field label="FAILED" tone="text-red-400" value={r.rejection_reason} missing="rejection_reason is null" />
+                {/* The `failed` column is the fact; `rejection_reason` is a
+                    separate, usually-absent one. Reading the failure out of
+                    rejection_reason alone rendered the row this channel writes
+                    in production — {failed: true, exit_status: 9,
+                    rejection_reason: null} — as "FAILED  rejection_reason is
+                    null", which a reader scans as NOT failed. */}
+                {truthy(r.failed) && (
+                  <Field
+                    label="FAILED"
+                    tone="text-red-400"
+                    value={r.rejection_reason}
+                    missing={`failed=true, exit_status=${r.exit_status ?? 'not observed'} — no rejection_reason was written`}
+                  />
+                )}
+                {!truthy(r.failed) && r.rejection_reason && (
+                  <Field label="REJECTED" tone="text-red-400" value={r.rejection_reason} missing="" />
+                )}
                 <Field label="NOTES" tone="text-white/50" value={r.reviewer_notes} missing="reviewer_notes is null" />
                 <div className="flex items-center gap-2 flex-wrap pt-0.5">
                   <Chip>succeeded: {String(truthy(r.succeeded))}</Chip>
                   <Chip>rejection_count: {r.rejection_count ?? 0}</Chip>
                   {r.status && <Chip>status: {r.status}</Chip>}
+                  {r.exit_status !== null && r.exit_status !== undefined && <Chip>exit_status: {r.exit_status}</Chip>}
                   <span className="flex-1" />
                   <span className="font-mono text-[10px] text-white/35">run {r.id}{r.agent_id ? ` · ${r.agent_id}` : ''}</span>
                 </div>
               </div>
             ))}
             <p className="font-mono text-[10px] leading-snug text-white/35">
-              No column records what WORKED — agent_run_records stores attempted, rejection_reason, reviewer_notes and a
-              boolean succeeded, so the working path is shown as that flag, not as prose nobody wrote. Recurrence
-              (&ldquo;seen n times&rdquo;) is counted only by promoteHotPatterns(), which writes; the per-row
-              rejection_count column is shown instead.
+              <span className="text-white/60">attempted</span> is written by summarizeExit() at process exit and is
+              machine text, not a human summary: it carries the runtime, the child OS exit code, the run&rsquo;s own
+              terminal status, its turn count and the tools it invoked, each stamped with where it came from.
+              succeeded/failed/exit_status are the observed outcome; rejection_reason and reviewer_notes remain human
+              text and are absent on most rows. Recurrence (&ldquo;seen n times&rdquo;) is counted only by
+              promoteHotPatterns(), which writes; the per-row rejection_count column is shown instead.
             </p>
           </div>
         )}

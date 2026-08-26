@@ -30,11 +30,28 @@ export async function GET(req: NextRequest) {
   try {
     const supabase = getSupabase()
 
-    // Fetch token_ledger rows in range, joined with issues for project
+    // Fetch token_ledger rows in range, joined with issues for project.
+    //
+    // pieces9 seam 1: this used to read `.eq('status', 'completed')`. That was a
+    // no-op filter for as long as lib/runtimes/claude-code.ts closed EVERY row
+    // with a hardcoded status of 'completed' — including the ones it recorded,
+    // four lines later, as failed. Now that `evidence.ledgerStatus` makes the
+    // column honest ('failed' | 'killed' | 'max_iterations' | 'running' |
+    // 'unknown' are all reachable — migrations/075_token_ledger_status_vocabulary.sql),
+    // the same filter would start hiding real money: a run that failed still
+    // burned its tokens, and those are exactly the runs an operator needs to see
+    // (migrations/038_agent_budgets_and_ceilings.sql calls that class of
+    // under-count budget-corrupting).
+    //
+    // The condition this filter was always trying to express is "has this row
+    // closed?", not "did it succeed?". `completed_at` is that fact: finalizeRun()
+    // in lib/runtimes/token-ledger.ts writes completed_at and status in the same
+    // payload, and `spawned` — the only status meaning "still open" — is exactly
+    // the set of rows whose completed_at is still null.
     let query = supabase
       .from('token_ledger')
       .select('agent_id, task_key, total_tokens, cost_usd, spawned_at')
-      .eq('status', 'completed')
+      .not('completed_at', 'is', null)
 
     if (from) query = query.gte('spawned_at', from)
     if (to) {

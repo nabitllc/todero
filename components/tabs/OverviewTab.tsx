@@ -216,6 +216,13 @@ interface LiveAgentRow {
   id: string
   liveness?: 'live' | 'stale' | 'idle'
   currentTask?: string | null
+  // `currentTask` with its provenance worded in FRONT — `reported: X` came
+  // from the agent's own heartbeat, `assigned: X` came off the board. Built by
+  // lib/fleet-liveness.ts' taskLabel() and shipped on every /api/agents row.
+  // The strip below truncates, and truncation eats the tail, so this is the
+  // field to render: a bare `currentTask` beside a pulsing green dot is the
+  // flattering guess this piece exists to stop.
+  currentTaskLabel?: string | null
 }
 
 interface AgentRunInfo { taskTitle: string; startedAt: string | null; status: string }
@@ -259,7 +266,7 @@ function RunningNowCard({
             <div key={a.id} className="flex items-center gap-2.5 px-3 py-2.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
               <span className="text-white text-sm font-medium shrink-0">{a.id}</span>
-              <span className="text-white/60 text-xs truncate flex-1">{a.currentTask || run?.taskTitle || 'heartbeat just now'}</span>
+              <span className="text-white/60 text-xs truncate flex-1">{a.currentTaskLabel || run?.taskTitle || 'heartbeat just now'}</span>
               {elapsedMs !== null && <span className="text-white/40 text-xs font-mono shrink-0">{formatElapsed(elapsedMs)}</span>}
             </div>
           )

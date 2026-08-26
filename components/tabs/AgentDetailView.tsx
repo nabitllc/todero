@@ -32,6 +32,17 @@ interface Agent {
   ago?: number | null
   lastUpdatedAt?: number
   currentTask?: string | null
+  // `currentTask` pre-worded with WHERE IT CAME FROM in front — `reported: X`
+  // (the agent's own heartbeat said so), `assigned: X` (a board row says so),
+  // `unsourced: X` (nobody has said so yet). Built server-side by
+  // lib/fleet-liveness.ts' taskLabel() and shipped on every /api/agents row.
+  // Render THIS, never the bare `currentTask`: both call sites below truncate,
+  // and truncation eats the tail, so the qualifier has to lead.
+  currentTaskLabel?: string | null
+  // Which fact `currentTask` is, for call sites that need the provenance as a
+  // value rather than as words (the emerald below). Absent means "we were not
+  // told", which fails closed to 'none' — never to the agent's own claim.
+  currentTaskSource?: 'heartbeat' | 'assigned-issue' | 'none'
   type?: 'consultant' | 'permanent'
   // Liveness as /api/agents reports it — derived from heartbeats the server
   // actually received, never inferred. Optional so call sites that hold a
@@ -253,8 +264,19 @@ function DashboardTab({ agent }: { agent: Agent }) {
       <div className="flex items-center gap-2 text-white/40 text-xs">
         <Clock size={12} />
         <span>Last active: <span className="text-white/60">{relTime(agent.lastUpdatedAt)}</span></span>
-        {agent.currentTask && (
-          <span className="ml-2 text-emerald-400/70 truncate max-w-[200px]">↳ {agent.currentTask}</span>
+        {/* Emerald is a colour that ASSERTS the agent is working. It is now
+            spent only on `reported:` — a task the agent itself checked in
+            with. A board assignment (or an unsourced string) gets the neutral
+            tone, because nothing here knows the agent ever picked it up.
+            Fails closed: an absent source is not a heartbeat. */}
+        {agent.currentTaskLabel && (
+          <span
+            className={`ml-2 truncate max-w-[200px] ${
+              agent.currentTaskSource === 'heartbeat' ? 'text-emerald-400/70' : 'text-white/50'
+            }`}
+          >
+            ↳ {agent.currentTaskLabel}
+          </span>
         )}
       </div>
 
@@ -670,10 +692,10 @@ function RunsTab({ agent }: { agent: Agent }) {
               <span className="text-white/30">Last active</span>
               <span className="text-white/60">{lastActiveStr}</span>
             </div>
-            {agent.currentTask && (
+            {agent.currentTaskLabel && (
               <div className="flex justify-between text-xs">
                 <span className="text-white/30">Current task</span>
-                <span className="text-white/60 truncate max-w-[60%]">{agent.currentTask}</span>
+                <span className="text-white/60 truncate max-w-[60%]">{agent.currentTaskLabel}</span>
               </div>
             )}
             <div className="flex justify-between text-xs">

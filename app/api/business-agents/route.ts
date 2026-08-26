@@ -42,7 +42,11 @@ export async function POST(req: Request) {
   // wrote a cloud id into every agent created without an explicit model.
   const resolved = await resolveConfiguredModel(model)
   if (!resolved.ok) {
-    return NextResponse.json({ error: resolved.error, id: resolved.id }, { status: resolved.status })
+    // `kind` rides along so a client can tell "the LLM host is down" (retry)
+    // from "LLM_BASE_URL points at the wrong kind of server" (fix the config)
+    // without string-matching prose. Absent when resolveConfiguredModel had no
+    // fetch failure to classify (an unknown model id, an empty roster).
+    return NextResponse.json({ error: resolved.error, id: resolved.id, kind: resolved.kind }, { status: resolved.status })
   }
   const hub = getHubClient(business_id)
   const { data, error } = await hub.client.from('agents')

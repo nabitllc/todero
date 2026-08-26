@@ -788,7 +788,14 @@ export default function ChatTab({ selectedBusiness }: { selectedBusiness?: strin
         setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, errMsg] } : c))
       } else {
         const roster = r.data.agents ?? []
-        const agentLines = roster.map((a: any) => `- ${a.emoji ?? ''} **${a.name}** — ${a.desc || a.role} _(${a.status})_${a.currentTask ? `: ${a.currentTask}` : ''}`).join('\n')
+        // `currentTaskLabel`, not `currentTask` — and this one is not cosmetic.
+        // The message built here is appended to the conversation, and the
+        // conversation is sent verbatim to a model as `historyMessages` (see
+        // the send path below). A bare `TOD-42: fix the nav` in a roster line
+        // invites the model to state as fact that the agent is working on it;
+        // `assigned:` vs `reported:` is the difference between relaying a board
+        // row and inventing a status report a human then reads as an answer.
+        const agentLines = roster.map((a: any) => `- ${a.emoji ?? ''} **${a.name}** — ${a.desc || a.role} _(${a.status})_${a.currentTaskLabel ? `: ${a.currentTaskLabel}` : ''}`).join('\n')
         const agentsMsg: ChatMessage = { id: 'agents-'+Date.now(), role: 'assistant', content: `**Active Agents** (${roster.length})\n\n${agentLines || '_No agents in the roster_'}\n\n_Select an agent using the dropdown above the input._`, ts: Date.now() }
         setChats(prev => prev.map(c => c.id === activeConv.id ? { ...c, messages: [...c.messages, agentsMsg] } : c))
       }

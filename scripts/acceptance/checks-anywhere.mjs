@@ -8,6 +8,7 @@
 // enforced outside the agent.
 
 import { http, countMatches } from './checks.mjs'
+import { execFileSync } from 'node:child_process'
 import { readFile, readdir } from 'node:fs/promises'
 
 const OWNER = 'mc-auth=kaos2026; mc-role=owner'
@@ -140,13 +141,49 @@ export const ANYWHERE_CHECKS = [
   {
     id: 'retrieval-is-budgeted', piece: 'memory-loop-retrieval', critical: true,
     desc: 'context injection is capped, and overflow errors rather than truncating',
+    // pieces9/memory-attempted seam 3 — THIS CHECK USED TO BE A GREP.
+    //
+    // It counted `MEMORY_BUDGET|contextBudget|CONTEXT_BUDGET` and
+    // `budget[^\n]*(throw|Error)` over lib/ and scripts/ source TEXT. Comments
+    // satisfy both. Measured by the lane that opened the seam: replacing the
+    // real `throw new RetrievalBudgetExceededError(…)` with a silent
+    // `block.slice(0, budgetTokens * 4)` still reported PASS here, 45/45, 10/10 —
+    // the check certifying this behaviour could not fail, which inflates every
+    // score it contributes to.
+    //
+    // It now RUNS the function. scripts/acceptance/retrieval-budget-probe.mjs
+    // builds a scratch SQLite from the real migrations in a temp directory (the
+    // live database is never touched), seeds one record whose human-written
+    // reviewer_notes alone cannot fit, calls buildRetrievedContext() with a
+    // 50-token budget, and prints RAISED / TRUNCATED / PROBE-BROKEN. Only
+    // RAISED:RetrievalBudgetExceededError passes — a probe that measured
+    // nothing fails loudly rather than passing quietly, which is the whole
+    // failure mode being repaired here.
     async run() {
       const budget = await countMatches(['lib', 'scripts'], 'MEMORY_BUDGET|contextBudget|CONTEXT_BUDGET', ['.ts', '.mjs'])
       if (budget.length === 0) return no('no context budget — memory is injected uncapped, which is the bug this piece exists to fix')
-      const errs = await countMatches(['lib', 'scripts'], 'budget[^\\n]*(throw|Error)', ['.ts', '.mjs'])
-      return errs.length > 0
-        ? ok('budget enforced by raising, not truncating')
-        : no('a budget exists but nothing raises on overflow — a silent truncation loses the record that mattered')
+
+      let out = ''
+      try {
+        out = String(
+          execFileSync(process.execPath, ['scripts/acceptance/retrieval-budget-probe.mjs'], {
+            encoding: 'utf8', timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'],
+          }),
+        ).trim()
+      } catch (e) {
+        // A non-zero exit is the probe's own verdict channel, so read its
+        // stdout before treating this as a harness fault.
+        out = String(e?.stdout ?? '').trim() || `PROBE-BROKEN:${e?.message ?? 'probe did not run'}`
+      }
+
+      const verdict = out.split('\n').map(l => l.trim()).filter(Boolean).pop() ?? '(no output)'
+      if (verdict.startsWith('RAISED:RetrievalBudgetExceededError')) {
+        return ok('budget enforced by raising, not truncating — buildRetrievedContext() actually raised on an oversized record (50-token budget, scratch sqlite)')
+      }
+      if (verdict.startsWith('TRUNCATED:')) {
+        return no(`a budget exists but overflow did NOT raise — buildRetrievedContext() returned text instead (${verdict}); a silent truncation loses the record that mattered`)
+      }
+      return no(`the budget behaviour could not be measured: ${verdict}`)
     },
   },
 

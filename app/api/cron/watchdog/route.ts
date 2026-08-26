@@ -22,6 +22,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
+import { sweepInFlightCeilings } from '@/lib/agent-budget'
 
 // Vercel cron authentication — reject unauthenticated external callers
 function isAuthorized(req: Request): boolean {
@@ -49,6 +50,28 @@ export async function GET(req: Request) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
+
+  // ── The supervisor-side trigger for the in-flight run ceilings ───────────
+  // Until this call existed, lib/agent-budget.ts's wall-clock and no-progress
+  // ceilings ran ONLY inside PATCH /api/heartbeat — a request the agent
+  // chooses to make — so an agent that stopped beating was never stopped and
+  // its pid was never signalled. That is the exact detached self-respawning
+  // watcher lib/dispatch-guard.ts's own comment names as the threat.
+  //
+  // Bounded (SWEEP_BATCH_LIMIT), and idempotent: a run it stops is no longer
+  // status='running', so the next tick does not see it again. Read failures
+  // come back in `.errors` rather than as an exception, so a sweep that could
+  // not look is distinguishable from a sweep that found nothing. The one way
+  // it can still throw is an unconfigured database, and the
+  // dbUnavailableResponse() guard above has already returned by then.
+  //
+  // Ordered BEFORE the stale-claim queries on purpose: a run past its ceiling
+  // should be stopped and blocked for triage by the mechanism that knows why,
+  // not merely recycled to `open` by the reset below as if the agent had
+  // simply died. Both can touch the same issue in one tick — the ceiling stop
+  // sets is_blocked, the reset moves status — and that combination (open but
+  // blocked, awaiting a human) is the intended end state, not a collision.
+  const ceilingSweep = await sweepInFlightCeilings()
 
   const db = createAdminClient()
   const now = Date.now()
@@ -353,13 +376,20 @@ export async function GET(req: Request) {
     }).catch(() => {/* non-critical */})
   }
 
+  // `ok` folds in the sweep's read errors as well as the reset failures.
+  // POST /api/heartbeat/sweep already refuses to report ok:true on a sweep
+  // that could not look — "looked at everything, stopped nothing" and "could
+  // not look" are different answers — and a caller reading THIS body has no
+  // other way to tell them apart. Reporting ok:true here while the ceiling
+  // sweep silently failed would rebuild that dishonesty one level up.
   return NextResponse.json({
-    ok: failed.length === 0,
+    ok: failed.length === 0 && ceilingSweep.errors.length === 0,
     ts: new Date().toISOString(),
     cleared: cleared.map(c => c.key),
     clearedDetail: cleared,
     failed,
     kicked,
     unblocked: unblockedKeys,
+    ceilingSweep,
   })
 }

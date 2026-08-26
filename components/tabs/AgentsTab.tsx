@@ -322,7 +322,14 @@ export default function AgentsTab({
                         </p>
                       </div>
                     </div>
-                    {ls.dot === 'green' && (a.currentTask || agentRunsData[a.id]?.taskTitle) && <p className="text-emerald-400/60 text-[10px] mb-2 truncate">↳ {(a.currentTask || agentRunsData[a.id]?.taskTitle || '').slice(0,40)}</p>}
+                    {/* `currentTaskLabel`, not `currentTask`: this line is
+                        emerald AND gated on a green dot, so it asserts "this
+                        live agent is doing this" about a string that is often
+                        just a board row. The label leads with `reported:` /
+                        `assigned:` / `unsourced:`, so the `.slice(0,40)` now
+                        cuts into the task after the word that says WHICH FACT
+                        it is — the intended trade. */}
+                    {ls.dot === 'green' && (a.currentTaskLabel || agentRunsData[a.id]?.taskTitle) && <p className="text-emerald-400/60 text-[10px] mb-2 truncate">↳ {(a.currentTaskLabel || agentRunsData[a.id]?.taskTitle || '').slice(0,40)}</p>}
                     <p className="text-white/50 text-xs leading-relaxed mb-3">{a.desc}</p>
                     <div className="flex flex-wrap gap-1 mb-2">
                       {a.capabilities.map((c:string)=><Chip key={c} label={c}/>)}

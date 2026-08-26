@@ -14,15 +14,23 @@
  * Four things are refused rather than stored:
  *   * an area the declared vocabulary does not contain (400, with the list)
  *   * a level outside accountable|responsible (422, with the list)
- *   * an agent id NO ROSTER DECLARES (422, with the roster's ids and its path)
+ *   * an agent id NO SOURCE DECLARES (422, with the fleet's ids and where it looked)
  *   * anything at all, when the roster itself cannot be read (503)
  *
  * The third is the one that matters most here. `todero-sme` and `infra-sme`
  * hold live queue lanes in lib/agent-queue.ts (:360, :399) and full entries in
  * app/api/agent-config/route.ts, and no AGENTS.md in this repo declares either
  * — verified 2026-08-26 by reading every AGENTS.md on this host. A queue lane
- * is not a declaration. Neither is a config default. Only the roster is, and
- * loadAgentRoster() is the only thing this route asks.
+ * is not a declaration. Neither is a config default.
+ *
+ * What DOES count as a declaration is the same union GET /api/agents uses:
+ * `loadFleetRoster()` — AGENTS.md ∪ the Brain2 vault registry ∪
+ * `agent_registrations`. This route asked `loadAgentRoster()` (AGENTS.md
+ * alone) until 2026-08-26, which made Roles and the Roster disagree about who
+ * exists — 14 against 28 on this host — and quietly made every vault agent and
+ * every self-registered one unassignable. Neither number was wrong; they were
+ * answers to different questions sharing the word `fleet`. The union is the
+ * one that matches what the fleet screens show.
  *
  * NOTHING CONSULTS THESE ROWS. No dispatch path reads agent_responsibilities;
  * the response says so in `consulted_by` (empty) and `not_consulted_notice`, and
@@ -34,7 +42,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dbUnavailableResponse, dbErrorResponse } from '@/lib/db-http'
 import { withPermission, resolveRole } from '@/lib/with-permission'
-import { loadAgentRoster } from '@/lib/agent-roster'
+import { loadFleetRoster, fleetSearchLine } from '@/app/api/agents/fleet-roster'
 import {
   AREAS,
   RESPONSIBILITY_CONSUMERS,
@@ -67,10 +75,37 @@ function sourceLine(businessId: string): string {
   return `SELECT ${COLUMNS} FROM ${TABLE} WHERE business_id = '${businessId}' — ${AREAS.length} areas declared in lib/agent-responsibilities.ts`
 }
 
-/** The roster, reduced to the facts the validators need. Never a fallback list. */
-function rosterFacts(): RosterFacts {
-  const load = loadAgentRoster()
-  return { agentIds: load.agents.map(a => a.id), source: load.path, warning: load.warning }
+/**
+ * The fleet, reduced to the facts the validators need. Never a fallback list.
+ *
+ * THE UNION, not AGENTS.md alone. This asked `loadAgentRoster()` while
+ * GET /api/agents unions three sources, so the two screens answered the same
+ * question — who exists — with different numbers (measured on this host:
+ * Roles 14, roster 28) while both used the word `fleet`. The consequence was
+ * invisible: ResponsibilitiesCard builds its accountability dropdown from
+ * `fleet.agents`, so every Brain2 vault agent and every self-registered one
+ * COULD NOT BE MADE ACCOUNTABLE for an area, and the card gave no reason.
+ *
+ * `source` is `fleetSearchLine(load)`, NOT `load.rosterPath`. That is a
+ * deliberate departure from the seam diff, which said `source: load.rosterPath`
+ * and flagged the consequence for whoever landed it. The card renders this
+ * string as "The fleet declares N agents, read from <source>" — so naming only
+ * the AGENTS.md path under a three-source count would assert that AGENTS.md
+ * declared all N. That is this channel's whole defect class (a value dressed as
+ * a fact it is not), one rung down. `fleetSearchLine` names all three legs.
+ */
+async function rosterFacts(): Promise<RosterFacts> {
+  const load = await loadFleetRoster()
+  return {
+    agentIds: load.ids,
+    source: fleetSearchLine(load),
+    // Each leg warns separately and any of them can fail on its own; surface
+    // whichever ones did rather than letting a short fleet pass silently.
+    warning:
+      [load.rosterWarning, load.vaultWarning, load.registrationWarning]
+        .filter((w): w is string => !!w)
+        .join(' · ') || null,
+  }
 }
 
 async function readBody(req: NextRequest): Promise<Record<string, unknown> | null> {
@@ -118,7 +153,7 @@ export const GET = withPermission(
       return NextResponse.json({ error: 'unknown_hub', message: `no hub with id "${businessId}"` }, { status: 404 })
     }
 
-    const fleet = rosterFacts()
+    const fleet = await rosterFacts()
 
     let rows: ResponsibilityRow[]
     try {
@@ -160,7 +195,7 @@ export const POST = withPermission(
     const body = await readBody(req)
     if (!body) return NextResponse.json({ error: 'body must be a JSON object' }, { status: 400 })
 
-    const verdict = validateAssignment(body, rosterFacts())
+    const verdict = validateAssignment(body, await rosterFacts())
     if (!verdict.ok) {
       return NextResponse.json(verdict.refusal.body, { status: verdict.refusal.status })
     }
