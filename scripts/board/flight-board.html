@@ -142,7 +142,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Wave</span><span class="v">3</span></div>
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">8.7 → 6.2 → 9.3 → 10</span></div>
-  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 6.2 (goal 8.9)</span></div>
+  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 6.6 (goal 8.9)</span></div>
   <div class="kv"><span class="k">Spent</span><span class="v mono">32.67M tok · ~$149</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
@@ -189,12 +189,12 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Data Layer &amp; Schema Management</span><span class="chip building">wave 4</span></div>
+        <div class="head"><span class="cname">Data Layer &amp; Schema Management</span><span class="chip building">wave 6</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:80%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">8.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+7.5]</b> Migration 066 restores four columns that a live validator required and the schema did not have — environment, steps_to_reproduce, expected_behavior, actual_behavior — and DELIBERATELY does not add test_status, with both halves of that reasoning in the migration comment. The evidence for the split was measured, not argued: across 3,078 production rows in the Supabase export the stored test_status disagreed with the derived value on 372 of them, 12.1 percent, with passed sitting on rows whose tester and designer were both still pending. A stored duplicate of a derived value that was already wrong one time in eight. A new no-phantom-columns guard compares every column named in live code against the LIVE schema and is proven in both directions across writes, filters, selects and query strings — and states in its own header the case it would NOT catch, which is the interface declaration where this defect lived longest.</div>
+        <div class="gap"><b>[+7.5]</b> Migration 066 restores four columns that a live validator required and the schema did not have — environment, steps_to_reproduce, expected_behavior, actual_behavior — and DELIBERATELY does not add test_status, with both halves of that reasoning in the migration comment. The evidence for the split was measured, not argued: across 3,078 production rows in the Supabase export the stored test_status disagreed with the derived value on 372 of them, 12.1 percent, with passed sitting on rows whose tester and designer were both still pending. A stored duplicate of a derived value that was already wrong one time in eight. A new no-phantom-columns guard compares every column named in live code against the LIVE schema and is proven in both directions across writes, filters, selects and query strings — and states in its own header the case it would NOT catch, which is the interface declaration where this defect lived longest. WAVE 6 KEPT THIS AT 8 RATHER THAN RAISING IT, because a dialect asymmetry sat in the seam the whole time: an equality filter on a schema-declared BOOLEAN column bound a string, which Postgres infers correctly for free and SQLite never matches. Every Postgres-run test passed. The seam's two-dialect discipline is exactly what this channel scores, and it had a hole only the host a fresh clone actually runs could see.</div>
         <div class="goal"><span class="glab">Goal</span> builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.</div>
       </div>
       <div class="card">
@@ -205,6 +205,33 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="gap"><b>[+7.0]</b> Seven guards now — invented-projects, unscoped-issues, no-secrets, silent-empty, dead-modules, cloud-provider, phantom-columns — and every one proven in both directions. Two more landed this wave: cloud-provider derives its banned set from the "Never X" bullets in HANDOFF.md so it cannot drift from the decision record, and phantom-columns compares code against the live schema. The most valuable output was a FAKE GREEN caught in the one tool a newcomer runs first: npm run doctor printed a raw Require stack dump, then said "OK — this host can run Todero" and exited 0, while health on the same checkout reported db.reachable false. It resolved the provider NAME from env without ever touching the driver; it now opens an in-memory database and round-trips a row. Held back: each new guard names a real blind spot in its own header rather than implying coverage it does not have.</div>
         <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Navigation &amp; Deep Linking</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">7.0<i>/8</i></span>
+        </div>
+        <div class="gap"><b>[+6.0]</b> An issue has a URL and the URL survives a reload — the clause that held this at 5 (the palette could not open an issue because no issue route existed) is closed. /p/&lt;slug>/i/&lt;key> renders an overlay over work/list, and a critic verified it across 3 navigations with dwells of 4s/10s/25s, history.length 2, no extra entries. TWO defects were found ONLY because someone drove a browser: the seam diff guarded ONE canonicaliser and a second fires a tick later on scope resolution, so the permalink worked exactly once and could never be reloaded; and a builder converted BoardTab.tsx:538 believing it was the board's card when it is a duplicate copy nothing renders — the real sites are KanbanCard.tsx and FeatureCard.tsx, found by measuring anchor count at ZERO while the issue was visibly on the board. Work then List went 0 to 4 anchors, Board 0 to 1, with a real href so middle-click, Cmd-click and right-click-copy are the browser's own handling. Eight scope attacks failed to leak (case variants, path traversal, project query param, all_projects); a foreign key says 'TOD-1 not found in Limiglow'. HELD BACK: closing the overlay pushes a history entry so Back re-opens the issue, and it always lands on work/list regardless of where it was opened from; goTo does not clear issueKey, so navigating with the overlay open leaves URL and screen disagreeing; an unparseable key silently rewrites the address bar with no message. And the guard that makes the permalink survive a reload has NO automated coverage — a critic mutated it, destroyed the feature in the browser, and every gate stayed byte-identical green.</div>
+        <div class="goal"><span class="glab">Goal</span> Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Commerce Operations</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">7.0<i>/8</i></span>
+        </div>
+        <div class="gap"><b>[+7.0]</b> Both writers of inventory_levels are now compare-and-swap, not one. The hardening had been applied to the PATCH handler while the ORDER FULFILMENT path — the one that ships goods — was still read-modify-write with no error check. Fixing it surfaced a defect no critic had named: the order's own fulfilment_status write was unconditional too, so two concurrent requests could both pass the transition check and both decrement stock. A DOUBLE SHIP. Measured after the guard: 10 concurrent fulfils gave 1x200 and 9x409, stock moved exactly once. The audit insert had discarded its error — a critic forced it and moved 7 units of stock with HTTP 200 and zero audit rows, ledger and stock permanently diverged; the fix was already written 25 lines away in the same directory and had not been ported. Real commerce permissions replace borrowed project ones on all 8 handlers, refused and permitted both ways, additive with no other route's authorization changed. AND THE HEADLINE MEASUREMENT WAS AN ARTIFACT: the claimed '20 successes, zero conflicts' came from backgrounded curl processes that never overlapped on Windows; with real single-process concurrency the pre-fix race lost 18 of 20, not 1. Re-measured at 20/30/50/80-way — every run exact, real refusal rates now stated rather than hidden. HELD BACK: no provider integration (needs an owner decision), no partial fulfilment with per-line quantities, an 8-attempt ceiling that refuses 55% of writes at 20-way which is honest but not usable as a bulk-sync target, and no cross-table transaction in the db seam on either dialect.</div>
+        <div class="goal"><span class="glab">Goal</span> Shopify admin — orders, catalog and inventory as first-class objects you can act on, not a dashboard that only reports what happened.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Search &amp; Findability</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">7.0<i>/8</i></span>
+        </div>
+        <div class="gap"><b>[+6.0]</b> Enter lands on the issue rather than on Work then List — the clause that held this at 5 is closed — and the palette carries verbs backed by the corrected move predicate. A critic executed all of them: 9 offered verbs PATCH 200, all 6 withheld ones genuinely refuse, no offered-but-fails and no refused-but-would-succeed. Withheld moves now show their real reason instead of vanishing. The in: modifier validates against all 16 statuses, names them on failure, and fires ZERO network requests on a bad value — the critic scored that as BEATING Slack. The before: modifier had been a shape regex that accepted 9999-99-99 and 2026-13-45, issued a live query, and rendered results under 'issues matching this filter'; calendar-impossible dates are now refused. The from: modifier was case-sensitive and unvalidated, so a capitalised name returned 'no issue matches', indistinguishable from 'that person has no issues'; now case-insensitive. HELD BACK: no autocomplete against a real directory the way Slack has, and filters live only in the palette's local state — a filtered view is not a shareable URL, which is exactly what Linear does and this does not.</div>
+        <div class="goal"><span class="glab">Goal</span> Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Portability &amp; Host Independence</span><span class="chip moving">in progress</span></div>
@@ -234,6 +261,24 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.</div>
       </div>
       <div class="card">
+        <div class="head"><span class="cname">Run Safety &amp; Enforcement</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">7.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+7.0]</b> A second layer of protection had been silently off and nothing said so. An equality filter on the blocked flag matched ZERO rows on the live SQLite host — no error, an empty result indistinguishable from 'there are none' — and that filter is ANDed into the eligible-issues query for EIGHT OF NINE agent-queue lanes, is main's entire blocked-issue triage filter, and sits in four WIP-ceiling counts. A ceiling whose count always reads 0 never fires. It hid because the is-filter parses to a real boolean while the eq-filter stays a string, so the two read as synonyms; and because Postgres infers the parameter type for free, so every Postgres-run test passed while SQLite — what a fresh clone runs — compared TEXT to INTEGER and never matched. Fixed at the seam rather than the call sites, on the SQLite flavour only, keyed off the schema-declared column type so a text column genuinely holding the word 'false' is untouched; proven red-then-green on both dialects and over real HTTP. The dispatch kill switch was never affected and both of its acceptance checks still pass. HELD BACK, and stated rather than fixed: three more boolean-meaning columns are declared INTEGER rather than BOOLEAN in the sqlite migrations, so they would reproduce this exactly the moment a query-string filter targeted one, and this fix cannot catch them because it keys off the declared type. Also the ceilings have never been observed FIRING against a real dispatch run, because dispatch is off by owner directive.</div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Learning &amp; Memory Loop</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">7.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+6.0]</b> The chain was already built — my briefing said 'nothing populates the store' and that was WRONG, the ninth wrong briefing this session; all four runtime adapters already called the exit hook and 37 tests were green. What was true is that the table held zero rows, so it had never been EXERCISED. A critic reproduced it end to end with its own vocabulary: real API transitions setting rejection_count by the app's own rule, a real spawn, a real row written on process exit, then retrieval on a task key that never existed, matching on FTS5 vocabulary alone. It also built a PGlite harness nobody had run and proved the Postgres keyword-overlap fallback is REAL, not a stub, with an explicit incomplete-scan flag so a bounded scan cannot masquerade as a complete search — it scored that as BEATING the competitor, which is SQLite-only. THE GAP IT FOUND: the exit hook never selected the issue title, so every lifecycle row carried a null title — and both engines index that field. A run finishing CLEANLY, with no rejection, wrote a row whose only searchable content was a task key the ranker deliberately strips: an unsearchable record. Fixed and pinned by a test that retrieves a clean run by title alone. A budget overflow now surfaces as 503 with its token numbers instead of an unstructured 500, with the claim reverted so an issue does not sit claimed with nothing running. HELD BACK: what was attempted, whether it succeeded, and the exit status are still null on every lifecycle row — deferred deliberately, since no real exit code is available at that call site — so a record says what was rejected, not what was tried. And the loop never closes automatically here because dispatch is off by owner directive.</div>
+        <div class="goal"><span class="glab">Goal</span> Hermes Agent — records what it tried and failed after each task, retrieves it on similar ones by FTS5, and caps in-context memory so overflow errors instead of truncating.</div>
+      </div>
+      <div class="card">
         <div class="head"><span class="cname">Approval &amp; Human-in-the-loop</span><span class="chip building">wave 4</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
@@ -252,33 +297,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Run Safety &amp; Enforcement</span><span class="chip building">wave 4</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">6.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+6.0]</b> runTouchedPaidProvider read cost_usd and never provider, while the screen printed the design rule verbatim — false against a step whose own row said anthropic. It reads provider now, and the word 'paid' left BOTH the code and the screen, because run_steps records WHICH provider and never whether it charges: calling one paid would have replaced one fabrication with another. Two more lies in the same panel are gone — a dollar total divided by steps that recorded no dollars, and a cost-bearing group vanishing from the bars while its dollars stayed in the total. Held back: nothing writes run_steps in production, so the shipped surface is still empty.</div>
-        <div class="goal"><span class="glab">Goal</span> Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Navigation &amp; Deep Linking</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">5.0<i>/8</i></span>
-        </div>
-        <div class="gap"><b>[+4.0]</b> Six destinations, path-based URLs, and renamed views resolve through LEGACY_VIEW_MAP so an old bookmark lands where it meant to rather than on the destination default. A smoothing pass then found five of six Settings views unlinkable — parseURL tested LEGACY_TAB_MAP before isDestinationId, and that branch discards the view segment — which meant the Connections card holding credential custody sat at the one URL that could not be reloaded. Fixed and verified through a reload. Held back: the palette cannot open an issue because no issue route exists.</div>
-        <div class="goal"><span class="glab">Goal</span> Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Commerce Operations</span><span class="chip building">wave 7</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">5.0<i>/8</i></span>
-        </div>
-        <div class="gap"><b>[+5.0]</b> Orders, products and inventory are objects with two real actions — inventory adjust and order fulfilment — both persisted and re-read from the database rather than from React state. Money is an integer count of minor units, and the load-bearing reason is that THE TWO HOSTS MUST AGREE: Postgres has exact NUMERIC, SQLite has none, so a NUMERIC column would be exact on Postgres and an IEEE float on the host a fresh clone gets — and every Postgres-run test would still pass. An unknown currency is refused rather than assumed to have two decimals, because assuming is a silent 100x error. Commerce fails closed harder than issues: no all-projects mode at all. Held back: no provider integration, no commerce:* permission (reads borrow projects:read), the inventory adjust is read-modify-write rather than atomic, and the card is wired but unwatched.</div>
-        <div class="goal"><span class="glab">Goal</span> Shopify admin — orders, catalog and inventory as first-class objects you can act on, not a dashboard that only reports what happened.</div>
-      </div>
-      <div class="card">
         <div class="head"><span class="cname">Secrets &amp; Credential Custody</span><span class="chip building">wave 6</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
@@ -288,15 +306,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Search &amp; Findability</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">5.0<i>/8</i></span>
-        </div>
-        <div class="gap"><b>[+4.0]</b> A command palette resolving destinations, views and issues, derived from components/nav/config.ts rather than a second hardcoded list — its round-trip test verifies a token resolves back to its own destination and view AT RUNTIME, so a renamed view cannot silently land on the destination default. The sprint-to-bolt rename is pinned by test. A foreign task_key does not leak: from a Limiglow page TOD-1 renders 'not found in Limiglow' with no trace of the other project in the DOM. No new API surface was added, on the grounds that a second issues-reading endpoint is a second place the boundary must be re-derived. Held back: Enter lands on Work then List rather than the issue, because no issue route exists, and the palette carries no verbs.</div>
-        <div class="goal"><span class="glab">Goal</span> Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list.</div>
-      </div>
-      <div class="card">
         <div class="head"><span class="cname">Agent Visualization Fidelity</span><span class="chip building">wave 6</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:30%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
@@ -304,15 +313,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="gap"><b>[+2.0]</b> The Office states '0 of 30 agents report a workspace folder — the positions on the floor below are decorative', computed from the field so the wording self-corrects if agents ever report one. That is the honest version of a surface that previously implied position meant something. Held back: GET /api/tasks 404s on every poll from two independent pollers, 30s and 60s, and the roster still lists Kemuni SME and Vespera SME — agents for projects that do not exist.</div>
         <div class="goal"><span class="glab">Goal</span> pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Learning &amp; Memory Loop</span><span class="chip building">wave 4</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">5.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+4.0]</b> The builder found the artboard was WRONG and said so rather than building to it: the single 1,300-token budget is two budgets — identity, 1300 x 6 = 7,800, always loaded, and retrieval, 1,300, per task. Both now render separately with their real constants, and drift tests fail if either constant moves. Six artboard elements could not be sourced and each renders an explicit absence naming what is missing rather than a plausible number. A critic called it the most honest surface in the app. Held back: nothing populates the store on this instance, so every panel is an honest empty.</div>
-        <div class="goal"><span class="glab">Goal</span> Hermes Agent — records what it tried and failed after each task, retrieves it on similar ones by FTS5, and caps in-context memory so overflow errors instead of truncating.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Customer Conversations</span><span class="chip building">wave 7</span></div>
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 417ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 239ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -569,7 +569,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">issues-pagination</span><span class="gcount">2/2</span></summary>
-          <div class="chk ok"><span class="cid">issues-paginated</span><span class="cdet">total=2 matches 2 rows actually returned</span></div>
+          <div class="chk ok"><span class="cid">issues-paginated</span><span class="cdet">total=1 matches 1 rows actually returned</span></div>
           <div class="chk ok"><span class="cid">issues-no-silent-truncation</span><span class="cdet">has_more=false</span></div>
         </details>
         <details class="grp ok">
@@ -590,7 +590,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         <details class="grp ok">
           <summary><span class="gname">sqlite-adapter</span><span class="gcount">3/3</span></summary>
           <div class="chk ok"><span class="cid">sqlite-adapter-registered</span><span class="cdet">adapter present, driver better-sqlite3</span></div>
-          <div class="chk ok"><span class="cid">db-provider-selectable</span><span class="cdet">selected via TODERO_DB_PROVIDER (33 refs)</span></div>
+          <div class="chk ok"><span class="cid">db-provider-selectable</span><span class="cdet">selected via TODERO_DB_PROVIDER (41 refs)</span></div>
           <div class="chk ok"><span class="cid">no-external-service-required</span><span class="cdet">no hard Supabase requirement at boot</span></div>
         </details>
         <details class="grp ok">
