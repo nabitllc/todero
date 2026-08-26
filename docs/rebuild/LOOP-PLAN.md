@@ -91,6 +91,34 @@ the environment traps below, and the instruction to report what it could NOT do
 honestly. A builder that reports a gap is worth more than one that reports
 success.
 
+## An automatic checkpointer commits everything, on a timer
+
+Discovered 2026-08-25 23:00. Something in this environment commits the whole
+working tree as `checkpoint: <timestamp>` at intervals — it is where every
+`checkpoint:` commit in this repo's history comes from, including the ones on
+`main` and `feat/tod-2328`.
+
+**This defeats "only the orchestrator commits."** Commit `30ebb3a` captured
+seven agents' mid-flight work at once, including a builder's half-written
+`lib/connections.ts` that does not compile and a temp fixture file. HEAD was
+red for reasons no round introduced.
+
+What this changes:
+
+- **A checkpoint is a safety net, never a reviewed commit.** Never cite one as
+  evidence that work landed, and never assume HEAD is gated just because it is
+  recent.
+- **The wave-boundary commit is the one that must be clean.** Gate the
+  COMBINATION, then commit with explicit paths and a message that says what was
+  verified. That commit — not the checkpoints around it — is the record.
+- **Staging discipline still matters** for what the orchestrator asserts, but it
+  cannot prevent mid-flight capture. The defence against a bad checkpoint is
+  gating before the wave commit, not staging hygiene.
+- **A red gate mid-wave is not automatically a stop-rule trigger.** Check who
+  owns the failing file first: a builder still running will have inconsistent
+  intermediate state, which is expected. Only a red that survives after all
+  builders report is a real red.
+
 ## Migration number registry — allocate BEFORE dispatching a builder
 
 Two builders picking the same prefix is a collision the acceptance harness
