@@ -45,6 +45,63 @@ function isMissingCorrelationColumn(error: DbError): boolean {
   return CORRELATION_COLUMNS.some((col) => error.message.includes(col))
 }
 
+// ── pieces9: the status vocabulary degrade ────────────────────────────────
+//
+// MEASURED, on a scratch sqlite built from the real migrations/sqlite/*.sql:
+//
+//   UPDATE token_ledger SET status='max_iterations', input_tokens=111,
+//     cost_usd=0.5, completed_at=… WHERE …
+//   → CHECK constraint failed: (status IN ('spawned','completed','failed','killed'))
+//   → row left {status:'spawned', completed_at:null, input_tokens:null, cost_usd:null}
+//
+// Control, same statement with status='completed': the row updates with
+// input_tokens=111 and cost_usd=0.5. Both dialects carry that CHECK
+// (migrations/008_token_ledger.sql:24, migrations/sqlite/000_baseline.sql:480).
+//
+// So every `openai-api` run that exhausted MAX_ITER, or died without writing a
+// `run_end` line, silently lost its tokens, its cost AND its completion — the
+// exact budget-corrupting state migrations/038_agent_budgets_and_ceilings.sql
+// documents — while the comment at lib/runtimes/openai-api.ts's finalizeRun
+// call asserted those statuses were being recorded. The comment described
+// behaviour the code did not have.
+//
+// migrations/075_token_ledger_status_vocabulary.sql widens the CHECK, which is
+// the real fix. This block is the degrade for an install where 075 has not run
+// and cannot be run from here — Supabase, whose PostgREST layer has no DDL
+// grammar at all, which is not hypothetical: migration 054 has never applied
+// on the owner's install for exactly that reason (see
+// `isMissingCorrelationColumn` above). On such an install the choice is
+// between losing the tokens/cost/completion entirely and recording them under
+// a narrower word. It records them, and writes the REAL word onto the same row
+// in `metadata.reported_status` with a note naming the migration — so the row
+// never asserts something the run did not report, and an operator can see why.
+
+/** The vocabulary the column was created with, before migrations/075 widened it. */
+const LEGACY_STATUS_VOCABULARY = new Set(['spawned', 'completed', 'failed', 'killed'])
+
+/**
+ * Nearest CHECK-legal word for a status the legacy vocabulary cannot hold.
+ *
+ * Lossy BY DEFINITION — which is precisely why every use of it also writes
+ * `metadata.reported_status`. 'failed' across the board is the conservative
+ * direction: all three of these mean "this run's own trace did not attest that
+ * it finished", and the one thing none of them may be recorded as is
+ * 'completed', which is what a budget and /api/costs/breakdown read as "this
+ * run did its job".
+ */
+const LEGACY_STATUS_FALLBACK: Record<string, 'completed' | 'failed' | 'killed'> = {
+  max_iterations: 'failed',
+  running: 'failed',
+  unknown: 'failed',
+}
+
+/** A CHECK-constraint rejection naming the `status` column, on either dialect. */
+function isStatusCheckViolation(error: DbError): boolean {
+  const code = error.code ?? ''
+  const isCheck = code === '23514' || code.startsWith('SQLITE_CONSTRAINT') || /check constraint/i.test(error.message)
+  return isCheck && /status/i.test(error.message)
+}
+
 export interface TokenLedgerEntry {
   agentId: string
   taskId?: string | null
@@ -197,7 +254,8 @@ export function finalizeRun(entry: CompletionEntry): void {
       // and PostgREST's all-or-nothing rejection meant completed_at, status,
       // input_tokens, output_tokens and cost_usd were being silently lost on
       // EVERY openai-api run, forever, with nothing anywhere saying so.
-      let { error: updateError } = await db().from('token_ledger').update(updatePayload).eq('id', row.id)
+      let payload = updatePayload
+      let { error: updateError } = await db().from('token_ledger').update(payload).eq('id', row.id)
 
       if (updateError && isMissingCorrelationColumn(updateError)) {
         // Retry the write with all four correlation columns dropped — not
@@ -217,13 +275,47 @@ export function finalizeRun(entry: CompletionEntry): void {
             : {}),
           upstream_correlation_unavailable: 'columns not migrated: run npm run db:migrate with DATABASE_URL',
         }
-        const retry = await db().from('token_ledger').update(withoutCorrelation).eq('id', row.id)
+        payload = withoutCorrelation
+        const retry = await db().from('token_ledger').update(payload).eq('id', row.id)
         updateError = retry.error
         if (updateError) {
           console.warn(
             `[token-ledger:finalizeRun] update failed even after dropping correlation columns: ${updateError.message.slice(0, 200)}`,
           )
         }
+      }
+
+      // pieces9: the status-vocabulary degrade. See LEGACY_STATUS_FALLBACK.
+      // Deliberately AFTER the correlation retry, because one install can need
+      // both, and the correlation drop is the one that must happen first (the
+      // whole update is rejected on the unknown column before the CHECK is
+      // ever evaluated).
+      if (updateError && isStatusCheckViolation(updateError) && !LEGACY_STATUS_VOCABULARY.has(entry.status)) {
+        const fallback = LEGACY_STATUS_FALLBACK[entry.status] ?? 'failed'
+        payload = {
+          ...payload,
+          status: fallback,
+          metadata: {
+            ...(typeof payload.metadata === 'object' && payload.metadata !== null
+              ? (payload.metadata as Record<string, unknown>)
+              : {}),
+            // The run's OWN word, kept verbatim on the row the narrower word
+            // is written to. Without this the degrade would be a fabrication.
+            reported_status: entry.status,
+            status_column_narrowed:
+              `token_ledger.status on this install cannot hold '${entry.status}' — ` +
+              `run migrations/075_token_ledger_status_vocabulary.sql. Recorded as ` +
+              `'${fallback}' so this run's tokens, cost and completed_at are not lost; ` +
+              `reported_status above is what the run actually reported.`,
+          },
+        }
+        const retry = await db().from('token_ledger').update(payload).eq('id', row.id)
+        updateError = retry.error
+        console.warn(
+          updateError
+            ? `[token-ledger:finalizeRun] update failed even after narrowing status '${entry.status}' to '${fallback}': ${updateError.message.slice(0, 200)}`
+            : `[token-ledger:finalizeRun] status '${entry.status}' narrowed to '${fallback}' (real value kept in metadata.reported_status) — run migrations/075_token_ledger_status_vocabulary.sql to record it properly`,
+        )
       } else if (updateError) {
         console.warn(`[token-ledger:finalizeRun] update failed: ${updateError.message.slice(0, 200)}`)
       }

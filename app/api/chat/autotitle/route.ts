@@ -61,9 +61,52 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `${LLM_BASE_URL} error: ${res.status}`, detail: errText }, { status: 502 })
     }
 
-    const data = await res.json()
-    const title = data?.choices?.[0]?.message?.content?.trim()
-    if (!title) return NextResponse.json({ error: 'No title generated' }, { status: 500 })
+    // A 200 is not evidence that this is a chat-completions endpoint. This
+    // used to be a bare `await res.json()`, so an HTML login page served 200
+    // threw a SyntaxError, fell into the catch below, and was reported as
+    // `<url> is unreachable` -- a wrong verdict about an endpoint that had
+    // just answered. Parse explicitly and name what actually arrived.
+    const raw = await res.text().catch(() => '')
+    let data: unknown
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            `${LLM_BASE_URL}/chat/completions answered ${res.status} but the body is not JSON ` +
+            `(Content-Type: ${res.headers.get('content-type') || '(none)'}) -- this is not an ` +
+            `OpenAI-compatible endpoint. Body starts: ${raw.replace(/\s+/g, ' ').trim().slice(0, 120)}`,
+          kind: 'not-openai-compatible',
+        },
+        { status: 502 },
+      )
+    }
+    const choices = (data as { choices?: unknown })?.choices
+    if (!Array.isArray(choices)) {
+      // Valid JSON, wrong API. Distinct from 'the model returned nothing',
+      // which is the branch below -- the two have different fixes.
+      return NextResponse.json(
+        {
+          error:
+            `${LLM_BASE_URL}/chat/completions answered ${res.status} with JSON that has no ` +
+            `"choices" array -- this endpoint speaks a different API.`,
+          kind: 'not-openai-compatible',
+        },
+        { status: 502 },
+      )
+    }
+    const title = (data as { choices: Array<{ message?: { content?: string } }> })
+      .choices[0]?.message?.content?.trim()
+    if (!title) {
+      return NextResponse.json(
+        {
+          error: `${model} returned an empty title -- the endpoint answered correctly, the model produced no text`,
+          kind: 'empty-completion',
+        },
+        { status: 502 },
+      )
+    }
 
     const db = createAdminClient()
     await db
@@ -73,6 +116,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ title })
   } catch (err: any) {
-    return NextResponse.json({ error: `${LLM_BASE_URL} is unreachable — ${err.message}` }, { status: 502 })
+    // Only a transport failure reaches here now -- the response-shape cases
+    // return above -- so 'unreachable' is true when it is printed.
+    return NextResponse.json(
+      { error: `${LLM_BASE_URL} is unreachable — ${err.message}`, kind: 'unreachable' },
+      { status: 502 },
+    )
   }
 }

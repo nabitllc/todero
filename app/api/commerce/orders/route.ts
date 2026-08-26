@@ -219,13 +219,13 @@ async function readLineStates(orderId: string) {
  * divergence and is always reported to the caller in words, never swallowed.
  */
 async function revertLineClaim(lineId: string, from: number, to: number): Promise<boolean> {
-  const { data } = await db()
+  const { data, error } = await db()
     .from('order_line_items')
     .update({ fulfilled_quantity: to })
     .eq('id', lineId)
     .eq('fulfilled_quantity', from)
     .select('*')
-  return ((data ?? []) as unknown[]).length > 0
+  return !error && ((data ?? []) as unknown[]).length > 0
 }
 
 interface LevelRow {
@@ -377,14 +377,14 @@ async function reconcileStatusToLines(
     created_at: now,
   })
   if (auditError) {
-    const { data: reverted } = await db()
+    const { data: reverted, error: revertError } = await db()
       .from('orders')
       .update({ fulfilment_status: order.fulfilment_status, updated_at: new Date().toISOString() })
       .eq('project', project)
       .eq('order_number', orderNumber)
       .eq('fulfilment_status', target)
       .select('*')
-    const revertLanded = ((reverted ?? []) as unknown[]).length > 0
+    const revertLanded = !revertError && ((reverted ?? []) as unknown[]).length > 0
     return NextResponse.json(
       {
         error: revertLanded ? 'audit_write_failed' : 'audit_write_failed_unreconciled',
@@ -415,13 +415,13 @@ async function reconcileStatusToLines(
 
 /** The same, for a stock level. */
 async function revertStock(levelId: string, from: number, to: number): Promise<boolean> {
-  const { data } = await db()
+  const { data, error } = await db()
     .from('inventory_levels')
     .update({ on_hand: to, updated_at: new Date().toISOString() })
     .eq('id', levelId)
     .eq('on_hand', from)
     .select('*')
-  return ((data ?? []) as unknown[]).length > 0
+  return !error && ((data ?? []) as unknown[]).length > 0
 }
 
 export const GET = withPermission(
@@ -457,10 +457,27 @@ export const GET = withPermission(
           { status: 404 },
         )
       }
-      const { data: lines } = await db()
+      // THE ERROR IS CHECKED, and this is the whole point of the read.
+      //
+      // This used to be `const { data: lines } = await ...` with no `error`
+      // destructured, and `(lines ?? [])` right after it. That coercion turned
+      // a driver failure into an EMPTY ORDER: HTTP 200, `line_items: []`, and
+      // `fulfilment: {ordered: 0, fulfilled: 0, remaining: 0}` for an order
+      // holding unshipped units. An operator reading "nothing outstanding" off
+      // a failed query is worse off than one reading an error, because the
+      // first number is actionable and wrong.
+      //
+      // It also defeated the client that was written to handle exactly this:
+      // components/tabs/CommerceTab.tsx:189-199 branches on `!res.ok` and its
+      // comment promises "never render an empty line list over a failed
+      // request". That branch was CORRECT AND UNREACHABLE — the server never
+      // gave it a non-ok status to see. A guarantee the client cannot enforce
+      // alone has to be kept on the server.
+      const { data: lines, error: linesError } = await db()
         .from('order_line_items')
         .select('*')
         .eq('order_id', data.id)
+      if (linesError) return dbQueryErrorResponse(linesError, 'order_line_items')
       const rows = (lines ?? []) as unknown as LineRow[]
 
       // `line_id` is returned because it is the only unambiguous way to address
@@ -590,6 +607,7 @@ export const POST = withPermission(
     }
 
     const created = ((data ?? []) as unknown as OrderRow[])[0]
+    let linesStored = 0
     if (created) {
       // Lines are written after the order they belong to, and only if it
       // actually landed — an order row with no lines is a total nobody can
@@ -603,8 +621,20 @@ export const POST = withPermission(
       // to create. Ingest now derives its status from the quantities (or
       // writes the quantities from the `fulfilled` shorthand), and this loop
       // only records what that decided.
+      //
+      // EACH INSERT'S ERROR IS CHECKED, and `landed` counts what the database
+      // accepted rather than what the request asked for. Before this, the loop
+      // discarded every result and the 201 below reported
+      // `line_items: order.value.line_items.length` — a count read off the
+      // REQUEST. A failing line insert therefore produced `201 {line_items: 3}`
+      // for an order that had stored one line, or none: the order's total says
+      // one thing, its lines say another, and the ingesting system has a
+      // written receipt saying all three arrived. That is silent data loss with
+      // a confirmation attached, and it made the comment above — "only if it
+      // actually landed" — an assertion this code did not keep.
+      let landed = 0
       for (const line of order.value.line_items) {
-        await db().from('order_line_items').insert({
+        const { error: lineError } = await db().from('order_line_items').insert({
           order_id: created.id,
           sku: line.sku,
           title: line.title,
@@ -613,14 +643,68 @@ export const POST = withPermission(
           unit_price_minor: line.unit_price_minor,
           currency: line.currency,
         })
+        if (lineError) {
+          // The order row is already committed and there is no transaction
+          // spanning it, so this cannot be undone into a clean "nothing
+          // happened". Say exactly what exists, so the half-order is
+          // reconcilable instead of merely wrong. 500, never 201: the caller
+          // must not record this ingest as complete.
+          return NextResponse.json(
+            {
+              error: 'order_lines_write_failed',
+              message:
+                `${order.value.order_number} was created but its lines were NOT fully stored: ` +
+                `line ${landed + 1} of ${order.value.line_items.length} ("${line.sku}") failed to ` +
+                `write (${lineError.message}). ${landed} line${landed === 1 ? '' : 's'} landed. ` +
+                `The order's total (${formatMinor(order.value.total_minor, order.value.currency)} ` +
+                `${order.value.currency}) does not match its stored lines. Delete the order and ` +
+                `re-ingest it, or add the missing lines, before shipping anything against it.`,
+              order_number: order.value.order_number,
+              lines_expected: order.value.line_items.length,
+              lines_stored: landed,
+            },
+            { status: 500 },
+          )
+        }
+        landed += 1
       }
+      linesStored = landed
+    }
+
+    // A 201 with `order: null` is not a created order.
+    //
+    // `created` is falsy when the insert reported NO error and returned NO row
+    // — a real driver outcome (a suppressed RETURNING, a row filtered by a
+    // policy). The `if (created)` block above is then skipped entirely, so not
+    // one line is written either; the old code still answered
+    // `201 {order: null, line_items: <length of the request>}`. An importer
+    // reading that records the order as ingested and never sends it again.
+    //
+    // Found by mutating the line count back to the request's length and
+    // noticing the mutation SURVIVED — the count is unobservable on every path
+    // that reaches this line except this one, which is precisely the path that
+    // should never have reached it.
+    if (!created) {
+      return NextResponse.json(
+        {
+          error: 'order_write_unconfirmed',
+          message:
+            `${order.value.order_number} could not be confirmed: the insert reported no error but ` +
+            `returned no row, so nothing here can say whether the order exists. No line items were ` +
+            `written. Re-read the order before retrying — a retry will be refused as a duplicate if ` +
+            `it did land.`,
+          order_number: order.value.order_number,
+        },
+        { status: 500 },
+      )
     }
 
     return NextResponse.json(
       {
         project,
-        order: created ? present(created) : null,
-        line_items: order.value.line_items.length,
+        order: present(created),
+        // What the DATABASE took, not what the request offered.
+        line_items: linesStored,
       },
       { status: 201 },
     )
@@ -778,14 +862,14 @@ export const PATCH = withPermission(
         created_at: now,
       })
       if (auditError) {
-        const { data: reverted } = await db()
+        const { data: reverted, error: revertError } = await db()
           .from('orders')
           .update({ fulfilment_status: order.fulfilment_status, updated_at: new Date().toISOString() })
           .eq('project', project)
           .eq('order_number', orderNumber)
           .eq('fulfilment_status', move.value)
           .select('*')
-        if (((reverted ?? []) as unknown[]).length > 0) {
+        if (!revertError && ((reverted ?? []) as unknown[]).length > 0) {
           return NextResponse.json(
             {
               error: 'audit_write_failed',
@@ -1303,14 +1387,14 @@ export const PATCH = withPermission(
         // record of the order's own status change. Put the status back and say
         // exactly what state the order is in, rather than leaving an unaudited
         // status change standing.
-        const { data: reverted } = await db()
+        const { data: reverted, error: revertError } = await db()
           .from('orders')
           .update({ fulfilment_status: freshOrder.fulfilment_status, updated_at: new Date().toISOString() })
           .eq('project', project)
           .eq('order_number', orderNumber)
           .eq('fulfilment_status', target)
           .select('*')
-        const revertLanded = ((reverted ?? []) as unknown[]).length > 0
+        const revertLanded = !revertError && ((reverted ?? []) as unknown[]).length > 0
         return NextResponse.json(
           {
             error: revertLanded ? 'audit_write_failed' : 'audit_write_failed_unreconciled',

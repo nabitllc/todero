@@ -16,8 +16,19 @@ import {
 // grep. See that file's header for why.
 import {
   BOARD_TASKS_QUERY, WAITING_QUERY, BOARD_TASK_POLL_MS, WAITING_POLL_MS,
-  boardTaskPollOutcome, waitingPollOutcome, partitionWaiting, unroutedWaitingMessage,
+  boardTaskPollOutcome, waitingPollOutcome,
 } from './officePolling';
+// …and every line that APPLIES one of those decisions to a ref, a banner or
+// the feed lives in officeWiring.ts, for the same reason and after the same
+// lesson: seven of a critic's nine surviving mutants were inside the effect
+// bodies below, where a `readFileSync` grep was the only thing watching. See
+// that file's header for the list.
+import {
+  applyBoardTaskOutcome, applyWaitingOutcome, applyRosterOutcome,
+  drawOptionsFromRefs, emptyLiveness, bubbleHit, inboxHrefFromPath,
+  type OfficeDrawRefs,
+} from './officeWiring';
+import { livenessHonestyLine, type RosterLiveness } from './officeLiveness';
 
 import { fetchAgentRuns } from '../../hooks/useAgentStatus';
 import ApiErrorBanner from '../ApiErrorBanner';
@@ -122,6 +133,34 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   // The last unrouted-waiting sentence pushed to the feed, so a 60s poll that
   // keeps finding the same off-roster agent says it once, not once a minute.
   const lastUnroutedMsgRef = useRef<string|null>(null);
+  // Heartbeat liveness for the whole floor, from the SAME /api/agents answer
+  // the roster poll already reads. Starts as an unread store — `observed:false`
+  // — so before the first answer every agent paints as `unknown` ("we did not
+  // look"), never as `never` ("nobody has ever checked in").
+  const livenessRef    = useRef<RosterLiveness>(emptyLiveness());
+  // The last honesty sentence pushed to the feed, so a 60s roster poll that
+  // keeps finding the same picture says it once, not once a minute.
+  const lastLivenessMsgRef = useRef<string|null>(null);
+  // selectedId as a REF, not as a closure variable. The simulation effect that
+  // draws every frame declares `[addFeed,addToast]`, and components/
+  // AgentOffice.tsx defines both with `useCallback(…, [])` — so that effect
+  // runs once, at mount, and a prop read inside it is frozen at its mount
+  // value. `selectedId`'s mount value is `useState<string|null>(null)`'s
+  // `null`, which meant clicking an agent updated the parent's state and
+  // highlighted NOTHING on the canvas, permanently. This ref is synced by its
+  // own effect below, exactly as the nine other props read from that loop
+  // already are.
+  const selectedIdRef  = useRef<string|null>(null);
+
+  // The refs the per-frame draw reads, bundled once and by NAME. This object is
+  // recreated on every render, which is harmless and deliberate: it holds the
+  // same ref identities every time, so the copy the mount-time simulation
+  // effect captured keeps seeing live values. Getting a member wrong is mostly
+  // a `tsc` error, because the ref value types differ (`Record<string,string>`
+  // vs `Record<string,number>` vs `number` vs `string|null`).
+  const drawRefs: OfficeDrawRefs = {
+    boardTasksRef, subagentCountRef, liveRunsRef, waitingRef, livenessRef, selectedIdRef,
+  };
   const zoomTargetRef  = useRef<{x:number,y:number,z:number}|null>(null);
   const soundRef       = useRef(true);
   const audioRef       = useRef<any>(null);
@@ -144,6 +183,7 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   useEffect(()=>{simSpeedRef.current=simSpeed;},[simSpeed]);
   useEffect(()=>{pausedRef.current=paused;},[paused]);
   useEffect(()=>{soundRef.current=soundOn;},[soundOn]);
+  useEffect(()=>{selectedIdRef.current=selectedId;},[selectedId]);
 
   // ── Initial audio setup ────────────────────────────────────────────────────
   useEffect(()=>{const i=()=>{if(!audioRef.current){audioRef.current=createAudio();if(audioRef.current?.master)audioRef.current.master.gain.value=volume/100*0.15;}};window.addEventListener("click",i,{once:true});return()=>window.removeEventListener("click",i);},[volume]);
@@ -163,15 +203,24 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       if(cancelled) return;
       if(!r.ok){ setPollError('roster', r.error); return; }
       setPollError('roster', null);
-      const data:any=r.data;
-      const rows:any[] = Array.isArray(data) ? data : (data && Array.isArray(data.agents) ? data.agents : []);
-      rosterRef.current=rows;
-      setRosterState(rows.length>0?'ready':'empty');
+      // ONE parse of ONE body feeds BOTH the floor and the heartbeat pips.
+      // /api/agents publishes per-row `lastSeenAt`/`lastSeenSource` and an
+      // envelope `livenessSource`, and this surface used to throw all of it
+      // away while CrewTab, FleetRegisterCard and useAgentRoster read it from
+      // the identical response — which is how one host came to render two
+      // contradictory answers to "is this agent alive".
+      const applied=applyRosterOutcome(r.data, rosterRef, livenessRef);
+      setRosterState(applied.state);
+      // Said out loud, and computed from the real counts so the wording
+      // self-corrects the moment the store starts answering.
+      const lmsg=livenessHonestyLine(applied.liveness);
+      if(lmsg!==lastLivenessMsgRef.current){ addFeed(lmsg,'#8E8E9E'); }
+      lastLivenessMsgRef.current=lmsg;
     };
     fetchRoster();
     const t=setInterval(fetchRoster,60000);
     return()=>{cancelled=true;clearInterval(t);};
-  },[]);
+  },[addFeed]);
 
   // ── Board task polling ─────────────────────────────────────────────────────
   // TOD (agent-visualization-fidelity): this used to call '/api/tasks', and
@@ -212,11 +261,10 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
     const fetchTasks=async()=>{
       try{
         const r=await fetchJson<{ data: any[] }>(BOARD_TASKS_QUERY);
-        const out=boardTaskPollOutcome(r);
-        setPollError('tasks', out.error);
-        // `tasks === null` means "unreadable answer" — keep the last known
-        // board rather than emptying every desk. The banner already says so.
-        if(out.tasks) boardTasksRef.current=out.tasks;
+        // Both halves — the banner AND the map — from one call, so deleting
+        // the banner is no longer deleting a line that sits next to another
+        // line. See officeWiring.applyBoardTaskOutcome.
+        applyBoardTaskOutcome(boardTaskPollOutcome(r), boardTasksRef, setPollError);
       }catch(e){}
     };
     fetchTasks();
@@ -255,20 +303,15 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       // same way lib/approvals.ts:approvalTarget() does (`row.agent`, then
       // `context.agent_id`), so a bubble lands on the agent a decision would
       // actually unblock.
-      const out=waitingPollOutcome(r);
-      setPollError('waiting', out.error);
-      // A pending row naming an agent that is not on this floor cannot be
-      // drawn over a head. It used to be silently dropped by the
-      // `waiting[ag.id]||0` lookup; now the canvas says so out loud instead
-      // of swallowing a real human decision. (Measured live 2026-08-26:
-      // /api/inbox named `lane7-critic-agent`, which is not one of the 28 ids
-      // /api/agents returns.)
-      const roster=(simRef.current?.agents??[]).map((a:any)=>a.id);
-      const split=partitionWaiting(out.waiting, roster);
-      waitingRef.current=split.drawable;
-      const msg=unroutedWaitingMessage(split.unroutedIds, split.unroutedRows);
-      if(msg && msg!==lastUnroutedMsgRef.current){ addFeed(msg,'#E879F9'); }
-      lastUnroutedMsgRef.current=msg;
+      // The banner, the bubbles, the off-roster split and the feed line all
+      // happen in ONE call, against the floor's real ids. A critic's surviving
+      // mutant passed `[]` as the roster here, classifying every waiting agent
+      // as off-roster and killing every bubble; that mutation now fails an
+      // executing test. See officeWiring.applyWaitingOutcome.
+      applyWaitingOutcome(
+        waitingPollOutcome(r), simRef.current, waitingRef, lastUnroutedMsgRef,
+        setPollError, addFeed,
+      );
     };
     fetchWaiting();
     const t=setInterval(fetchWaiting,WAITING_POLL_MS);
@@ -681,18 +724,19 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         ctx.restore();
       }
       drawParticles(ctx,particles,cam);
-      // The per-agent fan-out — including `waiting[ag.id] -> bubble` — lives in
-      // officeDrawing.drawAgents so a test can execute it against a recording
-      // canvas. This line is the one remaining seam no test reaches; it is a
-      // single named argument rather than a whole feature. See
-      // __tests__/office-bubble-render.test.ts.
-      drawAgents(ctx,drawAgentsArr,{
-        T:T2,now,cam,selectedId,darkAlpha,
-        boardTasks:boardTasksRef.current,
-        subagentCount:subagentCountRef.current,
-        runs:liveRunsRef.current,
-        waiting:waitingRef.current,
-      });
+      // The per-agent fan-out — including `waiting[ag.id] -> bubble` and
+      // `liveness[ag.id] -> heartbeat pip` — lives in officeDrawing.drawAgents,
+      // and the options object is BUILT by officeWiring.drawOptionsFromRefs.
+      //
+      // Why the indirection, since it reads like ceremony: an earlier revision
+      // wrote the six properties out here as values, and a critic replaced four
+      // of them with junk (`boardTasks:{}`, `runs:{}`, `subagentCount:99`,
+      // `selectedId:null`) with all 77 lane tests green, because nothing in
+      // this repo can mount a .tsx. There is no longer a call site with values
+      // in it — only named refs, whose types differ from one another, so most
+      // ways of getting this wrong are a `tsc` error and the rest fail
+      // __tests__/office-wiring.test.ts.
+      drawAgents(ctx,drawAgentsArr,drawOptionsFromRefs(drawRefs,{T:T2,now,cam,darkAlpha}));
 
       // MC-45: Draw temporary subagent sprites near the orchestrator
       const orchAg = drawAgentsArr.find((a:any) => a.isOrchestrator)
@@ -828,6 +872,12 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
       let best:any=null,bestD=T2*0.7;
       simRef.current?.agents?.forEach((ag:any)=>{const d=Math.hypot(ag.px-wx,ag.py-wy);if(d<bestD){bestD=d;best=ag;}});
       hoverAgentRef.current=best?{...best,screenX:p.x,screenY:p.y}:null;
+      // An invisible door is not actionability. The cursor is the only
+      // affordance a canvas has, so it changes over a bubble and nowhere else.
+      const wRef=waitingRef.current;
+      const overBubble=(simRef.current?.agents??[]).some(
+        (ag:any)=>bubbleHit({x:wx,y:wy},ag,wRef[ag.id]||0,T2));
+      canvas!.style.cursor=overBubble?"pointer":"grab";
     }
     function onUp(e:MouseEvent){
       const cam=camRef.current;
@@ -835,6 +885,25 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         const p=c2w(e),dd=Math.abs(p.x-cam.ds.x)+Math.abs(p.y-cam.ds.y);
         if(dd<6&&simRef.current?.agents){
           const wx=(p.x-cam.x)/cam.z,wy=(p.y-cam.y)/cam.z,T=tileRef.current;
+          // ── The bubble is a door, not a sticker ────────────────────────────
+          // The benchmark's "waiting on you" bubble is a live prompt you can
+          // answer; ours was read-only. A surface whose whole claim is "a
+          // HUMAN has to answer before this agent moves again", that then
+          // offers no way to answer, is describing a door it will not open.
+          //
+          // Checked BEFORE the selection hit-test, because the bubble sits
+          // above the head and a click there means the request, not the
+          // figure. `bubbleHit` returns false for any agent with no pending
+          // rows, so there is no hidden hot-spot over an agent that is not
+          // waiting — that would be the same fabrication in another medium.
+          const waitingNow=waitingRef.current;
+          const bubbleAg=simRef.current.agents.find(
+            (ag:any)=>bubbleHit({x:wx,y:wy},ag,waitingNow[ag.id]||0,T));
+          if(bubbleAg){
+            cam.drag=false;canvas!.style.cursor="grab";
+            window.location.assign(inboxHrefFromPath(window.location.pathname));
+            return;
+          }
           let best:any=null,bestD=T*0.7;
           simRef.current.agents.forEach((ag:any)=>{const d=Math.hypot(ag.px-wx,ag.py-wy);if(d<bestD){bestD=d;best=ag;}});
           if(best){

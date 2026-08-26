@@ -1,8 +1,7 @@
 // lib/agent-budget.ts — TOD-2381 (agent-budget-stop)
 //
-// Ceilings on a Todero-dispatched agent run, enforced by the SUPERVISOR — this
-// module and its two call sites (POST /api/run-agent, PATCH /api/heartbeat) —
-// never by the agent itself. See Mich-Brain2/Playbooks/Loop_Engineering.md:
+// Ceilings on a Todero-dispatched agent run, enforced by the SUPERVISOR, never
+// by the agent itself. See Mich-Brain2/Playbooks/Loop_Engineering.md:
 // "Both guards were instructions the loop was free to reason past; neither was
 // enforced by anything outside it. Treat a prompt-level stop condition as
 // documentation of intent, never as a control."
@@ -14,24 +13,71 @@
 // deliberate, per the piece brief:
 //   1. concurrency  — a hard cap on simultaneous runs, per agent and overall
 //   2. wall clock   — a maximum run duration, checked on every heartbeat
-//   3. no-progress  — halts BEFORE any other ceiling when state stops moving
+//   3. no-progress  — the cheap early signal, when state stops moving
 //   4. run count    — bounds a self-retriggering loop directly
+//
+// That list is an ORDER OF IMPORTANCE, not the order of the `if`s, and it used
+// to say no-progress "halts BEFORE any other ceiling", which is not true of the
+// code and is not what was meant. What is true: 1 and 4 are evaluated
+// before a run starts (evaluateCeilings) while 2 and 3 apply to a run already
+// in flight (evaluateRunCeilings), so they are never in the same comparison at
+// all; and within the in-flight pair the wall clock is tested first, because a
+// run past its hard time limit should stop for the plain reason rather than
+// for a derived one. No-progress still fires FIRST IN TIME on a real stall —
+// N observations plus DEFAULT_NO_PROGRESS_MIN_MS is minutes, the wall clock is
+// an hour — which is the property the ordering was arguing for. Reorder the
+// `if`s only with a reason; do not reorder them to match this list.
 //   5. dollar spend — built and wired to the real ledger, but dormant until a
 //                     run is routed to a paid provider (nullable limit_usd)
 //
 // Every check here is read-only against the agent_runs / token_ledger tables
 // the dispatch path already writes — never an estimate, never a hardcoded
 // number pretending to be telemetry.
+//
+// ── WHERE THESE ACTUALLY RUN, as of pieces9/run-safety-ceilings ─────────────
+// This header used to say "its two call sites (POST /api/run-agent, PATCH
+// /api/heartbeat)". That was a claim about reachability, and half of it was
+// false in the configuration this repo ships. The honest list:
+//
+//   checkDispatchCeilings  <- POST /api/run-agent:440. UNREACHABLE while
+//        TODERO_DISPATCH_ENABLED is off: that route answers 503
+//        DISPATCH_DISABLED at :384, sixty lines earlier (measured today,
+//        `POST /api/run-agent {"agent_id":"builder"}` -> HTTP 503). So
+//        concurrency_per_agent, concurrency_total, run_count_period,
+//        dollar_budget, schema_unavailable and read_error have never refused
+//        a real dispatch on this host. They EVALUATE correctly against real
+//        rows — that is proven — they just have nothing to refuse yet.
+//   checkInFlightCeilings  <- PATCH /api/heartbeat:97. Real, and wall_clock
+//        and no_progress have both been observed firing through it. But it
+//        only runs inside a request THE AGENT CHOSE TO MAKE, which means the
+//        one failure mode lib/dispatch-guard.ts names by name — a detached
+//        watcher that stops beating — was structurally exempt from it.
+//   sweepInFlightCeilings  <- POST /api/heartbeat/sweep, and (seam, see
+//        lib/__tests__/agent-budget-sweep-seam.test.ts) /api/cron/watchdog.
+//        Same evaluation, on a supervisor timer, for every running row in
+//        the window whether or not a beat arrived. This is the trigger that
+//        makes "enforced by the supervisor" true of a silent agent too.
+//
+// Keep this list honest. A comment asserting a call site that cannot execute
+// is the same defect class as a ceiling that cannot fire.
 
 import { db, DB_ERROR, type DbError } from '@/lib/db'
 
 // Same test as lib/db-http.ts's isMissingTableError, duplicated rather than
 // imported: that file also exports Next route helpers built on `NextResponse`,
 // which pulls in `next/server` — fine inside a route, but it means anything
-// importing db-http.ts cannot be loaded from a plain Node script (CLI tooling,
-// the demo in scripts/ that proves this piece's ceilings fire against the real
-// database). This module has no other reason to depend on the Next runtime, so
-// it keeps its own five-line copy instead.
+// importing db-http.ts cannot be loaded outside the Next runtime. That is not
+// hypothetical: lib/__tests__/agent-budget-ceilings.test.ts drives this module
+// directly under Jest's `node` test environment against a real file-backed
+// SQLite built from migrations/sqlite/*.sql, with no Next server involved.
+//
+// The previous version of this comment justified the duplication by pointing
+// at "the demo in scripts/ that proves this piece's ceilings fire against the
+// real database". NO SUCH SCRIPT EXISTS OR EVER EXISTED — checked today with
+// `ls scripts/`, `grep -rn ceiling scripts/`, and `git log --all --name-only
+// -- scripts/`. A comment that cites imaginary evidence for a real decision is
+// a defect even when the decision is right. The decision is right; the reason
+// above is one you can run.
 function isMissingTableError(error: DbError | null | undefined): boolean {
   if (!error) return false
   if (error.code === DB_ERROR.UNDEFINED_TABLE) return true
@@ -160,13 +206,81 @@ async function lastHeartbeatMs(agentId: string): Promise<number | null> {
 // the table itself has not been migrated (same degrade-with-a-name pattern as
 // lib/agent-heartbeats.ts, never a silent "no ceiling"). Overridable per host
 // via env for operators who need different numbers before they touch the DB. ──
-export const DEFAULT_MAX_CONCURRENT_PER_AGENT = Number(process.env.TODERO_MAX_CONCURRENT_PER_AGENT ?? 1)
-export const DEFAULT_MAX_CONCURRENT_TOTAL = Number(process.env.TODERO_MAX_CONCURRENT_TOTAL ?? 4)
+//
+// Every one of these used to be a bare `Number(process.env.X ?? default)`, and
+// that is a way to disarm a ceiling by TYPO, with no code change and nothing
+// said. Measured on this host before this helper existed:
+//   TODERO_MAX_RUN_MS=1h            -> Number('1h') is NaN, and the wall-clock
+//                                      test `ageMs > NaN` is false for every
+//                                      ageMs, forever. Ceiling gone.
+//   TODERO_NO_PROGRESS_HEARTBEATS=three -> `count >= NaN` is false, forever.
+// The budget panel then renders the NaN as JSON `null`, so the UI shows "no
+// limit" and calls it configuration. A ceiling that a plausible .env typo
+// silently removes is not a ceiling. The DB-backed lever has an accidental
+// backstop for the same class of mistake (SQLite's NOT NULL rejects a NaN
+// write with HTTP 500) — the env path had none.
+//
+// So: parse strictly. Anything that is not a finite number > 0 is REFUSED,
+// the built-in default is used instead, and the refusal is recorded in
+// {@link ceilingConfigProblems} so a caller can show it rather than pretend
+// the operator's value took effect. Refusing to a working ceiling is the
+// fail-closed direction; NaN was the fail-open one.
+const ceilingConfigProblemList: string[] = []
+
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (raw === undefined || raw === null || raw === '') return fallback
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const problem =
+      `${name}=${JSON.stringify(raw)} is not a positive number — ignoring it and using the built-in ` +
+      `default ${fallback}. Left as-is this would have disarmed the ceiling it configures (every ` +
+      `comparison against NaN is false), silently.`
+    ceilingConfigProblemList.push(problem)
+    console.warn(`[agent-budget] ${problem}`)
+    return fallback
+  }
+  return parsed
+}
+
+/**
+ * Ceiling env vars this process refused to honour, in the operator's own
+ * words. Empty on a correctly configured host. Exported so a status endpoint
+ * or panel can SAY the value was rejected instead of showing a null that
+ * reads like "no limit configured".
+ */
+export function ceilingConfigProblems(): string[] {
+  return [...ceilingConfigProblemList]
+}
+
+export const DEFAULT_MAX_CONCURRENT_PER_AGENT = positiveIntFromEnv('TODERO_MAX_CONCURRENT_PER_AGENT', 1)
+export const DEFAULT_MAX_CONCURRENT_TOTAL = positiveIntFromEnv('TODERO_MAX_CONCURRENT_TOTAL', 4)
 /** Wall-clock ceiling, ms. Default 60 minutes — checked on every heartbeat, not by the agent. */
-export const DEFAULT_MAX_RUN_MS = Number(process.env.TODERO_MAX_RUN_MS ?? 60 * 60 * 1000)
+export const DEFAULT_MAX_RUN_MS = positiveIntFromEnv('TODERO_MAX_RUN_MS', 60 * 60 * 1000)
 /** Consecutive heartbeats with an unchanged issue state before a no-progress halt fires. */
-export const DEFAULT_NO_PROGRESS_HEARTBEATS = Number(process.env.TODERO_NO_PROGRESS_HEARTBEATS ?? 3)
-export const DEFAULT_MAX_RUNS_PER_PERIOD = Number(process.env.TODERO_MAX_RUNS_PER_PERIOD ?? 20)
+export const DEFAULT_NO_PROGRESS_HEARTBEATS = positiveIntFromEnv('TODERO_NO_PROGRESS_HEARTBEATS', 3)
+/**
+ * Floor on how long a run must ACTUALLY have been stalled before the
+ * no-progress halt fires, independent of how many observations landed.
+ *
+ * Measured before this existed: four heartbeats arriving inside 218 ms
+ * stopped a run for "3 consecutive heartbeats with no change". The counter
+ * counts REQUESTS, so a chatty agent was killed in a quarter of a second
+ * while a silent one — the detached watcher this whole module exists to
+ * bound — was never killed at all, because it never made the request that
+ * did the counting. The count alone was measuring talkativeness, not stall.
+ *
+ * Both halves are now fixed: this floor removes the false positive, and
+ * {@link sweepInFlightCeilings} removes the false negative by making the
+ * observations arrive on a supervisor timer instead of on the agent's own
+ * traffic. Set to 0 to restore the pure count-based behaviour.
+ */
+export const DEFAULT_NO_PROGRESS_MIN_MS = (() => {
+  const raw = process.env.TODERO_NO_PROGRESS_MIN_MS
+  if (raw === '0') return 0
+  return positiveIntFromEnv('TODERO_NO_PROGRESS_MIN_MS', 10 * 60 * 1000)
+})()
+export const DEFAULT_MAX_RUNS_PER_PERIOD = positiveIntFromEnv('TODERO_MAX_RUNS_PER_PERIOD', 20)
 /** Window a "run count per period" ceiling counts over. */
 export const RUN_PERIOD_MS = 24 * 60 * 60 * 1000
 /**
@@ -175,7 +289,7 @@ export const RUN_PERIOD_MS = 24 * 60 * 60 * 1000
  * ceiling — so this is a dead-row filter, not a second wall clock. See the
  * comment at its one call site (checkDispatchCeilings) for why it exists.
  */
-export const STALE_RUN_CUTOFF_MS = Number(process.env.TODERO_STALE_RUN_CUTOFF_MS ?? 6 * 60 * 60 * 1000)
+export const STALE_RUN_CUTOFF_MS = positiveIntFromEnv('TODERO_STALE_RUN_CUTOFF_MS', 6 * 60 * 60 * 1000)
 
 export interface AgentBudget {
   agentId: string
@@ -511,62 +625,241 @@ export async function checkInFlightCeilings(
     .gte('started_at', staleCutoff)
     .order('started_at', { ascending: false })
     .limit(1)
-    .maybeSingle<{
-      id: string; agent_id: string; started_at: string; pid: number | null
-      stall_count: number; last_progress_hash: string | null
-    }>()
+    .maybeSingle<InFlightRun>()
   if (error || !run) return { allowed: true }
 
+  return evaluateRunCeilings(agentId, run, issue, { requireRecentHeartbeat: true })
+}
+
+/** One `status='running'` row, in the shape both in-flight callers read it. */
+interface InFlightRun {
+  id: string
+  agent_id: string
+  started_at: string
+  pid: number | null
+  stall_count: number
+  last_progress_hash: string | null
+  last_progress_at?: string | null
+}
+
+interface InFlightOptions {
+  /**
+   * When true (the heartbeat path), a wall-clock stop additionally requires a
+   * heartbeat observed inside STALE_RUN_CUTOFF_MS. See the long note at the
+   * wall-clock branch for why the two callers differ here — it is the whole
+   * reason a detached watcher used to be exempt from every ceiling.
+   */
+  requireRecentHeartbeat: boolean
+  /** Where the observation came from, for the inbox reason line. */
+  source?: 'heartbeat' | 'sweep'
+}
+
+/**
+ * The in-flight ceilings — wall clock, then no-progress — applied to ONE run
+ * row against ONE issue's mutable state. Shared verbatim by the two triggers
+ * so they can never drift into enforcing different rules:
+ *   - {@link checkInFlightCeilings}, driven by the agent's own heartbeat
+ *   - {@link sweepInFlightCeilings}, driven by a supervisor timer
+ */
+async function evaluateRunCeilings(
+  agentId: string,
+  run: InFlightRun,
+  issue: { id: string; task_key: string | null; updated_at: string },
+  opts: InFlightOptions,
+): Promise<CeilingResult & { runId?: string }> {
   const budget = await getAgentBudget(agentId)
+  const source = opts.source ?? 'heartbeat'
 
   // ── 1. Wall clock — a run older than the ceiling is stopped outright, no
   // matter what it is doing. Enforced by the supervisor reading started_at,
-  // not by anything the agent reports about itself. The started_at cutoff
-  // above only screens out rows that are unambiguously dead (no beat in 6h);
-  // it does not by itself prove THIS agent is still alive right now, so the
-  // stop additionally requires a heartbeat observed inside that same 6h
-  // window. A row with started_at inside the cutoff but no beat at all is
-  // still stale, not running, and must not block its issue either. ──
+  // not by anything the agent reports about itself.
+  //
+  // The heartbeat trigger additionally requires a recent beat before it will
+  // stop, because there the started_at cutoff alone does not prove the agent
+  // is alive: an ordinary beat for an issue carrying a zombie run row used to
+  // compute ageMs from a started_at months old and block a live issue off a
+  // dead process (measured doing exactly that to TOD-614). Note this makes
+  // the guard nearly vacuous on that path — the route records the beat BEFORE
+  // calling in, so `lastHeartbeatMs(owner)` is by construction seconds old.
+  //
+  // The SWEEP trigger deliberately does not require it, and that difference
+  // is the point of this piece. A run past its wall clock with NO beat is not
+  // an ambiguous row — it is precisely the detached, self-respawning watcher
+  // lib/dispatch-guard.ts's comment names, and "no beat" was the exact
+  // property that made it immune. The 6h started_at cutoff still bounds what
+  // the sweep will touch, and the beat age is recorded in the stop detail so
+  // the inbox row says which case it was rather than leaving it to be
+  // inferred. ──
   const ageMs = Date.now() - new Date(run.started_at).getTime()
   if (ageMs > budget.maxRunMs) {
     const lastBeatMs = await lastHeartbeatMs(agentId)
-    const heartbeatRecent = lastBeatMs !== null && (Date.now() - lastBeatMs) < STALE_RUN_CUTOFF_MS
-    if (!heartbeatRecent) {
+    const beatAgeMs = lastBeatMs === null ? null : Date.now() - lastBeatMs
+    const heartbeatRecent = beatAgeMs !== null && beatAgeMs < STALE_RUN_CUTOFF_MS
+    if (opts.requireRecentHeartbeat && !heartbeatRecent) {
       return { allowed: true, runId: run.id }
     }
+    const beatPhrase = beatAgeMs === null
+      ? ' and has never sent a heartbeat'
+      : heartbeatRecent
+        ? ''
+        : ` and has not sent a heartbeat in ${Math.round(beatAgeMs / 60000)} min`
     await stopRun(run.id, agentId, issue, run.pid, 'wall_clock',
-      `run exceeded ${Math.round(budget.maxRunMs / 60000)} min wall clock (${Math.round(ageMs / 60000)} min elapsed)`,
-      { ageMs, limitMs: budget.maxRunMs })
+      `run exceeded ${Math.round(budget.maxRunMs / 60000)} min wall clock (${Math.round(ageMs / 60000)} min elapsed)${beatPhrase}`,
+      { ageMs, limitMs: budget.maxRunMs, beatAgeMs, heartbeatRecent, source })
     return { allowed: false, ceiling: 'wall_clock', runId: run.id }
   }
 
   // ── 2. No-progress — fires BEFORE the dollar/run-count ceilings would ever
   // trip, per Loop_Engineering: "the cheap signal that catches a dead end
-  // early". `issue.updated_at` unchanged across N heartbeats means nothing
-  // about the task moved between beats. ──
+  // early". `issue.updated_at` unchanged across N observations means nothing
+  // about the task moved between them.
+  //
+  // Two conditions, not one: N consecutive stalled observations AND at least
+  // DEFAULT_NO_PROGRESS_MIN_MS of real elapsed stall. The count alone was
+  // measuring how CHATTY an agent is — four beats inside 218 ms tripped a
+  // "3 consecutive heartbeats" halt, measured. See that constant's comment. ──
   const hash = issue.updated_at
   const stalled = run.last_progress_hash === hash
   const nextStallCount = stalled ? (run.stall_count ?? 0) + 1 : 0
+  const now = new Date().toISOString()
 
-  if (stalled && nextStallCount >= budget.noProgressHeartbeats) {
-    await stopRun(run.id, agentId, issue, run.pid, 'no_progress',
-      `${nextStallCount} consecutive heartbeats with no change to the issue — this is the signal that would have caught the self-kicking watcher`,
-      { stallCount: nextStallCount, limit: budget.noProgressHeartbeats })
-    return { allowed: false, ceiling: 'no_progress', runId: run.id }
-  }
-
-  // Persist the (possibly reset) stall tracker — best-effort, never blocks the beat.
+  // Persist the tracker BEFORE deciding to stop. It used to be written only on
+  // the non-stopping path, so a stopped run's persisted stall_count was one
+  // behind the number its own inbox reason quoted — the row said 2 while the
+  // message said 3 (measured). Two numbers for one fact, and the durable one
+  // was the wrong one.
   const progressUpdate: Record<string, unknown> = {
     stall_count: nextStallCount,
     last_progress_hash: hash,
   }
-  if (!stalled) progressUpdate.last_progress_at = new Date().toISOString()
+  if (!stalled) progressUpdate.last_progress_at = now
   const { error: progressError } = await db().from('agent_runs').update(progressUpdate).eq('id', run.id)
   if (progressError) {
     console.warn(`[agent-budget] stall-tracker update failed (${progressError.message}) — no-progress detection degrades to "never trips" until migrations/038_agent_budgets_and_ceilings.sql is applied.`)
   }
 
+  if (stalled && nextStallCount >= budget.noProgressHeartbeats) {
+    // Elapsed stall is measured from the last observation that SAW progress,
+    // falling back to the run's own start when the column was never written
+    // (pre-038 host, or a run that has never once moved).
+    const stallSince = run.last_progress_at ?? run.started_at
+    const stalledForMs = Date.now() - new Date(stallSince).getTime()
+    if (!Number.isFinite(stalledForMs) || stalledForMs >= DEFAULT_NO_PROGRESS_MIN_MS) {
+      await stopRun(run.id, agentId, issue, run.pid, 'no_progress',
+        `${nextStallCount} consecutive checks with no change to the issue over ${Math.round(stalledForMs / 60000)} min — this is the signal that would have caught the self-kicking watcher`,
+        {
+          stallCount: nextStallCount, limit: budget.noProgressHeartbeats,
+          stalledForMs, minStallMs: DEFAULT_NO_PROGRESS_MIN_MS, source,
+        })
+      return { allowed: false, ceiling: 'no_progress', runId: run.id }
+    }
+  }
+
   return { allowed: true, runId: run.id }
+}
+
+/**
+ * How many running rows one sweep will look at. A bound, not a guess: this
+ * host's agent_runs carries ~67,600 rows stuck at status='running' (the
+ * close-on-status-change path only fires for issues that changed status, so a
+ * crashed run never closes). The started_at window below excludes essentially
+ * all of them, but a sweep that could in principle walk the whole table on a
+ * timer is a denial-of-service the supervisor points at itself.
+ */
+export const SWEEP_BATCH_LIMIT = positiveIntFromEnv('TODERO_CEILING_SWEEP_LIMIT', 50)
+
+export interface SweepStop {
+  runId: string
+  agentId: string
+  taskKey: string | null
+  ceiling: CeilingName
+}
+
+export interface SweepResult {
+  /** Running rows inside the window that were actually evaluated. */
+  scanned: number
+  stopped: SweepStop[]
+  /** Rows skipped because their issue row could not be read (deleted, or no task_id). */
+  skipped: number
+  errors: string[]
+}
+
+/**
+ * THE SUPERVISOR-SIDE TRIGGER. Evaluate the in-flight ceilings for every
+ * `status='running'` row inside the staleness window, regardless of whether
+ * that run's agent sent a heartbeat.
+ *
+ * Why this exists at all: before it, `checkInFlightCeilings` had exactly one
+ * call site in the repo — inside PATCH /api/heartbeat — so the only two
+ * ceilings that stop anything ran only inside a request the agent CHOSE to
+ * make. An agent that stopped beating was never stopped and its pid was never
+ * signalled. That is not a corner case; it is the precise behaviour of the
+ * detached self-respawning watcher lib/dispatch-guard.ts's own comment names
+ * as the threat this module was built for. "Enforced by the supervisor" is
+ * only true once the supervisor can act without the agent's cooperation.
+ *
+ * Same evaluation, same stop, same inbox row as the heartbeat path — see
+ * {@link evaluateRunCeilings}. The only difference is `requireRecentHeartbeat`,
+ * and that difference is argued at the wall-clock branch.
+ *
+ * Idempotent and safe to run on a short timer: a run it stops is no longer
+ * `status='running'`, so the next sweep does not see it.
+ */
+export async function sweepInFlightCeilings(opts?: { limit?: number }): Promise<SweepResult> {
+  const result: SweepResult = { scanned: 0, stopped: [], skipped: 0, errors: [] }
+  const limit = opts?.limit ?? SWEEP_BATCH_LIMIT
+
+  const staleCutoff = new Date(Date.now() - STALE_RUN_CUTOFF_MS).toISOString()
+  const { data: runs, error } = await db()
+    .from('agent_runs')
+    .select('id,agent_id,task_id,started_at,pid,stall_count,last_progress_hash,last_progress_at')
+    .eq('status', 'running')
+    .gte('started_at', staleCutoff)
+    .order('started_at', { ascending: true })
+    .limit(limit)
+
+  if (error) {
+    result.errors.push(`agent_runs read failed: ${error.message}`)
+    return result
+  }
+
+  for (const run of (runs ?? []) as Array<InFlightRun & { task_id: string | null }>) {
+    if (!run.task_id) {
+      result.skipped++
+      continue
+    }
+    const { data: issueRow, error: issueError } = await db()
+      .from('issues')
+      .select('id,task_key,updated_at')
+      .eq('id', run.task_id)
+      .maybeSingle<{ id: string; task_key: string | null; updated_at: string }>()
+    if (issueError || !issueRow) {
+      // A running row whose issue is gone cannot be evaluated for no-progress
+      // (there is no state to hash) and must not be invented a stop for.
+      // Counted, not swallowed, so a sweep that skips everything says so.
+      result.skipped++
+      if (issueError) result.errors.push(`issue read failed for run ${run.id}: ${issueError.message}`)
+      continue
+    }
+    result.scanned++
+    try {
+      const verdict = await evaluateRunCeilings(run.agent_id, run, issueRow, {
+        requireRecentHeartbeat: false,
+        source: 'sweep',
+      })
+      if (!verdict.allowed && verdict.ceiling) {
+        result.stopped.push({
+          runId: run.id, agentId: run.agent_id,
+          taskKey: issueRow.task_key, ceiling: verdict.ceiling,
+        })
+      }
+    } catch (err) {
+      // One bad row must not abort the sweep for every other run.
+      result.errors.push(`run ${run.id}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  return result
 }
 
 /**

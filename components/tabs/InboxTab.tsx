@@ -230,12 +230,23 @@ export default function InboxTab() {
   // piece's doc rather than applied from outside its ownership. Saying
   // nothing at all was the worse option: the operator otherwise learns their
   // session cannot approve only by clicking and reading a 403.
+  //
+  // The wording no longer says "the buttons below". Until 2026-08-26 both
+  // notices were rendered as CHILDREN of the "Waiting on you" card, and
+  // components/nav/Card.tsx:134 is `{isEmpty ? <p>{empty.message}</p> :
+  // children}` — an empty queue REPLACES the children, so neither notice
+  // existed on the one screen an operator sees most. Found by rendering the
+  // component in a test for the first time (see
+  // __tests__/inbox-rights-notice.test.tsx); it was not visible from reading
+  // the JSX, because the suppression is in the other component. Both notices
+  // are hoisted above the cards now, so they describe the SESSION rather than
+  // whatever happens to be in the list.
   const rightsNotice = (() => {
     if (!rights) return null
     if (rights.can_approve) return null
     const who = rights.role ? `a "${rights.role}" session` : 'a session that proved no role'
     if (!rights.can_record) {
-      return `This is ${who}, which may not record any decision here. The buttons below will be refused with a 403 and nothing will change — the refusal is filed either way.`
+      return `This is ${who}, which may not record any decision here. Any decision recorded from this session will be refused with a 403 and nothing will change — the refusal is filed either way.`
     }
     return `This is ${who}. It may deny or acknowledge a request, but not approve one: approving is what releases the agent that filed it. Approve will be refused with a 403.`
   })()
@@ -270,6 +281,28 @@ export default function InboxTab() {
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      {/* ABOVE the cards, deliberately. These describe the SESSION, not the
+          list: a card whose `empty` state is active drops its children
+          entirely (components/nav/Card.tsx:134), so while these lived inside
+          the list a viewer with an empty queue — and, worse, a browser
+          carrying a cookie asking for a role it does not hold — was told
+          nothing at all. */}
+      {rightsNotice && (
+        <p
+          data-testid="inbox-rights-notice"
+          className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-amber-300/80 text-[11px] leading-snug"
+        >
+          {rightsNotice}
+        </p>
+      )}
+      {ignoredClaimNotice && (
+        <p
+          data-testid="inbox-ignored-claim-notice"
+          className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-amber-300/80 text-[11px] leading-snug"
+        >
+          {ignoredClaimNotice}
+        </p>
+      )}
       <Card
         id="inbox-waiting"
         title="Waiting on you"
@@ -289,22 +322,6 @@ export default function InboxTab() {
           <p className="text-white/30 text-xs">Loading approvals for {project ?? 'no project'}…</p>
         ) : (
           <div className="space-y-2">
-            {rightsNotice && (
-              <p
-                data-testid="inbox-rights-notice"
-                className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-amber-300/80 text-[11px] leading-snug"
-              >
-                {rightsNotice}
-              </p>
-            )}
-            {ignoredClaimNotice && (
-              <p
-                data-testid="inbox-ignored-claim-notice"
-                className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-amber-300/80 text-[11px] leading-snug"
-              >
-                {ignoredClaimNotice}
-              </p>
-            )}
             {pending.map(entry => (
               <ApprovalCard
                 key={entry.id}

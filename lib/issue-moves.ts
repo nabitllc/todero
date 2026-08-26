@@ -500,18 +500,51 @@ export function moveBody(
  *
  *   PASS    — a message this repo wrote: an MC API refusal
  *             (`app/api/issues/route.ts`, `app/api/db/[...path]/route.ts`,
- *             `middleware.ts`), a transport message `lib/fetch-json.ts` writes
- *             itself, or an HTTP status text.
+ *             `middleware.ts`), a refusal the DB SEAM writes before any driver
+ *             is reached (`DbQueryParseError`, `DbConfigurationError`), a
+ *             transport message `lib/fetch-json.ts` writes itself, or an HTTP
+ *             status text.
  *   REPLACE — everything else. A known constraint gets its own sentence; the
  *             rest get a generic one that still says what happened.
  *
- * An allowlist has the opposite failure mode, and it is worth naming: a NEW MC
- * API refusal that nobody adds here would be replaced by the generic sentence,
- * and the operator would lose a good message. That is caught mechanically —
- * `lib/__tests__/issue-moves.test.ts` parses every `error:` / `message:` string
- * literal out of those route files and asserts each one survives this function
- * unchanged. Adding a refusal to the API without adding it here turns the build
- * red rather than turning the screen vague.
+ * ── the DEFAULT case is the whole argument ──────────────────────────────────
+ *
+ * Read the two paragraphs above as one rule: RECOGNISED → verbatim, and the
+ * default — the branch every message reaches when nothing recognises it — is
+ * REPLACE. Not "replace if it looks like SQL"; replace, full stop. That is why
+ * this is not a bigger denylist wearing a different name. A denylist's default
+ * is PASS, so every message its author failed to imagine reaches the operator;
+ * an allowlist's default is REPLACE, so every message its author failed to
+ * imagine costs the operator a good sentence and nothing worse. Both lists are
+ * incomplete forever. Only one of them is incomplete in the safe direction.
+ *
+ * That does not make the allowlist's incompleteness free, and it is the failure
+ * this revision was written to fix: a NEW refusal this repo writes and nobody
+ * adds here is replaced by the generic sentence, and the operator loses a
+ * sentence that was already correct. The mechanical guard against that is
+ * `lib/__tests__/issue-moves.test.ts` → "every sentence this repo writes
+ * survives the humaniser unchanged", which derives its corpus from source in
+ * two passes:
+ *
+ *   * quoted `error:` literals in the five route files, and
+ *   * every literal argument to `new DbQueryParseError(…)` /
+ *     `new DbConfigurationError(…)` anywhere under `lib/`, plus the
+ *     `dbStatusMessage()` templates — the sentences the routes hand back as
+ *     `error: e.message` and `error: NO_KEY_ERROR()`, which pass NO literal at
+ *     the `error:` key and were therefore invisible to the first pass alone.
+ *
+ * The second pass exists because the first one, shipped alone, let FOURTEEN
+ * repo-written sentences be eaten while reporting full coverage — including
+ * "The local database file does not exist yet: … Run `npm run db:migrate`",
+ * which the generic sentence replaced with a claim about a refused query on a
+ * server that has no database to refuse one. Measured 2026-08-26; see
+ * `docs/rebuild/pieces/pieces9/pipeline-humaniser.md` §2.
+ *
+ * Neither pass can see a sentence built somewhere this scanner does not read.
+ * That residue is named, not hidden: §7 of that doc lists it, and the SEAM DIFF
+ * in §8 asks for the one change that would end the guessing — the db route
+ * tagging its own refusals so the client recognises them by SHAPE instead of by
+ * spelling.
  *
  * Why message text is the only thing to decide on:
  * `app/api/issues/route.ts:2297` answers a failed write with
@@ -533,11 +566,22 @@ const MC_API_MESSAGES: readonly RegExp[] = [
   /^done is retired\b/i,
   /^Backlog-first policy\b/i,
   /^Issue is closed and read-only\b/i,
-  // Every role refusal the route writes begins this way: "Only auditor…",
-  // "Only main/po/ops or the workspace owner…", "Only the assignee (…)…",
-  // "Only tester or designer…", "Only the queue-refill cron…". No driver
-  // message in either dialect opens with a bare "Only ".
-  /^Only\s+\S/,
+  // Every role refusal the route writes has the same shape — "Only <who> can
+  // <do the thing>": "Only auditor can close…", "Only main/po/ops or the
+  // workspace owner can reset…", "Only the assignee (…) can…", "Only tester or
+  // designer can…", "Only the queue-refill cron, michael, or kaos can move…".
+  // All eleven are pinned from source by the test.
+  //
+  // This used to be `/^Only\s+\S/` with the comment "No driver message in
+  // either dialect opens with a bare 'Only '." That was an unbounded negative
+  // claim about two third-party drivers across every version they will ever
+  // have, stated as measured fact, and nothing tested it — a synthetic
+  // `Only one row may be updated at a time (pg internal)` walked through it
+  // unchanged. Requiring the verb the route always writes costs nothing (all
+  // eleven real refusals contain " can ") and takes the claim from "no driver
+  // says this" down to "no driver says this IN THIS SHAPE", which is a much
+  // smaller thing to be wrong about.
+  /^Only [^.]{0,200}\bcan\b/,
   /^(?:acceptance_criteria|closing_notes|commit_sha|description|implementation_notes|owner|regression_test|resolution_type|test_tier)\b[^.]{0,40}\bis required\b/i,
   /^Cannot (?:create issue|move to)\b/i,
   /^(?:Child task cap reached|Duplicate review issue blocked|Near-duplicate child task blocked)\b/i,
@@ -578,6 +622,78 @@ const MC_API_MESSAGES: readonly RegExp[] = [
   // ── app/api/agents/route.ts, app/api/pipeline-metrics/route.ts ──
   /^agent_id required$/i,
   /^window must be 7d or 30d$/i,
+]
+
+/**
+ * Sentences the DATABASE SEAM writes, before any driver is reached.
+ *
+ * These are the ones the first version of this allowlist missed, and missing
+ * them was worse than missing a route literal, because two of them are the only
+ * useful thing the product can say:
+ *
+ *   `app/api/db/[...path]/route.ts:276`  → `{ error: e.message }`  (503, DbConfigurationError)
+ *   `app/api/db/[...path]/route.ts:279`  → `{ error: e.message }`  (400, DbQueryParseError)
+ *   `app/api/agents/route.ts:928, 954`   → `{ error: NO_KEY_ERROR() }` (503)
+ *
+ * None of those passes a STRING LITERAL at the `error:` key, so the
+ * source-derived guard that only scanned for `error: '…'` could not see one of
+ * them, and every one was replaced by the generic sentence. Measured
+ * 2026-08-26, live over HTTP against this dev server:
+ *
+ *   GET /api/db/issues?project=eq.Limiglow&limit=abc
+ *     → 400 {"error":"Invalid numeric value \"abc\"."}
+ *   GET /api/db/issues?project=eq.Limiglow&or=()
+ *     → 400 {"error":"\"or\" needs at least one term."}
+ *
+ * and both became "the database refused the query in terms this board has no
+ * wording for yet". For the unconfigured-database case the replacement was not
+ * merely vaguer but FALSE: nothing refused a query, because there was no
+ * database to refuse one — the server was telling the operator to run
+ * `npm run db:migrate`, and the board deleted the instruction.
+ *
+ * Two of these deserve a specific note on ordering:
+ *
+ *   * "The local database file does not exist yet: …" contains the substring
+ *     `does not exist`, which is also how Postgres reports a phantom column.
+ *     The allowlist runs BEFORE `KNOWN_CONSTRAINTS`, so the seam's own sentence
+ *     wins and the operator is not told "the board asked for a field the
+ *     database does not have" about a missing FILE.
+ *   * `dbStatusMessage()` has a SUCCESS spelling ("database ready …") that
+ *     reaches the operator only through `app/api/agents/route.ts`'s 503 suffix.
+ *     It is allowlisted too, because the 503 is real even when the status line
+ *     inside it is the ready one.
+ *
+ * Every pattern below is derived from source by the test, not from memory: it
+ * reads the literal arguments to `new DbQueryParseError(…)` /
+ * `new DbConfigurationError(…)` under `lib/` and asserts each survives BOTH
+ * humanisers. Adding a seam refusal without adding it here turns the build red.
+ */
+const DB_SEAM_MESSAGES: readonly RegExp[] = [
+  // ── lib/db/query-params.ts, app/api/db/[...path]/route.ts — DbQueryParseError.
+  //    Anchored on the punctuation each template writes, the same discipline
+  //    `/^Invalid (?:limit|page|…) "/` is held to above: a bare `/^Invalid /`
+  //    would readmit Postgres's `invalid page in block 3 of relation …`.
+  /^Invalid (?:filter|order) column "/i,
+  /^Invalid numeric value "/i,
+  /^Unsupported "is" value: /i,
+  /^Unsupported filter operator "/i,
+  /^Unsupported order modifier "/i,
+  /^Each "or" term must look like </i,
+  /^"or" needs at least one term\.$/i,
+  /^"[^"]*\.not\." needs an operator and a value\b/i,
+  /^Filter on "[^"]*" must look like </i,
+  /^Request body is not valid JSON\.$/i,
+  /^Request body must be an object or an array of objects\.$/i,
+  /^PATCH body must be a single object\.$/i,
+  // ── lib/db.ts, lib/db/sqlite-adapter.ts, lib/db/supabase-env.ts,
+  //    lib/db/pg-adapter.ts — DbConfigurationError. Every one of these names an
+  //    environment variable or a command; the generic sentence names neither.
+  /^Database is not configured\b/i,
+  /^The local database file does not exist yet: /i,
+  /^Unknown database provider "/i,
+  // ── lib/db.ts `dbStatusMessage()`, reaching the screen through
+  //    `app/api/agents/route.ts`'s `NO_KEY_ERROR()`. Both spellings.
+  /^database (?:not configured|ready) \(provider "/i,
 ]
 
 /**
@@ -623,12 +739,60 @@ const API_TOKEN_SENTENCES: Readonly<Record<string, string>> = {
     'This screen is scoped to one project and cannot show issues from another one.',
 }
 
+/**
+ * Sentences THIS MODULE writes. Allowlisted so that humanising twice is the
+ * same as humanising once.
+ *
+ * Not a theoretical nicety. `components/tabs/PipelineTab.tsx` humanises a load
+ * error in a `useMemo` and again inside the banner component — belt and braces
+ * on purpose, so that neither half can be removed and quietly leak. Without
+ * this, the second pass would not recognise the first pass's output (none of
+ * these sentences is an MC API refusal) and would replace a specific sentence
+ * with the generic one: "The board asked the database for a field it does not
+ * have. That is a bug in Todero…" would degrade to "the database refused the
+ * query in terms this board has no wording for yet" — vaguer than the truth, and
+ * for the not-configured case, false.
+ *
+ * The list is DERIVED, not typed twice: it is built from the same constants the
+ * humanisers return, so a reworded sentence cannot fall off it.
+ */
+let ownSentences: Set<string> | null = null
+function ownSentenceSet(): Set<string> {
+  // Built on first call, not at module load: `SPRINT_IN_BACKLOG` and
+  // `KNOWN_CONSTRAINTS` are declared below this point, and reading a `const`
+  // before its initialiser runs is a TDZ throw, not an `undefined`.
+  if (!ownSentences) {
+    ownSentences = new Set<string>([
+      SPRINT_IN_BACKLOG,
+      SPRINT_REQUIRED,
+      ...Object.values(API_TOKEN_SENTENCES),
+      ...KNOWN_CONSTRAINTS.map(k => k.sentence),
+    ])
+  }
+  return ownSentences
+}
+
+/** Sentences with a value interpolated into them, which a Set cannot hold. */
+const OWN_SENTENCE_SHAPES: readonly RegExp[] = [
+  /^The move to "[^"]*" was refused(?: \(\d+\))?, and the server did not say why\./,
+  /^The move to "[^"]*" was refused by a rule this board does not have wording for yet\./,
+  /^the database refused the query in terms this board has no wording for yet\./,
+  /^the board asked for a field the database does not have\b/,
+  /^the server did not say why$/,
+]
+
+function isOwnSentence(message: string): boolean {
+  return ownSentenceSet().has(message) || OWN_SENTENCE_SHAPES.some(re => re.test(message))
+}
+
 /** True when the message is one this repo can point at the source of. */
 function isKnownHumanMessage(message: string): boolean {
   return (
     MC_API_MESSAGES.some(re => re.test(message)) ||
+    DB_SEAM_MESSAGES.some(re => re.test(message)) ||
     CLIENT_TRANSPORT_MESSAGES.some(re => re.test(message)) ||
-    HTTP_STATUS_TEXT.test(message)
+    HTTP_STATUS_TEXT.test(message) ||
+    isOwnSentence(message)
   )
 }
 
@@ -734,6 +898,83 @@ const KNOWN_CONSTRAINTS: readonly { readonly match: RegExp; readonly sentence: s
     sentence: 'Todero could not reach its database. Nothing was changed — try again in a moment, ' +
       'and report it if it keeps happening.',
   },
+  /* ── the residue, found by sweeping the real schema rather than by guessing ──
+   *
+   * The entries above this line were written from constraints somebody
+   * remembered. The seven below came out of a mechanical sweep: both dialects,
+   * every table in the shipped schema, every column, every NOT NULL / CHECK /
+   * UNIQUE / FOREIGN KEY / type coercion the drivers will actually produce —
+   * 326 distinct real driver strings, 2026-08-26 (the sweep is a test, not a
+   * one-off: see "the corpus nobody wrote by hand" in
+   * `lib/__tests__/issue-moves.test.ts`).
+   *
+   * ZERO of the 326 leaked, which is the allowlist working. But 26 of them fell
+   * all the way through to "a rule this board does not have wording for yet",
+   * and a foreign-key violation is not a rule nobody has wording for — it is
+   * "the thing you pointed at is gone". These seven cut that 26 to ONE:
+   * Postgres's `division by zero`, which is left on the generic branch
+   * deliberately. It is not a rule the operator broke, there is nothing they
+   * can do about it, and leaving it there keeps the default branch a live path
+   * with a measured occupant rather than a claim about dead code.
+   *
+   * Everything here still only REFINES. Deleting any of them makes one message
+   * vaguer and none of them leak, exactly as with the block above.
+   */
+  {
+    // SQLite says only `FOREIGN KEY constraint failed` — no table, no column,
+    // nothing to echo even if echoing were useful. Postgres names the
+    // constraint. The two halves mean opposite things to the operator and are
+    // split accordingly: a violated reference means the row you pointed AT is
+    // missing; a violated dependency (`still referenced from table "x"`) means
+    // something else points at THIS row.
+    match: /\bis still referenced from table\b|\bviolates foreign key constraint\b.*\bstill referenced\b/i,
+    sentence: 'Something else still points at this issue, so it cannot be removed or renumbered. ' +
+      'Nothing was changed.',
+  },
+  {
+    match: /FOREIGN KEY constraint failed|\bviolates foreign key constraint\b/i,
+    sentence: 'This move points at a record that no longer exists — a parent issue, a project or a ' +
+      'workspace that has since been removed. Nothing was changed. Reload the board and try again.',
+  },
+  {
+    // Any unique index other than `issues.task_key`, which has its own sentence
+    // above because "another issue already has this key" is a different action
+    // for the operator than "this value is already taken".
+    match: /UNIQUE constraint failed:|\bduplicate key value violates unique constraint\b/i,
+    sentence: 'One of these values has to be unique and something already has it. Nothing was ' +
+      'changed. Reload the board and try again.',
+  },
+  {
+    // `invalid input value for enum issue_status: "zz"` — Postgres only; SQLite
+    // spells the same rule as a CHECK, which the entries above already cover.
+    // The enum's own name is not echoed: it is a schema identifier.
+    match: /\binvalid input value for enum\b/i,
+    sentence: 'That value is not one the workflow recognises for this field. Nothing was changed — ' +
+      'pick one from the list.',
+  },
+  {
+    match: /\bInvalid input for boolean type\b|\bmalformed array literal\b|\binvalid input syntax for type\b/i,
+    sentence: 'One of the values sent with this move was the wrong kind for the field it belongs to. ' +
+      'Nothing was changed. Reload the board and try again.',
+  },
+  {
+    // Generated / identity columns, and SQLite's shadow FTS tables. Both mean
+    // "the code wrote to something the database maintains itself", which is a
+    // Todero bug in the same family as a phantom column.
+    match: /\bcan only be updated to DEFAULT\b|\bcannot insert a non-DEFAULT value into column\b|\bmay not be modified\b|\bcannot insert into column\b/i,
+    sentence: 'The board tried to write a field the database maintains itself. That is a bug in ' +
+      'Todero, not something you did — nothing was changed. Please report it.',
+  },
+  {
+    // The last resort before the generic sentence, and deliberately last: any
+    // CHECK constraint in either dialect that none of the named rules above
+    // recognised — including Postgres's anonymous `issues_check1` family when
+    // the destination cannot disambiguate it. It says less than the specific
+    // sentences and more than "no wording for yet".
+    match: /CHECK constraint failed|\bviolates check constraint\b/i,
+    sentence: 'This move would have left the issue in a state the workflow does not allow. ' +
+      'Nothing was changed. The rule that refused it is in the browser console.',
+  },
 ]
 
 /**
@@ -795,12 +1036,19 @@ export function humaniseMoveFailure(
 
   if (isKnownHumanMessage(raw)) return raw
 
+  // BEFORE the table, not after: the table's last entry is a catch-all for any
+  // CHECK in either dialect, and Postgres's anonymous `issues_check1` family is
+  // a CHECK. Left in its old position this call became unreachable — the
+  // catch-all answered first with the vaguer of the two sentences. The table's
+  // NAMED constraint entries cannot collide with it: none of them matches
+  // `constraint "issues_check\d*"`, which is the only thing this predicate
+  // fires on.
+  const byDestination = anonymousCheckSentence(raw, toStatus)
+  if (byDestination) return byDestination
+
   for (const { match, sentence } of KNOWN_CONSTRAINTS) {
     if (match.test(raw)) return sentence
   }
-
-  const byDestination = anonymousCheckSentence(raw, toStatus)
-  if (byDestination) return byDestination
 
   return `The move to "${toStatus}" was refused by a rule this board does not have wording for yet. ` +
     'Nothing was changed. Please report it — the raw message is in the browser console.'

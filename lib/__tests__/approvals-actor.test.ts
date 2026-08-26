@@ -219,10 +219,64 @@ describe('authorizeDecision — no agent approves its own request', () => {
     expect(r).toEqual({ ok: true })
   })
 
-  it('an approval with no claimed name at all is allowed on the role alone', () => {
-    // Nothing to collide with; the role is still recorded by attributeDecision.
+  // FLIPPED 2026-08-26 (round 3). This case used to read "an approval with no
+  // claimed name at all is allowed on the role alone", justified as "nothing
+  // to collide with". It was pinning the way THROUGH the rule above.
+  //
+  // MEASURED live, one fixture, one owner session, `resolved_by` the only
+  // variable between the two requests:
+  //
+  //   {"id":…,"status":"approved","resolved_by":"lane5-self-agent"} -> 403 SELF_APPROVAL
+  //   {"id":…,"status":"approved"}                                  -> 200, agent released,
+  //                                                                     trail says "owner"
+  //
+  // The refused variant was the MORE attributable of the two, which is the
+  // wrong way round for a rule whose whole purpose is attribution. The repo
+  // had already answered this for the other approval surface —
+  // lib/conversations.ts 422s `approve requires approved_by` — and this now
+  // matches it.
+  it('an approval with no claimed name at all is REFUSED — it is the way through self-approval', () => {
     const r = authorizeDecision({
       actor: { role: 'admin', claimedBy: null },
+      row: rowFiledBy('builder'),
+      decision: 'approved',
+    })
+    expect(r.ok).toBe(false)
+    expect(r.ok === false && r.code).toBe('UNSIGNED_APPROVAL')
+    expect(r.ok === false && r.httpStatus).toBe(422)
+  })
+
+  it('whitespace is not a signature', () => {
+    for (const claimedBy of ['', '   ', '\t\n']) {
+      const r = authorizeDecision({
+        actor: { role: 'admin', claimedBy },
+        row: rowFiledBy('builder'),
+        decision: 'approved',
+      })
+      expect(r.ok === false && r.code).toBe('UNSIGNED_APPROVAL')
+    }
+  })
+
+  // The asymmetry, pinned so a later "tidy-up" cannot make refusal harder.
+  // Refusing only ever leaves the agent stopped; requiring a signature there
+  // would push an operator toward doing nothing at all.
+  it('denying, acknowledging and timing out need no signature', () => {
+    for (const decision of ['denied', 'explained', 'timeout']) {
+      const r = authorizeDecision({
+        actor: { role: 'admin', claimedBy: null },
+        row: rowFiledBy('builder'),
+        decision,
+      })
+      expect(r).toEqual({ ok: true })
+    }
+  })
+
+  // The discriminator that proves the new refusal is not just "refuse
+  // everything": the identical row and role, signed by someone who is not the
+  // requesting agent, still passes.
+  it('a signature from someone other than the requesting agent still approves', () => {
+    const r = authorizeDecision({
+      actor: { role: 'admin', claimedBy: 'michael' },
       row: rowFiledBy('builder'),
       decision: 'approved',
     })

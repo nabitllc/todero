@@ -193,6 +193,16 @@ export default function CommerceTab({ projectFilter }: CommerceTabProps) {
         // The card's own rule: never render an empty line list over a failed
         // request. An operator seeing "no lines" must mean the order has none,
         // not that nobody managed to ask.
+        //
+        // THIS BRANCH WAS CORRECT AND UNREACHABLE until the server was fixed.
+        // `GET ?order_number=` did not check the error on its line read and
+        // coerced it with `(lines ?? [])`, so a failed read arrived here as a
+        // perfectly ordinary 200 carrying `line_items: []` and
+        // `fulfilment: {ordered: 0, fulfilled: 0, remaining: 0}`. No client
+        // check can recover a failure the server has already dressed as
+        // success — the guarantee this comment makes is only keepable on the
+        // server, and it is kept at app/api/commerce/orders/route.ts (the
+        // `linesError` check), pinned by __tests__/api/commerce-error-paths.test.ts.
         setLinesError(body.message ?? `could not read ${orderNumber}'s lines (${res.status})`)
         return
       }

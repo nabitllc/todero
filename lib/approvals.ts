@@ -151,6 +151,35 @@ const APPROVAL_KINDS: Record<string, ApprovalKind> = {
   },
 }
 
+/**
+ * The registered kind for a request type, or undefined.
+ *
+ * WHY THIS IS NOT `APPROVAL_KINDS[type]`. `APPROVAL_KINDS` is an object
+ * literal, so it inherits `Object.prototype`, and `row.type` is a free-text
+ * column any caller can fill: `APPROVAL_KINDS['constructor']` is the `Object`
+ * constructor — truthy — and the very next line calls `kind.touchesIssue(...)`
+ * on it, which is a TypeError, which is an empty HTTP 500.
+ *
+ * MEASURED on the running dev server, 2026-08-26, before this helper existed:
+ *
+ *     POST /api/inbox {"agent":"…","type":"constructor",…}   -> HTTP 201
+ *     GET  /api/inbox?project=Limiglow                       -> HTTP 500 (empty body)
+ *     PATCH /api/inbox {id, status:"approved"}                -> HTTP 500 (empty body)
+ *
+ * That is a denial of service on the whole approval surface, planted by one
+ * accepted request: while that single row existed, NOBODY could load the
+ * project's approval queue, including to delete it through this API. It
+ * cleared the moment the row was removed (verified: 200 again). One own-key
+ * check is the difference between "an unknown type is refused with a 422 that
+ * names it" and "the queue is gone".
+ */
+function kindFor(type: string | null | undefined): ApprovalKind | undefined {
+  if (!type) return undefined
+  return Object.prototype.hasOwnProperty.call(APPROVAL_KINDS, type)
+    ? APPROVAL_KINDS[type]
+    : undefined
+}
+
 /** Request types with a registered, dispatchable consequence. */
 export const EFFECT_TYPES: readonly string[] = Object.keys(APPROVAL_KINDS)
 
@@ -181,7 +210,7 @@ export function approvalTarget(row: ApprovalRow): ApprovalTarget {
   const agentId = str(row.agent) ?? str(ctx.agent_id)
   const issueId = str(ctx.last_issue_id) ?? str(row.issue_id)
   const taskKey = str(ctx.task_key)
-  const kind = row.type ? APPROVAL_KINDS[row.type] : undefined
+  const kind = kindFor(row.type)
   const base: ApprovalTarget = { agentId, issueId, taskKey, needsIssue: false }
   return { ...base, needsIssue: kind ? kind.touchesIssue(base) : false }
 }
@@ -196,7 +225,7 @@ export function approvalTarget(row: ApprovalRow): ApprovalTarget {
 export function describeApproval(row: ApprovalRow): ApprovalDescription {
   const target = approvalTarget(row)
   const type = row.type ?? ''
-  const kind = APPROVAL_KINDS[type]
+  const kind = kindFor(type)
   const agent = target.agentId ?? 'an unnamed agent'
 
   if (!kind) {
@@ -302,7 +331,7 @@ export function preflightDecision(args: {
   if (decision !== 'approved') return { ok: true }
 
   const type = row.type ?? ''
-  const kind = APPROVAL_KINDS[type]
+  const kind = kindFor(type)
   if (!kind) {
     return {
       ok: false,
@@ -487,10 +516,49 @@ export function issueRefsToResolve(rows: readonly ApprovalRow[]): { ids: string[
 // cookie asking for more than the password proves is ignored and reported as
 // `ignoredClaim` so the attempt is visible rather than silently downgraded.
 //
-// SCOPE OF THE FIX, said plainly: this closes the hole on THIS route only.
-// `lib/with-permission.ts` is not in this piece's ownership and still trusts
-// `mc-role` for every other route that calls it; that is written up as a seam
-// request in this piece's doc and is NOT fixed here.
+// SCOPE OF THE FIX, RE-STATED 2026-08-26 (round 3) because the previous
+// version of this paragraph was stale in a way that pointed away from the
+// live hole. It said the remaining exposure was "every other caller of
+// `resolveRole()`". That is no longer where the exposure is:
+// `lib/with-permission.ts:121` now calls `resolveDecisionRole()` itself, so
+// those routes are on the fixed source.
+//
+// The door that is still open is a DIFFERENT one, and it never called
+// `resolveRole()` at all — `app/api/db/[...path]/route.ts`. `inbox` is in
+// that route's WRITABLE_TABLES, and its only write gate is
+//
+//     function isViewer(req) { return req.cookies.get('mc-role')?.value === 'viewer' }
+//
+// — the exact client-typed cookie this module exists to stop trusting, read
+// with the polarity inverted: anything that is not the literal string
+// "viewer" is treated as a writer. MEASURED on the running dev server,
+// 2026-08-26, one credential, one row, in the same shell:
+//
+//   mc-auth=view2026; mc-role=owner  PATCH /api/inbox            -> 403 PERMISSION_DENIED
+//                                                                   (role viewer, claim ignored,
+//                                                                    refusal filed in the trail)
+//   mc-auth=view2026; mc-role=owner  PATCH /api/db/inbox?id=eq.<same row>
+//                                    {"status":"approved",
+//                                     "resolved_by":"definitely-not-a-human-bot"}
+//                                                                -> HTTP 200
+//                                    row: status=approved,
+//                                         resolved_by="definitely-not-a-human-bot",
+//                                         resolved_at=null,
+//                                         approval_decisions rows written: 0
+//   mc-auth=view2026; mc-role=owner  DELETE /api/db/inbox?id=eq.<a second row>
+//                                                                -> HTTP 200, row destroyed
+//
+// So while that route keeps `inbox` writable, this module's gate is one of
+// TWO writers to the same column and only one of them is gated. Do not read
+// "the role is provable" as a property of `inbox.resolved_by` — it is a
+// property of what THIS module writes. `/api/db/inbox` writes that column
+// verbatim from an unauthenticated string with no role appended at all.
+//
+// That route is not in this piece's ownership. The diff that closes it is one
+// token wide and is written up as SEAM-1 in
+// docs/rebuild/pieces/pieces9/approval-surface.md, and it is expressed as a
+// test that FAILS UNTIL THE SEAM LANDS rather than as prose:
+// `__tests__/api/inbox-db-proxy-seam.test.ts`.
 
 /**
  * The passwords a Mission Control session can present, and the role each one
@@ -534,11 +602,48 @@ export interface ResolvedDecisionRole {
   ignoredClaim: string | null
 }
 
+/**
+ * True when `name` is a role THIS BUILD DEFINES — an own key of
+ * `ROLE_PERMISSIONS` whose value is an actual permission list.
+ *
+ * WHY NOT `name in ROLE_PERMISSIONS`. That was the original guard, and `in`
+ * walks the prototype chain. `ROLE_PERMISSIONS` is an object literal, so
+ * `'constructor' in ROLE_PERMISSIONS`, `'toString' in …`, `'valueOf' in …`,
+ * `'hasOwnProperty' in …`, `'isPrototypeOf' in …` and `'__proto__' in …` are
+ * ALL true. The value behind each is a function or `Object.prototype`, never
+ * an array, so `isNarrowerOrEqual` below then called `.every` on it.
+ *
+ * MEASURED on the running dev server, 2026-08-26, before this fix — a valid
+ * READ-ONLY session, one cookie as the only variable:
+ *
+ *     mc-auth=view2026; mc-role=viewer        PATCH /api/inbox       -> 403
+ *     mc-auth=view2026; mc-role=constructor   PATCH /api/inbox       -> 500, empty body
+ *                                             GET /api/inbox?project -> 500, empty body
+ *                                             GET /api/conversations -> 500, empty body
+ *
+ * Six for six across constructor / toString / valueOf / hasOwnProperty /
+ * isPrototypeOf / __proto__, and the blast radius is every `withPermission`
+ * route, because `lib/with-permission.ts:121` calls `resolveDecisionRole()`
+ * too. This is not an escalation — the crash happens before any role is
+ * granted — but "an unreadable cookie must never be treated as an upgrade"
+ * was only ever half the property. The other half is that it must not be
+ * treated as a crash either, and this predicate is what makes the function
+ * TOTAL over the string domain its callers actually hand it.
+ */
+function isDefinedRole(name: string): name is Role {
+  return (
+    Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, name) &&
+    Array.isArray(ROLE_PERMISSIONS[name as Role])
+  )
+}
+
 /** True when `candidate` can do nothing `ceiling` cannot. */
 function isNarrowerOrEqual(candidate: Role, ceiling: Role): boolean {
   const allowed = ROLE_PERMISSIONS[ceiling]
   const wanted = ROLE_PERMISSIONS[candidate]
-  if (!allowed || !wanted) return false
+  // Array.isArray, not truthiness: a prototype member is truthy and has no
+  // `.every`, which is the exact shape of the 500 documented above.
+  if (!Array.isArray(allowed) || !Array.isArray(wanted)) return false
   return wanted.every(p => allowed.includes(p))
 }
 
@@ -575,8 +680,22 @@ function roleFromPassword(password: string | null, creds: SessionCredentials): R
  * changes with it: `owner` is a superset of `admin`, and this route checks
  * only `issues:write` and `settings:write`, which both hold.
  *
- * Pure: every input is an argument, so lib/__tests__ can prove the escalation
- * is closed without a server.
+ * Pure AND TOTAL: every input is an argument, and every combination of the
+ * three raw strings returns rather than throws, so lib/__tests__ can prove
+ * the escalation is closed without a server.
+ *
+ * "Total" is not decoration. This docstring used to claim only purity, and
+ * the function was NOT total: the guards below tested `wanted in
+ * ROLE_PERMISSIONS`, and `in` walks the prototype chain, so `constructor`,
+ * `toString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf` and `__proto__`
+ * all passed the guard and then hit `.every` on a function. Measured live,
+ * six for six, on a valid read-only session: HTTP 500 with an empty body from
+ * PATCH /api/inbox, GET /api/inbox?project=… and GET /api/conversations?project=…
+ * — and the whole 11-test `approvals-role-source.test.ts` was green over it,
+ * because every case it tried was a string the guard handled. `isDefinedRole`
+ * is the fix; `lib/__tests__/approvals-role-source.test.ts` now enumerates
+ * `Object.getOwnPropertyNames(Object.prototype)` so the class cannot come
+ * back rather than the six names that happened to be found.
  */
 export function resolveDecisionRole(
   cred: RequestCredential,
@@ -589,21 +708,25 @@ export function resolveDecisionRole(
     // already requires such a caller to prove itself with the internal
     // secret, so this is defence in depth, not the front door.
     const claimed = cred.agentRoleHeader?.trim()
-    if (claimed && claimed in ROLE_PERMISSIONS) {
-      const role = claimed as Role
+    if (claimed && isDefinedRole(claimed)) {
+      const role = claimed
       return { role, granted: role, ignoredClaim: null }
     }
     return { role: null, granted: null, ignoredClaim: null }
   }
 
   const wanted = cred.claimedRole?.trim()
-  if (!wanted || !(wanted in ROLE_PERMISSIONS)) {
+  if (!wanted || !isDefinedRole(wanted)) {
     // No cookie, or a value that names no role at all. The credential stands
-    // on its own — an unreadable cookie must never be treated as an upgrade.
+    // on its own — an unreadable cookie must never be treated as an upgrade,
+    // and (see `isDefinedRole`) must not be treated as a crash either. Every
+    // string reaches this branch except the seven `ROLE_PERMISSIONS` actually
+    // defines, so the function is total: `resolveDecisionRole` cannot throw
+    // for ANY combination of the three raw strings a request can carry.
     return { role: granted, granted, ignoredClaim: null }
   }
 
-  const asked = wanted as Role
+  const asked = wanted
   if (isNarrowerOrEqual(asked, granted)) {
     return { role: asked, granted, ignoredClaim: null }
   }
@@ -616,7 +739,11 @@ export const DECIDE_PERMISSION: Permission = 'issues:write'
 /** The extra right approving requires, on top of DECIDE_PERMISSION. */
 export const APPROVE_PERMISSION: Permission = 'settings:write'
 
-export type ActorRefusalCode = 'NO_ACTOR' | 'PERMISSION_DENIED' | 'SELF_APPROVAL'
+export type ActorRefusalCode =
+  | 'NO_ACTOR'
+  | 'PERMISSION_DENIED'
+  | 'SELF_APPROVAL'
+  | 'UNSIGNED_APPROVAL'
 
 /** Who the server believes is deciding. */
 export interface DecisionActor {
@@ -646,9 +773,19 @@ export type ActorResult =
  *
  * Format: `"<claimed name> (<proven role>)"`, or just `"(<proven role>)"`-less
  * `"<role>"` when nothing was claimed. The parenthesised half is the only
- * half the server verified, and it is always present — so a row reading
- * `michael (admin)` says "someone holding an admin session typed the name
- * michael", which is exactly as much as is actually known, no more.
+ * half THIS FUNCTION'S CALLER verified, and it is always present — so a row
+ * reading `michael (owner)` says "someone holding an owner session typed the
+ * name michael", which is exactly as much as is actually known, no more.
+ *
+ * READ THAT AS A PROPERTY OF THIS WRITER, NOT OF THE COLUMN. It was
+ * previously written as "the only half the server verified", which reads as
+ * a guarantee about `inbox.resolved_by` itself, and that is false as shipped:
+ * `app/api/db/[...path]/route.ts` also writes that column, with no role
+ * resolution of any kind. Measured 2026-08-26 with a READ-ONLY credential:
+ * `[{"status":"approved","resolved_by":"definitely-not-a-human-bot","resolved_at":null}]`
+ * — a value with no parenthesised half at all, which is how a reader can tell
+ * such a row from one this function wrote. See the SCOPE OF THE FIX block
+ * above and SEAM-1 in the piece doc.
  *
  * A dedicated `decided_by_role` column would be the better shape and is
  * offered as an optional seam diff in this piece's doc; it needs a migration,
@@ -730,12 +867,57 @@ export function authorizeDecision(args: {
     }
   }
 
+  const claim = actor.claimedBy?.trim().toLowerCase()
+
+  // ── An approval nobody signed ────────────────────────────────────────────
+  //
+  // MEASURED, 2026-08-26, one fixture, one session, ONE variable — the
+  // presence of `resolved_by` in the body:
+  //
+  //   {"id":…,"status":"approved","resolved_by":"lane5-self-agent"}  -> 403 SELF_APPROVAL
+  //   {"id":…,"status":"approved"}                                   -> 200, agent released,
+  //                                                                      trail records the bare
+  //                                                                      word "owner"
+  //
+  // So the SELF_APPROVAL refusal below was OPT-IN: it only fired against a
+  // caller that volunteered the agent's own name, and the refused variant was
+  // the MORE attributable of the two. Omitting the name was the way through
+  // it, and the way through it produced the less informative audit row.
+  //
+  // The repo had already answered this question for the other approval
+  // surface, and this copies that answer rather than inventing one:
+  // `lib/conversations.ts` (validateMessageAction) returns
+  //
+  //   422 'approve requires approved_by — an approval must record who made it'
+  //
+  // Denials, acknowledgements and timeouts are deliberately NOT gated: they
+  // only ever leave the agent stopped, and refusing an unsigned "stop"
+  // would push an operator toward doing nothing. Approving is the action
+  // that releases an agent, so it is the one that must be signed.
+  //
+  // NOTE what this is not. Todero authenticates a PASSWORD, not a person, so
+  // the signature is still a claim — `attributeDecision()` records it as
+  // `"<claim> (<proven role>)"` and only the parenthesised half is proven.
+  // What changes is that the claim can no longer be OMITTED, which is what
+  // made the self-approval rule optional.
+  if (!claim) {
+    return {
+      ok: false,
+      code: 'UNSIGNED_APPROVAL',
+      httpStatus: 422,
+      required: null,
+      reason:
+        'An approval must record who made it: send `resolved_by`. Approving is what releases the agent that filed this request, ' +
+        'and the check that an agent cannot approve its own request compares that name against the requesting agent — ' +
+        'so an unsigned approval is one this surface cannot check. Denying or acknowledging does not require a name.',
+    }
+  }
+
   // Even a session that holds the right may not sign the decision in the name
   // of the agent that asked for it. This is the inbox's form of "an agent
   // cannot approve its own draft": approving `loop_breaker_pause` un-pauses
   // exactly the agent named on the row.
-  const claim = actor.claimedBy?.trim().toLowerCase()
-  if (claim && requestingAgentNames(row).includes(claim)) {
+  if (requestingAgentNames(row).includes(claim)) {
     return {
       ok: false,
       code: 'SELF_APPROVAL',

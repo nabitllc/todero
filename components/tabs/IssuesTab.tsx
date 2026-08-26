@@ -78,9 +78,18 @@ type SortDir = 'asc'|'desc'
 //
 // So the write paths are now two exported async functions whose entire contract
 // is their RETURN VALUE. A mocked `global.fetch` drives them, and the branches
-// the critic deleted are the branches under test. What a test still cannot do
-// here is press the button; that gap is stated plainly in the piece doc rather
-// than papered over.
+// the critic deleted are the branches under test.
+//
+// ROUND 3. The sentence that followed — "what a test still cannot do here is
+// press the button" — was false, and round 2's five source guards were built on
+// it. A second critic showed why that mattered: `{writeError && (` ->
+// `{false && writeError && (`, `if (error) {` -> `if (false && error) {` and
+// `const retryFailedWrite = () => { return` all survived the guards, because a
+// guard greps for a string the mutation does not touch. The button IS pressed
+// now — `__tests__/work-ui-wiring.test.tsx` mounts this component, loads it
+// against a mocked fetch, clicks the row, the Save button, the select-all
+// checkbox, Apply and Retry, and asserts on the rendered tree and the recorded
+// PATCH bodies. The guards are deleted.
 
 /** Outcome of one PATCH. Exactly one of `row`/`error` is non-null. */
 export interface SaveOutcome {
@@ -188,7 +197,17 @@ export async function bulkMoveStatus(
       message:
         `${failures.length} of ${ids.length} could not move to "${status.replace(/_/g, ' ')}" ` +
         `(${failedKeys}) — ${first.message}. ` +
-        `They are still selected, so Retry re-sends only those ${countVerbFor(failures.length, 'rows', 'row')}.`,
+        // ROUND 3 defect, found by mounting the component and READING the
+        // sentence this function produces (previously only its retry BEHAVIOUR
+        // was asserted): `only those ${countVerbFor(n,'rows','row')}` renders
+        // "only those row" at n = 1 — the demonstrative was left plural while
+        // the noun was singularised. That is the same disagreement as
+        // "1 issues" and "1 issue are loaded", written one line below the
+        // helper that exists to prevent it. The whole phrase agrees now, and
+        // the plural states the count instead of making the operator go back
+        // and re-read it.
+        `They are still selected, so Retry re-sends only ` +
+        `${countVerbFor(failures.length, `those ${failures.length} rows`, 'that row')}.`,
     },
   }
 }

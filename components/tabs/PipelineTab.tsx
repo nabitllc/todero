@@ -60,7 +60,7 @@ import { isBlocked, nextPRWindow } from '@/lib/pipeline'
 import { Button } from '@/components/ui'
 import { issuesUrl } from '@/lib/db/browser'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
-import ApiErrorBanner from '@/components/ApiErrorBanner'
+import RawApiErrorBanner from '@/components/ApiErrorBanner'
 import { useAgentRoster, rosterEmptyReason, type RosterAgent } from '@/hooks/useAgentRoster'
 import { issuePermalinkPath, navigateToIssuePermalink } from '@/lib/issue-permalink'
 
@@ -99,19 +99,105 @@ function IssueKeyLink({ taskKey, className, style }: { taskKey: string; classNam
  *
  * `safeApiError` used to be defined right here, and that was the defect. It is
  * a pure function, so the only test that could reach it inside a `.tsx` module
- * — this repo has no @testing-library/react and `jest.config.js` sets
- * `testEnvironment: "node"` — was one that greps this source for the identifier
- * names reaching `<ApiErrorBanner>`. On 2026-08-26 that guard was proven blind:
- * gutting the function to `return error` as its first statement left the suite
- * at 84 passed / 84 total while every banner below went back to rendering
- * driver text.
+ * was one that greps this source for the identifier names reaching
+ * `<ApiErrorBanner>`. On 2026-08-26 that guard was proven blind: gutting the
+ * function to `return error` as its first statement left the suite at
+ * 84 passed / 84 total while every banner below went back to rendering driver
+ * text. It moved to `lib/issue-moves.ts`, where a test calls it directly.
  *
- * It now lives in `lib/issue-moves.ts` beside the two humanisers it wraps,
- * where a test calls it directly and asserts the replacement. The wiring guard
- * in `lib/__tests__/pipeline-no-phantom-columns.test.ts` still checks that this
- * file passes only humanised identifiers to the banner; the behaviour guard is
- * what makes that check mean something.
+ * That fixed the FUNCTION and not its USE, and a fresh critic proved it the
+ * same day with two one-line mutations that left this lane's suites at
+ * 198 passed / 198 total:
+ *
+ *   `const human = humaniseMoveFailure(r.error.message, status, r.error.status)`
+ *      → `const human = r.error.message`   — move sheet renders the raw CHECK
+ *   `const safe  = safeApiError(r.error)`  → `const safe = r.error`
+ *      → the Pipeline-health banner renders driver text
+ *
+ * Both survived because the guard was `expect(src).toMatch(/setErr\(safe\)/)`
+ * — a whitelist of SOURCE SPELLINGS. Rebinding the variable satisfies the
+ * spelling and reverses the behaviour, which is the same defect as a denylist
+ * of message shapes, one file over.
+ *
+ * ── what replaced it, and why it cannot be satisfied by a rename ─────────────
+ *
+ * There is now no site in this file where a raw message can reach a screen,
+ * because no site in this file HOLDS a humanised message. Both surfaces take
+ * the RAW error and humanise inside a small exported component:
+ *
+ *   `ApiErrorBanner`      — a wrapper that SHADOWS the imported banner, so the
+ *                           raw one (`RawApiErrorBanner`) is referenced exactly
+ *                           once in the file and never by a call site
+ *   `MoveFailureNotice`   — the only thing in this file that calls
+ *                           `humaniseMoveFailure`; the move sheet's red bar
+ *
+ * `lib/__tests__/issue-moves.test.ts` RENDERS both of them with
+ * `renderToStaticMarkup` — `react-dom/server` runs perfectly well under
+ * `testEnvironment: "node"`, which is the thing the note here used to say was
+ * impossible — feeds them a verbatim CHECK-constraint string, and asserts the
+ * markup contains no driver text. That assertion reads the OUTPUT. Renaming a
+ * variable does not move it; deleting the humaniser call inside either
+ * component fails it immediately.
+ *
+ * The two source-shape guards that remain in that file are the closed kind, not
+ * the whitelist kind: "`RawApiErrorBanner` appears exactly twice — the import
+ * and the one use inside the wrapper" and "`humaniseMoveFailure(` appears
+ * exactly once", so a NEW raw use is caught without anyone having to have
+ * predicted its spelling.
  */
+
+/** A refused move, exactly as the server described it. Raw on purpose. */
+export type MoveFailure = {
+  /** The server's own message. NEVER rendered — `MoveFailureNotice` humanises it. */
+  readonly message: string
+  /** The destination that was refused; disambiguates the anonymous sprint CHECKs. */
+  readonly toStatus: string
+  /** HTTP status, used only when the server said nothing at all. */
+  readonly status?: number
+}
+
+/**
+ * The move sheet's red bar. Takes the RAW failure and humanises it here.
+ *
+ * Exported for `lib/__tests__/issue-moves.test.ts`, which renders it. That is
+ * the whole point: the caller cannot hand this component a pre-humanised string
+ * because it does not accept one, so there is no call site left to mutate.
+ */
+export function MoveFailureNotice({ failure }: { failure: MoveFailure | null }) {
+  if (!failure) return null
+  return (
+    <div role="alert" data-testid="move-failure" className="mx-3 mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+      {humaniseMoveFailure(failure.message, failure.toStatus, failure.status)}
+    </div>
+  )
+}
+
+/**
+ * Every banner on this tab. Takes an `ApiError` and humanises it HERE, at the
+ * render, whatever the caller already did to it.
+ *
+ * The NAME is the mechanism. `components/ApiErrorBanner.tsx` is imported as
+ * `RawApiErrorBanner` and referenced exactly once — inside this function — so
+ * within this module the identifier `ApiErrorBanner` no longer resolves to a
+ * component that prints what it is handed. Every `<ApiErrorBanner …>` in this
+ * file humanises, including one somebody adds next year without reading any of
+ * this. A raw banner is not something a call site can reach by accident; it
+ * takes deliberately spelling `RawApiErrorBanner`, which
+ * `lib/__tests__/issue-moves.test.ts` permits exactly once, inside here.
+ *
+ * `safeApiError` keeps the status, the endpoint and the code — the half the
+ * banner is right about — and replaces only the message. It is idempotent
+ * (`isOwnSentence` in `lib/issue-moves.ts`), which is what lets the call sites
+ * go on humanising too: belt AND braces, and neither can be removed without the
+ * other still standing between the driver and the screen.
+ */
+export function ApiErrorBanner({ error, onRetry, className }: {
+  error: ApiError
+  onRetry?: () => void
+  className?: string
+}) {
+  return <RawApiErrorBanner error={safeApiError(error)} onRetry={onRetry} className={className} />
+}
 
 /** Row caps, named once so the header can print the same numbers it enforces. */
 const IN_FLIGHT_LIMIT = 400
@@ -165,7 +251,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
   const [countdown, setCountdown] = useState('')
 
   const [actionSheetIssue, setActionSheetIssue] = useState<Issue | null>(null)
-  const [moveError, setMoveError] = useState<string | null>(null)
+  const [moveError, setMoveError] = useState<MoveFailure | null>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Lane choice survives a reload, the same way BoardTab's swimlane does.
@@ -398,8 +484,12 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
     return { active, idle, total: all.length }
   }, [visible, roster.agents])
 
-  // Both banners get the humanised copy; the original goes to the console once,
-  // from an effect, so nothing is lost and nothing is logged during render.
+  // Both banners get the humanised copy HERE as well as inside
+  // `ApiErrorBanner`. The duplication is deliberate and is why `safeApiError`
+  // is idempotent: a mutation reverting either half leaves the other standing,
+  // so the screen stays honest while the test that names the reverted half goes
+  // red. The original goes to the console once, from an effect, so nothing is
+  // lost and nothing is logged during render.
   const shownError = useMemo(() => (error ? safeApiError(error) : null), [error])
   const shownRosterError = useMemo(() => (roster.error ? safeApiError(roster.error) : null), [roster.error])
   useEffect(() => {
@@ -648,14 +738,20 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
             })
             if (!r.ok) {
               setIssues(prev => prev ? prev.map(i => i.id === target.id ? { ...i, status: before } : i) : prev)
-              // Raw database text never reaches the screen. When the humaniser
-              // has to replace a message, the original goes to the console —
-              // the fallback sentence tells the operator to look for it there.
-              const human = humaniseMoveFailure(r.error.message, status, r.error.status)
-              if (human !== r.error.message) {
-                console.warn('[pipeline] move refused, raw server message:', r.error.message)
-              }
-              setMoveError(human)
+              // The RAW failure goes into state and `MoveFailureNotice` does the
+              // humanising at render. This branch deliberately holds no
+              // humanised string: there is nothing here to rebind to
+              // `r.error.message`, which is the one-line mutation that used to
+              // put a raw CHECK constraint back on this sheet with every test
+              // still green.
+              //
+              // The raw message is logged unconditionally rather than only when
+              // it was replaced. The old comparison needed a second call to the
+              // humaniser just to decide whether to log, and one extra line in
+              // the console on a refused move costs nothing next to a branch
+              // that can be flipped.
+              console.warn('[pipeline] move refused, raw server message:', r.error.message)
+              setMoveError({ message: r.error.message, toStatus: status, status: r.error.status })
               return
             }
             setActionSheetIssue(null)
@@ -1019,7 +1115,8 @@ function IssueCard({ issue, parent, onLongPressStart, onLongPressEnd, onOpenMove
    component entirely. */
 function MoveSheet({ issue, error, onClose, onMove }: {
   issue: Issue
-  error: string | null
+  // The RAW failure, not a sentence. See `MoveFailureNotice`.
+  error: MoveFailure | null
   onClose: () => void
   // Genuinely async in PipelineTab — it PATCHes the MC API and awaits the
   // result before deciding whether to close the sheet or show `error`. Typed
@@ -1087,7 +1184,7 @@ function MoveSheet({ issue, error, onClose, onMove }: {
 
 /** The bottom-sheet chrome, shared by the list view and the field form. */
 function MoveSheetShell({ issue, error, onClose, children }: {
-  issue: Issue; error: string | null; onClose: () => void; children: React.ReactNode
+  issue: Issue; error: MoveFailure | null; onClose: () => void; children: React.ReactNode
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/90 backdrop-blur-sm" onClick={onClose}>
@@ -1102,11 +1199,7 @@ function MoveSheetShell({ issue, error, onClose, children }: {
             Currently <span className="font-mono text-white/50">{String(issue.status)}</span> · move to another status
           </div>
         </div>
-        {error && (
-          <div role="alert" className="mx-3 mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
-            {error}
-          </div>
-        )}
+        <MoveFailureNotice failure={error} />
         {children}
       </div>
     </div>

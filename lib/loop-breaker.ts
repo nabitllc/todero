@@ -3,7 +3,14 @@
 // Tracks consecutive test failures per agent in agent_memory.
 // After 3 consecutive failures: sets is_paused=true, marks issue is_blocked,
 // posts to Discord #alerts, and creates an inbox request.
-// Resets the counter when an issue succeeds (test_status=passed).
+// Resets the counter when an issue succeeds. The trigger is the DERIVED
+// verdict at app/api/issues/route.ts:2515 — `derivedTestStatus === 'passed'
+// && before?.tester_status !== 'passed'` — i.e. a real `tester_status`
+// transition into 'passed'. This line said "(test_status=passed)" until
+// pieces9/run-safety-ceilings; there is no `test_status` column on `issues`
+// and the MC API answers 422 for it (measured), so the old wording named a
+// trigger that could never occur and sent a reader looking for a field that
+// does not exist. See lib/issues.ts's tombstone.
 
 import { db } from '@/lib/db'
 import { sendDiscordMessage } from '@/lib/discord-sender'

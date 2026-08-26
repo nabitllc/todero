@@ -234,7 +234,26 @@ export function describeLiveness(
 
 /** Fleet-wide tally. Every field is a count of rows, never an estimate. */
 export interface FleetSummary {
-  registered: number
+  /**
+   * How many rows the roster union produced. NOT "how many agents registered".
+   *
+   * ROUND 3 (2026-08-26). This field was called `registered` and
+   * {@link fleetHeadline} rendered it as `"28 registered"`. Measured live on
+   * this host the same minute: `GET /api/agents` returns 28 rows whose
+   * `rosterSource` tally is `{agents-md: 14, registered: 1, vault: 13}` — so
+   * the headline said twenty-eight registered while exactly ONE agent had
+   * registered. `registered` is a provenance word everywhere else in this
+   * lane: it means "self-registered through POST /api/connect", including
+   * eighty lines above this one, where a registration timestamp is refused
+   * the word "check-in" for precisely the same reason.
+   *
+   * Round 2 saw the collision and relabelled the Card metric to "in the
+   * fleet" (components/tabs/CrewTab.tsx), then left this sentence rendering
+   * "28 registered" immediately beneath it — one card, one word, two meanings,
+   * twenty-seven apart. Renaming the field is the fix that the label patch was
+   * standing in for: a caller can no longer spell the wrong noun by accident.
+   */
+  rows: number
   live: number
   offline: number
   never: number
@@ -255,7 +274,7 @@ export function summarizeFleet(
   offlineAfterMs: number = OFFLINE_AFTER_MS,
 ): FleetSummary {
   const summary: FleetSummary = {
-    registered: rows.length,
+    rows: rows.length,
     live: 0,
     offline: 0,
     never: 0,
@@ -309,12 +328,19 @@ export function fleetProvenanceLine(
 
 /**
  * The one-line headline the artboard puts beside "Fleet"
- * ("4 registered · 2 live · 1 waiting on you"). Only states with a non-zero
- * count are named, so an operator never reads "0 offline · 0 unknown" and has
- * to decide which zero matters.
+ * ("4 on the roster · 2 live · 1 never checked in"). Only states with a
+ * non-zero count are named, so an operator never reads "0 offline · 0 unknown"
+ * and has to decide which zero matters.
+ *
+ * THE FIRST NUMBER SAYS WHERE IT CAME FROM. It is the size of the roster
+ * union — `AGENTS.md` ∪ `agent_registrations` ∪ the vault registry — and the
+ * words "on the roster" are what that query returns. It is deliberately NOT
+ * "registered": see {@link FleetSummary.rows} for the twenty-seven-row lie
+ * that wording told on this host. Every other segment is a liveness
+ * classification of those same rows, so all five numbers trace to one read.
  */
 export function fleetHeadline(summary: FleetSummary): string {
-  const parts = [`${summary.registered} registered`]
+  const parts = [`${summary.rows} on the roster`]
   if (summary.live > 0) parts.push(`${summary.live} live`)
   if (summary.offline > 0) parts.push(`${summary.offline} offline`)
   if (summary.never > 0) parts.push(`${summary.never} never checked in`)
@@ -365,6 +391,23 @@ export type FleetActivity = 'blocked' | 'working' | 'stalled' | 'assigned' | 'id
 
 /** Where GET /api/agents' `currentTask` came from. Mirrors the route's type. */
 export type TaskProvenance = 'heartbeat' | 'assigned-issue' | 'none'
+
+/**
+ * The provenance words this build knows, as a runtime set.
+ *
+ * The type above is erased at compile time and the wire is not TypeScript, so
+ * {@link describeActivity} needs an actual membership test to tell "a value I
+ * recognise" from "a value I do not". Kept beside the type so the two cannot
+ * drift: adding a fourth member to the union without adding it here downgrades
+ * that member to the unrecognised branch — visible and honest — rather than
+ * silently dropping it into the "no task" denial, which is the failure this
+ * set was added to stop.
+ */
+export const RECOGNISED_TASK_PROVENANCE: ReadonlySet<string> = new Set<TaskProvenance>([
+  'heartbeat',
+  'assigned-issue',
+  'none',
+])
 
 /** The row fields an activity classification reads. All from GET /api/agents. */
 export interface FleetActivityInput {
@@ -484,13 +527,77 @@ export function describeActivity(
     }
   }
 
-  // 4. Nothing from either source. Note this says nothing about liveness: a
+  // 4. A task string whose provenance this build does not recognise.
+  //
+  //    ROUND 3 (2026-08-26). Branches 2 and 3 each test a LITERAL provenance
+  //    value, so before this branch existed a row carrying a real task under a
+  //    fourth value fell all the way through to branch 5 and rendered
+  //    "no task — neither a heartbeat nor a board row names work for this
+  //    agent" — an empty state, worded as a positive claim, over a row that
+  //    HAD a task. Measured by running the shipped function against
+  //    `{currentTask: 'TOD-42: a real task string', currentTaskSource:
+  //    'run-row'}`: state `idle`, that exact sentence. `taskLabel()` in this
+  //    same file fails closed correctly on the same input and returns
+  //    "assigned: TOD-42: a real task string", so the two halves of one
+  //    module contradicted each other — one showed the task, the other
+  //    swore there wasn't one.
+  //
+  //    `TaskProvenance` is a union of three strings, so TypeScript says this
+  //    is unreachable; the wire is not TypeScript. GET /api/agents can grow a
+  //    fourth value the day someone adds one, an older client can be talking
+  //    to a newer server, and a proxy or a hand-rolled fixture can send
+  //    anything at all. An enumerated whitelist that falls through to a
+  //    confident denial is the same defect class as the registration
+  //    timestamp dressed as a check-in.
+  //
+  //    FAILS CLOSED the way taskLabel does: the task IS shown, because it
+  //    exists and hiding it is the lie; it is NOT attributed to the agent,
+  //    because only a heartbeat earns that; and the sentence names the
+  //    unrecognised word so the reader can see which fact is missing rather
+  //    than inferring one. `needsAttention` stays false — an unknown
+  //    provenance is a gap in this module's knowledge, not a stuck agent, and
+  //    routing it to the operator's attention queue would be this file
+  //    claiming a verdict it does not have.
+  //    NOTE the two unknowns are NOT the same and do not get the same words.
+  //    `'none'` is a value this build recognises and it means "no sourced
+  //    task"; an unlisted word means "this build cannot tell". Only the second
+  //    lands here. The first falls to branch 5, which keeps the fail-closed
+  //    guarantee `activityOf` depends on — a wire row with a task string but
+  //    NO provenance field coerces to 'none' at the call site and must stay
+  //    `idle`, never be promoted on the strength of a string alone.
+  if (input.currentTask && !RECOGNISED_TASK_PROVENANCE.has(input.currentTaskSource)) {
+    const word = String(input.currentTaskSource ?? 'absent').trim() || 'absent'
+    return {
+      state: 'assigned',
+      badge: 'assigned',
+      label:
+        `"${input.currentTask}" is named for this agent, but its provenance arrived as ` +
+        `"${word}", which this build does not recognise — so whether the agent said it ` +
+        'or the board did cannot be told from here. Not read as a check-in.',
+      needsAttention: false,
+    }
+  }
+
+  // 5. Nothing this build can source. Note this says nothing about liveness: a
   //    live agent with no task is idle and fine; a dead one with no task is
   //    idle and the LIVENESS badge is where that shows.
+  //
+  //    The sentence has two forms because the row has two shapes. Usually
+  //    there is genuinely no task string. But a row can arrive carrying a task
+  //    with provenance 'none' — GET /api/agents never emits that pair (see
+  //    app/api/agents/route.ts, where 'none' and a null task are set from one
+  //    ternary), so it means an older server, a proxy, or a fixture. In that
+  //    case the old flat wording — "neither a heartbeat nor a board row names
+  //    work for this agent" — was a denial of a string sitting right there on
+  //    the row. It still is not read as work in progress; it just no longer
+  //    claims the string does not exist.
   return {
     state: 'idle',
     badge: 'idle',
-    label: 'no task — neither a heartbeat nor a board row names work for this agent',
+    label: input.currentTask
+      ? `a task string ("${input.currentTask}") arrived with no provenance, so nothing here ` +
+        'says whether the agent claimed it or the board did. Not read as work in progress.'
+      : 'no task — neither a heartbeat nor a board row names work for this agent',
     needsAttention: false,
   }
 }
@@ -587,21 +694,38 @@ export interface TaskLabelInput {
  *
  *   heartbeat      -> `reported: TOD-42: fix the nav`   (the AGENT's claim)
  *   assigned-issue -> `assigned: TOD-42: fix the nav`   (the BOARD's claim)
+ *   anything else  -> `unsourced: TOD-42: fix the nav`  (NOBODY's claim yet)
  *   none / empty   -> null
  *
  * Returns **null**, not `''` and not a placeholder, when there is no task: the
  * callers all use `label && <span>…` or `label || 'fallback'`, and handing
  * them a truthy empty-ish string would put an empty green line on screen.
  *
- * FAILS CLOSED by construction: an unrecognised or absent provenance takes the
- * `assigned` branch, never the `reported` one, because "the board says so" is
- * the weaker of the two claims and a caller that does not know which it holds
- * must not be upgraded to the agent's own word. (Callers reading a wire type
- * should still coerce a missing field to `'none'` before calling — that is
- * what `CrewTab.activityOf` does — but this function does not depend on it.)
+ * FAILS CLOSED by construction: an unrecognised or absent provenance is never
+ * upgraded to `reported`, because only a heartbeat earns the agent's own word.
+ * (Callers reading a wire type should still coerce a missing field to `'none'`
+ * before calling — that is what `CrewTab.activityOf` does — but this function
+ * does not depend on it.)
+ *
+ * ROUND 3 (2026-08-26): an unrecognised provenance now says `unsourced:`
+ * rather than borrowing `assigned:`. Failing closed meant not claiming the
+ * STRONGER fact; it never licensed asserting the weaker one. A row whose
+ * provenance this build cannot read is not evidence that the board assigned
+ * anything — printing "assigned:" over it invents a board row exactly the way
+ * the old undifferentiated `currentTask` invented a check-in, one rung down.
+ * `unsourced` is the honest third word, and it keeps this function's verdict
+ * identical to {@link describeActivity}'s on the same input; before this the
+ * two disagreed, one rendering the task while the other denied it existed.
+ *
+ * The provenance word still comes FIRST, for the truncation reason above:
+ * `unsourced` is nine characters a reader is guaranteed to see.
  */
 export function taskLabel(input: TaskLabelInput): string | null {
   const task = input.currentTask?.trim()
   if (!task) return null
-  return input.currentTaskSource === 'heartbeat' ? `reported: ${task}` : `assigned: ${task}`
+  if (input.currentTaskSource === 'heartbeat') return `reported: ${task}`
+  if (input.currentTaskSource === 'assigned-issue') return `assigned: ${task}`
+  // 'none' with a task string is the same impossible-from-this-server pair
+  // branch 5 of describeActivity documents, and gets the same treatment.
+  return `unsourced: ${task}`
 }

@@ -520,9 +520,16 @@ describe('no raw database text reaches the operator — in EITHER dialect', () =
       .toBe('An issue in Backlog cannot carry a sprint. Clear the sprint first.')
     expect(humaniseMoveFailure(anon('issues_check1'), 'in_progress', 500))
       .toBe('An issue being worked has to belong to a sprint. Set a sprint and try the move again.')
-    // No destination to reason from → the generic sentence, never a guess.
-    expect(humaniseMoveFailure(anon('issues_check1'), 'approved', 500))
-      .toMatch(/does not have wording for yet/)
+    // No destination to reason from → NOT a guess about which sprint rule it
+    // was. It used to fall all the way to "a rule this board does not have
+    // wording for yet"; it now stops one step earlier, on the sentence that is
+    // true of every CHECK in either dialect. Both halves are asserted, because
+    // the load-bearing half is the negative one: whatever it says, it must not
+    // pick one of the two sprint sentences at random.
+    const noDestination = humaniseMoveFailure(anon('issues_check1'), 'approved', 500)
+    expect(noDestination).toMatch(/the workflow does not allow/)
+    expect(noDestination).not.toMatch(/sprint/i)
+    expect(noDestination).not.toMatch(/issues_check|violates check constraint/)
   })
 
   it('still leaves every human sentence the MC API writes alone', () => {
@@ -763,11 +770,27 @@ describe('every sentence the MC API writes survives the humaniser unchanged', ()
    * interpolate expressions that themselves contain quotes and backticks —
    * `${missing.join(', ')}`, `${VALID_RESOLUTION_TYPES.join(', ')}` — which a
    * regex cannot bracket correctly.
+   *
+   * `key` is a parameter, and that is the repair this revision exists for. The
+   * scanner used to hard-code `error:` followed IMMEDIATELY by a quote, which
+   * meant it could only see refusals written as `{ error: 'literal' }`. Three
+   * of the five route files above do not write them that way:
+   *
+   *   `{ error: e.message }`      — db proxy, 503 and 400 (route.ts:276, 279)
+   *   `{ error: NO_KEY_ERROR() }` — agents, 503 (route.ts:928, 954)
+   *
+   * Those are not driver text — every one of them is a sentence written in this
+   * repo, in `lib/db/*` — but the scanner could not see them, so the allowlist
+   * did not cover them, so they were replaced, and this suite reported 179/179
+   * while it happened. Measured 2026-08-26: FOURTEEN repo-written sentences
+   * eaten on BOTH humanisers with every assertion here green. `key` being a
+   * parameter is what lets the passes below reach them at their SOURCE — the
+   * `throw` site — rather than at the `error:` key where the text is gone.
    */
-  function messageLiterals(src: string): string[] {
+  function messageLiterals(src: string, key: RegExp): string[] {
     const out: string[] = []
-    const key = /\berror\s*:\s*(['"`])/g
     let m: RegExpExecArray | null
+    key.lastIndex = 0
     while ((m = key.exec(src)) !== null) {
       const quote = m[1]
       let i = m.index + m[0].length
@@ -814,34 +837,113 @@ describe('every sentence the MC API writes survives the humaniser unchanged', ()
    */
   const TOKENS = new Set(['unscoped_issues_read', 'project_outside_scope'])
 
-  const literals = ROUTE_FILES.flatMap(rel => {
+  const read = (rel: string): string => {
     const abs = path.join(__dirname, '..', '..', rel)
-    if (!fs.existsSync(abs)) return []
-    return messageLiterals(fs.readFileSync(abs, 'utf8'))
-  }).filter(s => !NOT_A_MESSAGE.has(s))
+    return fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : ''
+  }
+
+  /* ── PASS 1: quoted `error:` literals in the five route files ─────────────── */
+  const routeLiterals = ROUTE_FILES
+    .flatMap(rel => messageLiterals(read(rel), /\berror\s*:\s*(['"`])/g))
+    .filter(s => !NOT_A_MESSAGE.has(s))
+
+  /* ── PASS 2: the DB seam's own refusals, read at the `throw` ────────────────
+   *
+   * These reach the operator through `{ error: e.message }`, which carries no
+   * literal for pass 1 to find. Scanned at the constructor call instead, which
+   * is where the text actually is.
+   *
+   * The scanner reads only the FIRST literal of each `throw` — these are
+   * multi-line concatenations, and the second half is usually all interpolation
+   * (`${missing.join(', ')}`). That is enough and it is the right half: the
+   * allowlist anchors on the START of a sentence, because the start is the part
+   * a template literal cannot change.
+   */
+  const SEAM_FILES = [
+    'lib/db/query-params.ts',
+    'lib/db/errors.ts',
+    'lib/db/sqlite-adapter.ts',
+    'lib/db/pg-adapter.ts',
+    'lib/db/supabase-env.ts',
+    'lib/db.ts',
+    'app/api/db/[...path]/route.ts',
+  ]
+  const seamLiterals = SEAM_FILES
+    .flatMap(rel => messageLiterals(read(rel), /\bnew Db(?:QueryParse|Configuration)Error\s*\(\s*(['"`])/g))
+    .filter(s => !NOT_A_MESSAGE.has(s))
+
+  /* ── PASS 3: `dbStatusMessage()`, wrapped the way `app/api/agents` wraps it ──
+   *
+   * `NO_KEY_ERROR = () => `${dbStatusMessage()} — agent run state unavailable``
+   * puts the interpolation FIRST, so the scanner's stand-in lands at position
+   * zero and the scraped text is useless to a start-anchored allowlist. The
+   * suffix is still read from source — never typed here — and the prefix comes
+   * from calling the real function in both of its two states.
+   */
+  const noKeySuffix = messageLiterals(
+    read('app/api/agents/route.ts'),
+    /\bNO_KEY_ERROR\s*=\s*\(\s*\)\s*=>\s*(`)/g,
+  )[0]
+
+  const seamRuntime: string[] = [
+    // Both spellings `dbStatusMessage()` can return, each wrapped in the
+    // agents-route suffix exactly as that route wraps it.
+    'database ready (provider "sqlite")',
+    'database not configured (provider "sqlite"): missing TODERO_SQLITE_PATH',
+  ].flatMap(s => [s, noKeySuffix ? noKeySuffix.replace(/^X/, s) : s])
 
   it('found the routes and read real literals out of them', () => {
     // Without this, a scanner that silently matched nothing would make every
     // assertion below pass vacuously — which is how the defect this whole file
     // exists for survived five sweeps.
-    expect(literals.length).toBeGreaterThan(25)
-    expect(literals).toContain('Issue is closed and read-only.')
-    expect(literals).toContain('Only main/po/ops or the workspace owner can reset an issue to backlog.')
-    expect(literals).toContain('window must be 7d or 30d')
+    expect(routeLiterals.length).toBeGreaterThan(25)
+    expect(routeLiterals).toContain('Issue is closed and read-only.')
+    expect(routeLiterals).toContain('Only main/po/ops or the workspace owner can reset an issue to backlog.')
+    expect(routeLiterals).toContain('window must be 7d or 30d')
+  })
+
+  it('found the DB seam refusals the `error:` scanner is structurally blind to', () => {
+    // Same non-vacuity guard, for the pass that did not exist. The three named
+    // sentences are the ones measured EATEN on 2026-08-26; if the scanner ever
+    // stops finding them, this fails rather than going quiet.
+    expect(seamLiterals.length).toBeGreaterThan(12)
+    expect(seamLiterals).toContain('"or" needs at least one term.')
+    expect(seamLiterals).toContain('Invalid numeric value "X".')
+    expect(seamLiterals.some(s => s.startsWith('The local database file does not exist yet'))).toBe(true)
+    expect(seamLiterals.some(s => s.startsWith('Database is not configured'))).toBe(true)
+    // And the agents-route wrapper, read from source rather than typed.
+    expect(noKeySuffix).toBe('X — agent run state unavailable')
   })
 
   it('passes every one of them through both humanisers unchanged', () => {
     const eaten: string[] = []
-    for (const s of literals) {
+    for (const s of [...routeLiterals, ...seamLiterals, ...seamRuntime]) {
       if (TOKENS.has(s)) continue
       if (humaniseMoveFailure(s, 'open', 422) !== s) eaten.push(`move: ${s}`)
       if (humaniseLoadFailure(s) !== s) eaten.push(`load: ${s}`)
     }
-    // A failure here means the API grew a refusal that `MC_API_MESSAGES` does
-    // not cover. The fix is to add the pattern there, NOT to relax this test:
-    // the operator would otherwise see "a rule this board does not have wording
-    // for yet" in place of a sentence the API already wrote for them.
+    // A failure here means the API or the DB seam grew a refusal that
+    // `MC_API_MESSAGES` / `DB_SEAM_MESSAGES` does not cover. The fix is to add
+    // the pattern there, NOT to relax this test: the operator would otherwise
+    // see "a rule this board does not have wording for yet" in place of a
+    // sentence the repo already wrote for them.
     expect(eaten).toEqual([])
+  })
+
+  it('every "Only …" refusal in the routes really does contain the verb the allowlist requires', () => {
+    // `MC_API_MESSAGES` matches `/^Only [^.]{0,200}\bcan\b/` rather than the
+    // `/^Only\s+\S/` it used to, so that a driver message opening with "Only "
+    // is not waved through on the strength of one word. That narrowing is only
+    // safe if every real refusal satisfies it — asserted here against the
+    // literals themselves, not against memory.
+    const onlys = routeLiterals.filter(s => s.startsWith('Only '))
+    expect(onlys.length).toBeGreaterThanOrEqual(10)
+    for (const s of onlys) expect(humaniseMoveFailure(s, 'open', 403)).toBe(s)
+
+    // The other half of the same narrowing: the shape that used to walk through.
+    const notOurs = 'Only one row may be updated at a time (pg internal)'
+    expect(humaniseMoveFailure(notOurs, 'open', 500)).not.toBe(notOurs)
+    expect(humaniseLoadFailure(notOurs)).not.toBe(notOurs)
   })
 })
 
@@ -905,5 +1007,558 @@ describe('safeApiError replaces the message and nothing else', () => {
       expect(safe.message).not.toBe(message)
       expect(safe.message).not.toMatch(/localhost|5432|constraint|permission denied/i)
     }
+  })
+})
+
+/* ══ THE TWO SURFACES, RENDERED ══════════════════════════════════════════════
+ *
+ * Everything above this line tests FUNCTIONS. On 2026-08-26 a fresh critic
+ * showed that was not enough: two one-line edits inside
+ * `components/tabs/PipelineTab.tsx` put raw driver text back on both operator
+ * surfaces and left this lane's suites at 198 passed / 198 total.
+ *
+ *   line 654  `const human = humaniseMoveFailure(r.error.message, status, …)`
+ *               → `const human = r.error.message`
+ *             The move sheet — this channel's headline surface — renders
+ *             `CHECK constraint failed: ((status NOT IN ('open',…)) OR (sprint
+ *             IS NOT NULL))` again. Nothing anywhere caught it.
+ *   line 799  `const safe = safeApiError(r.error)` → `const safe = r.error`
+ *             The Pipeline-health banner prints driver text again. The guard
+ *             that should have caught it was
+ *             `expect(src).toMatch(/setErr\(safe\)/)` — a whitelist of source
+ *             spellings, satisfied by rebinding the variable.
+ *
+ * The note in that file said a rendering test was impossible here: "this repo
+ * has no @testing-library/react and `jest.config.js` sets
+ * `testEnvironment: 'node'`". Only the first half is true. `react-dom/server`
+ * is a dependency and `renderToStaticMarkup` runs in plain node — no DOM, no
+ * jsdom, no new dependency. So the surfaces are RENDERED below and the MARKUP
+ * is asserted.
+ *
+ * Both mutations are now impossible to express rather than merely caught: the
+ * component holds no humanised string to rebind. `MoveFailureNotice` accepts
+ * `{message, toStatus, status}` and humanises inside itself; `SafeErrorBanner`
+ * accepts a raw `ApiError` and calls `safeApiError` inside itself.
+ *
+ * NOT VERIFIED HERE: whether an operator's browser actually reaches these
+ * components — that is a DOM fact, and this lane has no browser. What is
+ * verified is that IF either renders, no driver text is in its output.
+ */
+describe('the two operator surfaces, rendered', () => {
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const React = require('react')
+  const { MoveFailureNotice, ApiErrorBanner } = require('@/components/tabs/PipelineTab')
+
+  /** The exact string the critic's mutation put back on the move sheet. */
+  const RAW_CHECK =
+    "CHECK constraint failed: ((status NOT IN ('open', 'in_progress', 'in_review')) OR (sprint IS NOT NULL))"
+
+  it('the move sheet renders the sentence, never the constraint', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(MoveFailureNotice, {
+        failure: { message: RAW_CHECK, toStatus: 'open', status: 500 },
+      }),
+    )
+    expect(html).toContain('An issue being worked has to belong to a sprint')
+    expect(html).not.toMatch(/CHECK constraint|NOT IN|sprint IS NOT NULL/)
+  })
+
+  it('the move sheet renders nothing at all when there is no failure', () => {
+    expect(renderToStaticMarkup(React.createElement(MoveFailureNotice, { failure: null }))).toBe('')
+  })
+
+  it('the move sheet keeps a sentence the MC API wrote', () => {
+    const human = 'Issue is closed and read-only.'
+    const html = renderToStaticMarkup(
+      React.createElement(MoveFailureNotice, { failure: { message: human, toStatus: 'open', status: 403 } }),
+    )
+    expect(html).toContain(human)
+  })
+
+  it('every banner on the tab renders the sentence, never the driver text', () => {
+    for (const message of [
+      'no such column: "nope_not_a_column" - should this be a string literal in single-quotes?',
+      'connection to server at "localhost" (::1), port 5432 failed: Connection refused',
+      'permission denied for table issues',
+      RAW_CHECK,
+    ]) {
+      const html = renderToStaticMarkup(
+        React.createElement(ApiErrorBanner, {
+          error: { status: 500, endpoint: '/api/db/issues', message },
+        }),
+      )
+      // The half the banner is RIGHT about survives — an operator still has to
+      // be able to tell a refused request from an empty dataset.
+      expect(html).toContain('/api/db/issues')
+      expect(html).toContain('500')
+      // The half it was wrong about does not.
+      expect(html).not.toMatch(/no such column|localhost|5432|permission denied|CHECK constraint/)
+    }
+  })
+
+  it('the banner still shows a sentence the DB seam wrote, in full', () => {
+    // The regression this whole revision is about, at the surface: the operator
+    // must still be told which command to run.
+    const message =
+      'The local database file does not exist yet: /data/todero.db. Run `npm run db:migrate` ' +
+      '(or `npm run setup`) to create it. Point TODERO_SQLITE_PATH or TODERO_DATA_DIR somewhere ' +
+      'else to use a different file.'
+    const html = renderToStaticMarkup(
+      React.createElement(ApiErrorBanner, { error: { status: 503, endpoint: '/api/db/issues', message } }),
+    )
+    expect(html).toContain('npm run db:migrate')
+    expect(html).not.toMatch(/no wording for yet|bug in Todero/)
+  })
+})
+
+/* ── the closed source guards ────────────────────────────────────────────────
+ *
+ * These are greps, and greps are what failed last time — so they are written
+ * the other way round from the ones that failed. The old guard asked "is the
+ * approved spelling present?", which a rename satisfies. These ask "is there
+ * exactly ONE use, and is it the one inside the safe component?", which a new
+ * raw use fails whether or not anyone predicted how it would be spelled.
+ * Default-deny, the same rule the humaniser itself follows.
+ */
+describe('PipelineTab has exactly one place a message can reach a screen', () => {
+  const src: string = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'components', 'tabs', 'PipelineTab.tsx'),
+    'utf8',
+  )
+  /** Comments talk ABOUT these identifiers; only code counts. */
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+  it('names the RAW banner exactly twice — the import, and one use inside the wrapper', () => {
+    // `components/ApiErrorBanner.tsx` prints `formatApiError(error)` verbatim.
+    // PipelineTab imports it as `RawApiErrorBanner` and defines its OWN
+    // `ApiErrorBanner` that humanises first, so within that module the
+    // unqualified name IS the safe one and every call site — including a future
+    // one written by someone who never read the header — goes through the
+    // wrapper. Reaching the raw component takes deliberately spelling
+    // `RawApiErrorBanner`, which is what this counts.
+    const mentions = code.match(/RawApiErrorBanner/g) ?? []
+    expect(mentions).toHaveLength(2)
+    expect(code).toMatch(/import RawApiErrorBanner from '@\/components\/ApiErrorBanner'/)
+    expect(code).toMatch(/export function ApiErrorBanner[\s\S]{0,900}?<RawApiErrorBanner/)
+    // …and no second import can quietly reintroduce the unsafe name.
+    expect(code).not.toMatch(/import\s+ApiErrorBanner\s+from/)
+  })
+
+  it('calls humaniseMoveFailure exactly once, and that once is inside MoveFailureNotice', () => {
+    const calls = code.match(/humaniseMoveFailure\s*\(/g) ?? []
+    expect(calls).toHaveLength(1)
+    expect(code).toMatch(/function MoveFailureNotice[\s\S]{0,600}?humaniseMoveFailure\s*\(/)
+  })
+
+  it('holds no humanised move message in state — the state is the RAW failure', () => {
+    // The mutation `const human = r.error.message` needed a `human` binding to
+    // exist. There is none, and the state type says so.
+    expect(code).toMatch(/useState<MoveFailure \| null>\(null\)/)
+    expect(code).toMatch(/setMoveError\(\{\s*message: r\.error\.message/)
+    expect(code).not.toMatch(/setMoveError\(\s*human\s*\)/)
+  })
+})
+
+/* ══ THE CORPUS NOBODY WROTE BY HAND ═════════════════════════════════════════
+ *
+ * Every other test in this file checks a message somebody thought of. That is
+ * exactly the property this channel keeps failing on, in both directions: a
+ * denylist of shapes somebody thought of let sixteen real driver strings
+ * through, and an allowlist of shapes somebody thought of ate fourteen real
+ * repo sentences. A list curated by imagination reports full coverage either
+ * way.
+ *
+ * So this block does not curate. It builds BOTH dialects from the shipped
+ * migrations, walks every table and every column in each, and forces the
+ * drivers to speak for themselves — NOT NULL, CHECK, UNIQUE, FOREIGN KEY, type
+ * coercion, generated columns, missing columns, missing tables — then feeds
+ * every distinct string the drivers produced through both humanisers and the
+ * banner wrapper.
+ *
+ * Measured 2026-08-26 on this machine: 326 distinct messages across the two
+ * dialects. ZERO survived either humaniser or the banner wrapper. 26 of the 326
+ * reached the generic sentence; seven new entries in `KNOWN_CONSTRAINTS` were
+ * written FROM this sweep rather than from memory, and cut that 26 to ONE.
+ *
+ * The assertion is the leak count, not the corpus contents: a migration that
+ * adds a constraint nobody here anticipated is swept automatically the next
+ * time this runs. That is the only kind of test that can find the case nobody
+ * thought of.
+ */
+describe('no driver in either dialect can put raw text on a screen', () => {
+  const Database = require('better-sqlite3')
+  const { PGlite } = require('@electric-sql/pglite')
+  const ROOT = path.join(__dirname, '..', '..')
+
+  /** Every distinct error string better-sqlite3 produces against the real schema. */
+  function sweepSqlite(): string[] {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = ON')
+    const dir = path.join(ROOT, 'migrations', 'sqlite')
+    for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.sql')).sort()) {
+      db.exec(fs.readFileSync(path.join(dir, f), 'utf8'))
+    }
+    const msgs = new Set<string>()
+    const run = (sql: string, args: unknown[] = []) => {
+      try { db.prepare(sql).run(...(args as never[])) } catch (e) { msgs.add(String((e as Error).message)) }
+    }
+    const tables: string[] = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+      .all().map((r: { name: string }) => r.name)
+    for (const t of tables) {
+      run(`INSERT INTO "${t}" DEFAULT VALUES`)
+      for (const c of db.prepare(`PRAGMA table_info("${t}")`).all() as { name: string }[]) {
+        run(`INSERT INTO "${t}" ("${c.name}") VALUES (?)`, ['__zz__'])
+        run(`INSERT INTO "${t}" ("${c.name}") VALUES (NULL)`)
+        run(`UPDATE "${t}" SET "${c.name}" = NULL`)
+        // The UPDATE arm is not redundant with the INSERT arm: a table whose
+        // columns all have defaults takes `INSERT … DEFAULT VALUES`, and its
+        // CHECKs are then only reachable by updating the row that insert left
+        // behind. Dropping this line cost the sweep every Postgres CHECK
+        // violation while the message count stayed above 100 — which is why the
+        // non-vacuity test below names the shapes and not just a total.
+        run(`UPDATE "${t}" SET "${c.name}" = ?`, ['__zz__'])
+      }
+    }
+    // A UNIQUE violation needs a row to collide with, and the issues CHECKs need
+    // a row to update — neither is reachable from the empty-table sweep.
+    const seed = `INSERT INTO issues (id, task_key, title, project, type, priority, status)
+                  VALUES ('zz-a','ZZ-1','probe','Limiglow','ops','low','backlog')`
+    db.prepare(seed).run()
+    run(seed)
+    for (const sql of [
+      `UPDATE issues SET status='open' WHERE id='zz-a'`,
+      `UPDATE issues SET sprint='2026-01-01' WHERE id='zz-a'`,
+      `UPDATE issues SET test_tier='zz' WHERE id='zz-a'`,
+      `UPDATE issues SET deployer_status='zz' WHERE id='zz-a'`,
+      `UPDATE issues SET resolution_type='zz' WHERE id='zz-a'`,
+      `UPDATE issues SET parent_id='nope' WHERE id='zz-a'`,
+      `SELECT zz_no_such_col FROM issues`,
+      `SELECT * FROM zz_no_such_table`,
+    ]) run(sql)
+    db.close()
+    return [...msgs]
+  }
+
+  /** The same sweep against a real Postgres, built from `migrations/*.sql`. */
+  async function sweepPostgres(): Promise<string[]> {
+    const pg = await PGlite.create()
+    const dir = path.join(ROOT, 'migrations')
+    for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.sql')).sort()) {
+      await pg.exec(fs.readFileSync(path.join(dir, f), 'utf8'))
+    }
+    const msgs = new Set<string>()
+    const q = async (sql: string, args?: unknown[]) => {
+      try { await pg.query(sql, args) } catch (e) { msgs.add(String((e as Error).message)) }
+    }
+    // `require`d rather than imported (this file is CommonJS under ts-jest), so
+    // PGlite arrives untyped and the row shapes are asserted at the boundary.
+    const { rows } = (await pg.query(
+      `SELECT tablename FROM pg_tables WHERE schemaname='public'`,
+    )) as { rows: { tablename: string }[] }
+    for (const { tablename: t } of rows) {
+      await q(`INSERT INTO "${t}" DEFAULT VALUES`)
+      const cols = (await pg.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1`,
+        [t],
+      )) as { rows: { column_name: string }[] }
+      for (const { column_name: c } of cols.rows) {
+        await q(`INSERT INTO "${t}" ("${c}") VALUES ($1)`, ['__zz__'])
+        await q(`INSERT INTO "${t}" ("${c}") VALUES (NULL)`)
+        await q(`UPDATE "${t}" SET "${c}" = NULL`)
+        await q(`UPDATE "${t}" SET "${c}" = $1`, ['__zz__'])
+      }
+    }
+    const seed = `INSERT INTO issues (id, task_key, title, project, type, priority, status)
+                  VALUES ('zz-a','ZZ-1','probe','Limiglow','ops','low','backlog')`
+    await q(seed)
+    await q(seed)
+    for (const sql of [
+      `UPDATE issues SET status='open' WHERE id='zz-a'`,
+      `UPDATE issues SET sprint='2026-01-01' WHERE id='zz-a'`,
+      `UPDATE issues SET test_tier='zz' WHERE id='zz-a'`,
+      `UPDATE issues SET deployer_status='zz' WHERE id='zz-a'`,
+      `UPDATE issues SET resolution_type='zz' WHERE id='zz-a'`,
+      `UPDATE issues SET parent_id='nope' WHERE id='zz-a'`,
+      `SELECT zz_no_such_col FROM issues`,
+      `SELECT * FROM zz_no_such_table`,
+      `SELECT 1/0`,
+    ]) await q(sql)
+    await pg.close()
+    return [...msgs]
+  }
+
+  let sqlite: string[] = []
+  let postgres: string[] = []
+  beforeAll(async () => {
+    sqlite = sweepSqlite()
+    postgres = await sweepPostgres()
+  }, 120_000)
+
+  it('actually forced the drivers to speak — in both dialects', () => {
+    // Non-vacuity. A sweep that silently produced nothing would make the leak
+    // assertion below pass on an empty list, which is the exact way the guards
+    // this file replaced managed to report full coverage while leaking.
+    expect(sqlite.length).toBeGreaterThan(100)
+    expect(postgres.length).toBeGreaterThan(100)
+    expect(sqlite.some(m => /^CHECK constraint failed/.test(m))).toBe(true)
+    expect(sqlite.some(m => /^NOT NULL constraint failed/.test(m))).toBe(true)
+    expect(sqlite.some(m => /^UNIQUE constraint failed/.test(m))).toBe(true)
+    expect(sqlite.some(m => /^FOREIGN KEY constraint failed/.test(m))).toBe(true)
+    expect(postgres.some(m => /violates check constraint/.test(m))).toBe(true)
+    expect(postgres.some(m => /null value in column/.test(m))).toBe(true)
+    expect(postgres.some(m => /invalid input syntax for type/.test(m))).toBe(true)
+  })
+
+  it('replaces every single one of them, on both humanisers and the banner', () => {
+    const leaked: string[] = []
+    for (const [dialect, corpus] of [['sqlite', sqlite], ['postgres', postgres]] as const) {
+      for (const m of corpus) {
+        if (humaniseMoveFailure(m, 'open', 500) === m) leaked.push(`${dialect} move: ${m}`)
+        if (humaniseLoadFailure(m) === m) leaked.push(`${dialect} load: ${m}`)
+        if (safeApiError({ status: 500, endpoint: '/api/db/issues', message: m }).message === m) {
+          leaked.push(`${dialect} banner: ${m}`)
+        }
+      }
+    }
+    expect(leaked).toEqual([])
+  })
+
+  it('says something SPECIFIC about all but a handful of them', () => {
+    // Not a leak test — a quality one. The generic sentence is honest but tells
+    // an operator nothing they can act on, so the number of corpus messages that
+    // reach it is worth watching. It was 26 before the seven entries this sweep
+    // produced; measured today it is exactly ONE — Postgres's `division by
+    // zero`, deliberately left there. The bound is loose rather than pinned to
+    // 1 on purpose: a new migration may legitimately add a constraint with no
+    // sentence yet, and that should be VISIBLE in this number without being a
+    // build break on the day it lands. If it ever climbs toward 20, the
+    // refinement table has stopped keeping up with the schema.
+    const all = [...new Set([...sqlite, ...postgres])]
+    const vague = all.filter(m => /does not have wording for yet/.test(humaniseMoveFailure(m, 'open', 500)))
+    expect(all.length).toBeGreaterThan(300)
+    expect(vague.length).toBeLessThan(20)
+  })
+})
+
+/* ── the operational sentences, pinned ───────────────────────────────────────
+ *
+ * A critic mutated `value too long for type` to a string that never matches and
+ * every suite stayed green: the refined sentence degraded silently to the
+ * generic one. The CHECK entries were pinned; none of the five operational ones
+ * was. They are now, one assertion each, keyed on the driver's own documented
+ * wording. Breaking any entry fails by name.
+ */
+describe('the operational refinements each still produce their own sentence', () => {
+  const CASES: readonly (readonly [string, RegExp])[] = [
+    ['value too long for type character varying(50)', /longer than the field allows/],
+    ['string or blob too big', /longer than the field allows/],
+    ['deadlock detected', /at the same moment/],
+    ['could not serialize access due to concurrent update', /at the same moment/],
+    ['database is locked', /database was busy/],
+    ['canceling statement due to statement timeout', /database was busy/],
+    ['permission denied for table issues', /not allowed to make this change/],
+    ['cannot execute UPDATE in a read-only transaction', /not allowed to make this change/],
+    ['connection to server at "localhost" (::1), port 5432 failed: Connection refused', /could not reach its database/],
+    ['server closed the connection unexpectedly', /could not reach its database/],
+    // The seven written from the dialect sweep above.
+    ['FOREIGN KEY constraint failed', /no longer exists/],
+    ['insert or update on table "issues" violates foreign key constraint "issues_parent_id_fkey"', /no longer exists/],
+    ['update or delete on table "issues" violates foreign key constraint "c" on table "releases": Key (id)=(1) is still referenced from table "releases"', /still points at this issue/],
+    ['UNIQUE constraint failed: workspaces.slug', /has to be unique/],
+    ['duplicate key value violates unique constraint "workspaces_slug_key"', /has to be unique/],
+    ['invalid input value for enum workspace_role: "__zz__"', /not one the workflow recognises/],
+    ['Invalid input for boolean type', /wrong kind for the field/],
+    ['malformed array literal: "__zz__"', /wrong kind for the field/],
+    ['column "total_tokens" can only be updated to DEFAULT', /the database maintains itself/],
+    ['table agent_run_records_fts_data may not be modified', /the database maintains itself/],
+    ["CHECK constraint failed: period IN ('run', 'daily', 'monthly')", /the workflow does not allow/],
+  ]
+
+  it.each(CASES)('%s', (raw, expected) => {
+    const out = humaniseMoveFailure(raw, 'open', 500)
+    expect(out).toMatch(expected)
+    expect(out).not.toMatch(/does not have wording for yet/)
+    expect(out).not.toBe(raw)
+  })
+
+  it('the issues.task_key unique rule keeps its OWN sentence, not the general one', () => {
+    // Ordering matters: the general UNIQUE entry was added after it and would
+    // swallow it if the two were ever reordered.
+    expect(humaniseMoveFailure('UNIQUE constraint failed: issues.task_key', 'open', 500))
+      .toMatch(/Another issue already has this key/)
+    expect(humaniseMoveFailure('duplicate key value violates unique constraint "issues_task_key_key"', 'open', 500))
+      .toMatch(/Another issue already has this key/)
+  })
+
+  it('the named issues CHECKs keep their OWN sentences, not the catch-all', () => {
+    // Same ordering hazard for the CHECK catch-all, which is deliberately last.
+    expect(humaniseMoveFailure("CHECK constraint failed: (test_tier IN ('smoke','integration','e2e'))", 'open', 500))
+      .toMatch(/test tier has to be one of/)
+    expect(humaniseMoveFailure("CHECK constraint failed: ((status NOT IN ('open','in_progress')) OR (sprint IS NOT NULL))", 'open', 500))
+      .toMatch(/has to belong to a sprint/)
+  })
+})
+
+/* ── lib/pipeline.ts names no column the database does not have ──────────────
+ *
+ * `lib/__tests__/pipeline-no-phantom-columns.test.ts` guards this file too, but
+ * a critic showed on 2026-08-26 that its check is SHAPE-gated: it inspects
+ * snake_case member names only, so `i.testStatus` and `i.verdict` — two reads of
+ * columns that do not exist — were invisible, while the snake_case spelling of
+ * the same mutation was caught. That test is not this lane's file to change, so
+ * the gap is closed here instead, from the other direction: rather than asking
+ * "does this look like a column name", enumerate the columns the schema really
+ * has and refuse anything else, whatever its casing.
+ */
+describe('lib/pipeline.ts reads only columns the issues table actually has', () => {
+  const Database = require('better-sqlite3')
+
+  /** Column names straight out of the shipped migrations, not a copied list. */
+  const columns: Set<string> = (() => {
+    const db = new Database(':memory:')
+    const dir = path.join(__dirname, '..', '..', 'migrations', 'sqlite')
+    for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.sql')).sort()) {
+      db.exec(fs.readFileSync(path.join(dir, f), 'utf8'))
+    }
+    const names = (db.prepare('PRAGMA table_info(issues)').all() as { name: string }[]).map(r => r.name)
+    db.close()
+    return new Set(names)
+  })()
+
+  /**
+   * Members that are legitimately NOT columns: array/string methods and the
+   * fields of `computeDualReviewState`'s return value. Named individually — a
+   * category-shaped exemption would let a phantom hide behind it.
+   */
+  const NOT_A_COLUMN = new Set([
+    'length', 'some', 'every', 'map', 'filter', 'find', 'includes', 'join',
+    'bothPassed', 'getTime', 'toString', 'slice', 'trim', 'has',
+  ])
+
+  it('found a real column list', () => {
+    expect(columns.size).toBeGreaterThan(40)
+    expect(columns.has('tester_status')).toBe(true)
+    expect(columns.has('test_status')).toBe(false)
+  })
+
+  it('every member read off an issue-shaped value is a real column', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'pipeline.ts'), 'utf8')
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    // The identifiers this module binds an issue or a child row to.
+    const reads = [...code.matchAll(/\b(?:issue|child|row|rec|i|c)\.([A-Za-z_$][\w$]*)/g)].map(m => m[1])
+    expect(reads.length).toBeGreaterThan(5)
+    const phantom = [...new Set(reads)].filter(name => !columns.has(name) && !NOT_A_COLUMN.has(name))
+    expect(phantom).toEqual([])
+  })
+})
+
+/* ── the four bodies this dev server really returned, 2026-08-26 ─────────────
+ *
+ * Copied verbatim from `curl` against http://localhost:3000, signed in as the
+ * owner, `Referer: /p/limiglow`, scoped exactly the way the Pipeline scopes its
+ * own reads. Two of the four are sentences this repo wrote and two are driver
+ * text, and they arrive on the SAME endpoint with the SAME status — 400 — which
+ * is why the humaniser has to decide on the message and cannot decide on the
+ * status.
+ *
+ * Before this revision, all four were replaced. The first two are the ones the
+ * operator lost.
+ */
+describe('the live 400s from /api/db/issues, sorted correctly', () => {
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const React = require('react')
+  const { ApiErrorBanner } = require('@/components/tabs/PipelineTab')
+
+  const render = (message: string) =>
+    renderToStaticMarkup(
+      React.createElement(ApiErrorBanner, {
+        error: { status: 400, endpoint: '/api/db/issues?project=eq.Limiglow', message },
+      }),
+    )
+
+  /** `?limit=abc` and `?or=()` — `DbQueryParseError`, written in this repo. */
+  it.each([
+    'Invalid numeric value "abc".',
+    '"or" needs at least one term.',
+    'Unsupported filter operator "zz" on column "status".',
+  ])('keeps the seam sentence: %s', message => {
+    expect(humaniseLoadFailure(message)).toBe(message)
+    expect(render(message)).toContain(message.replace(/"/g, '&quot;'))
+  })
+
+  /** `?select=nope_not_a_column` and `?nope_col=eq.1` — the driver's own text. */
+  it.each([
+    'no such column: "nope_not_a_column" - should this be a string literal in single-quotes?',
+    'no such column: "nope_col" - should this be a string literal in single-quotes?',
+  ])('replaces the driver text: %s', message => {
+    expect(humaniseLoadFailure(message)).not.toBe(message)
+    const html = render(message)
+    expect(html).not.toMatch(/no such column|nope_not_a_column|nope_col|single-quotes/)
+    expect(html).toMatch(/bug in Todero/)
+  })
+
+  it('an unconfigured database is not described as a refused query', () => {
+    // The factually wrong replacement this revision removes. There is no
+    // database to refuse anything; the server was naming the command to run.
+    const message =
+      'Database is not configured (provider "sqlite"). Missing environment variable: ' +
+      'TODERO_SQLITE_PATH. Set it in .env.local — see .env.local.template.'
+    expect(humaniseLoadFailure(message)).toBe(message)
+    expect(humaniseLoadFailure(message)).not.toMatch(/refused the query/)
+  })
+})
+
+/* ── humanising twice is the same as humanising once ─────────────────────────
+ *
+ * `components/tabs/PipelineTab.tsx` deliberately humanises a load error in a
+ * `useMemo` AND again inside its `ApiErrorBanner` wrapper, so that reverting
+ * either half leaves the other between the driver and the screen. That only
+ * works if the second pass recognises the first pass's output — otherwise a
+ * specific sentence degrades into the generic one, which is exactly the
+ * over-eating failure this revision exists to end, arriving by a different
+ * door.
+ */
+describe('the humanisers are idempotent', () => {
+  const RAW = [
+    'no such column: "nope" - should this be a string literal in single-quotes?',
+    "CHECK constraint failed: (test_tier IN ('smoke','integration','e2e'))",
+    'connection to server at "localhost" (::1), port 5432 failed: Connection refused',
+    'FOREIGN KEY constraint failed',
+    'deadlock detected',
+    'something no rule in this file has ever seen',
+    '',
+  ]
+
+  it('humaniseLoadFailure(humaniseLoadFailure(x)) === humaniseLoadFailure(x)', () => {
+    for (const raw of RAW) {
+      const once = humaniseLoadFailure(raw)
+      expect(humaniseLoadFailure(once)).toBe(once)
+    }
+  })
+
+  it('humaniseMoveFailure applied twice does not degrade the sentence', () => {
+    for (const raw of RAW) {
+      const once = humaniseMoveFailure(raw, 'open', 500)
+      expect(humaniseMoveFailure(once, 'open', 500)).toBe(once)
+    }
+  })
+
+  it('safeApiError twice returns the SAME object the second time', () => {
+    for (const message of RAW) {
+      const once = safeApiError({ status: 500, endpoint: '/api/db/issues', message })
+      // Identity, not equality: the value feeds a component through a `useMemo`,
+      // and a fresh object on the second pass would be a re-render for nothing.
+      expect(safeApiError(once)).toBe(once)
+    }
+  })
+
+  it('a second pass never turns a SPECIFIC sentence into the generic one', () => {
+    // The failure mode stated plainly, in case the assertions above are ever
+    // relaxed: the phantom-column sentence must survive being re-humanised.
+    const once = humaniseLoadFailure('column "zz" does not exist')
+    expect(once).toMatch(/bug in Todero/)
+    expect(humaniseLoadFailure(once)).toMatch(/bug in Todero/)
+    expect(humaniseLoadFailure(once)).not.toMatch(/no wording for yet/)
   })
 })

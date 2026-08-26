@@ -81,6 +81,19 @@ const HEARTBEAT_ONLY = 'tester' // a heartbeat carries a task, no issues row
 const BOTH = 'deployer' // both — the issue must win, and say so
 const NEITHER = 'ops' // neither
 const REGISTRATION_ONLY = 'fixture_registration_only'
+// ROUND 3. Two more roster agents, each named by an issues row that the route's
+// query is supposed to REFUSE. They exist so that deleting a clause changes the
+// response, not just the recorded query — see the stub's header.
+const DONE_ROW_AGENT = 'scout' // named only by a `done` issue
+const ARCHIVED_ROW_AGENT = 'auditor' // named only by an ARCHIVED in_progress issue
+// Named by an issue whose `key + title` is comfortably over the 80-char wire
+// cap, so that removing `.slice(0, 80)` CHANGES THE RESPONSE. Without a row
+// like this the cap assertion is vacuously true and the mutant survives — it
+// did, on the first attempt at this test.
+const LONG_TITLE_AGENT = 'designer'
+const LONG_TITLE =
+  'a deliberately long issue title that runs well past the eighty character wire cap so the slice has something to cut'
+
 
 const NOW = Date.now()
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
@@ -108,6 +121,29 @@ const mockIssues = [
     task_key: 'TOD-9004', title: 'names a vault-only agent', status: 'in_progress',
     assignee: VAULT_ONLY_ID, worked_by: null, updated_at: iso(60_000), started_at: null,
   },
+  // ── Rows the query must exclude. Both name a real AGENTS.md agent, so if
+  //    either clause is dropped they land on the roster as
+  //    "assigned: TOD-90xx: …" — finished or archived work, rendered as work
+  //    in progress.
+  {
+    // Excluded by `.in('status', [...])`: 'done' is not an active status.
+    task_key: 'TOD-9005', title: 'finished work that must not render as current', status: 'done',
+    assignee: DONE_ROW_AGENT, worked_by: null, updated_at: iso(30_000), started_at: iso(90_000),
+    archived_at: null,
+  },
+  {
+    // Excluded by `.is('archived_at', null)`: an ACTIVE status, but archived.
+    // This is the row the status list alone cannot stop.
+    task_key: 'TOD-9006', title: 'archived work that must not render as current', status: 'in_progress',
+    assignee: ARCHIVED_ROW_AGENT, worked_by: null, updated_at: iso(30_000), started_at: iso(90_000),
+    archived_at: iso(10_000),
+  },
+  {
+    // Admitted by every clause — it exists to exercise the LENGTH cap.
+    task_key: 'TOD-9007', title: LONG_TITLE, status: 'in_progress',
+    assignee: LONG_TITLE_AGENT, worked_by: null, updated_at: iso(60_000), started_at: iso(60_000),
+    archived_at: null,
+  },
 ]
 
 const mockBeats = [
@@ -131,15 +167,72 @@ const mockTables: Record<string, unknown[]> = {
   agent_registrations: mockRegistrations,
 }
 
+/**
+ * Every query the route issued, in order. There is exactly ONE `GET()` in this
+ * file (the `beforeAll` below), so this array holds that request's queries and
+ * is never reset; a second request would append rather than replace.
+ *
+ * ─── ROUND 3: WHY THE STUB STOPPED BEING A NO-OP ─────────────────────────────
+ *
+ * The previous version of this stub built a chain whose every method was
+ * `() => chain` and then resolved with EVERY fixture row for the table,
+ * regardless of what was asked. That is a mock of the client's shape, not of
+ * its behaviour, and it made the filters invisible: a critic deleted
+ * `.in('status', [...])` from the issues query in app/api/agents/route.ts and
+ * all 141 lane tests stayed green. The clause that decides which issues count
+ * as "current work" was completely unguarded — with it gone, a `done` or
+ * `archived` row renders on the roster as "assigned: TOD-X: …", a finished
+ * ticket presented as work in progress.
+ *
+ * Two changes close it, and they are deliberately redundant:
+ *
+ *   1. The stub APPLIES `.in()`, `.eq()` and `.is()` to the fixture rows. A
+ *      deleted clause now changes the DATA, so the existing assertions about
+ *      what lands on the roster start failing on their own.
+ *   2. The stub RECORDS each call. A test can then assert the query itself,
+ *      which catches the case where today's fixtures happen not to contain a
+ *      row that the missing clause would have admitted.
+ *
+ * (1) alone would be defeated by a fixture set with nothing to exclude; (2)
+ * alone would be defeated by a clause that is recorded but wrong. Together
+ * they need two different lies to stay green.
+ */
+type RecordedQuery = { table: string; select?: string; in: [string, unknown[]][]; is: [string, unknown][]; eq: [string, unknown][] }
+const recordedQueries: RecordedQuery[] = []
+
+/** The recorded query against `table`, or undefined when it was never read. */
+function queryFor(table: string): RecordedQuery | undefined {
+  return recordedQueries.find(q => q.table === table)
+}
+
 jest.mock('@/lib/db', () => ({
   db: () => ({
     from: (table: string) => {
+      const q: RecordedQuery = { table, in: [], is: [], eq: [] }
+      recordedQueries.push(q)
+      let rows = [...((mockTables[table] as Record<string, unknown>[] | undefined) ?? [])]
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- chainable Supabase stub
       const chain: any = {}
-      for (const m of ['select', 'in', 'order', 'limit', 'eq', 'single', 'maybeSingle', 'upsert']) {
-        chain[m] = () => chain
+      // Pass-through shaping methods: recorded where useful, never filtering.
+      chain.select = (cols?: string) => { q.select = cols; return chain }
+      for (const m of ['order', 'limit', 'single', 'maybeSingle', 'upsert']) chain[m] = () => chain
+      // Filtering methods: recorded AND applied.
+      chain.in = (col: string, vals: unknown[]) => {
+        q.in.push([col, vals])
+        rows = rows.filter(r => vals.includes(r[col]))
+        return chain
       }
-      const rows = mockTables[table] ?? []
+      chain.eq = (col: string, val: unknown) => {
+        q.eq.push([col, val])
+        rows = rows.filter(r => r[col] === val)
+        return chain
+      }
+      chain.is = (col: string, val: unknown) => {
+        q.is.push([col, val])
+        // Supabase `.is(col, null)` means IS NULL; undefined counts as absent.
+        rows = rows.filter(r => (val === null ? r[col] === null || r[col] === undefined : r[col] === val))
+        return chain
+      }
       chain.then = (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
         resolve({ data: rows, error: null })
       return chain
@@ -295,5 +388,112 @@ describe('currentTaskLabel — the same fact, pre-worded, provenance FIRST', () 
         expect(row.currentTaskLabel?.startsWith('reported:')).toBe(false)
       }
     }
+  })
+})
+
+/**
+ * ─── ROUND 3: THE FOUR MUTANTS THAT SURVIVED ROUND 2 ─────────────────────────
+ *
+ * A fresh-context critic applied ten mutations to this lane's product code and
+ * reverted them. Six were caught by name. The four below were not: all 141 lane
+ * tests stayed green and `npx tsc --noEmit` stayed clean while the mutation was
+ * live. Each `it` here is named for the mutant it kills, so a future critic can
+ * re-apply the mutation and read the failure rather than take this on trust.
+ */
+describe('mutants that survived round 2 — the query that decides "current work"', () => {
+  /**
+   * MUTANT: delete `.in('status', [...])` from the issues query
+   *         (app/api/agents/route.ts).
+   *
+   * Caught twice over. The DATA assertion below fails because TOD-9005 is
+   * `done` and would reach the roster; the RECORD assertion fails because the
+   * clause is simply gone. The old stub could see neither — it returned every
+   * fixture row for `issues` no matter what was asked.
+   */
+  it('MUTANT deleting .in(status): a `done` issue never renders as current work', () => {
+    const row = byId(DONE_ROW_AGENT)
+    expect(row.currentTaskSource).toBe('none')
+    expect(row.currentTask).toBeNull()
+    expect(row.currentTaskLabel).toBeNull()
+  })
+
+  it('MUTANT deleting .in(status): the status filter is actually in the query', () => {
+    const q = queryFor('issues')
+    expect(q).toBeDefined()
+    const statusFilter = q!.in.find(([col]) => col === 'status')
+    expect(statusFilter).toBeDefined()
+    // The five statuses that mean "somebody could be working on this now".
+    expect(statusFilter![1]).toEqual(['open', 'in_progress', 'code_review', 'product_review', 'approved'])
+    // And the terminal states are NOT among them.
+    for (const terminal of ['done', 'archived', 'cancelled', 'backlog']) {
+      expect(statusFilter![1]).not.toContain(terminal)
+    }
+  })
+
+  /**
+   * ROUND 3 FIX, not a surviving mutant: the query carried NO archive clause,
+   * while /api/issues refuses to serve archived rows on every read. An archived
+   * issue in an active status was therefore eligible to render on the roster as
+   * current work. Latent on this host (measured 2026-08-26: `issues` holds 2
+   * rows and the one archived row is `backlog`, which the status list already
+   * excludes) — but nothing keeps it latent.
+   */
+  it('an ARCHIVED issue in an active status never renders as current work', () => {
+    const row = byId(ARCHIVED_ROW_AGENT)
+    expect(row.currentTaskSource).toBe('none')
+    expect(row.currentTask).toBeNull()
+    expect(row.currentTaskLabel).toBeNull()
+  })
+
+  it('the archive clause is actually in the query', () => {
+    const q = queryFor('issues')
+    expect(q!.is).toContainEqual(['archived_at', null])
+  })
+
+  /**
+   * MUTANT: `workStartedAt: issue?.startedAt ?? null` -> `workStartedAt: null`.
+   *
+   * `workStartedAt` is the SOLE input to describeActivity's "It has been in
+   * progress 3h." clause — the only duration evidence on an assigned row. The
+   * round-2 suite asserted only that it is null on a heartbeat row, so nothing
+   * objected when every row's start time was deleted.
+   */
+  it('MUTANT workStartedAt:null — an assigned row carries the board start time', () => {
+    const row = byId(ASSIGNED_ONLY)
+    expect(row.currentTaskSource).toBe('assigned-issue')
+    expect(row.workStartedAt).not.toBeNull()
+    expect(typeof row.workStartedAt).toBe('number')
+    // It is the fixture's own started_at, not "now" and not the updated_at.
+    expect(row.workStartedAt).toBe(new Date(iso(60_000)).getTime())
+  })
+
+  it('a heartbeat-sourced task still borrows no start time', () => {
+    const row = byId(HEARTBEAT_ONLY)
+    expect(row.currentTaskSource).toBe('heartbeat')
+    expect(row.workStartedAt).toBeNull()
+  })
+
+  /**
+   * MUTANT: remove `.slice(0, 80)` from the issue task string.
+   *
+   * Minor, and pinned because it was unpinned: the wire cap is what keeps a
+   * long issue title from blowing out the single-line surfaces that render
+   * `currentTaskLabel`.
+   */
+  it('MUTANT removing .slice(0,80) — the issue task string is capped at 80', () => {
+    // The fixture is chosen so the uncapped string would be far longer than
+    // the cap; asserting `<= 80` against a short title proves nothing, which
+    // is how this mutant survived its first guard.
+    const uncapped = `TOD-9007: ${LONG_TITLE}`
+    expect(uncapped.length).toBeGreaterThan(80)
+
+    const row = byId(LONG_TITLE_AGENT)
+    expect(row.currentTaskSource).toBe('assigned-issue')
+    expect(row.currentTask).toBe(uncapped.slice(0, 80))
+    expect(row.currentTask!.length).toBe(80)
+
+    // The cap applies to the raw task; the label adds its provenance word on
+    // top, so the label is allowed to be longer than 80.
+    expect(row.currentTaskLabel).toBe(`assigned: ${row.currentTask}`)
   })
 })

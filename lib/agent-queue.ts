@@ -156,7 +156,18 @@ Rules:
     checkBlocking: false,
     sortOrder: 'priority.asc',
     fetchLimit: 5,
-    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Check resolution_type to understand what kind of change was made (code_change = code diff to verify; config_change = config/env change; research_completed = document review; etc.). Run npm run build. If passes: PATCH to approved with test_status=passed + reviewer_notes. If fails: PATCH back to open with reviewer_notes explaining what failed.',
+    // `tester_status`, NOT `test_status`. This prompt said `test_status=passed`
+    // until pieces9/run-safety-ceilings. There has never been a `test_status`
+    // column on `issues` (see the tombstone in lib/issues.ts and the long note
+    // in migrations/066_bug_report_columns.sql), and since TOD-2446 the MC API
+    // refuses the field outright rather than 500ing on it — measured live
+    // today: `PATCH /api/issues {"test_status":"passed"}` -> HTTP 422,
+    // "`test_status` is not a field on an issue and never gets written."
+    // So every Tester run following this prompt to the letter would have had
+    // its verdict PATCH rejected, leaving the issue parked in code_review with
+    // no reviewer_notes. Prompt text is dispatched instructions, not
+    // documentation: a stale field name here is a live outage one spawn away.
+    promptPrefix: 'You are Tester. Review this issue against its acceptance criteria. Check resolution_type to understand what kind of change was made (code_change = code diff to verify; config_change = config/env change; research_completed = document review; etc.). Run npm run build. If passes: PATCH to approved with tester_status=passed + reviewer_notes. If fails: PATCH back to open with tester_status=failed + reviewer_notes explaining what failed. Never send `test_status` — it is not a column and the API answers 422 for it.',
     modelChain: [
       { runtime: 'claude-code', alias: 'haiku' },
     ],

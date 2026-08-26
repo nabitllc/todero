@@ -19,13 +19,34 @@
 // the Office used to make inline inside a `useEffect` or a `forEach`, where no
 // test could reach it.
 //
-// What is still NOT covered by an executing test, stated plainly: the single
-// expression in OfficeCanvas.tsx that passes `waitingRef.current` into
-// `drawAgents(...)`, and the `useEffect` bodies that call these functions on a
-// timer. Mounting OfficeCanvas would close that, and this repo has no jsdom
-// (jest.config.js -> testEnvironment "node"); adding one is a package.json
-// change and this lane does not own package.json. The residual seam is one
-// named argument instead of a whole feature.
+// A CORRECTION TO THIS HEADER, 2026-08-26. It used to end:
+//
+//     "The residual seam is one named argument instead of a whole feature."
+//
+// That was not true of the shipped code, and a fresh-context critic proved it
+// with thirty mutations. NINE survived a fully green suite and SEVEN of the
+// nine were inside OfficeCanvas.tsx - not one argument but the roster argument
+// to `partitionWaiting`, both `setPollError` calls, and four of the six
+// properties of the `drawAgents` options literal (`boardTasks`, `runs`,
+// `subagentCount`, `selectedId`, each replaced with junk, 77/77 green). Its
+// diagnosis was right: 18 `readFileSync` + `toContain` assertions were the
+// sole guard for that layer, and a whitelist of hand-picked source strings
+// only ever catches the strings someone thought to list.
+//
+// The repair is components/office/officeWiring.ts: every one of those seven
+// lines is now a pure exported function, executed by
+// __tests__/office-wiring.test.ts. All seven mutations were re-planted after
+// the move and all seven fail.
+//
+// WHAT IS STILL NOT COVERED, counted rather than characterised: the ~6 lines
+// inside the `useEffect` bodies that hand those functions their ref objects,
+// and the timers that arm them. Mounting OfficeCanvas is what closes those,
+// and this repo has no jsdom (jest.config.js -> `testEnvironment: "node"`;
+// `node_modules/jest-environment-jsdom` and `node_modules/jsdom` are both
+// absent as of 2026-08-26). Adding one is a package.json change this lane does
+// not own - the exact diff is docs/rebuild/pieces/pieces9/
+// agent-visualization.md section 9, and __tests__/office-wiring.test.ts
+// carries a tripwire that fails the day it lands.
 
 import type { ApiError } from '@/lib/fetch-json'
 import { countWaitingByAgent } from './officeDrawing'
@@ -74,6 +95,18 @@ export const BOARD_TASK_MIRROR_TICK_MS = 5_000
  *   Referer /fleet/office             -> 400 {"error":"unscoped_issues_read"}
  *   no Referer                        -> 400
  *   ...&all_projects=1, any Referer   -> 200
+ *
+ * READ THAT TABLE WITH ITS PRECONDITION. Authentication has since landed at
+ * HEAD (middleware.ts), and every endpoint above answers
+ * 401 {"error":"Unauthenticated","code":"UNAUTHENTICATED"} to a caller with no
+ * session - confirmed on 2026-08-26 for /api/issues, /api/inbox and
+ * /api/agents. The table reproduces ONLY with a session cookie; as originally
+ * written it read as reproducible by anyone, and was not. The cookie used for
+ * every measurement in this file is the acceptance harness's own checked-in
+ * test constant (scripts/acceptance/checks.mjs:16), not a real account. The
+ * internal-call bypass is not an alternative: there is no
+ * TODERO_INTERNAL_SECRET in .env.local, so `isInternalCall` returns false
+ * unconditionally. That is another lane's file and is reported, not touched.
  *
  * The route's own error body names the remedy — "pass all_projects=1 to read
  * across every project deliberately" — so this asks deliberately instead of
@@ -154,13 +187,16 @@ export function waitingPollOutcome(r: PollResult<unknown>): {
  * The canvas can only put a bubble over a head that exists, so a pending row
  * naming an agent that is not on the roster used to be counted and then
  * dropped on the floor by `waiting[ag.id] || 0` — no bubble, no notice, no
- * trace. A reviewing critic reported observing exactly that live on
- * 2026-08-26 — `/api/inbox?status=pending` naming `lane7-critic-agent`, which
- * is not among the ids `/api/agents` returns. I could not re-observe it (that
- * fixture is gone; `/api/inbox?status=pending` answers `[]` now), so treat the
- * sighting as reported, not as measured here. The hole it describes is real
- * regardless: the lookup below is what proves a row can be counted and then
- * dropped with nothing said.
+ * trace. MEASURED, not reported. A previous revision of this docstring said the
+ * fixture was gone and `/api/inbox?status=pending` answered `[]`, so the
+ * sighting could only be relayed. That is no longer true, and the docstring
+ * was understating its own evidence. Re-measured 2026-08-26 against the
+ * running dev server with the acceptance harness's own checked-in dev cookie
+ * (scripts/acceptance/checks.mjs:16): `/api/inbox?status=pending` -> 200 with
+ * 3 rows, naming `critic-probe` (2) and `avcrit-lane7-agent` (1), neither of
+ * which is among the 28 ids `/api/agents` returns. Both are therefore
+ * unroutable, both would have been silently dropped by the old
+ * `waiting[ag.id] || 0` lookup, and the office says so out loud instead.
  *
  * "Nowhere to draw it" is a fact about this canvas, not about the request. It
  * gets said out loud (see OfficeCanvas's unrouted-waiting feed line) instead
@@ -240,4 +276,39 @@ export function createBoardTaskMirror(publish: (v: Record<string, string>) => vo
       return last
     },
   }
+}
+
+/**
+ * Start the board-task mirror: publish once now, then on every tick.
+ *
+ * WHY THIS IS A FUNCTION AND NOT THREE LINES IN THE HOOK. Those three lines
+ * were guarded by three `readFileSync` + `toContain` assertions
+ * (office-board-task-mirror.test.ts:159-161,
+ * office-board-task-polling.test.ts:73-76). `createBoardTaskMirror` below is
+ * executed by tests, but nothing executed the code that ARMS it, so the first
+ * publish, the cadence and the cleanup were pinned only as source text -- and
+ * a whitelist of source strings only ever catches the strings someone thought
+ * to list. Here the timer functions are injected, so a test drives the tick
+ * with no clock and asserts what was published on each one.
+ *
+ * The first `sync()` before the interval is not a nicety: without it the
+ * sidebar shows nothing for a whole tick after mount, on a surface whose
+ * underlying fetch already answered.
+ *
+ * Returns the cleanup the effect must call. Leaking this interval leaks a
+ * closure over a ref that outlives the component.
+ */
+export function startBoardTaskMirror(
+  boardTasksRef: { current: Record<string, string> },
+  publish: (v: Record<string, string>) => void,
+  timers: {
+    setInterval: (fn: () => void, ms: number) => any
+    clearInterval: (h: any) => void
+  } = { setInterval: (fn, ms) => setInterval(fn, ms), clearInterval: h => clearInterval(h) },
+): () => void {
+  const mirror = createBoardTaskMirror(publish)
+  const sync = () => { mirror.sync(boardTasksRef.current) }
+  sync()
+  const handle = timers.setInterval(sync, BOARD_TASK_MIRROR_TICK_MS)
+  return () => timers.clearInterval(handle)
 }

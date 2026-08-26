@@ -51,20 +51,29 @@ describe('BOARD_TASKS_QUERY — the Office asks for cross-project scope DELIBERA
     expect(canvasSrc).toContain('fetchJson<any>(WAITING_QUERY)')
   })
 
-  it('THE ONE REMAINING GREP: the canvas hands drawAgents the real waiting ref', () => {
-    // Stated for what it is. This repo has no jsdom (jest.config.js ->
-    // testEnvironment "node"), so OfficeCanvas cannot be mounted, and this
-    // single expression is the last thing on this surface that no executing
-    // test reaches. I verified that plainly: replacing `waitingRef.current`
-    // with `{}` here leaves tsc at 0 errors and all 63 of this lane's tests
-    // green. So this assertion is worth exactly what a grep is worth — it
-    // catches a deletion, not a refactor. Everything the argument FEEDS is
-    // executed (office-bubble-render.test.ts); everything that FILLS it is
-    // executed (waitingPollOutcome/partitionWaiting above). Closing this last
-    // gap needs a jsdom devDependency, which is a package.json change this
-    // lane does not own.
-    expect(canvasSrc).toContain('waiting:waitingRef.current,')
-    expect(canvasSrc).toContain('waitingRef.current=split.drawable')
+  it('the canvas builds its draw options from named refs, not from literals', () => {
+    // WHAT THIS REPLACED, and why the replacement is not another grep.
+    //
+    // This slot used to hold an assertion labelled "THE ONE REMAINING GREP",
+    // pinning `waiting:waitingRef.current,` as source text. A fresh-context
+    // critic then walked around it: it left that string alone and passed `[]`
+    // as the ROSTER argument two lines earlier, which classifies every waiting
+    // agent as off-roster, empties `waitingRef.current` and makes a bubble
+    // impossible — with all 77 lane tests green. Four more of its survivors
+    // were sibling properties of the same object literal (`boardTasks:{}`,
+    // `runs:{}`, `subagentCount:99`, `selectedId:null`), none of which any
+    // grep enumerated.
+    //
+    // A whitelist of hand-picked source strings cannot be the guard for a
+    // wiring layer, because it only ever guards the strings someone thought to
+    // list. So the object literal is gone: OfficeCanvas now calls
+    // `drawOptionsFromRefs(drawRefs, …)`, and every property of the result is
+    // asserted by a test that RUNS it in __tests__/office-wiring.test.ts.
+    //
+    // What remains here is narrow and honest: that the component calls the
+    // extracted builder at all, rather than reconstructing a literal beside it.
+    expect(canvasSrc).toContain('drawOptionsFromRefs(drawRefs,')
+    expect(canvasSrc).not.toContain('waiting:waitingRef.current,')
   })
 })
 
@@ -161,8 +170,12 @@ describe('boardTasksFromIssues / boardTaskPollOutcome', () => {
     expect(out.error).toBe(FAILED.error)
   })
 
-  it('OfficeCanvas only assigns the ref when the outcome carries a board', () => {
-    expect(canvasSrc).toContain('if(out.tasks) boardTasksRef.current=out.tasks')
+  it('OfficeCanvas applies the outcome through the executed helper', () => {
+    // The rule itself — banner raised, map left alone on an unreadable answer
+    // — is asserted by running `applyBoardTaskOutcome` in
+    // __tests__/office-wiring.test.ts. This line only checks the component did
+    // not quietly re-inline it, which is all a grep is good for.
+    expect(canvasSrc).toContain('applyBoardTaskOutcome(boardTaskPollOutcome(r), boardTasksRef, setPollError)')
   })
 })
 
@@ -219,10 +232,11 @@ describe('unroutedWaitingMessage — the sentence the Office says out loud', () 
     expect(m).toContain('5 requests are')
   })
 
-  it('OfficeCanvas pushes it to the feed, and only when it changes', () => {
-    // Repeating the same sentence every 60s would train the operator to
-    // ignore the feed. The guard is the ref comparison at the call site.
-    expect(canvasSrc).toContain('unroutedWaitingMessage(split.unroutedIds, split.unroutedRows)')
-    expect(canvasSrc).toContain('if(msg && msg!==lastUnroutedMsgRef.current)')
+  it('OfficeCanvas pushes it to the feed through the executed helper', () => {
+    // The de-duplication that stops a 60s poll repeating one sentence a minute
+    // moved INTO `applyWaitingOutcome`, where office-wiring.test.ts calls it
+    // twice and asserts the second call added nothing to the feed. This is
+    // only the "did not re-inline it" check.
+    expect(canvasSrc).toContain('applyWaitingOutcome(')
   })
 })

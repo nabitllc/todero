@@ -19,6 +19,24 @@
 // while nine other lanes are running. The exact diff to add them is written up
 // as a requested seam in docs/rebuild/pieces/pieces8/work-ui-cards.md §11.
 //
+// CORRECTION, ROUND 3 (2026-08-26). The paragraph that stood here said "the
+// components were restructured instead, so that the branches the critic deleted
+// became reachable without a DOM." That was true of `WorkViewCardView` and
+// FALSE of the component `app/page.tsx` actually mounts. A second critic
+// mutation-tested the DEFAULT exports and 12 of 32 mutations survived this file
+// at 51/51 green — including verbatim TOD-2444 (`children={undefined}` after
+// the `{...props}` spread) and `setLoaded(true) -> setLoaded(false)`. The
+// restructuring moved the untested layer; it did not remove it.
+//
+// It is removed now, and NOT by restructuring: `__tests__/work-ui-wiring.test.tsx`
+// mounts the default exports for real and presses their buttons, using a
+// ~180-line dispatcher-driven micro-renderer instead of a new dependency. All
+// 12 of those mutants now fail, plus 8 more. This file keeps what it is good
+// at — the pure view in states a mount cannot easily force, and the request
+// functions in isolation.
+//
+// The paragraph as originally written:
+//
 // So the components were restructured instead, so that the branches the critic
 // deleted became reachable without a DOM:
 //
@@ -32,11 +50,17 @@
 //     of requests are asserted.
 //
 // NOT proven here, stated plainly rather than implied:
-//   • No click, keypress, drag or focus is exercised — there is no DOM to
-//     dispatch one into. Where a claim depends on the button being pressed,
-//     the request-layer behaviour is asserted and the WIRING is pinned by a
-//     source guard at the bottom of this file, which is a weaker instrument
-//     and is labelled as one.
+//   • No click, keypress, drag or focus is exercised IN THIS FILE. Round 2 put
+//     five `expect(src).toContain(...)` "source guards" at the bottom of this
+//     file to stand in for that. The same critic defeated all five with
+//     one-token edits that leave the guarded string intact —
+//     `{false && writeError && (`, `if (false && error) {`,
+//     `const retryFailedWrite = () => { return`. A string grep is not a test
+//     of behaviour, and a grep that a mutation walks straight past is worse
+//     than no test because it reads as coverage. All five are DELETED in round
+//     3 and replaced by real mounted-and-clicked tests in
+//     `__tests__/work-ui-wiring.test.tsx`.
+//   • Round 2's doc said this block held six guards. It held five.
 //   • No browser. Nothing here is DOM-level or visual evidence.
 
 import React from 'react'
@@ -368,6 +392,26 @@ describe('bulkMoveStatus — a partial failure is counted, named, and retryable'
     expect(out.appliedRows).toHaveLength(2)
   })
 
+  // ROUND 3. Round 2 asserted what a retry DOES and never read the sentence it
+  // shows, so `only those ${countVerbFor(n, 'rows', 'row')}` shipped and read
+  // "only those row" at n = 1: the noun was singularised and the demonstrative
+  // in front of it was left plural. That is the same disagreement as
+  // "1 issues" and "1 issue are loaded" — this file's own subject — written one
+  // line below the helper that exists to prevent it. Found by mounting the
+  // component and reading the banner; pinned at both ends here.
+  it('says "only that row" at one refusal, not "only those row"', async () => {
+    global.fetch = fetchFailing(['b']) as unknown as typeof fetch
+    const out = await bulkMoveStatus(['a', 'b'], 'code_review', keyOf)
+    expect(out.error!.message).toContain('Retry re-sends only that row.')
+    expect(out.error!.message).not.toContain('those row')
+  })
+
+  it('states the count in the plural rather than making the operator re-read it', async () => {
+    global.fetch = fetchFailing(['a', 'b']) as unknown as typeof fetch
+    const out = await bulkMoveStatus(['a', 'b', 'c'], 'code_review', keyOf)
+    expect(out.error!.message).toContain('Retry re-sends only those 2 rows.')
+  })
+
   it('does not report success when EVERY row was refused', async () => {
     global.fetch = fetchFailing(['a', 'b']) as unknown as typeof fetch
     const out = await bulkMoveStatus(['a', 'b'], 'code_review', keyOf)
@@ -473,61 +517,14 @@ describe('KanbanCard age signal', () => {
 })
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 9. SOURCE GUARDS — a weaker instrument, labelled as one.
+// 9. THE SOURCE GUARDS THAT USED TO LIVE HERE ARE GONE.
 //
-// Everything above is real behaviour. These are not: they read the file as
-// text. They exist only for the wiring that has no other reachable proof under
-// `testEnvironment: "node"` — a JSX prop and a state assignment that only a
-// click can otherwise exercise. They would be deleted the day this repo grows a
-// jsdom environment (see the requested seam in the piece doc), and they should
-// not be mistaken for evidence that the button was pressed. It was not.
+// Five `expect(src).toContain('…')` assertions over IssuesTab's wiring stood
+// here. A critic defeated every one of them with an edit that left the guarded
+// string byte-identical, so they certified nothing while reading as coverage.
+// The behaviours they claimed to pin — the banner rendering, Retry re-sending
+// the right request with the current edits, the editor staying open on a
+// rejection, the bulk outcome feeding back into the selection — are all
+// asserted against a mounted component in
+// `__tests__/work-ui-wiring.test.tsx`, where the button is genuinely pressed.
 // ═════════════════════════════════════════════════════════════════════════════
-describe('IssuesTab wiring (source guard, not behaviour)', () => {
-  const src = readFileSync(join(process.cwd(), 'components/tabs/IssuesTab.tsx'), 'utf8')
-  // Comments in this file quote the defect they replaced, so a guard looking
-  // for the defect's SHAPE has to read code only.
-  const code = src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter(l => !l.trim().startsWith('//'))
-    .join('\n')
-
-  it('has no retry ref pinning a stale render closure', () => {
-    // The round-1 defect was `<someRef>.current = handleBulkStatusChange`
-    // assigned from INSIDE the handler: it pins that render's closure, so the
-    // pre-failure selection is what a later Retry re-sends. Matched by shape
-    // rather than by name, so renaming the ref does not slip past.
-    expect(code).not.toMatch(/Ref\.current\s*=\s*handle/)
-    expect(code).not.toMatch(/useRef\s*[(<]/)
-  })
-
-  it('hands the banner a retry built in the current render', () => {
-    expect(src).toContain('<ApiErrorBanner error={writeError} onRetry={retryFailedWrite} />')
-    expect(src).toContain('const retryFailedWrite = () => {')
-  })
-
-  it('feeds the bulk outcome back into the selection and the target status', () => {
-    expect(src).toContain('setSelected(new Set(outcome.nextSelection))')
-    expect(src).toContain('setBulkStatus(outcome.nextBulkStatus)')
-    expect(src).toContain('setWriteError(outcome.error)')
-  })
-
-  it('routes both writes through the tested functions rather than a bare fetch', () => {
-    expect(src).toContain('await saveIssueFields(expandedId, editFields)')
-    expect(src).toContain('await bulkMoveStatus(')
-    // No hand-rolled PATCH left inside the component body.
-    const componentBody = code.slice(code.indexOf('export default function IssuesTab'))
-    expect(componentBody).not.toContain("method: 'PATCH'")
-  })
-
-  it('keeps the editor open on a rejected save', () => {
-    // The failure branch returns before setExpandedId(null), so the operator's
-    // edits and the explanation stay on screen together.
-    const save = src.slice(src.indexOf('const handleSave = async'), src.indexOf('const toggleSelect'))
-    const errIdx = save.indexOf('setWriteError(error)')
-    const closeIdx = save.indexOf('setExpandedId(null)')
-    expect(errIdx).toBeGreaterThan(-1)
-    expect(closeIdx).toBeGreaterThan(errIdx)
-    expect(save.slice(errIdx, closeIdx)).toContain('return')
-  })
-})

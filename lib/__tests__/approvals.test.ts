@@ -345,3 +345,93 @@ describe('humanReason', () => {
     expect(humanReason([{ reason: 'x' }])).toBeNull()
   })
 })
+
+// ─── A request TYPE is free text, and it reached a prototype lookup ──────────
+//
+// ADDED 2026-08-26 (round 3). `inbox.type` is a plain TEXT column
+// (migrations/011_inbox.sql — no CHECK, no FK), so any caller that may file a
+// request chooses the string. `APPROVAL_KINDS` is an object literal, and the
+// three lookups into it were bare `APPROVAL_KINDS[type]`, which finds
+// `Object.prototype` members: `APPROVAL_KINDS['constructor']` is the `Object`
+// constructor — truthy — and the next line calls `kind.touchesIssue(...)` on
+// it, which is a TypeError, which is an empty HTTP 500.
+//
+// MEASURED end to end on the running dev server before the fix:
+//
+//   POST /api/inbox {"agent":"…","type":"constructor","project":"Limiglow"} -> 201
+//   GET  /api/inbox?project=Limiglow                                        -> 500 (empty body)
+//   PATCH /api/inbox {"id":…,"status":"approved","resolved_by":"michael"}   -> 500 (empty body)
+//   DELETE that one row                                                     -> queue 200 again
+//
+// One accepted request took the whole project's approval queue offline for
+// everyone — including for the operator trying to look at it in order to
+// clear it. That is a denial of service on the human-in-the-loop, reachable
+// by anything that can file a request, and it is the most expensive possible
+// reading of "an unknown type is refused".
+//
+// These cases are generated from `Object.getOwnPropertyNames(Object.prototype)`
+// rather than listing the names that were found, so the class stays closed.
+describe('a request type that names an Object.prototype member', () => {
+  const PROTO_KEYS = Object.getOwnPropertyNames(Object.prototype)
+
+  function protoRow(type: string) {
+    return {
+      id: 'ib-proto',
+      agent: 'lane5-proto-agent',
+      type,
+      context: { agent_id: 'lane5-proto-agent' },
+      status: 'pending',
+    }
+  }
+
+  it('has something to test', () => {
+    expect(PROTO_KEYS).toEqual(expect.arrayContaining(['constructor', 'toString', '__proto__']))
+  })
+
+  it('describeApproval does not throw, and renders NO approve button', () => {
+    for (const key of PROTO_KEYS) {
+      const d = describeApproval(protoRow(key))
+      expect(d.hasRegisteredEffect).toBe(false)
+      // The whole point of `approveLabel: null` — no button that resolves to
+      // "recorded as approved, nothing happened".
+      expect(d.approveLabel).toBeNull()
+      expect(d.refuseLabel).toBeTruthy()
+    }
+  })
+
+  it('approvalTarget does not throw and claims no issue', () => {
+    for (const key of PROTO_KEYS) {
+      const t = approvalTarget(protoRow(key))
+      expect(t.needsIssue).toBe(false)
+      expect(t.agentId).toBe('lane5-proto-agent')
+    }
+  })
+
+  it('preflightDecision REFUSES it with 422 NO_REGISTERED_EFFECT, not a 500', () => {
+    for (const key of PROTO_KEYS) {
+      const r = preflightDecision({
+        row: protoRow(key),
+        decision: 'approved',
+        lookup: { issueExists: null, issueRef: null },
+      })
+      expect(r.ok).toBe(false)
+      expect(r.ok === false && r.code).toBe('NO_REGISTERED_EFFECT')
+      expect(r.ok === false && r.httpStatus).toBe(422)
+    }
+  })
+
+  it('and acknowledging one is still ALLOWED — the refusal is not "refuse everything"', () => {
+    for (const key of PROTO_KEYS) {
+      expect(preflightDecision({
+        row: protoRow(key),
+        decision: 'explained',
+        lookup: { issueExists: null, issueRef: null },
+      })).toEqual({ ok: true })
+    }
+  })
+
+  it('hasRegisteredEffect is false for every prototype member and true for the real ones', () => {
+    for (const key of PROTO_KEYS) expect(hasRegisteredEffect(key)).toBe(false)
+    for (const t of EFFECT_TYPES) expect(hasRegisteredEffect(t)).toBe(true)
+  })
+})

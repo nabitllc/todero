@@ -78,50 +78,62 @@ async function providerDetail(provider) {
 }
 
 /**
- * `llmStatus()` (via `lib/llm-provider.ts`) parses `${baseUrl}/models` with
- * `res.json().catch(() => null)` and defaults a parse failure to an empty
- * model list — so a 200-OK response from ANY server, OpenAI-shaped or not,
- * reports `{ ok: true, models: [] }`. Measured directly (see
- * docs/rebuild/pieces/pieces7/clone-and-run.md): pointing `LLM_BASE_URL` at a
- * plain HTTP server that answers with an HTML page reports the exact same
- * "reachable yes — 0 models" a real Ollama with nothing pulled yet would.
- * Those are not the same problem and do not have the same fix, so when the
- * model list comes back empty, both `setup` and `doctor` make this separate,
- * read-only request and look at what actually came back before repeating the
- * same "0 models" sentence for both.
+ * Second, independent look at what is actually answering at `baseUrl`.
+ *
+ * HISTORY, because the comment that used to be here described code that no
+ * longer exists and was therefore its own defect: `fetchLiveModels()` once
+ * parsed the body with `res.json().catch(() => null)` and defaulted a parse
+ * failure to an empty model list, so a 200 from ANY server reported
+ * `{ ok: true, models: [] }`. That is fixed in the seam itself — it now
+ * returns a required `kind` of 'unreachable' | 'error-status' |
+ * 'not-openai-compatible' — so this function is no longer the only thing
+ * standing between an operator and a wrong answer.
+ *
+ * It is kept because `doctor` and `setup` run WITHOUT the app, and because a
+ * second opinion from an independent request is worth having in a diagnostic.
+ * But it no longer hand-rolls the shape rule: it delegates to the seam's
+ * `readModelsResponse()`, which is the one place in the repo allowed to decide
+ * what an OpenAI-compatible `/models` answer looks like. The hand-rolled copy
+ * it used to contain had drifted — it reported an HTTP 401 (a real endpoint
+ * with a bad key) as "this endpoint is answering a different API", and its
+ * success string claimed "genuinely zero models listed" without ever counting
+ * them. Both measured 2026-08-26.
  *
  * Returns `{ looksOpenAiShaped: true | false | null, detail }` — `null` means
- * this second probe itself failed and the caller should say "unknown", not
- * fold it into either verdict.
+ * this probe itself could not reach the endpoint and the caller should say
+ * "unknown", not fold it into either verdict.
  */
 export async function probeOpenAiShape(baseUrl) {
+  const mod = await importTs('lib/llm-provider.ts')
   try {
     const res = await fetch(`${baseUrl}/models`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(5000),
     })
-    const contentType = res.headers.get('content-type') ?? ''
-    const text = await res.text()
-    let parsed
-    try {
-      parsed = JSON.parse(text)
-    } catch {
+    if (!mod.ok) {
+      return { looksOpenAiShaped: null, detail: `could not load the shape rule: ${mod.reason}` }
+    }
+    const verdict = await mod.module.readModelsResponse(baseUrl, res)
+    if (verdict.ok) {
+      const n = verdict.models.length
       return {
-        looksOpenAiShaped: false,
-        detail: `responded ${res.status}, Content-Type: ${contentType || '(none)'} — body is not JSON, so this is not an OpenAI-compatible endpoint`,
+        looksOpenAiShaped: true,
+        detail:
+          n === 0
+            ? 'valid OpenAI /v1/models shape, genuinely zero models listed'
+            : `valid OpenAI /v1/models shape, ${n} model${n === 1 ? '' : 's'} listed`,
       }
     }
-    if (!Array.isArray(parsed?.data)) {
-      return {
-        looksOpenAiShaped: false,
-        detail: `responded ${res.status} with valid JSON, but no top-level "data" array — the OpenAI \`/v1/models\` shape is {"data":[...]}, so this endpoint is answering a different API`,
-      }
+    // 'unreachable' cannot occur here (the fetch above already succeeded), and
+    // 'error-status' is NOT a shape verdict: a 401 is a real OpenAI endpoint
+    // refusing a credential, so calling it "a different API" would be the same
+    // confident wrong answer this file exists to prevent. Only the shape kind
+    // answers the shape question.
+    if (verdict.kind === 'not-openai-compatible') {
+      return { looksOpenAiShaped: false, detail: verdict.error }
     }
-    return { looksOpenAiShaped: true, detail: 'valid OpenAI /v1/models shape, genuinely zero models listed' }
+    return { looksOpenAiShaped: null, detail: verdict.error }
   } catch (err) {
-    // The shared fetch that got the caller here already succeeded once
-    // (status.ok was true), so a failure on this second, independent request
-    // is reported as unknown rather than folded into either verdict.
     return {
       looksOpenAiShaped: null,
       detail: `could not re-probe: ${err instanceof Error ? err.message : String(err)}`,
@@ -131,7 +143,7 @@ export async function probeOpenAiShape(baseUrl) {
 
 /**
  * Live model roster from whatever answers at LLM_BASE_URL.
- * `{ ok, baseUrl, models[] }` or `{ ok: false, baseUrl, error }`.
+ * `{ ok, baseUrl, models[] }` or `{ ok: false, baseUrl, error, kind }`.
  */
 export async function llmStatus() {
   const mod = await importTs('lib/llm-provider.ts')
@@ -146,7 +158,10 @@ export async function llmStatus() {
   const baseUrl = mod.module.LLM_BASE_URL
   try {
     const live = await mod.module.fetchLiveModels()
-    if (!live.ok) return { ok: false, baseUrl, models: [], error: live.error }
+    // `kind` rides along: the seam went to the trouble of deciding WHY, and
+    // dropping it here made `doctor` print one undifferentiated sentence for
+    // an unreachable socket, a 401 and an HTML page.
+    if (!live.ok) return { ok: false, baseUrl, models: [], error: live.error, kind: live.kind }
     return { ok: true, baseUrl, models: live.models.map(m => m.id).sort() }
   } catch (err) {
     return {
@@ -154,6 +169,7 @@ export async function llmStatus() {
       baseUrl,
       models: [],
       error: err instanceof Error ? err.message : String(err),
+      kind: 'unreachable',
     }
   }
 }

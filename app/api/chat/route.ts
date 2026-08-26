@@ -125,6 +125,23 @@ export async function POST(req: NextRequest) {
       const reader = upstream.body!.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
+      // -- Telling 'no answer' apart from 'an empty answer' ------------------
+      // This loop skips anything it cannot parse. That is right for ONE
+      // malformed line in an otherwise good stream, and catastrophic when the
+      // whole body is unparseable: an upstream 200 serving an HTML login page,
+      // or a server that ignored `stream: true` and sent an ordinary JSON
+      // completion, produced zero deltas and then the normal terminator --
+      // byte-identical to a model that genuinely replied with nothing. The
+      // user saw an empty bubble and no error anywhere. Measured 2026-08-26
+      // over real sockets; see __tests__/api/chat-stream-silent-empty.test.ts
+      // and docs/rebuild/pieces/pieces9/llm-provider-sweep.md.
+      //
+      // `sawFrame` -- NOT `fullContent` -- is the discriminator, because a
+      // legitimately empty completion still arrives as well-formed SSE frames
+      // and has to stay a clean `done`.
+      let sawFrame = false
+      let unparseableLines = 0
+      let sawBytes = false
 
       try {
         while (true) {
@@ -132,23 +149,44 @@ export async function POST(req: NextRequest) {
           if (done) break
 
           const chunk = decoder.decode(value, { stream: true })
+          if (chunk.length > 0) sawBytes = true
           for (const line of chunk.split('\n')) {
-            if (!line.startsWith('data: ')) continue
+            if (!line.trim()) continue
+            if (!line.startsWith('data: ')) { unparseableLines++; continue }
             const raw = line.slice(6).trim()
-            if (raw === '[DONE]') continue
+            if (raw === '[DONE]') { sawFrame = true; continue }
 
             try {
               const parsed = JSON.parse(raw)
+              sawFrame = true
               const delta = parsed?.choices?.[0]?.delta?.content
               if (delta) {
                 fullContent += delta
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`))
               }
-            } catch { /* skip malformed lines */ }
+            } catch { unparseableLines++ }
           }
         }
       } catch (err: any) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message || 'Stream error' })}\n\n`))
+        controller.close()
+        return
+      }
+
+      // Nothing in that body was an SSE frame. Say so, by name, rather than
+      // closing as though the model had answered.
+      if (!sawFrame) {
+        const detail = !sawBytes
+          ? 'the response body was empty'
+          : `${unparseableLines} line${unparseableLines === 1 ? '' : 's'} arrived, none of them an SSE "data:" frame` +
+            ` (Content-Type: ${upstream.headers.get('content-type') || '(none)'})`
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+          error:
+            `${LLM_BASE_URL} answered ${upstream.status} but sent no readable stream -- ${detail}. ` +
+            'This is not an empty answer from the model; nothing usable arrived. Check that ' +
+            'LLM_BASE_URL points at an OpenAI-compatible /chat/completions that honours stream:true.',
+          kind: 'not-openai-compatible',
+        })}\n\n`))
         controller.close()
         return
       }

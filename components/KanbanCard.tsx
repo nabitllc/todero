@@ -107,6 +107,18 @@ function truncate(s: string, max = 60): string {
   return s.length > max ? s.slice(0, max).trimEnd() + '…' : s
 }
 
+/**
+ * How much of `blocked_by` the VISIBLE chip may show.
+ *
+ * A kanban column is narrow and the blocker chip shares its row with the
+ * priority badge, the type badge and the age chip. A task key ("TOD-2411") is
+ * 8-9 characters and fits; a sentinel like "system:ceiling_stop:no_progress"
+ * is 31 and does not — it was wrapping the badge row on a real board. 18 keeps
+ * every task key whole and clips only the long machine-generated values, which
+ * stay complete in the tooltip and for assistive tech.
+ */
+const BLOCKER_CHIP_MAX = 18
+
 // ─── how long has this been sitting here ─────────────────────────────────────
 //
 // ROUND 2. The benchmark this lane is measured against is Linear, and the
@@ -209,6 +221,43 @@ export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd, no
       onDragStart={() => onDragStart?.(task)}
       onDragEnd={() => onDragEnd?.(task)}
       onClick={() => onClick?.(task)}
+      // ─── ROUND 3: the card was mouse-only ────────────────────────────────
+      //
+      // A critic measured this root as `<div draggable onClick=…>` with no
+      // role, no tabIndex and no key handler, and drew the right conclusion:
+      // a keyboard user could not open a card at all, so the previous round
+      // had spent itself adding sr-only labels to a target no assistive-tech
+      // user could reach. `grep -c "onKeyDown" components/KanbanCard.tsx`
+      // returned 0.
+      //
+      // The role/tabIndex/handler are attached ONLY when there is a real
+      // `onClick` to reach. A focusable element that does nothing is worse
+      // than an unfocusable one: it puts a stop in the tab order and pays
+      // nothing back.
+      //
+      // Space is preventDefault-ed because on a focusable element the browser
+      // scrolls the page on Space, which would move the board out from under
+      // the card the operator just activated.
+      //
+      // What this is NOT: a claim that the card is fully accessible. The
+      // column MOVE is still HTML5 drag-and-drop, which is mouse-only —
+      // opening a card and moving a card are different gestures and only the
+      // first is fixed here. And a `role`/`tabIndex` prop is not a screen
+      // reader: nothing in this lane can dispatch a real focus or hear an
+      // announcement. Both gaps are written up in the piece doc rather than
+      // implied away.
+      {...(onClick
+        ? {
+            role: 'button' as const,
+            tabIndex: 0,
+            'aria-label': `${task.task_key ? `${task.task_key}: ` : ''}${task.title}`,
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              onClick(task)
+            },
+          }
+        : {})}
       className={[
         'group relative rounded-lg border cursor-pointer transition-colors bg-[#0f0f0f]',
         dragging ? 'opacity-50 border-zinc-600' : 'border-zinc-800 hover:border-zinc-700',
@@ -249,8 +298,22 @@ export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd, no
               withholds the one fact that makes it actionable, which is what it
               is stuck ON. `blocked_by` is already on the row (lib/issues.ts
               Task) and was already fetched — it simply was not rendered, so the
-              operator had to open the detail overlay to learn a key that fits
-              in eight characters.
+              operator had to open the detail overlay to learn what it was.
+
+              CORRECTION, ROUND 3. The sentence here used to end "…to learn a
+              key that fits in eight characters", and that is FALSE of live
+              data. `blocked_by` is not constrained to a task key. A critic
+              fetched the only Limiglow row on the running server over
+              authenticated HTTP and it carried
+              `blocked_by: "system:ceiling_stop:no_progress"` — 31 characters —
+              which this card then rendered untruncated inside a kanban column,
+              while the file's own `truncate()` was applied to the title only.
+              So the visible chip is truncated now (BLOCKER_CHIP_MAX below) and
+              the WHOLE value is kept where length costs nothing: the `title`
+              tooltip and the sr-only text. Shortening what a screen reader
+              hears in order to fit a column would be the same trade in the
+              wrong direction.
+
               The padlock also carried NO accessible name, so a screen reader
               got an unlabelled icon where a sighted user got a signal.
               components/tabs/BoardTab.tsx's own card already labelled its
@@ -263,7 +326,9 @@ export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd, no
             >
               <Lock size={10} className="shrink-0" aria-hidden="true" />
               <span className="sr-only">{task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'}</span>
-              {task.blocked_by && <span aria-hidden="true">{task.blocked_by}</span>}
+              {task.blocked_by && (
+                <span aria-hidden="true">{truncate(task.blocked_by, BLOCKER_CHIP_MAX)}</span>
+              )}
             </span>
           )}
 

@@ -59,6 +59,14 @@ describe('fetchLiveModels', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(String(fetchMock.mock.calls[0][0])).toBe(`${LLM_BASE_URL}/models`)
+    // MUTATION-TESTING GAP (found 2026-08-26): deleting `cache: 'no-store'`
+    // from that fetch left all seven seam suites green — 70/70 — even the one
+    // named `chat-model-list-is-live`, because every assertion here looked at
+    // calls[0][0] (WHERE we fetch) and none at calls[0][1] (the init). That
+    // one line IS the liveness: TOD-2456 added it because Next's fetch cache
+    // had made a "live" roster permanent. A frozen roster is a number on
+    // screen that no longer traces to a live query.
+    expect((fetchMock.mock.calls[0][1] as RequestInit).cache).toBe('no-store')
     expect(live.ok).toBe(true)
     if (!live.ok) throw new Error('unreachable')
     // Exactly the endpoint's two ids — nothing appended, nothing merged in.

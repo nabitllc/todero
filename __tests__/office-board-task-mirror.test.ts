@@ -28,7 +28,7 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import {
-  createBoardTaskMirror, boardTasksChanged, BOARD_TASK_MIRROR_TICK_MS,
+  createBoardTaskMirror, boardTasksChanged, BOARD_TASK_MIRROR_TICK_MS, startBoardTaskMirror,
 } from '@/components/office/officePolling'
 
 const src = readFileSync(join(__dirname, '..', 'hooks', 'useAgentStatus.ts'), 'utf-8')
@@ -151,14 +151,69 @@ describe('the mirror is wired into the hook, and still does not fetch', () => {
   })
 
   it('drives the tested mirror rather than an inline copy of the rule', () => {
-    // A grep, deliberately, and the ONLY thing left grepped here: it is the
-    // one seam a unit test cannot reach without mounting the hook, and this
-    // repo has no jsdom. It asserts the hook delegates — which is what makes
-    // every executed test above true of the shipped screen.
-    const body = boardTaskEffect()
-    expect(body).toContain('createBoardTaskMirror(setBoardTasks)')
-    expect(body).toContain('mirror.sync(boardTasksRef.current)')
-    expect(body).toContain('setInterval(sync, BOARD_TASK_MIRROR_TICK_MS)')
+    // What is left of the grep, and it is now one string instead of three:
+    // whether the hook calls the extracted starter at all. Everything the
+    // starter DOES — the publish before the first tick, the cadence, the
+    // cleanup, the no-op on an unchanged map — is executed below.
+    expect(boardTaskEffect()).toContain('startBoardTaskMirror(boardTasksRef, setBoardTasks)')
+  })
+})
+
+describe('startBoardTaskMirror — the ARMING, executed instead of grepped', () => {
+  // These three lines used to live inside the hook's useEffect, pinned by
+  // three source strings and nothing else:
+  //     createBoardTaskMirror(setBoardTasks)
+  //     mirror.sync(boardTasksRef.current)
+  //     setInterval(sync, BOARD_TASK_MIRROR_TICK_MS)
+  // A whitelist of source strings only catches the strings someone listed, so
+  // the timers are injected and the tick is driven by hand here.
+  function harness(initial: Record<string, string>) {
+    const ref = { current: initial }
+    const published: Array<Record<string, string>> = []
+    let tick: (() => void) | null = null
+    let ms: number | null = null
+    let cleared = 0
+    const timers = {
+      setInterval: (fn: () => void, every: number) => { tick = fn; ms = every; return 'H' },
+      clearInterval: (h: any) => { if (h === 'H') cleared++ },
+    }
+    const stop = startBoardTaskMirror(ref, v => published.push(v), timers)
+    return { ref, published, run: () => tick && tick(), every: () => ms, stop, cleared: () => cleared }
+  }
+
+  it('publishes ONCE immediately, before any tick — the sidebar is not blank for a full tick', () => {
+    const h = harness({ builder: 'TOD-9' })
+    expect(h.published).toEqual([{ builder: 'TOD-9' }])
+  })
+
+  it('arms at the named cadence, not a literal', () => {
+    expect(harness({}).every()).toBe(BOARD_TASK_MIRROR_TICK_MS)
+  })
+
+  it('a tick with nothing changed publishes NOTHING — this is the re-render storm fix', () => {
+    const h = harness({ builder: 'TOD-9' })
+    h.run(); h.run(); h.run()
+    expect(h.published).toHaveLength(1)
+  })
+
+  it('a tick after the ref changes publishes the new map', () => {
+    const h = harness({ builder: 'TOD-9' })
+    h.ref.current = { builder: 'TOD-9', tester: 'TOD-10' }
+    h.run()
+    expect(h.published).toEqual([{ builder: 'TOD-9' }, { builder: 'TOD-9', tester: 'TOD-10' }])
+  })
+
+  it('publishes a COPY, so a later write to the ref cannot edit what React already rendered', () => {
+    const h = harness({ builder: 'TOD-9' })
+    expect(h.published[0]).not.toBe(h.ref.current)
+    h.ref.current.builder = 'mutated in place'
+    expect(h.published[0]).toEqual({ builder: 'TOD-9' })
+  })
+
+  it('the cleanup it returns actually clears the interval it armed', () => {
+    const h = harness({})
+    h.stop()
+    expect(h.cleared()).toBe(1)
   })
 })
 

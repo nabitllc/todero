@@ -26,6 +26,7 @@
 // assert on what it returns.
 
 import { drawAgent, drawAgents } from '@/components/office/officeDrawing'
+import { LIVENESS_COLOR } from '@/components/office/officeLiveness'
 
 // ─── A recording CanvasRenderingContext2D ────────────────────────────────────
 // Node has no canvas. It does not need one: drawAgent only ever CALLS methods
@@ -93,7 +94,7 @@ const BUBBLE = 'waiting on you'
 describe('drawAgent — the bubble is painted only for a measured pending row', () => {
   it('paints NOTHING resembling a bubble when the count is 0', () => {
     const r = recordingCtx()
-    drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 0)
+    drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 0, null)
     // The agent itself was drawn — this is a real render, not a no-op run.
     expect(r.calls.length).toBeGreaterThan(10)
     expect(r.texts().join('|')).not.toContain(BUBBLE)
@@ -101,7 +102,7 @@ describe('drawAgent — the bubble is painted only for a measured pending row', 
 
   it('paints "waiting on you" — with no number — for exactly one pending row', () => {
     const r = recordingCtx()
-    drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 1)
+    drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 1, null)
     const t = r.text(BUBBLE)
     expect(t).not.toBeNull()
     // "1 waiting on you" would read as a queue of unknown length. One request
@@ -113,7 +114,7 @@ describe('drawAgent — the bubble is painted only for a measured pending row', 
   it('states the number as soon as there is more than one', () => {
     for (const n of [2, 3, 17]) {
       const r = recordingCtx()
-      drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, n)
+      drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, n, null)
       expect(r.text(BUBBLE)!.text).toBe(`${n} waiting on you`)
     }
   })
@@ -123,7 +124,7 @@ describe('drawAgent — the bubble is painted only for a measured pending row', 
     // path ever synthesized a number, these would disagree.
     for (const n of [2, 5, 9]) {
       const r = recordingCtx()
-      drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, n)
+      drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, n, null)
       expect(r.text(BUBBLE)!.text.startsWith(String(n))).toBe(true)
     }
   })
@@ -134,7 +135,7 @@ describe('drawAgent — the bubble is painted only for a measured pending row', 
     for (const state of ['idle', 'working', 'walking', 'meeting']) {
       const r = recordingCtx()
       drawAgent(r.ctx, agent({ state, task: state === 'working' ? 'a task' : null }),
-        T, NOW, CAM, false, 0, {}, 0, 0, null, 1)
+        T, NOW, CAM, false, 0, {}, 0, 0, null, 1, null)
       expect(r.texts().join('|')).toContain(BUBBLE)
     }
   })
@@ -145,12 +146,12 @@ describe('drawAgent — the bubble is painted only for a measured pending row', 
     // badge in the stack rather than the agent speaking.
     const a = agent({ state: 'working', task: 'refactor the mirror' })
     const bare = recordingCtx()
-    drawAgent(bare.ctx, a, T, NOW, CAM, false, 0, {}, 0, 0, null, 1)
+    drawAgent(bare.ctx, a, T, NOW, CAM, false, 0, {}, 0, 0, null, 1, null)
     const bubbleY = bare.text(BUBBLE)!.y
     expect(bubbleY).toBeLessThan(a.py)
 
     const withBoard = recordingCtx()
-    drawAgent(withBoard.ctx, a, T, NOW, CAM, false, 0, { builder: 'TOD-9 board item' }, 0, 0, null, 1)
+    drawAgent(withBoard.ctx, a, T, NOW, CAM, false, 0, { builder: 'TOD-9 board item' }, 0, 0, null, 1, null)
     const boardY = withBoard.text('TOD-9 board item')!.y
     const stackedBubbleY = withBoard.text(BUBBLE)!.y
     expect(stackedBubbleY).toBeLessThan(boardY)
@@ -160,13 +161,76 @@ describe('drawAgent — the bubble is painted only for a measured pending row', 
 
   it('draws the bubble body and its tail, not just the words', () => {
     const zero = recordingCtx()
-    drawAgent(zero.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 0)
+    drawAgent(zero.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 0, null)
     const one = recordingCtx()
-    drawAgent(one.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 1)
+    drawAgent(one.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 1, null)
     const rounded = (r: typeof zero) => r.calls.filter(c => c.fn === 'roundRect').length
     const tails = (r: typeof zero) => r.calls.filter(c => c.fn === 'closePath').length
     expect(rounded(one)).toBeGreaterThan(rounded(zero))
     expect(tails(one)).toBeGreaterThan(tails(zero))
+  })
+
+  // MUTATION 9, from the critic's campaign. It rewrote the tail's first vertex
+  //   ctx.moveTo(px-tail*0.7, bY+wlH-ctx.lineWidth*0.5)  ->  ctx.moveTo(px, bY)
+  // so the tail became a wrong-shaped sliver pointing at nothing, and the test
+  // above stayed green — because counting `closePath` calls is a CALL CENSUS,
+  // not a geometry assertion. It can see that a triangle was drawn; it cannot
+  // see where the triangle points. That is the exact confusion this repo has
+  // already paid for once at a larger scale, reproduced in miniature.
+  //
+  // So: the three vertices are read off the recording and checked as a shape.
+  it("the tail is a real triangle whose apex points DOWN at the agent's head", () => {
+    const r = recordingCtx()
+    const a = agent({ px: 400 })
+    drawAgent(r.ctx, a, T, NOW, CAM, false, 0, {}, 0, 0, null, 1, null)
+
+    // The tail is the one path built from moveTo + two lineTo + closePath.
+    const i = r.calls.findIndex((c, n) =>
+      c.fn === 'moveTo'
+      && r.calls[n + 1]?.fn === 'lineTo'
+      && r.calls[n + 2]?.fn === 'lineTo'
+      && r.calls[n + 3]?.fn === 'closePath')
+    expect(i).toBeGreaterThanOrEqual(0)
+    const [x1, y1] = r.calls[i].args as [number, number]
+    const [x2, y2] = r.calls[i + 1].args as [number, number]
+    const [x3, y3] = r.calls[i + 2].args as [number, number]
+
+    // 1. The apex is the MIDDLE vertex, and it sits on the agent's centre line
+    //    — a tail that does not point at the head points at the wrong agent.
+    expect(x2).toBeCloseTo(a.px, 5)
+
+    // 2. It is the LOWEST of the three, i.e. it points down, toward the head.
+    //    (Canvas y grows downward.) The mutation put the apex at the bubble's
+    //    TOP-LEFT corner, which fails both of these.
+    expect(y2).toBeGreaterThan(y1)
+    expect(y2).toBeGreaterThan(y3)
+
+    // 3. The two base vertices straddle the centre line symmetrically and sit
+    //    at the same height, so the triangle is not a sliver.
+    expect(y1).toBeCloseTo(y3, 5)
+    expect(x1).toBeLessThan(a.px)
+    expect(x3).toBeGreaterThan(a.px)
+    expect(a.px - x1).toBeCloseTo(x3 - a.px, 5)
+
+    // 4. It has real area — a degenerate tail is invisible, not "subtle".
+    const width = x3 - x1, height = y2 - y1
+    expect(width).toBeGreaterThan(0)
+    expect(height).toBeGreaterThan(0)
+
+    // 5. And it joins the bubble body rather than floating below it: the base
+    //    sits within a pixel of the body's bottom edge.
+    const body = r.calls.find(c => c.fn === 'roundRect'
+      && Math.abs((c.args[1] as number) + (c.args[3] as number) - y1) < 1.5)
+    expect(body).toBeTruthy()
+  })
+
+  it("the tail is drawn in the bubble's own colours, not left as the last fill used", () => {
+    const r = recordingCtx()
+    drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 1, null)
+    const close = r.calls.find(c => c.fn === 'closePath')!
+    const fillAfter = r.calls[r.calls.indexOf(close) + 1]
+    expect(fillAfter.fn).toBe('fill')
+    expect(String(fillAfter.fillStyle)).toContain('2b1032')
   })
 })
 
@@ -178,7 +242,7 @@ describe('drawAgents — the map-to-head wiring, which no test could reach befor
   ]
   const base = {
     T, now: NOW, cam: CAM, selectedId: null, darkAlpha: 0,
-    boardTasks: {}, subagentCount: 0, runs: {},
+    boardTasks: {}, subagentCount: 0, runs: {}, liveness: {},
   }
 
   it('gives each agent ITS OWN count and nobody else\'s', () => {
@@ -249,5 +313,205 @@ describe('drawAgents — the map-to-head wiring, which no test could reach befor
         seen.push([ag.id, isSelected])
       }) as any)
     expect(seen).toEqual([['builder', false], ['tester', false], ['scout', true]])
+  })
+
+  it('hands each agent its OWN heartbeat row, and null — not a manufactured `never` — for an id the roster answer never mentioned', () => {
+    // The distinction this pins is the whole thesis of lib/fleet-liveness.ts,
+    // one layer further out. An id absent from the map is one we know NOTHING
+    // about; substituting `{state:'never'}` here would turn "we did not look"
+    // into "this agent has never checked in" — a claim about the agent made
+    // from an absence of evidence — and it would paint the same grey pip, so
+    // nothing on screen would give it away. I planted exactly that mutation
+    // and it survived every other test in this lane; this is the one that
+    // fails on it.
+    const seen: Array<[string, any]> = []
+    const beat = { state: 'live' as const, label: 'heartbeat 4s ago', lastSeenAt: 1, source: 'heartbeat' as const }
+    drawAgents(recordingCtx().ctx, roster,
+      { ...base, waiting: {}, liveness: { tester: beat } },
+      ((_ctx: any, ag: any, _T: any, _now: any, _cam: any, _sel: any, _dark: any,
+        _board: any, _sub: any, _cost: any, _started: any, _waiting: any, liveness: any) => {
+        seen.push([ag.id, liveness])
+      }) as any)
+    expect(seen).toEqual([['builder', null], ['tester', beat], ['scout', null]])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('drawAgent — heartbeat liveness, the answer the Office used to ignore', () => {
+  // THE GAP THIS CLOSES. Measured 2026-08-26 against the running dev server:
+  // GET /api/agents returns envelope `livenessSource:"heartbeat"`,
+  // `heartbeatStore:"agent_heartbeats"`, and per-row `lastSeenAt` /
+  // `lastSeenSource` / `liveness`. CrewTab, FleetRegisterCard and
+  // useAgentRoster all read those. `grep -rn "heartbeat|lastSeen|liveness"`
+  // over components/office/ returned ZERO matches, so the Office read none of
+  // them and derived everything from agent_runs instead. At that moment one
+  // host could draw `builder` working at a desk while the Crew tab said
+  // `builder` had never checked in — two contradictory answers to one
+  // question, on one screen, with nothing saying which was which.
+  const live = { state: 'live' as const, label: 'heartbeat 4s ago', lastSeenAt: NOW - 4000, source: 'heartbeat' as const }
+  const never = { state: 'never' as const, label: 'has never sent a heartbeat', lastSeenAt: null, source: 'none' as const }
+  const unknown = { state: 'unknown' as const, label: 'the heartbeat store could not be read', lastSeenAt: null, source: 'none' as const }
+  const offline = { state: 'offline' as const, label: 'last heartbeat 3h ago', lastSeenAt: null, source: 'heartbeat' as const }
+
+  /** The head pip is the arc drawn at the head's top-LEFT corner. */
+  function pip(r: ReturnType<typeof recordingCtx>, a: any) {
+    const sz = a.isOrchestrator ? T * 0.78 : T * 0.58, hs = sz / 2
+    const wantX = a.px - hs + sz * 0.1
+    return r.calls.find(c => c.fn === 'arc' && Math.abs((c.args[0] as number) - wantX) < sz * 0.06)
+  }
+
+  it('a live heartbeat paints a FILLED pip, and it is green', () => {
+    const r = recordingCtx(); const a = agent()
+    drawAgent(r.ctx, a, T, NOW, CAM, false, 0, {}, 0, 0, null, 0, live)
+    const p = pip(r, a)!
+    expect(p).toBeTruthy()
+    const after = r.calls[r.calls.indexOf(p) + 1]
+    expect(after.fn).toBe('fill')
+    expect(String(after.fillStyle).toLowerCase()).toBe(LIVENESS_COLOR.live.toLowerCase())
+  })
+
+  it('`never` and `unknown` paint a HOLLOW pip — an absence has to look like one', () => {
+    for (const l of [never, unknown]) {
+      const r = recordingCtx(); const a = agent()
+      drawAgent(r.ctx, a, T, NOW, CAM, false, 0, {}, 0, 0, null, 0, l)
+      const p = pip(r, a)!
+      const after = r.calls[r.calls.indexOf(p) + 1]
+      // Stroke, not fill. A dim green fill would read as a weak heartbeat.
+      expect(after.fn).toBe('stroke')
+      expect(String(after.strokeStyle).toLowerCase()).not.toBe(LIVENESS_COLOR.live.toLowerCase())
+    }
+  })
+
+  it('the pip is on the OPPOSITE corner from the run-status dot, so the two cannot be confused', () => {
+    const r = recordingCtx(); const a = agent()
+    drawAgent(r.ctx, a, T, NOW, CAM, false, 0, {}, 0, 0, null, 0, live)
+    const sz = T * 0.58, hs = sz / 2
+    const heartbeatX = a.px - hs + sz * 0.1
+    const runStatusX = a.px + hs - sz * 0.1
+    expect(pip(r, a)).toBeTruthy()
+    expect(r.calls.some(c => c.fn === 'arc' && Math.abs((c.args[0] as number) - runStatusX) < sz * 0.06)).toBe(true)
+    expect(Math.abs(runStatusX - heartbeatX)).toBeGreaterThan(sz * 0.5)
+  })
+
+  it('a MISSING id paints as unknown, never as `never` — we did not look is not nobody checked in', () => {
+    const r = recordingCtx(); const a = agent()
+    drawAgent(r.ctx, a, T, NOW, CAM, false, 0, {}, 0, 0, null, 0, null)
+    const p = pip(r, a)!
+    const after = r.calls[r.calls.indexOf(p) + 1]
+    expect(after.fn).toBe('stroke')
+    expect(String(after.strokeStyle).toLowerCase()).toBe(LIVENESS_COLOR.unknown.toLowerCase())
+  })
+
+  describe('the contradiction is named on the floor, not hidden', () => {
+    it('working + no heartbeat paints a badge naming BOTH sources', () => {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent({ state: 'working', task: 'a task' }), T, NOW, CAM, false, 0, {}, 0, 0, null, 0, never)
+      const joined = r.texts().join('|')
+      expect(joined).toContain('run says working')
+      expect(joined).toContain('heartbeat')
+    })
+
+    it('working + LIVE paints no badge — there is nothing to reconcile', () => {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent({ state: 'working', task: 'a task' }), T, NOW, CAM, false, 0, {}, 0, 0, null, 0, live)
+      expect(r.texts().join('|')).not.toContain('run says working')
+    })
+
+    it('an idle figure with no heartbeat gets no badge — idleness claims nothing', () => {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent({ state: 'idle' }), T, NOW, CAM, false, 0, {}, 0, 0, null, 0, never)
+      expect(r.texts().join('|')).not.toContain('run says working')
+    })
+
+    it('offline and unread-store are DIFFERENT sentences on screen', () => {
+      const say = (l: any) => {
+        const r = recordingCtx()
+        drawAgent(r.ctx, agent({ state: 'working', task: 't' }), T, NOW, CAM, false, 0, {}, 0, 0, null, 0, l)
+        return r.texts().find(t => t.includes('run says working'))
+      }
+      expect(say(offline)).toBeTruthy()
+      expect(say(unknown)).toBeTruthy()
+      expect(say(offline)).not.toBe(say(unknown))
+    })
+
+    it('the badge does not sit on top of the elapsed-time row', () => {
+      // Both live under the name pill. When the badge is present the clock has
+      // to move down, or the operator reads two strings stacked in one place.
+      const withBadge = recordingCtx()
+      drawAgent(withBadge.ctx, agent({ state: 'working', task: 'a task' }),
+        T, NOW, CAM, false, 0, {}, 0, 0, '2026-08-26T00:00:00Z', 0, never)
+      // Compared as BOXES, not as text baselines. Baselines are the wrong
+      // instrument here and I checked why: with the height term removed the
+      // two baselines still differ by ~0.4px, so a `toBeGreaterThan` on them
+      // passes while the two strings are drawn on top of each other. The
+      // question is whether the rectangles overlap.
+      const badge = withBadge.text('run says working')!
+      expect(badge).toBeTruthy()
+      const badgeBox = withBadge.calls.find(c => c.fn === 'roundRect'
+        && (c.args[1] as number) < badge.y && (c.args[1] as number) + (c.args[3] as number) > badge.y)!
+      expect(badgeBox).toBeTruthy()
+      const badgeBottom = (badgeBox.args[1] as number) + (badgeBox.args[3] as number)
+
+      const clockCall = withBadge.calls.find(c => c.fn === 'fillText' && String(c.args[0]).startsWith('running'))!
+      expect(clockCall).toBeTruthy()
+      const clockBox = withBadge.calls.find(c => c.fn === 'fillRect'
+        && (c.args[1] as number) < (clockCall.args[2] as number)
+        && (c.args[1] as number) + (c.args[3] as number) > (clockCall.args[2] as number))!
+      expect(clockBox).toBeTruthy()
+      // The clock's top edge starts at or below the badge's bottom edge.
+      expect(clockBox.args[1] as number).toBeGreaterThanOrEqual(badgeBottom)
+    })
+  })
+
+  describe("the selected agent shows the Crew tab's own sentence", () => {
+    it("selecting an agent paints lib/fleet-liveness's wording verbatim", () => {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent(), T, NOW, CAM, true, 0, {}, 0, 0, null, 0, live)
+      expect(r.texts().join('|')).toContain('heartbeat 4s ago')
+    })
+    it('an UNSELECTED agent stays a pip — 28 rows of text is not fidelity', () => {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent(), T, NOW, CAM, false, 0, {}, 0, 0, null, 0, live)
+      expect(r.texts().join('|')).not.toContain('heartbeat 4s ago')
+    })
+    it('a selected agent with NO liveness row says so, rather than showing a blank', () => {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent(), T, NOW, CAM, true, 0, {}, 0, 0, null, 0, null)
+      expect(r.texts().join('|')).toContain('heartbeat store')
+    })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('drawAgent — the board-task label obeys its state gate, at the pixel level', () => {
+  // MUTATION 8 again, this time asserted where it shows: __tests__/
+  // office-wiring.test.ts pins `showsBoardTask` as a rule; this pins that
+  // drawAgent actually consults it before painting.
+  const BOARD = { builder: 'TOD-9 board item' }
+  it('paints for a figure at its desk', () => {
+    for (const state of ['working', 'idle']) {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent({ state, task: state === 'working' ? 't' : null }),
+        T, NOW, CAM, false, 0, BOARD, 0, 0, null, 0, null)
+      expect(r.texts().join('|')).toContain('TOD-9 board item')
+    }
+  })
+  it('paints NOTHING for a figure crossing the floor or in a meeting', () => {
+    for (const state of ['walking', 'meeting']) {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent({ state }), T, NOW, CAM, false, 0, BOARD, 0, 0, null, 0, null)
+      expect(r.texts().join('|')).not.toContain('TOD-9 board item')
+    }
+  })
+  it('and the bubble does not leave a gap for a label that was not drawn', () => {
+    // The stacking maths used to be a SECOND copy of the gate. If the two ever
+    // disagree the bubble floats. Same state, one with a board row and one
+    // without, must put the bubble in the SAME place when the gate is closed.
+    const y = (board: Record<string, string>) => {
+      const r = recordingCtx()
+      drawAgent(r.ctx, agent({ state: 'walking' }), T, NOW, CAM, false, 0, board, 0, 0, null, 1, null)
+      return r.text(BUBBLE)!.y
+    }
+    expect(y(BOARD)).toBeCloseTo(y({}), 5)
   })
 })

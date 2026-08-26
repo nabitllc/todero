@@ -70,6 +70,39 @@ export interface RunExitEvidence {
   /** For `agent_run_records.exit_status` — the REAL OS code, or null when it was never observed. */
   exitStatus: number | null
   /**
+   * pieces9 — the same verdict, in `token_ledger.status`'s vocabulary.
+   *
+   * WHY THIS EXISTS. `lib/runtimes/claude-code.ts` closed its ledger row with
+   * a HARDCODED `status: 'completed'` in the very same `watchChildExit`
+   * callback that, four lines later, recorded the run as failed. Measured on
+   * a real child (CLAUDE_BIN pointed at node, exit 9): `agent_run_records` got
+   * `{exit_status: 9, succeeded: false, failed: true}` while `token_ledger`
+   * got `{status: 'completed'}` — two rows written microseconds apart by one
+   * function, flatly contradicting each other, with the ledger's copy being
+   * the one `/api/db/token_ledger` and `/api/costs/breakdown` serve. That is
+   * this piece's own thesis ("the evidence was sitting in the same function
+   * that deferred it") applied to the one line it did not change.
+   *
+   * The mapping is deliberately narrow and loses nothing the row does not
+   * already carry elsewhere:
+   *   signal observed → 'killed'  (the OS word for exactly this)
+   *   failed          → 'failed'
+   *   succeeded       → 'completed'
+   *   unknown         → 'unknown' (NOT 'completed' — see `decideOutcome`;
+   *                     a run whose trace never attested completion must not
+   *                     be filed as one, which is the whole point of the
+   *                     `NON_TERMINAL_STATUSES` branch)
+   *
+   * 'unknown' is outside `token_ledger.status`'s original CHECK vocabulary.
+   * migrations/075_token_ledger_status_vocabulary.sql widens it; for an
+   * install where that has not run (Supabase, whose PostgREST layer has no
+   * DDL grammar at all), `finalizeRun()` degrades — it retries with a status
+   * the CHECK accepts and records the real word in `metadata.reported_status`
+   * rather than losing the row's tokens, cost and completion. See that
+   * function.
+   */
+  ledgerStatus: 'completed' | 'failed' | 'killed' | 'unknown'
+  /**
    * For `agent_run_records.attempted` — a provenance-stamped record of what
    * the run actually did, built only from the facts passed in. `null` when
    * literally nothing was observed, so a row with no evidence still reads as
@@ -218,6 +251,7 @@ export function summarizeExit(facts: ObservedExitFacts): RunExitEvidence {
     succeeded: outcome === 'succeeded',
     failed: outcome === 'failed',
     exitStatus,
+    ledgerStatus: facts.signal ? 'killed' : outcome === 'succeeded' ? 'completed' : outcome === 'failed' ? 'failed' : 'unknown',
     attempted: buildAttempted(facts, outcome, exitStatus),
   }
 }

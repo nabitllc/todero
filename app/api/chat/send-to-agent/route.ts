@@ -30,7 +30,14 @@ export async function POST(req: NextRequest) {
   const label = AGENT_LABELS[agentId] ?? agentId
 
   // Attempt to nudge the agent via run-agent (best-effort — agent picks up next available task)
-  let agentStatus = 'nudged'
+  //
+  // `agentStatus` starts as an admission, not a claim. It used to start at
+  // 'nudged', and the catch below is empty, so a run-agent that 404'd, refused,
+  // or was never reached reported the SAME "Agent status: nudged." as one that
+  // actually queued the work. The user is told their message was forwarded
+  // either way. Same defect class as the rest of this sweep: a failure wearing
+  // the successful answer's clothes.
+  let agentStatus = 'could not confirm the agent was notified'
   try {
     const kickRes = await fetch(`${BASE_URL}/api/run-agent?agent=${encodeURIComponent(agentId)}`, {
       method: 'POST',
@@ -49,8 +56,15 @@ export async function POST(req: NextRequest) {
       agentStatus = 'no eligible tasks in queue right now'
     } else if (kickData?.paused) {
       agentStatus = 'paused (loop breaker active)'
+    } else if (!kickRes.ok) {
+      agentStatus = `run-agent answered ${kickRes.status} — the agent was NOT notified`
+    } else {
+      agentStatus = 'run-agent accepted the nudge but reported no task'
     }
-  } catch { /* non-fatal */ }
+  } catch (err) {
+    // Naming the failure keeps "forwarded" from meaning two different things.
+    agentStatus = `run-agent could not be reached — ${err instanceof Error ? err.message : String(err)}`
+  }
 
   return NextResponse.json({
     ok: true,

@@ -132,11 +132,33 @@ describe('the provider probe no longer calls a non-OpenAI-compatible 200 a healt
     await expect(openaiApiRuntime.isAvailable()).resolves.toBe(false)
     const why = await reason()
 
-    // The one case where pulling a model is the real fix — it must keep
+    // The one case where installing a model is the real fix — it must keep
     // saying so, or the fix has just moved the dishonesty in the other
     // direction.
     expect(why).toContain('serves no models')
-    expect(why).toContain('Pull one first')
+    // ...but phrased for THIS endpoint. The base URL under test here is
+    // localhost:59997, which is not Ollama, and this assertion used to demand
+    // the literal Ollama command for it. "Runs against ANY OpenAI-compatible
+    // LLM API" is the channel goal, and `ollama pull` is a confident wrong
+    // answer at a vLLM/LM Studio/hosted endpoint — the same reasoning that
+    // already made the /v1 suffix hint conditional. See pieces9/llm-provider-sweep.md.
+    expect(why).toMatch(/load or enable at least one model/i)
+    expect(why).not.toContain('ollama pull')
+  })
+
+  it('the empty-roster advice IS the Ollama command when the endpoint is Ollama', async () => {
+    // The other half of the same rule: making the advice conditional must not
+    // cost the accurate advice in the case it was written for.
+    process.env.LLM_BASE_URL = 'http://localhost:11434/v1'
+    jest.resetModules()
+    const fresh = await import('@/lib/runtimes/openai-api')
+    fresh.resetProviderProbeCache()
+    fetchMock.mockResolvedValue(realResponse(OPENAI_EMPTY, 200, 'application/json'))
+
+    const why = await fresh.openaiApiRuntime.unavailableReason?.()
+
+    expect(why).toContain('serves no models')
+    expect(why).toContain('ollama pull')
   })
 
   it('a real roster is still available', async () => {

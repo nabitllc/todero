@@ -32,6 +32,24 @@
 // `testEnvironment: "node"` with no jsdom — effects never run, so those
 // branches were unreachable from a test at all.
 //
+// ─── ROUND 3 (2026-08-26): that last sentence was wrong ──────────────────────
+//
+// "Unreachable from a test at all" was the premise of the round-2 repair and it
+// does not hold. jsdom is not what runs a `useEffect`; React's own reconciler
+// is, and hooks are forwarded at call time through
+// `ReactCurrentDispatcher.current`. Supply that object and effects run, state
+// updates re-render, and the `onClick` props of the returned element tree can
+// be invoked directly. `__tests__/work-ui-wiring.test.tsx` does exactly that in
+// ~180 lines with no new dependency, and MOUNTS THE DEFAULT EXPORT BELOW.
+//
+// This matters because the round-2 split, taken on that false premise, moved
+// the untested layer instead of removing it: a second critic applied 32
+// mutations to this lane's four files and 12 survived at 51/51 green, four of
+// them in the thirteen-line default export at the bottom of this file —
+// including `children={undefined}` on the spread, which is verbatim TOD-2444.
+// The split is still worth keeping (a pure view is easier to put into an odd
+// state than to drive one), but it is no longer the only instrument.
+//
 // The fix is structural rather than a new dependency: the rendering is now a
 // PURE, prop-driven component (`WorkViewCardView`) that `renderToStaticMarkup`
 // can put into any state directly, and the request is a separate exported
@@ -239,10 +257,15 @@ export interface WorkViewCardViewProps extends WorkViewCardProps {
  * Everything this card RENDERS, as a pure function of props.
  *
  * Split out for one reason: every branch below used to be reachable only after
- * a fetch resolved inside a useEffect, which under `testEnvironment: "node"`
- * never happens — so `renderToStaticMarkup` could only ever observe the
- * loading state and the interesting branches were untestable. As props, each
- * branch is one call.
+ * a fetch resolved inside a useEffect, and `renderToStaticMarkup` could only
+ * ever observe the loading state. As props, each branch is one call.
+ *
+ * ROUND 3 correction: "untestable" was the word used here and it was wrong —
+ * see the note at the top of the file. The default export IS mounted and driven
+ * in `__tests__/work-ui-wiring.test.tsx`, and that is where the guarantee below
+ * is actually enforced. This view keeps its own tests because forcing an
+ * awkward combination of props is still cheaper than arranging a server that
+ * produces it.
  *
  * The invariant this file exists to hold: **`children` render in EVERY
  * branch.** A fact about THE COUNT may never delete a surface that owns a

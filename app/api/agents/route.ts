@@ -848,11 +848,35 @@ export async function GET() {
     // The heartbeat read, the registration read, and the two queries are all
     // independent, so they run together rather than stacking their round trips.
     const [{ data: activeIssues }, { data: recentRuns }, beats, registrations] = await Promise.all([
-      // 1. Issues that are actively being worked on (in_progress, code_review)
+      // 1. Issues that are actively being worked on (in_progress, code_review).
+      //
+      //    THE STATUS LIST AND THE ARCHIVE CLAUSE ARE BOTH LOAD-BEARING, and
+      //    both are asserted against the RECORDED query in
+      //    __tests__/api/agents-task-provenance.test.ts — not merely exercised
+      //    through a stub. Deleting either one is invisible in the response on
+      //    a small board and wrong on a real one, which is exactly the mutant
+      //    class that survived round 2.
+      //
+      //    `.in(status)` is what makes a row "current work". Without it a
+      //    `done` or `archived` issue renders on the roster as
+      //    "assigned: TOD-X: …" — a finished task presented as work in
+      //    progress, which is this lane's whole failure mode with a different
+      //    input.
+      //
+      //    `.is('archived_at', null)` matches the rule /api/issues already
+      //    enforces on every read (app/api/issues/route.ts — `includeArchived`
+      //    gates the identical clause). Measured on this host 2026-08-26:
+      //    `issues` holds 2 rows and TOD-1 is archived with project 'Todero',
+      //    so today the status list happens to exclude it (`backlog`) and the
+      //    leak is LATENT, not live. It stops being latent the moment an
+      //    archived row sits in any of the five statuses above — nothing
+      //    prevents that, and an archived row is by definition not current
+      //    work.
       supabase
         .from('issues')
         .select('task_key, title, status, assignee, worked_by, updated_at, started_at')
         .in('status', ['open', 'in_progress', 'code_review', 'product_review', 'approved'])
+        .is('archived_at', null)
         .order('updated_at', { ascending: false })
         .limit(50),
       // 2. Recent agent_runs for last-activity tracking

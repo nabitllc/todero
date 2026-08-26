@@ -215,9 +215,16 @@ export const POST = withPermission(
     // just added — this is not a fabricated number, it is the absence of one
     // recorded honestly, and every later change to it goes through the
     // adjust action with a reason.
+    // BOTH follow-up writes have their errors checked. Neither used to.
+    // "Visible to the inventory surface immediately" (above) was an assertion
+    // this code did not keep: if the `inventory_levels` insert failed, the
+    // product existed with no stock row at all, and the 201 said so to nobody.
+    // A SKU the inventory screen cannot see is not a product an operator can
+    // sell, so reporting that state as success is the defect, not the missing
+    // row itself.
     if (created) {
       const reorderPoint = validateWholeCount(body.reorder_point, 'reorder_point')
-      await db()
+      const { error: levelError } = await db()
         .from('inventory_levels')
         .insert({
           project,
@@ -227,8 +234,25 @@ export const POST = withPermission(
           reorder_point: reorderPoint.ok ? reorderPoint.value : 0,
           updated_at: now,
         })
+      if (levelError) {
+        return NextResponse.json(
+          {
+            error: 'inventory_row_write_failed',
+            message:
+              `"${product.value.sku}" was created as a product but has NO stock row: the ` +
+              `inventory_levels write failed (${levelError.message}). The SKU will not appear on ` +
+              `the inventory surface and cannot be adjusted or shipped until it does. Re-create ` +
+              `the stock row with PATCH /api/commerce/inventory {"sku":"${product.value.sku}",` +
+              `"location":"default","on_hand":0,"reason":"..."}, or delete the product and retry.`,
+            sku: product.value.sku,
+            product_created: true,
+            inventory_row_created: false,
+          },
+          { status: 500 },
+        )
+      }
 
-      await db().from('commerce_actions').insert({
+      const { error: auditError } = await db().from('commerce_actions').insert({
         project,
         action: 'product.create',
         object_type: 'product',
@@ -239,9 +263,50 @@ export const POST = withPermission(
         actor: commerceActor(req),
         created_at: now,
       })
+      if (auditError) {
+        // The product and its stock row are real and usable; only the audit
+        // trail is missing. That is a smaller failure than the one above and
+        // gets its own code — but it is still not a 201, because an unaudited
+        // write reported as success is how an audit log silently stops being
+        // a record of everything that happened.
+        return NextResponse.json(
+          {
+            error: 'audit_write_failed',
+            message:
+              `"${product.value.sku}" WAS created (with a stock row at 0), but the audit row ` +
+              `recording who created it could not be written (${auditError.message}). The product ` +
+              `is usable; the commerce_actions log is incomplete for this SKU. Do not retry the ` +
+              `create — it will be refused as a duplicate.`,
+            sku: product.value.sku,
+            product_created: true,
+            inventory_row_created: true,
+            audited: false,
+          },
+          { status: 500 },
+        )
+      }
     }
 
-    return NextResponse.json({ project, product: created ? present(created) : null }, { status: 201 })
+    // Same rule as the orders POST: a 201 whose body is `product: null` claims
+    // a creation nothing can confirm. When `created` is falsy the block above
+    // never ran, so there is no stock row and no audit row either — a SKU in
+    // none of the three places a product is supposed to exist, reported as
+    // created.
+    if (!created) {
+      return NextResponse.json(
+        {
+          error: 'product_write_unconfirmed',
+          message:
+            `"${product.value.sku}" could not be confirmed: the insert reported no error but ` +
+            `returned no row. No stock row and no audit row were written. Re-read the catalogue ` +
+            `before retrying — a retry will be refused as a duplicate if it did land.`,
+          sku: product.value.sku,
+        },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({ project, product: present(created) }, { status: 201 })
   },
 )
 
@@ -354,7 +419,12 @@ export const PATCH = withPermission(
       .select('*')
     if (error) return dbQueryErrorResponse(error, 'products')
 
-    await db().from('commerce_actions').insert({
+    // Audit failure REVERTS the price change, the same way the orders route
+    // reverts a status settle whose audit row will not write. A price that
+    // moved with no record of who moved it is the one change in this file an
+    // operator cannot reconstruct after the fact, and an unchecked insert here
+    // meant a 200 that reported the new price as though it had been recorded.
+    const { error: auditError } = await db().from('commerce_actions').insert({
       project,
       action: 'product.update',
       object_type: 'product',
@@ -365,6 +435,36 @@ export const PATCH = withPermission(
       actor: commerceActor(req),
       created_at: new Date().toISOString(),
     })
+    if (auditError) {
+      const { data: reverted, error: revertError } = await db()
+        .from('products')
+        .update({
+          status: found.status,
+          price_minor: found.price_minor,
+          currency: found.currency,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('project', project)
+        .eq('sku', sku.value)
+        .select('*')
+      // An error on the revert leaves `data` null, which reads as "did not
+      // land" — the pessimistic answer, and the correct direction to fail in.
+      const revertLanded = !revertError && ((reverted ?? []) as unknown[]).length > 0
+      return NextResponse.json(
+        {
+          error: revertLanded ? 'audit_write_failed' : 'audit_write_failed_unreconciled',
+          message:
+            `"${sku.value}" was NOT updated: the audit row could not be written ` +
+            `(${auditError.message}). The change (${changes.join('; ')}) ` +
+            `${revertLanded ? 'was reverted' : 'could NOT be reverted and needs manual reconciliation — ' +
+              `re-read the product and restore ${found.status} @ ` +
+              `${formatMinor(found.price_minor, found.currency)} ${found.currency} by hand`}.`,
+          sku: sku.value,
+          reverted: revertLanded,
+        },
+        { status: 500 },
+      )
+    }
 
     const updated = ((data ?? []) as unknown as ProductRow[])[0] ?? { ...found, ...patch }
     return NextResponse.json({ project, product: present(updated as ProductRow), changed: changes })

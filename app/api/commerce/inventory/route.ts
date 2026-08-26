@@ -358,7 +358,7 @@ export const PATCH = withPermission(
     })
 
     if (auditError) {
-      const { data: reverted } = await db()
+      const { data: reverted, error: revertError } = await db()
         .from('inventory_levels')
         .update({ on_hand: level.on_hand, updated_at: new Date().toISOString() })
         .eq('project', project)
@@ -367,7 +367,7 @@ export const PATCH = withPermission(
         .eq('on_hand', next.value)
         .select('*')
 
-      if (((reverted ?? []) as unknown[]).length > 0) {
+      if (!revertError && ((reverted ?? []) as unknown[]).length > 0) {
         return NextResponse.json(
           {
             error: 'audit_write_failed',

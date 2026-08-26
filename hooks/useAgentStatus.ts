@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser';
 import { readApiError, formatApiError, type ApiError } from '@/lib/fetch-json';
 import type { AgentRunInfo, AgentRunStatus } from '@/components/office/officeConstants';
-import { createBoardTaskMirror, BOARD_TASK_MIRROR_TICK_MS } from '@/components/office/officePolling';
+import { startBoardTaskMirror } from '@/components/office/officePolling';
 
 export type { AgentRunInfo, AgentRunStatus };
 export type { ApiError };
@@ -153,13 +153,16 @@ export function useAgentStatus({
   // now lives in `createBoardTaskMirror` (components/office/officePolling.ts)
   // where `__tests__/office-board-task-mirror.test.ts` calls `sync()` twice
   // and asserts the second call published nothing.
-  useEffect(() => {
-    const mirror = createBoardTaskMirror(setBoardTasks);
-    const sync = () => { mirror.sync(boardTasksRef.current); };
-    sync();
-    const t = setInterval(sync, BOARD_TASK_MIRROR_TICK_MS);
-    return () => clearInterval(t);
-  }, [boardTasksRef, setBoardTasks]);
+  //
+  // ROUND 3: the ARMING moved out too. The decision was executable but the
+  // three lines that started it -- first publish, cadence, cleanup -- were
+  // pinned by three source greps and nothing else. `startBoardTaskMirror`
+  // takes injectable timers, so office-board-task-mirror.test.ts drives the
+  // tick with no clock and asserts what each one published.
+  useEffect(
+    () => startBoardTaskMirror(boardTasksRef, setBoardTasks),
+    [boardTasksRef, setBoardTasks],
+  );
 
   // ── Supabase agent_runs polling ──
   useEffect(() => {

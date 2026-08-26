@@ -299,7 +299,7 @@ function rowProvenance(row: RosterRowData, env: AgentsEnvelope | null): string {
  * read, not about the future: the roster refetches every 30s and a ceiling can
  * clear in between, so this says what the server said, not what it will say.
  */
-function RunControl({
+export function RunControl({
   dispatchEnabled,
   reason,
   row,
@@ -367,6 +367,103 @@ export function ceilingRefusal(row: RosterRowData): string | null {
     (reason ? `: ${reason}` : ' (the server reported no reason text)') +
     '. POST /api/run-agent would answer 429 — see app/api/run-agent/route.ts. ' +
     'The dry run this card uses to arm the control returns before that check, so it cannot see this.'
+  )
+}
+
+/**
+ * One roster row.
+ *
+ * ─── WHY THIS IS ITS OWN EXPORTED COMPONENT (ROUND 3) ────────────────────────
+ *
+ * It was inline in `RosterCard`'s `.map()`, and that made the row's WIRING
+ * untestable: `RosterCard` opens with `useState`/`useEffect` and fetches two
+ * endpoints, so nothing could render it in a test. A critic used the gap
+ * exactly as it deserved — it swapped the activity badge's `{act.badge}` for
+ * `{desc.badge}`, so every row would print its LIVENESS state ('never',
+ * 'live') in the slot that answers "what is it doing", and all 141 lane tests
+ * stayed green with `tsc` clean. The same trick worked on `RunControl`'s
+ * `ceilingRefusal(row)` call.
+ *
+ * The pure functions behind both were well tested; the fact that the render
+ * CALLS them was not tested at all, and the previous round's doc described the
+ * button as guarded when only the helper was. Pulling the row out lets
+ * `react-dom/server` render it with no fetch and no effects, so the wiring is
+ * asserted against real markup — see
+ * components/tabs/__tests__/crew-tab-render.test.tsx.
+ *
+ * It is a pure function of its props: every value it shows is derived here from
+ * `row`/`env`/`now`, and it holds no state of its own.
+ */
+export function RosterRow({
+  row,
+  env,
+  now,
+  dispatch,
+  onOpen,
+}: {
+  row: RosterRowData
+  env: AgentsEnvelope | null
+  now: number
+  dispatch: { enabled: boolean; reason: string | null } | null
+  onOpen: (row: RosterRowData) => void
+}) {
+  const desc = describeLiveness(livenessOf(env)(row), now)
+  const act = describeActivity(activityOf(env, now)(row), now)
+  return (
+    <li className="py-2.5 flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onOpen(row)}
+          className="flex items-center gap-2 min-w-0 text-left rounded hover:bg-white/5 -mx-1 px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-white/40"
+          aria-label={`Open details for ${row.name}`}
+        >
+          <span className="text-sm shrink-0" aria-hidden="true">{row.emoji ?? '•'}</span>
+          <span className="text-white text-[13px] font-semibold truncate">{row.name}</span>
+        </button>
+        {/* Two badges, two different questions. The first is "is it checking
+            in" (liveness); the second is "what is it doing" (activity). They
+            are classified from the same instant (see activityOf) so they
+            cannot contradict each other — but they must also not be each
+            other, which is what the render test pins. */}
+        <span
+          data-testid="liveness-badge"
+          className={`font-mono text-[10px] rounded px-1.5 py-0.5 border shrink-0 ${LIVENESS_TONE[desc.state]}`}
+        >
+          {desc.badge}
+        </span>
+        <span
+          data-testid="activity-badge"
+          className={`font-mono text-[10px] rounded px-1.5 py-0.5 border shrink-0 ${ACTIVITY_TONE[act.state]}`}
+          title={act.label}
+        >
+          {act.badge}
+        </span>
+        <span className="flex-1" />
+        <span className="font-mono text-[10px] text-white/50 bg-white/5 rounded px-1.5 py-0.5 shrink-0">
+          {row.vault ? `tier ${row.vault.tier}` : 'no tier declared'}
+        </span>
+      </div>
+      <p className="font-mono text-[10.5px] text-white/55 break-all">{row.model ?? 'no model reported by /api/agents'}</p>
+      <p className="font-mono text-[10px] text-white/42 leading-snug">{desc.label}</p>
+      {/* The activity sentence always names WHICH FACT it was built from —
+          "its own last heartbeat said so" vs "that is a board row, not a
+          check-in" — so the two can never be read as each other. Only the two
+          states an operator must act on are coloured; the rest stay quiet. */}
+      <p
+        data-testid="activity-label"
+        className={`font-mono text-[10px] leading-snug break-words ${
+          act.needsAttention ? 'text-amber-300/85' : 'text-white/42'
+        }`}
+      >
+        {act.label}
+      </p>
+      <div className="flex items-center gap-2">
+        <p className="font-mono text-[10px] text-white/30 leading-snug break-all min-w-0">{rowProvenance(row, env)}</p>
+        <span className="flex-1" />
+        <RunControl dispatchEnabled={dispatch === null ? null : dispatch.enabled} reason={dispatch?.reason ?? null} row={row} />
+      </div>
+    </li>
   )
 }
 
@@ -470,14 +567,18 @@ function RosterCard({
       // because the header truncates and a truncated "…· 1 live" is worse
       // than no breakdown.
       //
-      // The label is "in the fleet", NOT "registered", even though the field
-      // behind it is `FleetSummary.registered`. On this host that read
-      // "28 registered" while the same envelope's `rosterSource` breakdown had
-      // exactly ONE registered agent — `registered` means "self-registered
-      // through POST /api/connect" everywhere else on this surface (see
-      // `rowProvenance` above and app/api/agents/fleet-roster.ts). Two
-      // meanings for one word, twenty-seven apart, on one card.
-      metric={loaded ? { value: summary.registered, label: 'in the fleet' } : undefined}
+      // The label is "in the fleet", NOT "registered": `registered` means
+      // "self-registered through POST /api/connect" everywhere else on this
+      // surface (see `rowProvenance` above and app/api/agents/fleet-roster.ts),
+      // and this host has exactly ONE of those out of twenty-eight rows.
+      //
+      // ROUND 3: round 2 fixed this label and left `fleetHeadline` printing
+      // "28 registered" in the very next line of the body — the same word, the
+      // same card, still twenty-seven off. The field is now
+      // `FleetSummary.rows` and the headline says "on the roster", so the two
+      // agree because they cannot be spelled differently, not because someone
+      // remembered to patch both.
+      metric={loaded ? { value: summary.rows, label: 'in the fleet' } : undefined}
       // Card renders `empty.message` INSTEAD of children, so an empty roster
       // would swallow the source warnings below — and an empty roster is the
       // case those warnings exist to explain. When there is a warning to
@@ -515,61 +616,16 @@ function RosterCard({
         </p>
       )}
       <ul className="divide-y divide-white/5">
-        {rows.map(row => {
-          const desc = describeLiveness(livenessOf(env)(row), now)
-          const act = describeActivity(activityOf(env, now)(row), now)
-          return (
-            <li key={row.id} className="py-2.5 flex flex-col gap-1.5">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onOpen(row)}
-                  className="flex items-center gap-2 min-w-0 text-left rounded hover:bg-white/5 -mx-1 px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-white/40"
-                  aria-label={`Open details for ${row.name}`}
-                >
-                  <span className="text-sm shrink-0" aria-hidden="true">{row.emoji ?? '•'}</span>
-                  <span className="text-white text-[13px] font-semibold truncate">{row.name}</span>
-                </button>
-                <span className={`font-mono text-[10px] rounded px-1.5 py-0.5 border shrink-0 ${LIVENESS_TONE[desc.state]}`}>
-                  {desc.badge}
-                </span>
-                {/* Two badges, two different questions: the first is "is it
-                    checking in", this one is "what is it doing". They are
-                    classified from the same instant (see activityOf) so they
-                    cannot contradict each other. */}
-                <span
-                  className={`font-mono text-[10px] rounded px-1.5 py-0.5 border shrink-0 ${ACTIVITY_TONE[act.state]}`}
-                  title={act.label}
-                >
-                  {act.badge}
-                </span>
-                <span className="flex-1" />
-                <span className="font-mono text-[10px] text-white/50 bg-white/5 rounded px-1.5 py-0.5 shrink-0">
-                  {row.vault ? `tier ${row.vault.tier}` : 'no tier declared'}
-                </span>
-              </div>
-              <p className="font-mono text-[10.5px] text-white/55 break-all">{row.model ?? 'no model reported by /api/agents'}</p>
-              <p className="font-mono text-[10px] text-white/42 leading-snug">{desc.label}</p>
-              {/* The activity sentence always names WHICH FACT it was built
-                  from — "its own last heartbeat said so" vs "that is a board
-                  row, not a check-in" — so the two can never be read as each
-                  other. Only the two states an operator must act on are
-                  coloured; the rest stay quiet. */}
-              <p
-                className={`font-mono text-[10px] leading-snug break-words ${
-                  act.needsAttention ? 'text-amber-300/85' : 'text-white/42'
-                }`}
-              >
-                {act.label}
-              </p>
-              <div className="flex items-center gap-2">
-                <p className="font-mono text-[10px] text-white/30 leading-snug break-all min-w-0">{rowProvenance(row, env)}</p>
-                <span className="flex-1" />
-                <RunControl dispatchEnabled={dispatch === null ? null : dispatch.enabled} reason={dispatch?.reason ?? null} row={row} />
-              </div>
-            </li>
-          )
-        })}
+        {rows.map(row => (
+          <RosterRow
+            key={row.id}
+            row={row}
+            env={env}
+            now={now}
+            dispatch={dispatch}
+            onOpen={onOpen}
+          />
+        ))}
       </ul>
       {dispatch && !dispatch.enabled && (
         <p className="flex items-start gap-2 text-white/40 text-[11px] leading-relaxed mt-2 pt-2 border-t border-white/5">

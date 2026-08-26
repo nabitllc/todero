@@ -19,11 +19,12 @@ import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import {
   LLM_BASE_URL,
   fetchLiveModels,
+  pullHint,
   readModelsResponse,
   resolveModelId,
   unreachableModelsResult,
 } from '@/lib/llm-provider'
-import type { LiveModelsResult } from '@/lib/llm-provider'
+import type { LiveModelsFailureKind, LiveModelsResult } from '@/lib/llm-provider'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
 import { summarizeExit } from './exit-evidence'
 import { recordRunOnExit } from '../memory-loop'
@@ -103,12 +104,37 @@ export function resolveProvider(): ProviderConfig {
 // answers non-2xx (a bad or missing credential on a hosted gateway), or serves
 // an empty roster is unavailable, by name.
 
+/** Upper-case the first letter: `pullHint()` is phrased for mid-sentence use. */
+function sentenceCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 /** Short on purpose — this runs inline in request handlers. */
 const PROBE_TIMEOUT_MS = 1500
 /** listRuntimes() is polled by the wizard and /api/health; don't re-probe per request. */
 const PROBE_TTL_MS = 30_000
 
-export type ProviderProbe = { ok: true } | { ok: false; reason: string }
+/**
+ * Why the configured endpoint is not usable — as a VALUE, not only as prose.
+ *
+ * `reason` alone forced every consumer above this seam to either re-derive the
+ * cause by string-matching, or (what actually happened) print one sentence for
+ * all of them. `/api/health` and `/api/settings/usage` both did the latter, so
+ * a live HTTP 401 and a 200 serving HTML both rendered as "unreachable" — the
+ * exact class of indistinguishable answer this channel exists to remove.
+ *
+ * Three of these mirror `LiveModelsFailureKind` (lib/llm-provider.ts) so the
+ * verdict the parser produced survives all the way to the operator instead of
+ * being flattened here. The other two are this function's own states.
+ */
+export type ProviderProbeKind =
+  | LiveModelsFailureKind
+  /** Reachable, OpenAI-shaped, genuinely serving zero models. */
+  | 'empty-roster'
+  /** No endpoint configured at all — nothing was dialled. */
+  | 'unconfigured'
+
+export type ProviderProbe = { ok: true } | { ok: false; kind: ProviderProbeKind; reason: string }
 
 let probeCache: { key: string; at: number; result: ProviderProbe } | null = null
 
@@ -142,6 +168,12 @@ async function fetchModelsFrom(provider: ProviderConfig): Promise<LiveModelsResu
   let res: Response
   try {
     res = await fetch(`${provider.baseUrl}/models`, {
+      // Same reason as TOD-2456 on fetchLiveModels(): under Next's patched
+      // fetch an un-annotated GET is cacheable, which would freeze this
+      // liveness probe into a permanent verdict. The shared path above sets
+      // it; this divergent branch did not, so the one probe that talks to a
+      // DIFFERENT base URL was the one that could go stale.
+      cache: 'no-store' as RequestCache,
       headers: { Authorization: `Bearer ${provider.apiKey}` },
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     })
@@ -162,7 +194,7 @@ export async function probeProvider(): Promise<ProviderProbe> {
     provider = resolveProvider()
   } catch (err) {
     // No endpoint configured at all. The message already names the variable.
-    return { ok: false, reason: err instanceof Error ? err.message : String(err) }
+    return { ok: false, kind: 'unconfigured', reason: err instanceof Error ? err.message : String(err) }
   }
 
   const now = Date.now()
@@ -173,16 +205,29 @@ export async function probeProvider(): Promise<ProviderProbe> {
   const live = await fetchModelsFrom(provider)
   let result: ProviderProbe
   if (!live.ok) {
+    // The lead clause is chosen by KIND. It used to be "does not answer" for
+    // every failure, which made /api/health emit the self-contradictory
+    // "<url> does not answer — ... answered 200 but the body is not JSON" and
+    // called a live HTTP 401 unreachable. An endpoint that answered answered;
+    // saying otherwise sends the operator to check the wrong thing.
+    const lead =
+      live.kind === 'unreachable'
+        ? `${provider.baseUrl} does not answer`
+        : live.kind === 'error-status'
+          ? `${provider.baseUrl} answered with an error status`
+          : `${provider.baseUrl} answered, but it is not an OpenAI-compatible endpoint`
     result = {
       ok: false,
-      reason: `${provider.baseUrl} does not answer — dispatch through it will fail: ${live.error}`,
+      kind: live.kind,
+      reason: `${lead} — dispatch through it will fail: ${live.error}`,
     }
   } else if (live.models.length === 0) {
     result = {
       ok: false,
+      kind: 'empty-roster',
       reason:
         `${provider.baseUrl} answers but serves no models — dispatch through it will fail. ` +
-        'Pull one first (e.g. `ollama pull qwen2.5-coder:7b`).',
+        `${sentenceCase(pullHint(provider.baseUrl))}.`,
     }
   } else {
     result = { ok: true }
@@ -812,7 +857,29 @@ export const openaiApiRuntime: AgentRuntime = {
         // trace lines at all) are all real, distinct outcomes, not synonyms
         // for 'completed'. Collapsing them used to make every non-crashed
         // run read as a success even when the agent never finished the task.
+        //
+        // pieces9 — THIS COMMENT WAS FALSE OF THE SHIPPED CODE UNTIL NOW, and
+        // that is worth stating plainly rather than quietly deleting. MEASURED
+        // against a real sqlite built from the real migrations:
+        // `finalizeRun({status:'max_iterations'})` →
+        //   CHECK constraint failed: (status IN ('spawned','completed','failed','killed'))
+        // and the row was left `status=spawned, completed_at=null,
+        // input_tokens=null, cost_usd=null`. Both dialects carried that CHECK
+        // (migrations/008_token_ledger.sql:24,
+        // migrations/sqlite/000_baseline.sql:480), so every openai-api run that
+        // exhausted MAX_ITER, or died without a run_end line, silently lost its
+        // tokens, its cost AND its completion — with only a console.warn, and
+        // with this comment above it asserting the opposite.
+        // migrations/075_token_ledger_status_vocabulary.sql widens the column
+        // to hold these three words; lib/runtimes/token-ledger.ts degrades
+        // (narrowing the word, keeping the numbers, recording the real word in
+        // metadata.reported_status) on an install where 075 has not run.
         status: parsed.status,
+        // pieces9: the child's real exit code/signal, which finalizeRun() has
+        // always written into `metadata` and this call never passed — the same
+        // omission lib/runtimes/claude-code.ts had.
+        exitCode: childExit?.observed ? childExit.code : null,
+        exitSignal: childExit?.observed ? childExit.signal : null,
         durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
         taskId: opts.taskId ?? null,
         inputTokens: parsed.totals.tokensIn || undefined,

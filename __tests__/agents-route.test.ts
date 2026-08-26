@@ -41,9 +41,18 @@ process.env.TODERO_VAULT_DIR = path.join(os.tmpdir(), 'todero-no-such-vault')
 // Chainable stub for the two Supabase queries the route runs. Every builder
 // method returns `this`, and awaiting the chain yields `{ data: [] }` — the
 // route only needs run state, and empty run state is a legitimate answer.
+//
+// A METHOD MISSING FROM THIS LIST IS NOT A NO-OP — IT IS A 503. The route's
+// query chain runs inside a try/catch that answers 503 with the error text, so
+// an unstubbed builder method throws `chain.X is not a function` and the whole
+// request degrades to "database unavailable" — with the assertion failing as
+// `Expected: 200, Received: 503`, which reads like a route regression rather
+// than a missing stub. That is exactly what happened when `.is('archived_at',
+// null)` was added to the issues query in round 3 of the fleet-provenance
+// piece. Keep this list in step with app/api/agents/route.ts.
 function queryStub() {
   const chain: Record<string, unknown> = {}
-  for (const m of ['select', 'in', 'order', 'limit', 'eq', 'single', 'maybeSingle', 'upsert']) {
+  for (const m of ['select', 'in', 'is', 'order', 'limit', 'eq', 'single', 'maybeSingle', 'upsert']) {
     chain[m] = () => chain
   }
   chain.then = (resolve: (v: { data: never[] }) => unknown) => resolve({ data: [] })

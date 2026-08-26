@@ -14,6 +14,12 @@ import type { AgentRunInfo, ThemeKey } from './officeConstants';
 // one-clock (pieces6): every duration this canvas draws is spelled by the one
 // clock in lib/time.ts. See docs/rebuild/pieces/pieces6/one-clock.md.
 import { formatDuration, formatSince } from '@/lib/time';
+// The Office's heartbeat vocabulary. Imported here rather than re-derived so
+// the canvas and the Crew tab classify the SAME timestamp through the SAME
+// module (lib/fleet-liveness.ts) and cannot drift apart. See officeLiveness.ts.
+import {
+  livenessPip, livenessContradiction, LIVENESS_COLOR, type OfficeLiveness,
+} from './officeLiveness';
 
 // The one roster shape initAgents() ever accepts: whatever /api/agents
 // actually returned (mapped in AgentOffice.tsx), never a hardcoded stand-in.
@@ -440,7 +446,28 @@ export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:a
  * back "for convenience": the convenience is what made the feature deletable
  * in silence.
  */
-export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0,startedAt:string|null=null,waitingCount:number){
+/**
+ * Whether this agent's board-task label is painted at all.
+ *
+ * Exported and shared because the condition is needed TWICE — once to draw the
+ * label, once by the speech bubble's stacking maths to know how much room the
+ * label took. A critic unpinned the state gate on the first copy
+ * (`if(boardTask&&(state==="working"||state==="idle"))` -> `if(boardTask)`) and
+ * the suite stayed green: the label then painted over walking and in-meeting
+ * agents while the bubble, still using the old condition, stacked itself as if
+ * nothing were there. Two copies of one rule is how that becomes possible, so
+ * there is now one copy and `__tests__/office-wiring.test.ts` executes it.
+ *
+ * The gate itself is a claim about meaning, not layout: a board row says what
+ * an agent is ASSIGNED, and that only describes what you are looking at while
+ * the figure is at its desk. A figure crossing the floor to a meeting is not
+ * doing the thing on the label.
+ */
+export function showsBoardTask(boardTask:string|null|undefined,state:string|null|undefined):boolean{
+  return !!boardTask&&(state==="working"||state==="idle");
+}
+
+export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0,startedAt:string|null=null,waitingCount:number,liveness:OfficeLiveness|null){
   // Every roster agent gets a real position at init (desk or bench — see
   // initAgents), so there is no more "agent with nowhere to stand" case to
   // filter for here.
@@ -520,6 +547,27 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
   ctx.beginPath();ctx.arc(px+hs-sz*0.1+ox,py-hs+sz*0.1+dy2+oy,sz*0.1,0,Math.PI*2);
   ctx.fillStyle=dotC;ctx.fill();ctx.strokeStyle="#0b0b14";ctx.lineWidth=sz*0.035;ctx.stroke();
 
+  // ── Heartbeat pip ──────────────────────────────────────────────────────────
+  // The dot ABOVE answers "what does agent_runs say this figure is doing"; this
+  // one answers "has this agent checked in", from agent_heartbeats via
+  // /api/agents. They are different questions on different tables and the
+  // Office used to render only the first, which is how one host came to show a
+  // figure working at a desk while the Crew tab said that agent had never
+  // checked in. Two marks, deliberately on OPPOSITE corners of the head, so
+  // they can never be mistaken for one another.
+  //
+  // `never` and `unknown` are drawn HOLLOW — an empty ring, no fill. A dim
+  // fill would read as a weak heartbeat at a glance, and there is no heartbeat
+  // at all; the absence has to look like an absence.
+  {
+    const lst=liveness?liveness.state:"unknown";
+    const lcol=LIVENESS_COLOR[lst];
+    const hollow=lst==="never"||lst==="unknown";
+    ctx.beginPath();ctx.arc(px-hs+sz*0.1+ox,py-hs+sz*0.1+dy2+oy,sz*0.1,0,Math.PI*2);
+    if(!hollow){ctx.fillStyle=lcol;ctx.fill();}
+    ctx.strokeStyle=lcol;ctx.lineWidth=sz*0.035;ctx.stroke();
+  }
+
   const nPx=Math.max(10,Math.round(T*0.13));
   ctx.font=`bold ${nPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
   const nlW=ctx.measureText(name).width+T*0.14,nlH=nPx*1.6,nlY=py+hs+T*0.05+dy2+oy;
@@ -527,9 +575,41 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
   ctx.beginPath();ctx.roundRect(px-nlW/2,nlY,nlW,nlH,T*0.03);ctx.fill();ctx.stroke();
   ctx.fillStyle=active?color:"#6a6a8e";ctx.fillText(name,px,nlY+nlH*0.72);
 
+  // ── Heartbeat words ────────────────────────────────────────────────────────
+  // Two cases get WORDS rather than only the pip, and both are cases where a
+  // pip alone would let the screen mislead:
+  //
+  //   1. A CONTRADICTION — agent_runs says this figure is working and the
+  //      heartbeat store says it is not alive. Either table may be the correct
+  //      one; what is not acceptable is one host drawing both answers and
+  //      naming neither. This line names both, always, and cannot be dismissed.
+  //   2. The SELECTED agent, which gets lib/fleet-liveness.ts's own sentence
+  //      verbatim — the same words the Crew tab shows for that row — so the
+  //      operator can check the two surfaces against each other by reading.
+  //
+  // Everything else stays a pip, because 28 rows of text is not fidelity.
+  const contra=livenessContradiction(state,liveness);
+  const hbText=contra??(isSelected?(liveness?liveness.label:"heartbeat store not read yet"):null);
+  let hbH=0;
+  if(hbText){
+    const hPx=Math.max(9,Math.round(T*0.11));
+    ctx.font=`${hPx}px 'IBM Plex Mono',monospace`;
+    const hShort=hbText.length>34?hbText.slice(0,33)+"…":hbText;
+    const hW=ctx.measureText(hShort).width+T*0.12;
+    hbH=hPx*1.55;
+    const hY=nlY+nlH+T*0.02;
+    // A contradiction is amber whatever the liveness state is: the alarming
+    // fact is the DISAGREEMENT, not which side it fell on.
+    const hCol=contra?"#FF9F43":LIVENESS_COLOR[liveness?liveness.state:"unknown"];
+    ctx.fillStyle="#0a0a14e8";ctx.strokeStyle=hCol+"aa";ctx.lineWidth=sz*0.03;
+    ctx.beginPath();ctx.roundRect(px-hW/2,hY,hW,hbH,T*0.025);ctx.fill();ctx.stroke();
+    ctx.fillStyle=hCol;ctx.textAlign="center";
+    ctx.fillText(hShort,px,hY+hbH*0.72);
+  }
+
   // Board task overlay — shown above chat task label
   const boardTask=boardTasksMap[ag.id];
-  if(boardTask&&(state==="working"||state==="idle")){
+  if(showsBoardTask(boardTask,state)){
     const bPx=Math.max(10,Math.round(T*0.13));
     ctx.font=`bold ${bPx}px 'IBM Plex Mono',monospace`;
     const bShort=boardTask.length>28?boardTask.slice(0,27)+"…":boardTask;
@@ -557,7 +637,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     const wlW=ctx.measureText(wText).width+T*0.22,wlH=wPx*1.8;
     // Stack above whatever else is already above the head.
     const chatTaskH2=(state==="working"&&task)?(Math.max(11,Math.round(T*0.19))*1.8+T*0.10):0;
-    const boardTaskH2=(boardTask&&(state==="working"||state==="idle"))
+    const boardTaskH2=showsBoardTask(boardTask,state)
       ?(Math.max(10,Math.round(T*0.13))*1.7+T*0.28):0;
     const tail=T*0.10;
     const wlY=py-hs-chatTaskH2-boardTaskH2-wlH-tail-T*0.12+dy2+oy;
@@ -594,7 +674,7 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     if(elapsed){
       const ePx=Math.max(9,Math.round(T*0.115));
       ctx.font=`${ePx}px 'IBM Plex Mono',monospace`;
-      const eW=Math.max(tlW,nlW),eH=ePx*1.5,eY=nlY+nlH+T*0.025;
+      const eW=Math.max(tlW,nlW),eH=ePx*1.5,eY=nlY+nlH+hbH+T*0.025;
       ctx.fillStyle="#151528";ctx.fillRect(px-eW/2,eY,eW,eH);
       ctx.fillStyle=color+"dd";ctx.textAlign="center";
       // one-clock: "running 12m", not a bare "⏱ 12m". This figure shows time
@@ -764,6 +844,15 @@ export interface DrawAgentsOptions {
   runs: Record<string, { estimatedCost?: number | null; startedAt?: string | null } | undefined>;
   /** agent id -> that agent's own count of status='pending' inbox rows. */
   waiting: Record<string, number>;
+  /**
+   * agent id -> that agent's heartbeat facts, from GET /api/agents via
+   * `livenessFromAgentsBody`. REQUIRED, with no default, for the same reason
+   * `waitingCount` is: a default would let the whole heartbeat surface be
+   * deleted at the one call site with every test still green. An id missing
+   * from this map is passed `null`, which paints as `unknown` — "we did not
+   * look" — never as `never`.
+   */
+  liveness: Record<string, OfficeLiveness>;
 }
 
 export function drawAgents(
@@ -783,6 +872,12 @@ export function drawAgents(
       o.runs[ag.id]?.startedAt || null,
       // An agent with no key here is not waiting, and gets no bubble at all.
       o.waiting[ag.id] || 0,
+      // `?? null`, never `?? {state:'never'}`: an id the roster answer did not
+      // mention is one we know NOTHING about, and drawAgent renders that as
+      // `unknown`. Manufacturing `never` here would be a claim about the agent
+      // made from an absence of evidence — the exact defect lib/fleet-liveness
+      // exists to prevent.
+      o.liveness[ag.id] ?? null,
     );
   }
 }

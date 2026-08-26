@@ -240,6 +240,74 @@ describe('runtime adapters — the exit evidence reaches agent_run_records for r
     await assertFailedRunRecorded('cursor', 'CURSOR_BIN', '03')
   }, 90_000)
 
+  // ── pieces9: the ledger row and the memory row must not contradict ───────
+  //
+  // THE FABRICATION THIS CLOSES. lib/runtimes/claude-code.ts closed its
+  // token_ledger row with a HARDCODED `status: 'completed'` in the very same
+  // `watchChildExit` callback that recorded the run as failed four lines
+  // later. Measured before the fix, one real child exiting non-zero:
+  //   agent_run_records -> {exit_status: 9, succeeded: false, failed: true}
+  //   token_ledger      -> {status: 'completed', metadata: null}
+  // token_ledger is what /api/db/token_ledger serves and what
+  // /api/costs/breakdown reads, so the contradicting half was the half the
+  // product showed. `finalizeRun()` has always accepted exitCode/exitSignal;
+  // the call simply never passed them, though `childExit` was in scope.
+  it('claude-code: the token_ledger row it closes says the same thing as the memory row', async () => {
+    process.env.CLAUDE_BIN = process.execPath
+    const { runtime, db } = loadAdapter('claude-code')
+    const logFile = join(scratchDir, 'ledger-agreement.log')
+    await seedIssue(db, 'issue-07', 'TOD-9707')
+
+    // The row app/api/run-agent/route.ts's recordSpawn() creates at dispatch.
+    // No adapter creates it, and finalizeRun() only ever UPDATES, keyed by
+    // log_file — without this seed the assertions below would be vacuous.
+    const { error: seedError } = await db().from('token_ledger').insert({
+      agent_id: 'tester',
+      runtime: 'claude-code',
+      prompt_bytes: 11,
+      log_file: logFile,
+      status: 'spawned',
+    })
+    expect(seedError).toBeNull()
+
+    const spawned = await runtime.spawn({
+      agentId: 'tester',
+      workingDir: scratchDir,
+      prompt: 'fixture prompt for the ledger-agreement proof',
+      logFile,
+      taskId: 'issue-07',
+    })
+    expect(spawned.ok).toBe(true)
+
+    const memoryRow = await waitForRow(db, 'tester', logFile)
+    const osCode = exitCodeFromLog(logFile)
+    expect(osCode).not.toBeNull()
+    expect(osCode).not.toBe(0)
+    expect(truthy(memoryRow.failed)).toBe(true)
+    expect(memoryRow.exit_status).toBe(osCode)
+
+    // finalizeRun() is fire-and-forget and runs just before the memory write,
+    // so poll rather than assuming it has landed.
+    let ledger: Record<string, unknown> | undefined
+    const deadline = Date.now() + 15_000
+    while (Date.now() < deadline) {
+      const { data } = await db().from('token_ledger').select('*').eq('log_file', logFile)
+      const rows = (data ?? []) as Array<Record<string, unknown>>
+      if (rows.length > 0 && rows[0].status !== 'spawned') { ledger = rows[0]; break }
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+    expect(ledger).toBeDefined()
+
+    // The two rows agree. Before pieces9 this was 'completed'.
+    expect(ledger!.status).toBe('failed')
+    expect(ledger!.completed_at).not.toBeNull()
+
+    // And the exit code the callback had in scope all along is on the row.
+    const metadata = ledger!.metadata as Record<string, unknown> | null
+    expect(metadata).not.toBeNull()
+    expect(metadata!.exit_code).toBe(osCode)
+  }, 90_000)
+
   // ── openai-api: the whole loop, against a fake OpenAI-compatible server ───
 
   /**

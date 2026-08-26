@@ -256,8 +256,42 @@ function bodySnippet(text: string): string {
  * point, so this sentence is now reachable ONLY from that state. Before the
  * shape check above, four unrelated misconfigurations printed it too.
  */
+export function isOllamaLike(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).port === '11434'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * How to put a model on an endpoint that has none — phrased for the endpoint
+ * actually configured.
+ *
+ * `ollama pull …` is the right advice for exactly one server. Printing it at a
+ * vLLM, LM Studio or hosted gateway is a confident wrong answer, and this seam
+ * already refuses to give one of those elsewhere: the `/v1` suffix hint in
+ * `readModelsResponse()` was made conditional in an earlier round on precisely
+ * this reasoning ("naming a missing suffix on a URL that has one is a confident
+ * wrong answer"). The identical argument applies here and had not been applied.
+ * The channel goal is ANY OpenAI-compatible API, so the generic branch is the
+ * default and Ollama is the special case, not the other way round.
+ */
+export function pullHint(baseUrl: string): string {
+  // Lower-case leading word, no trailing stop: callers place it mid-sentence
+  // (`noModelsError()`) or capitalise it themselves at a sentence start
+  // (`probeProvider()`). Keeping the Ollama branch byte-identical to what it
+  // has always said means the existing guards on that sentence stay valid.
+  return isOllamaLike(baseUrl)
+    ? 'pull one first (e.g. `ollama pull qwen2.5-coder:7b`)'
+    : 'load or enable at least one model on that server, then retry'
+}
+
 export function noModelsError(): string {
-  return `${LLM_BASE_URL}/models returned no models — the endpoint is OpenAI-compatible but its roster is empty; pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)`
+  return (
+    `${LLM_BASE_URL}/models returned no models — the endpoint is OpenAI-compatible ` +
+    `but its roster is empty; ${pullHint(LLM_BASE_URL)}`
+  )
 }
 
 /**
@@ -343,6 +377,30 @@ export async function readModelsResponse(baseUrl: string, res: Response): Promis
         `Top-level keys: ${keys || '(none)'}.${suffixHint}`,
     }
   }
+  // A 200 whose body carries BOTH an empty `data` array and a top-level
+  // `error` object — a shape hosted gateways really do return for an expired
+  // key or an org without access. Read literally it is "OpenAI-shaped, zero
+  // models", which is byte-identical to a healthy server with nothing loaded
+  // and sends the operator off to install a model they cannot install.
+  // Measured 2026-08-26 on a synthetic gateway: {"data":[],"error":{...}}
+  // came back as { ok: true, models: [] }. The endpoint told us what was
+  // wrong and this parser was the one thing not reading it.
+  const declaredError = (body as { error?: unknown } | null)?.error
+  if (data.length === 0 && declaredError) {
+    const detail =
+      typeof declaredError === 'string'
+        ? declaredError
+        : typeof (declaredError as { message?: unknown })?.message === 'string'
+          ? (declaredError as { message: string }).message
+          : JSON.stringify(declaredError).slice(0, 200)
+    return {
+      ok: false,
+      kind: 'error-status',
+      error:
+        `${baseUrl}/models answered ${res.status} with an empty roster AND an "error" field — ` +
+        `the endpoint is reporting a fault, not an empty model list: ${detail}`,
+    }
+  }
   const models: LlmModel[] = data.filter(
     (m): m is LlmModel => !!m && typeof (m as LlmModel).id === 'string' && (m as LlmModel).id !== '',
   )
@@ -399,7 +457,15 @@ export async function fetchLiveModels(
   const shaped = await readModelsResponse(LLM_BASE_URL, res)
   if (!shaped.ok) return shaped
   const models = shaped.models
-  if (opts.includeContextLength) {
+  // The context-length enrichment below speaks Ollama's NATIVE API
+  // (`/api/ps`, `/api/show`) — endpoints no other OpenAI-compatible server
+  // has. Ungated it fired one POST /api/show PER MODEL, each carrying the
+  // bearer token: measured 62 requests for one dropdown load against a
+  // 60-model gateway, all of them 404s, and ~300 against a large one. Every
+  // answer was going to be "unknown" anyway, so the requests bought nothing.
+  // Gate on the endpoint actually being Ollama; elsewhere unknown stays
+  // unknown, which is what those fields already mean.
+  if (opts.includeContextLength && isOllamaLike(LLM_BASE_URL)) {
     const served = await fetchServedContextLengths(timeoutMs)
     await Promise.all(models.map(async m => {
       const loaded = served.get(m.id)

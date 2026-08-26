@@ -26,9 +26,27 @@
 // `resolveDecisionRole()` in lib/approvals.ts is that source, and it is pure
 // so the escalation can be proven closed without a server.
 //
-// THIS DOES NOT FIX THE OTHER ROUTES. Every other caller of `resolveRole()`
-// still trusts `mc-role`. That is a seam request in
-// docs/rebuild/pieces/pieces8/approval-surface.md §9, not a change made here.
+// WHAT IS STILL OPEN — corrected 2026-08-26 (round 3). This header used to
+// say "every other caller of `resolveRole()` still trusts `mc-role`". That
+// sentence is now wrong in both directions and it pointed away from the live
+// hole, so it is replaced rather than kept:
+//
+//   * `lib/with-permission.ts:121` now calls `resolveDecisionRole()` itself,
+//     so those routes are already on the fixed source.
+//   * The door that is actually open is `app/api/db/[...path]/route.ts`,
+//     which never called `resolveRole()`. `inbox` is in its WRITABLE_TABLES
+//     and its only write gate is `req.cookies.get('mc-role')?.value ===
+//     'viewer'`. MEASURED 2026-08-26, same read-only credential, same row,
+//     same shell: PATCH /api/inbox -> 403; PATCH /api/db/inbox?id=eq.<id>
+//     {"status":"approved","resolved_by":"definitely-not-a-human-bot"} -> 200,
+//     with zero rows written to `approval_decisions`. DELETE on a second row
+//     -> 200, request destroyed.
+//
+// So the gate below is one of TWO writers to `inbox.status`/`resolved_by`,
+// and only this one is gated. The closing diff is SEAM-1 in
+// docs/rebuild/pieces/pieces9/approval-surface.md, and it is enforced as a
+// failing test — `__tests__/api/inbox-db-proxy-seam.test.ts` — rather than as
+// a paragraph, because the previous round's paragraph is what went stale.
 
 import type { NextRequest } from 'next/server'
 import {

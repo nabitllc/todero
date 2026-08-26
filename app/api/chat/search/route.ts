@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
-import { dbUnavailableResponse } from '@/lib/db-http'
+import { dbQueryErrorResponse, dbUnavailableResponse } from '@/lib/db-http'
 
 let _supabase: DbAdapter | null = null
 function getSupabase(): DbAdapter {
@@ -19,10 +19,17 @@ export async function GET(req: NextRequest) {
 
   const q = new URL(req.url).searchParams.get('q')
   if (!q || q.length < 2) return NextResponse.json([])
-  const { data } = await getSupabase()
+  // `error` used to be destructured away and the result returned as
+  // `data || []`, so a failed query answered HTTP 200 with an empty array --
+  // "no messages match" and "the search did not run" were the same answer.
+  // Its three sibling routes under app/api/chat all branch on `error`; this
+  // one did not, and scripts/no-silent-empty.mjs cannot see it because that
+  // guard scans client-side response-parsing loaders, not server routes.
+  const { data, error } = await getSupabase()
     .from('chat_messages')
     .select('id, conversation_id, content, role, created_at')
     .ilike('content', `%${q}%`)
     .limit(20)
+  if (error) return dbQueryErrorResponse(error, 'chat_messages')
   return NextResponse.json(data || [])
 }

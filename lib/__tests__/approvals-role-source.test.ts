@@ -121,3 +121,83 @@ describe('the role comes from the credential, not the cookie', () => {
     expect(resolveDecisionRole(req(null, null, 'superuser'), CREDS).role).toBeNull()
   })
 })
+
+// ─── TOTALITY ────────────────────────────────────────────────────────────────
+//
+// ADDED 2026-08-26 (round 3). The suite above was 11 green tests over a
+// function that was NOT total, and the docstring on `resolveDecisionRole`
+// claimed "lib/__tests__ can prove the escalation is closed without a server"
+// while this file could not have caught the defect at all.
+//
+// `ROLE_PERMISSIONS` is an object literal, so it inherits `Object.prototype`.
+// The old guards were `wanted in ROLE_PERMISSIONS` / `claimed in
+// ROLE_PERMISSIONS`, and `in` walks the prototype chain, so every member of
+// `Object.prototype` passed the guard and then reached `.every` on a
+// function. MEASURED on the running dev server before the fix, with a valid
+// READ-ONLY session and the cookie as the only variable — six for six:
+//
+//   mc-role=constructor|toString|valueOf|hasOwnProperty|isPrototypeOf|__proto__
+//     PATCH /api/inbox                     -> HTTP 500, empty body
+//     GET   /api/inbox?project=Limiglow    -> HTTP 500, empty body
+//     GET   /api/conversations?project=…   -> HTTP 500, empty body
+//   mc-role=viewer (control)               -> 403 / 200 / 200
+//
+// Blast radius: every `withPermission` route, because
+// `lib/with-permission.ts:121` calls this same function.
+//
+// The cases below are NOT a list of the six names that were found. They are
+// generated from `Object.getOwnPropertyNames(Object.prototype)`, so a future
+// engine or polyfill that adds a member to the prototype is covered without
+// anyone remembering to add it here. That is the difference between pinning a
+// bug and pinning the CLASS of bug.
+describe('resolveDecisionRole is TOTAL over the strings a request can carry', () => {
+  const PROTO_KEYS = Object.getOwnPropertyNames(Object.prototype)
+
+  it('has something to test (guards against an empty-loop pass)', () => {
+    expect(PROTO_KEYS).toEqual(expect.arrayContaining(['constructor', 'toString', '__proto__']))
+    expect(PROTO_KEYS.length).toBeGreaterThan(5)
+  })
+
+  it('an mc-role naming an Object.prototype member does not throw, and grants nothing extra', () => {
+    for (const key of PROTO_KEYS) {
+      expect(() => resolveDecisionRole(req(CREDS.viewerPassword, key), CREDS)).not.toThrow()
+      const r = resolveDecisionRole(req(CREDS.viewerPassword, key), CREDS)
+      // It resolves to exactly what the CREDENTIAL proves: no crash, and no
+      // upgrade either. `viewer` is what view2026 grants.
+      expect(r).toEqual({ role: 'viewer', granted: 'viewer', ignoredClaim: null })
+    }
+  })
+
+  it('the same holds for an owner session — narrowing to a non-role is not narrowing', () => {
+    for (const key of PROTO_KEYS) {
+      expect(resolveDecisionRole(req(CREDS.ownerPassword, key), CREDS).role).toBe('owner')
+    }
+  })
+
+  it('an X-Agent-Role naming an Object.prototype member grants nothing', () => {
+    for (const key of PROTO_KEYS) {
+      expect(() => resolveDecisionRole(req(null, null, key), CREDS)).not.toThrow()
+      expect(resolveDecisionRole(req(null, null, key), CREDS).role).toBeNull()
+    }
+  })
+
+  it('no string at all can make it throw', () => {
+    const nasty = [
+      '', ' ', '\t', '__proto__', 'prototype', 'constructor.prototype',
+      'owner ', ' OWNER', 'Owner', '0', 'null', 'undefined', '[object Object]',
+      'toString', 'valueOf', 'hasOwnProperty', '__defineGetter__',
+    ]
+    for (const a of nasty) {
+      for (const b of nasty) {
+        expect(() => resolveDecisionRole(req(a, b, a), CREDS)).not.toThrow()
+        expect(() => resolveDecisionRole(req(null, a, b), CREDS)).not.toThrow()
+      }
+    }
+  })
+
+  it('case is not an escape hatch: OWNER is not owner', () => {
+    expect(resolveDecisionRole(req(CREDS.viewerPassword, 'OWNER'), CREDS))
+      .toEqual({ role: 'viewer', granted: 'viewer', ignoredClaim: null })
+    expect(resolveDecisionRole(req(null, null, 'OWNER'), CREDS).role).toBeNull()
+  })
+})

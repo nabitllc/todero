@@ -185,7 +185,7 @@ describe('summarizeFleet / fleetHeadline — counts, not estimates', () => {
 
   it('counts every state separately and keeps the newest event', () => {
     const s = summarizeFleet(rows, NOW)
-    expect(s).toMatchObject({ registered: 4, live: 2, offline: 1, never: 1, unknown: 0, anyObserved: true })
+    expect(s).toMatchObject({ rows: 4, live: 2, offline: 1, never: 1, unknown: 0, anyObserved: true })
     expect(s.lastEventAt).toBe(NOW - 5 * SECOND)
   })
 
@@ -201,15 +201,40 @@ describe('summarizeFleet / fleetHeadline — counts, not estimates', () => {
 
   it('names only the states that actually have rows', () => {
     expect(fleetHeadline(summarizeFleet(rows, NOW))).toBe(
-      '4 registered · 2 live · 1 offline · 1 never checked in',
+      '4 on the roster · 2 live · 1 offline · 1 never checked in',
     )
     expect(fleetHeadline(summarizeFleet([{ lastSeenAt: null, observed: true, source: 'heartbeat' }], NOW))).toBe(
-      '1 registered · 1 never checked in',
+      '1 on the roster · 1 never checked in',
     )
   })
 
-  it('an empty fleet reports zero registered and claims nothing else', () => {
-    expect(fleetHeadline(summarizeFleet([], NOW))).toBe('0 registered')
+  it('an empty fleet reports zero rows and claims nothing else', () => {
+    expect(fleetHeadline(summarizeFleet([], NOW))).toBe('0 on the roster')
+  })
+
+  /**
+   * ROUND 3 — THE NUMBER THAT DID NOT TRACE TO ITS QUERY.
+   *
+   * `fleetHeadline` opened with `"<n> registered"`, where n was the size of
+   * the roster UNION. Measured live on this host 2026-08-26: GET /api/agents
+   * returns 28 rows with a `rosterSource` tally of
+   * `{agents-md: 14, registered: 1, vault: 13}` — so the sentence read
+   * "28 registered" beside a fleet containing exactly one registration.
+   *
+   * `registered` is a provenance word in this lane: it means "self-registered
+   * through POST /api/connect". This same module refuses to call a
+   * registration timestamp a check-in (see the suite below); it may not then
+   * turn around and call fourteen AGENTS.md rows and thirteen vault manifests
+   * registrations.
+   *
+   * The guard is on the WORD, not on today's numbers, because the numbers are
+   * host data and the word is the defect.
+   */
+  it('never opens with the provenance word "registered" for a count of all rows', () => {
+    const headline = fleetHeadline(summarizeFleet(rows, NOW))
+    expect(headline).not.toMatch(/\bregistered\b/)
+    // And the number it does open with is the row count, from one read.
+    expect(headline.startsWith(`${rows.length} `)).toBe(true)
   })
 })
 
@@ -300,7 +325,7 @@ describe('a registration timestamp is never worded as a hook event', () => {
     const summary = summarizeFleet([registrationOnly], NOW)
     expect(summary.live).toBe(0)
     expect(summary.never).toBe(1)
-    expect(fleetHeadline(summary)).toBe('1 registered · 1 never checked in')
+    expect(fleetHeadline(summary)).toBe('1 on the roster · 1 never checked in')
   })
 
   it('an unread store still outranks provenance — nothing is known either way', () => {

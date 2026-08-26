@@ -70,9 +70,12 @@ describe('board task polling no longer targets the nonexistent /api/tasks route'
     const effectBody = useAgentStatusSrc.slice(start, nextEffectIdx)
     const liveEffectLines = effectBody.split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l))
     expect(liveEffectLines.some(l => /fetch\s*\(/.test(l))).toBe(false)
-    expect(effectBody).toContain('boardTasksRef.current')
-    expect(effectBody).toContain('setBoardTasks')
-    // The publish rule itself is executed in office-board-task-mirror.test.ts.
-    expect(effectBody).toContain('createBoardTaskMirror')
+    // The three strings that used to be pinned here — the ref read, the
+    // publish and the interval — are no longer source text in this file at
+    // all: they moved into `startBoardTaskMirror`, which
+    // office-board-task-mirror.test.ts DRIVES with injected timers. What is
+    // asserted here is the property a grep is actually good for: this second
+    // poller still makes no network call, and it still delegates.
+    expect(effectBody).toContain('startBoardTaskMirror(boardTasksRef, setBoardTasks)')
   })
 })

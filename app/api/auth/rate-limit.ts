@@ -57,7 +57,41 @@
 // attempts — 99.9% — indefinitely, unauthenticated, with no allowlist and no
 // off switch. A client that has itself authenticated successfully inside
 // `trustWindowMs` is now exempt from the GLOBAL counter (never from its own
-// per-client counter). See `check` for why that exemption is not a hole.
+// per-client counter). See `check` for why that exemption is bounded.
+//
+// ─── ROUND 3, 2026-08-26: FIX 3 SHIPPED A 1000x HOLE, AND FIX 4 CLOSES IT ───
+//
+// FIX 3's own comment claimed the trusted exemption "cannot be turned into a
+// guessing budget" because "rotating `X-Forwarded-For` ... lands on a fresh
+// untrusted key every time". THAT WAS FALSE, and this file had every fact
+// needed to know it: becoming trusted costs exactly one successful login, and
+// `recordSuccess` is deliberately not rate limited, so anyone holding the
+// WEAKEST of the three passwords — the read-only viewer password — can rotate
+// the header and pre-register as many trusted keys as they please. The test
+// that looked like it covered this only ever exercised the ordering where the
+// global counter fills FIRST and the attacker then rotates. Reverse the order
+// and the backstop is gone.
+//
+// MEASURED with the real class under an injected clock, 2026-08-26 (the probe
+// is now a permanent assertion in __tests__/auth/rate-limit-defaults.test.ts):
+//
+//   10,000 keys pre-registered by recordSuccess, then ground for failures,
+//   inside ONE 15-minute window, against a global cap of 100:
+//     before FIX 4:  100,000 guesses allowed   (control, no password held: 100)
+//     after  FIX 4:      200 guesses allowed   (control unchanged: 100)
+//
+// FIX 4 — the trusted exemption now has a CEILING IT CANNOT CROSS. There are
+// two global thresholds instead of one: `globalMaxFailures` (an untrusted
+// stranger is refused here) and `globalTrustedMaxFailures` (EVERYONE is
+// refused here, trusted or not). The aggregate bound is therefore a property
+// of the limiter rather than a property of how many passwords the attacker
+// holds. The denial-of-service FIX 3 was written against is still fixed: the
+// measured siege re-tops the counter to exactly `globalMaxFailures` and never
+// beyond, because an attacker who pushes past it locks THEMSELVES out too —
+// which is the point. The honest operator's cost is bounded and stated: in the
+// band between the two ceilings they still get in, above it nobody does for at
+// most one window, and an already-signed-in operator is unaffected either way
+// because `middleware.ts` never consults this limiter.
 //
 // ─── The two counters ───────────────────────────────────────────────────────
 //
@@ -96,8 +130,15 @@ export interface AuthRateLimiterOptions {
   maxFailures?: number
   /** Sliding window length in milliseconds. */
   windowMs?: number
-  /** Failures from EVERYONE, inside one window, before all logins are refused. */
+  /** Failures from EVERYONE, inside one window, before an UNTRUSTED client is refused. */
   globalMaxFailures?: number
+  /**
+   * The hard ceiling. Failures from EVERYONE, inside one window, before EVERY
+   * client is refused — trusted or not. This is what makes the aggregate
+   * guessing bound a property of the limiter rather than of how many passwords
+   * the caller happens to hold. Defaults to `2 * globalMaxFailures`.
+   */
+  globalTrustedMaxFailures?: number
   /** Injectable clock. Tests use it to prove the window actually drains. */
   now?: () => number
   /** Ceiling on tracked client keys, so spoofed addresses cannot exhaust memory. */
@@ -111,6 +152,21 @@ const DEFAULT_WINDOW_MS = 15 * 60 * 1000
 const DEFAULT_GLOBAL_MAX_FAILURES = 100
 const DEFAULT_MAX_TRACKED_KEYS = 10_000
 const DEFAULT_TRUST_WINDOW_MS = 12 * 60 * 60 * 1000
+/**
+ * How much slack the trusted exemption is allowed to add on top of
+ * `globalMaxFailures`, as a multiplier. `2` means: a stranger is refused at
+ * 100 failures per window, and NOBODY gets past 200 — so holding a password
+ * buys at most 100 extra guesses per window across the whole workspace, not
+ * 100 extra per rotated address.
+ *
+ * These five constants are the SHIPPED defaults. Every one of them is pinned
+ * by __tests__/auth/rate-limit-defaults.test.ts, because a mutation run on
+ * 2026-08-26 changed `DEFAULT_TRUST_WINDOW_MS` to ~137 years and
+ * `DEFAULT_MAX_TRACKED_KEYS` to ten billion and all 157 auth tests still
+ * passed: every trust and memory test injected its own value, so the numbers
+ * this install actually runs on were asserted by nothing.
+ */
+const DEFAULT_TRUSTED_GLOBAL_MULTIPLIER = 2
 
 /**
  * Read a positive integer out of the environment that may only make the
@@ -154,6 +210,7 @@ export class AuthRateLimiter {
   private readonly maxFailures: number
   private readonly windowMs: number
   private readonly globalMaxFailures: number
+  private readonly globalTrustedMaxFailures: number
   private readonly maxTrackedKeys: number
   private readonly trustWindowMs: number
   private readonly now: () => number
@@ -182,6 +239,26 @@ export class AuthRateLimiter {
         'lower',
         DEFAULT_GLOBAL_MAX_FAILURES,
       )
+    // Derived from the RESOLVED per-endpoint cap, not from the module
+    // constant, so a caller that tightens `globalMaxFailures` tightens the
+    // hard ceiling with it instead of leaving a fixed 200 above a cap of 5.
+    // A value BELOW `globalMaxFailures` cannot be honoured as written — a
+    // trusted client would be refused before an untrusted one. Of the two ways
+    // to resolve that, this clamps UP to `globalMaxFailures`, which makes the
+    // trusted branch unreachable: the typo costs AVAILABILITY (the exemption
+    // stops admitting the operator) rather than granting 100 extra guesses a
+    // window by silently falling back to the 2x default. A misconfiguration
+    // must never widen access. Pinned in rate-limit-defaults.test.ts.
+    this.globalTrustedMaxFailures = Math.max(
+      this.globalMaxFailures,
+      options.globalTrustedMaxFailures ??
+        tighteningIntFromEnv(
+          'MC_AUTH_GLOBAL_TRUSTED_MAX_FAILURES',
+          this.globalMaxFailures * DEFAULT_TRUSTED_GLOBAL_MULTIPLIER,
+          'lower',
+          this.globalMaxFailures * DEFAULT_TRUSTED_GLOBAL_MULTIPLIER,
+        ),
+    )
     this.maxTrackedKeys = options.maxTrackedKeys ?? DEFAULT_MAX_TRACKED_KEYS
     this.trustWindowMs = options.trustWindowMs ?? DEFAULT_TRUST_WINDOW_MS
     this.now = options.now ?? (() => Date.now())
@@ -226,29 +303,51 @@ export class AuthRateLimiter {
    * consequence is deliberate and is the load-bearing property: a blocked
    * client is refused EVEN WITH THE RIGHT PASSWORD.
    *
-   * WHY THE TRUSTED EXEMPTION IS NOT A HOLE. The global counter is a lockout,
-   * and a lockout an unauthenticated stranger can trigger is a
+   * THE TRUSTED EXEMPTION, AND THE BOUND ON IT. The global counter is a
+   * lockout, and a lockout an unauthenticated stranger can trigger is a
    * denial-of-service against the whole workspace — measured at 99.9% refusal
    * of the honest operator's correct password, sustained indefinitely for about
    * one request a second. Exempting a client that has ITSELF authenticated
-   * successfully inside `trustWindowMs` fixes that, and it cannot be turned
-   * into a guessing budget:
-   *   * The exemption skips ONLY the global counter. The per-client counter
-   *     still applies in full, so a trusted client gets no more attempts per
-   *     window than an untrusted one.
-   *   * Becoming trusted requires already knowing a password, so it grants an
-   *     attacker nothing they did not already have — and rotating
-   *     `X-Forwarded-For`, the move the global counter exists to catch, lands
-   *     on a fresh untrusted key every time.
-   *   * With FIX 2 above, holding one password no longer buys unlimited
-   *     per-client forgiveness either, so the bound is real rather than
-   *     nominal.
+   * successfully inside `trustWindowMs` fixes that.
+   *
+   * THE PREVIOUS VERSION OF THIS COMMENT CLAIMED THE EXEMPTION "cannot be
+   * turned into a guessing budget" BECAUSE "rotating `X-Forwarded-For` ...
+   * lands on a fresh untrusted key every time". That was false and this file
+   * knew better: `recordSuccess` is not rate limited, so one password buys
+   * unlimited trusted keys, one per rotated address. Measured, with the real
+   * class: 100,000 guesses in one window against a cap of 100.
+   *
+   * What is true of the code as it now stands, each clause testable:
+   *   * The exemption skips ONLY the per-stranger global threshold. The
+   *     per-client counter still applies in full, so a trusted client gets no
+   *     more attempts per window than an untrusted one.
+   *   * It does NOT skip `globalTrustedMaxFailures`. That ceiling refuses
+   *     every caller, trusted or not, so the total number of failed guesses
+   *     this endpoint will serve in one window is a fixed number regardless of
+   *     how many keys the caller pre-registered or how many passwords it
+   *     holds. This is the clause the old comment asserted and did not have.
+   *   * With FIX 2 above, holding one password does not buy unlimited
+   *     per-client forgiveness either.
+   *   * Trust is granted only by `recordSuccess`, never by a header, so it
+   *     still cannot be claimed — only earned, and now only spent up to a cap.
    */
   check(key: string): RateLimitDecision {
     const at = this.now()
     const cutoff = at - this.windowMs
 
     this.global = this.prune(this.global, cutoff)
+
+    // The hard ceiling, checked FIRST and with no exemption of any kind. Order
+    // matters: asking about trust before this line would let a trusted key skip
+    // the one threshold trust must never skip.
+    if (this.global.length >= this.globalTrustedMaxFailures) {
+      return {
+        allowed: false,
+        reason: 'global',
+        retryAfterSeconds: this.retryAfter(this.global, this.globalTrustedMaxFailures, at),
+      }
+    }
+
     if (this.global.length >= this.globalMaxFailures && !this.isTrusted(key, at)) {
       return {
         allowed: false,

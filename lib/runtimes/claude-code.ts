@@ -180,9 +180,35 @@ export const claudeCodeRuntime: AgentRuntime = {
       // the only place in the codebase a spawned run's exit is actually
       // observed — everywhere else only knows it was launched.
       const completion = readClaudeCompletion(opts.logFile)
+      const evidence = summarizeExit({
+        runtime: 'claude-code',
+        exitCode: childExit?.observed ? childExit.code : null,
+        signal: childExit?.observed ? childExit.signal : null,
+        durationSec,
+        reportedStatus: completion?.subtype ?? null,
+        reportedError: completion?.isError,
+        turns: completion?.numTurns ?? null,
+        tokensIn: completion?.inputTokens ?? null,
+        tokensOut: completion?.outputTokens ?? null,
+        finalReport: completion?.result ?? null,
+        spawnFailures: readSpawnFailures(opts.logFile),
+        logTail: completion ? undefined : readLogTail(opts.logFile),
+        logFile: opts.logFile,
+      })
+      // pieces9 — the ledger row now carries the SAME verdict as the memory
+      // row above, derived from the same `evidence`, instead of the hardcoded
+      // `status: 'completed'` that stood here. Measured before this change,
+      // one real child exiting 9: agent_run_records said
+      // {exit_status: 9, failed: true} while token_ledger said
+      // {status: 'completed', metadata: null} — written microseconds apart by
+      // this one callback. `finalizeRun()` has always accepted
+      // `exitCode`/`exitSignal` and written them into `metadata`; this call
+      // simply never passed them, though `childExit` is right there in scope.
       finalizeRun({
         logFile: opts.logFile,
-        status: 'completed',
+        status: evidence.ledgerStatus,
+        exitCode: childExit?.observed ? childExit.code : null,
+        exitSignal: childExit?.observed ? childExit.signal : null,
         durationSec,
         taskId: opts.taskId ?? null,
         inputTokens: completion?.inputTokens,
@@ -201,21 +227,6 @@ export const claudeCodeRuntime: AgentRuntime = {
       // how it ended — never a guess: `summarizeExit()` returns
       // outcome 'unknown' (both booleans false, the historical behaviour)
       // whenever none of those signals were actually observed.
-      const evidence = summarizeExit({
-        runtime: 'claude-code',
-        exitCode: childExit?.observed ? childExit.code : null,
-        signal: childExit?.observed ? childExit.signal : null,
-        durationSec,
-        reportedStatus: completion?.subtype ?? null,
-        reportedError: completion?.isError,
-        turns: completion?.numTurns ?? null,
-        tokensIn: completion?.inputTokens ?? null,
-        tokensOut: completion?.outputTokens ?? null,
-        finalReport: completion?.result ?? null,
-        spawnFailures: readSpawnFailures(opts.logFile),
-        logTail: completion ? undefined : readLogTail(opts.logFile),
-        logFile: opts.logFile,
-      })
       void recordRunOnExit({
         agentId: opts.agentId,
         taskId: opts.taskId ?? null,

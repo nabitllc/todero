@@ -323,15 +323,36 @@ describe('taskLabel — provenance first, because truncation eats the tail', () 
   /**
    * The fail-closed case, and the reason this is a function rather than a
    * template literal at each call site: a source value that is not 'heartbeat'
-   * must take the WEAKER branch. "The board says so" over-claims nothing; "the
-   * agent reported it" over-claims everything.
+   * must never take the agent's-own-word branch.
+   *
+   * ROUND 3 REVISION — this test previously asserted `'assigned: TOD-9'` for
+   * BOTH inputs below, and was named "falls to the board wording for any
+   * source that is not heartbeat". That rule was wrong in the same direction
+   * the whole piece exists to correct, one rung down. Failing closed means
+   * declining to assert the stronger fact; it does not license asserting the
+   * weaker one. Nobody measured a board row for a provenance this build cannot
+   * read, so "assigned:" invented one — the identical move to the old bare
+   * `currentTask` inventing a check-in. The third word is `unsourced:`.
    */
-  it('falls to the board wording for any source that is not "heartbeat"', () => {
-    expect(taskLabel({ currentTask: 'TOD-9', currentTaskSource: 'none' })).toBe('assigned: TOD-9')
+  it('says "unsourced" — not "assigned" — for a source it does not recognise', () => {
+    expect(taskLabel({ currentTask: 'TOD-9', currentTaskSource: 'none' })).toBe('unsourced: TOD-9')
     expect(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately off-contract
       taskLabel({ currentTask: 'TOD-9', currentTaskSource: 'something-new' as any }),
-    ).toBe('assigned: TOD-9')
+    ).toBe('unsourced: TOD-9')
+  })
+
+  /**
+   * The property that survives any future provenance word: whatever the third
+   * branch is called, it may not be either of the two that name a claimant.
+   */
+  it('never spells an unrecognised provenance as either party’s claim', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately off-contract
+    const label = taskLabel({ currentTask: 'TOD-9', currentTaskSource: 'run-row' as any })!
+    expect(label.startsWith('reported:')).toBe(false)
+    expect(label.startsWith('assigned:')).toBe(false)
+    // …and it still SHOWS the task. Hiding it would be the opposite lie.
+    expect(label).toContain('TOD-9')
   })
 
   it('agrees with describeActivity about which fact it is holding', () => {
@@ -342,5 +363,84 @@ describe('taskLabel — provenance first, because truncation eats the tail', () 
     const own = { currentTask: 'TOD-9', currentTaskSource: 'heartbeat' as const }
     expect(taskLabel(own)!.startsWith('reported')).toBe(true)
     expect(describeActivity(row({ ...own, liveness: 'live' }), NOW).state).toBe('working')
+  })
+})
+
+/**
+ * ROUND 3 — THE WHITELIST THAT WAS MASQUERADING AS A RULE.
+ *
+ * `describeActivity` tested two LITERAL provenance values and then returned an
+ * empty state. A row carrying a real task under any third value therefore fell
+ * through to "no task — neither a heartbeat nor a board row names work for
+ * this agent": an absence, asserted as a fact, over a row that had a task.
+ * Measured by running the shipped function before the fix, with
+ * `{currentTask: 'TOD-42: a real task string', currentTaskSource: 'run-row'}`
+ * -> `state: 'idle'`, that exact sentence, while `taskLabel()` on the SAME
+ * input rendered the task. One module, two verdicts, no way to see it.
+ *
+ * `TaskProvenance` being a three-member union is not a defence: the union is
+ * erased at runtime and the wire is not TypeScript. A newer server, an older
+ * client, a proxy, or a fixture can all put a fourth word on that field, and a
+ * whitelist whose default branch is a confident denial will deny it.
+ */
+describe('describeActivity — a provenance this build cannot read', () => {
+  const UNKNOWN = { currentTask: 'TOD-42: a real task string', currentTaskSource: 'run-row' as never }
+
+  it('does NOT claim there is no task when a task is sitting on the row', () => {
+    const d = describeActivity(row({ ...UNKNOWN, liveness: 'live' }), NOW)
+    expect(d.state).not.toBe('idle')
+    expect(d.label).not.toContain('no task')
+    expect(d.label).toContain('TOD-42: a real task string')
+  })
+
+  it('names the unrecognised word instead of guessing which fact it holds', () => {
+    const d = describeActivity(row({ ...UNKNOWN, liveness: 'live' }), NOW)
+    expect(d.label).toContain('run-row')
+    expect(d.label).toContain('does not recognise')
+    // Never upgraded to the agent's own claim, at any liveness.
+    for (const liveness of ['live', 'offline', 'never', 'unknown'] as const) {
+      const x = describeActivity(row({ ...UNKNOWN, liveness }), NOW)
+      expect(x.state).not.toBe('working')
+      expect(x.state).not.toBe('stalled')
+      expect(x.label).not.toContain('its own last heartbeat said so')
+    }
+  })
+
+  it('is a gap in knowledge, not a stuck agent — it does not page the operator', () => {
+    expect(describeActivity(row({ ...UNKNOWN, liveness: 'offline' }), NOW).needsAttention).toBe(false)
+  })
+
+  it('agrees with taskLabel on the very same row', () => {
+    const d = describeActivity(row({ ...UNKNOWN, liveness: 'live' }), NOW)
+    const label = taskLabel(UNKNOWN)!
+    // Both show the task; neither attributes it.
+    expect(d.label).toContain('TOD-42: a real task string')
+    expect(label).toContain('TOD-42: a real task string')
+    expect(label.startsWith('reported:')).toBe(false)
+    expect(label.startsWith('assigned:')).toBe(false)
+  })
+
+  /**
+   * The RECOGNISED value 'none' is a different unknown and keeps its own
+   * words. `activityOf` coerces a missing wire field to 'none', and that path
+   * must stay `idle` — promoting a bare string with no provenance is the
+   * fail-open this lane exists to prevent. What changed is only that the
+   * sentence no longer denies a string that is visibly present.
+   */
+  it("keeps 'none' idle, but stops denying a task string that came with it", () => {
+    const d = describeActivity(
+      row({ currentTask: 'TOD-7: from an older server', currentTaskSource: 'none', liveness: 'live' }),
+      NOW,
+    )
+    expect(d.state).toBe('idle')
+    expect(d.label).toContain('TOD-7: from an older server')
+    expect(d.label).toContain('no provenance')
+    expect(d.label).not.toContain('neither a heartbeat nor a board row')
+  })
+
+  it('a row with genuinely no task still says so in the original words', () => {
+    const d = describeActivity(row({ currentTask: null, currentTaskSource: 'none', liveness: 'live' }), NOW)
+    expect(d.state).toBe('idle')
+    expect(d.label).toBe('no task — neither a heartbeat nor a board row names work for this agent')
   })
 })
