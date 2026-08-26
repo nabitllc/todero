@@ -56,6 +56,8 @@ import {
   pathForView,
   projectFromPath,
   issueSearchQuery,
+  queryFromSearchParams,
+  withSearchQueryParam,
   type PaletteCommand,
 } from '@/lib/search-commands'
 import { issuePermalinkPath } from '@/lib/issue-permalink'
@@ -126,6 +128,17 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
   const [verbState, setVerbState] = useState<VerbState>(VERB_IDLE)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // Set true by the restore-on-open effect, read (and cleared) by the very
+  // next run of the sync-to-URL effect below. Without this, the sync effect
+  // would fire in the SAME commit as the restore, before React has applied
+  // the `setQuery` the restore just queued — reading the stale (pre-restore)
+  // `query` and, for one tick, overwriting the just-restored `?q=` with
+  // whatever the palette last held (often empty), before self-correcting on
+  // the following render. Harmless in the sense that it settles correctly,
+  // but real: a `history.replaceState` momentarily naming the wrong query is
+  // exactly the kind of thing this piece exists to stop happening even
+  // fleetingly. The ref skips that one write.
+  const skipNextUrlSyncRef = useRef(false)
 
   const taskKey = normalizeTaskKey(query)
   const trimmed = query.trim()
@@ -147,9 +160,49 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
 
   useEffect(() => {
     if (!open) return
-    setQuery(''); setActive(0); setKeyLeg(IDLE); setTextLeg(IDLE); setVerbState(VERB_IDLE)
+    // "Any view is a link" (Navigation & Deep Linking): a query typed here
+    // gets written into `?q=` while the palette stays open (below) — so
+    // reopening from a URL that already carries one (a shared link, or the
+    // same overlay reopened after a popstate) restores it instead of
+    // starting blank. See lib/search-commands.ts's own comment on why this
+    // is a query string and not a path segment.
+    skipNextUrlSyncRef.current = true
+    setQuery(queryFromSearchParams(window.location.search))
+    setActive(0); setKeyLeg(IDLE); setTextLeg(IDLE); setVerbState(VERB_IDLE)
     const t = setTimeout(() => inputRef.current?.focus(), 50)
     return () => clearTimeout(t)
+  }, [open])
+
+  // Keep `?q=` in sync with the live query WHILE the palette is open — a
+  // `replaceState`, never a `pushState`: this mirrors an in-place edit, not a
+  // navigation, so it must not grow `history.length` (the exact class of bug
+  // this piece already fixed once for closing the issue overlay — see
+  // app/page.tsx's seam diff in the piece doc). Skipped entirely while
+  // closed, so an unrelated screen's URL is never touched by a palette that
+  // isn't even mounted-visible.
+  useEffect(() => {
+    if (!open) return
+    if (skipNextUrlSyncRef.current) { skipNextUrlSyncRef.current = false; return }
+    const next = withSearchQueryParam(window.location.search, query)
+    const current = window.location.search
+    if (next !== current && !(next === '' && current === '')) {
+      window.history.replaceState(window.history.state, '', window.location.pathname + next)
+    }
+  }, [open, query])
+
+  // Closing is not navigation (same principle app/page.tsx's issue-overlay
+  // `onClose` follows): `?q=` means nothing once the palette that reads it
+  // is gone, so it is removed — via this cleanup, which fires exactly once,
+  // on the true -> false transition (or unmount while open), never on the
+  // false -> true one — rather than left to go stale in the address bar.
+  useEffect(() => {
+    return () => {
+      if (!open) return
+      const next = withSearchQueryParam(window.location.search, '')
+      if (next !== window.location.search) {
+        window.history.replaceState(window.history.state, '', window.location.pathname + next)
+      }
+    }
   }, [open])
 
   // Escape closes even if focus has left the input (the arrow keys live on the

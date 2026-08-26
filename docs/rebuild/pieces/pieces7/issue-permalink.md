@@ -1013,3 +1013,143 @@ the concurrent agent mentioned in my instructions.
   did not exhaustively confirm it.
 - **`components/tabs/IssuesTab.tsx` (Work → List) remains without a real
   anchor.** See §9.1 — out of my ownership, not touched, pattern handed off.
+
+---
+
+## 10. Third pass (2026-08-26, bug_fixer) — re-verified §9's diffs live, closed the URL-filter gap
+
+Tooling note, same as §9.0: no browser tool was present in this invocation
+either, despite the task briefing naming one — confirmed by checking the
+actual tool list available this session, not assumed. Every claim below is
+either a `git diff`/`grep` fact about the file on disk, a live `jest` run
+(including the mutation performed and reverted in the terminal, not
+described from memory), or the existing full gate. No DOM was watched.
+
+### 10.1 §9.2/§9.4/§9.7's seam diffs — re-confirmed against app/page.tsx as it stands today
+
+Read `app/page.tsx` fresh this session rather than trusting the prior
+pass's transcription. All three gaps it described are still live, verbatim:
+
+- The scope-sync effect (`[selectedBusiness, selectedProject, issueKey]`)
+  still reads `if (issueKey) return` — not `issueUrlSyncPath`.
+- `goTo` still has no `setIssueKey(null)` call; `<IssueDetailOverlay
+  onClose>` still calls `setIssueKey(null); goTo('work', 'list')` (a
+  `pushState`, not the `replaceState`-to-`issueBackdropPath` §9.4 diffs to).
+- `parseURL`'s `/i/` branch still reads only `parseIssueKeyFromPath` (no
+  `?? rawIssueSegment(...)` fallback), so `/p/limiglow/i/notakey` still
+  falls through to the `now` default.
+
+§9.2's, §9.4's, and §9.7's diffs (reproduced there in full) are therefore
+**still the correct, current, unapplied fix** — nothing on the page.tsx side
+has drifted since they were written. I did not re-paste them here to avoid
+duplicating text this doc's own header says not to rewrite; apply them from
+§9.2/§9.4/§9.7 as written.
+
+**The mutation proof, re-performed live this session** (not merely re-read
+from §9.2's account of a prior session): applied the critic's exact edit —
+`lib/issue-permalink.ts`, `if (issueIsOpen) return null` →
+`if (false && issueIsOpen) return null` — via `sed`, then ran `npx jest
+lib/__tests__/issue-permalink.test.ts`. Result: 2 of 35 tests failed, by
+name — `issueUrlSyncPath › refuses to sync — returns null — whenever an
+issue is open, no matter how the paths differ` and `issueUrlSyncPath ›
+MUTATION PROBE: a version that ignores issueIsOpen would fail the first case
+above`. Reverted from a pre-mutation backup; re-ran: 35/35 green, `git diff
+lib/issue-permalink.ts` empty. Full transcript of both runs is in this
+session's tool log, not just asserted here.
+
+### 10.2 Closed: `in:`/`from:`/`before:` had no representation in the URL (§3, this piece's remaining channel gap)
+
+Confirmed before changing anything: `components/SearchOverlay.tsx`'s `query`
+state (which carries the modifiers and free text both) had exactly one
+writer (`setQuery`, local `useState`) and zero readers or writers touching
+`window.location` — grepped for `URLSearchParams|history\.` in this file and
+`lib/search-commands.ts` before this pass: only the pre-existing
+`pushState`+`popstate` calls for destination/issue navigation, nothing
+naming `query`. Confirmed also that the overlay resets `query` to `''`
+every time it opens (`useEffect(() => { if (open) setQuery('') ... })`),
+which is what actually threw a constructed query away, not merely "the
+palette closed" — even leaving the palette mounted-open across a reload
+would not have survived, because the reset fires on every `open` transition
+including the one after a fresh mount.
+
+**Fix, entirely within this piece's owned files, no seam diff required for
+the core behavior:**
+
+- `lib/search-commands.ts`: `withSearchQueryParam(search, query)` /
+  `queryFromSearchParams(search)` — pure `URLSearchParams` string-in/
+  string-out helpers (testable under this repo's `node` jest environment;
+  `URLSearchParams` is a Node global, no jsdom needed). `SEARCH_QUERY_PARAM
+  = 'q'`, a query string deliberately, not a path segment — see that file's
+  new header comment for why this one differs from `/i/<key>`: dropping it
+  still lands on a valid page with the palette merely closed, which
+  `/i/<key>` cannot say.
+- `components/SearchOverlay.tsx`: on open, `query` is now seeded from `?q=`
+  instead of always `''`; while open, every `query` change is written back
+  into `?q=` via `replaceState` (never `pushState` — this is an in-place
+  edit, not a navigation, the same principle §9.4's `onClose` fix already
+  established for closing the issue overlay); on the true→false transition
+  (close), `?q=` is stripped via the effect's own cleanup, so a dismissed
+  search does not leave a stale query string behind with nothing left to
+  read it. A `skipNextUrlSyncRef` guard prevents the restore-effect and the
+  sync-effect from racing in the same commit (the sync effect would
+  otherwise read `query` from before the restore's `setQuery` had been
+  applied and briefly write the OLD value back over the just-restored one,
+  self-correcting one render later — harmless in outcome, but avoided
+  outright rather than left as a known one-tick wart).
+- Tests: 6 new cases in `lib/__tests__/search-commands.test.ts` (round-trip,
+  preserving an unrelated existing param, clearing removes the key
+  entirely rather than leaving `q=`, empty-string-not-null contract).
+
+**What this closes and what it does not:** while the palette is open, its
+address bar now genuinely names the current filtered search — copying it
+and opening it in a new tab, IF the palette is independently opened there
+too (e.g. via Cmd-K), restores the same query. **What it does NOT close**:
+`searchOpen` (whether the palette is open at all) is `app/page.tsx` state,
+not this piece's — so a URL carrying `?q=in:backlog` does not, by itself,
+reopen the palette on a cold load or a plain link click. That is the
+remaining seam diff, offered but not required for the fix above to be real:
+
+```diff
+   useEffect(() => {
+     const { destination: d, view: v, business, project, openChat, issueKey: k } = parseURL()
+     setDestination(d)
+     setView(v)
+     if (business) setSelectedBusiness(business)
+     if (project) setSelectedProject(project)
+     if (openChat) setChatOpen(true)
++    if (new URLSearchParams(window.location.search).get('q')) setSearchOpen(true)
+     if (k) {
+```
+
+This is additive, one line, and safe to skip: without it, `?q=` is inert
+metadata on a cold load (no worse than today, since today there is no `q`
+param at all) and still fully functional as "what the palette currently
+shows while you have it open," which is the improvement actually delivered
+this pass.
+
+### 10.3 Gate (this session, after §10.2's changes)
+
+- `npx tsc --noEmit` → 0 errors in every file this piece owns or touched.
+  One pre-existing error remains in `lib/__tests__/conversations.test.ts`
+  (`MessageRow`/`external_id` type mismatch) — confirmed via `git status`
+  that `lib/conversations.ts`, `lib/db/sqlite-adapter.ts`,
+  `app/api/notify/route.ts` and that test file are mid-edit by a concurrent
+  agent (explicitly off-limits to this piece); I did not touch them and the
+  error is unrelated to anything in this section.
+- `npx jest lib/__tests__/issue-permalink.test.ts lib/__tests__/issue-verbs.test.ts
+  lib/__tests__/search-commands.test.ts` → 114/114 (108 pre-existing + 6 new).
+- `npm test` → at the moment I ran it, 1118 passed / 7 failed / 2 skipped.
+  5 of the 7 are the named baseline set (`agents-route` ×2,
+  `agents-unconfigured` ×1, `spawn-live` ×1, plus one more in that cluster);
+  the other 2 are in `lib/__tests__/conversations.test.ts`, the same
+  concurrently-edited file from the `tsc` note above — not this piece's
+  files, not present before that agent's WIP landed mid-session. An earlier
+  run this same session, before that file changed under me, showed exactly
+  the baseline 5/1098/2.
+- `node scripts/acceptance/run.mjs` → 45/45, harness 10/10.
+- `bash scripts/smoke-test-layout.sh` → all guards passed, including
+  Honest-error and Scope guard by name.
+
+No Limiglow fixtures were created this pass — every check above is either a
+pure-function jest run or a static gate script; nothing needed a live
+issue row.

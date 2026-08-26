@@ -57,7 +57,14 @@ import { DEFAULT_VIEW, LEGACY_TAB_MAP, LEGACY_VIEW_MAP, isDestinationId, viewsOf
 import { dbUrl, dbRestHeaders, issuesUrl } from '@/lib/db/browser'
 import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
-import { parseIssueKeyFromPath } from '@/lib/issue-permalink'
+import {
+  ISSUE_BACKDROP_DESTINATION,
+  ISSUE_BACKDROP_VIEW,
+  issueBackdropPath,
+  issueUrlSyncPath,
+  parseIssueKeyFromPath,
+  rawIssueSegment,
+} from '@/lib/issue-permalink'
 
 // BIZ_EMOJI was here: a six-name emoji table (Vespera, Kemuni, Mission Control,
 // Todero, Infrastructure, KAOS). The sibling piece banned exactly this shape —
@@ -148,7 +155,14 @@ function parseURL(): ParsedURL {
   // below. An unparseable key falls through to the ordinary destination
   // parse rather than opening a blank overlay.
   if (rest[0] === 'i' && rest[1]) {
-    const issueKey = parseIssueKeyFromPath(window.location.pathname)
+    // TOD-2467: a malformed or truncated permalink used to fall through to the
+    // `now` default below, and the mount-time replaceState rewrote the address
+    // bar before the operator saw any evidence an issue had been requested — a
+    // typo'd shared link looked like an ordinary page load. rawIssueSegment is
+    // the fallback, and handing it through unnormalised is safe: the GET 404s
+    // cleanly on any string (measured), so "notakey not found in Limiglow"
+    // renders instead of a silent bounce.
+    const issueKey = parseIssueKeyFromPath(window.location.pathname) ?? rawIssueSegment(window.location.pathname)
     if (issueKey) {
       return { destination: 'work', view: 'list', business, project, openChat: false, issueKey }
     }
@@ -497,19 +511,23 @@ export default function Home() {
   // only ever true in React state and never in the address bar.
   useEffect(() => {
     if (typeof window === 'undefined' || !selectedProject) return
-    // TOD-2462: an open issue permalink owns the address bar. The seam diff for
-    // the issue-permalink piece guarded the MOUNT-time replaceState (above) and
-    // stopped there; this second one fires on `[selectedBusiness,
-    // selectedProject]`, which resolve a tick LATER than mount on a cold load,
-    // so it overwrote `/p/limiglow/i/TOD-159` with
-    // `/b/todero/p/limiglow/work/list` before the operator could reload it.
-    // Measured in a browser: the overlay opened, the URL did not survive.
-    // Guarding one canonicaliser is not guarding the URL.
-    if (issueKey) return
+    // TOD-2467: the decision is no longer made here. app/page.tsx cannot be
+    // imported or rendered by this repo's test suite — jest runs
+    // testEnvironment "node", jest-environment-jsdom is not installed, and
+    // parseURL/buildPath are not exported — so a guard written INLINE here is
+    // a guard nothing can pin. A critic proved that by mutating the previous
+    // inline version, destroying the permalink in a browser, and watching
+    // every gate come back byte-identical green.
+    //
+    // issueUrlSyncPath() folds both halves of the decision — is an issue open,
+    // and did the canonical path actually change — into one pure function in
+    // lib/issue-permalink.ts, where 35 tests can reach it. The same mutation
+    // applied there now fails two tests BY NAME.
     const path = buildPath(selectedBusiness, destination, view, selectedProject)
     const current = window.location.pathname + window.location.search
-    if (current !== path) {
-      window.history.replaceState({ biz: selectedBusiness, destination, view, project: selectedProject }, '', path)
+    const sync = issueUrlSyncPath(issueKey !== null, current, path)
+    if (sync) {
+      window.history.replaceState({ biz: selectedBusiness, destination, view, project: selectedProject }, '', sync)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBusiness, selectedProject, issueKey])
@@ -758,6 +776,12 @@ export default function Home() {
     const resolved = v && viewsOf(dest).includes(v) ? v : DEFAULT_VIEW[dest]
     setDestination(dest)
     setView(resolved)
+    // TOD-2467: navigating away closes an open issue overlay. Before this,
+    // nav left `issueKey` set while the URL moved to e.g. /fleet — the overlay
+    // stayed mounted showing an issue, over a screen whose OWN address bar
+    // named something else, and that URL reloads straight to Fleet with no
+    // memory an issue was ever open. URL and screen must not disagree.
+    setIssueKey(null)
     pushURL(selectedBusiness, dest, resolved, selectedProject)
   }, [selectedBusiness, selectedProject, pushURL])
 
@@ -1063,7 +1087,21 @@ export default function Home() {
 
       <ChatOverlay open={chatOpen} onClose={() => { setChatOpen(false); setUnreadChat(false) }} selectedBusiness={selectedBusiness} />
 
-      <IssueDetailOverlay taskKey={issueKey} onClose={() => { setIssueKey(null); goTo('work', 'list') }} />
+      <IssueDetailOverlay taskKey={issueKey} onClose={() => {
+        setIssueKey(null)
+        // TOD-2467: closing an overlay is not navigation. goTo('work','list')
+        // PUSHED a history entry, so history.length grew on every open+close
+        // and Back immediately RE-OPENED the issue. replaceState instead, via
+        // the shared constants, so this and SearchOverlay's own idea of the
+        // "closed" destination cannot drift apart.
+        setDestination(ISSUE_BACKDROP_DESTINATION)
+        setView(ISSUE_BACKDROP_VIEW)
+        window.history.replaceState(
+          { biz: selectedBusiness, destination: ISSUE_BACKDROP_DESTINATION, view: ISSUE_BACKDROP_VIEW, project: selectedProject },
+          '',
+          issueBackdropPath(window.location.pathname),
+        )
+      }} />
 
       <QuickActionFab
         onNavigate={navigate}

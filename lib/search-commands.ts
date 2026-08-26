@@ -399,3 +399,44 @@ export function pathForView(currentPath: string, destination: DestinationId, vie
   if (!hasBusiness && !hasProject && destination === 'now' && view === DEFAULT_VIEW.now) return '/'
   return `/${segs.join('/')}`
 }
+
+// ─── the palette query in the URL (Navigation & Deep Linking, "any view is a
+// link") ──────────────────────────────────────────────────────────────────
+//
+// Linear puts filters in the URL, so a filtered view is shareable. Before
+// this, `in:`/`from:`/`before:` and the free text they narrow lived only in
+// SearchOverlay's own `query` useState — closing the palette (or a reload)
+// threw them away, so a search that took real thought to construct (three
+// modifiers plus a term) could never be handed to a teammate or bookmarked.
+//
+// `SEARCH_QUERY_PARAM` is a query string, not a path segment, deliberately —
+// unlike `/p/<slug>` or `/i/<key>` (see lib/issue-permalink.ts's header on
+// why those are NOT query strings), the palette query is optional metadata
+// about a transient UI overlay, not an identity the app resolves server-side.
+// Dropping `?q=…` still lands on a valid, correct page (the backdrop
+// destination) with the palette simply closed — exactly the same fallback
+// safety a dropped `/i/<key>` segment does NOT have, which is why that one
+// had to be a path segment and this one does not.
+
+export const SEARCH_QUERY_PARAM = 'q'
+
+/**
+ * `search` (with or without a leading `?`) plus `query` written into (or
+ * removed from) its `q` param — pure string in, string out, so this is
+ * testable without `window.location`. Returns `''` (no leading `?`) when the
+ * result would carry no params at all, matching how `pathForView` never
+ * emits a bare `?`.
+ */
+export function withSearchQueryParam(search: string, query: string): string {
+  const params = new URLSearchParams(search)
+  const trimmed = query.trim()
+  if (trimmed) params.set(SEARCH_QUERY_PARAM, query)
+  else params.delete(SEARCH_QUERY_PARAM)
+  const s = params.toString()
+  return s ? `?${s}` : ''
+}
+
+/** The inverse read: `q` out of a `search` string, or `''` if absent. */
+export function queryFromSearchParams(search: string): string {
+  return new URLSearchParams(search).get(SEARCH_QUERY_PARAM) ?? ''
+}

@@ -21,6 +21,8 @@ import {
   sanitizeIlikePattern,
   issueSearchQuery,
   scoreCommand,
+  queryFromSearchParams,
+  withSearchQueryParam,
 } from '../search-commands'
 import {
   DESTINATIONS,
@@ -381,5 +383,43 @@ describe('projectFromPath', () => {
     expect(projectFromPath('/work/board')).toBeNull()
     expect(projectFromPath('/b/todero/work/board')).toBeNull()
     expect(projectFromPath('/p/Not_A_Slug/now')).toBeNull()
+  })
+})
+
+// "Any view is a link" — the remaining competitor gap the piece brief named:
+// a palette query (free text plus in:/from:/before: modifiers) has to
+// survive being written into, and read back out of, the URL, or it is not
+// actually shareable — see lib/search-commands.ts's own comment on why this
+// is a query string (`?q=`) rather than a path segment like `/i/<key>`.
+describe('withSearchQueryParam / queryFromSearchParams — palette query in the URL', () => {
+  it('round-trips a query with no other params', () => {
+    const search = withSearchQueryParam('', 'in:backlog from:po')
+    expect(search).toBe('?q=in%3Abacklog+from%3Apo')
+    expect(queryFromSearchParams(search)).toBe('in:backlog from:po')
+  })
+
+  it('preserves an unrelated existing param', () => {
+    const search = withSearchQueryParam('?feature=42', 'TOD-9')
+    expect(queryFromSearchParams(search)).toBe('TOD-9')
+    expect(search).toContain('feature=42')
+  })
+
+  it('removes q entirely (not q=) for an empty or whitespace-only query', () => {
+    expect(withSearchQueryParam('?q=stale', '')).toBe('')
+    expect(withSearchQueryParam('?q=stale', '   ')).toBe('')
+  })
+
+  it('leaves other params intact when clearing an empty query', () => {
+    const search = withSearchQueryParam('?q=stale&feature=42', '')
+    expect(search).toBe('?feature=42')
+  })
+
+  it('queryFromSearchParams is empty-string, not null, when q is absent — so a caller can pass it straight to setQuery(string)', () => {
+    expect(queryFromSearchParams('')).toBe('')
+    expect(queryFromSearchParams('?feature=42')).toBe('')
+  })
+
+  it('round-trips through a leading-? or bare search string identically', () => {
+    expect(withSearchQueryParam('feature=42', 'x')).toBe(withSearchQueryParam('?feature=42', 'x'))
   })
 })
