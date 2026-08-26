@@ -20,9 +20,13 @@ the move sheet's exact body — `PATCH /api/issues` with `{ id, status }` and
 nothing else — as the signed-in owner
 (`cookie: mc-auth=kaos2026; mc-role=owner`).
 
-One fresh row per destination; thirty-seven fixture rows total across five
-measurement passes; **all thirty-seven deleted afterwards**, leaving Limiglow at
-zero issues.
+One fresh row per destination; **37 fixture rows across five measurement passes,
+plus 2 more for the browser verification in §6 — all 39 deleted afterwards.**
+Limiglow held zero issues of this piece's making before and after.
+
+(Three rows titled `PHANTOM-COLUMN probe:` — TOD-105, TOD-106, TOD-107 — appeared
+in Limiglow partway through, from another builder working the same database at
+the same time. They are not this piece's and were left untouched.)
 
 The signed-in owner matters. `lib/session-actor.ts:36` resolves an owner session
 to the actor `michael`, and `app/api/issues/route.ts:570,587` give that actor a
@@ -149,7 +153,74 @@ if (!transitionedBy || (!KAOS_ROLES.includes(transitionedBy) && !isOwnerActor(tr
 file and did not make the change. Until it lands, ACCEPTANCE 3 covers the gap
 honestly: the destination is visible, disabled, and explained.
 
-## 5. Not done, and why
+## 5. Verified in the running app, not asserted
+
+Captured from the live board at `/b/todero/p/limiglow/work/bolt`, signed in as
+the owner, `document.body.innerText`:
+
+**Every destination labelled with what it needs** (a fresh `ops` row in
+`backlog`) — the five refusals from §2 are the five carrying a label, and no
+other row does:
+
+```
+BACKLOG   backlog  Current
+          draft
+DEFINED   defined
+          refined         Needs test tier
+READY     open            Needs sprint
+IN PROG.  in_progress     Needs sprint
+          underway
+          active
+IN REVIEW code_review     Needs resolution type, implementation notes, commit sha, regression test
+          product_review  Needs resolution type, implementation notes
+          feature_review
+APPROVED  approved
+SIGNED    released / wrapped / completed
+CLOSED    closed          Needs resolution type
+```
+
+**A blocked move** (same sheet, a card in `open`) — visible, disabled, explained:
+
+> Sending an issue back to Backlog is reserved for main, po, ops, and you are
+> signed in as michael. Ask one of them, or reset it from the agent side.
+
+**A completed move**, all four `code_review` gates in one submit:
+
+> Moving to code_review needs 4 more things. The board asks for them here so the
+> move goes through the first time.
+
+with `0/10 characters minimum` counting up under Implementation notes, and
+`Still needed: resolution type, implementation notes, commit sha, regression
+test.` under a disabled submit until every one is filled. One PATCH; the row read
+back `status=code_review` with all four columns written.
+
+**No raw database text, proved against the real 500.** The humaniser is not
+dead code: a card was loaded with a sprint (so the sheet honestly judged
+`in_progress` ready), the sprint was then nulled in the database behind the open
+sheet, and the bare PATCH went out. The server answered with the constraint
+string verbatim. The operator saw:
+
+> An issue being worked has to belong to a sprint. Set a sprint and try the move
+> again.
+
+`document.body.innerText.includes('CHECK constraint')` → `false`. The original is
+in the console, once, as `[pipeline] move refused, raw server message: …`.
+
+**The server still refuses a bypassed client.** The same five bodies the sheet
+now never sends, sent by `fetch` with no client involved, against a fresh row:
+
+```
+open           500  CHECK constraint failed: ((status NOT IN ('open', 'in_progress', …
+in_progress    500  CHECK constraint failed: ((status NOT IN ('open', 'in_progress', …
+code_review    422  resolution_type is required before moving to code_review. …
+closed         422  resolution_type is required to close an issue. …
+refined        400  test_tier is required for task/bug/ops before moving to refined. …
+backlog        403  Only main/po/ops can reset an issue to backlog.
+```
+
+Nothing moved into the client. Every rule is still enforced twice.
+
+## 6. Not done, and why
 
 * **The 10-open cap (409) and the one-at-a-time lane (409) are not predicted.**
   Both depend on rows other than the one being moved, and both can change between
