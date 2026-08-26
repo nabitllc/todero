@@ -8,6 +8,23 @@ components/BusinessRail.tsx, components/tabs/OverviewTab.tsx
 
 DO NOT TOUCH: middleware.ts, app/api/** — another agent is verifying those.
 
+## SUPERSEDED IN PART — read this before scoring anything against this file
+
+Added 2026-08-26, after a critic scored round 4 against this spec and reported a
+deviation that was in fact an authorised later decision.
+
+Sections 2 and 3 below say the left rail shows **projects** and that businesses
+move into **Settings**. That is no longer the decision. The owner's later words
+— recorded verbatim as item 7 in `docs/rebuild/FEEDBACK.md`, and summarised in
+`HANDOFF.md:83-85` — make the rail the **HUB switcher** (Slack's workspace rail),
+permanent, not relocated to Settings. "Business" is renamed **Hub**.
+
+Where this file and `FEEDBACK.md` item 7 disagree, **item 7 wins.** The rest of
+this spec stands.
+
+Item 6 of the ACCEPTANCE list below FAILED at round 4 and is now owned by the
+`bolt-time` piece, not this one.
+
 ## Why this piece matters
 
 This is the owner's own feedback on the running app, given today. It is recorded
