@@ -54,6 +54,46 @@ function refusal<T>(v: { ok: true; value: T } | { ok: false; why: string }): str
 
 // ─── A. Money is not a float ────────────────────────────────────────────────
 
+describe('parseAmountToMinor — the test that can actually tell the two apart', () => {
+  // TOD-2443. A critic replaced the BigInt parser with the exact defect this
+  // module exists to prevent — BigInt(Math.round(parseFloat(body) * 10**exp)) —
+  // and ALL 86 tests passed. The money type was defended by a source grep and
+  // nothing else.
+  //
+  // The reason the old cases could not discriminate is worth keeping. The suite
+  // reached for '8114.35' believing parseFloat * 100 yields 811434.9999999999.
+  // It does — and Math.round repairs it. Every value the suite enumerated
+  // (19.99, 0.10, 0.05, 1500, 0.01, 123.45) is byte-identical under both
+  // implementations. A rounding step hides float error at small magnitudes,
+  // which is exactly why "it round-trips 19.99" proves nothing.
+  //
+  // The defect only surfaces where the scaled value exceeds what a double can
+  // represent exactly. These cases fail against parseFloat and pass against
+  // BigInt, which is the only thing that makes them worth running.
+  it('is exact past the magnitude where a double stops being exact', () => {
+    // parseFloat('38269170443769.09') * 100 -> 3826917044376910, one minor unit high.
+    expect(value(parseAmountToMinor('38269170443769.09', 'USD'))).toBe(3826917044376909)
+  })
+
+  it('refuses an amount larger than it can store exactly, rather than rounding it', () => {
+    // Found while writing the case above: the module already has a magnitude
+    // ceiling. That is the right answer — silently returning an approximate
+    // integer is the failure mode this whole type exists to avoid — and it was
+    // undefended by any test until now.
+    const v = parseAmountToMinor('99999999999999.99', 'USD')
+    expect(v.ok).toBe(false)
+    if (!v.ok) expect(v.why).toMatch(/larger than this system stores exactly/)
+  })
+
+  it('never agrees with a float implementation on those values', () => {
+    // Stated as an assertion rather than a comment, so the day someone
+    // "simplifies" the parser this fails loudly instead of silently passing.
+    const viaFloat = BigInt(Math.round(parseFloat('38269170443769.09') * 100))
+    expect(viaFloat.toString()).toBe('3826917044376910')
+    expect(String(value(parseAmountToMinor('38269170443769.09', 'USD')))).not.toBe(viaFloat.toString())
+  })
+})
+
 describe('parseAmountToMinor — exact integer minor units, no float anywhere', () => {
   it('parses two-decimal currencies exactly', () => {
     expect(value(parseAmountToMinor('19.99', 'USD'))).toBe(1999)

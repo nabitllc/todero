@@ -935,31 +935,49 @@ export default function Home() {
               </WorkViewCard>
             )}
 
+            {/* TOD-2444: a SUB-VIEW ROUTER IS NOT A CARD BODY. Card renders
+                empty.message IN PLACE OF children (components/nav/Card.tsx:98),
+                so wrapping these routers in a count-gated card made every
+                surface beneath them vanish at exactly the count this project
+                sits at — zero. A critic measured it: at Limiglow's documented
+                steady state, /work/bolt rendered the empty sentence and ZERO
+                pipeline columns, while that sentence claimed "the pipeline and
+                calendar below still show what exists". They did not exist.
+                Everything the Pipeline round built was unreachable on the
+                default screen, behind a card of mine promising otherwise.
+                The card stays as a HEADER — its question and its real count are
+                still worth having — and the surfaces render beneath it, always. */}
             {destination === 'work' && view === 'epics' && (
-              <WorkViewCard
-                id="work-epics" title="What are the epics, and how do they break down?"
-                projectFilter={selectedProject} countFilter="&type=epic" countLabel="epics"
-                emptyMessage={(p) => `${p} has no epics yet — that is correct, not broken.`}
-              >
-                {workEpicsSubView === 'map' && <EpicMapTab />}
-                {workEpicsSubView === 'features' && (
-                  <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); goTo('work', 'board') }} projectFilter={selectedProject} />
-                )}
-                {workEpicsSubView === 'roadmap' && <ProductBoardTab projectFilter={selectedProject} />}
-              </WorkViewCard>
+              <>
+                <WorkViewCard
+                  id="work-epics" title="What are the epics, and how do they break down?"
+                  projectFilter={selectedProject} countFilter="&type=epic" countLabel="epics"
+                  emptyMessage={(p) => `${p} has no epics yet — that is correct, not broken. The views below still render.`}
+                />
+                <div className="mt-4">
+                  {workEpicsSubView === 'map' && <EpicMapTab />}
+                  {workEpicsSubView === 'features' && (
+                    <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); goTo('work', 'board') }} projectFilter={selectedProject} />
+                  )}
+                  {workEpicsSubView === 'roadmap' && <ProductBoardTab projectFilter={selectedProject} />}
+                </div>
+              </>
             )}
 
             {destination === 'work' && view === 'bolt' && (
-              <WorkViewCard
-                id="work-due" title="What is due?"
-                projectFilter={selectedProject} countFilter="&has_due=1" countLabel="with a due date"
-                emptyMessage={(p) => `No issue in ${p} carries a due date yet — that is correct, not broken. The pipeline and calendar below still show what exists.`}
-              >
-                {workBoltSubView === 'pipeline' && <PipelineTab projectFilter={selectedProject} />}
-                {workBoltSubView === 'due-dates' && (
-                  <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedProject} cronsMeta={cronsMeta} />
-                )}
-              </WorkViewCard>
+              <>
+                <WorkViewCard
+                  id="work-due" title="What is due?"
+                  projectFilter={selectedProject} countFilter="&has_due=1" countLabel="with a due date"
+                  emptyMessage={(p) => `No issue in ${p} carries a due date yet — that is correct, not broken. The pipeline and calendar below still show what exists.`}
+                />
+                <div className="mt-4">
+                  {workBoltSubView === 'pipeline' && <PipelineTab projectFilter={selectedProject} />}
+                  {workBoltSubView === 'due-dates' && (
+                    <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedProject} cronsMeta={cronsMeta} />
+                  )}
+                </div>
+              </>
             )}
 
             {destination === 'fleet' && view === 'team' && (

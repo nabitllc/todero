@@ -40,7 +40,13 @@ export interface WorkViewCardProps {
   countLabel: string
   /** Rendered when the count is 0. Must name the project. */
   emptyMessage: (project: string) => string
-  children: React.ReactNode
+  /**
+   * TOD-2444: OPTIONAL. Card renders empty.message IN PLACE OF children, so a
+   * sub-view router passed as children disappears at exactly the count this
+   * project sits at — zero. Those routers now render beneath the card and it
+   * is used as a header: the question and its real count, no body.
+   */
+  children?: React.ReactNode
 }
 
 export default function WorkViewCard({

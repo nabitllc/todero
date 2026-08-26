@@ -347,7 +347,95 @@ export const PATCH = withPermission(
       created_at: now,
     })
 
+    // TOD-2443. Fulfilling an order MOVES STOCK. Without this the two ledgers
+    // this channel just built describe the same physical goods and cannot
+    // disagree loudly: a critic ran an order carrying 10 units of CRIT-A all
+    // the way to `fulfilled` and inventory still read 14 on hand. Ten shipped,
+    // fourteen on the shelf, and "What is about to run out?" would keep
+    // answering 0 for a SKU that had shipped its entire stock.
+    //
+    // The join was already in the schema and nothing queried it: order_line_items
+    // carries sku and quantity. Stock moves through the SAME audit shape as a
+    // manual adjust, with the order named as the reason, so item 27's guarantee
+    // — stock never changes without a recorded reason — still holds.
+    //
+    // Only on the transition INTO `fulfilled`. `partially_fulfilled` cannot say
+    // WHICH lines went (order_line_items has no fulfilled-quantity column), so
+    // decrementing there would be inventing a number. That absence is stated in
+    // the response rather than guessed at.
+    const stockMoves: { sku: string; quantity: number; on_hand: number | null }[] = []
+    let stockNote: string | null = null
+
+    if (move.value === 'fulfilled' && order.fulfilment_status !== 'fulfilled') {
+      const { data: lines } = await db()
+        .from('order_line_items')
+        .select('sku,quantity')
+        .eq('order_id', order.id)
+
+      for (const line of (lines ?? []) as { sku: string; quantity: number }[]) {
+        const { data: level } = await db()
+          .from('inventory_levels')
+          .select('id,on_hand')
+          .eq('project', project)
+          .eq('sku', line.sku)
+          .limit(1)
+          .maybeSingle()
+
+        if (!level) {
+          // Say it rather than silently skipping: a line with no stock record
+          // is a real gap in the catalogue, not a no-op.
+          stockMoves.push({ sku: line.sku, quantity: line.quantity, on_hand: null })
+          continue
+        }
+
+        const next = Number(level.on_hand) - Number(line.quantity)
+
+        // Write the AUDIT ROW FIRST, and check it. TOD-2443: my first version
+        // wrote object_type 'inventory_level', which the CHECK on
+        // commerce_actions refuses — and the insert's error was not checked, so
+        // stock moved 14 -> 4 while the audit recorded nothing and the response
+        // said the move was clean. Item 27's guarantee is that stock never
+        // changes without a recorded reason; an unchecked insert cannot make
+        // that guarantee, it can only appear to.
+        //
+        // Ordering it first means the failure mode is a refused move with an
+        // intact ledger, not a silent move with a missing one.
+        const { error: auditError } = await db().from('commerce_actions').insert({
+          project,
+          action: 'inventory.adjust',
+          object_type: 'inventory',
+          object_ref: line.sku,
+          from_value: String(level.on_hand),
+          to_value: String(next),
+          reason: `fulfilled order ${orderNumber}`,
+          actor: commerceActor(req),
+          created_at: now,
+        })
+        if (auditError) {
+          return NextResponse.json(
+            {
+              error: 'audit_write_failed',
+              message:
+                `stock for "${line.sku}" was NOT moved: the audit row could not be written ` +
+                `(${auditError.message}). Stock does not change without a recorded reason, so ` +
+                `the order stays ${order.fulfilment_status}.`,
+            },
+            { status: 500 },
+          )
+        }
+
+        await db().from('inventory_levels').update({ on_hand: next, updated_at: now }).eq('id', level.id)
+        stockMoves.push({ sku: line.sku, quantity: line.quantity, on_hand: next })
+      }
+    } else if (move.value === 'partially_fulfilled') {
+      stockNote =
+        'stock was not moved: order_line_items records no fulfilled quantity, so which lines shipped is not known. ' +
+        'Stock moves in full when this order reaches fulfilled.'
+    }
+
     return NextResponse.json({
+      stock_moves: stockMoves,
+      stock_note: stockNote,
       project,
       order_number: orderNumber,
       from: order.fulfilment_status,
