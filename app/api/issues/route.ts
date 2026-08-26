@@ -968,7 +968,7 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const effectiveProject = projectParam || null // CRITIC-TEMP
+  const effectiveProject = resolvedScope || projectParam || null
 
   // Hub-scoped query when business_id provided; fallback to admin for aggregate queries
   const hub = businessIdParam ? getHubClient(businessIdParam) : null
