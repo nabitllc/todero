@@ -351,7 +351,19 @@ alarm twice, and one lane's own doc independently recorded the same one.
   and read `total` for an exact count.
 - `issues` CHECK constraint: status open/in_progress/in_review requires a
   non-null `sprint`. Use `backlog` for fixtures.
-- Limiglow has ZERO issues. That is CORRECT.
+- **CHANGED 2026-08-26: Limiglow NO LONGER has zero issues, and that is DELIBERATE.**
+  The owner asked to see the product working; the database held one archived row,
+  so every screen showed an honest empty state and nothing he could click. I
+  seeded a realistic set — **TOD-504 to TOD-514**, two features with bugs and a
+  task under them, an ops issue, an auto-created epic, and two moved into a
+  sprint so the board has a Queue and an Active column.
+  **DO NOT DELETE THEM.** The old rule was "Limiglow must end at 0 issues", and
+  an agent following it literally would wipe the owner's demo data. The rule is
+  now: delete every fixture YOU create, and leave TOD-504 through TOD-514 alone
+  unless the owner says otherwise. Fixtures you create should still be removed —
+  use titles that make yours obviously yours.
+- Limiglow having zero issues WAS correct, and would be again if the demo data
+  were removed. It is not a defect either way.
 - Every fixture inserted must be removed, and the removal confirmed.
 - `TOD-1` restore values: `archived_at = "2026-08-25 19:36:02"`,
   `archived_reason = "Pre-Limiglow history. Todero the tool is built against the Flight Board, not its own backlog."`
