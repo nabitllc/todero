@@ -41,7 +41,7 @@ const COOKIE = 'mc-auth=kaos2026; mc-role=owner'
 const SCOPED_REFERER = `${BASE}/p/limiglow/work/board`
 const FLEET_REFERER = `${BASE}/p/limiglow/fleet/team`
 
-async function req(path, { referer, headers = {}, method = 'GET' } = {}) {
+async function req(path, { referer, headers = {}, method = 'GET', body } = {}) {
   try {
     const res = await fetch(BASE + path, {
       method,
@@ -50,6 +50,11 @@ async function req(path, { referer, headers = {}, method = 'GET' } = {}) {
         ...(referer ? { referer } : {}),
         ...headers,
       },
+      // TOD-2419: `body` was silently dropped here, so the probe-row POST sent
+      // nothing and the server refused it for missing fields. A parameter
+      // accepted and ignored, inside the guard that exists to catch exactly
+      // that class of defect.
+      ...(body !== undefined ? { body } : {}),
       signal: AbortSignal.timeout(15000),
     })
     return { status: res.status, body: await res.text() }
@@ -66,26 +71,80 @@ if (health.status === 0 || health.status === 404) {
 }
 
 /**
- * The probe row: any issue whose project is NOT the scoped one. TOD-1 is
- * archived, so it is fetched with the archive escape hatch and matched by
- * project rather than by key — a guard that hardcodes one task key stops
- * guarding the moment that row is deleted.
+ * The probe row: any issue whose project is NOT the scoped one, and which the
+ * probes below can actually SEE.
+ *
+ * TOD-2419. This used to select with `include_archived=1` and then probe
+ * WITHOUT it. The only foreign row in this database is TOD-1, which is
+ * archived, so every probe was filtered by the ARCHIVE clause before the SCOPE
+ * clause ever mattered. A critic proved the consequence: it disabled project
+ * narrowing outright in app/api/issues/route.ts and this guard still printed
+ * "PASS: scope holds under 10 live probes". The guard's own header says a guard
+ * reporting confidence it has not earned is worse than no guard. This was that.
+ *
+ * So: the probe row must be LIVE. An archived-only foreign row is a SKIP, never
+ * a pass — and rather than skip, this creates a live one and removes it after.
  */
 const SCOPED_PROJECT = 'Limiglow'
-const inventory = await req('/api/issues?limit=0&include_archived=1&all_projects=1')
-let foreign = null
-try {
-  const j = JSON.parse(inventory.body)
-  const rows = j?.data ?? j
-  if (Array.isArray(rows)) foreign = rows.find((r) => r?.project && r.project !== SCOPED_PROJECT) ?? null
-} catch {
-  /* handled below */
+const PROBE_KEY_PREFIX = 'SCOPEPROBE'
+
+async function findLiveForeign() {
+  // Deliberately WITHOUT include_archived: this must be a row the probes can see.
+  const inv = await req('/api/issues?limit=0&all_projects=1')
+  try {
+    const j = JSON.parse(inv.body)
+    const rows = j?.data ?? j
+    if (Array.isArray(rows)) return rows.find((r) => r?.project && r.project !== SCOPED_PROJECT) ?? null
+  } catch {
+    /* fall through */
+  }
+  return null
 }
+
+let foreign = await findLiveForeign()
+let createdProbe = null
+
+if (!foreign) {
+  // Create one, so the guard tests the scope clause rather than the archive
+  // clause. `sprint` is required by a CHECK constraint for non-backlog states,
+  // so the probe is created in `backlog`.
+  const key = `${PROBE_KEY_PREFIX}-${Date.now()}`
+  const created = await req('/api/issues', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      task_key: key,
+      title: 'scope guard probe row — deleted by scripts/no-unscoped-issues.mjs',
+      project: 'Todero',
+      // `task` and `bug` require a parent feature; `ops` stands alone.
+      type: 'ops',
+      priority: 'low',
+      assignee: 'builder',
+      status: 'backlog',
+      description: 'Transient probe row created by the scope guard to make a cross-project leak observable.',
+      acceptance_criteria: 'Transient. If this row is still here, the guard died mid-run.',
+    }),
+  })
+  if (created.status >= 200 && created.status < 300) {
+    foreign = await findLiveForeign()
+    if (foreign) createdProbe = foreign
+  }
+}
+
 if (!foreign) {
   console.log(
-    `SKIP: no issue outside "${SCOPED_PROJECT}" exists, so a leak is not observable. Not a pass.`,
+    `SKIP: no LIVE issue outside "${SCOPED_PROJECT}" exists and one could not be created, ` +
+      `so a leak is not observable. Not a pass. ` +
+      `(An ARCHIVED foreign row does not count: the archive clause would hide it ` +
+      `whether or not the scope clause works — see TOD-2419.)`,
   )
   process.exit(0)
+}
+
+/** Remove the probe row this run created, whatever the verdict. */
+async function cleanupProbe() {
+  if (!createdProbe?.id) return
+  await req(`/api/issues?id=${encodeURIComponent(createdProbe.id)}`, { method: 'DELETE' })
 }
 
 const leaks = (body) => body.includes(foreign.project) || (foreign.task_key && body.includes(foreign.task_key))
@@ -151,6 +210,8 @@ for (const [name, headers] of [
   const r = await req('/api/db/issues?task_number=gte.0', { referer: SCOPED_REFERER, method: 'PATCH' })
   check('write path scoped', !leaks(r.body), `status ${r.status} :: ${r.body.slice(0, 160)}`)
 }
+
+await cleanupProbe()
 
 if (failures.length > 0) {
   console.error('FAIL: the server leaks across the project boundary.')
