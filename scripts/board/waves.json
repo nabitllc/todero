@@ -194,12 +194,12 @@
       "n": 6,
       "name": "Operator surface",
       "chip": "in flight",
-      "when": "25 Aug · 16:05 → running (4 rounds)",
+      "when": "25 Aug · 16:05 → running (6 rounds)",
       "minutes": 190,
       "agents": 6,
       "tokens": 0,
       "cost": 0,
-      "lede": "Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder’s summary. Four rounds: <b>4 → 5 → 6 → 6</b>. Round 4 is the wave’s first flat score; one more halts it.",
+      "lede": "Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder’s summary. Six rounds: <b>4 → 5 → 6 → 6 → 6</b>. The no-progress halt has fired. The score is flat while the findings get <i>deeper</i> — see the note below — so the halt is reading a signal that cannot move while five of six destinations are still undesigned.",
       "before": [
         "Twenty nav entries plus a divider, appended one at a time — never designed",
         "<code>projectFilter={selectedBusiness}</code> — every tab's “project filter” was the <b>business</b>, so selecting one project selected everything",
@@ -214,7 +214,10 @@
         "Landing screen reads “Limiglow has 0 issues yet — that is correct, not broken”, “No active sprint for Limiglow”, “No recent activity”",
         "Round 4 measured: <b>0px gutter</b> at 1280/1024/820/375 with no horizontal scroll, and Now down to <b>752px in an 800px viewport</b> from ~1,250 — it fits one screen",
         "Round 4 shipped the fabrication it was written to prevent: a hardcoded <code>24h</code> badge fires on rows with <b>no window at all</b>, and an expired row wins the soonest-remaining reduce — the headline read <b>“ended left”</b> while a live bolt had 8h58m to run. TOD-2401 in new clothes",
-        "The card contract is real and verified: <code>components/nav/Card.tsx</code> carries metric, <b>source provenance</b>, optional action, and id-keyed collapse that survives reload"
+        "The card contract is real and verified: <code>components/nav/Card.tsx</code> carries metric, <b>source provenance</b>, optional action, and id-keyed collapse that survives reload",
+        "Round 5 put every bolt-time decision in one module and killed three defects: an expired row won the soonest-remaining reduce (headline read <b>“ended left”</b> while a live bolt had 8h58m), the <code>24h</code> badge was a literal stamped on rows with no window, and date-only boundaries parsed as <b>UTC</b> — so at UTC-4 every bolt read “ended” four hours early",
+        "Round 6: the critic broke round 5 in round 5’s own shape. The READER was fixed and a comment asserted the WRITER agreed; it did not. <code>sprint-start</code> stamped the UTC date, so after 8pm it wrote <b>tomorrow</b> as the start and the screen showed <code>24h</code> above <b>“26h 26m left”</b> at 0% elapsed. One stamp now matches one parser, with a round-trip test that fails against the old writer",
+        "Measured limit of the loop: three consecutive rounds scored <b>6</b> while each critic broke something a layer deeper than the last. A wave score cannot move while 5 of 6 destinations are untouched, so it is the wrong progress signal for a per-piece halt — the Wave 3 halt bug in a new form"
       ]
     }
   ],
