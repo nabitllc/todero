@@ -62,7 +62,7 @@ const NO_TARGET = { issueExists: null as boolean | null, issueRef: null }
 describe('describeApproval — an approve button that does not say what it approves', () => {
   it('fills every field a human needs, with no blanks', () => {
     const d = describeApproval(loopBreakerRow())
-    for (const key of ['question', 'agent', 'ifApproved', 'ifRefused', 'refuseLabel'] as const) {
+    for (const key of ['question', 'agent', 'ifApproved', 'ifRefused', 'refuseLabel', 'confirmRefuseLabel'] as const) {
       expect(typeof d[key]).toBe('string')
       expect(d[key]).not.toBe('')
     }
@@ -83,6 +83,14 @@ describe('describeApproval — an approve button that does not say what it appro
     expect(d.ifApproved).toMatch(/nothing is unblocked/i)
   })
 
+  it('gives the confirming click its own label rather than composing a double dash', () => {
+    // "Confirm — " + "Refuse — leave it stopped" rendered as
+    // "Confirm — Refuse — leave it stopped" in the browser. One dash.
+    const d = describeApproval(loopBreakerRow())
+    expect(d.confirmRefuseLabel.match(/—/g) ?? []).toHaveLength(1)
+    expect(d.confirmRefuseLabel).toContain('builder')
+  })
+
   it('says what refusing leaves in place, not just that it was refused', () => {
     const d = describeApproval(loopBreakerRow())
     expect(d.ifRefused).toMatch(/stays paused/i)
@@ -98,6 +106,7 @@ describe('describeApproval — an approve button that does not say what it appro
     expect(d.ifApproved).toMatch(/nothing/i)
     // Refusing/acknowledging is still on the table — that is always safe.
     expect(d.refuseLabel).not.toBe('')
+    expect(d.confirmRefuseLabel).not.toBe('')
   })
 
   it('never renders a blank agent, even on a row with no agent at all', () => {

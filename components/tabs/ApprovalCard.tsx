@@ -141,7 +141,7 @@ export default function ApprovalCard({
             onClick={submitRefusal}
             className="px-3 py-1.5 text-[11px] font-medium rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {busy ? 'Recording…' : `Confirm — ${d.refuseLabel}`}
+            {busy ? 'Recording…' : d.confirmRefuseLabel}
           </button>
         ) : (
           <button

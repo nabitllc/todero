@@ -71,6 +71,10 @@ export interface ApprovalDescription {
   /** Button label for the refusal path. Always present — refusing is always
    *  a legitimate answer, including for a type with no automated effect. */
   refuseLabel: string
+  /** Label for the second, confirming click once a reason has been typed.
+   *  Its own string rather than `Confirm — ${refuseLabel}`, which composed
+   *  into the double-dashed "Confirm — Refuse — leave it stopped". */
+  confirmRefuseLabel: string
   /** Whether `app/api/inbox/route.ts`'s INBOX_EFFECTS has a handler for this type. */
   hasRegisteredEffect: boolean
 }
@@ -202,6 +206,7 @@ export function describeApproval(row: ApprovalRow): ApprovalDescription {
       ifRefused: `The request is filed as acknowledged with your note. Nothing in the system changes either way — this type has no automated effect.`,
       approveLabel: null,
       refuseLabel: 'Acknowledge and file',
+      confirmRefuseLabel: 'Confirm — file the acknowledgement',
       hasRegisteredEffect: false,
     }
   }
@@ -213,6 +218,7 @@ export function describeApproval(row: ApprovalRow): ApprovalDescription {
     ifRefused: kind.refused(target),
     approveLabel: kind.approveLabel(target),
     refuseLabel: 'Refuse — leave it stopped',
+    confirmRefuseLabel: `Confirm — ${agent} stays stopped`,
     hasRegisteredEffect: true,
   }
 }

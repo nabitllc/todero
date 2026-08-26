@@ -157,7 +157,9 @@ export default function InboxTab() {
   const emptyMessage = (() => {
     if (!project) return 'No project is in scope, so no approvals are listed. Pick a project in the rail.'
     const excluded: string[] = []
-    if (scope && scope.other_project > 0) excluded.push(`${scope.other_project} belong to another project`)
+    if (scope && scope.other_project > 0) {
+      excluded.push(`${scope.other_project} ${scope.other_project === 1 ? 'belongs' : 'belong'} to another project`)
+    }
     if (scope && scope.unresolvable > 0) excluded.push(`${scope.unresolvable} could not be placed in any project`)
     const tail = excluded.length > 0 ? ` Of the pending requests fleet-wide, ${excluded.join(' and ')}.` : ''
     return `No agent is waiting on you in ${project}.${tail}`
