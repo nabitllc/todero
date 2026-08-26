@@ -21,9 +21,10 @@ import {
   emptyColumnBuckets,
   mappedStatuses,
   uncategorisedStatuses,
+  type PipelineColumn,
 } from '@/lib/pipeline-stages'
 import { VALID_STATUSES, RETIRED_STATUSES } from '@/lib/constants'
-import { deriveIssueStatusCategory } from '@/lib/status-category'
+import { deriveIssueStatusCategory, type IssueStatusCategory } from '@/lib/status-category'
 
 describe('the column model is data, not a render condition', () => {
   it('exports a non-empty frozen column list', () => {
@@ -157,14 +158,121 @@ describe('the running app carries the same guarantee', () => {
     expect(PIPELINE_MODEL_DEFECTS).toEqual([])
   })
 
-  it('computeModelDefects() names the status when one is unmapped', () => {
-    // Proves the detector FAILS when it should, not merely that it passes when
-    // it should. Simulates the exact defect: a status the lifecycle defines
-    // that no column claims.
-    const stray = VALID_STATUSES[0]
-    const valid = new Set(VALID_STATUSES)
-    const mapped = new Set(mappedStatuses().filter(s => s !== stray))
-    const simulated = VALID_STATUSES.filter(s => valid.has(s) && !mapped.has(s))
-    expect(simulated).toEqual([stray])
+  it('the no-argument call is the same computation the app ships', () => {
+    expect(computeModelDefects()).toEqual([...PIPELINE_MODEL_DEFECTS])
+    expect(computeModelDefects(PIPELINE_COLUMNS)).toEqual([])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE DETECTOR MUST FAIL WHEN IT SHOULD.
+//
+// What used to stand here was a test titled
+// `computeModelDefects() names the status when one is unmapped`, commented
+// "Proves the detector FAILS when it should" — whose body never called
+// computeModelDefects. It rebuilt the set difference in local variables and
+// asserted on the local copy, so it proved JavaScript's Set works, not that the
+// detector does. MEASURED 2026-08-26: inserting `if (1) return []` as the first
+// statement of computeModelDefects — disabling all six checks — left this file
+// 53/53 GREEN. PIPELINE_MODEL_DEFECTS is what components/tabs/PipelineTab.tsx
+// renders IN PLACE OF the board, so the one guard between an operator and a
+// board that silently drops cards could be neutered whole, in silence.
+//
+// Every test below calls the real function and hands it a model broken in
+// exactly one way, then asserts the returned SENTENCE names the offender. Each
+// one goes red under that mutation.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('computeModelDefects() fails when it should', () => {
+  /** A column with sane defaults, overridden one field at a time. */
+  function col(over: Partial<PipelineColumn>): PipelineColumn {
+    return {
+      id: 'fixture',
+      label: 'Fixture',
+      meaning: 'a column that exists only inside this test',
+      statuses: [],
+      category: 'Planned',
+      hex: '#000000',
+      ...over,
+    }
+  }
+
+  it('1. names a column that claims no statuses', () => {
+    const defects = computeModelDefects([
+      ...PIPELINE_COLUMNS,
+      col({ id: 'hollow', label: 'Hollow', statuses: [] }),
+    ])
+    expect(defects.some(d => d.includes('"Hollow"') && d.includes('claims no statuses'))).toBe(true)
+  })
+
+  it('2. names a column that claims a status the lifecycle does not define', () => {
+    const invented = 'ux_review' // the unreachable column's old gate; not a status
+    expect(VALID_STATUSES).not.toContain(invented)
+    const defects = computeModelDefects([
+      ...PIPELINE_COLUMNS,
+      col({ id: 'invented', label: 'Invented', statuses: [invented], category: 'Ongoing' }),
+    ])
+    expect(
+      defects.some(d => d.includes('"Invented"') && d.includes(`"${invented}"`) && d.includes('VALID_STATUSES')),
+    ).toBe(true)
+  })
+
+  it('3. names BOTH columns when two claim the same status', () => {
+    const taken = PIPELINE_COLUMNS[0].statuses[0]
+    const firstOwner = PIPELINE_COLUMNS[0].label
+    const defects = computeModelDefects([
+      ...PIPELINE_COLUMNS,
+      col({ id: 'thief', label: 'Thief', statuses: [taken] }),
+    ])
+    expect(
+      defects.some(d => d.includes(`"${taken}"`) && d.includes(`"${firstOwner}"`) && d.includes('"Thief"')),
+    ).toBe(true)
+  })
+
+  it('4. names the status when a VALID_STATUS has no column at all', () => {
+    // The exact defect the old test only simulated: drop one status from a real
+    // column and require the detector itself to notice.
+    const victim = PIPELINE_COLUMNS.find(c => c.statuses.length > 1)!
+    const stray = victim.statuses[0]
+    const broken = PIPELINE_COLUMNS.map(c =>
+      c === victim ? col({ ...c, statuses: c.statuses.filter(s => s !== stray) }) : c,
+    )
+    const defects = computeModelDefects(broken)
+    expect(
+      defects.some(d => d.includes(`"${stray}"`) && d.includes('no Pipeline column displays it')),
+    ).toBe(true)
+    // And the healthy model says nothing of the kind.
+    expect(
+      computeModelDefects(PIPELINE_COLUMNS).some(d => d.includes('no Pipeline column displays it')),
+    ).toBe(false)
+  })
+
+  it('5. names a column that smuggles in a RETIRED status', () => {
+    const retired = RETIRED_STATUSES[0]
+    const defects = computeModelDefects([
+      ...PIPELINE_COLUMNS,
+      col({ id: 'zombie', label: 'Zombie', statuses: [retired] }),
+    ])
+    expect(
+      defects.some(
+        d => d.includes(`"${retired}"`) && d.includes('"Zombie"') && d.includes('refused by the MC API'),
+      ),
+    ).toBe(true)
+  })
+
+  it('6. names a column whose declared category contradicts status-category.ts', () => {
+    // Derived, not hardcoded: find a real column holding a status the repo
+    // actually categorises, then declare the wrong category on it.
+    const victim = PIPELINE_COLUMNS.find(c =>
+      c.statuses.some(s => deriveIssueStatusCategory(s) !== null),
+    )!
+    const truth = victim.statuses.map(s => deriveIssueStatusCategory(s)).find(x => x !== null)!
+    const wrong: IssueStatusCategory = truth === 'Done' ? 'Planned' : 'Done'
+    const broken = PIPELINE_COLUMNS.map(c => (c === victim ? col({ ...c, category: wrong }) : c))
+    const defects = computeModelDefects(broken)
+    expect(
+      defects.some(
+        d => d.includes(`"${victim.label}"`) && d.includes(`"${wrong}"`) && d.includes('lib/status-category.ts'),
+      ),
+    ).toBe(true)
   })
 })

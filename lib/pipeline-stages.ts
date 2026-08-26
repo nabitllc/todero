@@ -203,20 +203,31 @@ export function uncategorisedStatuses(): string[] {
  * so the RUNNING app carries the guarantee too rather than only CI. The
  * Pipeline renders these in place of the board when the list is non-empty:
  * an operator must never be shown a board that is quietly dropping cards.
+ *
+ * `columns` exists ONLY so the test suite can hand this function a model that
+ * is deliberately broken in one specific way and assert that the returned
+ * sentence NAMES the offence. Before that parameter existed, the test named
+ * after this function re-implemented its set arithmetic locally and asserted on
+ * the local copy — so replacing this entire body with `return []` left the
+ * suite 53/53 green, and the detector the Pipeline renders IN PLACE OF the
+ * board could be neutered whole without a single red test. Production always
+ * uses the default.
  */
-export function computeModelDefects(): string[] {
+export function computeModelDefects(
+  columns: readonly PipelineColumn[] = PIPELINE_COLUMNS,
+): string[] {
   const defects: string[] = []
   const valid = new Set<string>(VALID_STATUSES)
 
   // 1. A column with no status is a defect.
-  for (const col of PIPELINE_COLUMNS) {
+  for (const col of columns) {
     if (col.statuses.length === 0) {
       defects.push(`Column "${col.label}" (${col.id}) claims no statuses — it can never hold a card.`)
     }
   }
 
   // 2. A column claiming a status the lifecycle does not define is a defect.
-  for (const col of PIPELINE_COLUMNS) {
+  for (const col of columns) {
     for (const s of col.statuses) {
       if (!valid.has(s)) {
         defects.push(
@@ -231,7 +242,7 @@ export function computeModelDefects(): string[] {
   // 3. Two columns claiming the same status is a defect — a card would have
   //    two homes and the totals would double-count.
   const seen = new Map<string, string>()
-  for (const col of PIPELINE_COLUMNS) {
+  for (const col of columns) {
     for (const s of col.statuses) {
       const first = seen.get(s)
       if (first) {
@@ -268,7 +279,7 @@ export function computeModelDefects(): string[] {
   //    a defect: the board would place a card in a phase the rest of the app
   //    disagrees with. A status with NO category is skipped here and reported
   //    by uncategorisedStatuses() instead.
-  for (const col of PIPELINE_COLUMNS) {
+  for (const col of columns) {
     for (const s of col.statuses) {
       const actual = deriveIssueStatusCategory(s)
       if (actual !== null && actual !== col.category) {

@@ -15,7 +15,7 @@
  * built-in list of agents anywhere in this piece.
  */
 
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, existsSync, readdirSync } from 'fs'
 import { join } from 'path'
 import {
   AREAS,
@@ -25,6 +25,7 @@ import {
   RESPONSIBILITY_CONSUMERS,
   RESPONSIBILITY_LEVELS,
   capabilityBacking,
+  notConsultedNotice,
   coverage,
   coveredAreaCount,
   validateAssignment,
@@ -275,10 +276,136 @@ describe('coverage folds real rows onto the declared areas', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THE HONEST LIMIT IS A MECHANISM, NOT A SENTENCE ABOUT ONE.
+//
+// components/tabs/ResponsibilitiesCard.tsx used to say the notice was "not a
+// hardcoded sentence … driven by RESPONSIBILITY_CONSUMERS. Wiring a real
+// consumer changes what this card says, in the same commit, automatically."
+// MEASURED 2026-08-26: NOT_CONSULTED_NOTICE was a flat string concatenation
+// that never read RESPONSIBILITY_CONSUMERS, so populating the array changed
+// nothing the card said; and the card rendered the notice unconditionally next
+// to a `Read by: …` clause, so a populated array would have printed "Nothing
+// acts on these assignments yet" AND "Read by: agent-queue" in one box.
+//
+// The notice is now derived for real, and the array — still maintained by hand,
+// which the card now says plainly — is held current by the importer test below
+// rather than by a claim.
+// ─────────────────────────────────────────────────────────────────────────────
 describe('the honest limit is stated in code, not only in prose', () => {
   it('nothing consults these rows yet', () => {
     expect(RESPONSIBILITY_CONSUMERS).toEqual([])
     expect(NOT_CONSULTED_NOTICE).toMatch(/TODERO_DISPATCH_ENABLED/)
+  })
+
+  it('the notice is a FUNCTION of the consumer list, not a constant beside it', () => {
+    const empty = notConsultedNotice([])
+    const wired = notConsultedNotice(['lib/agent-queue.ts'])
+    expect(wired).not.toBe(empty)
+    expect(wired).toContain('lib/agent-queue.ts')
+  })
+
+  it('shipped constant is that function applied to the real list', () => {
+    expect(NOT_CONSULTED_NOTICE).toBe(notConsultedNotice(RESPONSIBILITY_CONSUMERS))
+  })
+
+  it('never asserts a thing and its negation in the same sentence', () => {
+    // The contradiction the card could previously render. With consumers, the
+    // notice must NOT still say nothing acts on the rows.
+    expect(notConsultedNotice([])).toContain('Nothing acts on these assignments yet')
+    const wired = notConsultedNotice(['lib/agent-queue.ts', 'app/api/run-agent'])
+    expect(wired).not.toContain('Nothing acts on these assignments yet')
+    expect(wired).toContain('lib/agent-queue.ts')
+    expect(wired).toContain('app/api/run-agent')
+  })
+
+  it('the card renders the notice ONCE, with no second "Read by" clause', () => {
+    const card = readFileSync(join(REPO_ROOT, 'components', 'tabs', 'ResponsibilitiesCard.tsx'), 'utf8')
+    const executable = card.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(executable).not.toMatch(/Read by:/)
+  })
+})
+
+describe('RESPONSIBILITY_CONSUMERS cannot go stale in silence', () => {
+  /**
+   * Exports that mean "this module made a decision about who owns what". A file
+   * importing one of these is consuming the responsibility rows. RESPONSIBILITY_LEVELS
+   * and the types are deliberately absent — importing those is a form control,
+   * not a consumer.
+   */
+  const DECISION_EXPORTS = ['coverage', 'coveredAreaCount', 'capabilityBacking', 'findArea', 'AREAS', 'AREA_IDS']
+
+  /**
+   * Files that import a decision export purely to DISPLAY the rows. The API
+   * route calls coverage() to serve it to the card; neither acts on the result.
+   * Adding to this list is a claim that the new file does not act on the rows —
+   * make it consciously.
+   */
+  const DISPLAY_ONLY = [join('app', 'api', 'agent-responsibilities', 'route.ts')]
+
+  const SEARCH_ROOTS = ['app', 'lib', 'components', 'hooks', 'scripts']
+  const SKIP_DIRS = new Set(['node_modules', '.next', '.git', '__tests__'])
+
+  function walk(dir: string, out: string[] = []): string[] {
+    if (!existsSync(dir)) return out
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP_DIRS.has(entry.name)) continue
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) walk(full, out)
+      else if (/\.tsx?$/.test(entry.name)) out.push(full)
+    }
+    return out
+  }
+
+  it('a new consumer of the rows fails this test while the list is still empty', () => {
+    if (RESPONSIBILITY_CONSUMERS.length > 0) {
+      // The list is populated: the card already says who reads the rows, so
+      // there is nothing stale to catch. Whoever populated it owns keeping it right.
+      return
+    }
+
+    const offenders: string[] = []
+    for (const root of SEARCH_ROOTS) {
+      for (const file of walk(join(REPO_ROOT, root))) {
+        const rel = file.slice(REPO_ROOT.length + 1)
+        if (rel.includes('agent-responsibilities.ts')) continue
+        if (DISPLAY_ONLY.some(allowed => rel.endsWith(allowed))) continue
+
+        const src = readFileSync(file, 'utf8')
+        const imports = src.match(
+          /import\s*\{([^}]*)\}\s*from\s*['"](?:@\/lib\/agent-responsibilities|[.\/]*agent-responsibilities)['"]/g,
+        )
+        if (!imports) continue
+        const bound = imports
+          .flatMap(stmt => stmt.slice(stmt.indexOf('{') + 1, stmt.lastIndexOf('}')).split(','))
+          .map(s => s.replace(/^\s*type\s+/, '').split(/\s+as\s+/)[0].trim())
+        const decisions = bound.filter(b => DECISION_EXPORTS.includes(b))
+        if (decisions.length > 0) offenders.push(`${rel} imports ${decisions.join(', ')}`)
+      }
+    }
+
+    expect(
+      offenders.length === 0
+        ? 'ok'
+        : `RESPONSIBILITY_CONSUMERS is empty, but these files read the responsibility rows: ` +
+          `${offenders.join('; ')}. Either add the consumer to RESPONSIBILITY_CONSUMERS in ` +
+          `lib/agent-responsibilities.ts — which changes what the Fleet card says — or, if the ` +
+          `file only displays the rows, add it to DISPLAY_ONLY here and say why.`,
+    ).toBe('ok')
+  })
+
+  it('the scanner actually finds importers — it is not silently matching nothing', () => {
+    // A scan that matches nothing would pass the test above forever. Prove the
+    // regex sees the one importer that genuinely exists today.
+    const route = readFileSync(join(REPO_ROOT, ...DISPLAY_ONLY[0].split(/[\\/]/)), 'utf8')
+    const found = route.match(
+      /import\s*\{([^}]*)\}\s*from\s*['"](?:@\/lib\/agent-responsibilities|[.\/]*agent-responsibilities)['"]/g,
+    )
+    expect(found).not.toBeNull()
+    const bound = found!
+      .flatMap(stmt => stmt.slice(stmt.indexOf('{') + 1, stmt.lastIndexOf('}')).split(','))
+      .map(s => s.replace(/^\s*type\s+/, '').split(/\s+as\s+/)[0].trim())
+    expect(bound.filter(b => DECISION_EXPORTS.includes(b)).length).toBeGreaterThan(0)
   })
 })
 

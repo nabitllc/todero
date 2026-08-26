@@ -12,10 +12,21 @@
 // than sitting next to a stale number.
 //
 // THE HONEST LIMIT, ON SCREEN
-//   Nothing consults these assignments. The notice below is not a hardcoded
-//   sentence — it is `not_consulted_notice` from the API, driven by
-//   RESPONSIBILITY_CONSUMERS in lib/agent-responsibilities.ts. Wiring a real
-//   consumer changes what this card says, in the same commit, automatically.
+//   Nothing consults these assignments. The notice below is `not_consulted_notice`
+//   from the API, which is `notConsultedNotice(RESPONSIBILITY_CONSUMERS)` in
+//   lib/agent-responsibilities.ts — a real function of that list, so adding a
+//   consumer to it does change this sentence in the same commit.
+//
+//   What that list is NOT is automatic. It is maintained by hand. Nothing scans
+//   for consumers, and this comment previously claimed the change happened
+//   "automatically", which was false: NOT_CONSULTED_NOTICE was a flat string
+//   that never read the array, and this card rendered it unconditionally
+//   ALONGSIDE a "Read by: …" clause — so a populated list would have printed
+//   "Nothing acts on these assignments yet" and "Read by: agent-queue" together.
+//   The single derived sentence below is now the only thing rendered, and a test
+//   in lib/__tests__/agent-responsibilities.test.ts fails when a new module
+//   starts consuming the rows while the list is still empty.
+//
 //   A responsibility table rendered as though the fleet obeyed it would be a
 //   fabrication; saying so is the whole point of the line.
 //
@@ -167,10 +178,12 @@ export default function ResponsibilitiesCard({ hubName }: { hubName: string | nu
           {unassigned.length > 0 && <> — <span className="text-white/80">{unassigned.length}</span> of them own nothing.</>}
         </p>
 
-        {/* The honest limit, from the API rather than hardcoded here. */}
+        {/* The honest limit, from the API rather than hardcoded here. ONE
+            sentence: it already names the consumers when there are any, so a
+            second "Read by:" clause here would contradict the empty-list
+            wording the moment the list stopped being empty. */}
         <p className="text-amber-300/80 text-xs leading-relaxed border border-amber-400/20 bg-amber-400/5 rounded-lg px-3 py-2">
           {data.not_consulted_notice}
-          {data.consulted_by.length > 0 && <> Read by: {data.consulted_by.join(', ')}.</>}
         </p>
 
         {open && (

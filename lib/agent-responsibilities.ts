@@ -424,12 +424,46 @@ export function coveredAreaCount(rows: readonly ResponsibilityRow[]): number {
  * and dispatch is off by default behind lib/dispatch-guard.ts. This piece ships
  * a RECORD, not a CONTROL.
  *
- * It is exported, returned by the API and rendered by the card so that the
- * claim is made once, in code, and goes stale loudly (a consumer added here
- * changes what the UI says) instead of quietly.
+ * MAINTAINED BY HAND. Nothing computes this array, and the card no longer
+ * claims otherwise. What stops it going stale is a test, not a scan:
+ * `lib/__tests__/agent-responsibilities.test.ts` fails, naming the file, the
+ * moment any module outside a small display-only allowlist imports the
+ * decision-making exports below (`coverage`, `coveredAreaCount`,
+ * `capabilityBacking`, `findArea`, `AREAS`, `AREA_IDS`) while this array is
+ * still empty. Wiring a real consumer therefore breaks CI in the same commit
+ * that wires it, and the fix is to add the consumer here.
+ *
+ * A scan was considered and rejected: a static import graph cannot tell "reads
+ * these rows to make a decision" from "renders them", and would immediately
+ * name app/api/agent-responsibilities/route.ts — which imports `coverage()`
+ * only to serve it for display. That would swap a false sentence for a
+ * different false sentence.
  */
 export const RESPONSIBILITY_CONSUMERS: readonly string[] = []
 
-export const NOT_CONSULTED_NOTICE =
-  'Nothing acts on these assignments yet. Dispatch does not read them, and agent dispatch is off ' +
-  '(TODERO_DISPATCH_ENABLED). This is a record of who owns what, not a control over what runs.'
+/**
+ * The honest-limit sentence, DERIVED from the consumer list.
+ *
+ * This is a real function of its argument, which is what makes the card's claim
+ * true: populate RESPONSIBILITY_CONSUMERS and the sentence changes, in the same
+ * commit, with no second edit. Before this existed, `NOT_CONSULTED_NOTICE` was
+ * a flat string concatenation that never read the array — so a populated array
+ * would have rendered "Nothing acts on these assignments yet" AND
+ * "Read by: …" in the same box, the card asserting both a thing and its
+ * negation.
+ */
+export function notConsultedNotice(consumers: readonly string[]): string {
+  if (consumers.length === 0) {
+    return (
+      'Nothing acts on these assignments yet. Dispatch does not read them, and agent dispatch is off ' +
+      '(TODERO_DISPATCH_ENABLED). This is a record of who owns what, not a control over what runs.'
+    )
+  }
+  return (
+    `These assignments are read by ${consumers.join(', ')}. Everything else still ignores them, and ` +
+    'agent dispatch remains gated by TODERO_DISPATCH_ENABLED.'
+  )
+}
+
+/** Same export name and `string` type as before, so the API route is untouched. */
+export const NOT_CONSULTED_NOTICE: string = notConsultedNotice(RESPONSIBILITY_CONSUMERS)
