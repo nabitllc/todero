@@ -164,10 +164,14 @@ string on screen. No item is an adjective.
       names it, and renders `dormant` for a null `limitUsd`.
 
 17. **`npx tsc --noEmit` reports no new errors**, and
-    `node scripts/acceptance/run.mjs` reports the same score after this piece as
-    before it (baseline observed at the start of this piece: **44/45**, the one
-    failure being `no-jwt-in-source` at `lib/__tests__/connections.test.ts:107`,
-    which belongs to another agent's file and is untouched here).
+    `node scripts/acceptance/run.mjs` reports at least the score it did before
+    this piece. Observed: **44/45 at the start** (the one failure being
+    `no-jwt-in-source` at `lib/__tests__/connections.test.ts:107`, another
+    agent's file, untouched here) and **45/45 at the end**, that agent having
+    fixed it meanwhile. `npm test` shows the same 5 pre-existing failures in
+    `agents-route`, `agents-unconfigured` and `spawn-live` and no others;
+    `node scripts/no-silent-empty.mjs` and `node scripts/no-unscoped-issues.mjs`
+    both PASS.
 
 18. **Every fixture row inserted into `./db.sqlite` to observe items 7–12 is
     deleted afterwards**, and the deletion is confirmed by a follow-up count
