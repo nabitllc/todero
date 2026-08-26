@@ -279,10 +279,19 @@ export function formatLimitMs(ms: number): string {
   return formatMs(ms)
 }
 
-/** `null` -> `'—'`. Never `'$0.00'` for an unrecorded cost. */
+/**
+ * `null` -> `'—'`. Never `'$0.00'` for an unrecorded cost.
+ *
+ * Sub-dollar figures keep four decimals rather than being rounded to cents:
+ * a step that cost $0.0060 displayed as `$0.01` is a rounded number presented
+ * as the recorded one, and a per-step trace exists precisely so the small
+ * numbers stay legible. A measured exact zero stays `$0.00` — there is no
+ * precision to lose.
+ */
 export function formatUsd(usd: number | null): string {
   if (usd === null) return '—'
-  if (usd !== 0 && Math.abs(usd) < 0.01) return `$${usd.toFixed(4)}`
+  if (usd === 0) return '$0.00'
+  if (Math.abs(usd) < 1) return `$${usd.toFixed(4)}`
   return `$${usd.toFixed(2)}`
 }
 

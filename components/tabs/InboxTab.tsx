@@ -1,371 +1,245 @@
 'use client'
-// TOD-1043: Inbox tab — Pending + Historic sub-views with Approve/Deny/Explain actions
+// components/tabs/InboxTab.tsx — approval-surface piece (Wave 6)
+//
+// The surface where the one human in a "0 or 1 person business manager"
+// actually decides. Rebuilt on components/nav/Card.tsx's contract: one
+// question per card, one number that came from a real query, that query
+// printed as `source`, an empty state that names the project, and an error
+// that REPLACES the body rather than sitting next to an empty state.
+//
+// Two cards:
+//   inbox-waiting   — what is waiting on you IN THIS PROJECT, as ApprovalCards
+//   inbox-decisions — the append-only record of what you already decided
+//                     (migration 061 approval_decisions), including refusals
+//
+// SCOPE. This tab takes no props (app/page.tsx renders it as <InboxTab />, and
+// that file belongs to another piece this round), so it reads the project from
+// `useProjectScope()` — the single Provider app/page.tsx mounts around every
+// destination. That is the same value every other tab receives as a
+// `projectFilter` prop, read from the source instead of re-typed.
+//
+// The counts below are the server's own `scope` numbers, never `items.length`
+// — GET /api/inbox?project=X reports how many rows matched, how many belong
+// to another project, and how many could not be placed at all, and the empty
+// state says so instead of implying the fleet is quiet.
 
-import React, { useState } from 'react'
-import { useApiList, fetchJson, type ApiError } from '@/hooks/useApiData'
+import React, { useCallback, useState } from 'react'
+import { fetchJson, useApiData, type ApiError } from '@/hooks/useApiData'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
+import Card from '@/components/nav/Card'
+import { useProjectScope } from '@/components/nav/ProjectScope'
+import ApprovalCard, { type Decision, type InboxEntry } from '@/components/tabs/ApprovalCard'
 
-interface InboxEntry {
+/** `scope` block GET /api/inbox returns whenever `project=` is given. */
+interface InboxScope {
+  project: string
+  matched: number
+  other_project: number
+  unresolvable: number
+}
+
+interface ScopedInbox {
+  data: InboxEntry[]
+  total: number
+  has_more: boolean
+  scope: InboxScope
+}
+
+/** One row of `approval_decisions` (migrations/061_approval_decisions.sql). */
+interface DecisionRow {
   id: string
-  agent: string
-  type: string
-  context: Record<string, unknown> | null
-  status: 'pending' | 'approved' | 'denied' | 'timeout' | 'explained'
-  created_at: string
-  expires_at: string | null
-  resolved_at: string | null
-  resolved_by: string | null
-  response_data: unknown
-  issue_id: string | null
+  inbox_id: string
+  request_type: string | null
+  request_agent: string | null
+  decision: string
+  outcome: 'applied' | 'no_effect' | 'failed' | 'refused'
+  effect: string | null
+  detail: string
+  human_reason: string | null
+  project: string | null
+  decided_by: string
+  decided_at: string
 }
 
-type ContextFields = Record<string, { label: string; type?: 'text' | 'select'; options?: string[] }>
-
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#f59e0b', approved: '#10b981', denied: '#ef4444',
-  timeout: '#6b7280', explained: '#6366f1',
+interface DecisionsPayload {
+  data: DecisionRow[]
+  total: number
+  has_more: boolean
 }
 
-function timeRemaining(expiresAt: string | null): string {
-  if (!expiresAt) return '—'
-  const diff = new Date(expiresAt).getTime() - Date.now()
-  if (diff <= 0) return 'expired'
-  const m = Math.floor(diff / 60000)
-  const s = Math.floor((diff % 60000) / 1000)
-  return m > 0 ? `${m}m ${s}s` : `${s}s`
+const OUTCOME_STYLE: Record<DecisionRow['outcome'], { label: string; className: string }> = {
+  applied: { label: 'APPLIED', className: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+  no_effect: { label: 'RECORDED', className: 'bg-white/[0.06] text-white/50 border-white/10' },
+  failed: { label: 'FAILED', className: 'bg-red-500/10 text-red-400 border-red-500/20' },
+  refused: { label: 'REFUSED', className: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
 }
 
 function timeAgo(ts: string): string {
   const diff = Date.now() - new Date(ts).getTime()
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`
+  if (!Number.isFinite(diff)) return ts
+  if (diff < 60000) return `${Math.max(0, Math.floor(diff / 1000))}s ago`
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
-  return `${Math.floor(diff / 3600000)}h ago`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+  return `${Math.floor(diff / 86400000)}d ago`
 }
 
-/** The fallback shape PATCH /api/inbox writes to `context.resolution` when
- * the `response_data` column doesn't exist — see app/api/inbox/route.ts. */
-interface ContextResolution {
-  by?: string
-  at?: string
-  status?: string
-  /** Round-3 shape: `{effect, ok, detail}` — what the decision actually did. */
-  effect?: unknown
-  /** Pre-round-3 shape, kept for entries resolved before this fix. */
-  data?: unknown
-}
-
-/** Round-3: response_data is now the real consequence of a decision, not the
- * reason a human typed — see app/api/inbox/route.ts's INBOX_EFFECTS map. */
-interface EffectOutcome {
-  effect?: unknown
-  ok?: unknown
-  detail?: unknown
-}
-
-function isEffectOutcome(payload: unknown): payload is EffectOutcome {
-  return !!payload && typeof payload === 'object' && !Array.isArray(payload) && 'effect' in payload && 'detail' in payload
-}
-
-function formatResolutionPayload(data: unknown): string | null {
-  if (data === null || data === undefined) return null
-  // The real shape since round 3: what the decision actually did, not what
-  // the human typed. Render that outcome, flagging a failed effect plainly
-  // rather than letting it read like a clean success.
-  if (isEffectOutcome(data)) {
-    const detail = typeof data.detail === 'string' && data.detail.trim() ? data.detail.trim() : String(data.effect ?? '')
-    if (!detail) return null
-    return data.ok === false ? `${detail} (FAILED)` : detail
-  }
-  // Pre-round-3 entries: response_data was whatever the human typed in the
-  // modal (a deny reason, or field values). Kept so old history still renders.
-  if (typeof data === 'object') {
-    const obj = data as Record<string, unknown>
-    if (typeof obj.reason === 'string' && obj.reason.trim()) return obj.reason.trim()
-    const entries = Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== '')
-    if (entries.length === 0) return null
-    return entries.map(([k, v]) => `${k}: ${v}`).join(', ')
-  }
-  const str = String(data).trim()
-  return str || null
-}
-
-/** What actually happened as a result of a decision, for the historic view.
- * Reads the real `response_data` column when it's present, and falls back to
- * `context.resolution` (the read-modify-write the API does when that column
- * is missing) so the payload is visible either way instead of vanishing. */
-function resolutionLine(entry: InboxEntry): string | null {
-  const contextResolution = (entry.context && typeof entry.context === 'object' && !Array.isArray(entry.context))
-    ? (entry.context as Record<string, unknown>).resolution as ContextResolution | undefined
-    : undefined
-
-  const payload = entry.response_data ?? contextResolution?.effect ?? contextResolution?.data
-  const detail = formatResolutionPayload(payload)
-  if (!detail) return null
-
-  const by = entry.resolved_by ?? contextResolution?.by ?? '—'
-  return `${entry.status} by ${by} — ${detail}`
-}
-
-/** Request types with a registered automated consequence — mirrors
- * INBOX_EFFECTS in app/api/inbox/route.ts. A type NOT in this set has no
- * effect the server can dispatch, so it must not show Approve/Deny (buttons
- * that imply a consequence they don't have) — it gets a single Acknowledge
- * action instead. */
-const TYPES_WITH_EFFECT = new Set(['loop_breaker_pause', 'ceiling_stop'])
-
-function ActionModal({ entry, action, onClose, onSubmit }: {
-  entry: InboxEntry
-  action: 'approved' | 'denied' | 'explained'
-  onClose: () => void
-  onSubmit: (responseData: unknown) => void
-}) {
-  const fields = (entry.context as Record<string, unknown>)?.fields as ContextFields | undefined
-  const [reason, setReason] = useState('')
-  const [fieldValues, setFieldValues] = useState<Record<string, string>>({})
-
-  const label = { approved: 'Approve', denied: 'Deny', explained: 'Explain' }[action]
-
-  const handleSubmit = () => {
-    if ((action === 'denied' || action === 'explained') && !reason.trim()) return
-    const responseData = action === 'approved' && fields
-      ? { ...fieldValues }
-      : { reason: reason.trim() || undefined }
-    onSubmit(responseData)
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0f0f0f] p-5 shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-white font-semibold">{label} Request</span>
-          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors text-lg leading-none">×</button>
-        </div>
-
-        <div className="mb-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
-          <p className="text-xs text-white/50 mb-1">{entry.agent} · {entry.type}</p>
-          <p className="text-xs text-white/70">{JSON.stringify(entry.context, null, 2).slice(0, 300)}</p>
-        </div>
-
-        {action === 'approved' && fields && Object.entries(fields).map(([key, field]) => (
-          <div key={key} className="mb-3">
-            <label className="block text-xs text-white/50 mb-1">{field.label}</label>
-            {field.type === 'select' && field.options ? (
-              <select
-                value={fieldValues[key] ?? ''}
-                onChange={e => setFieldValues(p => ({ ...p, [key]: e.target.value }))}
-                className="w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-white/20"
-              >
-                <option value="">Select…</option>
-                {field.options.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            ) : (
-              <input
-                value={fieldValues[key] ?? ''}
-                onChange={e => setFieldValues(p => ({ ...p, [key]: e.target.value }))}
-                className="w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-white/20"
-              />
-            )}
-          </div>
-        ))}
-
-        {(action === 'denied' || action === 'explained') && (
-          <textarea
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            placeholder={action === 'denied' ? 'Reason for denial…' : 'Clarification message…'}
-            rows={3}
-            className="w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-white/20 resize-none mb-3"
-          />
-        )}
-
-        <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-3 py-1.5 text-xs text-white/50 hover:text-white transition-colors">Cancel</button>
-          <button
-            onClick={handleSubmit}
-            className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-              action === 'denied' ? 'bg-red-600 hover:bg-red-500 text-white'
-              : action === 'explained' ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
-              : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-            }`}
-          >
-            {label}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+/** Per-item note: the server's refusal reason, or what a landed decision did. */
+type ItemNote = { kind: 'refused' | 'done' | 'warning'; text: string }
 
 export default function InboxTab() {
-  const [view, setView] = useState<'pending' | 'historic'>('pending')
-  const [modal, setModal] = useState<{ entry: InboxEntry; action: 'approved' | 'denied' | 'explained' } | null>(null)
-  const [actionError, setActionError] = useState<ApiError | null>(null)
-  // A `_warning` on a 2xx (e.g. response_data fell back to context.resolution
-  // because the dedicated column is missing) is not a failed request — the
-  // decision AND its effect both landed. Routing it into ApiErrorBanner made
-  // a successful approval render "data unavailable", which is a lie in the
-  // other direction. Track it separately, keyed to the entry it came from, so
-  // it renders as a neutral note under that specific resolved card instead.
-  const [actionWarning, setActionWarning] = useState<{ entryId: string; message: string } | null>(null)
+  const { project } = useProjectScope()
 
-  // `items` stays null on a failed fetch — never coerced to [] — so a 403/500
-  // renders the error banner instead of a lying "No pending requests".
-  const { items, error, loading, refetch } = useApiList<InboxEntry>(
-    view === 'pending' ? '/api/inbox?status=pending' : '/api/inbox',
-  )
+  // No project scope yet means there is nothing honest to show — the whole
+  // point of this surface is that a decision belongs to a business. Say that,
+  // rather than falling back to a fleet-wide list.
+  const pendingUrl = project
+    ? `/api/inbox?status=pending&project=${encodeURIComponent(project)}`
+    : null
+  const decisionsUrl = project
+    ? `/api/inbox/decisions?project=${encodeURIComponent(project)}&limit=25`
+    : null
 
-  // Poll the pending view every 10s. Skipped entirely while a fetch is
-  // erroring so we don't hammer a broken endpoint.
-  React.useEffect(() => {
-    if (view !== 'pending') return
-    const iv = setInterval(refetch, 10000)
-    return () => clearInterval(iv)
-  }, [view, refetch])
+  const pendingQ = useApiData<ScopedInbox>(pendingUrl)
+  const decisionsQ = useApiData<DecisionsPayload>(decisionsUrl)
 
-  const resolve = async (entry: InboxEntry, action: 'approved' | 'denied' | 'explained', responseData?: unknown) => {
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [notes, setNotes] = useState<Record<string, ItemNote>>({})
+
+  const refetchAll = useCallback(() => {
+    pendingQ.refetch()
+    decisionsQ.refetch()
+  }, [pendingQ, decisionsQ])
+
+  const decide = useCallback(async (entry: InboxEntry, decision: Decision, responseData: unknown) => {
+    setBusyId(entry.id)
     const r = await fetchJson<InboxEntry & { _warning?: string }>('/api/inbox', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: entry.id, status: action, resolved_by: 'michael', response_data: responseData }),
+      body: JSON.stringify({ id: entry.id, status: decision, resolved_by: 'michael', response_data: responseData }),
     })
-    setModal(null)
-    if (!r.ok) { setActionError(r.error); setActionWarning(null); return }
-    setActionError(null)
-    setActionWarning(r.data._warning ? { entryId: entry.id, message: r.data._warning } : null)
-    refetch()
-  }
+    setBusyId(null)
+    if (!r.ok) {
+      // A 409/422 here is the server FAILING CLOSED — the request is still
+      // pending and nothing was changed. It belongs on the item that was
+      // refused, in the server's own words, not in a generic red banner that
+      // would leave the operator guessing whether the click half-landed.
+      setNotes(n => ({
+        ...n,
+        [entry.id]: { kind: 'refused', text: `Refused (${r.error.status}${r.error.code ? ` ${r.error.code}` : ''}): ${r.error.message}` },
+      }))
+      return
+    }
+    if (r.data._warning) {
+      setNotes(n => ({ ...n, [entry.id]: { kind: 'warning', text: r.data._warning as string } }))
+    } else {
+      setNotes(n => {
+        const { [entry.id]: _gone, ...rest } = n
+        return rest
+      })
+    }
+    refetchAll()
+  }, [refetchAll])
 
-  const entries = items ?? []
-  const historic = entries.filter(e => e.status !== 'pending')
-  const pending = entries.filter(e => e.status === 'pending')
-  const displayed = view === 'pending' ? pending : historic
+  const scope = pendingQ.data?.scope ?? null
+  const pending = pendingQ.data?.data ?? []
+  const decisions = decisionsQ.data?.data ?? []
+
+  const pendingSource = pendingUrl
+    ? `GET ${pendingUrl}`
+    : 'GET /api/inbox — not requested: no project is in scope'
+  const decisionsSource = decisionsUrl
+    ? `GET ${decisionsUrl} (table: approval_decisions, migration 061)`
+    : 'GET /api/inbox/decisions — not requested: no project is in scope'
+
+  // The empty message must name the project AND account for anything the
+  // scope deliberately excluded — a quiet card over 4 unplaceable requests
+  // would be the same silent-empty lie this repo has a build guard about.
+  const emptyMessage = (() => {
+    if (!project) return 'No project is in scope, so no approvals are listed. Pick a project in the rail.'
+    const excluded: string[] = []
+    if (scope && scope.other_project > 0) excluded.push(`${scope.other_project} belong to another project`)
+    if (scope && scope.unresolvable > 0) excluded.push(`${scope.unresolvable} could not be placed in any project`)
+    const tail = excluded.length > 0 ? ` Of the pending requests fleet-wide, ${excluded.join(' and ')}.` : ''
+    return `No agent is waiting on you in ${project}.${tail}`
+  })()
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      {modal && (
-        <ActionModal
-          entry={modal.entry}
-          action={modal.action}
-          onClose={() => setModal(null)}
-          onSubmit={data => resolve(modal.entry, modal.action, data)}
-        />
-      )}
-
-      {/* Sub-view toggle */}
-      <div className="flex gap-1 px-4 pt-4 pb-2 shrink-0">
-        {(['pending', 'historic'] as const).map(v => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${
-              view === v ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/60'
-            }`}
-          >
-            {v}
-            {v === 'pending' && pending.length > 0 && (
-              <span className="ml-1.5 bg-amber-500 text-black text-[10px] font-bold rounded-full px-1.5 py-0.5 leading-none">
-                {pending.length}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-        {actionError && (
-          <ApiErrorBanner error={actionError} onRetry={() => setActionError(null)} />
-        )}
-        {error && <ApiErrorBanner error={error} onRetry={refetch} />}
-        {!error && loading && <p className="text-white/30 text-xs py-8 text-center">Loading…</p>}
-        {!error && !loading && displayed.length === 0 && (
-          <div className="py-12 text-center">
-            <p className="text-white/30 text-sm">{view === 'pending' ? 'No pending requests' : 'No history yet'}</p>
+    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <Card
+        id="inbox-waiting"
+        title="Waiting on you"
+        source={pendingSource}
+        metric={scope ? { value: scope.matched, label: 'to decide', tone: scope.matched > 0 ? 'amber' : 'default' } : undefined}
+        action={project ? { label: 'Refresh', onClick: refetchAll } : undefined}
+        empty={!pendingQ.error && !pendingQ.loading && pending.length === 0
+          ? { active: true, message: emptyMessage }
+          : undefined}
+      >
+        {/* The error REPLACES the body: when `error` is set the empty state
+            above is not active and no rows render, so the card never shows a
+            reassuring "nothing waiting" over a refused load. */}
+        {pendingQ.error ? (
+          <ApiErrorBanner error={pendingQ.error} onRetry={pendingQ.refetch} />
+        ) : pendingQ.loading ? (
+          <p className="text-white/30 text-xs">Loading approvals for {project ?? 'no project'}…</p>
+        ) : (
+          <div className="space-y-2">
+            {pending.map(entry => (
+              <ApprovalCard
+                key={entry.id}
+                entry={entry}
+                busy={busyId === entry.id}
+                note={notes[entry.id] ?? null}
+                onDecide={(decision, responseData) => decide(entry, decision, responseData)}
+              />
+            ))}
           </div>
         )}
-        {!error && displayed.map(entry => (
-          <div
-            key={entry.id}
-            className="rounded-xl border border-white/[0.07] bg-[#0f0f0f] p-4"
-          >
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-white text-xs font-medium">{entry.agent}</span>
-                  <span className="text-white/30 text-[10px]">·</span>
-                  <span className="text-white/50 text-[10px]">{entry.type}</span>
+      </Card>
+
+      <Card
+        id="inbox-decisions"
+        title="Decisions on record"
+        source={decisionsSource}
+        metric={decisionsQ.data ? { value: decisionsQ.data.total, label: 'recorded' } : undefined}
+        empty={!decisionsQ.error && !decisionsQ.loading && decisions.length === 0
+          ? {
+            active: true,
+            message: project
+              ? `No decision has been recorded in ${project} yet. Every approval, refusal and refused-approval lands here the moment it happens.`
+              : 'No project is in scope, so no decision history is listed.',
+          }
+          : undefined}
+      >
+        {decisionsQ.error ? (
+          <ApiErrorBanner error={decisionsQ.error} onRetry={decisionsQ.refetch} />
+        ) : decisionsQ.loading ? (
+          <p className="text-white/30 text-xs">Loading decisions for {project ?? 'no project'}…</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {decisions.map(d => (
+              <li key={d.id} className="rounded-lg border border-white/10 bg-[#080808] px-3 py-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[9px] font-mono font-medium px-1.5 py-0.5 rounded border shrink-0 ${OUTCOME_STYLE[d.outcome]?.className ?? OUTCOME_STYLE.no_effect.className}`}>
+                    {OUTCOME_STYLE[d.outcome]?.label ?? d.outcome.toUpperCase()}
+                  </span>
+                  <span className="text-white text-[11px] font-medium truncate">
+                    {d.decision} by {d.decided_by}
+                  </span>
+                  <span className="text-white/25 text-[10px] shrink-0 ml-auto">{timeAgo(d.decided_at)}</span>
                 </div>
-                <p className="text-white/40 text-[11px] truncate">
-                  {typeof entry.context === 'object' && entry.context
-                    ? ((entry.context as Record<string, unknown>).summary as string) ??
-                      // 'resolution' is the read-modify-write blob PATCH /api/inbox
-                      // merges into context when response_data has no column
-                      // (see resolutionLine above, which renders it properly) —
-                      // without this exclusion it prints here too, as the
-                      // useless "resolution: [object Object]".
-                      Object.entries(entry.context).filter(([k]) => k !== 'fields' && k !== 'resolution').map(([k,v]) => `${k}: ${v}`).join(' · ').slice(0, 120)
-                    : String(entry.context ?? '—')}
+                <p className="text-white/55 text-[11px] leading-snug">{d.detail}</p>
+                {d.human_reason && (
+                  <p className="text-white/35 text-[10px] mt-0.5">their reason: {d.human_reason}</p>
+                )}
+                <p className="text-white/25 text-[10px] font-mono mt-0.5">
+                  {d.request_agent ?? 'unknown agent'} · {d.request_type ?? 'untyped'} · inbox {d.inbox_id}
                 </p>
-              </div>
-              <span
-                className="shrink-0 text-[10px] font-medium px-2 py-0.5 rounded-full"
-                style={{ background: `${STATUS_COLORS[entry.status]}20`, color: STATUS_COLORS[entry.status] }}
-              >
-                {entry.status}
-              </span>
-            </div>
-
-            {view === 'historic' && resolutionLine(entry) && (
-              <p className="text-white/40 text-[11px] mb-2">{resolutionLine(entry)}</p>
-            )}
-
-            {/* A 2xx `_warning` (write partially degraded, not failed) shown
-                as a neutral note on the card it came from — not the red
-                ApiErrorBanner, which would claim "data unavailable" about a
-                decision that actually landed. */}
-            {actionWarning && actionWarning.entryId === entry.id && (
-              <p className="text-amber-400/80 text-[11px] mb-2" role="status">
-                {actionWarning.message}
-              </p>
-            )}
-
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-white/25 text-[10px]">
-                {view === 'pending'
-                  ? `expires ${timeRemaining(entry.expires_at)}`
-                  : `resolved ${timeAgo(entry.resolved_at ?? entry.created_at)} by ${entry.resolved_by ?? '—'}`}
-              </span>
-              {view === 'pending' && (
-                <div className="flex gap-1">
-                  {TYPES_WITH_EFFECT.has(entry.type) ? (
-                    (['approved', 'explained', 'denied'] as const).map(action => (
-                      <button
-                        key={action}
-                        onClick={() => setModal({ entry, action })}
-                        className={`px-2.5 py-1 text-[10px] font-medium rounded-lg transition-colors capitalize ${
-                          action === 'approved' ? 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400'
-                          : action === 'denied' ? 'bg-red-600/20 hover:bg-red-600/40 text-red-400'
-                          : 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400'
-                        }`}
-                      >
-                        {action === 'approved' ? 'Approve' : action === 'denied' ? 'Deny' : 'Explain'}
-                      </button>
-                    ))
-                  ) : (
-                    // No registered effect for this type (see TYPES_WITH_EFFECT above) —
-                    // Approve/Deny would imply a consequence the server can't dispatch.
-                    <button
-                      onClick={() => resolve(entry, 'explained', { reason: 'Acknowledged — no automated effect for this request type.' })}
-                      className="px-2.5 py-1 text-[10px] font-medium rounded-lg transition-colors bg-white/10 hover:bg-white/20 text-white/70"
-                    >
-                      Acknowledge
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   )
 }

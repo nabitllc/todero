@@ -186,6 +186,10 @@ describe('formatters — an em dash for absent, a digit only for measured', () =
     expect(formatUsd(0)).toBe('$0.00')
     expect(formatUsd(0.0004)).toBe('$0.0004')
     expect(formatUsd(1.5)).toBe('$1.50')
+    // A sub-dollar figure is NOT rounded into cents — $0.0060 must not read
+    // as $0.01, which would be a rounded number shown as the recorded one.
+    expect(formatUsd(0.006)).toBe('$0.0060')
+    expect(formatUsd(0.027)).toBe('$0.0270')
   })
 
   it('formatMs(null) is an em dash; real values scale', () => {

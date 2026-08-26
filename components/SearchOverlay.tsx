@@ -85,7 +85,19 @@ interface Option {
   run: () => void
 }
 
+/** The dim monospace provenance treatment components/nav/Card.tsx established
+ *  for its `source` prop — every group in this palette states where its rows
+ *  came from, in the same style the design artboards call `.prov`. */
 const PROV = 'font-mono text-[10px] leading-snug text-white/35 break-all'
+
+function GroupHeader({ id, title, source }: { id: string; title: string; source: string }) {
+  return (
+    <div className="px-4 pt-3 pb-1.5">
+      <div id={id} className="text-[10px] uppercase tracking-wider text-white/45 font-medium">{title}</div>
+      <p className={PROV}>{source}</p>
+    </div>
+  )
+}
 
 export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverlayProps) {
   const [query, setQuery] = useState('')
@@ -113,6 +125,15 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
     const t = setTimeout(() => inputRef.current?.focus(), 50)
     return () => clearTimeout(t)
   }, [open])
+
+  // Escape closes even if focus has left the input (the arrow keys live on the
+  // input, which keeps focus; this is the safety net the old overlay had).
+  useEffect(() => {
+    if (!open) return
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [open, onClose])
 
   // ── leg 1: identifier ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -169,14 +190,15 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
   }, [onNavigate, onClose])
 
   const commands = useMemo(() => matchCommands(query), [query])
-  const chatMatches = !trimmed || 'chat'.startsWith(trimmed.toLowerCase()) || 'open chat'.includes(trimmed.toLowerCase())
+  const chatMatches =
+    !trimmed || 'chat'.startsWith(trimmed.toLowerCase()) || 'open chat'.startsWith(trimmed.toLowerCase())
   const issueRows = textLeg.data ?? []
 
   // Flat option list, in render order — the single source of truth for both
   // the arrow keys and `aria-activedescendant`.
   const options = useMemo<Option[]>(() => {
     const out: Option[] = []
-    if (keyLeg.state === 'ok' && ISSUE_SURFACE) {
+    if (keyLeg.state === 'ok' && keyLeg.data && ISSUE_SURFACE) {
       out.push({ id: 'opt-key', run: () => go(ISSUE_SURFACE) })
     }
     commands.forEach(c => out.push({ id: `opt-cmd-${c.key}`, run: () => go(c) }))
@@ -185,7 +207,7 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
       issueRows.forEach((r, i) => out.push({ id: `opt-issue-${r.task_key ?? i}`, run: () => go(ISSUE_SURFACE) }))
     }
     return out
-  }, [keyLeg.state, commands, chatMatches, issueRows, go, onNavigate, onClose])
+  }, [keyLeg.state, keyLeg.data, commands, chatMatches, issueRows, go, onNavigate, onClose])
 
   useEffect(() => { setActive(0) }, [query])
   useEffect(() => {
@@ -211,29 +233,25 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
   if (!open) return null
 
   const scopeName = scopeProject ?? 'this project'
-  let n = -1
+  // Rows are matched to options BY ID, never by a parallel counter: if a row
+  // is ever rendered that the option list does not contain, it degrades to
+  // inert rather than firing whatever action happened to sit at that index.
   const row = (id: string) => {
-    n += 1
-    const i = n
+    const i = options.findIndex(o => o.id === id)
+    const selected = activeId === id
     return {
       id,
       role: 'option' as const,
-      'aria-selected': options[active]?.id === id,
-      onMouseEnter: () => setActive(i),
+      'aria-selected': selected,
+      'aria-disabled': i < 0 ? true : undefined,
+      onMouseEnter: () => { if (i >= 0) setActive(i) },
       onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
       onClick: () => options[i]?.run(),
       className:
         'w-full text-left px-4 py-2 cursor-pointer border-b border-white/[0.03] flex items-center gap-3 ' +
-        (options[active]?.id === id ? 'bg-white/[0.07]' : 'hover:bg-white/[0.04]'),
+        (selected ? 'bg-white/[0.07]' : 'hover:bg-white/[0.04]'),
     }
   }
-
-  const GroupHeader = ({ id, title, source }: { id: string; title: string; source: string }) => (
-    <div className="px-4 pt-3 pb-1.5">
-      <div id={id} className="text-[10px] uppercase tracking-wider text-white/45 font-medium">{title}</div>
-      <p className={PROV}>{source}</p>
-    </div>
-  )
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh]" onClick={onClose}>
@@ -316,8 +334,11 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
                     <span className="block text-xs text-white/80 truncate">{c.label}</span>
                     <span className="block text-[10px] text-white/35 truncate">{c.question}</span>
                   </span>
+                  {/* The CURRENT canonical id, always from config — never the
+                      legacy token the nav plan happens to use, or this badge
+                      would print `sprint` under a row labelled "Bolt board". */}
                   <span className="text-[9px] font-mono text-white/25 shrink-0">
-                    {c.nav.kind === 'token' ? c.nav.token : `${c.destination}/${c.view}`}
+                    {c.isDestinationRow ? c.destination : c.key}
                   </span>
                 </div>
               ))}

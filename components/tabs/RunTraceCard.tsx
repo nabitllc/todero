@@ -237,10 +237,15 @@ export default function RunTraceCard({ runId, agentId, startedAt, completedAt, s
               </div>
             )}
 
+            {/* Three distinct sentences, because three distinct facts. A run
+                with no rows at all must not be described as "cost_usd is null
+                for every step" — there is no step to say that about. */}
             <p className="font-mono text-[10px] text-white/35 leading-relaxed mt-3">
-              {paid
-                ? `dollar figures are summed run_steps.cost_usd — ${formatUsd(breakdown.totalCostUsd)} across ${rows.length} step${rows.length === 1 ? '' : 's'}.`
-                : 'no step recorded a dollar cost (run_steps.cost_usd is null for every step), so no dollar column is shown. The dollar column appears only when a run touches a paid provider.'}
+              {rows.length === 0
+                ? 'no cost can be attributed either — the dollar column appears only when a run touches a paid provider, and this run recorded no steps at all.'
+                : paid
+                  ? `dollar figures are summed run_steps.cost_usd — ${formatUsd(breakdown.totalCostUsd)} across ${rows.length} step${rows.length === 1 ? '' : 's'}.`
+                  : `no step recorded a dollar cost (run_steps.cost_usd is null for all ${rows.length} step${rows.length === 1 ? '' : 's'}), so no dollar column is shown. The dollar column appears only when a run touches a paid provider.`}
             </p>
           </Panel>
 
