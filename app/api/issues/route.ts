@@ -1660,6 +1660,53 @@ export async function PATCH(req: NextRequest) {
   if (hubScope) beforeQ = beforeQ.eq('business_id', hubScope.businessId)
   const { data: before } = await beforeQ.single()
 
+  // TOD-2455: a missing row used to fall through to the write and surface the
+  // driver's own sentence — `Expected exactly one row from "issues", got 0.` —
+  // as a 500, while the task_key path twelve lines above returned a clean 404
+  // for exactly the same condition. One route, two answers to one question, and
+  // the worse of the two was raw database text reaching the caller.
+  if (!before) {
+    return NextResponse.json({ error: `No issue found for id=${id}` }, { status: 404 })
+  }
+
+  // TOD-2455: THESE VALIDATORS MOVED UP. They used to sit ~90 lines below, and
+  // the backlog-reset branch returns early — so `{status:'backlog', priority:
+  // 'anything'}` skipped all four and went straight to the write. Measured: the
+  // same invalid priority WITHOUT a status returned 400, and WITH it did not.
+  //
+  // The database is not a backstop: PRAGMA shows `priority` and `severity`
+  // carry no CHECK. So the one write path that could persist an arbitrary
+  // priority string was the most common gesture on the board — and my own
+  // owner-bypass at TOD-2452 is what made that path reachable for the operator
+  // who uses it most.
+  //
+  // Validation belongs before ANY early return, not after the ones that
+  // happened to be written first.
+  if (fields.priority && !VALID_PRIORITIES.includes(fields.priority as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'priority': "${fields.priority}". Allowed values: ${VALID_PRIORITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.severity && !VALID_SEVERITIES.includes(fields.severity as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'severity': "${fields.severity}". Allowed values: ${VALID_SEVERITIES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.resolution_type && !VALID_RESOLUTION_TYPES.includes(fields.resolution_type as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'resolution_type': "${fields.resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+  if (fields.status && !VALID_STATUSES.includes(fields.status as string)) {
+    return NextResponse.json(
+      { error: `Invalid value for 'status': "${fields.status}". Allowed values: ${VALID_STATUSES.join(', ')}` },
+      { status: 400 }
+    )
+  }
+
   if (before?.status === 'closed') {
     return NextResponse.json(
       { error: 'Issue is closed and read-only.' },
@@ -1747,30 +1794,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  if (fields.priority && !VALID_PRIORITIES.includes(fields.priority as string)) {
-    return NextResponse.json(
-      { error: `Invalid value for 'priority': "${fields.priority}". Allowed values: ${VALID_PRIORITIES.join(', ')}` },
-      { status: 400 }
-    )
-  }
-  if (fields.severity && !VALID_SEVERITIES.includes(fields.severity as string)) {
-    return NextResponse.json(
-      { error: `Invalid value for 'severity': "${fields.severity}". Allowed values: ${VALID_SEVERITIES.join(', ')}` },
-      { status: 400 }
-    )
-  }
-  if (fields.resolution_type && !VALID_RESOLUTION_TYPES.includes(fields.resolution_type as string)) {
-    return NextResponse.json(
-      { error: `Invalid value for 'resolution_type': "${fields.resolution_type}". Allowed values: ${VALID_RESOLUTION_TYPES.join(', ')}` },
-      { status: 400 }
-    )
-  }
-  if (fields.status && !VALID_STATUSES.includes(fields.status as string)) {
-    return NextResponse.json(
-      { error: `Invalid value for 'status': "${fields.status}". Allowed values: ${VALID_STATUSES.join(', ')}` },
-      { status: 400 }
-    )
-  }
 
   if (fields.parent_id !== undefined || fields.type !== undefined) {
     const effectiveType = (fields.type ?? before?.type) as string | undefined

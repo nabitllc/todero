@@ -213,6 +213,8 @@ export async function fetchLiveModels(
   let res: Response
   try {
     res = await fetch(`${LLM_BASE_URL}/models`, {
+      // TOD-2456: the Next fetch cache made a 'live' roster permanent.
+      cache: 'no-store' as RequestCache,
       headers: { Authorization: `Bearer ${LLM_API_KEY}` },
       signal: AbortSignal.timeout(timeoutMs),
     })

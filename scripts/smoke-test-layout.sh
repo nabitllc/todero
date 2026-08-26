@@ -49,6 +49,29 @@ else
   echo "⚠️  Header not found"
 fi
 
+# Checks 8-11 (TOD-2456): four guards existed and RAN NOWHERE.
+#
+# A critic measured it: `grep -rn no-cloud-provider package.json scripts
+# .githooks .github` returned zero hits outside the guard's own file. Same for
+# no-invented-projects, no-dead-modules and no-phantom-columns. Only
+# check:secrets and no-silent-empty were wired, via prebuild — and `npm run
+# build` is forbidden on this host, so prebuild never fires here either.
+#
+# A guard that only runs when a human remembers it is a guard that stops running
+# the first time someone is busy. Each of these was proven red-then-green when
+# it was written; that proof is worthless if nothing invokes them. They are
+# wired here rather than into prebuild precisely because the smoke test is the
+# gate that actually runs in this environment.
+for guard in no-invented-projects no-dead-modules no-phantom-columns no-cloud-provider; do
+  echo ""
+  if node "$(dirname "$0")/$guard.mjs"; then
+    echo "✅ $guard passed"
+  else
+    echo "❌ $guard FAILED — see scripts/$guard.mjs"
+    exit 1
+  fi
+done
+
 # Check 6 (TOD-654): no tab may render an empty state over a non-ok response.
 echo ""
 if node "$(dirname "$0")/no-silent-empty.mjs"; then

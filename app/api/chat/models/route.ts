@@ -10,6 +10,27 @@ import { NextResponse } from 'next/server'
 import { LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels } from '@/lib/llm-provider'
 
 export const runtime = 'nodejs'
+// TOD-2456: WITHOUT THIS, THE "LIVE" MODEL LIST IS NOT LIVE. Next 14 caches the
+// fetch inside fetchLiveModels for the life of the process, so this route
+// served whatever the endpoint said the FIRST time it was hit — forever.
+//
+// A critic measured it: it killed the endpoint and this route kept answering
+// HTTP 200 with the old menu; it started a different endpoint serving one
+// different model and this route still served the original two, across six
+// calls and a cache-busting query string.
+//
+// That is the channel goal — "the model list is read live from that endpoint,
+// never hardcoded" — failing in the exact way the acceptance list declares
+// impossible, and it is WORSE than a hardcoded constant: a constant is
+// greppable, this was invisible to every check in the repo including the
+// 11-test file written to prevent it.
+//
+// Fourteen other routes under app/api already set this. The one whose entire
+// purpose is liveness did not. POST /api/chat was exempt only because POST
+// handlers are dynamic by default, which is why it correctly reported the
+// endpoint unreachable in the same second this route was serving a menu.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET() {
   const live = await fetchLiveModels(5000, { includeContextLength: true })
