@@ -76,7 +76,17 @@ export async function POST(req: NextRequest) {
 
     const projectName = business?.name ?? 'Unknown'
 
-    // 3. Create new sprint (24h: today 7am to tomorrow 7am)
+    // 3. Create new bolt — today's date to tomorrow's date.
+    //
+    // This used to claim "24h: today 7am to tomorrow 7am". It never did that:
+    // the two values below are `.toISOString().split('T')[0]`, i.e. whole
+    // DATES, so the window is midnight to midnight and there is no 7am
+    // anywhere. `sprints.start_date` and `.end_date` are DATE columns
+    // (migrations/000_baseline_schema.sql:76-77, never altered), so an
+    // hour-accurate bolt — HANDOFF.md's "opens automatically at a set time" —
+    // is not reachable from this table without a TIMESTAMPTZ migration. That
+    // migration is a separate decision; until it is made, this writes whole
+    // dates and lib/bolt-time.ts renders exactly that precision and no more.
     const today = new Date()
     const startDate = today.toISOString().split('T')[0]
     const tomorrow = new Date(today.getTime() + 86400000)

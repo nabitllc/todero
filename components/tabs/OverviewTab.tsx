@@ -6,6 +6,7 @@ import ActivityFeed from '@/components/ActivityFeed'
 import { readApiError, type ApiError } from '@/hooks/useApiData'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import Card from '@/components/nav/Card'
+import { classifyWindow, formatRemaining, parseBoundary, pickHeadline } from '@/lib/bolt-time'
 
 // cards-and-identity piece (Wave 6): Now's four cards — Needs you, Running
 // now, Bolt status, Recent activity. Every other panel this file used to
@@ -95,30 +96,10 @@ function PendingRows({ rows = 2 }: { rows?: number }) {
   )
 }
 
-/**
- * Bolt units (build instruction 4): a 24h window rendered with day-granularity
- * math is exactly the fabrication TOD-2401 deleted ("0 days left" with hours
- * still on the clock). This never invokes day math for anything under 48h —
- * it reads real hours/minutes off the millisecond difference directly, so
- * there is no rounding step that can collapse "9 hours left" into "0".
- */
-function formatRemaining(ms: number): string {
-  if (ms <= 0) return 'ended'
-  // Round to a single whole-minute integer FIRST, then derive h/m from THAT
-  // integer via floor/mod. Rounding the leftover minutes independently of
-  // the floored hour (e.g. h = floor(ms/3600000), m = round(remainder/60000))
-  // can round 59.97 minutes up to a literal "60m" instead of carrying into
-  // the next hour — a smaller instance of the same rounding-vs-truncation
-  // class of bug this function exists to avoid.
-  const totalMinutes = Math.round(ms / 60000)
-  if (totalMinutes < 60) return `${totalMinutes}m`
-  if (totalMinutes < 48 * 60) {
-    const h = Math.floor(totalMinutes / 60)
-    const m = totalMinutes % 60
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-  return `${Math.floor(ms / 86400000)}d`
-}
+// Bolt units (build instruction 4) and every other bolt-time decision now live
+// in lib/bolt-time.ts. Round 4 hardened formatRemaining here and left the
+// SELECTION feeding it unguarded, which is how the headline came to read
+// "ended left" while a live bolt had 8h58m to run. One module, one copy.
 
 // ─── Needs you — inbox + blockers + risk radar merged (build instruction 3) ──
 
@@ -365,31 +346,48 @@ function BoltStatusCard({ projectFilter }: { projectFilter: string | null }) {
     )
   }
 
+  // One `now` for the whole render, so the headline and the tiles below it
+  // cannot disagree by a tick.
+  const now = Date.now()
   const computed = rows.map(row => {
-    const startsAt = row.start_date ? new Date(row.start_date) : null
-    const endsAt = row.end_date ? new Date(row.end_date) : null
-    const windowMs = startsAt && endsAt ? endsAt.getTime() - startsAt.getTime() : null
-    // <=30h counts as bolt-scale even allowing for a little slack around the
-    // nominal 24h; a real two-week sprint is nowhere near this threshold.
-    const isBolt = windowMs !== null && windowMs <= 30 * 3600000
-    const remainingMs = endsAt ? endsAt.getTime() - Date.now() : null
-    const elapsedMs = startsAt ? Date.now() - startsAt.getTime() : null
+    const { windowMs, kind, windowLabel } = classifyWindow(row.start_date, row.end_date)
+    const startsAt = parseBoundary(row.start_date)
+    const endsAt = parseBoundary(row.end_date)
+    const remainingMs = endsAt ? endsAt.getTime() - now : null
+    const elapsedMs = startsAt ? now - startsAt.getTime() : null
     const pct = windowMs && windowMs > 0 && elapsedMs !== null ? Math.max(0, Math.min(100, Math.round((elapsedMs / windowMs) * 100))) : null
-    const noun = windowMs === null ? 'Bolt' : isBolt ? 'Bolt' : 'Sprint'
-    const label = row.name ?? (row.sprint_number != null ? `${noun} ${row.sprint_number}` : noun)
-    return { row, remainingMs, pct, label, noun }
+    // A row nothing measured is not a bolt. Round 4's ternary read
+    // `windowMs === null ? 'Bolt'`, which is how a row with no start date got
+    // a "24h" badge printed above "10d left".
+    const noun = kind === 'bolt' ? 'Bolt' : kind === 'sprint' ? 'Sprint' : 'Untimed'
+    const label = row.name ?? (
+      row.sprint_number != null
+        ? (kind === 'unknown' ? `#${row.sprint_number}` : `${noun} ${row.sprint_number}`)
+        : noun
+    )
+    return { row, remainingMs, pct, label, noun, windowLabel }
   })
-  const soonest = computed.reduce((a, b) => (a.remainingMs ?? Infinity) <= (b.remainingMs ?? Infinity) ? a : b)
+  // The soonest row still in the FUTURE. Round 4 reduced on remainingMs, which
+  // goes negative once a row expires, so the most-expired row always won.
+  const headline = pickHeadline(rows, now)
 
   return (
     <Card
       id="now-bolt-status"
       title="Bolt status"
       source={source}
-      metric={soonest.remainingMs !== null ? { value: formatRemaining(soonest.remainingMs), label: 'left' } : undefined}
+      metric={
+        headline.state === 'live'
+          ? { value: formatRemaining(headline.remainingMs), label: 'left' }
+          : headline.state === 'ended'
+            // Never the bare word "left" over an expired row — that pairing is
+            // what produced the string "ended left" on the landing screen.
+            ? { value: 'ended', label: `${formatRemaining(headline.endedMsAgo)} ago` }
+            : undefined
+      }
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {computed.map(({ row, remainingMs, pct, label, noun }) => {
+        {computed.map(({ row, remainingMs, pct, label, windowLabel }) => {
           const urgent = remainingMs !== null && remainingMs <= 3 * 3600000 && remainingMs > 0
           const ended = remainingMs !== null && remainingMs <= 0
           return (
@@ -397,8 +395,8 @@ function BoltStatusCard({ projectFilter }: { projectFilter: string | null }) {
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-white/50 text-[10px] font-semibold uppercase tracking-widest">{label}</span>
                 {row.project && <span className="text-white/25 text-[9px]">{row.project}</span>}
-                {noun === 'Bolt' && (
-                  <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/40 font-mono">24h</span>
+                {windowLabel && (
+                  <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/40 font-mono">{windowLabel}</span>
                 )}
                 {urgent && <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold">DUE SOON</span>}
               </div>
