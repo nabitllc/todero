@@ -54,13 +54,15 @@ const ENDPOINT = '/api/connect'
  * here would make the protocol look more complete than it is.
  */
 const HANDSHAKE = `POST /api/connect
-  { tool_name, agent_name }
-→ { connection_id,
-    agent_id,
+  { tool_name, agent_name }   // both optional; the reply names what it registered
+→ { connection_id, agent_id, agent_name, runtime, status,
     heartbeat_url,      // POST to beat; GET to poll for work
-    task_report_url,    // PATCH /api/issues
     sse_url: null,      // this instance has no event bus
-    registered_at, store, warning }`
+    task_report_url,    // "/api/issues" — PATCH to report a task
+    registered_at, capabilities, store, warning }
+
+DELETE /api/connect { connection_id } | { agent_id }
+→ marks the agent offline and clears its heartbeat`
 
 export default function FleetRegisterCard({ id = 'fleet-register' }: { id?: string }) {
   const [register, setRegister] = useState<ConnectRegister | null>(null)
@@ -109,7 +111,7 @@ export default function FleetRegisterCard({ id = 'fleet-register' }: { id?: stri
       id={id}
       title="How does an agent join this fleet?"
       source={source}
-      metric={loaded ? { value: rows.length, label: 'completed handshakes' } : undefined}
+      metric={loaded ? { value: rows.length, label: rows.length === 1 ? 'completed handshake' : 'completed handshakes' } : undefined}
     >
       <div className="space-y-3">
         <pre className="font-mono text-[10.5px] leading-relaxed text-white/55 bg-[#0a0a0a] border border-white/10 rounded-lg px-3 py-2.5 overflow-x-auto">

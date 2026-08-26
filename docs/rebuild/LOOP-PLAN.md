@@ -39,6 +39,47 @@ closest and lift the worst off zero.
 | 4 -> 9 | Agent Visualization Fidelity | Fleet office. |
 | 6 -> 8 | Identity, Auth & Access Control | Blocked on real sessions replacing three shared passwords. Bigger than a round. |
 
+## OPEN DECISION — do not guess. Two deliberate rules contradict.
+
+Found 2026-08-26 by the Fleet builder, reproduced 5/5 with curl.
+
+`GET /api/db/issues?project=eq.Limiglow&...` returns **400 `unscoped_issues_read`**
+when the referer is a Fleet page, and 200 from a Work page. Same query, same
+`/p/limiglow/` in both referers, and the query explicitly names the in-scope
+project.
+
+Both halves are deliberate and both are documented:
+
+- `middleware.ts:87-91` — `fleet/*` and `runs/*` are **cross-project
+  destinations**. Middleware refuses to stamp a project scope there on purpose:
+  *"agent-level aggregates that span every project an agent has ever touched;
+  scoping them would hide the cross-project picture they exist to show."*
+- The issues guard then refuses any issues read with no resolved scope, because
+  an unresolvable boundary must fail closed rather than widen.
+
+Together they mean **Fleet cannot read issues at all**, even when the caller
+resolved the boundary itself by naming the project. A user-visible loader on
+Fleet 400s.
+
+`scripts/no-unscoped-issues.mjs` passes throughout, because none of its ten
+probes send an explicit in-scope `project=` filter from a cross-project
+destination. The guard is not wrong; that case is simply outside it.
+
+Three defensible answers, and picking wrong widens a security boundary:
+
+1. An explicit `project=eq.<in-scope>` filter satisfies the requirement
+   regardless of origin — the caller resolved the boundary deliberately, which
+   is exactly what the refusal message asks for.
+2. Fleet is cross-project, so issues reads from it should be **allowed to span
+   projects** — the middleware comment's own logic, followed through.
+3. Fleet should not read `issues` at all, and the loader firing that request is
+   the actual defect.
+
+(1) is the smallest change and matches the error message's own instruction.
+(2) is what the middleware comment implies. (3) is the most conservative.
+**Ask the owner.** Do not resolve this in an unattended round, and add a probe
+for this exact case to `scripts/no-unscoped-issues.mjs` once it is decided.
+
 ## Queue, in order
 
 1. **Work cards critic** — in flight at handoff time. Apply its single named gap.
