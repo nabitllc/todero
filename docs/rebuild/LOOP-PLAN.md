@@ -109,31 +109,35 @@ for this exact case to `scripts/no-unscoped-issues.mjs` once it is decided.
 
 ## Queue, in order
 
-The original seven-item queue is DONE or superseded — items 1-6 all landed
-across waves 1-5, and the scoreboard replaced it as the source of work. The
-standing order says: when the queue empties, pick the next-worst channel off
-`channels.json` and write a piece for it. That is now the whole queue rule.
+The queue rule IS the queue: when it empties, pick the next-worst channel off
+`channels.json` and write a piece for it. Regenerate the live numbers rather
+than trusting any table in this file.
 
-**In flight (wave 6, dispatched 2026-08-26 ~08:00):**
+**In flight (wave 7, dispatched 2026-08-26 ~14:00):**
 
-1. **agent-visualization** — build or remove `/api/tasks`; stop the 404 storm;
-   phantom agents. Owns `app/api/tasks/**`, `components/office/OfficeCanvas.tsx`,
-   `hooks/useAgentStatus.ts`, `lib/agent-roster.ts`.
-2. **memory-loop** — a real write path + FTS5 retrieval + overflow that errors.
-   Owns `lib/agent-memory.ts`, `app/api/agent-memory/**`, migration 067.
-3. **issue-permalink** — an issue route, palette verbs, search modifiers. Lifts
-   TWO channels. **Has a seam it cannot cross**: the router lives in
-   `app/page.tsx`, which only the orchestrator edits — it delivers an exact diff
-   for me to apply, and the piece is INCOMPLETE until I apply it.
-4. **commerce-hardening** — atomic inventory, `commerce:*` permissions, watch
-   the card. Owns `lib/commerce.ts`, `app/api/commerce/**`, migration 069.
+1. **conversations-transport** — inbound webhook SHAPE and an outbound adapter
+   interface with ZERO implementations. The provider is an OWNER DECISION now on
+   the board; do not pick one, do not stub one. Owns `lib/conversations.ts`,
+   `app/api/conversations/**`, migration 070.
+2. **issue-permalink (second pass)** — coverage that goes red when either
+   `issueKey` guard in `app/page.tsx` is mutated, plus four measured UI defects.
+   Delivers SEAM DIFFS; the router is orchestrator-owned.
+3. **boolean-columns** — inventory every boolean-MEANING column in both
+   dialects, then close the gap TOD-2464 could not: three columns declared
+   INTEGER that a filter would silently fail on. Owns `lib/db/**`, migration 071.
+4. **hub-connections** — `resolveHubDiscord` has zero callers, so custody is
+   write-only: a credential can be stored safely and is then never used. Owns
+   `lib/connections.ts`, `app/api/connections/**`, migration 072 if needed.
+5. **clone-and-run (second pass)** — an ACTUAL fresh-copy trial in a temp clone,
+   plus making `doctor` unable to report a fake green. This is the owner's
+   primary stated goal for the whole program. Owns `scripts/setup.mjs`,
+   `scripts/doctor.mjs`, `package.json`, `README.md`.
 
-**Next, after wave 6 is judged:**
+Still running from wave 6: **agent-visualization**. Integrate its work before
+dispatching anything else onto `app/api/tasks/**`, `components/office/**`,
+`hooks/useAgentStatus.ts` or `lib/agent-roster.ts`.
 
-5. Customer Conversations — blocked on a provider decision the owner has not
-   made. Do the non-provider half (inbound webhook shape, watch the card) and
-   ASK about the provider rather than picking one.
-6. The **Paperclip.ing feature study**.
+**Next, after wave 7 is judged:** the Paperclip.ing feature study.
 
 ## Fan out. Do not build serially.
 
@@ -205,15 +209,21 @@ builders never choose their own.
 |---|---|---|
 | 058 | orchestrator | `hub_settings` — per-hub key/value. LANDED. |
 | 059 | connections builder | per-hub connections (Discord credential custody). LANDED. |
-| 060 | runs builder | `run_steps` — per-step traces |
-| 061 | approvals builder | approval decisions / audit trail |
 | 065 | responsibilities builder | `agent_responsibilities`. LANDED. |
-| 066 | phantom-column builder | bug report columns (`environment`, `steps_to_reproduce`, `expected_behavior`, `actual_behavior`). LANDED. Deliberately does NOT add `test_status`. |
-| 067 | memory-loop builder (wave 6) | memory store + FTS5 retrieval |
-| 068 | issue-permalink builder (wave 6) | reserved; may go unused |
-| 069 | commerce builder (wave 6) | atomic inventory + `commerce:*` permissions |
+| 066 | phantom-column builder | bug report columns. LANDED. Deliberately does NOT add `test_status`. |
+| 067 | memory-loop builder (wave 6) | ALLOCATED, WENT UNUSED — the chain was already built. |
+| 068 | issue-permalink builder (wave 6) | ALLOCATED, WENT UNUSED. |
+| 069 | commerce builder (wave 6) | ALLOCATED, WENT UNUSED — no schema change was needed. |
+| 070 | conversations builder (wave 7) | threading, if the store cannot represent it |
+| 071 | boolean-columns builder (wave 7) | boolean-meaning column declarations |
+| 072 | hub-connections builder (wave 7) | only if needed |
 
-Next free: **070**.
+Next free: **073**.
+
+Three of wave 6's allocations went unused, and that is the registry working as
+intended rather than waste: a number is reserved BEFORE dispatch so two builders
+cannot collide, and a builder that finds it needs no schema change should say so
+rather than inventing one to justify its allocation.
 
 ## Integration is the orchestrator's job, and it is a real job
 
@@ -238,6 +248,33 @@ how a green wave ships a broken app:
    hardcoded emoji table survived two sweeps by living exactly there.
 
 Only then do the per-piece critics' verdicts mean anything about the product.
+
+## Decisions for the owner go on the BOARD, not into chat
+
+Owner instruction, 2026-08-26: *"Add Decisions needed by me to Flight Board and
+I will answer them when I see you added them."*
+
+He reads the board from his phone and misses questions buried in a long reply.
+`scripts/board/decisions.json` already existed and the board already renders the
+section with an open count — it simply had nothing open in it.
+
+Rules for adding one:
+
+* Status `recommended` = open and waiting. Status `accepted` = he answered.
+* Every entry carries a **recommendation**, the **why**, and the **tradeoff of
+  picking against it** — including where the recommendation is least certain.
+  A decision presented without a recommendation is work pushed back onto him.
+* Only raise what genuinely cannot be resolved from the code, the brief, or a
+  sensible default. Manufacturing decisions to look thorough wastes the one
+  channel he actually reads.
+* Do NOT block the whole wave waiting for an answer. Build everything that does
+  not depend on it, and say plainly in the piece what stays unbuilt until he
+  chooses.
+
+Five are open as of wave 7. The first — that the stop rule cannot be satisfied
+as written, because "every channel clears its goal" and "multi-tenancy is
+post-MVP, skip it" contradict — is the one that matters most, since the loop has
+been running toward a finish line it had already been told to make unreachable.
 
 ## Per round, without exception
 
