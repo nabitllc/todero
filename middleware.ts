@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { hasPermission } from '@/lib/rbac-types'
 import type { Role } from '@/lib/rbac-types'
 import { isInternalCall } from '@/lib/internal-auth'
+import { resolveDecisionRole } from '@/lib/approvals'
 
 const ADMIN_PASSWORD = process.env.MC_PASSWORD ?? 'kaos2026'
 const VIEWER_PASSWORD = process.env.MC_VIEWER_PASSWORD ?? 'view2026'
@@ -44,6 +45,24 @@ const SCOPE_HEADER = 'x-mc-project'
  * the ambiguous case and honours only this explicit one.
  */
 const CROSS_PROJECT_HEADER = 'x-mc-all-projects'
+
+/**
+ * OPEN DECISION (docs/rebuild/LOOP-PLAN.md), resolved as option 1: the project
+ * named in THIS SAME request's own path or Referer, stamped ONLY when that
+ * path/Referer is a cross-project destination (fleet/*, runs/*) — i.e. exactly
+ * the case where `SCOPE_HEADER` above comes out null not because nothing was
+ * nameable, but because `isCrossProjectDestination` refused to let it narrow.
+ *
+ * This header is NOT a scope and is never read as one anywhere. It exists so
+ * `app/api/db/[...path]/route.ts` can let an issues read through when — and
+ * only when — the caller's OWN explicit `project=eq.<x>` filter repeats this
+ * exact value back. A caller that does not already know the project this
+ * request is "standing on" gains nothing by the header being present: it
+ * grants nothing by itself, it only confirms an explicit filter's claim.
+ * Stripped from the inbound request before being recomputed, same as the two
+ * headers above, so a caller cannot assert it for itself.
+ */
+const CROSS_PROJECT_HINT_HEADER = 'x-mc-cross-project-hint'
 
 const PROJECT_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -127,33 +146,52 @@ function resolveProjectScope(req: NextRequest): string | null {
  */
 function withResolvedScope(req: NextRequest): Headers {
   const headers = new Headers(req.headers)
-  // Both stripped first: a caller must never be able to assert either of these
-  // for itself, or the boundary is decided by the thing it constrains.
+  // All three stripped first: a caller must never be able to assert any of
+  // these for itself, or the boundary is decided by the thing it constrains.
   headers.delete(SCOPE_HEADER)
   headers.delete(CROSS_PROJECT_HEADER)
+  headers.delete(CROSS_PROJECT_HINT_HEADER)
   const project = resolveProjectScope(req)
   if (project) {
     headers.set(SCOPE_HEADER, project)
-  } else if (isCrossProjectRequest(req)) {
-    headers.set(CROSS_PROJECT_HEADER, '1')
+  } else {
+    const hinted = crossProjectDestinationName(req)
+    if (hinted !== null) {
+      headers.set(CROSS_PROJECT_HEADER, '1')
+      headers.set(CROSS_PROJECT_HINT_HEADER, hinted)
+    }
   }
   return headers
 }
 
-/** True when the originating screen is one of the deliberately global destinations. */
-function isCrossProjectRequest(req: NextRequest): boolean {
+/**
+ * The project named in this request's own path or Referer, returned ONLY when
+ * that same path/Referer is a cross-project destination — i.e. exactly the
+ * case that makes `resolveProjectScope` return null above. Returns null both
+ * when no project is nameable at all AND when a nameable project's
+ * destination is NOT cross-project (a normal `/p/<slug>/work/...` read),
+ * since neither case is this header's concern; the caller for those either
+ * already has `SCOPE_HEADER` or has nothing to hint.
+ */
+function crossProjectDestinationName(req: NextRequest): string | null {
   const own = projectFromPathname(req.nextUrl.pathname)
-  if (own) return isCrossProjectDestination(own.rest)
+  if (own) return isCrossProjectDestination(own.rest) ? own.project : null
   const referer = req.headers.get('referer')
-  if (!referer) return false
+  if (!referer) return null
   try {
     const refUrl = new URL(referer)
-    if (refUrl.origin !== req.nextUrl.origin) return false
+    if (refUrl.origin !== req.nextUrl.origin) return null
     const fromRef = projectFromPathname(refUrl.pathname)
-    return fromRef ? isCrossProjectDestination(fromRef.rest) : false
+    if (!fromRef) return null
+    return isCrossProjectDestination(fromRef.rest) ? fromRef.project : null
   } catch {
-    return false
+    return null
   }
+}
+
+/** True when the originating screen is one of the deliberately global destinations. */
+function isCrossProjectRequest(req: NextRequest): boolean {
+  return crossProjectDestinationName(req) !== null
 }
 
 // Methods that modify data — viewers are blocked from these on API routes
@@ -177,6 +215,31 @@ function hasValidSession(req: NextRequest): boolean {
 }
 
 /** Returns true if the role can perform write operations on issues/board. */
+/**
+ * TOD-2478. The role this request may act with, derived from the CREDENTIAL in
+ * `mc-auth`. `mc-role` is a string the client types: it may NARROW this, never
+ * widen it. Null means no session credential was presented at all — which, past
+ * the gate above, means an internal-secret caller.
+ *
+ * `agentRoleHeader` is deliberately null. Honouring X-Agent-Role here would let
+ * an internal caller narrow itself into a 403 it does not get today, and this
+ * seam is not the place to change machine behaviour.
+ */
+function resolveRequestRole(req: NextRequest): Role | null {
+  return resolveDecisionRole(
+    {
+      sessionPassword: req.cookies.get('mc-auth')?.value ?? null,
+      claimedRole: req.cookies.get('mc-role')?.value ?? null,
+      agentRoleHeader: null,
+    },
+    {
+      ownerPassword: ADMIN_PASSWORD,
+      viewerPassword: VIEWER_PASSWORD,
+      memberPassword: process.env.MC_MEMBER_PASSWORD || null,
+    },
+  ).role
+}
+
 function canWrite(role: Role): boolean {
   return hasPermission(role, 'issues:write')
 }
@@ -243,11 +306,20 @@ export function middleware(req: NextRequest) {
     }
 
     if (WRITE_METHODS.has(req.method)) {
-      const role = getRoleFromCookie(req)
+      // TOD-2478: derived from the CREDENTIAL, not from a cookie the client types.
+      const role = resolveRequestRole(req)
 
       // Roles management endpoints require roles:admin (owner only)
       if (pathname.startsWith('/api/roles')) {
-        if (!role || !canManageRoles(role)) {
+        // BOTH conditions, on purpose. The credential must GRANT roles:admin —
+        // that closes the forgery — AND the operator must still explicitly name a
+        // recognised role, which preserves today's denial of an owner credential
+        // sending no mc-role at all. Requiring only the first WIDENS this
+        // endpoint: the first draft of this diff did exactly that and two
+        // assertions in __tests__/rbac-middleware.test.ts caught it. The cookie
+        // may narrow, or be REQUIRED. It may never widen. Do not simplify this.
+        const claimed = getRoleFromCookie(req)
+        if (!claimed || !role || !canManageRoles(role)) {
           return NextResponse.json(
             { error: 'Forbidden: owner role required to manage workspace roles' },
             { status: 403 }
@@ -256,14 +328,26 @@ export function middleware(req: NextRequest) {
         return NextResponse.next({ request: { headers: scopedHeaders } })
       }
 
-      // All other write endpoints: viewer is blocked; owner/member/admin/god pass through
-      if (role === 'viewer') {
+      // A write is allowed by a GRANT, never by the absence of a claim.
+      //
+      // MEASURED BEFORE THE FIX, with the read-only viewer password: DELETE
+      // /api/issues answered 403 only when the caller volunteered
+      // `mc-role=viewer`, and 200 {"ok":true} with mc-role=owner, with
+      // mc-role=god, with mc-role=notarole, and with the cookie OMITTED
+      // ENTIRELY. The row was really deleted. A viewer that simply declined to
+      // name itself fell straight through the old `role === 'viewer'` check into
+      // the pass-through below — a fail-open reached only AFTER hasValidSession()
+      // had already admitted a human.
+      if (role && !canWrite(role)) {
         return NextResponse.json(
           { error: 'Read-only access: viewer role cannot modify data' },
           { status: 403 }
         )
       }
-      // No cookie = server-side call (e.g. agent → API) — pass through
+      // role === null: no session credential at all. Past the gate above that
+      // means an internal-secret caller, which keeps its pass-through. Making
+      // machine callers prove a per-principal identity is the agent-keys plan,
+      // not this seam.
     }
     return NextResponse.next({ request: { headers: scopedHeaders } })
   }
