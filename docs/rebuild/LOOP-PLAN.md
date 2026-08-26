@@ -59,6 +59,38 @@ closest and lift the worst off zero.
    never appears on the Limiglow-scoped card.
 7. **Paperclip.ing feature study** — only if the queue empties.
 
+## Fan out. Do not build serially.
+
+The owner caught this on 2026-08-25: six rounds were built by the orchestrator
+alone while the loop's own design is a fan-out. `HANDOFF.md`'s "one piece at a
+time with a written spec and **exclusive file ownership**" — that ownership
+clause exists BECAUSE agents run in parallel. Read as a serialization rule it
+makes the orchestrator the bottleneck, which is exactly what happened.
+
+**Default: 3-5 builders concurrently, then their critics concurrently.**
+
+Two constraints that are real, not caution:
+
+1. **The shared seams are `app/page.tsx` and `components/nav/config.ts`.**
+   Every destination has to be wired through them, so no builder may touch
+   either. The orchestrator does all wiring, serially, after builders land.
+2. **Builders must not run git at all.** The orchestrator stages explicit paths
+   and commits. On 2026-08-25 a blanket `git add -A` swept a critic's temporary
+   edit into two commits and shipped `/api/issues` with project scoping
+   disabled — and the scope guard passed it, because that guard could not fail
+   (TOD-2419). Concurrency plus blanket staging is how that happens.
+
+**After every fan-out, run one pass that owns nothing and greps everything.**
+`HANDOFF.md` records why: a hardcoded emoji table survived two rounds of a
+sweep whose job was removing exactly that, because it sat between two
+ownership boundaries. Disjoint ownership stops agents clobbering each other AND
+lets a defect sit untouched in the gap.
+
+Give every builder: its spec, its exclusive file list, the DO-NOT-TOUCH list,
+the environment traps below, and the instruction to report what it could NOT do
+honestly. A builder that reports a gap is worth more than one that reports
+success.
+
 ## Per round, without exception
 
 1. Write the piece spec to `docs/rebuild/pieces/pieces6/<id>.md` with a numbered
