@@ -1,12 +1,22 @@
 /**
  * The request-level glue between middleware.ts's resolved scope and
- * lib/commerce.ts's pure `resolveCommerceScope()`.
+ * lib/scope.ts's pure `resolveProjectScope()`.
  *
- * It lives here rather than in lib/commerce.ts so that file stays free of
+ * It lives here rather than in lib/scope.ts so that file stays free of
  * NextRequest and remains unit-testable; and it lives in ONE file rather than
  * three so the three commerce routes cannot drift into three different answers
  * to the same question — which is exactly how `/api/db/issues` and
  * `/api/issues` ended up 400-ing and 200-ing on the identical unscoped read.
+ *
+ * one-scope-answer: the rule itself used to be a second copy, in
+ * `lib/commerce.ts:resolveCommerceScope()`, of the twelve lines in
+ * `lib/conversations.ts:resolveScope()`. They differed in an error string
+ * (`scope_mismatch` vs `scope_conflict`), a result field name (`why` vs
+ * `message`), and one check commerce simply did not have — conversations
+ * capped a project name at 120 characters and commerce did not. That last
+ * difference is what a duplicated boundary always eventually looks like: not a
+ * disagreement anyone chose, just one copy that never got the fix. Both
+ * surfaces now call `resolveProjectScope()` and commerce has the cap.
  *
  * WHAT IT WILL NOT DO
  *   There is no `all_projects=1` here. Every other list read in this app has a
@@ -24,7 +34,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveCommerceScope } from '@/lib/commerce'
+import { COMMERCE_READ_SCOPE, COMMERCE_WRITE_SCOPE, resolveProjectScope } from '@/lib/scope'
 
 /** The header middleware.ts stamps the resolved project on. Never client-set. */
 const SCOPE_HEADER = 'x-mc-project'
@@ -52,11 +62,15 @@ export function commerceScope(
       ? requestedProject
       : req.nextUrl.searchParams.get('project')
 
-  const verdict = resolveCommerceScope(resolved, requested ?? null, kind)
+  const verdict = resolveProjectScope(
+    resolved,
+    requested ?? null,
+    kind === 'write' ? COMMERCE_WRITE_SCOPE : COMMERCE_READ_SCOPE,
+  )
   if (!verdict.ok) {
     return {
       refusal: NextResponse.json(
-        { error: verdict.error, message: verdict.why },
+        { error: verdict.error, message: verdict.message },
         { status: verdict.status },
       ),
     }

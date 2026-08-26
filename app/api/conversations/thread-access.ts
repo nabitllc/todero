@@ -10,19 +10,29 @@
  * closed one round ago.
  *
  * THE TWO RULES, IN ONE PLACE
- *   1. The project comes from resolveScope() and nowhere else: middleware's
- *      `x-mc-project`, or an explicit `?project=`. Absent -> 400. Conflicting
- *      -> 409. There is no widening escape.
+ *   1. The project comes from lib/scope.ts's resolveProjectScope() and nowhere
+ *      else: middleware's `x-mc-project`, or an explicit `?project=`. Absent
+ *      -> 400. Conflicting -> 409. There is no widening escape.
  *   2. A thread's OWN project is never used as the scope. It is compared
  *      against the resolved scope, and a mismatch is a 404 — otherwise any id
  *      would be a way to read across the boundary it sits inside, and the
  *      scope would be decided by the thing it constrains.
+ *
+ * one-scope-answer: rule 1 used to be implemented by
+ * `lib/conversations.ts:resolveScope()`, which was the same twelve lines as
+ * `lib/commerce.ts:resolveCommerceScope()` differing in an error string and a
+ * field name. Writing the boundary once in this file, and then twice more one
+ * directory up, is the same defect this file's own header opens by describing.
+ * Both now call `resolveProjectScope()`; the surface descriptor
+ * (CONVERSATIONS_SCOPE) is the only thing that differs, and it can change only
+ * what the refusal is CALLED, never whether there is one.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dbQueryErrorResponse } from '@/lib/db-http'
-import { normalizeConversationRow, resolveScope, type ConversationRow } from '@/lib/conversations'
+import { normalizeConversationRow, type ConversationRow } from '@/lib/conversations'
+import { CONVERSATIONS_SCOPE, resolveProjectScope } from '@/lib/scope'
 
 export const CONVERSATION_COLUMNS =
   'id,project,channel,contact,contact_name,status,last_message_at,created_at'
@@ -33,9 +43,10 @@ export type ScopeOutcome = { project: string } | { refusal: NextResponse }
 
 /** Resolve the scope for a request, or the response that refuses it. */
 export function scopeOrRefusal(req: NextRequest): ScopeOutcome {
-  const verdict = resolveScope(
+  const verdict = resolveProjectScope(
     req.headers.get('x-mc-project'),
     req.nextUrl.searchParams.get('project'),
+    CONVERSATIONS_SCOPE,
   )
   if (verdict.ok) return { project: verdict.project }
   return {
