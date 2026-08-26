@@ -211,6 +211,40 @@ for (const [name, headers] of [
   check('write path scoped', !leaks(r.body), `status ${r.status} :: ${r.body.slice(0, 160)}`)
 }
 
+// ── 7/8. OPEN DECISION (docs/rebuild/LOOP-PLAN.md), resolved as option 1 ────
+// `GET /api/db/issues?project=eq.Limiglow&...` used to 400 from a Fleet
+// referer and 200 from a Work referer, for the identical query — the caller
+// had already resolved its own boundary and the guard refused to take yes for
+// an answer. Both directions are probed, by REQUEST, not by reading the fix:
+//   7. the newly-allowed case must now pass: an explicit `project=eq.<x>`
+//      filter that repeats the SAME project FLEET_REFERER's own `/p/<slug>`
+//      names (`SCOPED_PROJECT`, here) satisfies scope.
+//   8. the identical shape, naming a DIFFERENT (foreign) project, must still
+//      refuse — this is not "any project filter satisfies scope", it is
+//      "the ONE project this request already names, and no other".
+{
+  const r = await req(
+    `/api/db/issues?select=id,project&project=eq.${encodeURIComponent(SCOPED_PROJECT)}&limit=5`,
+    { referer: FLEET_REFERER },
+  )
+  check(
+    'fleet destination + explicit in-scope project filter -> 200 (was 400)',
+    r.status === 200,
+    `status ${r.status} :: ${r.body.slice(0, 160)}`,
+  )
+}
+{
+  const r = await req(
+    `/api/db/issues?select=id,project&project=eq.${encodeURIComponent(foreign.project)}&limit=200`,
+    { referer: FLEET_REFERER },
+  )
+  check(
+    'fleet destination + explicit FOREIGN project filter still refuses',
+    r.status === 400 && !leaks(r.body),
+    `status ${r.status} :: ${r.body.slice(0, 160)}`,
+  )
+}
+
 await cleanupProbe()
 
 if (failures.length > 0) {
@@ -224,5 +258,6 @@ if (failures.length > 0) {
 }
 
 console.log(`PASS: scope holds under ${8 + 2} live probes (scoped reads, cross-project destination,`)
-console.log(`      refusal without scope, forged headers, filter override, write path).`)
+console.log(`      refusal without scope, forged headers, filter override, write path,`)
+console.log(`      explicit in-scope filter from a cross-project destination — both directions).`)
 console.log(`      Probe row: ${foreign.task_key ?? foreign.id} in "${foreign.project}".`)

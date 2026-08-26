@@ -58,6 +58,15 @@ const WRITABLE_TABLES = new Set(['issues', 'notifications', 'inbox'])
 // string the client sent — see `scopedParams` below.
 const SCOPE_HEADER = 'x-mc-project'
 const CROSS_PROJECT_HEADER = 'x-mc-all-projects'
+/**
+ * OPEN DECISION (docs/rebuild/LOOP-PLAN.md), resolved as option 1: the project
+ * middleware.ts saw named in THIS SAME request's own path/Referer, stamped
+ * only when that destination is deliberately cross-project (fleet/*, runs/*)
+ * — see middleware.ts's `crossProjectDestinationName`. It is not a scope by
+ * itself (see `scopedParams` below for the one place it is trusted, and only
+ * in agreement with the caller's OWN explicit filter).
+ */
+const CROSS_PROJECT_HINT_HEADER = 'x-mc-cross-project-hint'
 
 /**
  * Every READ of the `issues` table through this proxy is scoped HERE, ONCE,
@@ -126,6 +135,32 @@ function scopedParams(req: NextRequest, table: string, isWrite: boolean): URLSea
     // boundary. Refusing costs a caller one explicit parameter; widening
     // silently costs the operator their trust in every number on the screen.
     if (wantsAllProjects) return params
+    // OPEN DECISION, option 1: a cross-project destination (Fleet/Runs) with
+    // NO resolved scope can still satisfy the boundary itself, by repeating
+    // the SAME project the request's own path/Referer already names, as an
+    // EXPLICIT `project=eq.<x>` filter. `CROSS_PROJECT_HINT_HEADER` carries
+    // that project name — never the caller's own claim, middleware computed
+    // it from the request's own path/Referer, the same way it computes
+    // `SCOPE_HEADER` for a non-cross-project destination.
+    //
+    // This is deliberately an EQUALITY check against the hint, not "any
+    // project filter satisfies scope": a filter naming a DIFFERENT project
+    // still falls through to the refusal below — the caller named a boundary
+    // it does not occupy, not the one it does. A filter with any operator
+    // other than a bare `eq.<exact value>` (`eq.*`, `eq.`, `in.(...)`,
+    // `neq.X`, a case variant, …) does not match the hint string and also
+    // falls through, for the same reason. And with NO project filter at all,
+    // there is nothing to check equality against, so this is skipped
+    // entirely and the request still refuses below — an unresolved scope is
+    // never forgiven just because the destination happens to be cross-project.
+    const hint = req.headers.get(CROSS_PROJECT_HINT_HEADER)
+    if (hint && params.get('project') === `eq.${hint}`) {
+      params.delete('project')
+      params.delete('archived_at')
+      params.set('project', `eq.${hint}`)
+      params.set('archived_at', 'is.null')
+      return params
+    }
     // A destination the middleware identified as deliberately global — but that
     // signal is keyed by DESTINATION, never by table, and it was justified for
     // agent-level aggregates (agent_runs, agents, agent_cost_log) that span
