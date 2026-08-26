@@ -35,6 +35,9 @@ export const DESTINATIONS: Destination[] = [
       { id: 'inbox', label: 'Inbox' },
       { id: 'activity', label: 'Activity' },
       { id: 'signal', label: 'Signal' },
+      // TOD-2441: a customer waiting on a reply is something that needs you
+      // now, which is this destination's own question.
+      { id: 'conversations', label: 'Conversations' },
     ],
   },
   {
@@ -57,6 +60,11 @@ export const DESTINATIONS: Destination[] = [
       { id: 'list', label: 'List' },
       { id: 'epics', label: 'Epics' },
       { id: 'bolt', label: 'Bolt board' },
+      // TOD-2441: orders, catalogue and inventory. Under Work because commerce
+      // reads are project-scoped and middleware deliberately resolves NO scope
+      // on fleet/runs/settings-projects — mounting it there would 400 every
+      // read, correctly but uselessly.
+      { id: 'commerce', label: 'Commerce' },
     ],
   },
   {
@@ -66,6 +74,11 @@ export const DESTINATIONS: Destination[] = [
     views: [
       { id: 'team', label: 'Roster' },
       { id: 'office', label: 'Office' },
+      // TOD-2441: who is accountable for what. A VIEW, not a destination —
+      // MobileNav renders DESTINATIONS into a hardcoded grid-cols-6, so a
+      // seventh would wrap to a second row and CLAUDE.md records that the six
+      // fit without an overflow menu, and that restoring one is a regression.
+      { id: 'roles', label: 'Roles' },
     ],
   },
   {

@@ -30,6 +30,9 @@ import IssuesTab from '@/components/tabs/IssuesTab'
 import AutomationsTab from '@/components/tabs/AutomationsTab'
 import BoltScheduleCard from '@/components/tabs/BoltScheduleCard'
 import ConnectionsCard from '@/components/tabs/ConnectionsCard'
+import ResponsibilitiesCard from '@/components/tabs/ResponsibilitiesCard'
+import CommerceTab from '@/components/tabs/CommerceTab'
+import ConversationsTab from '@/components/tabs/ConversationsTab'
 import WorkViewCard from '@/components/tabs/WorkViewCard'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
@@ -963,6 +966,12 @@ export default function Home() {
               <CrewTab agentsError={agentsError} userRole={userRole} currentIdentity={currentIdentity} displayAgents={displayAgents} agentLiveStatus={agentLiveStatus} agentRunsData={agentRunsData} liveAgents={liveAgents} rosterMeta={rosterMeta} agentModal={agentModal} setAgentModal={setAgentModal} projectFilter={selectedProject} onAgentRemoved={(id) => setLiveAgents((rows) => rows ? rows.filter((a: any) => a.id !== id) : rows)} />
             )}
             {destination === 'fleet' && view === 'office' && <OfficeTab agentRunsData={agentRunsData} />}
+            {/* TOD-2441: three cards their builders could not mount — app/page.tsx
+                and nav/config.ts are the orchestrator's seams by design, which is
+                what let seven builders run concurrently without colliding. */}
+            {destination === 'fleet' && view === 'roles' && <ResponsibilitiesCard hubName={selectedBusiness} />}
+            {destination === 'work' && view === 'commerce' && <CommerceTab projectFilter={selectedProject} />}
+            {destination === 'now' && view === 'conversations' && <ConversationsTab projectFilter={selectedProject} />}
 
             {destination === 'runs' && <RunsView />}
 

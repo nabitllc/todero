@@ -85,7 +85,25 @@ export const TABLE_PROBE_COLUMNS: Partial<Record<RequiredTable, string>> = {
   businesses: 'name',
   chat_conversations: 'model',
   chat_messages: 'conversation_id',
+  // TOD-2441: the seven tables wave 3 added. A required table with no probe
+  // falls back to existence-only, which is the weaker check this file exists to
+  // replace — and the agent-kv suite fails when any required table lacks one,
+  // which is how these were caught the moment required-tables was regenerated.
+  //
+  // Each probes the column that carries the table's REASON to exist, so a
+  // regression to a plausible-but-wrong shape is caught rather than tolerated.
+  commerce_actions: 'from_value',
   connections: 'encrypted_value',
+  // The approve-before-send rule lives in a CHECK over these two columns
+  // (migrations/063). Probing them pins the rule's storage in place.
+  conversation_messages: 'approved_at',
+  conversations: 'channel',
+  inventory_levels: 'on_hand',
+  order_line_items: 'unit_price_minor',
+  // Money is an integer count of minor units, never a float — the one thing
+  // about these two tables that must not silently change.
+  orders: 'total_minor',
+  products: 'price_minor',
   deploy_history: 'commit_sha',
   hub_settings: 'key',
   inbox: 'context',
