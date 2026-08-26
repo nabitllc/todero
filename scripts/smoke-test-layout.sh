@@ -62,7 +62,14 @@ fi
 # it was written; that proof is worthless if nothing invokes them. They are
 # wired here rather than into prebuild precisely because the smoke test is the
 # gate that actually runs in this environment.
-for guard in no-invented-projects no-dead-modules no-phantom-columns no-cloud-provider; do
+# TOD-2468 adds check-boolean-columns to this list. It exists because
+# TOD-2464's fix keys off the DECLARED column type, which is exact by design
+# and therefore blind to a column whose sqlite migration never got the BOOLEAN
+# label its postgres twin has. Three such columns exist today. No filter targets
+# them yet, so nothing is broken — the guard is here to fail the moment the two
+# dialects drift apart again, rather than the moment somebody writes an ordinary
+# filter and gets zero rows back for no visible reason.
+for guard in no-invented-projects no-dead-modules no-phantom-columns no-cloud-provider check-boolean-columns; do
   echo ""
   if node "$(dirname "$0")/$guard.mjs"; then
     echo "✅ $guard passed"
