@@ -1,0 +1,47 @@
+-- 074 (sqlite): per-line fulfilled quantity.
+--
+-- This is the SQLite dialect of migrations/074_order_line_fulfilled_quantity.sql.
+-- Read that file for what was missing, the measurement that showed it, why this
+-- is a column on the line rather than a `fulfilments` table, and why there is no
+-- backfill. This header covers only what DIFFERS, plus one measurement that
+-- belongs to this dialect specifically.
+--
+-- DIALECT NOTES
+--   * SQLite has no `ADD COLUMN IF NOT EXISTS` and rejects it at 'near "EXISTS"'
+--     — the same note migrations/sqlite/057 and /066 already record. The
+--     runner's `schema_migrations` ledger is what makes a bare ADD COLUMN run
+--     exactly once, so the guard the Postgres copy gets from IF NOT EXISTS is
+--     not needed here.
+--   * `NOT NULL DEFAULT 0` is required together, not by style: SQLite's
+--     ALTER TABLE ADD COLUMN refuses a NOT NULL column whose default is NULL,
+--     because it has to fill every existing row with something.
+--   * `integer` vs `INTEGER` and the absence of a BIGINT distinction are the
+--     same as 064's — SQLite INTEGER is already up to 8 bytes.
+--
+-- THE CROSS-COLUMN CHECK ACTUALLY FIRES ON THIS HOST — MEASURED, NOT ASSUMED
+--   SQLite's ALTER TABLE ADD COLUMN documents that it may not add a UNIQUE or
+--   PRIMARY KEY constraint, and it does not validate a new CHECK against rows
+--   that already exist. Neither restriction says whether a CHECK referencing a
+--   DIFFERENT column of the same row is accepted and then enforced on later
+--   writes, or accepted and quietly ignored — and "accepted and ignored" is
+--   exactly the shape of floor that reads as protection and is not. So it was
+--   run, against a copy of the live db.sqlite, with better-sqlite3, the same
+--   driver lib/db/sqlite-adapter.ts opens the file with:
+--
+--     ALTER TABLE ... ADD COLUMN fulfilled_quantity ...   -> OK
+--     INSERT a line with quantity 5                       -> fulfilled_quantity 0
+--     UPDATE ... SET fulfilled_quantity = 5               -> ACCEPTED
+--     UPDATE ... SET fulfilled_quantity = 6               -> REFUSED,
+--       "CHECK constraint failed: fulfilled_quantity >= 0 AND fulfilled_quantity <= quantity"
+--     UPDATE ... SET fulfilled_quantity = -1              -> REFUSED, same message
+--
+--   Both halves of the constraint are real on this host. The Postgres half is
+--   proven the same way, against a real PGlite Postgres, in
+--   __tests__/api/commerce-partial-fulfilment.test.ts.
+--
+-- NO DATA, and no backfill — see the Postgres copy for why 0 is the correct
+-- value for every row that already exists.
+
+ALTER TABLE order_line_items
+  ADD COLUMN fulfilled_quantity INTEGER NOT NULL DEFAULT 0
+    CHECK (fulfilled_quantity >= 0 AND fulfilled_quantity <= quantity);

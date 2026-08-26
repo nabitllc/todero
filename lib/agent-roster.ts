@@ -34,13 +34,20 @@ export const AGENT_META: Record<string, AgentMeta> = {
   'scout':       { name: 'Scout',       emoji: '🔍', role: 'Research Agent',        color: '#a855f7', capabilities: ['Web Research', 'Summarization', 'Trends'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: ['open'] },
   'ops':         { name: 'Ingo',        emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true,                  model: 'claude-haiku-4-5',  queue_filter: ['open'] },
   // no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were entries here.
-  // Removing them does NOT by itself stop the roster naming them: loadAgentRoster()
-  // reads AGENTS.md, and this host's AGENTS.md:87-88 still lists both rows. What
-  // this removal does change is that neither id can now pick up an emoji, colour,
-  // capability list or `floor: true` from code — a roster row for an agent that
-  // does not exist renders as an unstyled unknown instead of a fully dressed
-  // "Kemuni Product Expert". AGENTS.md is owned by another agent; see the piece
-  // report for that finding.
+  // Removing them from AGENT_META only stopped either id picking up an emoji,
+  // colour, capability list or `floor: true` from code; it could not stop the
+  // roster NAMING them, because loadAgentRoster() reads AGENTS.md.
+  //
+  // agent-visualization-fidelity, 2026-08-26: AGENTS.md has since been fixed
+  // too. Both rows now sit inside a blockquote (AGENTS.md:89-90, each line
+  // prefixed `> ` and wrapped in backticks) under a heading that says they were
+  // removed, so parseAgentsFromMd() stops at the blank line after :86 and never
+  // reaches them. Measured today against the running server: GET /api/agents
+  // returns 28 agents and neither 'kemuni-sme' nor 'vespera-sme' is among them.
+  //
+  // An earlier revision of this comment asserted "AGENTS.md:87-88 still lists
+  // both rows". That was true when written and is not true now — which is why
+  // this note carries the date and the command whose output it is describing.
   'builder':     { name: 'Builder',     emoji: '🔨', role: 'Coding Agent',           color: '#f59e0b', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true,     model: 'claude-sonnet-4-6', queue_filter: ['open'] },
   'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true,     model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
   'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true,                model: 'claude-haiku-4-5',  queue_filter: ['approved'] },

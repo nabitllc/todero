@@ -14,6 +14,16 @@
 // get an EMPTY list and a warning naming the path that was searched. There is
 // no built-in fallback to fall back to — "no agents configured" is a truthful
 // answer and an invented default agent is not.
+//
+// fleet-liveness piece, 2026-08-26: the "16 agents" figure above is the count
+// from when this hook was written and is left as written, because it is
+// describing the four hand-written lists it replaced. What the endpoint serves
+// now is the union of THREE sources — AGENTS.md, `agent_registrations`, and
+// the Brain2 vault registry — combined by app/api/agents/fleet-roster.ts.
+// Measured against the running server on 2026-08-26: 28 agents
+// (14 agents-md · 1 registered · 13 vault). Every picker built on this hook
+// therefore offers all three, which is the point: an agent that exists in any
+// source is an agent a picker must be able to name.
 
 import { useMemo } from 'react'
 import { useApiData, type ApiError } from '@/hooks/useApiData'
@@ -69,9 +79,22 @@ interface AgentsEnvelope {
 }
 
 export interface AgentRosterState {
-  /** Every agent the host's AGENTS.md declares. Empty means empty — never a default. */
+  /**
+   * Every agent ANY source declares — AGENTS.md, `agent_registrations`, or the
+   * Brain2 vault. Empty means empty — never a default.
+   */
   agents: RosterAgent[]
-  /** 'agents-md' when a roster file was read, 'none' when none was found. */
+  /**
+   * Which source(s) the rows came from, as
+   * app/api/agents/fleet-roster.ts computes it:
+   * 'agents-md' | 'registered' | 'vault' | 'both' | 'none'.
+   *
+   * This docstring used to say "'agents-md' when a roster file was read,
+   * 'none' when none was found", which was true of a two-value field that has
+   * since grown to five. A consumer that switches on it and only handles two
+   * gets the default branch for a perfectly healthy host, so the full set is
+   * spelled out rather than summarised.
+   */
   rosterSource: string
   /** Operator-facing reason the roster is empty, naming the path searched. */
   rosterWarning: string | null

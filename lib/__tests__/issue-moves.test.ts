@@ -20,6 +20,8 @@ import {
   unmetFields,
   moveBody,
   humaniseMoveFailure,
+  humaniseLoadFailure,
+  safeApiError,
   todaysSprint,
   BACKLOG_RESET_ROLES,
   type MoveIssue,
@@ -419,5 +421,489 @@ describe('no raw database text reaches the operator', () => {
     expect(out).toMatch(/refused/)
     expect(out).toMatch(/502/)
     expect(humaniseMoveFailure(null, 'approved')).toMatch(/did not say why/)
+  })
+})
+
+/* ── the dialect half of the same rule ───────────────────────────────────────
+ *
+ * Every string in this block is VERBATIM driver output captured on 2026-08-26,
+ * not wording invented for a test:
+ *
+ *  * the SQLite lines were forced out of the RUNNING server with
+ *    `PATCH /api/issues` against throwaway `Limiglow` fixtures (deleted in the
+ *    same run) and are the `error` field of the 500 body.
+ *  * the Postgres lines were forced out of a real Postgres — PGlite, in
+ *    process — over a table whose CHECK/UNIQUE/FK definitions were copied
+ *    verbatim from `migrations/001_add_review_fields.sql`,
+ *    `migrations/014_resolution_type_constraint.sql`,
+ *    `migrations/018_issues_test_tier.sql` and
+ *    `migrations/025_deployer_status.sql`.
+ *
+ * The point of the block is the SECOND list. Before this revision the signature
+ * list was written entirely in SQLite's spelling, so the same constraint that
+ * produced a sentence on the dev box produced raw schema text on Postgres — and
+ * `migrations/*.sql` is the Postgres dialect this repo also ships, runs its
+ * tests on, and is migrating to. Six shapes leaked. Each is pinned below by the
+ * exact string that leaked.
+ */
+describe('no raw database text reaches the operator — in EITHER dialect', () => {
+  /** Driver output that must never survive `humaniseMoveFailure` unchanged. */
+  const RAW = {
+    sqlite: [
+      "CHECK constraint failed: ((status NOT IN ('open', 'in_progress', 'in_review')) OR (sprint IS NOT NULL))",
+      "CHECK constraint failed: (NOT ((status = 'backlog') AND (sprint IS NOT NULL)))",
+      "CHECK constraint failed: (test_tier IN ('smoke', 'integration', 'e2e'))",
+      "CHECK constraint failed: (deployer_status IN ('ready', 'failed'))",
+      'NOT NULL constraint failed: issues.title',
+      'FOREIGN KEY constraint failed',
+      'UNIQUE constraint failed: issues.task_key',
+      'no such column: test_status',
+      'SQLITE_BUSY: database is locked',
+      'datatype mismatch',
+    ],
+    postgres: [
+      'new row for relation "issues" violates check constraint "backlog_no_sprint"',
+      'new row for relation "issues" violates check constraint "sprint_required_if_open"',
+      'new row for relation "issues" violates check constraint "issues_test_tier_check"',
+      'new row for relation "issues" violates check constraint "issues_deployer_status_check"',
+      'new row for relation "issues" violates check constraint "tasks_resolution_type_check"',
+      'duplicate key value violates unique constraint "issues_task_key_key"',
+      'insert or update on table "issues" violates foreign key constraint "issues_parent_id_fkey"',
+      // ── the six shapes that LEAKED VERBATIM before this revision ──
+      'null value in column "title" of relation "issues" violates not-null constraint',
+      'invalid input syntax for type integer: "lots"',
+      'invalid input syntax for type boolean: "yes-please"',
+      'invalid input syntax for type uuid: "not-a-uuid"',
+      'invalid input syntax for type timestamp with time zone: "whenever"',
+      'column "test_status" does not exist',
+      'column "test_status" of relation "issues" does not exist',
+      'relation "nope_not_a_table" does not exist',
+    ],
+  }
+
+  /** Fragments that are schema, SQL or driver vocabulary — never operator words. */
+  const SCHEMA_VOCABULARY =
+    /constraint|sqlite|pgrst|relation "|invalid input syntax|does not exist|IS NOT NULL|NOT IN \(|duplicate key|schema cache|test_status|issues\.|datatype mismatch/i
+
+  it.each([...RAW.sqlite, ...RAW.postgres])('never shows %s', raw => {
+    const out = humaniseMoveFailure(raw, 'open', 500)
+    expect(out).not.toBe(raw)
+    expect(out).not.toMatch(SCHEMA_VOCABULARY)
+  })
+
+  it('gives the SAME sentence for the same rule in both dialects', () => {
+    const pairs: [string, string][] = [
+      [RAW.sqlite[0], RAW.postgres[1]], // sprint required while worked
+      [RAW.sqlite[1], RAW.postgres[0]], // backlog must not carry a sprint
+      [RAW.sqlite[2], RAW.postgres[2]], // test_tier
+      [RAW.sqlite[3], RAW.postgres[3]], // deployer_status
+      [RAW.sqlite[6], RAW.postgres[5]], // duplicate task_key
+    ]
+    for (const [sqliteText, pgText] of pairs) {
+      expect(humaniseMoveFailure(sqliteText, 'backlog', 500))
+        .toBe(humaniseMoveFailure(pgText, 'backlog', 500))
+    }
+  })
+
+  it('names the phantom-column class as a Todero bug rather than a refusal', () => {
+    for (const raw of ['no such column: test_status', 'column "test_status" does not exist']) {
+      expect(humaniseMoveFailure(raw, 'code_review', 500)).toMatch(/bug in Todero/)
+    }
+  })
+
+  it('tells the two anonymous sprint CHECKs apart by destination', () => {
+    // A Postgres install built from 000_baseline_schema.sql alone reports both
+    // sprint rules as "issues_check"/"issues_check1" — measured on PGlite. The
+    // message cannot disambiguate; the destination can.
+    const anon = (n: string) => `new row for relation "issues" violates check constraint "${n}"`
+    expect(humaniseMoveFailure(anon('issues_check'), 'backlog', 500))
+      .toBe('An issue in Backlog cannot carry a sprint. Clear the sprint first.')
+    expect(humaniseMoveFailure(anon('issues_check1'), 'in_progress', 500))
+      .toBe('An issue being worked has to belong to a sprint. Set a sprint and try the move again.')
+    // No destination to reason from → the generic sentence, never a guess.
+    expect(humaniseMoveFailure(anon('issues_check1'), 'approved', 500))
+      .toMatch(/does not have wording for yet/)
+  })
+
+  it('still leaves every human sentence the MC API writes alone', () => {
+    // Broadening the signature list must not start swallowing the API's own
+    // English. Each of these is a verbatim refusal body measured against the
+    // running server on 2026-08-26.
+    const humanRefusals = [
+      'test_tier is required for task/bug/ops before moving to refined. Set it to smoke, integration, or e2e.',
+      'resolution_type is required before moving to code_review. Set it to what was done (e.g. code_change, config_change, research_completed). Allowed: code_change, config_change, database_change',
+      'resolution_type is required to close an issue. Allowed: code_change, config_change, database_change',
+      `Invalid value for 'resolution_type': "because_i_said_so". Allowed values: code_change, config_change`,
+      `Invalid value for 'priority': "urgent!!". Allowed values: critical, high, medium, low`,
+      'One-at-a-time lane enforcement: ops is already working on TOD-224 ("pipeline-fidelity hunt fixture"). Complete or reset that issue before claiming a new one.',
+      'Only main/po/ops or the workspace owner can reset an issue to backlog.',
+      'Issue is closed and read-only.',
+      'This issues query has no project scope. Navigate from a /p/<project> screen, or pass all_projects=1 to read across every project deliberately.',
+      'window must be 7d or 30d',
+    ]
+    for (const s of humanRefusals) {
+      expect(humaniseMoveFailure(s, 'open', 422)).toBe(s)
+      expect(humaniseLoadFailure(s)).toBe(s)
+    }
+  })
+})
+
+describe('the READ path has the same guard as the move path', () => {
+  it('replaces driver text the db proxy hands back verbatim', () => {
+    // Measured 2026-08-26, running server, scoped exactly as PipelineTab scopes
+    // its own reads:
+    //   GET /api/db/issues?project=eq.Limiglow&archived_at=is.null
+    //       &select=nope_not_a_column&limit=1
+    //   -> 400 {"error":"no such column: \"nope_not_a_column\" - should this be
+    //           a string literal in single-quotes?","code":"42703",...}
+    const raw = 'no such column: "nope_not_a_column" - should this be a string literal in single-quotes?'
+    const out = humaniseLoadFailure(raw)
+    expect(out).not.toBe(raw)
+    expect(out).not.toMatch(/no such column|single-quotes|nope_not_a_column/i)
+    expect(out).toMatch(/bug in Todero/)
+  })
+
+  it('covers the Postgres spelling of the same failure', () => {
+    expect(humaniseLoadFailure('column "nope_not_a_column" does not exist')).toMatch(/bug in Todero/)
+    expect(humaniseLoadFailure('relation "issues" does not exist')).toMatch(/bug in Todero/)
+    expect(humaniseLoadFailure('PGRST204: column not found in schema cache')).toMatch(/bug in Todero/)
+  })
+
+  it('replaces constraint text it has no wording for, rather than passing it through', () => {
+    const out = humaniseLoadFailure('CHECK constraint failed: ((frobnicator IS NULL))')
+    expect(out).not.toMatch(/frobnicator|CHECK constraint/)
+    expect(out).toMatch(/browser console/)
+  })
+
+  it('says something when the server says nothing', () => {
+    expect(humaniseLoadFailure('')).toMatch(/did not say why/)
+    expect(humaniseLoadFailure(null)).toMatch(/did not say why/)
+    expect(humaniseLoadFailure(undefined)).toMatch(/did not say why/)
+  })
+})
+
+/* ── the inversion: an allowlist, and the two tests that make it hold ────────
+ *
+ * Written 2026-08-26 after the denylist that used to live in
+ * `lib/issue-moves.ts` was measured and found not to do what its own header
+ * said. Twenty-three ordinary driver messages were fed to the SHIPPED
+ * `humaniseMoveFailure`; sixteen came back verbatim, including
+ * `connection to server at "localhost" (::1), port 5432 failed: Connection
+ * refused`, which puts the database host and port on an operator's screen.
+ *
+ * A denylist of message shapes cannot be completed — the set of things a driver
+ * can say belongs to the driver. So the rule was inverted, and an allowlist has
+ * exactly two ways to be wrong. Both are pinned here:
+ *
+ *   TOO LOOSE — something that is not ours reaches the screen. Pinned by the
+ *               adversarial battery below: every string in it must change.
+ *   TOO TIGHT — one of OUR OWN sentences gets replaced by the generic one, and
+ *               the operator loses a good message. Pinned by the extractor
+ *               below, which reads the API's error literals out of the route
+ *               SOURCE rather than out of a list somebody remembered to update.
+ */
+describe('the humaniser is an allowlist, and it is too loose nowhere', () => {
+  /**
+   * Verbatim better-sqlite3 / Postgres output. The first sixteen are the exact
+   * strings that leaked through the previous denylist on 2026-08-26; the rest
+   * are ordinary messages from the same two drivers. None was invented to be
+   * easy: every one is a message a driver prints in normal operation.
+   */
+  const DRIVER_OUTPUT = [
+    // ── the sixteen that leaked ──
+    'value too long for type character varying(50)',
+    'date/time field value out of range: "2026-13-45"',
+    'deadlock detected',
+    'could not serialize access due to concurrent update',
+    'permission denied for table issues',
+    'operator does not exist: text = integer',
+    'canceling statement due to statement timeout',
+    'attempt to write a readonly database',
+    'too many SQL variables',
+    'connection to server at "localhost" (::1), port 5432 failed: Connection refused',
+    'out of memory',
+    'disk I/O error',
+    'server closed the connection unexpectedly',
+    'invalid byte sequence for encoding "UTF8": 0x00',
+    'cannot execute UPDATE in a read-only transaction',
+    'index "issues_pkey" contains unexpected zero page at block 0',
+    // ── shapes the old list did catch; they must still not leak ──
+    'CHECK constraint failed: (NOT ((status = \'backlog\') AND (sprint IS NOT NULL)))',
+    'UNIQUE constraint failed: issues.task_key',
+    'NOT NULL constraint failed: issues.title',
+    'FOREIGN KEY constraint failed',
+    'SQLITE_CONSTRAINT_CHECK: CHECK constraint failed',
+    'no such column: test_status',
+    'no such table: issues_v2',
+    'null value in column "title" of relation "issues" violates not-null constraint',
+    'duplicate key value violates unique constraint "issues_task_key_key"',
+    'new row for relation "issues" violates check constraint "backlog_no_sprint"',
+    'invalid input syntax for type integer: "lots"',
+    'column "test_status" of relation "issues" does not exist',
+    'relation "nope_not_a_table" does not exist',
+    'syntax error at or near "SELCT"',
+    'PGRST204: Could not find the \'test_status\' column of \'issues\' in the schema cache',
+    // ── more of the same drivers, none of which the old list named ──
+    'database or disk is full',
+    'no more rows available',
+    'unrecognized configuration parameter "statement_tomeout"',
+    'terminating connection due to administrator command',
+    'sorry, too many clients already',
+    'remaining connection slots are reserved for non-replication superuser connections',
+    'SSL SYSCALL error: EOF detected',
+    'prepared statement "s1" already exists',
+    'current transaction is aborted, commands ignored until end of transaction block',
+    'malformed database schema (issues) - near "AUTOINCREMENT": syntax error',
+    'file is not a database',
+    'unable to open database file',
+    'cannot start a transaction within a transaction',
+    'table issues has no column named test_status',
+    'integer out of range',
+    'division by zero',
+    'stack depth limit exceeded',
+    'invalid page in block 3 of relation base/16384/16401',
+  ]
+
+  /**
+   * Vocabulary that only ever appears in database output. If any of it survives
+   * to the returned sentence, something leaked — regardless of what else the
+   * sentence says.
+   *
+   * `does not exist` is deliberately absent: `parent_id 42 does not exist` is
+   * the MC API's own English and is allowlisted. The schema-shaped spellings of
+   * the same idea are covered by the identifier and quoting checks instead.
+   */
+  const SCHEMA_VOCABULARY = [
+    /\bSQLITE_/i, /\bPGRST\d/i, /\bconstraint\b/i, /\bno such (?:column|table)\b/i,
+    /\brelation\b/i, /\bnull value in column\b/i, /\binvalid input syntax\b/i,
+    /\bsyntax error\b/i, /\bschema cache\b/i, /\bcharacter varying\b/i,
+    /\bport \d{2,5}\b/i, /\blocalhost\b/i, /::1/, /\bpg_/i, /\bsuperuser\b/i,
+    /\btransaction block\b/i, /\bSELECT\b/, /\bUPDATE\b/, /\bINSERT\b/,
+  ]
+
+  it.each(DRIVER_OUTPUT)('replaces %s on the move path', raw => {
+    const out = humaniseMoveFailure(raw, 'code_review', 500)
+    expect(out).not.toBe(raw)
+    for (const v of SCHEMA_VOCABULARY) expect(out).not.toMatch(v)
+  })
+
+  it.each(DRIVER_OUTPUT)('replaces %s on the read path', raw => {
+    const out = humaniseLoadFailure(raw)
+    expect(out).not.toBe(raw)
+    for (const v of SCHEMA_VOCABULARY) expect(out).not.toMatch(v)
+  })
+
+  it('never echoes a column, table or host identifier back to the operator', () => {
+    // The specific harm: the previous list let the DB host and port through.
+    const out = humaniseMoveFailure(
+      'connection to server at "localhost" (::1), port 5432 failed: Connection refused',
+      'open', 500,
+    )
+    expect(out).not.toMatch(/localhost|5432|::1/)
+    expect(out).toMatch(/could not reach its database/i)
+  })
+
+  it('replaces a message no driver has printed yet — the whole point of an allowlist', () => {
+    // Not a real message. A denylist can only be right about messages somebody
+    // has already seen; this is the case that separates the two designs.
+    const invented = 'ERROR:  frobnicator index wedged on shard 7 (SQLSTATE XX000)'
+    expect(humaniseMoveFailure(invented, 'open', 500)).not.toBe(invented)
+    expect(humaniseLoadFailure(invented)).not.toBe(invented)
+  })
+
+  it('replaces the machine tokens the API sends in `error`, rather than printing them', () => {
+    // `lib/fetch-json.ts` reads `body?.error ?? body?.message`, so for these two
+    // routes the TOKEN is what reaches ApiError.message and therefore the
+    // banner — the human sentence in the body's `message` field never gets
+    // there. Measured by reading that precedence, not assumed.
+    for (const token of ['unscoped_issues_read', 'project_outside_scope']) {
+      const moved = humaniseMoveFailure(token, 'open', 400)
+      const loaded = humaniseLoadFailure(token)
+      expect(moved).not.toBe(token)
+      expect(loaded).not.toBe(token)
+      expect(moved).toMatch(/project/i)
+      expect(loaded).toMatch(/project/i)
+      // and not the generic database sentence — a scope refusal is not a
+      // database failure and must not read like one
+      expect(moved).not.toMatch(/database/i)
+    }
+  })
+})
+
+/* ── too tight: the allowlist is derived from the API, not from memory ───────
+ *
+ * The cost of inverting the rule is that a NEW refusal added to a route and not
+ * added to `MC_API_MESSAGES` would be replaced by the generic sentence, and the
+ * operator would lose a good message. This test is the mechanism that makes
+ * that a red build instead of a quiet regression: it reads the route SOURCE and
+ * asserts every message literal in it survives the humaniser unchanged.
+ */
+describe('every sentence the MC API writes survives the humaniser unchanged', () => {
+  /** The routes whose refusals can reach a Pipeline banner or the move sheet. */
+  const ROUTE_FILES = [
+    'app/api/issues/route.ts',
+    'app/api/db/[...path]/route.ts',
+    'middleware.ts',
+    'app/api/agents/route.ts',
+    'app/api/pipeline-metrics/route.ts',
+  ]
+
+  /**
+   * Pull out every `error:` string literal, template literals included, with
+   * `${…}` substituted by a stand-in value.
+   *
+   * `error:` and NOT `message:`, for a measured reason: `lib/fetch-json.ts`
+   * reads `body?.error ?? body?.message ?? …`, so when a body carries both, the
+   * `error` value is what lands in `ApiError.message` and therefore in the
+   * banner — the `message` companion never reaches a screen. Scanning both was
+   * tried first and pulled in a Discord notification body
+   * (`app/api/issues/route.ts:785`), which is not operator-facing text at all.
+   *
+   * A hand-written scanner rather than a regex because the template literals
+   * interpolate expressions that themselves contain quotes and backticks —
+   * `${missing.join(', ')}`, `${VALID_RESOLUTION_TYPES.join(', ')}` — which a
+   * regex cannot bracket correctly.
+   */
+  function messageLiterals(src: string): string[] {
+    const out: string[] = []
+    const key = /\berror\s*:\s*(['"`])/g
+    let m: RegExpExecArray | null
+    while ((m = key.exec(src)) !== null) {
+      const quote = m[1]
+      let i = m.index + m[0].length
+      let text = ''
+      let ok = false
+      while (i < src.length) {
+        const ch = src[i]
+        if (ch === '\\') { text += src[i + 1] ?? ''; i += 2; continue }
+        if (ch === quote) { ok = true; i++; break }
+        if (quote === '`' && ch === '$' && src[i + 1] === '{') {
+          // Skip the interpolation, balancing braces, and stand in for it.
+          let depth = 1
+          i += 2
+          while (i < src.length && depth > 0) {
+            if (src[i] === '{') depth++
+            else if (src[i] === '}') depth--
+            i++
+          }
+          text += 'X'
+          continue
+        }
+        if (quote !== '`' && ch === '\n') break // not a literal; bail
+        text += ch
+        i++
+      }
+      if (ok) out.push(text.replace(/\s+/g, ' ').trim())
+      key.lastIndex = i
+    }
+    return out
+  }
+
+  /**
+   * Literals that are NOT operator-facing text. Each is named individually —
+   * a category-shaped exclusion would let a real sentence hide behind it.
+   */
+  const NOT_A_MESSAGE = new Set([
+    '', 'X', 'error', 'message',
+  ])
+
+  /**
+   * The two machine tokens. They are not English, so they are the one thing the
+   * humaniser is REQUIRED to replace rather than pass through — see the
+   * matching assertion in the block above.
+   */
+  const TOKENS = new Set(['unscoped_issues_read', 'project_outside_scope'])
+
+  const literals = ROUTE_FILES.flatMap(rel => {
+    const abs = path.join(__dirname, '..', '..', rel)
+    if (!fs.existsSync(abs)) return []
+    return messageLiterals(fs.readFileSync(abs, 'utf8'))
+  }).filter(s => !NOT_A_MESSAGE.has(s))
+
+  it('found the routes and read real literals out of them', () => {
+    // Without this, a scanner that silently matched nothing would make every
+    // assertion below pass vacuously — which is how the defect this whole file
+    // exists for survived five sweeps.
+    expect(literals.length).toBeGreaterThan(25)
+    expect(literals).toContain('Issue is closed and read-only.')
+    expect(literals).toContain('Only main/po/ops or the workspace owner can reset an issue to backlog.')
+    expect(literals).toContain('window must be 7d or 30d')
+  })
+
+  it('passes every one of them through both humanisers unchanged', () => {
+    const eaten: string[] = []
+    for (const s of literals) {
+      if (TOKENS.has(s)) continue
+      if (humaniseMoveFailure(s, 'open', 422) !== s) eaten.push(`move: ${s}`)
+      if (humaniseLoadFailure(s) !== s) eaten.push(`load: ${s}`)
+    }
+    // A failure here means the API grew a refusal that `MC_API_MESSAGES` does
+    // not cover. The fix is to add the pattern there, NOT to relax this test:
+    // the operator would otherwise see "a rule this board does not have wording
+    // for yet" in place of a sentence the API already wrote for them.
+    expect(eaten).toEqual([])
+  })
+})
+
+/* ── safeApiError: the mutation that used to survive ─────────────────────────
+ *
+ * Measured 2026-08-26 on the shipped code: `safeApiError` was defined inside
+ * `components/tabs/PipelineTab.tsx`, and gutting it to `return error` as its
+ * first statement left the suite at 84 passed / 84 total. Every Pipeline banner
+ * rendered raw driver text again and nothing failed, because the only guard was
+ * a source grep for the identifier names reaching `<ApiErrorBanner>`.
+ *
+ * It is now an exported pure function, so it can be called. These assertions
+ * fail on that mutation.
+ */
+describe('safeApiError replaces the message and nothing else', () => {
+  const raw = {
+    status: 400,
+    endpoint: '/api/db/issues?project=eq.Limiglow&select=nope_not_a_column',
+    message: 'no such column: "nope_not_a_column" - should this be a string literal in single-quotes?',
+    code: '42703',
+  }
+
+  it('humanises a driver message', () => {
+    const safe = safeApiError(raw)
+    expect(safe.message).not.toBe(raw.message)
+    expect(safe.message).not.toMatch(/no such column|nope_not_a_column|single-quotes/i)
+    expect(safe.message).toMatch(/bug in Todero/)
+  })
+
+  it('keeps the status, the endpoint and the code — the half the banner is right about', () => {
+    const safe = safeApiError(raw)
+    expect(safe.status).toBe(400)
+    expect(safe.endpoint).toBe(raw.endpoint)
+    expect(safe.code).toBe('42703')
+  })
+
+  it('returns the SAME object when there was nothing to replace', () => {
+    // Identity, not equality: the value goes into a `useMemo` result that feeds
+    // a component, so a fresh object on every call would be a re-render for no
+    // reason.
+    const human = { status: 403, endpoint: '/api/issues', message: 'Issue is closed and read-only.' }
+    expect(safeApiError(human)).toBe(human)
+  })
+
+  it('does not mutate the error it was given', () => {
+    const before = { ...raw }
+    safeApiError(raw)
+    expect(raw).toEqual(before)
+  })
+
+  it('humanises every driver string on the banner path too', () => {
+    // The banner is the surface this function exists for; assert the whole
+    // battery through it, not just one example.
+    for (const message of [
+      'connection to server at "localhost" (::1), port 5432 failed: Connection refused',
+      'permission denied for table issues',
+      'deadlock detected',
+      'CHECK constraint failed: (test_tier IN (\'smoke\',\'integration\',\'e2e\'))',
+    ]) {
+      const safe = safeApiError({ status: 500, endpoint: '/api/db/issues', message })
+      expect(safe.message).not.toBe(message)
+      expect(safe.message).not.toMatch(/localhost|5432|constraint|permission denied/i)
+    }
   })
 })

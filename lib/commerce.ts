@@ -555,12 +555,24 @@ export const ORDER_CREATE_FIELDS = [
 ] as const
 
 /** Fields one line of an ingested order accepts. */
-export const ORDER_LINE_FIELDS = ['sku', 'title', 'quantity', 'unit_price', 'unit_price_minor'] as const
+export const ORDER_LINE_FIELDS = [
+  'sku',
+  'title',
+  'quantity',
+  'unit_price',
+  'unit_price_minor',
+  // How many of this line had ALREADY shipped when the storefront handed the
+  // order over. Optional, defaults to 0. It exists so that an order which is
+  // genuinely part-shipped at ingest can say WHICH units went - see
+  // `validateNewOrder`'s "the status is derived at the door too" note.
+  'fulfilled_quantity',
+] as const
 
 export interface NewOrderLine {
   sku: string
   title: string
   quantity: number
+  fulfilled_quantity: number
   unit_price_minor: number
   currency: string
 }
@@ -584,6 +596,34 @@ export interface NewOrder {
  * REFUSED rather than stored — an order whose total does not equal its lines is
  * a reconciliation failure, and storing it means discovering that months later
  * against a payout report instead of at the door.
+ *
+ * THE STATUS IS DERIVED AT THE DOOR TOO - the fix to a fabrication this piece
+ * shipped. The piece doc claimed "the status is DERIVED from the lines, never
+ * asserted", and that was true of PATCH and FALSE here. Measured on the running
+ * server before this change (2026-08-26):
+ *
+ *   POST {order_number:'W8C-ING-1', fulfilment_status:'partially_fulfilled',
+ *         line_items:[{sku:'W8C-OS', quantity:5, ...}]}
+ *   -> 201, order stored `partially_fulfilled`, every line at 0 fulfilled,
+ *      GET fulfilment {ordered:5, fulfilled:0, remaining:5}
+ *
+ * - the exact incoherent state PATCH refuses in so many words ("an order the
+ * operator had been told was partly shipped, with every unit still on the shelf
+ * and no record of which parcel left"), waved through by the other door. Ingest
+ * now works the same way the total already does:
+ *
+ *   * a line may state `fulfilled_quantity` (0 <= it <= quantity);
+ *   * `fulfilment_status: 'fulfilled'` with no per-line numbers still means
+ *     "all of it", unchanged - that shorthand is what an importer of an
+ *     already-shipped order sends, and it agrees with the lines by definition
+ *     because the lines are written FROM it;
+ *   * the status is otherwise DERIVED from those quantities, and a stated one
+ *     that disagrees is REFUSED naming both;
+ *   * `cancelled` is the single exemption, and deliberately: cancellation is a
+ *     decision about an order, not a count of what left the warehouse, and
+ *     `deriveFulfilmentStatus` cannot return it by construction. A cancelled
+ *     order may carry any fulfilled quantities, including the partial shipment
+ *     that went out before somebody cancelled the rest.
  */
 export function validateNewOrder(body: Record<string, unknown>): Verdict<NewOrder> {
   const fields = rejectUnknownFields(body, ORDER_CREATE_FIELDS)
@@ -610,6 +650,9 @@ export function validateNewOrder(body: Record<string, unknown>): Verdict<NewOrde
 
   const lines: NewOrderLine[] = []
   let computedTotal = 0
+  /** Did ANY line say how much of it had already shipped? Decides whether
+   *  `fulfilment_status: 'fulfilled'` is read as the all-of-it shorthand. */
+  let statedAnyFulfilled = false
   for (const [index, raw] of body.line_items.entries()) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return no(`line ${index + 1} is not an object`)
@@ -628,6 +671,24 @@ export function validateNewOrder(body: Record<string, unknown>): Verdict<NewOrde
     const quantity = validateWholeCount(line.quantity, 'quantity')
     if (!quantity.ok) return no(`line ${index + 1}: ${quantity.why}`)
     if (quantity.value < 1) return no(`line ${index + 1}: quantity must be at least 1`)
+
+    // How many of this line arrived already shipped. The same bound the column's
+    // CHECK carries (0 <= fulfilled <= quantity) is enforced here first, so the
+    // refusal is a sentence with numbers in it rather than a driver string.
+    let fulfilledQuantity = 0
+    if (line.fulfilled_quantity !== undefined) {
+      const already = validateWholeCount(line.fulfilled_quantity, 'fulfilled_quantity')
+      if (!already.ok) return no(`line ${index + 1}: ${already.why}`)
+      if (already.value > quantity.value) {
+        return no(
+          `line ${index + 1}: fulfilled_quantity is ${already.value} but only ${quantity.value} ` +
+            `${quantity.value === 1 ? 'was' : 'were'} ordered - a line cannot have shipped more units than ` +
+            `it sold. State at most ${quantity.value}, or raise quantity if the order really is bigger.`,
+        )
+      }
+      statedAnyFulfilled = true
+      fulfilledQuantity = already.value
+    }
 
     if (line.unit_price !== undefined && line.unit_price_minor !== undefined) {
       return no(`line ${index + 1}: pass either unit_price or unit_price_minor, not both`)
@@ -648,6 +709,7 @@ export function validateNewOrder(body: Record<string, unknown>): Verdict<NewOrde
       sku: sku.value,
       title: line.title.trim(),
       quantity: quantity.value,
+      fulfilled_quantity: fulfilledQuantity,
       unit_price_minor: price.value,
       currency: currency.value,
     })
@@ -680,18 +742,39 @@ export function validateNewOrder(body: Record<string, unknown>): Verdict<NewOrde
     placedAt = new Date(body.placed_at).toISOString()
   }
 
-  // An ingested order may arrive already fulfilled or already cancelled — the
+  // An ingested order may arrive already fulfilled or already cancelled - the
   // state machine governs MOVES an operator makes, not the state a storefront
   // reports on the way in.
-  let status: FulfilmentStatus = 'unfulfilled'
+  let stated: FulfilmentStatus | null = null
   if (body.fulfilment_status !== undefined) {
     if (!isFulfilmentStatus(body.fulfilment_status)) {
       return no(
         `fulfilment_status must be one of ${FULFILMENT_STATES.join(', ')}, got ${JSON.stringify(body.fulfilment_status)}`,
       )
     }
-    status = body.fulfilment_status
+    stated = body.fulfilment_status
   }
+
+  // `fulfilment_status: 'fulfilled'` with no per-line numbers is the shorthand
+  // for "all of it", and is the only place a status still WRITES quantities
+  // instead of reading them. It cannot disagree with the lines, because the
+  // lines are set from it.
+  if (stated === 'fulfilled' && !statedAnyFulfilled) {
+    for (const line of lines) line.fulfilled_quantity = line.quantity
+  }
+
+  const derived = deriveFulfilmentStatus(lines)
+  if (stated !== null && stated !== 'cancelled' && stated !== derived) {
+    return no(
+      `this order is being ingested as ${stated}, but its own line quantities make it ${derived} ` +
+        `(${lines.map(l => `${l.sku}: ${l.fulfilled_quantity}/${l.quantity} fulfilled`).join(', ')}). ` +
+        `An order whose stated fulfilment disagrees with its lines is a reconciliation failure, not a ` +
+        `rounding one - the same rule the total already follows. Say what shipped with ` +
+        `line_items[].fulfilled_quantity, or omit fulfilment_status and it will be derived from them.`,
+    )
+  }
+  // `cancelled` keeps what the caller stated; every other status IS the lines.
+  const status: FulfilmentStatus = stated === 'cancelled' ? 'cancelled' : derived
 
   const email =
     body.customer_email === undefined || body.customer_email === null
@@ -712,4 +795,296 @@ export function validateNewOrder(body: Record<string, unknown>): Verdict<NewOrde
     fulfilment_status: status,
     line_items: lines,
   })
+}
+
+// ─── Partial fulfilment ─────────────────────────────────────────────────────
+//
+// THE OBJECT THAT WAS MISSING
+//   Until migration 074, `order_line_items` recorded how many units were
+//   ORDERED and nothing about how many had SHIPPED. So `partially_fulfilled`
+//   was a status an order could assert about itself with nothing underneath it:
+//   the route's own comment said, correctly, that it could not move stock
+//   because "order_line_items has no fulfilled-quantity column", and an
+//   operator who marked an order partly shipped got HTTP 200, zero stock
+//   movement, and no record anywhere of which parcel left.
+//
+//   That refusal was honest. It was also covering for a missing OBJECT rather
+//   than a missing report, which is what 074 and this section fix.
+//
+// THE STANCE, WHICH IS THE ONE THIS FILE ALREADY TAKES ABOUT MONEY
+//   `validateNewOrder` REFUSES an order whose stated total disagrees with the
+//   sum of its lines, rather than storing the disagreement. Fulfilment gets the
+//   same treatment: a fulfilment_status is DERIVED from the line quantities,
+//   and a caller who also states one gets a refusal if the two disagree. The
+//   status is a function of the lines, never a second, independent opinion
+//   about the same fact — because a second opinion is exactly what
+//   reconciliation failures are made of.
+//
+// EVERY REFUSAL HERE CARRIES REAL NUMBERS
+//   Not "over-fulfilment" but: line "PF8-A" has 10 ordered and 7 already
+//   fulfilled, so 3 remain, and this asks to ship 5. An operator reading the
+//   first has to go and look; an operator reading the second already knows what
+//   to type next.
+
+/** Fields one entry of `line_fulfilments` accepts. */
+export const LINE_FULFILMENT_FIELDS = ['sku', 'line_id', 'quantity'] as const
+
+/**
+ * One line the caller wants to ship units of, addressed EITHER by `sku` or by
+ * `line_id`, never both.
+ *
+ * WHY TWO WAYS TO NAME A LINE, WHEN ONE WOULD BE SIMPLER
+ *   `order_line_items` has no unique constraint on (order_id, sku), and that is
+ *   deliberate — a real order can carry the same SKU on two lines (two
+ *   different discounts, a gift copy alongside a bought one). SKU is therefore
+ *   the name an operator actually says out loud, and is NOT guaranteed to
+ *   identify one line. Refusing SKU entirely would make the common case
+ *   awkward; accepting it silently when it is ambiguous would ship units
+ *   against a line nobody chose. So: `sku` is accepted, and is REFUSED when it
+ *   matches more than one line, with the matching line ids named so the caller
+ *   can re-send addressed by `line_id`.
+ */
+export interface LineFulfilmentRequest {
+  sku: string | null
+  line_id: string | null
+  quantity: number
+}
+
+/**
+ * Validate the `line_fulfilments` array's SHAPE. It knows nothing about the
+ * order — matching these against real lines is `planLineFulfilments`'s job,
+ * because that needs the database and this file has no database handle.
+ */
+export function validateLineFulfilments(raw: unknown): Verdict<LineFulfilmentRequest[]> {
+  if (!Array.isArray(raw)) {
+    return no(
+      'line_fulfilments must be an array of { sku or line_id, quantity } — say which lines shipped and how many',
+    )
+  }
+  if (raw.length === 0) {
+    return no('line_fulfilments is empty — an empty shipment moves nothing and records nothing')
+  }
+
+  const requests: LineFulfilmentRequest[] = []
+  const seen = new Set<string>()
+
+  for (const [index, entry] of raw.entries()) {
+    const where = `line_fulfilments[${index}]`
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return no(`${where} is not an object`)
+    }
+    const item = entry as Record<string, unknown>
+
+    const known = rejectUnknownFields(item, LINE_FULFILMENT_FIELDS)
+    if (!known.ok) return no(`${where}: ${known.why}`)
+
+    const hasSku = item.sku !== undefined && item.sku !== null
+    const hasId = item.line_id !== undefined && item.line_id !== null
+    if (hasSku && hasId) {
+      return no(`${where}: pass either sku or line_id, not both — they could name different lines`)
+    }
+    if (!hasSku && !hasId) {
+      return no(`${where}: name the line with either sku or line_id`)
+    }
+
+    let sku: string | null = null
+    let lineId: string | null = null
+    if (hasSku) {
+      const checked = validateSku(item.sku)
+      if (!checked.ok) return no(`${where}: ${checked.why}`)
+      sku = checked.value
+    } else {
+      if (typeof item.line_id !== 'string' || item.line_id.trim() === '') {
+        return no(`${where}: line_id must be a non-empty string`)
+      }
+      lineId = item.line_id.trim()
+    }
+
+    const quantity = validateWholeCount(item.quantity, 'quantity')
+    if (!quantity.ok) return no(`${where}: ${quantity.why}`)
+    if (quantity.value < 1) {
+      // The same rule `validateAdjustment` applies to `delta` 0: an action that
+      // moves nothing is not a smaller action, it is a green answer for
+      // something that did not happen.
+      return no(`${where}: quantity must be at least 1 — shipping 0 units of a line changes nothing`)
+    }
+
+    // Two entries naming the same line would either be applied twice or have
+    // one of them silently lost, depending on write order. Neither is an answer
+    // a caller can predict, so the request is refused instead.
+    const key = sku !== null ? `sku:${sku}` : `line_id:${lineId}`
+    if (seen.has(key)) {
+      return no(
+        `${where}: ${sku !== null ? `sku "${sku}"` : `line_id "${lineId}"`} appears more than once. ` +
+          `Send one entry per line with the total you are shipping.`,
+      )
+    }
+    seen.add(key)
+
+    requests.push({ sku, line_id: lineId, quantity: quantity.value })
+  }
+
+  return ok(requests)
+}
+
+/** A line as the database holds it, for planning purposes. */
+export interface OrderLineState {
+  id: string
+  sku: string
+  quantity: number
+  fulfilled_quantity: number
+}
+
+/** One line's planned move: ship `quantity` more, taking it to `next_fulfilled`. */
+export interface PlannedLineFulfilment {
+  line: OrderLineState
+  quantity: number
+  next_fulfilled: number
+}
+
+/** Units of a line that have not shipped yet. Never negative. */
+export function lineRemaining(line: { quantity: number; fulfilled_quantity: number }): number {
+  return Math.max(0, line.quantity - line.fulfilled_quantity)
+}
+
+/**
+ * Match each request against a real line and refuse anything the order cannot
+ * support — with the actual numbers in the message, every time.
+ *
+ * Pure: it plans, it does not write. The route runs the plan under
+ * compare-and-swap and RE-CHECKS each line against its freshly-read value,
+ * because a plan made from one read is a statement about the past the moment
+ * another writer lands.
+ */
+export function planLineFulfilments(
+  lines: OrderLineState[],
+  requests: LineFulfilmentRequest[],
+): Verdict<PlannedLineFulfilment[]> {
+  if (lines.length === 0) {
+    return no(
+      'this order has no line items, so there is nothing to ship. An order with no lines is a total ' +
+        'nobody can reconstruct — it needs fixing at ingest, not fulfilling.',
+    )
+  }
+
+  const planned: PlannedLineFulfilment[] = []
+  const claimedLineIds = new Set<string>()
+
+  for (const request of requests) {
+    let line: OrderLineState | undefined
+
+    if (request.line_id !== null) {
+      line = lines.find(l => l.id === request.line_id)
+      if (!line) {
+        return no(
+          `this order has no line with line_id "${request.line_id}". Its lines are: ` +
+            lines.map(l => `${l.id} (${l.sku})`).join(', '),
+        )
+      }
+    } else {
+      const matches = lines.filter(l => l.sku === request.sku)
+      if (matches.length === 0) {
+        return no(
+          `this order has no line for sku "${request.sku}". It carries: ` +
+            `${lines.map(l => l.sku).join(', ')}.`,
+        )
+      }
+      if (matches.length > 1) {
+        return no(
+          `sku "${request.sku}" is on ${matches.length} of this order's lines ` +
+            `(${matches.map(l => `${l.id}: ${l.fulfilled_quantity}/${l.quantity} fulfilled`).join('; ')}), ` +
+            `so naming it by sku does not say which one to ship. Re-send that entry with line_id.`,
+        )
+      }
+      line = matches[0]
+    }
+
+    // Two entries can still land on the same line when one names it by sku and
+    // the other by line_id — `validateLineFulfilments` cannot see that, because
+    // it never sees the order.
+    if (claimedLineIds.has(line.id)) {
+      return no(
+        `line ${line.id} (sku "${line.sku}") is named twice in this request, once by sku and once by ` +
+          `line_id. Send one entry per line with the total you are shipping.`,
+      )
+    }
+    claimedLineIds.add(line.id)
+
+    const remaining = lineRemaining(line)
+    if (remaining === 0) {
+      return no(
+        `line "${line.sku}" (${line.id}) is already fulfilled in full — ${line.fulfilled_quantity} of ` +
+          `${line.quantity} have shipped and 0 remain, so shipping ${request.quantity} more is not possible. ` +
+          `A parcel that already left is a RETURN, which is a different object.`,
+      )
+    }
+    if (request.quantity > remaining) {
+      return no(
+        `line "${line.sku}" (${line.id}) has ${line.quantity} ordered and ${line.fulfilled_quantity} already ` +
+          `fulfilled, so ${remaining} remain — this asks to ship ${request.quantity}, which would take it to ` +
+          `${line.fulfilled_quantity + request.quantity} of ${line.quantity}. Ship at most ${remaining}.`,
+      )
+    }
+
+    planned.push({
+      line,
+      quantity: request.quantity,
+      next_fulfilled: line.fulfilled_quantity + request.quantity,
+    })
+  }
+
+  return ok(planned)
+}
+
+/**
+ * The order's fulfilment state, DERIVED from its lines. Never asserted.
+ *
+ * THE EMPTY-ARRAY TRAP, NAMED RATHER THAN INHERITED
+ *   `lines.every(...)` on an empty array is `true`, so the obvious
+ *   implementation reports an order with no lines as FULLY FULFILLED — the most
+ *   confident possible answer about an order nothing is known about. Empty
+ *   returns 'unfulfilled' here, and callers that care refuse the order outright
+ *   (see `planLineFulfilments`).
+ *
+ * It never returns 'cancelled': cancellation is an operator's decision about an
+ * order, not a fact about how many units left the warehouse, and no arrangement
+ * of line quantities can express it.
+ */
+export function deriveFulfilmentStatus(
+  lines: readonly { quantity: number; fulfilled_quantity: number }[],
+): FulfilmentStatus {
+  if (lines.length === 0) return 'unfulfilled'
+  const shipped = lines.reduce((sum, l) => sum + l.fulfilled_quantity, 0)
+  if (shipped === 0) return 'unfulfilled'
+  return lines.every(l => l.fulfilled_quantity >= l.quantity) ? 'fulfilled' : 'partially_fulfilled'
+}
+
+/**
+ * A caller may state the `fulfilment_status` it expects alongside
+ * `line_fulfilments`. If it disagrees with what the lines actually say, the
+ * whole request is refused — the same stance `validateNewOrder` takes when a
+ * stated total disagrees with the sum of the lines.
+ */
+export function checkStatedStatusAgainstLines(
+  stated: unknown,
+  derived: FulfilmentStatus,
+  detail: string,
+): Verdict<FulfilmentStatus> {
+  if (!isFulfilmentStatus(stated)) {
+    return no(
+      `"${String(stated)}" is not a fulfilment state. Known states: ${FULFILMENT_STATES.join(', ')}`,
+    )
+  }
+  if (stated === derived) return ok(derived)
+  if (stated === 'cancelled') {
+    return no(
+      'cancelled cannot be reached by shipping units — it is a decision about the order, not a count of ' +
+        'what left the warehouse. Send fulfilment_status: "cancelled" on its own, with no line_fulfilments.',
+    )
+  }
+  return no(
+    `these line quantities make this order ${derived}, not ${stated} (${detail}). An order whose stated ` +
+      `fulfilment disagrees with its own lines is a reconciliation failure, not a rounding one — omit ` +
+      `fulfilment_status and it will be derived, or send the quantities that actually make it ${stated}.`,
+  )
 }

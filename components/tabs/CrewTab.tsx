@@ -58,10 +58,16 @@ import type { WorkspaceMember } from '@/lib/rbac-types'
 import type { VaultBadgeInfo } from '@/lib/vault-badge'
 import type { AgentRunStatus } from '@/hooks/useAgentStatus'
 import {
+  activityHeadline,
+  classifyFleetLiveness,
+  describeActivity,
   describeLiveness,
   fleetHeadline,
   fleetProvenanceLine,
+  summarizeActivity,
   summarizeFleet,
+  type FleetActivity,
+  type FleetActivityInput,
   type FleetLiveness,
   type FleetLivenessInput,
 } from '@/lib/fleet-liveness'
@@ -69,7 +75,7 @@ import {
 // ── Types over the two endpoints this file reads ─────────────────────────────
 
 /** The fields of GET /api/agents' AgentDto this surface renders. */
-interface RosterRowData {
+export interface RosterRowData {
   id: string
   name: string
   emoji?: string
@@ -88,9 +94,26 @@ interface RosterRowData {
   rosterPath?: string | null
   /** Brain2 manifest fields, or null when the vault does not name this id. */
   vault?: VaultBadgeInfo | null
+  /**
+   * What GET /api/agents says this agent is on. Optional because it is a wire
+   * field; `activityOf()` below fails closed when it is absent.
+   */
+  currentTask?: string | null
+  /**
+   * WHICH FACT `currentTask` is — the agent's own heartbeat, or a board row
+   * that merely names it. Same provenance discipline as `lastSeenSource`, and
+   * added for the same reason: before it existed this surface had no way to
+   * tell "builder said it is doing TOD-42" from "TOD-42 is assigned to
+   * builder", so it could only have rendered one of them as the other.
+   */
+  currentTaskSource?: 'heartbeat' | 'assigned-issue' | 'none'
+  /** Epoch ms the assigned ISSUE went in progress. A board fact, not a check-in. */
+  workStartedAt?: number | null
+  /** The server's read-only budget verdict, or null when within every ceiling. */
+  overCeiling?: { ceiling: string; reason: string } | null
 }
 
-interface AgentsEnvelope {
+export interface AgentsEnvelope {
   agents: RosterRowData[]
   rosterPath: string | null
   rosterWarning: string | null
@@ -150,6 +173,19 @@ function EnvelopeWarnings({ env }: { env: AgentsEnvelope | null }) {
 const ROSTER_QUERY = '/api/agents'
 const DISPATCH_PROBE = '/api/run-agent?dryRun=1'
 
+/**
+ * Only the two states an operator must ACT on get a loud colour. `working` is
+ * quietly good, `assigned` is quietly normal, `idle` is quietly nothing — if
+ * all five shouted, none of them would.
+ */
+const ACTIVITY_TONE: Record<FleetActivity, string> = {
+  blocked: 'text-red-300 border-red-500/40 bg-red-500/10',
+  stalled: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
+  working: 'text-emerald-400/90 border-emerald-500/30 bg-emerald-500/5',
+  assigned: 'text-sky-300/80 border-sky-500/25 bg-sky-500/5',
+  idle: 'text-white/40 border-white/10 bg-white/5',
+}
+
 const LIVENESS_TONE: Record<FleetLiveness, string> = {
   live: 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10',
   offline: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
@@ -174,6 +210,33 @@ function livenessOf(env: AgentsEnvelope | null) {
     lastSeenAt: row.lastSeenAt ?? null,
     observed: (row.livenessSource ?? env?.livenessSource) === 'heartbeat',
     source: row.lastSeenSource ?? 'none',
+  })
+}
+
+/**
+ * One roster row -> the five facts lib/fleet-liveness.ts classifies activity on.
+ *
+ * Paired with `livenessOf()` above and sharing its liveness result, so the
+ * activity badge and the liveness badge on the same line can never be built
+ * from two different readings of the same timestamp.
+ *
+ * FAILS CLOSED on `currentTaskSource` for the same reason `livenessOf` fails
+ * closed on `lastSeenSource`: a server too old to report provenance is a
+ * server whose provenance is unknown, and unknown provenance may not be
+ * upgraded to "the agent said so".
+ */
+export function activityOf(env: AgentsEnvelope | null, now: number) {
+  const liveness = livenessOf(env)
+  // `now` is threaded rather than left to Date.now() so the activity badge and
+  // the liveness badge on the same line are classified against the SAME
+  // instant. Two clocks a few milliseconds apart is exactly how a row would
+  // come to read `live` and `stalled` at once.
+  return (row: RosterRowData): FleetActivityInput => ({
+    currentTask: row.currentTask ?? null,
+    currentTaskSource: row.currentTaskSource ?? 'none',
+    workStartedAt: row.workStartedAt ?? null,
+    overCeiling: row.overCeiling ?? null,
+    liveness: classifyFleetLiveness(liveness(row), now),
   })
 }
 
@@ -209,6 +272,32 @@ function rowProvenance(row: RosterRowData, env: AgentsEnvelope | null): string {
  * rendered at all. When dispatch IS armed the per-agent control takes over —
  * it runs its own per-agent dry run, because a runtime that is missing for
  * one agent is not a fact this shared probe can know.
+ *
+ * ROUND 2 (2026-08-26) — THIS FILE WAS BREAKING ITS OWN QUOTED RULE.
+ *
+ * The two probes it consults answer two different questions, and only one of
+ * them was being asked:
+ *
+ *   * `POST /api/run-agent?dryRun=1` returns at app/api/run-agent/route.ts:380
+ *     — SIXTY LINES BEFORE `checkDispatchCeilings()` at :440, whose refusal is
+ *     the only 429 in that file. So a dry run reports `wouldSpawn: true` for an
+ *     agent a real POST would refuse. Verified live: with `builder` carrying
+ *     `overCeiling: { ceiling: 'concurrency_per_agent' }` in the same
+ *     GET /api/agents payload, the dry run still answered `wouldSpawn: true`.
+ *
+ *   * `AgentDto.overCeiling` IS that ceiling verdict, read-only
+ *     (`getCeilingStatus`), and this row already renders it in red as
+ *     "A dispatch would be refused right now."
+ *
+ * The consequence was masked only by this instance having dispatch disabled.
+ * Set `TODERO_DISPATCH_ENABLED=1` and, before this change, a red "blocked …
+ * a dispatch would be refused right now" badge sat beside an armed
+ * "Launch (Local)" button on the same line. That is precisely "appears live
+ * and then refuses", one field away from the field that could have stopped it.
+ *
+ * So the ceiling gates the control too. Wording is deliberately about the last
+ * read, not about the future: the roster refetches every 30s and a ceiling can
+ * clear in between, so this says what the server said, not what it will say.
  */
 function RunControl({
   dispatchEnabled,
@@ -223,6 +312,22 @@ function RunControl({
     return <span className="text-white/25 text-[10px] font-mono shrink-0">checking dispatch…</span>
   }
   if (dispatchEnabled) {
+    // Per-agent refusal outranks the instance-wide "armed": the ceiling is a
+    // fact about THIS agent that the shared dry run never checked.
+    const blocked = ceilingRefusal(row)
+    if (blocked) {
+      return (
+        <button
+          type="button"
+          disabled
+          title={blocked}
+          className="flex items-center gap-1.5 text-[11px] font-medium text-amber-300/60 border border-amber-400/25 rounded-md px-2.5 py-1 cursor-not-allowed shrink-0"
+        >
+          <Lock size={10} />
+          Run — over ceiling
+        </button>
+      )
+    }
     return <AgentLaunchControl agentId={row.id} vault={row.vault ?? null} />
   }
   return (
@@ -235,6 +340,33 @@ function RunControl({
       <Lock size={10} />
       Run — disabled
     </button>
+  )
+}
+
+/**
+ * The reason a dispatch for this row would be refused right now, or null when
+ * the last roster read found no ceiling over.
+ *
+ * Exported so the gate is testable without a DOM (the same reason
+ * `activityOf` is). `RunControl` is the only caller; the assertion that
+ * matters is that a row carrying `overCeiling` never yields null, because
+ * yielding null is what arms the button.
+ *
+ * FAILS CLOSED on a malformed verdict: a row whose `overCeiling` is present
+ * but whose `reason` is empty still returns a non-null string, so a server
+ * that reports a ceiling without wording it still disables the control rather
+ * than arming it on a falsy reason.
+ */
+export function ceilingRefusal(row: RosterRowData): string | null {
+  const over = row.overCeiling
+  if (!over) return null
+  const reason = (over.reason ?? '').trim()
+  const ceiling = (over.ceiling ?? '').trim() || 'budget'
+  return (
+    `Over the ${ceiling} ceiling as of the last roster read` +
+    (reason ? `: ${reason}` : ' (the server reported no reason text)') +
+    '. POST /api/run-agent would answer 429 — see app/api/run-agent/route.ts. ' +
+    'The dry run this card uses to arm the control returns before that check, so it cannot see this.'
   )
 }
 
@@ -300,6 +432,8 @@ function RosterCard({
   const observed = env?.livenessSource === 'heartbeat'
   const inputs = rows.map(livenessOf(env))
   const summary = summarizeFleet(inputs, now)
+  const activityInputs = rows.map(activityOf(env, now))
+  const activity = summarizeActivity(activityInputs, now)
 
   // GET /api/agents takes no limit or offset — it returns the union of every
   // source in full — so this length is an exact count, not the size of a page.
@@ -331,10 +465,19 @@ function RosterCard({
       id="fleet-roster"
       title="Which agents exist, and which are alive?"
       source={source}
-      // Card's one number is the registered count; the per-state breakdown is
-      // the first line of the body rather than the header, because the header
-      // truncates and a truncated "…· 1 live" is worse than no breakdown.
-      metric={loaded ? { value: summary.registered, label: 'registered' } : undefined}
+      // Card's one number is how many rows the union produced; the per-state
+      // breakdown is the first line of the body rather than the header,
+      // because the header truncates and a truncated "…· 1 live" is worse
+      // than no breakdown.
+      //
+      // The label is "in the fleet", NOT "registered", even though the field
+      // behind it is `FleetSummary.registered`. On this host that read
+      // "28 registered" while the same envelope's `rosterSource` breakdown had
+      // exactly ONE registered agent — `registered` means "self-registered
+      // through POST /api/connect" everywhere else on this surface (see
+      // `rowProvenance` above and app/api/agents/fleet-roster.ts). Two
+      // meanings for one word, twenty-seven apart, on one card.
+      metric={loaded ? { value: summary.registered, label: 'in the fleet' } : undefined}
       // Card renders `empty.message` INSTEAD of children, so an empty roster
       // would swallow the source warnings below — and an empty roster is the
       // case those warnings exist to explain. When there is a warning to
@@ -347,7 +490,21 @@ function RosterCard({
     >
       <EnvelopeWarnings env={env} />
       {loaded && rows.length === 0 && <p className="text-white/45 text-xs">{emptyMessage}</p>}
-      {rows.length > 0 && <p className="font-mono text-[11px] text-white/60 mb-2">{fleetHeadline(summary)}</p>}
+      {rows.length > 0 && (
+        <div className="mb-2 space-y-0.5">
+          {/* What the fleet IS. */}
+          <p className="font-mono text-[11px] text-white/60">{fleetHeadline(summary)}</p>
+          {/* What the fleet is DOING — the second half of the question this
+              card's title asks, and the half the roster used to leave out
+              entirely. Ends in either a count of rows that need the operator
+              or the words "nothing is waiting on you", never in silence. */}
+          <p
+            className={`font-mono text-[11px] ${activity.needsAttention > 0 ? 'text-amber-300/90' : 'text-white/45'}`}
+          >
+            {activityHeadline(activity)}
+          </p>
+        </div>
+      )}
       {env?.heartbeatWarning && (
         <p className="text-amber-300/80 text-[11px] leading-relaxed mb-2 break-words">{env.heartbeatWarning}</p>
       )}
@@ -360,6 +517,7 @@ function RosterCard({
       <ul className="divide-y divide-white/5">
         {rows.map(row => {
           const desc = describeLiveness(livenessOf(env)(row), now)
+          const act = describeActivity(activityOf(env, now)(row), now)
           return (
             <li key={row.id} className="py-2.5 flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
@@ -375,6 +533,16 @@ function RosterCard({
                 <span className={`font-mono text-[10px] rounded px-1.5 py-0.5 border shrink-0 ${LIVENESS_TONE[desc.state]}`}>
                   {desc.badge}
                 </span>
+                {/* Two badges, two different questions: the first is "is it
+                    checking in", this one is "what is it doing". They are
+                    classified from the same instant (see activityOf) so they
+                    cannot contradict each other. */}
+                <span
+                  className={`font-mono text-[10px] rounded px-1.5 py-0.5 border shrink-0 ${ACTIVITY_TONE[act.state]}`}
+                  title={act.label}
+                >
+                  {act.badge}
+                </span>
                 <span className="flex-1" />
                 <span className="font-mono text-[10px] text-white/50 bg-white/5 rounded px-1.5 py-0.5 shrink-0">
                   {row.vault ? `tier ${row.vault.tier}` : 'no tier declared'}
@@ -382,6 +550,18 @@ function RosterCard({
               </div>
               <p className="font-mono text-[10.5px] text-white/55 break-all">{row.model ?? 'no model reported by /api/agents'}</p>
               <p className="font-mono text-[10px] text-white/42 leading-snug">{desc.label}</p>
+              {/* The activity sentence always names WHICH FACT it was built
+                  from — "its own last heartbeat said so" vs "that is a board
+                  row, not a check-in" — so the two can never be read as each
+                  other. Only the two states an operator must act on are
+                  coloured; the rest stay quiet. */}
+              <p
+                className={`font-mono text-[10px] leading-snug break-words ${
+                  act.needsAttention ? 'text-amber-300/85' : 'text-white/42'
+                }`}
+              >
+                {act.label}
+              </p>
               <div className="flex items-center gap-2">
                 <p className="font-mono text-[10px] text-white/30 leading-snug break-all min-w-0">{rowProvenance(row, env)}</p>
                 <span className="flex-1" />

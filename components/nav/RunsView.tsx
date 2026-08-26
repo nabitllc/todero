@@ -24,13 +24,68 @@
 // learned" panel and its "2 of 3 to skill" counter. No column records a
 // per-run lesson or its promotion progress; the promotion threshold lives in a
 // script. RunTraceCard names that absence on screen instead of approximating it.
+//
+// RUNS-NEED-URLS (Navigation & Deep Linking, 7/8)
+// ----------------------------------------------
+// An open run used to live in `useState`, and nowhere else. Measured
+// 2026-08-26 before this piece: `GET /api/agent-runs/<uuid>` answered 405 with
+// an empty body — a run had no address at all, while an issue has had one
+// since the issue-permalink piece (`/p/<slug>/i/<key>`). You could not send
+// anyone a run, and a reload lost whichever one you had open.
+//
+// The URL is now the ONLY source of truth for which run is open. There is no
+// `openRunId` state left to disagree with the address bar: `runSegment` is
+// read from `location.pathname` on mount and on every popstate (real or the
+// synthetic one lib/run-permalink.ts dispatches), so clicking a row, using the
+// back button, and pasting a link all go through the same one path.
+//
+// Two consequences worth stating because they are the point:
+//   * every run row is a real `<a href>`, so middle-click, cmd-click and
+//     "copy link address" work — the LangSmith/Linear property this channel
+//     is measured against;
+//   * a run OUTSIDE this list's `limit=100` window is still reachable, because
+//     an open run that is not among the loaded rows is fetched by id from
+//     GET /api/agent-runs/<id> and rendered above the table. Before, a
+//     permalink to the 101st run would have rendered as "not found" with
+//     nothing to distinguish it from a deleted one.
+//
+// INCOMPLETE UNTIL THE SEAM DIFF LANDS. app/page.tsx's mount-time
+// `replaceState` canonicalises the URL to `buildPath(...)`, which for
+// `/p/limiglow/runs/r/<id>` is `/p/limiglow/runs` — it erases the run id from
+// the address bar milliseconds after load. This file cannot fix that;
+// app/page.tsx is orchestrator-owned. The exact two-line diff is in
+// docs/rebuild/pieces/pieces8/runs-need-urls.md §5. Until it is applied,
+// clicking a run works and the back button works, but a full RELOAD of a run
+// permalink does not survive. `grep -c 'run-permalink' app/page.tsx` -> 0,
+// measured 2026-08-26; __tests__/nav/runs-permalink-seam.test.ts is RED for
+// exactly as long as that stays 0.
+//
+// AND THIS FILE CANNOT WORK AROUND IT — checked 2026-08-26, not assumed. The
+// tempting workaround is for this component to read the run segment on mount
+// BEFORE the parent erases it, relying on child effects running before parent
+// effects. That cannot happen here: app/page.tsx:921 gates every destination
+// behind `!selectedProject`, so RunsView is not even mounted until
+// /api/businesses and /api/projects have resolved — strictly after the
+// mount-time replaceState at app/page.tsx:452 has already run. There is no
+// effect ordering, no module-load capture and no re-assertion of the address
+// bar from here that is not a race with a parent effect this file cannot see
+// fire. The seam is the fix. Nothing else is.
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import { formatElapsedBetween } from '@/lib/time'
 import { fetchJson } from '@/hooks/useApiData'
 import { useProjectScope } from './ProjectScope'
 import RunTraceCard from '@/components/tabs/RunTraceCard'
+import {
+  closeRunPermalink,
+  navigateToRunPermalink,
+  normalizeRunId,
+  parseRunIdFromPath,
+  rawRunSegment,
+  runBackdropPath,
+  runPermalinkPath,
+} from '@/lib/run-permalink'
 
 interface AgentRunRow {
   id: string
@@ -82,6 +137,15 @@ const STATUS_TONE: Record<string, string> = {
   stopped: 'text-amber-400 bg-amber-500/10 border-amber-500/25',
 }
 
+/** What GET /api/agent-runs/<id> answers with. */
+interface RunDetailResponse {
+  run: AgentRunRow
+  /** The run's own project, resolved through task_id -> issues.project. Null = no task. */
+  project: string | null
+  scope: string | null
+  crossProject: boolean
+}
+
 export default function RunsView() {
   // scope-is-a-boundary: read from the one Context Provider instead of a
   // same-named prop — see components/nav/ProjectScope.tsx. Runs is
@@ -90,8 +154,91 @@ export default function RunsView() {
   const { project: projectName } = useProjectScope()
   const [rows, setRows] = useState<AgentRunRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  /** The one run whose trace is open. Null = none; this is a drill-down, not a list of traces. */
-  const [openRunId, setOpenRunId] = useState<string | null>(null)
+
+  // ── which run is open ──────────────────────────────────────────────────────
+  // The URL, and only the URL. `runSegment` is the RAW segment after
+  // `runs/r/`, not a parsed id, for the same reason lib/issue-permalink.ts
+  // keeps `rawIssueSegment` (TOD-2467): a truncated or mistyped link has to
+  // stay visibly a RUN REQUEST, or it renders as an ordinary list load and the
+  // operator never learns their link was wrong.
+  //
+  // `null` on the very first render is deliberate and not a bug: this is a
+  // 'use client' component inside an app that renders on the server first, so
+  // reading `location` during render would be a hydration mismatch. The effect
+  // below fills it in on mount, before paint.
+  const [runSegment, setRunSegment] = useState<string | null>(null)
+  const [detail, setDetail] = useState<RunDetailResponse | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const read = () => setRunSegment(rawRunSegment(window.location.pathname))
+    read()
+    // Covers the browser's own back/forward AND the synthetic popstate
+    // lib/run-permalink.ts dispatches — the same event app/page.tsx's router
+    // already listens for, so this is not a second routing mechanism.
+    window.addEventListener('popstate', read)
+    return () => window.removeEventListener('popstate', read)
+  }, [])
+
+  const openRunId = runSegment === null ? null : normalizeRunId(runSegment)
+  const rowForOpenRun = openRunId === null ? null : (rows ?? []).find(r => r.id === openRunId) ?? null
+
+  /**
+   * Toggle: open a run at its own URL, or go back to the list's URL.
+   *
+   * The comparison goes through `parseRunIdFromPath` — the NORMALISED id —
+   * and not through `rawRunSegment`. That was a real defect, found by reading
+   * rather than by running (this repo cannot render a component; see the file
+   * header): with an upper-cased id in the address bar, `openRunId` normalises
+   * and the row therefore renders OPEN with its link reading "Close this run",
+   * while a raw comparison against the lower-cased `agent_runs.id` said "not
+   * open" — so the first click re-pushed the permalink instead of closing it,
+   * and the control did the opposite of what it said. What is open is decided
+   * by exactly one rule, in one place, and this is that rule.
+   */
+  const toggleRun = useCallback((id: string) => {
+    if (parseRunIdFromPath(window.location.pathname) === id) closeRunPermalink()
+    else navigateToRunPermalink(id)
+  }, [])
+
+  /**
+   * The href a row carries. An OPEN row links to the list (closing it is a
+   * navigation too, so it gets a real URL as well); a closed row links to the
+   * run's permalink. `runSegment` is in the dependency list because the
+   * address bar is what these hrefs are derived from — when it changes, every
+   * href on screen has to be recomputed, or an open row keeps advertising the
+   * link that opened it.
+   */
+  const hrefFor = useCallback((id: string, isOpen: boolean) => {
+    // Client-only in practice: `rows` is null until a browser fetch resolves,
+    // so the table this feeds never renders on the server. The guard is here
+    // so that stops being a thing anyone has to remember.
+    const here = typeof window === 'undefined' ? '/' : window.location.pathname
+    return isOpen ? runBackdropPath(here) : runPermalinkPath(here, id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runSegment])
+
+  // A run that is open but NOT among the loaded rows — outside this list's
+  // limit=100 window, or from another project — is fetched by id. Without
+  // this, a permalink to the 101st run is indistinguishable from a deleted
+  // one. The failure is kept and rendered, never coerced into an empty state
+  // (scripts/no-silent-empty.mjs).
+  useEffect(() => {
+    if (openRunId === null || rows === null || rowForOpenRun !== null) {
+      setDetail(null)
+      setDetailError(null)
+      return
+    }
+    let cancelled = false
+    setDetail(null)
+    setDetailError(null)
+    fetchJson<RunDetailResponse>(`/api/agent-runs/${encodeURIComponent(openRunId)}`).then(r => {
+      if (cancelled) return
+      if (!r.ok) { setDetailError(`${r.error.status}: ${r.error.message}`); return }
+      setDetail(r.data)
+    })
+    return () => { cancelled = true }
+  }, [openRunId, rows, rowForOpenRun])
 
   useEffect(() => {
     let cancelled = false
@@ -105,39 +252,128 @@ export default function RunsView() {
     return () => { cancelled = true }
   }, [])
 
+  // ── the addressed run ──────────────────────────────────────────────────────
+  // Rendered ABOVE the list branches below, deliberately: a permalink must
+  // still say something when the list is empty, still loading, or failed. If
+  // it were folded into the table it would disappear behind the empty state,
+  // which is exactly the "looks like an ordinary page load" failure this piece
+  // exists to remove.
+  let addressed: React.ReactNode = null
+  if (runSegment !== null && openRunId === null) {
+    addressed = (
+      <div className="border border-amber-500/25 bg-amber-500/[0.06] rounded-lg px-4 py-3 text-sm text-amber-200 space-y-1">
+        <p className="font-medium">
+          <code className="font-mono">{runSegment}</code> is not a run id.
+        </p>
+        <p className="text-amber-200/80 text-xs">
+          A run permalink is <code className="font-mono">…/runs/r/&lt;agent_runs.id&gt;</code>. This link was
+          truncated or mistyped — the run it names may still exist. The list below is unfiltered.
+        </p>
+      </div>
+    )
+  } else if (openRunId !== null && rows !== null && rowForOpenRun === null) {
+    // `rows !== null` matters: while the list is still loading, EVERY run is
+    // "not in the rows", and claiming so would be a sentence that is true for
+    // a tenth of a second and wrong about why.
+    addressed = (
+      <div className="border border-white/10 rounded-lg px-4 py-3 space-y-2">
+        <p className="text-white/75 text-xs font-mono">
+          run {openRunId} · not among the {rows.length} most recent runs below, fetched by id
+        </p>
+        {detailError ? (
+          <p className="text-red-300 text-sm">run unavailable — {detailError}</p>
+        ) : detail === null ? (
+          <p className="text-white/60 text-sm">Loading run…</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              <span className="text-white font-medium">{detail.run.agent_id}</span>
+              <span className="text-white/70">{detail.run.task_title || '—'}</span>
+              <span className={`text-xs font-mono border rounded px-1.5 py-0.5 ${STATUS_TONE[detail.run.status] ?? 'text-white/70 bg-white/5 border-white/10'}`}>
+                {detail.run.status}
+              </span>
+              <span
+                className="text-white/70 font-mono text-xs"
+                title={runDuration(detail.run.started_at, detail.run.completed_at).title}
+              >
+                {runDuration(detail.run.started_at, detail.run.completed_at).text}
+              </span>
+              <span className="text-white/70 font-mono text-xs">{detail.run.tokens_used ?? '—'} tokens</span>
+              <span className="text-white/70 font-mono text-xs">
+                {detail.run.cost_usd != null ? `$${detail.run.cost_usd.toFixed(2)}` : '—'}
+              </span>
+              {/* The run's OWN project, resolved server-side through
+                  task_id -> issues.project. Never the screen's scope, and
+                  never rendered when the run has no task — see the route. */}
+              <span className="text-white/60 font-mono text-xs" title="agent_runs.task_id → issues.project">
+                {detail.project ?? 'no task — belongs to no project'}
+              </span>
+            </div>
+            <RunTraceCard
+              runId={detail.run.id}
+              agentId={detail.run.agent_id}
+              startedAt={detail.run.started_at}
+              completedAt={detail.run.completed_at}
+              stoppedReason={detail.run.stopped_reason}
+            />
+          </>
+        )}
+        <a
+          href={runBackdropPath(typeof window === 'undefined' ? '/' : window.location.pathname)}
+          onClick={e => { e.preventDefault(); closeRunPermalink() }}
+          className="inline-block text-white/60 hover:text-white text-xs underline"
+        >
+          Close — back to the run list
+        </a>
+      </div>
+    )
+  }
+
   if (error) {
     return (
-      <div className="border border-red-500/25 bg-red-500/[0.06] rounded-lg px-4 py-3 text-sm text-red-300">
-        agent_runs unavailable — {error}
+      <div className="space-y-4">
+        {addressed}
+        <div className="border border-red-500/25 bg-red-500/[0.06] rounded-lg px-4 py-3 text-sm text-red-300">
+          agent_runs unavailable — {error}
+        </div>
       </div>
     )
   }
 
   if (rows === null) {
-    return <div className="text-white/60 text-sm py-8 text-center">Loading runs…</div>
+    return (
+      <div className="space-y-4">
+        {addressed}
+        <div className="text-white/60 text-sm py-8 text-center">Loading runs…</div>
+      </div>
+    )
   }
 
   if (rows.length === 0) {
     return (
-      <div className="border border-dashed border-white/15 rounded-xl px-5 py-8 text-center space-y-2">
-        <p className="text-white/70 text-sm font-medium">
-          No runs recorded yet{projectName ? ` — ${projectName} has not had an agent dispatched to it` : ''}.
-        </p>
-        <p className="text-white/75 text-xs max-w-md mx-auto leading-relaxed">
-          This will fill in the moment an agent is dispatched — every row comes straight from the
-          <code className="mx-1 text-white/70 font-mono">agent_runs</code>
-          table (agent, task, status, started/completed, tokens, cost), and opening a row shows its
-          per-step trace from
-          <code className="mx-1 text-white/70 font-mono">run_steps</code>.
-          Nothing here is estimated.
-          {projectName && ' Runs are agent-wide, not filtered by project — an agent works across every project it is assigned to.'}
-        </p>
+      <div className="space-y-4">
+        {addressed}
+        <div className="border border-dashed border-white/15 rounded-xl px-5 py-8 text-center space-y-2">
+          <p className="text-white/70 text-sm font-medium">
+            No runs recorded yet{projectName ? ` — ${projectName} has not had an agent dispatched to it` : ''}.
+          </p>
+          <p className="text-white/75 text-xs max-w-md mx-auto leading-relaxed">
+            This will fill in the moment an agent is dispatched — every row comes straight from the
+            <code className="mx-1 text-white/70 font-mono">agent_runs</code>
+            table (agent, task, status, started/completed, tokens, cost), and opening a row shows its
+            per-step trace from
+            <code className="mx-1 text-white/70 font-mono">run_steps</code>.
+            Nothing here is estimated.
+            {projectName && ' Runs are agent-wide, not filtered by project — an agent works across every project it is assigned to.'}
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
+      {addressed}
       <p className="text-white/75 text-xs font-mono">
         {rows.length} run{rows.length === 1 ? '' : 's'} · every number below is recorded, never estimated · open a run for its per-step trace from run_steps
         {projectName && ' · shown across every project, not filtered to ' + projectName}
@@ -159,23 +395,36 @@ export default function RunsView() {
               const open = openRunId === r.id
               return (
                 <React.Fragment key={r.id}>
+                  {/* The whole row stays clickable, but a click that started
+                      inside the anchor below is left to the anchor — otherwise
+                      both fire and the run toggles twice, netting out as "the
+                      click did nothing". */}
                   <tr
                     className={`border-b border-white/5 hover:bg-white/[0.03] cursor-pointer ${open ? 'bg-white/[0.04]' : ''}`}
-                    onClick={() => setOpenRunId(open ? null : r.id)}
+                    onClick={e => {
+                      if ((e.target as HTMLElement).closest('a')) return
+                      toggleRun(r.id)
+                    }}
                     aria-expanded={open}
                     aria-controls={`run-trace-${r.id}`}
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        setOpenRunId(open ? null : r.id)
-                      }
-                    }}
                   >
                     <td className="px-3 py-2.5 text-white font-medium">
                       <span className="text-white/40 font-mono text-xs mr-1.5">{open ? '▾' : '▸'}</span>
-                      {r.agent_id}
+                      {/* A REAL href, not a click handler wearing a link's
+                          clothes: middle-click, cmd-click and "copy link
+                          address" all have to work, which is the whole point
+                          of this piece. It is also the row's keyboard
+                          control — the <tr> no longer carries role="button"
+                          and tabIndex, because two focusable things for one
+                          action is worse than one. */}
+                      <a
+                        href={hrefFor(r.id, open)}
+                        onClick={e => { e.preventDefault(); toggleRun(r.id) }}
+                        className="hover:underline"
+                        title={open ? 'Close this run' : 'Open this run — this link is its permalink'}
+                      >
+                        {r.agent_id}
+                      </a>
                     </td>
                     <td className="px-3 py-2.5 text-white/70 max-w-[320px] truncate" title={r.error ?? undefined}>
                       {r.task_title || '—'}

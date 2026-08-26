@@ -5,4 +5,4 @@
  * officeDrawing.ts so we re-export them here to keep the module boundary
  * clear without duplicating logic.
  */
-export { tileCenterPx, fmt, clamp, mkBurst } from './officeDrawing';
+export { tileCenterPx, fmt, clamp, mkBurst, countWaitingByAgent } from './officeDrawing';

@@ -28,6 +28,8 @@
 //     unresolvable, never quietly attributed to the project you happen to be
 //     looking at.
 
+import { ROLE_PERMISSIONS, hasPermission, type Permission, type Role } from '@/lib/rbac-types'
+
 /** The statuses `inbox.status` is allowed to hold (migration 022's CHECK). */
 export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'explained' | 'timeout'
 
@@ -427,6 +429,327 @@ export function issueRefsToResolve(rows: readonly ApprovalRow[]): { ids: string[
   return { ids: [...ids], taskKeys: [...taskKeys] }
 }
 
+// ─── Who is allowed to decide ───────────────────────────────────────────────
+//
+// THE GAP THIS CLOSES, measured before it was written (2026-08-26, live
+// against the dev server, see docs/rebuild/pieces/pieces8/approval-surface.md):
+//
+//   PATCH /api/inbox {"id":…,"status":"approved","resolved_by":
+//   "definitely-not-a-human-bot"}  ->  200, effect applied, and the
+//   append-only audit row recorded `decided_by:"definitely-not-a-human-bot"`.
+//
+// The decision persisted and the effect really ran — that half was already
+// true. What was not true was attribution: `decided_by` was whatever string
+// the caller typed, checked against nothing, and the route carried no
+// permission check of its own at all. An audit trail that records the
+// caller's own claim about who they are is a log, not an audit trail; and a
+// permission nobody is ever refused by is not a permission.
+//
+// THE STANDARD BEING MATCHED. `app/api/conversations/[id]/messages/[messageId]`
+// splits drafting from approving with two permissions: `projects:write` to
+// write a draft, `settings:write` ON TOP to approve one — so a drafting agent
+// (role `member`, which holds the first and not the second) gets 201 on the
+// draft and 403 the moment it approves its own work. The inbox is the same
+// shape of problem: an agent FILES the request (lib/loop-breaker.ts,
+// lib/agent-budget.ts insert it), and approving that request is what releases
+// that same agent. So the same split applies here, with `issues:write` as the
+// baseline because that is what middleware.ts already uses to separate viewer
+// from everyone else on a write.
+//
+// WHAT THIS CAN AND CANNOT PROVE, stated rather than implied. Todero has no
+// per-person identity: the workspace authenticates a PASSWORD, not a person,
+// so every session on the owner password is the same session whatever name it
+// types. The role is provable; the person is not. `attributeDecision()`
+// therefore records both halves and keeps them distinguishable — the claimed
+// name, and the role the server resolved — instead of writing the unbacked
+// half alone.
+//
+// CORRECTION, 2026-08-26 (round 2). The paragraph above previously ended
+// "The role IS provable; the person is NOT" while pointing at
+// `lib/with-permission.ts`'s `resolveRole()` as the thing that proved it.
+// That was false as shipped, and a fresh critic measured it: `resolveRole()`
+// accepts ANY valid session password and then reads the role straight out of
+// the client-typed `mc-role` cookie, so a session holding only the READ-ONLY
+// viewer password could name itself `admin`. Measured live on this route
+// before the fix, one variable changed between the two requests:
+//
+//   mc-auth=view2026; mc-role=viewer  ->  403
+//   mc-auth=view2026; mc-role=admin   ->  200, agent un-paused,
+//                                          decided_by "michael (admin)"
+//
+// Neither half was proven when the caller could raise its own role with a
+// cookie value and no extra credential, and the append-only trail was
+// recording an escalation as an admin decision.
+//
+// `resolveDecisionRole()` below is the fix, and it is the role source this
+// piece's route now uses. It derives the role from the CREDENTIAL presented
+// (`mc-auth`), and lets `mc-role` only ever NARROW that — never widen it. A
+// cookie asking for more than the password proves is ignored and reported as
+// `ignoredClaim` so the attempt is visible rather than silently downgraded.
+//
+// SCOPE OF THE FIX, said plainly: this closes the hole on THIS route only.
+// `lib/with-permission.ts` is not in this piece's ownership and still trusts
+// `mc-role` for every other route that calls it; that is written up as a seam
+// request in this piece's doc and is NOT fixed here.
+
+/**
+ * The passwords a Mission Control session can present, and the role each one
+ * grants. Read from env by the caller — this module stays free of `process`.
+ *
+ * The password→role contract is `app/api/auth/route.ts`'s, not a second one
+ * invented here: MC_PASSWORD signs you in as `owner`, MC_MEMBER_PASSWORD as
+ * `member`, MC_VIEWER_PASSWORD as `viewer`, and that is exactly what it
+ * writes into the `mc-role` cookie. Deriving the role from the credential
+ * means using THAT mapping. `lib/with-permission.ts` uses a different one
+ * (MC_PASSWORD → `admin`, and no `member` at all), which is part of why the
+ * two disagreed about who was signed in.
+ */
+export interface SessionCredentials {
+  /** MC_PASSWORD — grants `owner`. */
+  ownerPassword: string
+  /** MC_VIEWER_PASSWORD — grants `viewer`. */
+  viewerPassword: string
+  /** MC_MEMBER_PASSWORD when configured — grants `member`. Unset on this install. */
+  memberPassword?: string | null
+}
+
+/** The three role-bearing signals a request can carry, as raw strings. */
+export interface RequestCredential {
+  /** `mc-auth` cookie. The only one of the three the client cannot invent. */
+  sessionPassword: string | null
+  /** `mc-role` cookie. A client-typed string: may narrow, never widen. */
+  claimedRole: string | null
+  /** `X-Agent-Role`. Honoured only when no valid session is presented. */
+  agentRoleHeader: string | null
+}
+
+export interface ResolvedDecisionRole {
+  /** The role the request actually gets, after narrowing. */
+  role: Role | null
+  /** The role the presented credential proves, before any narrowing. */
+  granted: Role | null
+  /** A `mc-role` value that asked for more than the credential proves, and
+   *  was therefore ignored. Null when the cookie was absent, unrecognised in
+   *  a harmless way, or a legitimate narrowing. */
+  ignoredClaim: string | null
+}
+
+/** True when `candidate` can do nothing `ceiling` cannot. */
+function isNarrowerOrEqual(candidate: Role, ceiling: Role): boolean {
+  const allowed = ROLE_PERMISSIONS[ceiling]
+  const wanted = ROLE_PERMISSIONS[candidate]
+  if (!allowed || !wanted) return false
+  return wanted.every(p => allowed.includes(p))
+}
+
+/** Which role does this password prove? Unknown password proves nothing. */
+function roleFromPassword(password: string | null, creds: SessionCredentials): Role | null {
+  if (!password) return null
+  if (creds.ownerPassword && password === creds.ownerPassword) return 'owner'
+  if (creds.viewerPassword && password === creds.viewerPassword) return 'viewer'
+  if (creds.memberPassword && password === creds.memberPassword) return 'member'
+  return null
+}
+
+/**
+ * The role this request may act with — derived from the credential, narrowed
+ * (never widened) by the `mc-role` cookie.
+ *
+ * Narrowing is allowed on purpose: an admin session that sets `mc-role=viewer`
+ * is asking to be treated as less, and honouring that is fail-safe. Widening
+ * is refused because it is not a request, it is a claim with nothing behind
+ * it — and `admin` vs `viewer` here is the difference between "may release a
+ * paused agent" and "may read".
+ *
+ * The ordinary signed-in operator is unaffected: `app/api/auth/route.ts` sets
+ * `mc-role=owner` for the owner password, which matches what that credential
+ * grants exactly, so nothing is narrowed and nothing is ignored. What changes
+ * is only the case the cookie and the credential DISAGREE about.
+ *
+ * ONE VISIBLE CONSEQUENCE, stated rather than buried: the role recorded for an
+ * owner session is now `owner`, so `attributeDecision()` writes
+ * `"michael (owner)"` where it wrote `"michael (admin)"` before. `admin` was
+ * `lib/with-permission.ts`'s word for the owner password, not the login's own
+ * — `app/api/auth/route.ts` has always called that credential `owner`. The
+ * trail now says what the operator actually signed in as. No permission
+ * changes with it: `owner` is a superset of `admin`, and this route checks
+ * only `issues:write` and `settings:write`, which both hold.
+ *
+ * Pure: every input is an argument, so lib/__tests__ can prove the escalation
+ * is closed without a server.
+ */
+export function resolveDecisionRole(
+  cred: RequestCredential,
+  creds: SessionCredentials,
+): ResolvedDecisionRole {
+  const granted = roleFromPassword(cred.sessionPassword, creds)
+
+  if (!granted) {
+    // No session. An agent caller may present X-Agent-Role — middleware.ts
+    // already requires such a caller to prove itself with the internal
+    // secret, so this is defence in depth, not the front door.
+    const claimed = cred.agentRoleHeader?.trim()
+    if (claimed && claimed in ROLE_PERMISSIONS) {
+      const role = claimed as Role
+      return { role, granted: role, ignoredClaim: null }
+    }
+    return { role: null, granted: null, ignoredClaim: null }
+  }
+
+  const wanted = cred.claimedRole?.trim()
+  if (!wanted || !(wanted in ROLE_PERMISSIONS)) {
+    // No cookie, or a value that names no role at all. The credential stands
+    // on its own — an unreadable cookie must never be treated as an upgrade.
+    return { role: granted, granted, ignoredClaim: null }
+  }
+
+  const asked = wanted as Role
+  if (isNarrowerOrEqual(asked, granted)) {
+    return { role: asked, granted, ignoredClaim: null }
+  }
+  return { role: granted, granted, ignoredClaim: wanted }
+}
+
+/** Baseline right to record ANY decision (deny, acknowledge, approve). */
+export const DECIDE_PERMISSION: Permission = 'issues:write'
+
+/** The extra right approving requires, on top of DECIDE_PERMISSION. */
+export const APPROVE_PERMISSION: Permission = 'settings:write'
+
+export type ActorRefusalCode = 'NO_ACTOR' | 'PERMISSION_DENIED' | 'SELF_APPROVAL'
+
+/** Who the server believes is deciding. */
+export interface DecisionActor {
+  /** Role resolved from the request's CREDENTIAL by `resolveDecisionRole()`
+   *  above — not read from the `mc-role` cookie, which can only narrow it.
+   *  null means the request proved no role at all. */
+  role: Role | null
+  /** Display name the caller supplied in `resolved_by`. A claim, not a proof. */
+  claimedBy: string | null
+}
+
+/** Structural shape shared by a preflight refusal and an actor refusal, so the
+ *  audit-row builder can record either without caring which it is. */
+export interface DecisionRefusal {
+  code: string
+  httpStatus: number
+  reason: string
+}
+
+export type ActorResult =
+  | { ok: true }
+  | { ok: false; code: ActorRefusalCode; httpStatus: number; reason: string; required: Permission | null }
+
+/**
+ * The attributable string written to `inbox.resolved_by` and
+ * `approval_decisions.decided_by`.
+ *
+ * Format: `"<claimed name> (<proven role>)"`, or just `"(<proven role>)"`-less
+ * `"<role>"` when nothing was claimed. The parenthesised half is the only
+ * half the server verified, and it is always present — so a row reading
+ * `michael (admin)` says "someone holding an admin session typed the name
+ * michael", which is exactly as much as is actually known, no more.
+ *
+ * A dedicated `decided_by_role` column would be the better shape and is
+ * offered as an optional seam diff in this piece's doc; it needs a migration,
+ * and migrations are not this lane's to write.
+ */
+export function attributeDecision(actor: DecisionActor): string {
+  const role = actor.role ?? 'unauthenticated'
+  const claim = actor.claimedBy && actor.claimedBy.trim() ? actor.claimedBy.trim() : null
+  return claim ? `${claim} (${role})` : role
+}
+
+/** The agent names a decision on this row must not be made in the name of. */
+function requestingAgentNames(row: ApprovalRow): string[] {
+  const ctx = contextOf(row)
+  const names = [str(row.agent), str(ctx.agent_id)]
+  return names.filter((n): n is string => !!n).map(n => n.toLowerCase())
+}
+
+/**
+ * May THIS actor record THIS decision on THIS row?
+ *
+ * Pure, and separate from `preflightDecision()` on purpose: preflight asks
+ * "is the world in a state where this decision can take effect", this asks
+ * "is the caller allowed to make it at all". They fail with different codes
+ * and different HTTP statuses, and conflating them would make a 403 read as
+ * a 409.
+ *
+ * The asymmetry is the same one preflight has, for the same reason:
+ * approving RELEASES an agent, refusing only ever leaves it stopped. So
+ * `settings:write` gates approval alone, and a `member`-role agent keeps the
+ * ability to acknowledge or deny a request it filed.
+ */
+export function authorizeDecision(args: {
+  actor: DecisionActor
+  row: ApprovalRow
+  decision: string
+}): ActorResult {
+  const { actor, row, decision } = args
+  const role = actor.role
+
+  // No role at all. Never fall back to "user" — an unattributable decision is
+  // exactly what this section exists to stop being possible.
+  if (!role) {
+    return {
+      ok: false,
+      code: 'NO_ACTOR',
+      httpStatus: 403,
+      required: DECIDE_PERMISSION,
+      reason:
+        'This request proved no role, so a decision made through it would be attributable to nobody. ' +
+        'Sign in, or present a recognised agent role.',
+    }
+  }
+
+  if (!hasPermission(role, DECIDE_PERMISSION)) {
+    return {
+      ok: false,
+      code: 'PERMISSION_DENIED',
+      httpStatus: 403,
+      required: DECIDE_PERMISSION,
+      reason:
+        `missing permission: ${DECIDE_PERMISSION} is not granted to role "${role}". ` +
+        'Recording any decision — approve, deny or acknowledge — is a write.',
+    }
+  }
+
+  if (decision !== 'approved') return { ok: true }
+
+  if (!hasPermission(role, APPROVE_PERMISSION)) {
+    return {
+      ok: false,
+      code: 'PERMISSION_DENIED',
+      httpStatus: 403,
+      required: APPROVE_PERMISSION,
+      reason:
+        `missing permission: ${APPROVE_PERMISSION} is not granted to role "${role}". ` +
+        'Filing a request and approving one are deliberately different rights — approving is what releases the agent, ' +
+        'so the agent that filed it cannot be the thing that grants it.',
+    }
+  }
+
+  // Even a session that holds the right may not sign the decision in the name
+  // of the agent that asked for it. This is the inbox's form of "an agent
+  // cannot approve its own draft": approving `loop_breaker_pause` un-pauses
+  // exactly the agent named on the row.
+  const claim = actor.claimedBy?.trim().toLowerCase()
+  if (claim && requestingAgentNames(row).includes(claim)) {
+    return {
+      ok: false,
+      code: 'SELF_APPROVAL',
+      httpStatus: 403,
+      required: null,
+      reason:
+        `This approval is signed "${actor.claimedBy?.trim()}", which is the agent that filed the request. ` +
+        'Approving it is what releases that agent, so it cannot be recorded in that agent\'s own name.',
+    }
+  }
+
+  return { ok: true }
+}
+
 // ─── The audit row ──────────────────────────────────────────────────────────
 
 /** Why `approval_decisions` exists — see migrations/061_approval_decisions.sql. */
@@ -494,11 +817,19 @@ export function auditRowForOutcome(args: {
   }
 }
 
-/** Build the append-only audit row for a decision that was REFUSED. */
+/**
+ * Build the append-only audit row for a decision that was REFUSED.
+ *
+ * Takes the structural `DecisionRefusal` rather than the preflight's own
+ * union, so an ACTOR refusal (403 PERMISSION_DENIED / SELF_APPROVAL / NO_ACTOR
+ * from `authorizeDecision()`) lands in the same append-only table as a
+ * preflight refusal. A permission that refuses silently leaves no evidence it
+ * was ever exercised, which is the same defect as no permission at all.
+ */
 export function auditRowForRefusal(args: {
   row: ApprovalRow
   decision: string
-  refusal: Extract<PreflightResult, { ok: false }>
+  refusal: DecisionRefusal
   humanInput: unknown
   project: string | null
   decidedBy: string

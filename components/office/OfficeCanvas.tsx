@@ -7,10 +7,17 @@ import {
 import type { AgentRunInfo } from './officeConstants';
 
 import {
-  drawFloor, drawFurniture, drawParticles, drawAgent, drawMinimap,
+  drawFloor, drawFurniture, drawParticles, drawAgents, drawMinimap,
   tileCenterPx, nowts,
   initAgents, saveMemory, createAudio, getDayNight, clampCam, applyCamera, captureFrame,
 } from './officeDrawing';
+// Every decision these polls make lives in officePolling.ts as a pure exported
+// function, so it is pinned by a test that RUNS it rather than by a source
+// grep. See that file's header for why.
+import {
+  BOARD_TASKS_QUERY, WAITING_QUERY, BOARD_TASK_POLL_MS, WAITING_POLL_MS,
+  boardTaskPollOutcome, waitingPollOutcome, partitionWaiting, unroutedWaitingMessage,
+} from './officePolling';
 
 import { fetchAgentRuns } from '../../hooks/useAgentStatus';
 import ApiErrorBanner from '../ApiErrorBanner';
@@ -108,6 +115,13 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   const waterfallRef   = useRef<any[]>([]);
   const timelineRef    = useRef<any[]>([]);
   const hoverAgentRef  = useRef<any>(null);
+  // agentId -> how many inbox requests that agent has PENDING on a human right
+  // now. Populated only by the "Waiting on you" poll below; an agent with no
+  // key here is not waiting, and is drawn with no bubble at all.
+  const waitingRef     = useRef<Record<string, number>>({});
+  // The last unrouted-waiting sentence pushed to the feed, so a 60s poll that
+  // keeps finding the same off-roster agent says it once, not once a minute.
+  const lastUnroutedMsgRef = useRef<string|null>(null);
   const zoomTargetRef  = useRef<{x:number,y:number,z:number}|null>(null);
   const soundRef       = useRef(true);
   const audioRef       = useRef<any>(null);
@@ -160,33 +174,106 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   },[]);
 
   // ── Board task polling ─────────────────────────────────────────────────────
-  // TOD (agent-visualization-fidelity): this used to call '/api/tasks', a
-  // route that has never existed in this app (no `tasks` table either) — every
-  // poll 404'd, on TWO independent intervals (this one and the identical query
-  // in useAgentStatus.ts), forever. There is no separate "tasks" concept here:
-  // "what is this agent working on" IS an issue with status=in_progress and an
-  // assignee, which already lives on the `issues` table `/api/issues` reads.
-  // The Office is a fleet-wide (cross-project) surface — middleware.ts already
-  // stamps `x-mc-all-projects` for it — so this asks across every project on
-  // purpose, the same way every other fleet/* read does.
+  // TOD (agent-visualization-fidelity): this used to call '/api/tasks', and
+  // every poll 404'd — on TWO independent intervals (this one and the
+  // identical query in useAgentStatus.ts), forever.
+  //
+  // WHY, precisely — this matters, because the obvious repair is the wrong
+  // one. /api/tasks is not a route someone invented and never built. It
+  // EXISTED, and commit fd7e5b5 ("refactor: tasks → issues") renamed it:
+  //   app/api/{tasks => issues}/route.ts   |  8 ++++----
+  //   lib/{tasks.ts => issues.ts}          |  2 +-
+  // The table, the lib and the route all moved to `issues` in that commit.
+  // These two callers were the stragglers it missed, and they have been
+  // pointed at the old name ever since. So the fix is not to build a new
+  // /api/tasks — that would resurrect the exact name the rename retired, as a
+  // second spelling of a concept that already has one. The fix is to finish
+  // fd7e5b5: follow the rename to where it went.
+  //
+  // "What is this agent working on" IS an issue with status=in_progress and an
+  // assignee, on the `issues` table that /api/issues already serves.
+  //
+  // `limit=0` is /api/issues' documented "unbounded" sentinel (route.ts:965,
+  // "Pass ?limit=0 for unbounded"), NOT "zero rows" — verified against the
+  // running server with a real in_progress fixture, which came back in the
+  // body. Getting that backwards would make this poll succeed while always
+  // returning nothing, which is worse than the 404 it replaced.
+  //
+  // The Office is a fleet-wide (cross-project) surface, and it asks for that
+  // DELIBERATELY with `all_projects=1` rather than relying on middleware to
+  // stamp `x-mc-all-projects`. The earlier revision of this comment claimed
+  // the stamp was enough; it is not, and the gap was a live 400. middleware's
+  // `projectFromPathname` returns null unless the path contains `/p/<slug>`
+  // (middleware.ts:66-73), so from the bare `/fleet/office` URL — which
+  // app/page.tsx's parseURL serves — there is no scope AND no cross-project
+  // stamp, and app/api/issues/route.ts:1084 answers 400 `unscoped_issues_read`.
+  // Measured both ways on 2026-08-26; see BOARD_TASKS_QUERY's docstring.
   useEffect(()=>{
     const fetchTasks=async()=>{
       try{
-        const r=await fetchJson<{ data: any[] }>('/api/issues?status=in_progress&limit=0');
-        if(!r.ok){ setPollError('tasks', r.error); return; }
-        setPollError('tasks', null);
-        const data=r.data?.data;
-        if(!Array.isArray(data)) return;
-        const map:Record<string,string>={};
-        data.filter((t:any)=>t.status==='in_progress'&&t.assignee&&t.title)
-            .forEach((t:any)=>{ map[t.assignee]=t.title; });
-        boardTasksRef.current=map;
+        const r=await fetchJson<{ data: any[] }>(BOARD_TASKS_QUERY);
+        const out=boardTaskPollOutcome(r);
+        setPollError('tasks', out.error);
+        // `tasks === null` means "unreadable answer" — keep the last known
+        // board rather than emptying every desk. The banner already says so.
+        if(out.tasks) boardTasksRef.current=out.tasks;
       }catch(e){}
     };
     fetchTasks();
-    const t=setInterval(fetchTasks,60000); // raised 30s→60s (Supabase egress)
+    const t=setInterval(fetchTasks,BOARD_TASK_POLL_MS); // raised 30s→60s (Supabase egress)
     return()=>clearInterval(t);
   },[]);
+
+  // ── "Waiting on you" polling ───────────────────────────────────────────────
+  // The one state in this app that genuinely means "this agent has stopped and
+  // a HUMAN has to answer before it moves again": an `inbox` row with
+  // status='pending'. lib/approvals.ts states it in those words —
+  // `${agent} filed "${shown}" and it is waiting on you.` — and a refusal
+  // "leaves it stopped". So a pending row is not a notification; it is a
+  // blocked agent, which is exactly what a speech bubble should mean.
+  //
+  // Nothing here is inferred. The bubble is drawn from the COUNT of that
+  // agent's own pending rows and nothing else: no "probably waiting", no
+  // guess from idleness, no bubble for an agent with zero pending rows. If
+  // the poll fails, the ApiErrorBanner names /api/inbox and NO bubbles are
+  // drawn — an unanswered question must never render as "nobody is waiting".
+  //
+  // Fleet-wide on purpose, and the unscoped shape is deliberate: /api/inbox
+  // returns a BARE ARRAY when `project=` is omitted and `{data,...}` when it
+  // is given (see that route's "TWO RESPONSE SHAPES" comment). The Office is
+  // a fleet/* surface, so it wants the fleet-wide array — the same leg
+  // OverviewTab's "Needs you" already reads.
+  useEffect(()=>{
+    let cancelled=false;
+    const fetchWaiting=async()=>{
+      const r=await fetchJson<any>(WAITING_QUERY);
+      if(cancelled) return;
+      // ONE function decides both halves — the counts and the banner — so a
+      // test can assert they move together. On a failed poll it returns {}
+      // AND a non-null error: no bubbles, but never a silent "nobody is
+      // waiting". `countWaitingByAgent` inside it resolves the target the
+      // same way lib/approvals.ts:approvalTarget() does (`row.agent`, then
+      // `context.agent_id`), so a bubble lands on the agent a decision would
+      // actually unblock.
+      const out=waitingPollOutcome(r);
+      setPollError('waiting', out.error);
+      // A pending row naming an agent that is not on this floor cannot be
+      // drawn over a head. It used to be silently dropped by the
+      // `waiting[ag.id]||0` lookup; now the canvas says so out loud instead
+      // of swallowing a real human decision. (Measured live 2026-08-26:
+      // /api/inbox named `lane7-critic-agent`, which is not one of the 28 ids
+      // /api/agents returns.)
+      const roster=(simRef.current?.agents??[]).map((a:any)=>a.id);
+      const split=partitionWaiting(out.waiting, roster);
+      waitingRef.current=split.drawable;
+      const msg=unroutedWaitingMessage(split.unroutedIds, split.unroutedRows);
+      if(msg && msg!==lastUnroutedMsgRef.current){ addFeed(msg,'#E879F9'); }
+      lastUnroutedMsgRef.current=msg;
+    };
+    fetchWaiting();
+    const t=setInterval(fetchWaiting,WAITING_POLL_MS);
+    return()=>{cancelled=true;clearInterval(t);};
+  },[addFeed]);
 
   // ── Supabase agent_runs polling — real-time status for ALL 8 agents ────
   useEffect(()=>{
@@ -594,7 +681,18 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
         ctx.restore();
       }
       drawParticles(ctx,particles,cam);
-      drawAgentsArr.forEach((ag:any)=>drawAgent(ctx,ag,T2,now,cam,ag.id===selectedId,darkAlpha,boardTasksRef.current,ag.isOrchestrator?subagentCountRef.current:0,liveRunsRef.current[ag.id]?.estimatedCost||0,liveRunsRef.current[ag.id]?.startedAt||null));
+      // The per-agent fan-out — including `waiting[ag.id] -> bubble` — lives in
+      // officeDrawing.drawAgents so a test can execute it against a recording
+      // canvas. This line is the one remaining seam no test reaches; it is a
+      // single named argument rather than a whole feature. See
+      // __tests__/office-bubble-render.test.ts.
+      drawAgents(ctx,drawAgentsArr,{
+        T:T2,now,cam,selectedId,darkAlpha,
+        boardTasks:boardTasksRef.current,
+        subagentCount:subagentCountRef.current,
+        runs:liveRunsRef.current,
+        waiting:waitingRef.current,
+      });
 
       // MC-45: Draw temporary subagent sprites near the orchestrator
       const orchAg = drawAgentsArr.find((a:any) => a.isOrchestrator)

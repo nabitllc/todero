@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser';
 import { readApiError, formatApiError, type ApiError } from '@/lib/fetch-json';
 import type { AgentRunInfo, AgentRunStatus } from '@/components/office/officeConstants';
+import { createBoardTaskMirror, BOARD_TASK_MIRROR_TICK_MS } from '@/components/office/officePolling';
 
 export type { AgentRunInfo, AgentRunStatus };
 export type { ApiError };
@@ -113,8 +114,11 @@ export function useAgentStatus({
   // TOD (agent-visualization-fidelity): this used to fetch('/api/tasks') on
   // its own 30s interval, independent of OfficeCanvas.tsx's near-identical
   // 60s poll of the same question ("what is each agent working on right
-  // now?") into the SAME `boardTasksRef`. The route never existed, so both
-  // intervals 404'd forever; fixing the URL here too would have just made it
+  // now?") into the SAME `boardTasksRef`. That route had been RENAMED out from
+  // under both callers by fd7e5b5 ("refactor: tasks → issues", which moved
+  // app/api/{tasks => issues}/route.ts), so both intervals 404'd forever —
+  // see OfficeCanvas.tsx's poll for the full history. Fixing the URL here too
+  // would have just made it
   // two real, redundant reads of the same `issues` query instead — doubling
   // live Supabase egress for no new data, the exact cost this file's sibling
   // poll already raises its own interval to avoid (see its "raised 30s→60s
@@ -126,10 +130,34 @@ export function useAgentStatus({
   // network at all — it only mirrors that ref into the `boardTasks` REACT
   // STATE, which is what OfficeSidebar actually renders (OfficeCanvas reads
   // the ref directly and never sees this state).
+  //
+  // WHY THE SHALLOW COMPARE IS NOT AN OPTIMISATION — it is the thing that
+  // makes a 5s tick affordable at all. `setBoardTasks` is a plain useState
+  // setter (components/AgentOffice.tsx:24), so publishing `{...ref.current}`
+  // unconditionally hands React a NEW OBJECT IDENTITY on every tick, whether
+  // or not a single character changed. React compares by identity, so every
+  // tick re-rendered AgentOffice and its children — including OfficeCanvas,
+  // which drives requestAnimationFrame loops — forever, on an idle office
+  // where the underlying poll only refreshes once every 60s. That is twelve
+  // re-renders per real data change.
+  //
+  // So this publishes only on an actual change. The tick can stay short (the
+  // point of it is to pick up OfficeCanvas's 60s fetch promptly, not to
+  // re-render), and a steady office now settles to zero renders from here.
+  //
+  // THE DECISION IS NOT WRITTEN HERE ANY MORE, and that is the point. It used
+  // to be a closure inside this effect, which no test could call: a critic
+  // deleted the one line that remembers what was last published — restoring
+  // the full 5s re-render storm — and every test this lane shipped stayed
+  // green, because they only grepped this file for the strings. The decision
+  // now lives in `createBoardTaskMirror` (components/office/officePolling.ts)
+  // where `__tests__/office-board-task-mirror.test.ts` calls `sync()` twice
+  // and asserts the second call published nothing.
   useEffect(() => {
-    const sync = () => setBoardTasks({ ...boardTasksRef.current });
+    const mirror = createBoardTaskMirror(setBoardTasks);
+    const sync = () => { mirror.sync(boardTasksRef.current); };
     sync();
-    const t = setInterval(sync, 5000);
+    const t = setInterval(sync, BOARD_TASK_MIRROR_TICK_MS);
     return () => clearInterval(t);
   }, [boardTasksRef, setBoardTasks]);
 

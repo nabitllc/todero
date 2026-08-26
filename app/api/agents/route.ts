@@ -3,6 +3,8 @@ import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { dbQueryErrorResponse } from '@/lib/db-http'
 import { AGENT_META, loadAgentRoster, type ParsedAgent } from '@/lib/agent-roster'
 import { loadVaultAgentRoster, localRoutingFor, type VaultAgent } from '@/lib/vault-agents'
+import { unionFleetIds } from './fleet-roster'
+import { taskLabel } from '@/lib/fleet-liveness'
 import {
   classifyLiveness,
   readHeartbeats,
@@ -88,6 +90,29 @@ type LivenessSource = 'heartbeat' | 'none'
  */
 type LastSeenSource = 'heartbeat' | 'registration' | 'none'
 
+/**
+ * WHERE this row's `currentTask` came from — the SAME defect class
+ * `LastSeenSource` above was added to close, in the next field along.
+ *
+ *   'heartbeat'      — the agent named this task in its own last heartbeat.
+ *                      This, and only this, is the agent saying what it is
+ *                      doing.
+ *   'assigned-issue' — an `issues` row in an active status names this agent as
+ *                      assignee/worked_by. That is a fact about the BOARD. A
+ *                      ticket sitting in a column is not evidence that
+ *                      anything is running, and this route's own comment has
+ *                      said so since the liveness fix — but `currentTask`
+ *                      still handed both facts to the UI through one nullable
+ *                      string, so every consumer had to guess which it held,
+ *                      and the Fleet roster guessed "the agent is doing this".
+ *   'none'           — there is no task at all.
+ *
+ * A timestamp without its provenance cannot be worded honestly
+ * (lib/fleet-liveness.ts's whole thesis); neither can a task. The provenance
+ * travels WITH the value so no consumer has to guess.
+ */
+type CurrentTaskSource = 'heartbeat' | 'assigned-issue' | 'none'
+
 /** One agent row as the dashboard renders it. */
 type AgentDto = {
   id: string
@@ -118,6 +143,22 @@ type AgentDto = {
   ago: number | null
   lastUpdatedAt: number
   currentTask: string | null
+  /** Which fact `currentTask` is. See {@link CurrentTaskSource}. */
+  currentTaskSource: CurrentTaskSource
+  /**
+   * `currentTask` already worded with its provenance in front — `reported: X`
+   * for the agent's own heartbeat, `assigned: X` for a board row, null for no
+   * task. Built by `taskLabel()` in lib/fleet-liveness.ts.
+   *
+   * This is here because `currentTaskSource` alone did not fix the defect it
+   * was added for. Five surfaces render `currentTask` as a bare string and
+   * would each have to learn the wording rule; shipping the worded string
+   * means they render the right thing by rendering ONE field instead of the
+   * other, and the rule lives in one tested function rather than five.
+   * A consumer that wants to style the two cases differently still has
+   * `currentTaskSource`; this is the no-room-for-a-sentence form.
+   */
+  currentTaskLabel: string | null
   workStartedAt: number | null
   rosterSource: RosterSource
   rosterWarning: string | null
@@ -398,6 +439,16 @@ function buildAgents(
       // its own last heartbeat. Both are things somebody stated; neither is
       // inferred from a run row that was never closed.
       currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : beat?.task ?? null,
+      // The two branches above are two DIFFERENT facts and are now labelled as
+      // such — an assigned issue is the board's claim, a heartbeat task is the
+      // agent's. `workStartedAt` belongs to the issue branch only, so a
+      // heartbeat-sourced task carries no start time rather than borrowing an
+      // unrelated one.
+      currentTaskSource: issue ? 'assigned-issue' : beat?.task ? 'heartbeat' : 'none',
+      currentTaskLabel: taskLabel({
+        currentTask: issue ? `${issue.key}: ${issue.title}`.slice(0, 80) : beat?.task ?? null,
+        currentTaskSource: issue ? 'assigned-issue' : beat?.task ? 'heartbeat' : 'none',
+      }),
       workStartedAt: issue?.startedAt ?? null,
       // Where id/name/role/model came from, so the UI never implies a roster
       // file exists when it does not. Also on the envelope; kept per-row for
@@ -507,6 +558,13 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
     ago: agoMin,
     lastUpdatedAt: lastSeenAt ?? reg.registeredAt,
     currentTask: beat?.task ?? null,
+    // Heartbeat-only by construction: this builder never looks at the
+    // issues table, so the task is the agent's own report or nothing.
+    currentTaskSource: beat?.task ? 'heartbeat' : 'none',
+    currentTaskLabel: taskLabel({
+      currentTask: beat?.task ?? null,
+      currentTaskSource: beat?.task ? 'heartbeat' : 'none',
+    }),
     workStartedAt: null,
     rosterSource: 'registered',
     rosterWarning: null,
@@ -590,6 +648,13 @@ function buildVaultOnlyAgent(
     ago: agoMin,
     lastUpdatedAt: lastSeenAt ?? 0,
     currentTask: beat?.task ?? null,
+    // Heartbeat-only by construction: this builder never looks at the
+    // issues table, so the task is the agent's own report or nothing.
+    currentTaskSource: beat?.task ? 'heartbeat' : 'none',
+    currentTaskLabel: taskLabel({
+      currentTask: beat?.task ?? null,
+      currentTaskSource: beat?.task ? 'heartbeat' : 'none',
+    }),
     workStartedAt: null,
     rosterSource: 'vault',
     rosterWarning,
@@ -660,21 +725,32 @@ export async function GET() {
     heartbeatWarning: string | null = null,
     registrations: Map<string, AgentRegistration> = new Map(),
   ) => {
-    // Every registration that AGENTS.md does not already name — the union
-    // this piece was built for. An agent named in both sources renders once,
-    // as its roster row (display metadata from AGENT_META is real; a
-    // registration has none), so its heartbeat still drives that one row.
-    const rosterIds = new Set(parsedAgents.map((a) => a.id))
-    const registrationOnly = Array.from(registrations.values()).filter((r) => !rosterIds.has(r.id))
-
-    // Vault agents not already named by AGENTS.md or a live registration —
-    // the third leg of the same union `registrationOnly` above already does.
-    // An id present in either of the other two sources is enriched via the
-    // per-row `vault` field instead (buildAgents/buildRegistrationAgent both
-    // look it up), so it never renders twice.
-    const knownIds = new Set(rosterIds)
-    for (const id of Array.from(registrations.keys())) knownIds.add(id)
-    const vaultOnly = vaultRoster.agents.filter((v) => !knownIds.has(v.id))
+    // fleet-liveness piece (2026-08-26): the three-way union used to be
+    // open-coded right here, and `rosterSource` was derived a second time
+    // seventy lines below from a DIFFERENT set of conditions. That duplication
+    // is not why the numbers on screen disagreed — but a second, independent
+    // copy of the union rule living in GET /api/agent-responsibilities IS
+    // (Fleet ▸ Roster said 28, Fleet ▸ Roles said 14, both measured
+    // 2026-08-26). Both derivations now go through ./fleet-roster.ts, which is
+    // importable by any surface that needs to name the fleet, so a fourth
+    // consumer cannot invent a fourth answer.
+    //
+    // `unionFleetIds` is precedence-ordered (agents-md > registered > vault),
+    // which is exactly what the two filters below used to express: an agent
+    // named by more than one source renders ONCE, as its highest-precedence
+    // row, and the losing source is folded in as that row's `vault` field
+    // rather than dropped.
+    const union = unionFleetIds({
+      rosterIds: parsedAgents.map((a) => a.id),
+      registrationIds: Array.from(registrations.keys()),
+      vaultIds: vaultRoster.agents.map((v) => v.id),
+    })
+    const registrationOnly = union.bySource.registered
+      .map((id) => registrations.get(id))
+      .filter((r): r is AgentRegistration => r !== undefined)
+    const vaultOnly = union.bySource.vault
+      .map((id) => vaultById.get(id))
+      .filter((v): v is VaultAgent => v !== undefined)
 
     const agents: AgentDto[] = [
       ...buildAgents(parsedAgents, baseRosterSource, rosterWarning, rosterPath, state, schedule, vaultById),
@@ -727,13 +803,16 @@ export async function GET() {
       for (const a of agents) a.overCeiling = null
     }
 
-    const sourcesPresent = [
-      parsedAgents.length > 0 && 'agents-md',
-      registrations.size > 0 && 'registered',
-      vaultOnly.length > 0 && 'vault',
-    ].filter((s): s is 'agents-md' | 'registered' | 'vault' => s !== false)
-    const rosterSource: RosterSource =
-      sourcesPresent.length > 1 ? 'both' : sourcesPresent.length === 1 ? sourcesPresent[0] : 'none'
+    // From the same union that produced the rows, so the envelope value and
+    // the rows can no longer disagree. This also fixes a latent inconsistency
+    // in the old expression: it counted `registrations.size > 0`, i.e. a
+    // registration that EXISTS, while counting `vaultOnly.length > 0`, i.e. a
+    // vault entry that CONTRIBUTED A ROW. A host where every registered agent
+    // was also named in AGENTS.md therefore reported 'both' with no
+    // registration-sourced row anywhere on screen to justify it.
+    // `unionFleetIds` counts contributions for all three legs alike — see its
+    // docstring for why that is the honest reading of this field.
+    const rosterSource: RosterSource = union.rosterSource
 
     const body: AgentsResponse = {
       agents,

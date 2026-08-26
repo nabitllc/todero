@@ -50,6 +50,8 @@ import {
   moveBody,
   unmetFields,
   humaniseMoveFailure,
+  humaniseLoadFailure,
+  safeApiError,
   type MoveField,
   type MoveVerdict,
 } from '@/lib/issue-moves'
@@ -92,6 +94,24 @@ function IssueKeyLink({ taskKey, className, style }: { taskKey: string; classNam
     </a>
   )
 }
+
+/* ── the banner half of "no raw database text, ever" ─────────────────────────
+ *
+ * `safeApiError` used to be defined right here, and that was the defect. It is
+ * a pure function, so the only test that could reach it inside a `.tsx` module
+ * — this repo has no @testing-library/react and `jest.config.js` sets
+ * `testEnvironment: "node"` — was one that greps this source for the identifier
+ * names reaching `<ApiErrorBanner>`. On 2026-08-26 that guard was proven blind:
+ * gutting the function to `return error` as its first statement left the suite
+ * at 84 passed / 84 total while every banner below went back to rendering
+ * driver text.
+ *
+ * It now lives in `lib/issue-moves.ts` beside the two humanisers it wraps,
+ * where a test calls it directly and asserts the replacement. The wiring guard
+ * in `lib/__tests__/pipeline-no-phantom-columns.test.ts` still checks that this
+ * file passes only humanised identifiers to the banner; the behaviour guard is
+ * what makes that check mean something.
+ */
 
 /** Row caps, named once so the header can print the same numbers it enforces. */
 const IN_FLIGHT_LIMIT = 400
@@ -378,6 +398,18 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
     return { active, idle, total: all.length }
   }, [visible, roster.agents])
 
+  // Both banners get the humanised copy; the original goes to the console once,
+  // from an effect, so nothing is lost and nothing is logged during render.
+  const shownError = useMemo(() => (error ? safeApiError(error) : null), [error])
+  const shownRosterError = useMemo(() => (roster.error ? safeApiError(roster.error) : null), [roster.error])
+  useEffect(() => {
+    for (const e of [error, roster.error]) {
+      if (e && humaniseLoadFailure(e.message) !== e.message) {
+        console.warn('[pipeline] load failed, raw server message:', e.message)
+      }
+    }
+  }, [error, roster.error])
+
   const modelBroken = PIPELINE_MODEL_DEFECTS.length > 0
 
   if (loading) {
@@ -414,7 +446,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
       )}
 
       {/* A failed request REPLACES the body. No empty state over an error. */}
-      {error && <ApiErrorBanner error={error} onRetry={fetchIssues} />}
+      {shownError && <ApiErrorBanner error={shownError} onRetry={fetchIssues} />}
 
       {!modelBroken && !error && issues !== null && (
         <>
@@ -501,10 +533,10 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
               onOpenMove={openMove}
               emptyLine={`${projectFilter} has no issues in this stage yet — that is correct, not broken.`}
             />
-          ) : roster.error ? (
+          ) : shownRosterError ? (
             // The roster failed → the lane region is REPLACED by the reason.
             // Falling back to "no agents" would invent an empty fleet.
-            <ApiErrorBanner error={roster.error} onRetry={roster.refetch} />
+            <ApiErrorBanner error={shownRosterError} onRetry={roster.refetch} />
           ) : roster.agents.length === 0 ? (
             <div className="rounded-xl border border-white/10 bg-[#080808] px-4 py-6 text-sm text-white/50">
               {rosterEmptyReason(roster)}
@@ -757,7 +789,19 @@ function PipelineMetrics() {
       if (cancelled) return
       // A failed load must not leave the strip on "loading…" forever — that
       // reads as a live metric that is merely slow, not a refused request.
-      if (r.ok) { setMetrics(r.data); setErr(null) } else { setMetrics(null); setErr(r.error) }
+      if (r.ok) {
+        setMetrics(r.data); setErr(null)
+      } else {
+        setMetrics(null)
+        // Same rule as the board's own banner: the status and the endpoint stay,
+        // driver text does not. Logged here rather than in render because this
+        // is already the imperative path.
+        const safe = safeApiError(r.error)
+        if (safe.message !== r.error.message) {
+          console.warn('[pipeline-metrics] load failed, raw server message:', r.error.message)
+        }
+        setErr(safe)
+      }
       setBusy(false)
     })
     return () => { cancelled = true }

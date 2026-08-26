@@ -18,6 +18,7 @@ import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+import { readLogTail, readSpawnFailures, summarizeExit } from './exit-evidence'
 import { resolveBinary } from '../paths'
 import { recordRunOnExit } from '../memory-loop'
 
@@ -116,10 +117,41 @@ export const codexRuntime: AgentRuntime = {
     }
 
     appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
+    // pieces8/memory-attempted: the live exit record spawnDetached fills in
+    // from the child's real `'exit'` event, plus the spawn timestamp the
+    // duration is measured against.
+    const childExit = result.exit
+    const spawnStartedAt = Date.now()
     watchChildExit(result.pid, opts.logFile, () => {
       appendLog(opts.logFile, `[spawn-exit] agent=${opts.agentId} task=${opts.taskId ?? 'none'}`)
       // memory-loop-write (round 2): one agent_run_records row per run.
-      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
+      //
+      // pieces8/memory-attempted: unlike claude-code and openai-api, codex
+      // writes no structured completion record into its log — there is no
+      // `--output-format json` object and no `[trace]` line to read. What IS
+      // observable is the child's real exit code/signal, the wall-clock
+      // duration, any `[spawn-failure]` line, and the log's own verbatim
+      // tail. That is what gets recorded, and `attempted` says exactly that
+      // in as many words so nobody mistakes an exit-0 verdict for a verified
+      // task outcome. Nothing here is inferred from what the run "probably"
+      // did.
+      const evidence = summarizeExit({
+        runtime: 'codex',
+        exitCode: childExit?.observed ? childExit.code : null,
+        signal: childExit?.observed ? childExit.signal : null,
+        durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
+        spawnFailures: readSpawnFailures(opts.logFile),
+        logTail: readLogTail(opts.logFile),
+        logFile: opts.logFile,
+      })
+      void recordRunOnExit({
+        agentId: opts.agentId,
+        taskId: opts.taskId ?? null,
+        attempted: evidence.attempted,
+        succeeded: evidence.succeeded,
+        failed: evidence.failed,
+        exitStatus: evidence.exitStatus,
+      })
     }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
 
     if (teardownPath) {

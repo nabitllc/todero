@@ -7,7 +7,7 @@
 // failed.
 
 import { NextResponse } from 'next/server'
-import { LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels } from '@/lib/llm-provider'
+import { LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, noModelsError } from '@/lib/llm-provider'
 
 export const runtime = 'nodejs'
 // TOD-2456: WITHOUT THIS, THE "LIVE" MODEL LIST IS NOT LIVE. Next 14 caches the
@@ -35,11 +35,21 @@ export const revalidate = 0
 export async function GET() {
   const live = await fetchLiveModels(5000, { includeContextLength: true })
   if (!live.ok) {
-    return NextResponse.json({ error: live.error, base_url: LLM_BASE_URL }, { status: 502 })
+    // `kind` is in the body next to the prose so a client can tell an
+    // endpoint that is DOWN from one that is the WRONG KIND OF SERVER without
+    // parsing the sentence. Before the seam distinguished them, the second
+    // case did not reach this branch at all — it arrived as a 200 with an
+    // empty menu, identical to a healthy Ollama with nothing pulled.
+    return NextResponse.json(
+      { error: live.error, kind: live.kind, base_url: LLM_BASE_URL },
+      { status: 502 },
+    )
   }
   if (live.models.length === 0) {
+    // Now reachable ONLY from a genuinely OpenAI-compatible endpoint with an
+    // empty roster, so "pull one first" is real advice rather than a guess.
     return NextResponse.json(
-      { error: `${LLM_BASE_URL}/models returned no models — pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)`, base_url: LLM_BASE_URL },
+      { error: noModelsError(), kind: 'empty-roster', base_url: LLM_BASE_URL },
       { status: 502 },
     )
   }

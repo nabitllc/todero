@@ -4,13 +4,14 @@ import { Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button, Input, Select, EmptyState } from '@/components/ui'
 import { TypeBadge, PriorityBadge, StatusBadge, Badge } from '@/components/ui'
 import { List } from 'lucide-react'
-import { useApiList } from '@/hooks/useApiData'
+import { useApiList, readApiError, type ApiError } from '@/hooks/useApiData'
 import { useAgentRoster } from '@/hooks/useAgentRoster'
 import { agentDisplay } from '@/lib/agents-config'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { issuePermalinkPath, navigateToIssuePermalink } from '@/lib/issue-permalink'
+import { countLabelFor, countVerbFor } from '@/components/tabs/WorkViewCard'
 
-interface Issue {
+export interface Issue {
   id: string; title: string; description?: string; status: string;
   assignee?: string; project?: string; priority?: string; type?: string;
   parent_id?: string; task_key?: string; acceptance_criteria?: string;
@@ -64,6 +65,134 @@ const PRIORITY_OPTIONS = ['critical','high','medium','low']
 type SortKey = 'task_key'|'type'|'title'|'status'|'priority'|'assignee'|'sprint'
 type SortDir = 'asc'|'desc'
 
+// ─── the write paths, lifted out of the component ────────────────────────────
+//
+// ROUND 2 (2026-08-26). A fresh-context critic mutation-tested this lane and
+// showed that this file's two headline behaviours could be REVERTED with every
+// gate green: deleting `if (!res.ok) setWriteError(...)` and turning the bulk
+// partial-failure check into `if (true)` both left 15/15 tests passing, tsc
+// clean, no-silent-empty PASS and the smoke test at exit 0. Its diagnosis was
+// exact — this file held 162 of the lane's 305 changed lines and had ZERO
+// tests, because every interesting branch sat behind a click, and this repo's
+// jest is `testEnvironment: "node"` with no jsdom.
+//
+// So the write paths are now two exported async functions whose entire contract
+// is their RETURN VALUE. A mocked `global.fetch` drives them, and the branches
+// the critic deleted are the branches under test. What a test still cannot do
+// here is press the button; that gap is stated plainly in the piece doc rather
+// than papered over.
+
+/** Outcome of one PATCH. Exactly one of `row`/`error` is non-null. */
+export interface SaveOutcome {
+  row: Issue | null
+  error: ApiError | null
+}
+
+/**
+ * PATCH one issue's edited fields.
+ *
+ * The behaviour under test: a REFUSED write returns an error and no row. The
+ * commonest refusal is a move to a review status without `regression_test`,
+ * which /api/issues rejects by design. Before round 1 this was
+ * `if (res.ok) { ... }` with no else, inside `catch { /* ignore *\/ }` — the
+ * editor stayed open, the row did not change, and nothing appeared on screen.
+ */
+export async function saveIssueFields(id: string, fields: Partial<Issue>): Promise<SaveOutcome> {
+  try {
+    const res = await fetch('/api/issues', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...fields }),
+    })
+    if (!res.ok) return { row: null, error: await readApiError(res, 'PATCH /api/issues') }
+    return { row: (await res.json()) as Issue, error: null }
+  } catch (e) {
+    return {
+      row: null,
+      error: {
+        status: 0,
+        endpoint: 'PATCH /api/issues',
+        message: e instanceof Error ? e.message : 'could not reach the server',
+      },
+    }
+  }
+}
+
+/**
+ * Outcome of a bulk status move.
+ *
+ * `nextSelection` and `nextBulkStatus` are the point of this shape. They are
+ * the state the bulk bar must be left in, computed here rather than in a
+ * component closure — which is what makes "Retry re-sends only the rows that
+ * failed" a checkable claim: feed `nextSelection`/`nextBulkStatus` straight
+ * back into this function and count the requests.
+ */
+export interface BulkMoveOutcome {
+  /** Rows the server accepted, already updated. Apply these regardless of failures. */
+  appliedRows: Issue[]
+  /** Ids the server refused, in the order they were submitted. */
+  failedIds: string[]
+  /** The selection the bulk bar should show afterwards. */
+  nextSelection: string[]
+  /** The target status the bulk bar should still have chosen afterwards. */
+  nextBulkStatus: string
+  error: ApiError | null
+}
+
+/**
+ * Move every id to `status`, reporting PARTIAL failure rather than hiding it.
+ *
+ * A bulk move is the operation most likely to be partially rejected — one
+ * selected issue missing a field the target status requires fails while its
+ * neighbours succeed. The pre-round-1 handler mapped a rejection to `null` and
+ * dropped it, so nine of ten moving looked identical to ten of ten.
+ *
+ * `keyOf` turns an id into the operator-facing task key; an id alone is not
+ * something anyone can act on.
+ */
+export async function bulkMoveStatus(
+  ids: string[],
+  status: string,
+  keyOf: (id: string) => string,
+): Promise<BulkMoveOutcome> {
+  const results = await Promise.all(
+    ids.map(async id => {
+      const outcome = await saveIssueFields(id, { status })
+      return { id, ...outcome }
+    }),
+  )
+
+  const appliedRows = results.map(r => r.row).filter((r): r is Issue => r !== null)
+  const failures = results.filter(r => r.error !== null)
+
+  if (failures.length === 0) {
+    // Everything landed: clear the bar so it does not sit there implying an
+    // outstanding operation.
+    return { appliedRows, failedIds: [], nextSelection: [], nextBulkStatus: '', error: null }
+  }
+
+  // Leave the failures selected and say which they were, by key where the key
+  // is known. Keeping `status` chosen is what makes the retry the SAME intent
+  // rather than a fresh, half-configured one.
+  const failedIds = failures.map(f => f.id)
+  const failedKeys = failedIds.map(keyOf).join(', ')
+  const first = failures[0].error!
+  return {
+    appliedRows,
+    failedIds,
+    nextSelection: failedIds,
+    nextBulkStatus: status,
+    error: {
+      status: first.status,
+      endpoint: 'PATCH /api/issues',
+      message:
+        `${failures.length} of ${ids.length} could not move to "${status.replace(/_/g, ' ')}" ` +
+        `(${failedKeys}) — ${first.message}. ` +
+        `They are still selected, so Retry re-sends only those ${countVerbFor(failures.length, 'rows', 'row')}.`,
+    },
+  }
+}
+
 export default function IssuesTab({ projectFilter }: { projectFilter?: string | null }) {
   const endpoint = useMemo(() => {
     const params = new URLSearchParams()
@@ -86,6 +215,39 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
+  // A write that fails must say so. Before this, `if (res.ok)` had no else and
+  // the surrounding try had `catch { /* ignore */ }`, so a PATCH the API
+  // REJECTED — the commonest being a move to a review status without
+  // `regression_test`, which /api/issues refuses by design — left the editor
+  // open, the row unchanged, and nothing at all on screen. The operator's only
+  // evidence that the save had not happened was noticing the row had not
+  // moved. That is the same silent-emptiness family the honest-error guard
+  // exists for, on the write path instead of the read path.
+  const [writeError, setWriteError] = useState<ApiError | null>(null)
+  // Retry has to re-run the operation that failed, not a generic reload, so the
+  // banner's button has to know WHICH write failed.
+  //
+  // ROUND 2 — this was a `useRef` holding the handler itself, and the critic was
+  // right that it was broken:
+  //
+  //     retryRef.current = handleBulkStatusChange   // inside the handler
+  //
+  // assigns the function object created by THAT render, pinning that render's
+  // closure. The failure path then calls `setSelected(new Set(failedIds))`, and
+  // the ref still holds the pre-failure closure whose `ids` is the ORIGINAL
+  // selection. The bar rendered "1 selected" while Retry re-PATCHed all three.
+  // Same defect on the save path: the pinned closure re-sent the stale
+  // `editFields`, so an operator who read the error, corrected the Status
+  // select and pressed Retry silently re-sent the old payload — while the
+  // editor's own Save button, built in the current render, sent the new one.
+  // Two buttons, one screen, one intent, two different requests.
+  //
+  // The ref is gone. `writeIntent` is plain state naming which write failed,
+  // and the banner is handed a handler built in the CURRENT render, so it reads
+  // whatever `selected` / `bulkStatus` / `editFields` are at the moment of the
+  // click — which after a partial failure is exactly the failed rows and the
+  // target status the outcome left behind.
+  const [writeIntent, setWriteIntent] = useState<'save' | 'bulk' | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -119,19 +281,20 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
   const handleSave = async () => {
     if (!expandedId) return
     setSaving(true)
+    setWriteError(null)
+    setWriteIntent('save')
     try {
-      const res = await fetch('/api/issues', {
-        method: 'PATCH',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ id: expandedId, ...editFields })
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setIssues(prev => prev.map(i => i.id === expandedId ? updated : i))
-        setExpandedId(null)
+      const { row, error } = await saveIssueFields(expandedId, editFields)
+      if (error) {
+        // Keep the editor OPEN on a rejection. Closing it would throw away the
+        // operator's edits along with the explanation of why they did not take.
+        setWriteError(error)
+        return
       }
-    } catch { /* ignore */ }
-    finally { setSaving(false) }
+      setIssues(prev => prev.map(i => i.id === expandedId ? row! : i))
+      setExpandedId(null)
+      setWriteIntent(null)
+    } finally { setSaving(false) }
   }
 
   const toggleSelect = (id: string, e: React.MouseEvent) => {
@@ -148,26 +311,37 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
     else setSelected(new Set(filtered.map(i => i.id)))
   }
 
+  // The whole decision — which rows moved, which were refused, what the bar is
+  // left showing, what the banner says — is `bulkMoveStatus` above, so that it
+  // is reachable from a test. This handler is the wiring: it feeds the outcome
+  // straight back into state, including `nextSelection`, which is what makes a
+  // subsequent Retry re-send ONLY the rows that failed.
   const handleBulkStatusChange = async () => {
     if (!bulkStatus || selected.size === 0) return
     setBulkSaving(true)
+    setWriteError(null)
+    setWriteIntent('bulk')
     try {
-      const promises = Array.from(selected).map(id =>
-        fetch('/api/issues', {
-          method: 'PATCH',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ id, status: bulkStatus })
-        }).then(r => r.ok ? r.json() : null)
+      const outcome = await bulkMoveStatus(
+        Array.from(selected),
+        bulkStatus,
+        id => issues.find(i => i.id === id)?.task_key ?? id,
       )
-      const results = await Promise.all(promises)
-      setIssues(prev => prev.map(i => {
-        const updated = results.find((r: any) => r && r.id === i.id)
-        return updated ? updated : i
-      }))
-      setSelected(new Set())
-      setBulkStatus('')
-    } catch { /* ignore */ }
-    finally { setBulkSaving(false) }
+      setIssues(prev => prev.map(i => outcome.appliedRows.find(r => r.id === i.id) ?? i))
+      setSelected(new Set(outcome.nextSelection))
+      setBulkStatus(outcome.nextBulkStatus)
+      setWriteError(outcome.error)
+      if (!outcome.error) setWriteIntent(null)
+    } finally { setBulkSaving(false) }
+  }
+
+  // Built in the CURRENT render on purpose — see the `writeIntent` comment
+  // above. Whatever the operator has changed since the failure (a corrected
+  // Status select, a narrowed selection) is what gets re-sent, and it is the
+  // same request the on-screen Save / Apply button would send.
+  const retryFailedWrite = () => {
+    if (writeIntent === 'save') void handleSave()
+    else if (writeIntent === 'bulk') void handleBulkStatusChange()
   }
 
   const sprints = useMemo(() => Array.from(new Set(issues.map(i=>i.sprint).filter(Boolean))).sort().reverse(), [issues])
@@ -196,12 +370,25 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
               // true row count, not issues.length (this endpoint is called with
               // limit=0, which batches through every matching row, but total is
               // still the authoritative source rather than re-deriving it).
+              //
+              // The noun goes through the same singularizeLabel the Work cards
+              // use, so there is ONE pluralisation rule on this destination
+              // instead of one per surface that happened to remember.
               : `${(() => {
                   const trueTotal = total ?? issues.length
-                  const base = search ? `Showing ${filtered.length} of ${trueTotal}` : `${trueTotal}`
-                  return `${base} issue${trueTotal !== 1 ? 's' : ''}`
+                  const noun = countLabelFor(trueTotal, 'issues')
+                  return search
+                    ? `Showing ${filtered.length} of ${trueTotal} ${noun}`
+                    : `${trueTotal} ${noun}`
                 })()}${selected.size > 0 ? ` · ${selected.size} selected` : ''}`}
           </p>
+          {/* Provenance, in Card's `.prov` idiom: the query that produced the
+              number above and every row below, printed rather than implied.
+              This surface renders INSIDE a WorkViewCard whose own metric counts
+              a DIFFERENT query (`&status=backlog`), so two honest numbers sit
+              on one screen. Printing both queries is what makes that legible
+              instead of looking like one of them is wrong. */}
+          <p className="font-mono text-[10px] leading-snug text-white/35 mt-1 break-all">{endpoint}</p>
         </div>
         <div className="relative max-w-xs flex-1">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25 z-10" />
@@ -212,6 +399,13 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
           />
         </div>
       </div>
+
+      {/* A rejected write, rendered where the operator is looking. It sits
+          ABOVE the table rather than replacing it: the rows on screen are
+          still true — it is the WRITE that did not happen, not the read. */}
+      {writeError && (
+        <ApiErrorBanner error={writeError} onRetry={retryFailedWrite} />
+      )}
 
       {/* Bulk actions bar */}
       {selected.size > 0 && (
@@ -370,11 +564,38 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
               </React.Fragment>
             ))}
 
+            {/* An empty state has to NAME what it is empty about, and it has to
+                distinguish the two reasons a table can be empty. "No issues
+                found" said neither: it read identically whether the project
+                genuinely holds nothing, whether the search matched nothing, and
+                — before the `!fetchError` guard above — whether the request had
+                failed. The failure case is now impossible to reach here (the
+                banner replaces this branch), and the remaining two say which
+                one they are and which project they are talking about. */}
             {!loading && !fetchError && filtered.length === 0 && (
               <EmptyState
                 icon={List}
-                title={search ? 'No issues match your search' : 'No issues found'}
-                description={search ? 'Try a different search term' : 'Issues will appear here once created'}
+                title={
+                  search
+                    ? `Nothing in ${projectFilter ?? 'this project'} matches “${search}”`
+                    : `${projectFilter ?? 'This project'} has no issues yet`
+                }
+                description={
+                  search
+                    // ROUND 2: this sentence singularised its NOUN and left
+                    // its VERB plural — "1 issue are loaded". Limiglow held
+                    // exactly 1 issue when this session began, so any
+                    // non-matching search here reproduced it on real data at
+                    // that moment. The verb goes through the same rule as the
+                    // noun now.
+                    ? (() => {
+                        const loadedTotal = total ?? issues.length
+                        return `${loadedTotal} ${countLabelFor(loadedTotal, 'issues')} ` +
+                          `${countVerbFor(loadedTotal, 'are', 'is')} loaded — the search is what is hiding ` +
+                          `${countVerbFor(loadedTotal, 'them', 'it')}, not the project.`
+                      })()
+                    : 'That is correct, not broken. Rows appear here as issues are created.'
+                }
               />
             )}
           </div>

@@ -20,6 +20,14 @@
 // `memory-loop.ts`'s `PromotionBlockTooLargeError` already applies to the
 // write side; `RetrievalBudgetExceededError` is its read-side counterpart.
 //
+// Round 2 narrowed "cannot fit inside it" by exactly one term: the top
+// record's `attempted` excerpt — this piece's own addition, and itself a
+// bounded digest of a log file still on disk — is handed back first, clipped
+// with a marker or dropped, and announced both in the injected text and in
+// `RetrievalResult.attemptedRefit`. Only then does the budget raise. Nothing
+// a human wrote is ever shortened. See `refitAttemptedToBudget` for the
+// measured regression that forced it.
+//
 // SERVER ONLY: reaches for `better-sqlite3` (lazily, like
 // `lib/db/sqlite-adapter.ts` does) and the DB seam.
 
@@ -444,13 +452,103 @@ export async function searchRunRecords(
   }
 }
 
-/** One retrieved record, formatted as a whole block — never partially, see `buildRetrievedContext`. */
-function formatRecord(r: RetrievedRecord): string {
+/**
+ * One retrieved record, formatted as a whole block — never partially, see
+ * `buildRetrievedContext`.
+ *
+ * `attempted` is passed in rather than read off the record so the single
+ * budget-refit path below (`refitAttemptedToBudget`) can render the same
+ * record with a shorter excerpt without duplicating this layout. Every other
+ * caller gets the record's own text.
+ */
+function formatRecord(r: RetrievedRecord, attempted: string | null = r.attempted): string {
   const lines = [`### ${r.taskKey}${r.taskTitle ? ` — ${r.taskTitle}` : ''}`]
-  if (r.attempted) lines.push(`Attempted: ${r.attempted}`)
+  if (attempted) lines.push(`Attempted: ${attempted}`)
   if (r.rejectionReason) lines.push(`Rejected because: ${r.rejectionReason}`)
   if (r.reviewerNotes) lines.push(`Reviewer notes: ${r.reviewerNotes}`)
   return lines.join('\n')
+}
+
+/** What happened to the top record's `attempted` excerpt when it had to be refitted. See `AttemptedRefit`. */
+export interface AttemptedRefit {
+  /** The record whose excerpt was refitted. */
+  taskKey: string
+  /** `'clipped'` — a marked excerpt survived. `'omitted'` — there was no room for one at all. */
+  state: 'clipped' | 'omitted'
+  /** How many characters of `agent_run_records.attempted` are not in the injected text. */
+  droppedChars: number
+}
+
+/** Below this, a surviving excerpt is too short to tell anyone anything — omit it and say so instead. */
+const MIN_ATTEMPTED_EXCERPT_CHARS = 120
+
+/**
+ * Give back THIS PIECE's own contribution to a record's size, rather than
+ * failing a retrieval that worked before it existed.
+ *
+ * WHY THIS EXISTS (round-2 repair of a regression this piece caused, measured
+ * both ways on a real sqlite DB — see docs/rebuild/pieces/pieces8/
+ * memory-attempted.md §11). `agent_run_records.attempted` was null on every
+ * row ever written until pieces8/memory-attempted filled it in. Filling it in
+ * adds up to `ATTEMPTED_MAX_CHARS` (~300 tokens) to every record
+ * `formatRecord()` renders — so a record that fitted the 1,300-token budget
+ * yesterday could exceed it today purely because of this piece, and
+ * `buildRetrievedContext` would raise `RetrievalBudgetExceededError`, which
+ * app/api/run-agent/route.ts answers with a 503 and a reset issue. Measured:
+ * one row, 4,600-char `reviewer_notes`, identical query — `attempted: null`
+ * retrieved fine at ~1,185 tokens; `attempted` at the cap threw at ~1,468.
+ * A dispatch that worked before this piece must not start failing because of
+ * it.
+ *
+ * WHY THIS IS NOT THE "NEVER TRUNCATE" RULE BENDING. The rule exists so that
+ * half a rejection reason never reads as the whole story. What is clipped
+ * here is already an excerpt: `attempted` is itself a bounded, marked digest
+ * of a log file that still exists on disk, and the clip is announced twice —
+ * inline in the text, and in `RetrievalResult.attemptedRefit`. The
+ * reviewer's and rejecter's own words are never touched. And the pre-piece
+ * behaviour is preserved exactly: if the record still does not fit with the
+ * excerpt gone entirely, this returns null and the caller raises, exactly as
+ * it did before `attempted` was ever written.
+ *
+ * Returns null when there is nothing to give back (no `attempted`) or when
+ * giving all of it back is still not enough.
+ */
+function refitAttemptedToBudget(
+  r: RetrievedRecord,
+  budgetTokens: number,
+): { block: string; refit: AttemptedRefit } | null {
+  if (!r.attempted) return null
+
+  const withoutAttempted = formatRecord(r, null)
+  if (estimateTokens(withoutAttempted) > budgetTokens) return null
+
+  const marker = `… [clipped to fit the retrieval budget — full text in agent_run_records.attempted for ${r.taskKey}]`
+  // estimateTokens is ceil(bytes/4), so "fits" is exactly "bytes <= budget*4".
+  // Start from the byte allowance (never an under-estimate of the character
+  // allowance for UTF-8) and shrink until the assembled block really fits.
+  const allowanceBytes = budgetTokens * 4 - Buffer.byteLength(withoutAttempted, 'utf8') - Buffer.byteLength(`\nAttempted: ${marker}`, 'utf8')
+  let excerpt = r.attempted.slice(0, Math.max(0, allowanceBytes))
+  while (excerpt.length > 0 && estimateTokens(formatRecord(r, excerpt + marker)) > budgetTokens) {
+    excerpt = excerpt.slice(0, excerpt.length - Math.max(1, Math.ceil(excerpt.length * 0.05)))
+  }
+
+  if (excerpt.length >= MIN_ATTEMPTED_EXCERPT_CHARS) {
+    return {
+      block: formatRecord(r, excerpt + marker),
+      refit: { taskKey: r.taskKey, state: 'clipped', droppedChars: r.attempted.length - excerpt.length },
+    }
+  }
+
+  // No room for an excerpt worth reading. Say so in the text if even that
+  // line fits, and either way report it in `attemptedRefit` and the header —
+  // an omission a caller cannot see is the silent truncation this file
+  // refuses to do.
+  const omitted = `[omitted — ~${estimateTokens(r.attempted)} tokens did not fit the retrieval budget; full text in agent_run_records.attempted for ${r.taskKey}]`
+  const withNote = formatRecord(r, omitted)
+  return {
+    block: estimateTokens(withNote) <= budgetTokens ? withNote : withoutAttempted,
+    refit: { taskKey: r.taskKey, state: 'omitted', droppedChars: r.attempted.length },
+  }
 }
 
 export interface RetrievalResult {
@@ -468,6 +566,8 @@ export interface RetrievalResult {
   scannedWindowRows?: number
   /** Present only when `engine === 'keyword-overlap'` — true when the scan hit its window and older records may hold a match this search never saw. A caller must not report `text === ''` as "no relevant records exist" when this is true; it only means none were found INSIDE the scanned window. */
   possiblyIncompleteScan?: boolean
+  /** Present only when the top-ranked record's `attempted` excerpt had to be shortened or dropped to fit the budget — see `refitAttemptedToBudget`. Absent means every record was injected whole. */
+  attemptedRefit?: AttemptedRefit
 }
 
 /**
@@ -484,6 +584,14 @@ export interface RetrievalResult {
  * record, which is the one result nothing may silently drop. If IT alone
  * exceeds the budget, that is `RetrievalBudgetExceededError`, raised rather
  * than truncated, exactly as the piece brief specifies.
+ *
+ * ONE exception, added in round 2 and scoped as narrowly as it can be: before
+ * raising on the top-ranked record, the `attempted` EXCERPT — this piece's
+ * own addition, itself already a bounded digest of a log file still on disk —
+ * is clipped or dropped, and the fact is reported both inside `text` and in
+ * `attemptedRefit`. Nothing a human wrote (rejection reason, reviewer notes)
+ * is ever shortened, and a record that overflows without the excerpt still
+ * raises. See `refitAttemptedToBudget` for the regression that forced this.
  */
 export async function buildRetrievedContext(
   agentId: string,
@@ -506,16 +614,35 @@ export async function buildRetrievedContext(
 
   const blocks: string[] = []
   let usedTokens = 0
+  let attemptedRefit: AttemptedRefit | undefined
   for (const record of records) {
-    const block = formatRecord(record)
-    const blockTokens = estimateTokens(block)
+    let block = formatRecord(record)
+    let blockTokens = estimateTokens(block)
 
     if (blocks.length === 0 && blockTokens > budgetTokens) {
-      // Hard budget overflow on the single most relevant record: throw
-      // rather than silently truncate it — this is the exact case the piece
-      // brief names ("a silently truncated context is how an agent loses the
-      // one record that mattered").
-      throw new RetrievalBudgetExceededError(agentId, taskKey, record.taskKey, blockTokens, budgetTokens)
+      // Round-2 repair, applied ONLY here — to the top-ranked record, the one
+      // record nothing is allowed to silently drop, and the only place this
+      // function can raise. A lower-ranked record that does not fit is still
+      // skipped whole (below), because clipping those would change which
+      // records get selected, not just how much of one survives.
+      //
+      // Before raising, hand back this piece's own contribution: `attempted`
+      // was null on every row until pieces8/memory-attempted, so raising on a
+      // record that only overflows BECAUSE of it would break a dispatch that
+      // worked before the feature existed. See `refitAttemptedToBudget`.
+      const refitted = refitAttemptedToBudget(record, budgetTokens)
+      if (!refitted) {
+        // Genuine overflow — the record does not fit even with the
+        // `attempted` excerpt gone entirely, exactly as it did not fit
+        // pre-piece. Throw rather than silently truncate the reviewer's and
+        // rejecter's own words: the exact case the piece brief names ("a
+        // silently truncated context is how an agent loses the one record
+        // that mattered").
+        throw new RetrievalBudgetExceededError(agentId, taskKey, record.taskKey, blockTokens, budgetTokens)
+      }
+      block = refitted.block
+      blockTokens = estimateTokens(block)
+      attemptedRefit = refitted.refit
     }
     // A single oversized LOWER-ranked record must not exclude smaller
     // records that still fit under the budget — continue scanning instead
@@ -539,9 +666,18 @@ export async function buildRetrievedContext(
       ? ` — bounded scan of the ${scannedWindowRows} most recent records; an older match may exist beyond that window`
       : ''
 
+  // Same discipline as the bounded-scan caveat above: whoever reads the spawn
+  // prompt sees only `text`, so a shortened excerpt is disclosed IN the text,
+  // not only in a field a caller would have to think to check.
+  const refitNote = attemptedRefit
+    ? attemptedRefit.state === 'clipped'
+      ? ` — ${attemptedRefit.taskKey}'s Attempted excerpt clipped by ${attemptedRefit.droppedChars} char(s) to fit`
+      : ` — ${attemptedRefit.taskKey}'s Attempted excerpt (${attemptedRefit.droppedChars} chars) omitted; it did not fit`
+    : ''
+
   const text =
     blocks.length > 0
-      ? `# RELEVANT PAST EXPERIENCE (${engine} search${boundedScanNote}, ${blocks.length}/${records.length} match(es) fit, ~${usedTokens}/${budgetTokens} tokens)\n\n${blocks.join('\n\n')}`
+      ? `# RELEVANT PAST EXPERIENCE (${engine} search${boundedScanNote}, ${blocks.length}/${records.length} match(es) fit, ~${usedTokens}/${budgetTokens} tokens${refitNote})\n\n${blocks.join('\n\n')}`
       : ''
 
   return {
@@ -554,5 +690,6 @@ export async function buildRetrievedContext(
     unavailableReason,
     scannedWindowRows,
     possiblyIncompleteScan,
+    attemptedRefit,
   }
 }

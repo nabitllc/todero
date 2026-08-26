@@ -28,14 +28,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
-import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
+import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, noModelsError, resolveModelId } from '@/lib/llm-provider'
 
 export const runtime = 'nodejs'
 
-function sseError(encoder: TextEncoder, message: string) {
+// `kind` is carried alongside the prose (ChatTab renders `error`; the field is
+// additive) so an LLM_BASE_URL pointing at the wrong KIND of server is
+// machine-distinguishable from one that is merely down.
+function sseError(encoder: TextEncoder, message: string, kind?: string) {
   const stream = new ReadableStream({
     start(c) {
-      c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`))
+      c.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message, ...(kind ? { kind } : {}) })}\n\n`))
       c.close()
     },
   })
@@ -69,10 +72,15 @@ export async function POST(req: NextRequest) {
   // silently substituted for a different model.
   const live = await fetchLiveModels()
   if (!live.ok) {
-    return sseError(encoder, live.error)
+    return sseError(encoder, live.error, live.kind)
   }
   if (live.models.length === 0) {
-    return sseError(encoder, `${LLM_BASE_URL}/models returned no models — pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)`)
+    // Reachable only when the endpoint really is OpenAI-compatible. A server
+    // that merely answers 200 with something else — an HTML page, a proxy
+    // login screen, Ollama's native API when LLM_BASE_URL lost its `/v1` —
+    // is caught above by `live.ok === false` with kind 'not-openai-compatible',
+    // and says so, instead of telling the operator to pull a model.
+    return sseError(encoder, noModelsError(), 'empty-roster')
   }
 
   const requestedModel = modelOverride && modelOverride !== 'default' ? modelOverride : (LLM_DEFAULT_MODEL || live.models[0].id)

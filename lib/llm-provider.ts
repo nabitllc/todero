@@ -82,16 +82,17 @@ export async function resolveConfiguredModel(
   requested?: string | null,
 ): Promise<
   | { ok: true; model: string }
-  | { ok: false; status: 400 | 502; error: string; id?: string }
+  | { ok: false; status: 400 | 502; error: string; id?: string; kind?: LiveModelsFailureKind }
 > {
   const live = await fetchLiveModels()
-  if (!live.ok) return { ok: false, status: 502, error: live.error }
+  // `kind` rides along so a caller can branch on WHY without string-matching
+  // prose. 'not-openai-compatible' in particular is a configuration fault the
+  // operator has to fix, not a transient outage to retry.
+  if (!live.ok) return { ok: false, status: 502, error: live.error, kind: live.kind }
   if (live.models.length === 0) {
-    return {
-      ok: false,
-      status: 502,
-      error: `${LLM_BASE_URL}/models returned no models — pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)`,
-    }
+    // No `kind`: an empty roster is not a fetch FAILURE — fetchLiveModels
+    // reported ok — it is this function's own refusal to invent a model id.
+    return { ok: false, status: 502, error: noModelsError() }
   }
   const ids = live.models.map(m => m.id)
   const wanted = requested && requested !== 'default' ? requested : (LLM_DEFAULT_MODEL || ids[0])
@@ -125,9 +126,47 @@ export interface LlmModel {
   trainedContextLength?: number
 }
 
+/**
+ * Why a live roster read failed, as a value rather than only as prose.
+ *
+ * `not-openai-compatible` is the one this enum exists for. It used to be
+ * indistinguishable from success: `fetchLiveModels` parsed the body with
+ * `res.json().catch(() => null)` and then took `Array.isArray(body?.data) ?
+ * body.data : []`, so ANY 200 — an HTML index page, a proxy login screen, a
+ * 404 page served with status 200, Ollama's NATIVE `/api/tags` shape when
+ * LLM_BASE_URL is missing its `/v1` suffix — came back as
+ * `{ ok: true, models: [] }`: byte-for-byte what a healthy Ollama with
+ * nothing pulled reports. Measured on 2026-08-26 against seven deliberately
+ * wrong servers; four separate causes produced that one identical answer.
+ *
+ * Those are not the same problem and do not have the same fix ("pull a model"
+ * vs "LLM_BASE_URL points at the wrong thing"), and the one an operator would
+ * actually act on was the invisible one. `scripts/lib/env-report.mjs`'s
+ * `probeOpenAiShape()` already told them apart at DIAGNOSIS time; this makes
+ * the PRODUCT path say it too, at the moment of failure, in the message the
+ * user sees.
+ */
+export type LiveModelsFailureKind =
+  /** The socket never produced a response: refused, DNS failure, timeout. */
+  | 'unreachable'
+  /** A response arrived carrying a non-2xx status. */
+  | 'error-status'
+  /** A 2xx arrived, but it is not the OpenAI `/models` shape at all. */
+  | 'not-openai-compatible'
+
 export type LiveModelsResult =
   | { ok: true; models: LlmModel[] }
-  | { ok: false; error: string }
+  // `kind` is REQUIRED, not optional. It was optional for one round because
+  // lib/runtimes/openai-api.ts hand-rolled its own copy of this result and set
+  // no kind — which is exactly how that file kept the original defect alive
+  // after this one was fixed (a plain HTML page came back from its
+  // `fetchModelsFrom()` as `{ ok: true, models: [] }`, so /api/health and the
+  // runtimes registry called an HTML page a reachable provider). The
+  // duplicated parser is gone: both callers now go through
+  // `readModelsResponse()` / `unreachableModelsResult()` below, so the
+  // compiler — not a comment — is what stops the next hand-rolled copy from
+  // reporting a failure with no reason attached.
+  | { ok: false; error: string; kind: LiveModelsFailureKind }
 
 // The OpenAI-compat `/v1/models` list (what fetchLiveModels queries) never
 // carries context-window size. Two different Ollama endpoints do, and they
@@ -201,10 +240,138 @@ async function fetchTrainedContextLength(modelId: string, timeoutMs: number): Pr
   }
 }
 
+/** First ~120 printable characters of a body, whitespace collapsed, so an
+ *  HTML page is recognisable in an error string without pasting a page into
+ *  a toast. */
+function bodySnippet(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  if (!flat) return '(empty body)'
+  return flat.length > 120 ? `${flat.slice(0, 120)}…` : flat
+}
+
+/**
+ * The one sentence for "this endpoint IS OpenAI-compatible and genuinely has
+ * nothing loaded". Shared by every chat route so the three of them cannot
+ * drift into three different phrasings of the same state — and, more to the
+ * point, so this sentence is now reachable ONLY from that state. Before the
+ * shape check above, four unrelated misconfigurations printed it too.
+ */
+export function noModelsError(): string {
+  return `${LLM_BASE_URL}/models returned no models — the endpoint is OpenAI-compatible but its roster is empty; pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)`
+}
+
+/**
+ * The failure a caller reports when the socket never produced a response at
+ * all: connection refused, DNS failure, TLS failure, timeout.
+ *
+ * Exported so every place in the repo that dials a `/models` endpoint returns
+ * the SAME shape with the SAME kind. `lib/runtimes/openai-api.ts` used to
+ * hand-roll this (and the parser below); see the note on `LiveModelsResult`.
+ */
+export function unreachableModelsResult(baseUrl: string, err: unknown): LiveModelsResult {
+  const detail = err instanceof Error ? err.message : String(err)
+  return { ok: false, kind: 'unreachable', error: `${baseUrl} is unreachable — ${detail}` }
+}
+
+/**
+ * Turn a `GET ${baseUrl}/models` Response into a verdict — the one and only
+ * place in this repo that decides whether something answering at a base URL
+ * is an OpenAI-compatible endpoint.
+ *
+ * A 2xx is NOT evidence that the thing on the other end speaks this API, so
+ * the body is checked for the OpenAI `/models` shape before any of it is
+ * believed, and a body that fails that check becomes a NAMED failure rather
+ * than an empty roster. See the long note on `LiveModelsFailureKind` for the
+ * measurement that motivated it.
+ *
+ * `baseUrl` is passed in rather than read from the module constant because
+ * `openai-api.ts`'s `resolveProvider()` also honours `OPENAI_BASE_URL`, so the
+ * URL actually dialled can differ from `LLM_BASE_URL` — and probing a URL the
+ * adapter would not dispatch to is its own kind of lie.
+ */
+export async function readModelsResponse(baseUrl: string, res: Response): Promise<LiveModelsResult> {
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return {
+      ok: false,
+      kind: 'error-status',
+      error: `${baseUrl}/models responded ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`,
+    }
+  }
+
+  // `res.headers?.get` rather than `res.headers.get`: a real Response always
+  // has headers, but the Content-Type is only decoration on the message here,
+  // and the seam should not throw on a partial Response stand-in when the
+  // actual answer is already knowable from the body.
+  const contentType = res.headers?.get?.('content-type') ?? ''
+  const text = await res.text().catch(() => '')
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    return {
+      ok: false,
+      kind: 'not-openai-compatible',
+      error:
+        `${baseUrl}/models answered ${res.status} but the body is not JSON` +
+        `${contentType ? ` (Content-Type: ${contentType})` : ''} — this is not an OpenAI-compatible endpoint. ` +
+        `LLM_BASE_URL must point at a server that serves GET /models as {"data":[{"id":…}]}. ` +
+        `Body starts: ${bodySnippet(text)}`,
+    }
+  }
+  const data = (body as { data?: unknown } | null)?.data
+  if (!Array.isArray(data)) {
+    // Valid JSON, wrong API. The overwhelmingly common cause on this machine
+    // is a base URL missing its `/v1` suffix, which reaches Ollama's own
+    // `/api/tags`-style payload (`{"models":[{"name":…}]}`) — so say that.
+    //
+    // The hint is CONDITIONAL on the URL not already ending in `/v1`. Naming a
+    // missing suffix on a URL that has one would be a confident wrong answer,
+    // which is the failure mode this whole seam exists to remove; when the
+    // suffix is already there the cause is something else and the message says
+    // only what it knows.
+    const keys = body && typeof body === 'object' ? Object.keys(body).slice(0, 6).join(', ') : String(body)
+    const suffixHint = /\/v1$/.test(baseUrl)
+      ? ''
+      : ` If this is Ollama, the base URL needs its /v1 suffix — set LLM_BASE_URL to ${baseUrl}/v1.`
+    return {
+      ok: false,
+      kind: 'not-openai-compatible',
+      error:
+        `${baseUrl}/models answered ${res.status} with JSON that has no top-level "data" array — ` +
+        `the OpenAI /models shape is {"data":[{"id":…}]}, so this endpoint speaks a different API. ` +
+        `Top-level keys: ${keys || '(none)'}.${suffixHint}`,
+    }
+  }
+  const models: LlmModel[] = data.filter(
+    (m): m is LlmModel => !!m && typeof (m as LlmModel).id === 'string' && (m as LlmModel).id !== '',
+  )
+  if (data.length > 0 && models.length === 0) {
+    // A `data` array is present but nothing in it is addressable by id, so
+    // there is no roster here either — and reporting zero would again mean
+    // "pull a model", which is not the fix.
+    return {
+      ok: false,
+      kind: 'not-openai-compatible',
+      error:
+        `${baseUrl}/models answered ${res.status} with a "data" array of ${data.length} entr` +
+        `${data.length === 1 ? 'y' : 'ies'}, none carrying a string "id" — not the OpenAI /models shape.`,
+    }
+  }
+  return { ok: true, models }
+}
+
 /**
  * Live GET against `${LLM_BASE_URL}/models`. Never a hardcoded list — an
  * unreachable endpoint or an empty roster is reported by name so a caller
  * can show it to the operator instead of guessing.
+ *
+ * Four outcomes, each distinguishable by the caller:
+ *   { ok: true,  models: [...] }                       a real roster
+ *   { ok: true,  models: [] }                          OpenAI-shaped, empty
+ *   { ok: false, kind: 'unreachable' | 'error-status' } no usable response
+ *   { ok: false, kind: 'not-openai-compatible' }        a 200 from something
+ *                                                       that isn't this API
  */
 export async function fetchLiveModels(
   timeoutMs = 5000,
@@ -219,15 +386,19 @@ export async function fetchLiveModels(
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    return { ok: false, error: `${LLM_BASE_URL} is unreachable — ${detail}` }
+    return unreachableModelsResult(LLM_BASE_URL, err)
   }
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    return { ok: false, error: `${LLM_BASE_URL}/models responded ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}` }
-  }
-  const body = await res.json().catch(() => null)
-  const models: LlmModel[] = Array.isArray(body?.data) ? body.data : []
+
+  // ── The 200 that is not an answer ──────────────────────────────────────────
+  // The shape check lives in `readModelsResponse()` above, shared with
+  // lib/runtimes/openai-api.ts's provider probe. It was inlined here for one
+  // round, and the duplicate in that file went on returning
+  // `{ ok: true, models: [] }` for an HTML page the whole time this function
+  // was reporting it honestly — so the parser is now in one place by
+  // construction, not by convention.
+  const shaped = await readModelsResponse(LLM_BASE_URL, res)
+  if (!shaped.ok) return shaped
+  const models = shaped.models
   if (opts.includeContextLength) {
     const served = await fetchServedContextLengths(timeoutMs)
     await Promise.all(models.map(async m => {

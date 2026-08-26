@@ -105,6 +105,26 @@ export interface ExitRecordInput {
   agentId: string
   /** opts.taskId from the spawn — the issue's DB id, when the caller had one */
   taskId?: string | null
+  /**
+   * pieces8/memory-attempted — the observed-at-exit evidence half.
+   *
+   * Every field below is OPTIONAL and omitting it reproduces this function's
+   * historical behaviour byte for byte (`attempted: null`, `succeeded: false`,
+   * `failed: false`, `exit_status: null`). A caller passes these ONLY when it
+   * genuinely observed them; the honest verdict for "nothing was observed" is
+   * to pass nothing, never a guessed value.
+   *
+   * Build them with `summarizeExit()` from `lib/runtimes/exit-evidence.ts`,
+   * which is the single place that decides what the observed facts add up to
+   * and stamps `attempted` with the provenance of each claim.
+   */
+  attempted?: string | null
+  /** "The run process reported success" — NOT "the review passed". See exit-evidence.ts. */
+  succeeded?: boolean
+  /** "The run process reported failure" — a non-zero exit, a signal, a spawn failure, or the run's own error record. */
+  failed?: boolean
+  /** The child's REAL OS exit code, from `child.on('exit')`. null when never observed. */
+  exitStatus?: number | null
 }
 
 /**
@@ -114,14 +134,28 @@ export interface ExitRecordInput {
  * dispatched agent run produces exactly one `agent_run_records` row instead
  * of recording nothing.
  *
- * `watchChildExit` only confirms the OS pid is gone (`process.kill(pid, 0)`
- * failing); it does not capture a real exit code or signal, and it has no
- * way to know whether the task's review ultimately passed. Those fields are
- * therefore left unset here (not guessed) so `writeRunRecord`'s own
- * defaults are what land, not a fabricated "this succeeded" — the only
- * things filled in are read fresh from the issue row at the moment of exit:
- * task_key, status, rejection_count, last_rejection_reason and
- * reviewer_notes, which genuinely are known at that instant.
+ * Two kinds of field land on the row:
+ *
+ *   1. Read fresh from the issue row at the moment of exit — task_key,
+ *      title, status, rejection_count, last_rejection_reason,
+ *      reviewer_notes. Genuinely known at that instant, never guessed.
+ *   2. Passed in by the caller as OBSERVED exit evidence — attempted,
+ *      succeeded, failed, exit_status (pieces8/memory-attempted). The
+ *      adapters build these with `summarizeExit()` from real, already-
+ *      collected signals: the child's true exit code/signal from
+ *      `child.on('exit')`, `[spawn-failure]` lines, and the run's own
+ *      completion record (claude's `--output-format json` `subtype`/
+ *      `is_error`/`result`, or `parseOpenAiTrace()`'s `run_end` status and
+ *      tool-call list). Before that piece these were dropped on the floor
+ *      after being parsed for the token ledger, and every row this function
+ *      wrote carried `attempted: null` — a memory that could say "TOD-167
+ *      was open and someone rejected it" but never "I tried X and it failed".
+ *
+ * A caller that observed nothing passes nothing, and the row comes out
+ * exactly as it always did — `writeRunRecord`'s defaults, not a fabricated
+ * "this succeeded". `succeeded`/`failed` mean "the run PROCESS reported
+ * success/failure", never "the review passed"; the review's own verdict is
+ * the separate rejection_count/rejection_reason pair on the same row.
  *
  * Never throws and never fails the exit callback: a missing taskId (not
  * every spawn attaches one) or a DB error means this exit produces no row —
@@ -175,12 +209,14 @@ export async function recordRunOnExit(entry: ExitRecordInput): Promise<void> {
       rejectionCount: issue?.rejection_count ?? undefined,
       rejectionReason: issue?.last_rejection_reason ?? null,
       reviewerNotes: issue?.reviewer_notes ?? null,
-      // Genuinely unobservable from a pid-liveness watcher — explicit null,
-      // not a guessed 0 ("succeeded") or 1 ("failed"). watchChildExit (see
-      // lib/runtimes/detached-spawn.ts) only confirms process.kill(pid, 0)
-      // fails; it never captures a real exit code or signal, so there is
-      // nothing honest to fill in here at this call site.
-      exitStatus: null,
+      // pieces8/memory-attempted: passed through verbatim from the caller's
+      // observed evidence, or left at writeRunRecord's defaults when the
+      // caller observed nothing. `?? null` / `?? false` here is the "not
+      // observed" branch, not a verdict.
+      attempted: entry.attempted ?? null,
+      succeeded: entry.succeeded ?? false,
+      failed: entry.failed ?? false,
+      exitStatus: entry.exitStatus ?? null,
     })
     if (dbError) {
       console.warn(`[memory-loop] writeRunRecord failed on exit for ${entry.agentId}/${taskKey}: ${dbError}`)

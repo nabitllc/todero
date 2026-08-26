@@ -321,3 +321,287 @@ export function fleetHeadline(summary: FleetSummary): string {
   if (summary.unknown > 0) parts.push(`${summary.unknown} not measured`)
   return parts.join(' · ')
 }
+
+// ─── What is it doing, and is it stuck? ──────────────────────────────────────
+//
+// Everything above answers "is this agent still checking in". The Fleet
+// artboard asks two more questions of the same row — what it is DOING, and
+// whether it is STUCK — and the roster answered neither: it rendered a
+// liveness badge and a model string and stopped.
+//
+// The same honesty rule that governs liveness governs both. GET /api/agents'
+// `currentTask` is populated from EITHER the agent's own heartbeat OR an
+// `issues` row that names it as assignee, and until 2026-08-26 those two very
+// different facts arrived as one nullable string. A board ticket is not
+// evidence that a process is running — the sibling comment in
+// app/api/agents/route.ts has said so since the liveness fix — so wording an
+// assigned issue as "working on TOD-123" is the identical fabrication to
+// wording a registration timestamp as "heartbeat 4m ago". `currentTaskSource`
+// is the fix, and nothing below will call an agent "working" without it.
+//
+// "Stuck" is likewise never inferred from vibes. There are exactly two things
+// this module will call stuck, and each is two measured facts in conjunction:
+//   * `blocked`  — the server's own budget verdict says a dispatch would be
+//                  refused right now, and carries the reason.
+//   * `stalled`  — the agent ITSELF said it was working, and then stopped
+//                  checking in for longer than the offline window.
+// An agent that never claimed anything is not stuck; it is idle, and it says
+// so. An issue that has been open a long time is a fact about the ISSUE, and
+// is worded as one.
+
+/**
+ * What one row is doing, in five mutually exclusive states.
+ *
+ *   blocked  — over a budget ceiling: the server would refuse a dispatch now
+ *   working  — the agent's own heartbeat named a task, and it is still live
+ *   stalled  — the agent's own heartbeat named a task, and it has gone quiet
+ *   assigned — the BOARD names it on an issue; no check-in evidence exists
+ *   idle     — no task from either source
+ *
+ * `assigned` is deliberately not called "working". That distinction is the
+ * whole point of this vocabulary.
+ */
+export type FleetActivity = 'blocked' | 'working' | 'stalled' | 'assigned' | 'idle'
+
+/** Where GET /api/agents' `currentTask` came from. Mirrors the route's type. */
+export type TaskProvenance = 'heartbeat' | 'assigned-issue' | 'none'
+
+/** The row fields an activity classification reads. All from GET /api/agents. */
+export interface FleetActivityInput {
+  /** The task string, or null when there is none. */
+  currentTask: string | null
+  /**
+   * Which fact `currentTask` is. Required, with no default, for the same
+   * reason {@link FleetLivenessInput.source} is: a caller that does not know
+   * must say 'none' rather than have this module assume the flattering
+   * answer. A wire type whose server is too old to send it FAILS CLOSED to
+   * 'none' at the call site, never to 'heartbeat'.
+   */
+  currentTaskSource: TaskProvenance
+  /** Epoch ms the assigned ISSUE went in progress, or null. A board fact. */
+  workStartedAt: number | null
+  /** The server's read-only budget verdict, or null when within every ceiling. */
+  overCeiling: { ceiling: string; reason: string } | null
+  /** This row's liveness, from {@link classifyFleetLiveness}. */
+  liveness: FleetLiveness
+}
+
+/** One row's activity plus the exact words the roster renders for it. */
+export interface ActivityDescription {
+  state: FleetActivity
+  /** Short badge word — the state itself, so the badge cannot drift from it. */
+  badge: FleetActivity
+  /** The full sentence, always naming which fact it is built from. */
+  label: string
+  /**
+   * True when this row is one an operator has to do something about. Exactly
+   * `blocked` and `stalled` — the two states backed by a measured conjunction.
+   * `assigned` is NOT attention-worthy on its own: a ticket with an assignee
+   * and no heartbeat is the normal resting state of every board in this repo,
+   * and a roster that flagged all 28 rows would be flagging nothing.
+   */
+  needsAttention: boolean
+}
+
+/**
+ * Turn a row into the words the roster shows for "what is it doing".
+ *
+ * Order of precedence is the order of certainty about what an operator must
+ * act on: a budget block outranks everything (the agent cannot run at all,
+ * whatever it thinks it is doing), then the agent's own claim about itself,
+ * then the board's claim about the agent, then nothing.
+ */
+export function describeActivity(
+  input: FleetActivityInput,
+  now: number = Date.now(),
+  offlineAfterMs: number = OFFLINE_AFTER_MS,
+): ActivityDescription {
+  const window = formatAge(offlineAfterMs)
+
+  // 1. Blocked. A verdict the server computed against real ledger rows, with
+  //    the reason it gave — never this module's paraphrase of it.
+  if (input.overCeiling) {
+    const reason = input.overCeiling.reason.trim()
+    return {
+      state: 'blocked',
+      badge: 'blocked',
+      label:
+        `blocked by the ${input.overCeiling.ceiling} ceiling` +
+        (reason ? ` — ${reason}` : ' — the server reported no reason text') +
+        '. A dispatch would be refused right now.',
+      needsAttention: true,
+    }
+  }
+
+  // 2. The agent's own claim. Only a heartbeat-sourced task reaches here, so
+  //    "it says" is literally true.
+  if (input.currentTaskSource === 'heartbeat' && input.currentTask) {
+    if (input.liveness === 'live') {
+      return {
+        state: 'working',
+        badge: 'working',
+        label: `working on "${input.currentTask}" — its own last heartbeat said so`,
+        needsAttention: false,
+      }
+    }
+    if (input.liveness === 'offline') {
+      return {
+        state: 'stalled',
+        badge: 'stalled',
+        label:
+          `said it was working on "${input.currentTask}", then stopped checking in for more than ${window}. ` +
+          'Nothing has reported the work finished or failed.',
+        needsAttention: true,
+      }
+    }
+    // `never` and `unknown`: there is a task string but no readable liveness
+    // to judge it against. Saying "stalled" would be a claim from an absence
+    // of evidence — the exact move this file exists to refuse.
+    return {
+      state: 'assigned',
+      badge: 'assigned',
+      label:
+        `a heartbeat named "${input.currentTask}", but this row's liveness is ${input.liveness}, ` +
+        'so whether it is still working cannot be told from here',
+      needsAttention: false,
+    }
+  }
+
+  // 3. The board's claim. Worded as a fact about the ISSUE, because that is
+  //    what it is: nobody has shown the agent ever picked it up.
+  if (input.currentTaskSource === 'assigned-issue' && input.currentTask) {
+    const started =
+      input.workStartedAt !== null && now - input.workStartedAt >= 0
+        ? ` It has been in progress ${formatAge(now - input.workStartedAt)}.`
+        : ''
+    return {
+      state: 'assigned',
+      badge: 'assigned',
+      label:
+        `${input.currentTask} is assigned to it on the board — that is a board row, not a check-in, ` +
+        `and no heartbeat has reported work on it.${started}`,
+      needsAttention: false,
+    }
+  }
+
+  // 4. Nothing from either source. Note this says nothing about liveness: a
+  //    live agent with no task is idle and fine; a dead one with no task is
+  //    idle and the LIVENESS badge is where that shows.
+  return {
+    state: 'idle',
+    badge: 'idle',
+    label: 'no task — neither a heartbeat nor a board row names work for this agent',
+    needsAttention: false,
+  }
+}
+
+/** Fleet-wide activity tally. Every field is a count of rows. */
+export interface ActivitySummary {
+  blocked: number
+  working: number
+  stalled: number
+  assigned: number
+  idle: number
+  /** Rows whose `needsAttention` is true — `blocked` + `stalled`. */
+  needsAttention: number
+}
+
+export function summarizeActivity(
+  rows: readonly FleetActivityInput[],
+  now: number = Date.now(),
+  offlineAfterMs: number = OFFLINE_AFTER_MS,
+): ActivitySummary {
+  const summary: ActivitySummary = {
+    blocked: 0, working: 0, stalled: 0, assigned: 0, idle: 0, needsAttention: 0,
+  }
+  for (const row of rows) {
+    const desc = describeActivity(row, now, offlineAfterMs)
+    summary[desc.state] += 1
+    if (desc.needsAttention) summary.needsAttention += 1
+  }
+  return summary
+}
+
+/**
+ * The second headline line: what the fleet is DOING, beside
+ * {@link fleetHeadline}'s what it IS.
+ *
+ * Same rule as fleetHeadline — only non-zero states are named — with one
+ * deliberate exception: a fleet where nothing needs attention SAYS SO, in
+ * words, rather than falling silent. Silence is what "nothing is wrong" and
+ * "we did not check" look like from the outside, and this whole module exists
+ * because those two were indistinguishable on this surface.
+ */
+export function activityHeadline(summary: ActivitySummary): string {
+  const parts: string[] = []
+  if (summary.working > 0) parts.push(`${summary.working} working`)
+  if (summary.stalled > 0) parts.push(`${summary.stalled} stalled`)
+  if (summary.blocked > 0) parts.push(`${summary.blocked} blocked by a budget ceiling`)
+  if (summary.assigned > 0) parts.push(`${summary.assigned} assigned on the board, no check-in`)
+  if (summary.idle > 0) parts.push(`${summary.idle} idle`)
+  const head = parts.length > 0 ? parts.join(' · ') : 'no rows to describe'
+  return summary.needsAttention > 0
+    ? `${head} — ${summary.needsAttention} need${summary.needsAttention === 1 ? 's' : ''} you`
+    : `${head} — nothing is waiting on you`
+}
+
+// ─── The one-line form, for surfaces that are not the Fleet roster ───────────
+//
+// ROUND 2 (2026-08-26). `describeActivity()` above solves "what is it doing"
+// properly, but it costs the caller a badge, a tone map and a sentence, and it
+// wants a classified `liveness` it must compute first. Exactly ONE surface in
+// this repo pays that price — components/tabs/CrewTab.tsx. Five others render
+// GET /api/agents' `currentTask` as a bare string, several of them in green
+// next to a live dot, which is the flattering guess this whole piece exists to
+// stop:
+//
+//   app/page.tsx:738                    { dot: 'green', label: row.currentTask || … }
+//   components/tabs/AgentDetailView.tsx:250, :669
+//   components/tabs/AgentsTab.tsx:325   (emerald, gated on dot === 'green')
+//   components/tabs/OverviewTab.tsx:262
+//   components/tabs/ChatTab.tsx:791     (fed into an LLM roster prompt)
+//
+// None of those files belongs to this lane, so this round does the half that
+// does: it makes the honest string a ONE-TOKEN swap for each of them, and puts
+// it on the wire as `AgentDto.currentTaskLabel` so a consumer needs no import
+// and no classification step at all. The remaining five diffs are in §8 of
+// docs/rebuild/pieces/pieces8/fleet-liveness.md, and they are NOT applied.
+//
+// WHY THE PROVENANCE WORD COMES FIRST. Every one of those five call sites
+// renders inside a `truncate`, which cuts the TAIL. A label reading
+// `"TOD-42: fix the nav (board row, not a check-in)"` truncates to
+// `"TOD-42: fix the nav…"` — i.e. back to the exact ambiguous string, in the
+// exact place it does the most damage. Leading with the provenance means the
+// one word a reader is guaranteed to see is the one that says which fact this
+// is.
+
+/** The two fields {@link taskLabel} reads. A subset of `FleetActivityInput`. */
+export interface TaskLabelInput {
+  currentTask: string | null
+  currentTaskSource: TaskProvenance
+}
+
+/**
+ * `currentTask`, worded so it cannot be read as the wrong fact — for any
+ * surface that renders one short string and has no room for a sentence.
+ *
+ *   heartbeat      -> `reported: TOD-42: fix the nav`   (the AGENT's claim)
+ *   assigned-issue -> `assigned: TOD-42: fix the nav`   (the BOARD's claim)
+ *   none / empty   -> null
+ *
+ * Returns **null**, not `''` and not a placeholder, when there is no task: the
+ * callers all use `label && <span>…` or `label || 'fallback'`, and handing
+ * them a truthy empty-ish string would put an empty green line on screen.
+ *
+ * FAILS CLOSED by construction: an unrecognised or absent provenance takes the
+ * `assigned` branch, never the `reported` one, because "the board says so" is
+ * the weaker of the two claims and a caller that does not know which it holds
+ * must not be upgraded to the agent's own word. (Callers reading a wire type
+ * should still coerce a missing field to `'none'` before calling — that is
+ * what `CrewTab.activityOf` does — but this function does not depend on it.)
+ */
+export function taskLabel(input: TaskLabelInput): string | null {
+  const task = input.currentTask?.trim()
+  if (!task) return null
+  return input.currentTaskSource === 'heartbeat' ? `reported: ${task}` : `assigned: ${task}`
+}

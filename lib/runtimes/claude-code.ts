@@ -13,12 +13,13 @@
 //   detached+stdio+unref gives us everything nohup/disown/</dev/null did, on
 //   every platform, with no shell and therefore no quoting.
 
-import { existsSync, writeFileSync, mkdtempSync, unlinkSync, rmSync, readFileSync } from 'fs'
+import { existsSync, writeFileSync, mkdtempSync, unlinkSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
 import { prepareWorktree, teardownWorktree } from './worktree'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+import { readClaudeCompletion, readLogTail, readSpawnFailures, summarizeExit } from './exit-evidence'
 import { resolveBinary } from '../paths'
 import { finalizeRun } from './token-ledger'
 import { recordRunOnExit } from '../memory-loop'
@@ -128,7 +129,8 @@ export const claudeCodeRuntime: AgentRuntime = {
     // TOD-2381 (agent-budget-stop) round 3: `--output-format json` is what
     // makes the ledger closable with real numbers. Plain `--print` writes only
     // the model's final text to the log — nothing token-shaped for
-    // parseClaudeJsonOutput() below to read, which is why finalizeRun()'s one
+    // readClaudeCompletion() (./exit-evidence.ts) to read, which is why
+    // finalizeRun()'s one
     // real call site (the [spawn-exit] handler further down) previously could
     // never pass inputTokens/outputTokens/costUsd: there was nothing in the
     // log to compute them from. No other consumer parses this log file as a
@@ -166,30 +168,62 @@ export const claudeCodeRuntime: AgentRuntime = {
 
     // Portable replacement for the 40-line `nohup bash -c 'kill -0 …'` watcher:
     // poll the pid and log [spawn-exit] when it is gone.
+    // pieces8/memory-attempted: the live exit record spawnDetached now fills
+    // in from the child's real `'exit'` event. Read below, inside the exit
+    // callback — by which point the event has normally already fired.
+    const childExit = result.exit
     watchChildExit(result.pid, opts.logFile, () => {
       appendLog(opts.logFile, `[spawn-exit] agent=${opts.agentId} task=${opts.taskId ?? 'none'}`)
+      const durationSec = Math.round((Date.now() - spawnStartedAt) / 1000)
       // TOD-2381: close the token_ledger row (and any dangling agent_runs row
       // for this task) the moment the OS confirms the process is gone. This is
       // the only place in the codebase a spawned run's exit is actually
-      // observed — everywhere else only knows it was launched. `status:
-      // 'completed'` here means "the process exited", not "the task
-      // succeeded": watchChildExit polls pid liveness, it does not see the
-      // real exit code, so this is honestly the coarsest signal available
-      // without a bigger rewrite of spawnDetached's child.on('exit') plumbing.
-      const parsed = parseClaudeJsonOutput(opts.logFile)
+      // observed — everywhere else only knows it was launched.
+      const completion = readClaudeCompletion(opts.logFile)
       finalizeRun({
         logFile: opts.logFile,
         status: 'completed',
-        durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
+        durationSec,
         taskId: opts.taskId ?? null,
-        inputTokens: parsed?.inputTokens,
-        outputTokens: parsed?.outputTokens,
-        costUsd: parsed?.costUsd,
+        inputTokens: completion?.inputTokens,
+        outputTokens: completion?.outputTokens,
+        costUsd: completion?.costUsd,
       })
       // memory-loop-write (round 2): the learning loop's write half had no
       // caller anywhere in the running product — this is that caller, one
       // agent_run_records row per dispatched run.
-      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
+      //
+      // pieces8/memory-attempted: and it no longer writes a contentless row.
+      // `completion` is the SAME object the ledger call above already reads
+      // for tokens; its `subtype` / `is_error` / `num_turns` / `result`
+      // fields were parsed and discarded until now. Combined with the child's
+      // real exit code, that is a genuine record of what this run tried and
+      // how it ended — never a guess: `summarizeExit()` returns
+      // outcome 'unknown' (both booleans false, the historical behaviour)
+      // whenever none of those signals were actually observed.
+      const evidence = summarizeExit({
+        runtime: 'claude-code',
+        exitCode: childExit?.observed ? childExit.code : null,
+        signal: childExit?.observed ? childExit.signal : null,
+        durationSec,
+        reportedStatus: completion?.subtype ?? null,
+        reportedError: completion?.isError,
+        turns: completion?.numTurns ?? null,
+        tokensIn: completion?.inputTokens ?? null,
+        tokensOut: completion?.outputTokens ?? null,
+        finalReport: completion?.result ?? null,
+        spawnFailures: readSpawnFailures(opts.logFile),
+        logTail: completion ? undefined : readLogTail(opts.logFile),
+        logFile: opts.logFile,
+      })
+      void recordRunOnExit({
+        agentId: opts.agentId,
+        taskId: opts.taskId ?? null,
+        attempted: evidence.attempted,
+        succeeded: evidence.succeeded,
+        failed: evidence.failed,
+        exitStatus: evidence.exitStatus,
+      })
     }, { maxMinutes: WORKTREE_TEARDOWN_MINUTES + 30 })
 
     // Schedule worktree teardown after the timeout window
@@ -217,56 +251,18 @@ export const claudeCodeRuntime: AgentRuntime = {
   },
 }
 
-/**
- * TOD-2381 (agent-budget-stop) round 3: the ledger's actual closing numbers.
- *
- * `claude --print --output-format json` writes exactly one JSON object to
- * stdout when the process finishes — this log file's tail, after the
- * `[spawn-start]` header lines this adapter writes before launching. Its
- * documented shape includes `total_cost_usd` and a `usage` object with
- * `input_tokens` / `output_tokens` (the same fields the Messages API's own
- * `usage` object uses) plus cache token counts. This is deliberately the
- * ONLY place in the codebase that parses this log file's content — reading
- * it as anything other than "did the spawn produce the completion JSON we
- * asked for" is out of scope.
- *
- * Best-effort: a process that never reached `--output-format json`'s
- * completion line (crashed, killed mid-run, an older `claude` binary that
- * does not support the flag) leaves nothing valid to parse. That degrades to
- * exactly the pre-existing behavior — finalizeRun() still closes the row with
- * status/duration, just without token/cost numbers — never a thrown error
- * that could break the exit-watcher's cleanup.
- */
-function parseClaudeJsonOutput(logFile: string): { inputTokens?: number; outputTokens?: number; costUsd?: number } | null {
-  let text: string
-  try {
-    text = readFileSync(logFile, 'utf8')
-  } catch {
-    return null
-  }
-  // The header block ends at the "---" marker this adapter itself writes
-  // (see the `[spawn-start] ---` line above); everything after it is the
-  // child process's own stdout+stderr. Falling back to the first `{` in the
-  // whole file if that marker is somehow absent, rather than giving up.
-  const markerIdx = text.indexOf('[spawn-start] ---\n')
-  const tail = markerIdx >= 0 ? text.slice(markerIdx + '[spawn-start] ---\n'.length) : text
-  const firstBrace = tail.indexOf('{')
-  const lastBrace = tail.lastIndexOf('}')
-  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) return null
-  try {
-    const parsed = JSON.parse(tail.slice(firstBrace, lastBrace + 1)) as {
-      total_cost_usd?: number
-      usage?: { input_tokens?: number; output_tokens?: number }
-    }
-    const result: { inputTokens?: number; outputTokens?: number; costUsd?: number } = {}
-    if (typeof parsed.usage?.input_tokens === 'number') result.inputTokens = parsed.usage.input_tokens
-    if (typeof parsed.usage?.output_tokens === 'number') result.outputTokens = parsed.usage.output_tokens
-    if (typeof parsed.total_cost_usd === 'number') result.costUsd = parsed.total_cost_usd
-    return Object.keys(result).length > 0 ? result : null
-  } catch {
-    return null
-  }
-}
+// TOD-2381 (agent-budget-stop) round 3 lived here as `parseClaudeJsonOutput()`:
+// the reader that pulls `total_cost_usd` / `usage.input_tokens` /
+// `usage.output_tokens` out of the one JSON object
+// `claude --print --output-format json` writes at the end of this log file.
+//
+// pieces8/memory-attempted moved it to `./exit-evidence.ts` as
+// `readClaudeCompletion()`, unchanged in its brace-span scanning (so the
+// ledger numbers are byte-identical), because the SAME parse also yields
+// `subtype`, `is_error`, `num_turns` and the model's own final `result` —
+// the fields `agent_run_records.attempted` / `.succeeded` / `.failed` had
+// been left null/false for want of, supposedly, anything observable. They
+// were being parsed here and thrown away. One reader, both consumers.
 
 function extractTaskKeyFromBranch(branch: string | null | undefined): string | null {
   if (!branch) return null

@@ -37,6 +37,37 @@ export interface DetachedSpawnOptions {
   stdinFile?: string
 }
 
+/**
+ * A live record of the child's REAL exit, filled in by `child.on('exit')`.
+ *
+ * pieces8/memory-attempted: `watchChildExit()` below can only ever prove
+ * "the pid is gone" — it polls `process.kill(pid, 0)` and never sees a code.
+ * That limitation was repeatedly (and correctly) cited as the reason
+ * `agent_run_records.exit_status` had to stay null... but the PARENT still
+ * holds the `ChildProcess` handle from `spawn()`, and Node delivers a real
+ * `'exit'` event on it with the true code/signal even for a detached,
+ * `unref()`d child, as long as this server process is still alive. Nothing
+ * was ever listening. Now something is.
+ *
+ * This object is MUTATED in place after `spawnDetached()` resolves: a caller
+ * holds the reference and reads it later, from inside its `watchChildExit`
+ * callback, by which point the event has normally already fired.
+ *
+ * `observed: false` is a real and expected state — a Next.js restart between
+ * spawn and exit loses the listener the same way it loses the watcher — and
+ * MUST be reported as "not observed", never as exit 0.
+ */
+export interface ChildExitObservation {
+  /** True only once a genuine `'exit'` event arrived. */
+  observed: boolean
+  /** Real exit code, or null when the child was terminated by a signal / not yet observed. */
+  code: number | null
+  /** Real terminating signal, or null. */
+  signal: string | null
+  /** `Date.now()` at the moment the event fired, or null. */
+  at: number | null
+}
+
 export interface DetachedSpawnResult {
   ok: boolean
   /** OS pid of the detached child, when the spawn got far enough to have one. */
@@ -46,6 +77,12 @@ export interface DetachedSpawnResult {
   /** Human-readable command, for debugging/UI. Never re-parsed. */
   command: string
   error?: string
+  /**
+   * Live exit record for this child — see `ChildExitObservation`. Present
+   * whenever a child process was actually created (i.e. whenever there is a
+   * pid), absent when the spawn never got that far.
+   */
+  exit?: ChildExitObservation
 }
 
 /** `[label] …` line appended to a log file; never throws. */
@@ -156,6 +193,27 @@ export async function spawnDetached(
     appendLog(logFile, `[spawn-failure] ${new Date().toISOString()} ${errText(err)} (bin=${resolvedBin})`)
   })
 
+  // pieces8/memory-attempted: the child's REAL exit code, which nothing in
+  // this codebase had ever captured. Filled in in place; the caller reads it
+  // from its watchChildExit callback (which fires on a <=5s poll, i.e.
+  // normally well after this event). Listening does not re-`ref()` the
+  // handle — `unref()` below still lets Node exit with the child running —
+  // and this listener never throws, so it cannot affect the spawn.
+  // The log line is deliberately brace-free: claude-code.ts's completion-JSON
+  // reader scans this same file for the last `}`.
+  const exit: ChildExitObservation = { observed: false, code: null, signal: null, at: null }
+  child.on('exit', (code, signal) => {
+    exit.observed = true
+    exit.code = typeof code === 'number' ? code : null
+    exit.signal = signal ?? null
+    exit.at = Date.now()
+    appendLog(
+      logFile,
+      `[spawn-exit-code] ${new Date().toISOString()} pid=${child.pid ?? 'unknown'} ` +
+      `code=${exit.code === null ? 'null' : String(exit.code)} signal=${exit.signal ?? 'none'}`,
+    )
+  })
+
   // Node must hold no reference to the child: that is what let a Next.js
   // restart kill in-flight agents before this file existed.
   child.unref()
@@ -179,7 +237,7 @@ export async function spawnDetached(
   })
 
   if (!verdict.ok) {
-    return { ok: false, pid: undefined, logFile, command: shortCommand, error: verdict.error }
+    return { ok: false, pid: undefined, logFile, command: shortCommand, error: verdict.error, exit }
   }
 
   // Belt and braces: ok:true without a pid is meaningless to every caller
@@ -192,10 +250,11 @@ export async function spawnDetached(
       logFile,
       command: shortCommand,
       error: `spawn of '${bin}' produced no pid`,
+      exit,
     }
   }
 
-  return { ok: true, pid: child.pid, logFile, command: shortCommand }
+  return { ok: true, pid: child.pid, logFile, command: shortCommand, exit }
 }
 
 /**

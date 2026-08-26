@@ -16,9 +16,16 @@ import { writeFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { AgentRuntime, AgentSpawnOptions, AgentSpawnResult } from './types'
-import { LLM_BASE_URL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
+import {
+  LLM_BASE_URL,
+  fetchLiveModels,
+  readModelsResponse,
+  resolveModelId,
+  unreachableModelsResult,
+} from '@/lib/llm-provider'
 import type { LiveModelsResult } from '@/lib/llm-provider'
 import { appendLog, spawnDetached, watchChildExit } from './detached-spawn'
+import { summarizeExit } from './exit-evidence'
 import { recordRunOnExit } from '../memory-loop'
 import { finalizeRun } from './token-ledger'
 import { estimateModelRateUsd } from '../model-rates'
@@ -111,6 +118,24 @@ let probeCache: { key: string; at: number; result: ProviderProbe } | null = null
  * so the two can diverge — and probing a URL the adapter would not dispatch to
  * is the exact class of lie this function exists to remove. Use the shared
  * helper when they agree, and probe the resolved URL directly when they do not.
+ *
+ * The "probe it directly" branch used to be a HAND-ROLLED SECOND PARSER, and
+ * it ended with:
+ *
+ *     const body = await res.json().catch(() => null)
+ *     return { ok: true, models: Array.isArray(body?.data) ? body.data : [] }
+ *
+ * so any HTTP 200 whatsoever — an HTML index page, a proxy login screen,
+ * Ollama's native `/api/tags` shape when the base URL lost its `/v1` — came
+ * back as `{ ok: true, models: [] }`, byte-identical to a healthy endpoint
+ * with nothing pulled. `probeProvider()` then reported "answers but serves no
+ * models — pull one first" for four unrelated causes, three of which pulling a
+ * model does not fix, and `/api/health` and `listRuntimes()` published that.
+ * lib/llm-provider.ts's `fetchLiveModels()` was fixed first and this copy was
+ * left behind, which is the whole argument for there being one parser: the
+ * body check and the unreachable case now come from `readModelsResponse()` /
+ * `unreachableModelsResult()`, and `LiveModelsResult.kind` is required, so a
+ * third hand-rolled copy will not type-check.
  */
 async function fetchModelsFrom(provider: ProviderConfig): Promise<LiveModelsResult> {
   if (provider.baseUrl === LLM_BASE_URL) return fetchLiveModels(PROBE_TIMEOUT_MS)
@@ -121,18 +146,9 @@ async function fetchModelsFrom(provider: ProviderConfig): Promise<LiveModelsResu
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     })
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    return { ok: false, error: `${provider.baseUrl} is unreachable — ${detail}` }
+    return unreachableModelsResult(provider.baseUrl, err)
   }
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    return {
-      ok: false,
-      error: `${provider.baseUrl}/models responded ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`,
-    }
-  }
-  const body = await res.json().catch(() => null)
-  return { ok: true, models: Array.isArray(body?.data) ? body.data : [] }
+  return readModelsResponse(provider.baseUrl, res)
 }
 
 /**
@@ -445,6 +461,22 @@ function defaultExecuteTool(name: string, args: Record<string, unknown>): string
 
 // Plain JS (no TypeScript) executed by node in the child process.
 // Implements the same tool-use loop as runOpenAIToolUseLoop, reading config from env vars.
+//
+// EVERY `\n` INSIDE A STRING IN THESE LINES MUST BE WRITTEN `\\n`. These are
+// TypeScript string literals whose contents become JavaScript SOURCE, so a
+// single-backslash `\n` is a real newline character emitted into the middle of
+// a JS string literal — an unterminated-string SyntaxError, and node refuses to
+// parse the whole file.
+//
+// This is not hypothetical. Two of these lines (the `!BASE_URL` and `!MODEL`
+// guards) shipped with a single backslash from the commit that introduced this
+// runner, so EVERY openai-api dispatch since then spawned a runner that died
+// instantly with `SyntaxError: Invalid or unexpected token`, wrote no `[trace]`
+// line at all, and exited 1. Nothing caught it because nothing had ever run
+// this adapter's spawn() end to end. Found and fixed in pieces8/memory-attempted
+// round 2, by the first test that did — see
+// __tests__/runtimes/adapter-exit-record.test.ts, whose 'a run that really
+// completes' case fails with exit 1 if either backslash is dropped again.
 const RUNNER_SCRIPT = [
   "'use strict'",
   'const http = require("http")',
@@ -457,8 +489,8 @@ const RUNNER_SCRIPT = [
   // No cloud default for either. The parent already refused to spawn without
   // both, so reaching here unset means the env was tampered with in between —
   // say which one is missing rather than dialling api.openai.com with "gpt-4o".
-  'if (!BASE_URL) { process.stderr.write("[openai-api] LLM_BASE_URL not set\n"); process.exit(1) }',
-  'if (!MODEL) { process.stderr.write("[openai-api] OPENAI_MODEL not set\n"); process.exit(1) }',
+  'if (!BASE_URL) { process.stderr.write("[openai-api] LLM_BASE_URL not set\\n"); process.exit(1) }',
+  'if (!MODEL) { process.stderr.write("[openai-api] OPENAI_MODEL not set\\n"); process.exit(1) }',
   'const PROMPT_F = process.env.PROMPT_FILE',
   'const LOG_F = process.env.LOG_FILE',
   'const MAX_ITER = parseInt(process.env.MAX_ITER || "20", 10)',
@@ -759,12 +791,13 @@ export const openaiApiRuntime: AgentRuntime = {
 
     appendLog(opts.logFile, `[spawn-ok] child_pid=${result.pid}`)
     const spawnStartedAt = Date.now()
+    // pieces8/memory-attempted: the child's real exit code, captured by
+    // spawnDetached's `'exit'` listener. Read below, after the poll fires.
+    const childExit = result.exit
     watchChildExit(result.pid, opts.logFile, () => {
       // tmpDir holds the prompt + runner; only safe to drop once the child
       // that reads them is gone.
       try { rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore */ }
-      // memory-loop-write (round 2): one agent_run_records row per run.
-      void recordRunOnExit({ agentId: opts.agentId, taskId: opts.taskId ?? null })
       // run-agent-locally piece: close the ledger row with REAL numbers —
       // before this, openai-api spawns were the one runtime whose token_ledger
       // row never closed with token counts/cost at all (only claude-code.ts
@@ -793,6 +826,47 @@ export const openaiApiRuntime: AgentRuntime = {
         providerModel: parsed.upstream?.providerModel ?? undefined,
         upstreamStartedAt: parsed.upstream?.upstreamStartedAt ?? undefined,
         upstreamFinishedAt: parsed.upstream?.upstreamFinishedAt ?? undefined,
+      })
+      // memory-loop-write (round 2): one agent_run_records row per run.
+      //
+      // pieces8/memory-attempted: this runtime has the RICHEST observable
+      // exit record in the codebase and none of it used to reach memory.
+      // `parsed` above — the very same object the ledger call just used —
+      // carries the run's own `run_end` status ('completed' / 'failed' /
+      // 'max_iterations'), its iteration count, and every `tool_call` step
+      // it actually made, because RUNNER_SCRIPT writes them as `[trace]`
+      // lines. A list of the tools a run invoked IS "what it tried", as a
+      // fact rather than an inference, so it is recorded. `run_end` also
+      // makes the max_iterations case honest: that run exits 0 while plainly
+      // not having finished, and summarizeExit() ranks the run's own status
+      // above the exit code precisely so it is never filed as a success.
+      const toolsUsed = parsed.steps
+        .filter(step => step.type === 'tool_call' && typeof step.tool === 'string')
+        .map(step => String(step.tool))
+      const finalReportStep = [...parsed.steps].reverse().find(step => step.type === 'run_end')
+      const evidence = summarizeExit({
+        runtime: 'openai-api',
+        exitCode: childExit?.observed ? childExit.code : null,
+        signal: childExit?.observed ? childExit.signal : null,
+        durationSec: Math.round((Date.now() - spawnStartedAt) / 1000),
+        reportedStatus: parsed.status,
+        turns: typeof finalReportStep?.iterations === 'number' ? finalReportStep.iterations : null,
+        tokensIn: parsed.totals.tokensIn || null,
+        tokensOut: parsed.totals.tokensOut || null,
+        toolsUsed,
+        // The runner's own fatal-error text, when it wrote one. Not a
+        // summary of the run — the literal `error` field off the `run_end`
+        // trace line, which only exists on the failure path.
+        finalReport: typeof finalReportStep?.error === 'string' ? `run_end error: ${finalReportStep.error}` : null,
+        logFile: opts.logFile,
+      })
+      void recordRunOnExit({
+        agentId: opts.agentId,
+        taskId: opts.taskId ?? null,
+        attempted: evidence.attempted,
+        succeeded: evidence.succeeded,
+        failed: evidence.failed,
+        exitStatus: evidence.exitStatus,
       })
     }, { maxMinutes: 90 })
 

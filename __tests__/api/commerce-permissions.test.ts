@@ -114,23 +114,44 @@ describe('commerce:write is a real, independently-enforced permission', () => {
   })
 
   it('allows member (has commerce:write) to reach the handler and perform the transition', async () => {
+    // The queue below mirrors the PATCH handler's real call order since
+    // migration 074. It changed with that migration and is worth reading as
+    // documentation of the new order rather than as noise: LINES are claimed
+    // first, stock moves, and the ORDER's own status is reconciled last from
+    // what the lines end up saying.
+    //
+    // The previous version of this queue ended with `{ data: [] }` for the line
+    // lookup — no lines at all — and still expected 200, which is what the old
+    // handler did: it marked an order fulfilled without a single line to ship.
+    // That request is now a 409 `nothing_to_ship`, correctly, so this test
+    // gives the order a real line.
+    const order = {
+      id: 'ord-1', project: 'Limiglow', order_number: 'LG-1', placed_at: new Date().toISOString(),
+      customer_email: null, currency: 'USD', total_minor: 999, fulfilment_status: 'unfulfilled',
+    }
+    const line = { id: 'line-1', sku: 'S-1', quantity: 2, fulfilled_quantity: 0 }
+
+    const level = { id: 'lvl-1', on_hand: 5, location: 'default' }
+
     responses = [
-      // read the order (PATCH handler's .maybeSingle())
-      {
-        data: {
-          id: 'ord-1', project: 'Limiglow', order_number: 'LG-1', placed_at: new Date().toISOString(),
-          customer_email: null, currency: 'USD', total_minor: 999, fulfilment_status: 'unfulfilled',
-        },
-        error: null,
-      },
-      // the fulfilment UPDATE — CAS, so it must return the matched row(s)
-      // for the handler to treat the claim as won (an empty array reads as
-      // "another writer already changed this order" and returns 409).
-      { data: [{ id: 'ord-1', fulfilment_status: 'fulfilled' }], error: null },
-      // the commerce_actions audit INSERT (order.fulfilment)
-      { data: null, error: null },
-      // line items lookup for the stock-move step
-      { data: [], error: null },
+      { data: order, error: null },                                    // read the order (.maybeSingle)
+      { data: [line], error: null },                                   // read its lines
+      // Pre-flight: can the shelf cover the whole plan? Asked once per SKU,
+      // BEFORE any line is claimed, so an oversell refuses with nothing
+      // written instead of detonating `CHECK (on_hand >= 0)` mid-shipment.
+      { data: [level], error: null },                                  // pre-flight stock read
+      { data: line, error: null },                                     // re-read line-1 before claiming it
+      { data: [{ ...line, fulfilled_quantity: 2 }], error: null },     // line CAS — non-empty = claim won
+      // Every level for this SKU, not `.limit(1)` of them: which location a
+      // shipment comes off is now a decision (lowest location name that can
+      // cover the units), not whatever the driver returned first.
+      { data: [level], error: null },                                  // read the stock levels
+      { data: [{ id: 'lvl-1', on_hand: 3 }], error: null },            // stock CAS — non-empty = write landed
+      { data: null, error: null },                                     // inventory.adjust audit INSERT
+      { data: [{ ...line, fulfilled_quantity: 2 }], error: null },     // re-read lines to derive the status
+      { data: { ...order, fulfilment_status: 'unfulfilled' }, error: null }, // re-read the order
+      { data: [{ ...order, fulfilment_status: 'fulfilled' }], error: null }, // order status CAS
+      { data: null, error: null },                                     // order.fulfilment audit INSERT
     ]
 
     const res = await ordersRoute.PATCH(

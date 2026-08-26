@@ -1,8 +1,14 @@
-// Regression guard for TOD (agent-visualization-fidelity): GET /api/tasks
-// never existed (no `tasks` table either), and it was polled on TWO
-// independent intervals — components/office/OfficeCanvas.tsx (60s) and
+// Regression guard for TOD (agent-visualization-fidelity): GET /api/tasks was
+// polled on TWO independent intervals — components/office/OfficeCanvas.tsx (60s) and
 // hooks/useAgentStatus.ts (30s) — both writing into the same shared
 // `boardTasksRef`. Every poll on both intervals 404'd, forever.
+//
+// The route was not imaginary — this file used to say it "never existed",
+// which was wrong and argued for the wrong repair. It was RENAMED: fd7e5b5
+// ("refactor: tasks → issues") moved app/api/{tasks => issues}/route.ts and
+// lib/{tasks => issues}.ts, and these two callers were the stragglers that
+// commit missed. So the fix is to finish the rename, not to rebuild the name
+// the rename retired.
 //
 // The fix: "what is this agent working on" is an `issues` row with
 // status=in_progress and an assignee, which already exists and is already
@@ -11,9 +17,14 @@
 // ref OfficeCanvas already populates into React state, with no fetch of its
 // own — fixing the 404s without doubling live query volume.
 //
-// This is a source-scan, not a render test: OfficeCanvas.tsx renders a real
-// <canvas> and drives requestAnimationFrame loops that are not worth a jsdom
-// harness for a regression this mechanical to catch by inspection.
+// This is a source-scan, and it is deliberately limited to the ONE thing a
+// source-scan can honestly prove: that a particular dead string is absent.
+// It proves nothing about behaviour, and a critic demonstrated exactly that by
+// deleting the speech-bubble feature under a green suite of scans like these.
+// The behaviour of this surface is asserted by execution in
+// __tests__/office-bubble-render.test.ts, __tests__/office-polling.test.ts and
+// __tests__/office-board-task-mirror.test.ts. Do not add behavioural claims
+// here.
 
 import { readFileSync } from 'fs'
 import { join } from 'path'
@@ -37,7 +48,15 @@ describe('board task polling no longer targets the nonexistent /api/tasks route'
   })
 
   it('OfficeCanvas.tsx fetches the real in-progress-issues query instead', () => {
-    expect(officeCanvasSrc).toContain("/api/issues?status=in_progress")
+    // The URL now lives in components/office/officePolling.ts as
+    // BOARD_TASKS_QUERY, where __tests__/office-polling.test.ts asserts its
+    // contents (including the `all_projects=1` that keeps it from 400ing on
+    // the bare /fleet/office URL). Import it rather than re-spelling it, so
+    // this scan cannot pass against a constant that says something else.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { BOARD_TASKS_QUERY } = require('@/components/office/officePolling')
+    expect(BOARD_TASKS_QUERY).toContain('/api/issues?status=in_progress')
+    expect(officeCanvasSrc).toContain('fetchJson<{ data: any[] }>(BOARD_TASKS_QUERY)')
   })
 
   it('useAgentStatus.ts no longer makes its own network call for board tasks — it mirrors boardTasksRef', () => {
@@ -53,5 +72,7 @@ describe('board task polling no longer targets the nonexistent /api/tasks route'
     expect(liveEffectLines.some(l => /fetch\s*\(/.test(l))).toBe(false)
     expect(effectBody).toContain('boardTasksRef.current')
     expect(effectBody).toContain('setBoardTasks')
+    // The publish rule itself is executed in office-board-task-mirror.test.ts.
+    expect(effectBody).toContain('createBoardTaskMirror')
   })
 })

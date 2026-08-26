@@ -3,14 +3,30 @@ import React from 'react'
 import { Lock } from 'lucide-react'
 import type { Task } from '@/lib/issues'
 import { issuePermalinkPath, navigateToIssuePermalink } from '@/lib/issue-permalink'
+import { formatAgo } from '@/lib/time'
 
-// TOD-2463: the real render site for an issue key on the board.
+// TOD-2463: a render site for an issue key on the board.
 //
-// A builder converted components/tabs/BoardTab.tsx:538 believing it was this —
-// it is a duplicate local copy that nothing renders. Measured in a browser
-// afterwards: TOD-174 was ON the board and `a[href*="/i/"]` counted ZERO, and
-// the element that actually rendered was a SPAN carrying THIS file's className.
-// That is why the anchor lives here.
+// CORRECTION, 2026-08-26 (round 2). The comment that stood here said
+// components/tabs/BoardTab.tsx:538 "is a duplicate local copy that nothing
+// renders." That is FALSE of the shipped code, a critic caught it, and it was
+// false in both this file and components/tabs/FeatureCard.tsx while round 1's
+// own piece doc (section 1.1 item 3) proved it false. Verified again today:
+//
+//   BoardTab.tsx:521   const renderBoardCard = (task) => ...
+//   BoardTab.tsx:538     <IssueKeyLink .../>      (inside renderBoardCard)
+//   BoardTab.tsx:930 / 1015 / 1125   colTasks.map(task => renderBoardCard(task))
+//   BoardTab.tsx:1199  <KanbanCard .../>          (this file)
+//
+// So BoardTab has TWO card treatments and renders BOTH: `renderBoardCard` with
+// its own local IssueKeyLink in the three swimlane modes (feature / sprint /
+// business), and this card in the default 'together' mode. Deleting that copy
+// as dead code would blank the issue key in a third of the board's view modes.
+//
+// What IS true, and is why this anchor exists: TOD-174 was on the board and
+// `a[href*="/i/"]` counted ZERO, because the element the DEFAULT mode rendered
+// was a SPAN carrying this file's className. That measurement was of this card,
+// not of BoardTab's.
 //
 // `href` is a real path, so middle-click, Cmd/Ctrl-click and right-click ->
 // Copy Link Address are the browser's own handling and nothing here runs for
@@ -91,17 +107,91 @@ function truncate(s: string, max = 60): string {
   return s.length > max ? s.slice(0, max).trimEnd() + '…' : s
 }
 
+// ─── how long has this been sitting here ─────────────────────────────────────
+//
+// ROUND 2. The benchmark this lane is measured against is Linear, and the
+// sentence is "the board tells you where work is stuck WITHOUT you asking".
+// A critic pointed out that round 1 rendered ZERO time signal on this card —
+// `grep -niE "ago|updated_at|Date.now|elapsed" components/KanbanCard.tsx`
+// returned nothing — while `updated_at` and `started_at` are already on the
+// Task interface (lib/issues.ts) and already in the route's default column list
+// (app/api/issues/route.ts:1122, SELECT_COLS). That is the identical argument
+// round 1 used to justify rendering `blocked_by`, declined for the one field
+// the benchmark is actually about. It was right.
+//
+// WHAT THIS IS NOT: Linear shows true time-in-state, and this app cannot. There
+// is no status_changed_at column and no status history table — verified today
+// by grep across app/, lib/ and migrations/. So the card says only what the two
+// real columns support, and labels which one it is showing:
+//
+//   in_progress + started_at  ->  "started 4h 12m ago"
+//        /api/issues sets started_at on entry to in_progress and clears it on
+//        a return to backlog/refined/open (route.ts:1955-1963), so for a row
+//        currently in progress this IS the age of the work. It is the same
+//        column the stale-claim watchdog keys off.
+//   anything else             ->  "updated 6d ago"
+//        `updated_at` moves on ANY edit, so it is a last-touched signal and is
+//        NOT called anything else. Naming it "in this column for 6d" would be
+//        the fabrication.
+//
+// No fabricated zero: an absent timestamp renders no chip at all. `formatAgo`
+// (lib/time.ts, the canonical formatter this repo is consolidating on) already
+// returns the empty string for an absent or unparseable input.
+export const IN_PROGRESS_ATTENTION_MS = 24 * 60 * 60 * 1000
+
+export interface TimeSignal {
+  /** Visible chip text, e.g. "started 4h 12m ago". */
+  label: string
+  /** The same fact spelled out for a screen reader. */
+  accessibleLabel: string
+  /** Work that has been in progress past IN_PROGRESS_ATTENTION_MS. */
+  needsAttention: boolean
+}
+
+/**
+ * The card's one time fact, or null when the row carries no usable timestamp.
+ *
+ * `needsAttention` fires only for in-progress work older than 24h, and only
+ * there, because that is the one case where the underlying column means what
+ * the warning would claim. 24h is chosen to match the app's own bolt window
+ * (see lib/time.ts formatCountdown, rule 3) rather than invented; a `now`
+ * argument is taken so this is deterministic under test.
+ */
+export function timeSignalFor(task: Task, now: number = Date.now()): TimeSignal | null {
+  if (task.status === 'in_progress' && task.started_at) {
+    const ago = formatAgo(task.started_at, now)
+    if (!ago) return null
+    const startedMs = Date.parse(task.started_at)
+    return {
+      label: `started ${ago}`,
+      accessibleLabel: `work started ${ago}`,
+      needsAttention: Number.isFinite(startedMs) && now - startedMs > IN_PROGRESS_ATTENTION_MS,
+    }
+  }
+  if (task.updated_at) {
+    const ago = formatAgo(task.updated_at, now)
+    if (!ago) return null
+    // Deliberately "updated", never "waiting" or "in this column": updated_at
+    // moves on any edit and cannot carry the stronger claim.
+    return { label: `updated ${ago}`, accessibleLabel: `last updated ${ago}`, needsAttention: false }
+  }
+  return null
+}
+
 // ─── component ─────────────────────────────────────────────────────────────────
 
 export interface KanbanCardProps {
   task: Task
   dragging?: boolean
+  /** Injectable clock, so the age chip is deterministic under test. */
+  now?: number
   onClick?: (task: Task) => void
   onDragStart?: (task: Task) => void
   onDragEnd?: (task: Task) => void
 }
 
-export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd }: KanbanCardProps) {
+export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd, now }: KanbanCardProps) {
+  const signal = timeSignalFor(task, now)
   const assigneeKey = task.assignee?.toLowerCase() ?? ''
   const dotColor    = ASSIGNEE_COLORS[assigneeKey] ?? '#6b7280'
   const initials    = ASSIGNEE_INITIALS[assigneeKey]
@@ -153,9 +243,40 @@ export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd }: 
             </span>
           )}
 
-          {/* blocked indicator */}
+          {/* Blocked indicator.
+              The benchmark for this board is that it says where work is stuck
+              WITHOUT being asked. A bare padlock does not: it says "stuck" and
+              withholds the one fact that makes it actionable, which is what it
+              is stuck ON. `blocked_by` is already on the row (lib/issues.ts
+              Task) and was already fetched — it simply was not rendered, so the
+              operator had to open the detail overlay to learn a key that fits
+              in eight characters.
+              The padlock also carried NO accessible name, so a screen reader
+              got an unlabelled icon where a sighted user got a signal.
+              components/tabs/BoardTab.tsx's own card already labelled its
+              equivalent; this one is the card the default board actually
+              renders, and it did not. */}
           {(task.is_blocked || task.blocked_by) && (
-            <Lock size={10} className="text-red-400 shrink-0" />
+            <span
+              className="inline-flex items-center gap-0.5 shrink-0 text-[9px] font-medium text-red-400"
+              title={task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'}
+            >
+              <Lock size={10} className="shrink-0" aria-hidden="true" />
+              <span className="sr-only">{task.blocked_by ? `blocked by ${task.blocked_by}` : 'blocked'}</span>
+              {task.blocked_by && <span aria-hidden="true">{task.blocked_by}</span>}
+            </span>
+          )}
+
+          {/* Age. See timeSignalFor above for exactly what each wording means
+              and why nothing stronger is claimed. */}
+          {signal && (
+            <span
+              className={`text-[9px] font-medium shrink-0 tabular-nums ${signal.needsAttention ? 'text-amber-400' : 'text-white/35'}`}
+              title={signal.accessibleLabel}
+            >
+              <span aria-hidden="true">{signal.label}</span>
+              <span className="sr-only">{signal.accessibleLabel}</span>
+            </span>
           )}
         </div>
       </div>

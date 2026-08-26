@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
-import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, resolveModelId } from '@/lib/llm-provider'
+import { LLM_API_KEY, LLM_BASE_URL, LLM_DEFAULT_MODEL, fetchLiveModels, noModelsError, resolveModelId } from '@/lib/llm-provider'
 
 export async function POST(req: NextRequest) {
   // The database is either configured or it is not — say which, in the body.
@@ -18,13 +18,13 @@ export async function POST(req: NextRequest) {
 
   const live = await fetchLiveModels()
   if (!live.ok) {
-    return NextResponse.json({ error: live.error }, { status: 502 })
+    // `kind` distinguishes "the endpoint is down" from "LLM_BASE_URL points
+    // at something that is not an OpenAI-compatible server at all" — the
+    // latter used to arrive here as a 200 with an empty roster.
+    return NextResponse.json({ error: live.error, kind: live.kind }, { status: 502 })
   }
   if (live.models.length === 0) {
-    return NextResponse.json(
-      { error: `${LLM_BASE_URL}/models returned no models — pull one first (e.g. \`ollama pull qwen2.5-coder:7b\`)` },
-      { status: 502 },
-    )
+    return NextResponse.json({ error: noModelsError(), kind: 'empty-roster' }, { status: 502 })
   }
   // A configured LLM_MODEL that the endpoint does not report is a
   // misconfiguration worth saying out loud — quietly titling with a different

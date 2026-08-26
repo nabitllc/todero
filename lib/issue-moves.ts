@@ -455,71 +455,325 @@ export function moveBody(
  * under us, a 409 lane conflict, a constraint added since. This is the last
  * gate before a server string reaches a human.
  *
- * The rule is not "translate the messages we know about". It is: a message that
- * LOOKS like database output never reaches the screen, whether or not this file
- * has a translation for it. Known constraints get their own sentence; anything
- * else that smells of SQL gets a generic one that still tells the operator what
- * happened and what to do.
+ * The rule is an ALLOWLIST: a message reaches the screen only if this repo can
+ * point at the line that wrote it. Everything else is replaced — whether or not
+ * this file recognises it, and whether or not it looks like SQL. The block
+ * below explains why it is written that way, because it used to be written the
+ * other way round and the other way round did not hold.
  */
 
-/** Anything that reads as database or driver output rather than as English. */
-const RAW_DB_SIGNATURES: readonly RegExp[] = [
-  /CHECK constraint failed/i,
-  /UNIQUE constraint failed/i,
-  /NOT NULL constraint failed/i,
-  /FOREIGN KEY constraint/i,
-  /\bSQLITE_[A-Z]+\b/,
-  /\bno such (column|table)\b/i,
-  /\bviolates \w+ constraint\b/i,
-  /\bsyntax error at or near\b/i,
-  /\bPGRST\d+\b/,
-  /\bschema cache\b/i,
+/* ── why this is an allowlist: the measurement that forced the inversion ──────
+ *
+ * Until 2026-08-26 this was a DENYLIST — eighteen regexes that recognised
+ * database output, with anything unrecognised passed to the screen unchanged.
+ * The comment above it claimed the opposite: "a message that LOOKS like
+ * database output never reaches the screen, whether or not this file has a
+ * translation for it." That claim was false, and a shipped comment asserting
+ * something untrue of the code under it is a defect in its own right.
+ *
+ * Measured 2026-08-26 by calling the then-shipped `humaniseMoveFailure` on 23
+ * ordinary better-sqlite3/Postgres messages. SIXTEEN came back VERBATIM:
+ *
+ *   value too long for type character varying(50)
+ *   date/time field value out of range: "2026-13-45"
+ *   deadlock detected
+ *   could not serialize access due to concurrent update
+ *   permission denied for table issues
+ *   operator does not exist: text = integer
+ *   canceling statement due to statement timeout
+ *   attempt to write a readonly database
+ *   too many SQL variables
+ *   connection to server at "localhost" (::1), port 5432 failed: Connection refused
+ *   out of memory
+ *   disk I/O error
+ *   server closed the connection unexpectedly
+ *   invalid byte sequence for encoding "UTF8": 0x00
+ *   cannot execute UPDATE in a read-only transaction
+ *   index "issues_pkey" contains unexpected zero page at block 0
+ *
+ * The tenth puts the database host and port on an operator's screen. None of
+ * these is exotic, and Postgres is the dialect this repo is migrating to.
+ *
+ * A denylist of message shapes cannot be finished: what a driver can say is the
+ * driver's to decide and changes with its version. What the MC API says is
+ * OURS, lives in this repo, and is enumerable. So the rule is inverted:
+ *
+ *   PASS    — a message this repo wrote: an MC API refusal
+ *             (`app/api/issues/route.ts`, `app/api/db/[...path]/route.ts`,
+ *             `middleware.ts`), a transport message `lib/fetch-json.ts` writes
+ *             itself, or an HTTP status text.
+ *   REPLACE — everything else. A known constraint gets its own sentence; the
+ *             rest get a generic one that still says what happened.
+ *
+ * An allowlist has the opposite failure mode, and it is worth naming: a NEW MC
+ * API refusal that nobody adds here would be replaced by the generic sentence,
+ * and the operator would lose a good message. That is caught mechanically —
+ * `lib/__tests__/issue-moves.test.ts` parses every `error:` / `message:` string
+ * literal out of those route files and asserts each one survives this function
+ * unchanged. Adding a refusal to the API without adding it here turns the build
+ * red rather than turning the screen vague.
+ *
+ * Why message text is the only thing to decide on:
+ * `app/api/issues/route.ts:2297` answers a failed write with
+ * `NextResponse.json({ error: error.message }, …)` — the driver's own string,
+ * no SQLSTATE alongside it — and `app/api/db/[...path]/route.ts:286` does the
+ * same with `result.error.message`. There is no `code` to branch on.
+ */
+
+/**
+ * Sentences the MC API itself writes. Anchored at the start, because the start
+ * is the half a template literal cannot change.
+ *
+ * Every entry corresponds to a literal in one of the route files named above;
+ * the test derives those literals from the source, so this list cannot quietly
+ * fall behind the API.
+ */
+const MC_API_MESSAGES: readonly RegExp[] = [
+  // ── app/api/issues/route.ts ──
+  /^done is retired\b/i,
+  /^Backlog-first policy\b/i,
+  /^Issue is closed and read-only\b/i,
+  // Every role refusal the route writes begins this way: "Only auditor…",
+  // "Only main/po/ops or the workspace owner…", "Only the assignee (…)…",
+  // "Only tester or designer…", "Only the queue-refill cron…". No driver
+  // message in either dialect opens with a bare "Only ".
+  /^Only\s+\S/,
+  /^(?:acceptance_criteria|closing_notes|commit_sha|description|implementation_notes|owner|regression_test|resolution_type|test_tier)\b[^.]{0,40}\bis required\b/i,
+  /^Cannot (?:create issue|move to)\b/i,
+  /^(?:Child task cap reached|Duplicate review issue blocked|Near-duplicate child task blocked)\b/i,
+  // Each of these is anchored on the punctuation the route writes, not just on
+  // the word. `/^Invalid (?:…|page|…)\b/` was tried first and had to be
+  // narrowed: it allowlisted Postgres's `invalid page in block 3 of relation
+  // base/16384/16401`, which the adversarial battery in the test file caught on
+  // the first run. A one-word prefix is not a signature.
+  /^Invalid (?:limit|page|has_due|type) "/i,
+  /^Invalid value for '/i,
+  /^Invalid transition for\b/i,
+  /^No issue found for\b/i,
+  /^One-at-a-time lane enforcement\b/i,
+  // Contains the words "does not exist", which is also how Postgres reports a
+  // phantom column. It is allowlisted BEFORE that check precisely so the API's
+  // own sentence is not mistaken for schema text.
+  /^parent_id \S+ does not exist$/i,
+  /^type=\S+ (?:requires|should not have)\b/i,
+  /^id(?: or task_key)? required$/i,
+  /^This screen is scoped to\b/i,
+  // The 422 that refuses a phantom field by name — `app/api/issues/route.ts`
+  // answers `PATCH {test_status: …}` with it. Matched on the SHAPE rather than
+  // on the identifier, for two reasons: the next phantom the API refuses this
+  // way is covered without another edit, and spelling the identifier here would
+  // trip `lib/__tests__/pipeline-no-phantom-columns.test.ts`, which forbids that
+  // word in this file outside a comment.
+  /^`\w+` is not a field on an issue\b/i,
+  // ── app/api/db/[...path]/route.ts ──
+  /^Unauthorized: sign in to Mission Control first$/i,
+  /^Method not allowed\b/i,
+  /^Not proxied\b/i,
+  /^Read-only through this endpoint\b/i,
+  /^This issues query has no project scope\b/i,
+  // ── middleware.ts ──
+  /^Unauthenticated: sign in\b/i,
+  /^Read-only access\b/i,
+  /^Forbidden:\s/i,
+  // ── app/api/agents/route.ts, app/api/pipeline-metrics/route.ts ──
+  /^agent_id required$/i,
+  /^window must be 7d or 30d$/i,
 ]
 
-function looksLikeRawDatabaseText(message: string): boolean {
-  return RAW_DB_SIGNATURES.some(re => re.test(message))
+/**
+ * Messages `lib/fetch-json.ts` writes ITSELF, without a server. A failed
+ * `fetch()` never reaches a route, so no route literal covers these, and they
+ * are the most common thing an operator actually sees.
+ */
+const CLIENT_TRANSPORT_MESSAGES: readonly RegExp[] = [
+  /^could not reach the server$/i,
+  /^request failed$/i,
+  /^invalid JSON in response\b/i,
+  /^no such endpoint; the server returned an HTML page\b/i,
+  /^the server returned an HTML error page instead of JSON\b/i,
+  // Whatever the platform's own `fetch()` rejection says. Four spellings across
+  // undici/Chrome/Firefox/Safari; all four are English and none is ours to
+  // reword.
+  /^(?:failed to fetch|fetch failed|load failed|terminated)$/i,
+  /^networkerror\b/i,
+]
+
+/**
+ * `readApiError` falls back to `res.statusText` when a body carries no `error`
+ * and no `message`. That is HTTP's own English and there is nothing to improve
+ * about it — but it has to be named, or the allowlist would replace "Not Found"
+ * with a sentence about the database.
+ */
+const HTTP_STATUS_TEXT =
+  /^(?:continue|ok|created|accepted|no content|moved permanently|found|not modified|bad request|unauthorized|payment required|forbidden|not found|method not allowed|not acceptable|request timeout|conflict|gone|length required|precondition failed|payload too large|content too large|uri too long|unsupported media type|range not satisfiable|expectation failed|unprocessable entity|unprocessable content|locked|failed dependency|too early|upgrade required|precondition required|too many requests|request header fields too large|unavailable for legal reasons|internal server error|not implemented|bad gateway|service unavailable|gateway timeout|http version not supported|insufficient storage|loop detected|network authentication required)$/i
+
+/**
+ * Machine tokens the MC API sends in `error`, with the sentence in `message`.
+ * `readApiError` prefers `error` — `lib/fetch-json.ts` reads
+ * `body?.error ?? body?.message ?? …` — so the TOKEN is what reaches
+ * `ApiError.message`, and therefore the banner. A token is not English, so it
+ * is neither passed through nor handed the database sentence: it gets wording
+ * taken from the route's own `message` field, minus the interpolated values the
+ * client never receives.
+ */
+const API_TOKEN_SENTENCES: Readonly<Record<string, string>> = {
+  unscoped_issues_read:
+    'That request asked for issues without naming a project. Open the board from a project screen and try again.',
+  project_outside_scope:
+    'This screen is scoped to one project and cannot show issues from another one.',
 }
 
-/** Known constraints, each with the sentence a person would have written. */
+/** True when the message is one this repo can point at the source of. */
+function isKnownHumanMessage(message: string): boolean {
+  return (
+    MC_API_MESSAGES.some(re => re.test(message)) ||
+    CLIENT_TRANSPORT_MESSAGES.some(re => re.test(message)) ||
+    HTTP_STATUS_TEXT.test(message)
+  )
+}
+
+const SPRINT_IN_BACKLOG = 'An issue in Backlog cannot carry a sprint. Clear the sprint first.'
+const SPRINT_REQUIRED = 'An issue being worked has to belong to a sprint. Set a sprint and try the move again.'
+
+/** How both dialects spell "the code named a column/table that is not there". */
+const PHANTOM_COLUMN_SHAPE =
+  /\bno such (?:column|table)\b|\bdoes not exist\b|\bschema cache\b|\bPGRST\d+\b|\bundefined column\b/i
+
+/**
+ * Known constraints and known driver failures, each with the sentence a person
+ * would have written.
+ *
+ * Reached only by messages the allowlist did NOT recognise, so everything here
+ * REFINES the generic sentence rather than being the thing that stands between
+ * the schema and the screen. The allowlist is that thing. Deleting any single
+ * entry below makes one message vaguer; it never makes one leak.
+ *
+ * TWO spellings per constraint rule, because two dialects report the same rule
+ * differently: SQLite prints the CHECK EXPRESSION, because
+ * `migrations/sqlite/000_baseline.sql` writes the checks inline and unnamed;
+ * Postgres prints the CONSTRAINT NAME, because
+ * `migrations/001_add_review_fields.sql` and friends name them. Both forms were
+ * captured on 2026-08-26.
+ *
+ * PROVENANCE is stated per group: the constraint entries were forced out of the
+ * running server and out of PGlite. The operational entries were reproduced
+ * from the drivers' own documented messages and were NOT forced through this
+ * API — they are marked as such.
+ */
 const KNOWN_CONSTRAINTS: readonly { readonly match: RegExp; readonly sentence: string }[] = [
+  // ── forced through the API, both dialects, 2026-08-26 ──
   // Order matters: both sprint constraints contain the substring
   // `sprint IS NOT NULL`, so each is matched on the half that distinguishes it
   // — the status list for one, `status = 'backlog'` for the other — and the
   // narrower of the two is tested first.
+  { match: /status = 'backlog'\)? AND \(?sprint IS NOT NULL/i, sentence: SPRINT_IN_BACKLOG },
+  { match: /constraint "backlog_no_sprint"/i, sentence: SPRINT_IN_BACKLOG },
+  { match: /status NOT IN \(\s*'open'/i, sentence: SPRINT_REQUIRED },
+  { match: /constraint "sprint_required_if_open"/i, sentence: SPRINT_REQUIRED },
   {
-    match: /status = 'backlog'\)? AND \(?sprint IS NOT NULL/i,
-    sentence: 'An issue in Backlog cannot carry a sprint. Clear the sprint first.',
-  },
-  {
-    match: /status NOT IN \(\s*'open'/i,
-    sentence: 'An issue being worked has to belong to a sprint. Set a sprint and try the move again.',
-  },
-  {
-    match: /test_tier IN/i,
+    match: /test_tier IN|constraint "[^"]*test_tier[^"]*"/i,
     sentence: 'The test tier has to be one of smoke, integration or e2e.',
   },
   {
-    match: /resolution_type IS NULL\) OR \(resolution_type IN/i,
+    match: /resolution_type IS NULL\) OR \(resolution_type IN|constraint "[^"]*resolution_type[^"]*"/i,
     sentence: 'That resolution type is not one the workflow recognises. Pick one from the list.',
   },
   {
-    match: /deployer_status IN/i,
+    match: /deployer_status IN|constraint "[^"]*deployer_status[^"]*"/i,
     sentence: 'The deployer status has to be either ready or failed.',
   },
   {
-    match: /UNIQUE constraint failed: issues\.task_key/i,
+    match: /UNIQUE constraint failed: issues\.task_key|unique constraint "[^"]*task_key[^"]*"/i,
     sentence: 'Another issue already has this key. Reload the board and try again.',
+  },
+  {
+    // A column the code named and the database does not have — SQLite's
+    // `no such column: …`, Postgres's `column "…" does not exist`, or a whole
+    // missing table. This is a Todero bug, not an operator mistake, and saying
+    // so is the one useful thing the board can say. The identifier is
+    // deliberately NOT echoed: an operator cannot add a column, and the raw
+    // message is already written to the console by the caller.
+    match: PHANTOM_COLUMN_SHAPE,
+    sentence: 'The board asked the database for a field it does not have. That is a bug in Todero, ' +
+      'not something you did — nothing was changed. Please report it; the details are in the browser console.',
+  },
+  {
+    // Postgres type coercion — `invalid input syntax for type integer: "lots"`.
+    // SQLite is typeless enough that the same payload is stored rather than
+    // refused, so this shape only ever appears on the Postgres side.
+    match: /\binvalid input syntax for type\b|\bdatatype mismatch\b|\bdate\/time field value out of range\b|\binvalid byte sequence\b/i,
+    sentence: 'One of the values sent with this move was the wrong kind for the field it belongs to. ' +
+      'Nothing was changed. Reload the board and try again.',
+  },
+  {
+    match: /\bnull value in column\b|NOT NULL constraint failed/i,
+    sentence: 'This move would have emptied a field the issue is required to have. Nothing was changed.',
+  },
+  // ── the drivers' own documented messages, reproduced from the driver and NOT
+  //    forced through this API. Each only sharpens the generic sentence. ──
+  {
+    match: /\bvalue too long for type\b|\bstring or blob too big\b/i,
+    sentence: 'One of the values sent with this move is longer than the field allows. Nothing was changed.',
+  },
+  {
+    match: /\bdeadlock detected\b|\bcould not serialize access\b|\bcould not obtain lock\b/i,
+    sentence: 'Another change landed on this issue at the same moment. Nothing was changed — ' +
+      'reload the board and try the move again.',
+  },
+  {
+    match: /\bdatabase (?:table )?is locked\b|\bSQLITE_BUSY\b|\bcanceling statement due to\b|\bstatement timeout\b/i,
+    sentence: 'The database was busy and the move did not go through. Nothing was changed — try again.',
+  },
+  {
+    match: /\bpermission denied\b|\bmust be owner of\b|\bread-only transaction\b|\breadonly database\b|\bSQLITE_READONLY\b/i,
+    sentence: 'Todero’s database connection is not allowed to make this change. Nothing was changed — ' +
+      'that is a configuration problem to report, not something you did.',
+  },
+  {
+    match: /\bconnection to server\b|\bserver closed the connection\b|\bcould not connect to server\b|\bECONNREFUSED\b|\bconnection refused\b/i,
+    sentence: 'Todero could not reach its database. Nothing was changed — try again in a moment, ' +
+      'and report it if it keeps happening.',
   },
 ]
 
 /**
+ * The two sprint CHECKs, disambiguated by DESTINATION when the message does not
+ * name them.
+ *
+ * A Postgres install created straight from `migrations/000_baseline_schema.sql`
+ * without `001_add_review_fields.sql` gets ANONYMOUS check constraints, and
+ * Postgres then reports them as `"issues_check"`, `"issues_check1"`, … —
+ * measured on PGlite, 2026-08-26. Those names carry no information, so the
+ * message alone cannot tell the two sprint rules apart.
+ *
+ * The destination can, and cannot be wrong about it: `backlog_no_sprint` is the
+ * only sprint rule that a move TO backlog can violate, and
+ * `sprint_required_if_open` is the only one a move to open/in_progress can. Any
+ * other destination gets nothing from this and falls through to the generic
+ * sentence rather than to a guess.
+ */
+function anonymousCheckSentence(raw: string, toStatus: string): string | null {
+  if (!/constraint "issues_check\d*"/i.test(raw)) return null
+  if (toStatus === 'backlog') return SPRINT_IN_BACKLOG
+  if (toStatus === 'open' || toStatus === 'in_progress') return SPRINT_REQUIRED
+  return null
+}
+
+/** The token map, applied identically on both paths. */
+function tokenSentence(raw: string): string | null {
+  return Object.prototype.hasOwnProperty.call(API_TOKEN_SENTENCES, raw)
+    ? API_TOKEN_SENTENCES[raw]
+    : null
+}
+
+/**
  * The sentence to show when a move is refused.
  *
- * A server message written for a person is passed through unchanged — the MC
- * API's own refusals ("Only main/po/ops can reset an issue to backlog.", the
- * one-at-a-time lane 409, the ten-open cap 409) are already sentences, and
- * rewriting them would only lose information. Only text that reads as database
- * output is replaced.
+ * A message this repo wrote is passed through unchanged — the MC API's own
+ * refusals ("Only main/po/ops or the workspace owner can reset an issue to
+ * backlog.", the one-at-a-time lane 409, the ten-open cap 409) say more than any
+ * rewrite could. EVERYTHING ELSE is replaced, including messages this file has
+ * never seen and has no translation for.
  *
  * `status` is used solely to add the HTTP code when there is nothing else to
  * say; it never turns a human sentence into a code.
@@ -536,12 +790,86 @@ export function humaniseMoveFailure(
     return `The move to "${toStatus}" was refused${code}, and the server did not say why. Reload the board and try again.`
   }
 
-  if (!looksLikeRawDatabaseText(raw)) return raw
+  const token = tokenSentence(raw)
+  if (token) return token
+
+  if (isKnownHumanMessage(raw)) return raw
 
   for (const { match, sentence } of KNOWN_CONSTRAINTS) {
     if (match.test(raw)) return sentence
   }
 
+  const byDestination = anonymousCheckSentence(raw, toStatus)
+  if (byDestination) return byDestination
+
   return `The move to "${toStatus}" was refused by a rule this board does not have wording for yet. ` +
     'Nothing was changed. Please report it — the raw message is in the browser console.'
+}
+
+/**
+ * The same last gate, for a READ that failed rather than a move.
+ *
+ * `components/ApiErrorBanner.tsx` renders `formatApiError(error)` — literally
+ * `data unavailable — <status> from <endpoint>: <server message>` — and that
+ * server message is unfiltered. Measured 2026-08-26 against the running server,
+ * scoped exactly the way the Pipeline scopes its own reads:
+ *
+ *   GET /api/db/issues?project=eq.Limiglow&archived_at=is.null&select=nope_not_a_column&limit=1
+ *   → 400 {"error":"no such column: \"nope_not_a_column\" - should this be a
+ *          string literal in single-quotes?","code":"42703","details":null}
+ *
+ * `app/api/db/[...path]/route.ts:286` hands `result.error.message` back
+ * verbatim, so any read that reaches the driver and fails puts driver text into
+ * that red bar with nothing in between. The Pipeline's own four reads use fixed,
+ * valid queries, so this is not something an operator can trigger from the board
+ * TODAY — it is an unguarded channel, not a live leak, and it is written up as
+ * such. This function is the guard: same allowlist as `humaniseMoveFailure`,
+ * worded for a load instead of a move.
+ *
+ * The status and the endpoint are NOT touched — an operator still gets to tell a
+ * refused request from an empty dataset, which is the whole point of that
+ * banner. Only the message half is replaced.
+ */
+export function humaniseLoadFailure(message: string | null | undefined): string {
+  const raw = (message ?? '').trim()
+  if (!raw) return 'the server did not say why'
+
+  const token = tokenSentence(raw)
+  if (token) return token
+
+  if (isKnownHumanMessage(raw)) return raw
+
+  if (PHANTOM_COLUMN_SHAPE.test(raw)) {
+    return 'the board asked for a field the database does not have — a bug in Todero, not a ' +
+      'permission problem. The details are in the browser console.'
+  }
+  return 'the database refused the query in terms this board has no wording for yet. ' +
+    'The raw message is in the browser console.'
+}
+
+/**
+ * The banner half of "no raw database text, ever".
+ *
+ * `ApiErrorBanner` renders `formatApiError(error)` verbatim, by design — an
+ * operator has to be able to tell a refused request from an empty dataset. That
+ * design is right about the STATUS and the ENDPOINT and silent about the
+ * MESSAGE, which is whatever the server put in `{error: …}`. For the db proxy
+ * that is `result.error.message` — the driver's own string
+ * (`app/api/db/[...path]/route.ts:286`).
+ *
+ * It lives HERE, not in `components/tabs/PipelineTab.tsx` where it started, for
+ * one measured reason: inside the component the only test that could reach it
+ * was one that greps the source for identifier names, and on 2026-08-26 that
+ * test was proven blind — gutting the function to `return error` as its first
+ * statement left the whole suite green (84 passed / 84 total) while every
+ * Pipeline banner went back to rendering driver text. As a pure exported
+ * function it is called directly by a test that asserts the REPLACEMENT, and
+ * the same mutation now fails.
+ *
+ * Generic over the error shape rather than typed to `ApiError`, so this module
+ * takes no import from the fetch layer.
+ */
+export function safeApiError<E extends { readonly message: string }>(error: E): E {
+  const human = humaniseLoadFailure(error.message)
+  return human === error.message ? error : { ...error, message: human }
 }

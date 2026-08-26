@@ -65,6 +65,7 @@ import {
   parseIssueKeyFromPath,
   rawIssueSegment,
 } from '@/lib/issue-permalink'
+import { rawRunSegment, runMountPath, runUrlSyncPath } from '@/lib/run-permalink'
 
 // BIZ_EMOJI was here: a six-name emoji table (Vespera, Kemuni, Mission Control,
 // Todero, Infrastructure, KAOS). The sibling piece banned exactly this shape —
@@ -449,7 +450,16 @@ export default function Home() {
       // the one thing a permalink has to survive.
       setIssueKey(k)
     } else {
-      window.history.replaceState({ biz: business, destination: d, view: v, project }, '', buildPath(business, d, v, project))
+      // TOD-2473: a RUN permalink has to survive the same canonicalising an
+      // ISSUE permalink survives. buildPath emits [p, <slug>, 'runs'] and drops
+      // the /r/<id>, so the address was rewritten milliseconds after load and a
+      // run URL worked on a click but never on a reload — which is exactly what
+      // "every trace has a URL" means and exactly what it did not do.
+      window.history.replaceState(
+        { biz: business, destination: d, view: v, project },
+        '',
+        runMountPath(rawRunSegment(window.location.pathname), buildPath(business, d, v, project)),
+      )
     }
     const p = new URLSearchParams(window.location.search)
     const feat = p.get('feature')
@@ -525,7 +535,13 @@ export default function Home() {
     // applied there now fails two tests BY NAME.
     const path = buildPath(selectedBusiness, destination, view, selectedProject)
     const current = window.location.pathname + window.location.search
-    const sync = issueUrlSyncPath(issueKey !== null, current, path)
+    // TOD-2473: wraps, never replaces. The issue decision still runs first and
+    // still wins; runUrlSyncPath only re-attaches a /r/<id> that this effect
+    // would otherwise strip on the second canonicalising pass.
+    const sync = runUrlSyncPath(
+      rawRunSegment(window.location.pathname),
+      issueUrlSyncPath(issueKey !== null, current, path),
+    )
     if (sync) {
       window.history.replaceState({ biz: selectedBusiness, destination, view, project: selectedProject }, '', sync)
     }

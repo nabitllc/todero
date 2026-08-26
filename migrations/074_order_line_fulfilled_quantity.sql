@@ -1,0 +1,91 @@
+-- 074: per-line fulfilled quantity — the object that makes PARTIAL FULFILMENT
+--      real instead of a status an order asserts about itself.
+--      Postgres dialect; the SQLite copy is
+--      migrations/sqlite/074_order_line_fulfilled_quantity.sql.
+--
+-- WHAT WAS MISSING, AND WHY IT WAS A MISSING OBJECT RATHER THAN A MISSING REPORT
+--   `orders.fulfilment_status` has carried the value 'partially_fulfilled'
+--   since 064. Nothing has ever been able to say WHAT was partially fulfilled.
+--   `order_line_items` records `quantity` (how many were ORDERED) and nothing
+--   about how many actually SHIPPED, so the two facts a partial shipment
+--   consists of — which line, how many units — had nowhere to live.
+--
+--   The consequence, measured against the running server before this migration
+--   (POST an order with 10 x PF8-A and 4 x PF8-B, then
+--   PATCH {fulfilment_status: 'partially_fulfilled'}):
+--
+--     HTTP 200
+--     {"stock_moves":[],
+--      "stock_note":"stock was not moved: order_line_items records no fulfilled
+--                    quantity, so which lines shipped is not known. …",
+--      "fulfilment_status":"partially_fulfilled"}
+--     GET /api/commerce/inventory -> PF8-A on_hand 100, PF8-B on_hand 100
+--
+--   That is an order the operator has told the system is partly shipped, with
+--   every unit still counted as on the shelf and no record anywhere of which
+--   parcel left. The refusal in `stock_note` was HONEST — it is better than
+--   guessing a number — but the honest refusal was covering for a column that
+--   did not exist. This migration is that column.
+--
+-- WHY A COLUMN ON THE LINE, AND NOT A `fulfilments` TABLE
+--   Shopify models a Fulfillment as its own object with its own id, tracking
+--   number and carrier, and a line's shipped total is derived by summing them.
+--   That is the right shape for a storefront that ships parcels and mails
+--   tracking links, and it is NOT what is being built here: nothing in this
+--   repo has a carrier, a tracking number, or a decision from the owner about a
+--   provider, and inventing an empty parcel object to hold three null columns
+--   would be building the integration this schema's own 064 header explicitly
+--   refuses to build.
+--
+--   What IS needed today is the one number every fulfilment question asks for:
+--   how many units of this line have gone. `commerce_actions` already records
+--   the WHO/WHEN/WHY of every movement as an append-only trail, so the history
+--   a `fulfilments` table would carry is not lost — it is in the ledger, keyed
+--   by SKU and by order number. This column is the running total that ledger
+--   sums to, materialised so that the compare-and-swap writers in
+--   app/api/commerce/orders/route.ts can pin it in a WHERE clause. Deriving it
+--   from `commerce_actions` on every read would be correct and un-pinnable:
+--   there is no way to compare-and-swap against an aggregate.
+--
+-- THE CONSTRAINT IS LOAD-BEARING, NOT DECORATIVE
+--   `fulfilled_quantity <= quantity` is a CHECK, not a comment, because
+--   over-fulfilment is the defect this column makes possible. Before it, no
+--   caller could ship 12 of a 10-unit line because no caller could ship any
+--   number at all. lib/commerce.ts refuses over-fulfilment first, with a
+--   message naming the real numbers (ordered, already fulfilled, remaining) —
+--   that is the fence. This CHECK is the floor under it, in the same stance
+--   064 takes for `on_hand >= 0` and for the currency regex: the validator is
+--   what a caller sees, the constraint is what survives a validator someone
+--   forgets to call.
+--
+--   A cross-column CHECK inside ADD COLUMN was verified to actually FIRE on
+--   both dialects rather than being silently accepted and ignored — see the
+--   SQLite copy's header for that measurement, and
+--   __tests__/api/commerce-partial-fulfilment.test.ts for the Postgres one,
+--   which boots a real PGlite Postgres, applies this file, and asserts the
+--   refusal.
+--
+-- BACKFILL: none, deliberately.
+--   DEFAULT 0 is the correct value for every existing row, and it is correct
+--   for a reason worth stating rather than assuming: no code path before this
+--   migration could move a per-line quantity, so no existing line has ever
+--   shipped a partial amount that a backfill would need to recover. An order
+--   already sitting at `fulfilment_status = 'fulfilled'` is the one case where
+--   0 understates reality — its lines all shipped in full. That is handled in
+--   the route, not here: see app/api/commerce/orders/route.ts, which treats a
+--   line's outstanding amount as `quantity - fulfilled_quantity` and therefore
+--   cannot double-ship it, and which refuses any further movement on a
+--   `fulfilled` order because `fulfilled` is terminal in
+--   lib/commerce.ts's state machine. Writing a backfill UPDATE here that set
+--   `fulfilled_quantity = quantity` for those lines would be inventing history
+--   this database never recorded.
+--
+-- IDEMPOTENCE
+--   ADD COLUMN IF NOT EXISTS, and the runner's `schema_migrations` ledger. A
+--   second `npm run db:migrate` is a no-op.
+--
+-- NO DATA. Not one INSERT, same as 064.
+
+ALTER TABLE order_line_items
+  ADD COLUMN IF NOT EXISTS fulfilled_quantity integer NOT NULL DEFAULT 0
+    CHECK (fulfilled_quantity >= 0 AND fulfilled_quantity <= quantity);

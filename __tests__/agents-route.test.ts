@@ -10,12 +10,40 @@
 import path from 'path'
 import os from 'os'
 
+// ─── WHY THIS FILE WAS RED FOR THE WHOLE PROGRAM ────────────────────────────
+//
+// Every gate report in this repo says "5 known failures" and moves on. Three
+// of them were here, and the cause is not a bug in the route: it is that this
+// file asserts a TWO-SOURCE contract ("the roster is AGENTS.md or it is
+// empty") that stopped being true when GET /api/agents grew a THIRD source —
+// the Brain2 vault registry at `<TODERO_VAULT_DIR>/Global_Agents/<id>/
+// manifest.json` (lib/vault-agents.ts, docs/brain2-integration.md).
+//
+// That made the file HOST-DEPENDENT, which is why it looked like scenery:
+//   * on a machine with no vault it passes, because the third source is empty;
+//   * on a machine with one (the author's, TODERO_VAULT_DIR defaults to
+//     C:\Development\Mich-Brain2) it fails, because 13 vault agents join the
+//     union and `rosterSource` becomes 'both'.
+// Measured 2026-08-26 against the running server: 28 agents — 14 agents-md,
+// 1 registered, 13 vault.
+//
+// The fix is NOT to relax the assertions. It is to make the environment
+// explicit: this file tests the AGENTS.md leg of the union, so it pins the
+// vault to a directory that does not exist and the assertions become
+// deterministic on every host. `TODERO_VAULT_DIR` is read into a module-scope
+// const in lib/paths.ts, so it must be set BEFORE the route module graph is
+// required — hence its position here, above the require below.
+//
+// The union itself — three sources, no double-counting — is covered by
+// __tests__/api/agents-roster-union.test.ts, which builds a fixture vault.
+process.env.TODERO_VAULT_DIR = path.join(os.tmpdir(), 'todero-no-such-vault')
+
 // Chainable stub for the two Supabase queries the route runs. Every builder
 // method returns `this`, and awaiting the chain yields `{ data: [] }` — the
 // route only needs run state, and empty run state is a legitimate answer.
 function queryStub() {
   const chain: Record<string, unknown> = {}
-  for (const m of ['select', 'in', 'order', 'limit', 'eq', 'single', 'upsert']) {
+  for (const m of ['select', 'in', 'order', 'limit', 'eq', 'single', 'maybeSingle', 'upsert']) {
     chain[m] = () => chain
   }
   chain.then = (resolve: (v: { data: never[] }) => unknown) => resolve({ data: [] })

@@ -3,11 +3,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
 import type { DbAdapter, DbRow } from '@/lib/db'
 import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
+import { hasPermission, type Role } from '@/lib/rbac-types'
+import { inboxDecisionActor } from './actor'
 import {
+  APPROVE_PERMISSION,
+  DECIDE_PERMISSION,
   EFFECT_TYPES,
   approvalTarget,
+  attributeDecision,
   auditRowForOutcome,
   auditRowForRefusal,
+  authorizeDecision,
   issueRefsToResolve,
   preflightDecision,
   resolveRowProject,
@@ -48,6 +54,32 @@ interface InboxEffectArgs {
   status: string
   agentId: string | null
   taskKey: string | null
+  /**
+   * The issue this decision is supposed to act on, resolved by
+   * `approvalTarget()` in lib/approvals.ts — the SAME function that decides
+   * the approve button's label and that `lookupIssueTarget()` preflights.
+   *
+   * It used to be read here as `requestContext.last_issue_id` alone, while
+   * `approvalTarget()` reads `context.last_issue_id ?? row.issue_id`. A row
+   * linked through the `inbox.issue_id` COLUMN — a shape `POST /api/inbox`
+   * accepts as first-class and has a PGRST204 retry to persist — therefore
+   * got a button reading "Approve — un-pause <agent> and unblock <issue>",
+   * passed the preflight, and then hit an effect handler that could not see
+   * the issue at all. Measured live on 2026-08-26, before this fix, on a
+   * fixture whose issue_id column was set and whose context carried no
+   * last_issue_id:
+   *
+   *   HTTP 200, response_data.ok = true,
+   *   detail "agent 'lane7-fix-agent' un-paused (request carried no issue —
+   *           nothing to unblock)",
+   *   audit row outcome 'applied'.
+   *
+   * That is precisely the "green approval for an approval that touched
+   * nothing" this module's header says is now a 409. One resolver, so the
+   * label, the preflight and the effect cannot disagree about what the
+   * decision acts on.
+   */
+  issueId: string | null
   requestContext: DbRow
   /** Whatever the operator typed in the modal (e.g. a deny reason) — folded into `detail`, never dropped. */
   humanInput: unknown
@@ -80,7 +112,7 @@ const INBOX_EFFECTS: Record<string, InboxEffectHandler> = {
   // halves — exactly like ceiling_stop below undoes both its agent_memory
   // marker and its issue block — or the agent comes back un-paused with
   // nothing to dispatch, which is a half-consequence reported as a full one.
-  async loop_breaker_pause({ db, approved, status, agentId, requestContext, humanInput }) {
+  async loop_breaker_pause({ db, approved, status, agentId, issueId, humanInput }) {
     if (!approved) return nonApprovalOutcome(status, humanInput, 'paused')
     if (!agentId) {
       return { effect: 'agent_unpause', ok: false, detail: 'no agent id on this request — nothing to un-pause' }
@@ -122,8 +154,11 @@ const INBOX_EFFECTS: Record<string, InboxEffectHandler> = {
       // is the issues.id UUID (lib/loop-breaker.ts pauseAgent() writes it
       // straight from recordAgentFailure's `issueId` param, not a display
       // key) — see the identical `context.last_issue_id` write in
-      // lib/loop-breaker.ts's inbox insert.
-      const lastIssueId = typeof requestContext.last_issue_id === 'string' ? requestContext.last_issue_id : null
+      // lib/loop-breaker.ts's inbox insert. `issueId` here is that value OR
+      // the `inbox.issue_id` column, resolved once by `approvalTarget()` —
+      // see the field's note on InboxEffectArgs for the silent success that
+      // reading only the context half produced.
+      const lastIssueId = issueId
       if (!lastIssueId) {
         return { effect: 'agent_unpause', ok: true, detail: `agent '${agentId}' un-paused (request carried no issue — nothing to unblock)` }
       }
@@ -324,13 +359,16 @@ async function runInboxEffect(
   const requestContext: DbRow = (row.context && typeof row.context === 'object' && !Array.isArray(row.context))
     ? row.context as DbRow
     : {}
-  const agentId = typeof row.agent === 'string' && row.agent
-    ? row.agent
-    : (typeof requestContext.agent_id === 'string' ? requestContext.agent_id : null)
-  const taskKey = typeof requestContext.task_key === 'string' ? requestContext.task_key : null
+  // ONE resolver for what this decision acts on. `approvalTarget()` is what
+  // describeApproval() builds the button label from and what
+  // lookupIssueTarget() preflights, so deriving the effect's arguments from
+  // anywhere else is how a button promises an unblock the handler cannot see
+  // (measured, 2026-08-26 — see InboxEffectArgs.issueId).
+  const target = approvalTarget(row as unknown as ApprovalRow)
+  const { agentId, issueId, taskKey } = target
   try {
     return await handler({
-      db, approved: status === 'approved', status, agentId, taskKey, requestContext, humanInput,
+      db, approved: status === 'approved', status, agentId, issueId, taskKey, requestContext, humanInput,
     })
   } catch (err) {
     return { effect: type, ok: false, detail: `effect threw: ${err instanceof Error ? err.message : String(err)}` }
@@ -403,7 +441,37 @@ export async function GET(req: NextRequest) {
     total: scoped.rows.length,
     has_more: rows.length >= limit,
     scope: scoped.scope,
+    // What THIS session may actually do with the rows above.
+    //
+    // The surface used to render an Approve button to every caller and find
+    // out what happened only after the click. Now that PATCH refuses a role
+    // without `settings:write`, a read-only session was being offered a
+    // control guaranteed to 403 — an offered action that fails. This block
+    // is the server's own answer, resolved by the SAME function the decision
+    // route authorises with, so the UI cannot disagree with the gate about
+    // who may decide.
+    //
+    // It is deliberately NOT on the unscoped array response: that shape has
+    // four consumers this piece does not own (see the note above).
+    decide: decideRights(req),
   })
+}
+
+/** What the calling session may do with a decision, from the server's own
+ *  role resolution — not from anything the client sent. */
+function decideRights(req: NextRequest): {
+  role: Role | null
+  can_record: boolean
+  can_approve: boolean
+  ignored_role_claim: string | null
+} {
+  const actor = inboxDecisionActor(req, null)
+  return {
+    role: actor.role,
+    can_record: !!actor.role && hasPermission(actor.role, DECIDE_PERMISSION),
+    can_approve: !!actor.role && hasPermission(actor.role, APPROVE_PERMISSION),
+    ignored_role_claim: actor.ignoredClaim,
+  }
 }
 
 /** POST /api/inbox — create approval request */
@@ -485,7 +553,25 @@ export async function PATCH(req: NextRequest) {
   }
 
   const db = createAdminClient()
-  const decidedBy = body.resolved_by ?? 'user'
+
+  // ── Who is deciding ─────────────────────────────────────────────────────
+  // `decidedBy` used to be `body.resolved_by ?? 'user'` — the caller's own
+  // unchecked claim, which is how a live PATCH signed
+  // "definitely-not-a-human-bot" was accepted with a 200 and written into the
+  // append-only trail verbatim. The role comes from the request now and is
+  // recorded ALONGSIDE the claimed name — see attributeDecision(). Only the
+  // role half is proven, and the format keeps the two halves distinguishable
+  // rather than letting the claim stand alone.
+  //
+  // The role source is `./actor`, NOT lib/with-permission.ts's resolveRole().
+  // That function accepts any valid session password and then believes the
+  // client-typed `mc-role` cookie, so `mc-auth=view2026; mc-role=admin` —
+  // a READ-ONLY credential — resolved to `admin` and was measured releasing a
+  // paused agent with a 200. `inboxDecisionActor()` derives the role from the
+  // credential and lets `mc-role` only ever narrow it. See that file's header
+  // for the before/after measurement.
+  const actor = inboxDecisionActor(req, body.resolved_by ?? null)
+  const decidedBy = attributeDecision(actor)
   const decidedAt = new Date().toISOString()
 
   // ── Read before writing ─────────────────────────────────────────────────
@@ -510,6 +596,73 @@ export async function PATCH(req: NextRequest) {
 
   const requestRow = currentRow as ApprovalRow
 
+  // Placing the request in a project, for the audit row. Best effort: an
+  // unplaceable request records project=null rather than a guess. Resolved
+  // BEFORE the two refusal gates below so a refused attempt is filed against
+  // the same project a permitted one would have been.
+  const { map: projectMap } = await projectsForRows(db, [requestRow])
+  const requestProject = resolveRowProject(requestRow, projectMap)
+
+  /** Record a refusal in the append-only trail and answer with it. Nothing is
+   *  written to `inbox` — the request stays exactly as pending as it was. */
+  const refuse = async (
+    refusal: { code: string; httpStatus: number; reason: string },
+    extra: Record<string, unknown> = {},
+  ) => {
+    const auditWarning = await recordDecision(db, auditRowForRefusal({
+      row: requestRow,
+      decision: body.status as string,
+      refusal,
+      humanInput: body.response_data,
+      project: requestProject,
+      decidedBy,
+      decidedAt,
+    }) as unknown as Record<string, unknown>)
+    return NextResponse.json(
+      {
+        error: refusal.reason,
+        code: refusal.code,
+        inbox_id: requestRow.id,
+        // The request is deliberately untouched — say so, or the operator has
+        // to guess whether their click half-landed.
+        request_status: requestRow.status,
+        ...extra,
+        ...(auditWarning ? { _warning: auditWarning } : {}),
+      },
+      { status: refusal.httpStatus },
+    )
+  }
+
+  // ── Refused when the actor is not allowed to make it ────────────────────
+  // Three refusals, and all three are recorded rather than merely returned:
+  //   * no role on the request at all (nothing to attribute the decision to)
+  //   * a role without issues:write (cannot record any decision)
+  //   * a role without settings:write attempting to APPROVE — the split that
+  //     makes "an agent files; you approve" enforced rather than described
+  //   * an approval signed in the name of the very agent that filed it
+  // This runs BEFORE the fail-closed preflight because a caller who may not
+  // decide at all should not learn whether the target issue still exists.
+  const authorized = authorizeDecision({ actor, row: requestRow, decision: body.status })
+  if (!authorized.ok) {
+    // A refusal that arrived because the caller ASKED for a role it does not
+    // hold has to say so, or the operator reads "role: viewer" and cannot tell
+    // it apart from a plain read-only session. The sentence goes into
+    // `reason`, so it lands in the append-only trail's `detail` too — an
+    // attempted escalation that is only visible in an HTTP response the
+    // attacker receives is not recorded anywhere that matters.
+    const escalation = actor.ignoredClaim
+      ? ` The request also asked to act as "${actor.ignoredClaim}" via the mc-role cookie; that cookie can only narrow the role its credential proves, never widen it, so it was ignored.`
+      : ''
+    return refuse(
+      { ...authorized, reason: authorized.reason + escalation },
+      {
+        role: actor.role ?? 'unauthenticated',
+        ...(actor.ignoredClaim ? { ignored_role_claim: actor.ignoredClaim } : {}),
+        ...(authorized.required ? { required: authorized.required } : {}),
+      },
+    )
+  }
+
   // ── Fail closed ─────────────────────────────────────────────────────────
   // Three refusals, all of which previously read as clean successes:
   //   * the issue this approval would unblock has been deleted
@@ -525,34 +678,7 @@ export async function PATCH(req: NextRequest) {
     lookup: targetLookup,
   })
 
-  // Placing the request in a project, for the audit row. Best effort: an
-  // unplaceable request records project=null rather than a guess.
-  const { map: projectMap } = await projectsForRows(db, [requestRow])
-  const requestProject = resolveRowProject(requestRow, projectMap)
-
-  if (!preflight.ok) {
-    const auditWarning = await recordDecision(db, auditRowForRefusal({
-      row: requestRow,
-      decision: body.status,
-      refusal: preflight,
-      humanInput: body.response_data,
-      project: requestProject,
-      decidedBy,
-      decidedAt,
-    }) as unknown as Record<string, unknown>)
-    return NextResponse.json(
-      {
-        error: preflight.reason,
-        code: preflight.code,
-        inbox_id: requestRow.id,
-        // The request is deliberately untouched — say so, or the operator has
-        // to guess whether their click half-landed.
-        request_status: requestRow.status,
-        ...(auditWarning ? { _warning: auditWarning } : {}),
-      },
-      { status: preflight.httpStatus },
-    )
-  }
+  if (!preflight.ok) return refuse(preflight)
 
   // The decision itself — who, when, what status — always persists via
   // status/resolved_by/resolved_at, which have existed since migration 011.

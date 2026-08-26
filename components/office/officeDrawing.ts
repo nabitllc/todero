@@ -425,7 +425,22 @@ export function drawParticles(ctx:CanvasRenderingContext2D,particles:any[],cam:a
   ctx.globalAlpha=1;ctx.restore();
 }
 
-export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0,startedAt:string|null=null){
+/**
+ * `waitingCount` is how many `inbox` rows with status='pending' name this
+ * agent — i.e. how many decisions a HUMAN owes it before it moves again. It is
+ * a measured count, never an inference: 0 draws no bubble, and a failed
+ * /api/inbox poll passes 0 for everyone while the error banner says so, so
+ * "no bubble" never quietly means "we could not ask".
+ *
+ * It is deliberately REQUIRED — it has no `= 0` default. A critic deleted the
+ * argument at the one call site, killing the feature outright, and every test
+ * in this repo stayed green because they were string greps. Without a default,
+ * that same deletion is now `TS2554: Expected 12 arguments, but got 11` under
+ * `npx tsc --noEmit`, which is a gate this lane runs. Do not add a default
+ * back "for convenience": the convenience is what made the feature deletable
+ * in silence.
+ */
+export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:number,cam:any,isSelected:boolean,darkAlpha:number,boardTasksMap:Record<string,string>={},subagentCount:number=0,agentCost:number=0,startedAt:string|null=null,waitingCount:number){
   // Every roster agent gets a real position at init (desk or bench — see
   // initAgents), so there is no more "agent with nowhere to stand" case to
   // filter for here.
@@ -525,6 +540,43 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
     ctx.beginPath();ctx.roundRect(px-blW/2,blY,blW,blH,T*0.04);ctx.fill();ctx.stroke();
     ctx.fillStyle="#FDCB6E";ctx.textAlign="center";
     ctx.fillText("📋 "+bShort,px,blY+blH*0.73);
+  }
+
+  // ── "Waiting on you" speech bubble ─────────────────────────────────────────
+  // Drawn ONLY from waitingCount, which is a count of this agent's own
+  // status='pending' inbox rows. No pending row, no bubble. It sits above the
+  // whole label stack so it reads as the agent speaking, not as another badge,
+  // and it is the one overlay that is drawn for EVERY state — an agent blocked
+  // on a human is blocked whether the canvas thinks it is working or idle.
+  if(waitingCount>0){
+    const wPx=Math.max(10,Math.round(T*0.135));
+    ctx.font=`bold ${wPx}px 'IBM Plex Mono',monospace`;
+    // Singular vs plural stated exactly; the number is only shown when it
+    // is more than one, so "1" never reads as a queue.
+    const wText=waitingCount===1?"waiting on you":`${waitingCount} waiting on you`;
+    const wlW=ctx.measureText(wText).width+T*0.22,wlH=wPx*1.8;
+    // Stack above whatever else is already above the head.
+    const chatTaskH2=(state==="working"&&task)?(Math.max(11,Math.round(T*0.19))*1.8+T*0.10):0;
+    const boardTaskH2=(boardTask&&(state==="working"||state==="idle"))
+      ?(Math.max(10,Math.round(T*0.13))*1.7+T*0.28):0;
+    const tail=T*0.10;
+    const wlY=py-hs-chatTaskH2-boardTaskH2-wlH-tail-T*0.12+dy2+oy;
+    // Gentle bob so it catches the eye on a busy floor without animating the
+    // agent itself. Pure presentation — it encodes no data.
+    const bob=Math.sin(now/420+(ag.bobPhase??0))*T*0.02;
+    const bY=wlY+bob;
+    ctx.fillStyle="#2b1032f2";ctx.strokeStyle="#E879F9";ctx.lineWidth=T*0.022;
+    ctx.beginPath();ctx.roundRect(px-wlW/2,bY,wlW,wlH,T*0.06);ctx.fill();ctx.stroke();
+    // Tail, pointing down at the agent's head.
+    ctx.beginPath();
+    ctx.moveTo(px-tail*0.7,bY+wlH-ctx.lineWidth*0.5);
+    ctx.lineTo(px,bY+wlH+tail);
+    ctx.lineTo(px+tail*0.7,bY+wlH-ctx.lineWidth*0.5);
+    ctx.closePath();
+    ctx.fillStyle="#2b1032f2";ctx.fill();
+    ctx.strokeStyle="#E879F9";ctx.stroke();
+    ctx.fillStyle="#F5D0FE";ctx.textAlign="center";
+    ctx.fillText(wText,px,bY+wlH*0.72);
   }
   if(state==="working"&&task){
     const tPx=Math.max(11,Math.round(T*0.19));
@@ -645,4 +697,92 @@ export function drawMinimap(ctx:CanvasRenderingContext2D,T:number,agents:any[],c
 
 export function captureFrame(agents:any[],simTick:number){
   return {tick:simTick,agents:agents.map(a=>({id:a.id,px:a.px,py:a.py,state:a.state,task:a.task,progress:Math.round(a.progress)}))};
+}
+
+/**
+ * Reduce /api/inbox rows to "how many decisions does each agent owe a human".
+ *
+ * Pure and exported so the rule can be tested without a canvas. Two details
+ * are deliberate, and both mirror lib/approvals.ts:approvalTarget():
+ *
+ *  - the agent is `row.agent` FIRST, then `context.agent_id`. A decision acts
+ *    on that target, so the bubble must land on the same one — resolving it
+ *    differently here would put the bubble over an agent the button would not
+ *    actually unblock.
+ *  - a row that names no agent at all is COUNTED FOR NOBODY, never bucketed
+ *    under a placeholder id. It still needs a human, but this surface cannot
+ *    say whose head to draw it over, and inventing one is the fabrication the
+ *    Office exists to avoid. (It remains visible in the real inbox.)
+ *
+ * Callers pass only rows they have already filtered to status='pending';
+ * this function does not re-filter, so a caller that forgets is not silently
+ * rescued into showing bubbles for resolved rows — it shows too many, loudly.
+ */
+export function countWaitingByAgent(rows: unknown): Record<string, number> {
+  if (!Array.isArray(rows)) return {}
+  const counts: Record<string, number> = {}
+  for (const row of rows) {
+    const r = row as { agent?: unknown; context?: { agent_id?: unknown } } | null
+    const raw = r?.agent ?? r?.context?.agent_id
+    if (typeof raw !== 'string') continue
+    const id = raw.trim()
+    if (!id) continue
+    counts[id] = (counts[id] ?? 0) + 1
+  }
+  return counts
+}
+
+// ─── Draw every agent ─────────────────────────────────────────────────────────
+/**
+ * The per-agent fan-out that OfficeCanvas's render loop used to do inline:
+ *
+ *   drawAgentsArr.forEach(ag => drawAgent(ctx, ag, …, waitingRef.current[ag.id]||0))
+ *
+ * It is here, and exported, for one reason: while it lived inside the
+ * component nothing could execute it. A critic replaced that last argument
+ * with the literal `1` — giving all 28 agents a fabricated "waiting on you"
+ * bubble — and every suite stayed green, because the only thing guarding it
+ * was a `readFileSync` + `toContain`. Lifted out, the lookup from
+ * `waiting[ag.id]` to the bubble that one specific agent gets is a function a
+ * test can call with a recording canvas and assert on. See
+ * `__tests__/office-bubble-render.test.ts`.
+ *
+ * `draw` is injectable so a test can also observe the ARGUMENTS this fan-out
+ * builds, not only the pixels they produce.
+ */
+export interface DrawAgentsOptions {
+  T: number;
+  now: number;
+  cam: any;
+  selectedId: string | null;
+  darkAlpha: number;
+  /** assignee -> in_progress issue title, from the board-task poll. */
+  boardTasks: Record<string, string>;
+  /** Live subagent count; only the orchestrator seat is given it. */
+  subagentCount: number;
+  /** agent id -> latest agent_runs summary. */
+  runs: Record<string, { estimatedCost?: number | null; startedAt?: string | null } | undefined>;
+  /** agent id -> that agent's own count of status='pending' inbox rows. */
+  waiting: Record<string, number>;
+}
+
+export function drawAgents(
+  ctx: CanvasRenderingContext2D,
+  agents: any[],
+  o: DrawAgentsOptions,
+  draw: typeof drawAgent = drawAgent,
+): void {
+  for (const ag of agents) {
+    draw(
+      ctx, ag, o.T, o.now, o.cam,
+      ag.id === o.selectedId,
+      o.darkAlpha,
+      o.boardTasks,
+      ag.isOrchestrator ? o.subagentCount : 0,
+      o.runs[ag.id]?.estimatedCost || 0,
+      o.runs[ag.id]?.startedAt || null,
+      // An agent with no key here is not waiting, and gets no bubble at all.
+      o.waiting[ag.id] || 0,
+    );
+  }
 }
