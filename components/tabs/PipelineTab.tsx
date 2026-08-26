@@ -943,7 +943,11 @@ function MoveSheet({ issue, error, onClose, onMove }: {
   issue: Issue
   error: string | null
   onClose: () => void
-  onMove: (status: string, values: Record<string, string>) => void
+  // Genuinely async in PipelineTab — it PATCHes the MC API and awaits the
+  // result before deciding whether to close the sheet or show `error`. Typed
+  // `=> void` before, which is what let `MoveFieldForm` fire it without
+  // awaiting; see the comment on `onSubmit` there for the failure this caused.
+  onMove: (status: string, values: Record<string, string>) => Promise<void>
 }) {
   // The workflow identity this PATCH will be attributed to — the same value the
   // server derives from the session cookie when the body omits one
@@ -1089,7 +1093,14 @@ function MoveFieldForm({ status, fields, onBack, onSubmit }: {
   status: string
   fields: readonly MoveField[]
   onBack: () => void
-  onSubmit: (values: Record<string, string>) => void
+  // `onSubmit` ultimately calls the async `onMove` in PipelineTab (a 409 lane
+  // refusal, a network drop, a future thrown exception). It used to be typed
+  // `=> void`, which let that promise go unawaited: `setSubmitting(true)` below
+  // had no failure path that could ever clear it, so a refused move left the
+  // button reading "Moving…" — disabled, with the error shown above it, and no
+  // way to retry short of closing the sheet. Typing the return as a real
+  // Promise is what makes the await below possible.
+  onSubmit: (values: Record<string, string>) => Promise<void>
 }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const seed: Record<string, string> = {}
@@ -1097,13 +1108,32 @@ function MoveFieldForm({ status, fields, onBack, onSubmit }: {
     return seed
   })
   const [submitting, setSubmitting] = useState(false)
+  // Whether this form is still on screen. The success path unmounts it
+  // (PipelineTab closes the whole sheet on a 2xx), so the reset below must
+  // never fire after that — not because it would error, but because a
+  // post-unmount `setSubmitting(false)` would be a flicker of "Move to X"
+  // reappearing for a frame before the sheet is gone. Only the failure paths
+  // are supposed to reach it, and this ref is what keeps it that way without
+  // hand-coding a success/failure branch (`onMove` never rejects on a
+  // refusal — see the comment on it in PipelineTab — so branching on
+  // resolved-vs-rejected would not by itself tell success from failure).
+  const mountedRef = useRef(true)
+  useEffect(() => () => { mountedRef.current = false }, [])
   const unmet = unmetFields(fields, values)
   const set = (field: string, v: string) => setValues(prev => ({ ...prev, [field]: v }))
+
+  const submit = () => {
+    if (unmet.length > 0 || submitting) return
+    setSubmitting(true)
+    Promise.resolve(onSubmit(values))
+      .catch(() => { /* onMove reports failures via the error prop, not a rejection */ })
+      .finally(() => { if (mountedRef.current) setSubmitting(false) })
+  }
 
   return (
     <form
       className="px-4 py-3"
-      onSubmit={e => { e.preventDefault(); if (unmet.length === 0 && !submitting) { setSubmitting(true); onSubmit(values) } }}
+      onSubmit={e => { e.preventDefault(); submit() }}
     >
       <p className="text-[11px] text-white/50 mb-3">
         Moving to <span className="font-mono text-white/70">{status}</span> needs{' '}

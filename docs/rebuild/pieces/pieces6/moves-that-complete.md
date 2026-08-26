@@ -42,7 +42,7 @@ measured.
 
 | # | Destination | `{id,status}` | HTTP | Extra fields needed to complete | Where enforced |
 |---|---|---|---|---|---|
-| 1 | `backlog` | ✅ succeeds *(no-op only)* | 200 | **From any other status: not satisfiable from the board.** Actor must be `main`/`po`/`ops`; the owner session is `michael`. Also must NOT carry `sprint`. | `route.ts:1631-1637`; `CHECK (NOT (status='backlog' AND sprint IS NOT NULL))` |
+| 1 | `backlog` | ✅ succeeds *(no-op only)* | 200 | **From any other status, as measured in this pass: not satisfiable from the board.** Actor must be `main`/`po`/`ops`; the owner session is `michael`, and at the time of this pass that name was not in the list. **See §7 — this stopped being true within the same commit that recorded it.** Also must NOT carry `sprint`. | `route.ts:1631-1637` (line numbers at the time of this pass); `CHECK (NOT (status='backlog' AND sprint IS NOT NULL))` |
 | 2 | `draft` | ✅ succeeds | 200 | — | — |
 | 3 | `defined` | ✅ succeeds | 200 | `owner` non-empty. POST always sets it by type, and **PATCH strips `owner` (`route.ts:2178-2181`)**, so a row missing it cannot be fixed from the board. | `route.ts:1737-1745` |
 | 4 | `refined` | ❌ refuses | 400 | `description` non-empty **and** `test_tier` ∈ {smoke, integration, e2e} for task/bug/ops. Epics/features skip `test_tier`. | `route.ts:1748-1770` |
@@ -88,9 +88,11 @@ reproduce:
 
 * **`backlog` from any non-backlog status → 403 `Only main/po/ops can reset an
   issue to backlog.`** This is the single most common board gesture — send it
-  back — and for the signed-in owner it fails every time. `KAOS_ROLES` at
-  `route.ts:1632` is `['main','po','ops']` and contains no `isOwnerActor()`
-  bypass, unlike every other guard in the file.
+  back — and, at the time of this pass, for the signed-in owner it failed
+  every time. `KAOS_ROLES` at `route.ts:1632` was `['main','po','ops']` and
+  contained no `isOwnerActor()` bypass, unlike every other guard in the file.
+  **This was fixed later in the same commit — see §7. It no longer refuses the
+  owner as of `route.ts:1730`.**
 * **Every destination from a `closed` card → 403 `Issue is closed and
   read-only.`** (`route.ts:1623-1628`.)
 
@@ -128,30 +130,68 @@ reproduce:
    `backlog`-from-elsewhere succeed today by sending `transitioned_by: 'po'`. It
    does not, because that writes a false actor into the audit trail. It disables
    the destination and reports the API line instead.
-10. **Nothing outside the owned files changed.** `lib/pipeline-stages.ts`,
-    `app/api/issues/route.ts` and `lib/issue-routing.ts` were read, not edited.
+10. **Correction (§7): this item was wrong.** `app/api/issues/route.ts` WAS
+    edited, in this same commit, under this piece's own key (TOD-2452) — the
+    13-line diff at `route.ts:1669-1690` that added the `isOwnerActor()`
+    bypass §4 (below) originally proposed as future work. `lib/pipeline-stages.ts`
+    and `lib/issue-routing.ts` were read, not edited; `route.ts` was not
+    read-only. The original claim ("Nothing outside the owned files changed")
+    was written before that diff landed and nobody came back to correct it once
+    it did — see §7 for the measurement that caught the contradiction.
 
-## 4. The one API change this piece would ask for
+## 4. The API change this piece asked for — landed; one smaller request remains
 
-`app/api/issues/route.ts:1631-1637`. Every other actor guard in this file has an
-owner bypass; this one does not, so the workspace owner cannot reset an issue to
-backlog from any UI.
+**Correction (§7): this section originally described a change as still
+outstanding that had, by the time this doc was committed, already been made —
+in the very same commit, under this piece's own key.** The proposal below is
+kept for the record, struck through in spirit; what actually shipped and what
+is still open follow it.
+
+~~`app/api/issues/route.ts:1631-1637`. Every other actor guard in this file has
+an owner bypass; this one does not, so the workspace owner cannot reset an
+issue to backlog from any UI.~~
 
 ```ts
-// route.ts:1632 — current
+// route.ts:1632 — as measured in §2/§2b, before the fix
 const KAOS_ROLES = ['main', 'po', 'ops']
 if (!transitionedBy || !KAOS_ROLES.includes(transitionedBy)) {
 ```
 
+**Landed, as of `route.ts:1718-1735` (commit 62d9d82, TOD-2452 — this piece's
+own commit):**
+
 ```ts
-// proposed — one condition, matching route.ts:570 and route.ts:587
+// route.ts:1730 — current, measured 2026-08-26
 const KAOS_ROLES = ['main', 'po', 'ops']
 if (!transitionedBy || (!KAOS_ROLES.includes(transitionedBy) && !isOwnerActor(transitionedBy))) {
+  return NextResponse.json(
+    { error: 'Only main/po/ops or the workspace owner can reset an issue to backlog.', field: 'transitioned_by' },
+    { status: 403 }
+  )
+}
 ```
 
-`isOwnerActor` is already imported at `route.ts:30`. This piece does not own that
-file and did not make the change. Until it lands, ACCEPTANCE 3 covers the gap
-honestly: the destination is visible, disabled, and explained.
+Measured directly against the running server today (§7): `defined -> backlog`
+as the signed-in owner, no `transitioned_by` in the body, is **200**. The
+client mirror in `lib/issue-moves.ts` (`BACKLOG_RESET_ROLES` /
+`moveVerdict`) now imports `isOwnerActor` from `lib/operator-identity.ts` — a
+module already written to be safe in the browser bundle, and already the
+source of truth the server itself defers to — instead of re-deriving the
+owner bypass by hand.
+
+**What is still open, and is a request rather than something this piece can
+do itself:** `KAOS_ROLES` at `route.ts:1718` is a local, unexported `const`.
+`lib/issue-moves.ts` cannot import it and still has to carry
+`BACKLOG_RESET_ROLES = ['main', 'po', 'ops']` as a hand-mirrored copy — the
+exact pattern that let the owner-bypass comment above go stale for a full
+commit. The ask: export `KAOS_ROLES` from `route.ts`, or better, move it next
+to `OWNER_IDENTITY` in `lib/operator-identity.ts` so both sides import the
+same array and the mirror is retired rather than merely re-drawn. This piece
+does not own `route.ts` and has not made that change. Until it lands, the risk
+is contained rather than eliminated: `lib/__tests__/issue-moves.test.ts` reads
+`route.ts`'s source at test time and fails the moment `KAOS_ROLES` there
+diverges from the copy in `lib/issue-moves.ts`, so a future drift is a red
+test, not a silent stale comment.
 
 ## 5. Verified in the running app, not asserted
 
@@ -218,6 +258,10 @@ refined        400  test_tier is required for task/bug/ops before moving to refi
 backlog        403  Only main/po/ops can reset an issue to backlog.
 ```
 
+(The `backlog` row above was measured as a non-owner actor. As the signed-in
+owner it is 200, not 403 — see §7, where this whole page's account of the
+backlog guard is corrected.)
+
 Nothing moved into the client. Every rule is still enforced twice.
 
 ## 6. Not done, and why
@@ -231,3 +275,80 @@ Nothing moved into the client. Every rule is still enforced twice.
 * **`owner` cannot be collected inline.** PATCH deletes it from every payload
   (`route.ts:2178-2181`). The sheet says so rather than offering a field that
   would be silently discarded.
+
+## 7. Correction — 2026-08-26, a second pass
+
+Everything in this section was measured today, against the running dev
+server, by a `bug_fixer` pass over this piece. Nothing here is inherited from
+§1-§6 without being independently reproduced.
+
+**What was wrong.** §2's table, §2b, §3 item 10, and old §4 all described the
+backlog-reset guard (`route.ts`, then at `:1631-1637`) as still refusing the
+signed-in owner, and old §4 proposed the one-line `isOwnerActor()` fix as
+future work. All of that was true when first drafted and stopped being true
+within the *same commit* (62d9d82, TOD-2452) — the diff at what is now
+`route.ts:1718-1735` landed in that commit and added exactly the bypass §4
+proposed. `lib/issue-moves.ts`'s own `BACKLOG_RESET_ROLES` comment, and
+`lib/__tests__/issue-moves.test.ts`'s `blocks backlog from any other status
+for the signed-in owner` test, were written for the pre-fix world and were
+never updated once the server side of the same commit changed under them —
+so the client disabled the board's most common gesture with a reason the
+server no longer gave.
+
+**Measured today, fresh `ops` fixture in `Limiglow` (deleted after), owner
+session (`mc-auth=kaos2026; mc-role=owner`), no `transitioned_by` in the body:**
+
+| Move | Body | HTTP | Result |
+|---|---|---|---|
+| `defined -> backlog` | `{id, status:'backlog'}` | **200** | succeeds — contradicts the old client comment's claimed 403 |
+| `in_progress -> backlog`, row carries `sprint:'2026-08-26'` | `{id, status:'backlog'}` | **500** | `CHECK constraint failed: (NOT ((status = 'backlog') AND (sprint IS NOT NULL)))` — the SECOND refusal on this same now-owner-permitted path (CLAIM 2) |
+| same row, same move | `{id, status:'backlog', sprint:null}` | **200** | succeeds; row reads back `sprint: null` |
+
+**Why the second refusal exists.** The backlog-reset handler
+(`route.ts:1718-1753`) resets `worked_by`, `started_at` and `submitted_at`
+unconditionally on every reset, but does not touch `sprint` unless the PATCH
+body includes it — so a card that carries a sprint (anything that was ever
+`open`/`in_progress`/etc.) hits the `backlog_no_sprint` CHECK
+(`migrations/sqlite/000_baseline.sql:142`) the instant the actor gate no
+longer stops it. Making the owner-bypass true without also clearing the
+sprint would have swapped one false refusal for a guaranteed 500 on every
+sprint-carrying card — the two were fixed together, not separately.
+
+**What changed in this revision, confined to the three files this piece owns:**
+
+* `lib/issue-moves.ts` — `moveVerdict`'s `backlog` branch now also accepts
+  `isOwnerActor(actor)`, imported directly from `lib/operator-identity.ts`
+  (a module already safe in the browser bundle and already the server's own
+  source of truth for "is this actor the owner" — no re-derivation, no new
+  drift surface for that half of the check). `BACKLOG_RESET_ROLES` is now
+  exported so a test can check it against `route.ts`'s `KAOS_ROLES` by name,
+  rather than by eye. `requiredFieldsForMove` gained an explicit (empty)
+  `backlog` branch documenting why there is no form field for the sprint
+  clear. `moveBody` now sends `sprint: null` on a move to `backlog` whenever
+  the row currently carries one.
+* `lib/__tests__/issue-moves.test.ts` — the inverted test and its corrected
+  comment; a new test for a non-owner, non-`main/po/ops` actor (the refusal
+  that IS still real); a source-reading guard test that fails if
+  `route.ts`'s `KAOS_ROLES` ever diverges from `BACKLOG_RESET_ROLES`; and
+  tests for the sprint-carrying backlog move in both directions
+  (`moveVerdict` says `ready`; `moveBody` clears the sprint, and leaves it
+  alone when there is none to clear).
+* This file — §2, §2b, §3 item 10, and §4 corrected in place rather than
+  silently rewritten, so the wrong claim stays visible next to its correction.
+
+**What is still a request, not a fix:** exporting `KAOS_ROLES` from
+`route.ts` (or moving it into `lib/operator-identity.ts`), so the mirror in
+`lib/issue-moves.ts` can be retired instead of guarded. See §4.
+
+**Gate, run today:** `npx tsc --noEmit` clean. `issue-moves.test.ts`: 38/38
+passing (33 before, +5 new; none removed, one inverted with its comment
+corrected). Full suite: 999 passed, 5 failed (the same three pre-existing
+suites — `agents-route`, `agents-unconfigured`, `spawn-live` — named in this
+piece's own baseline), 2 skipped, 1006 total — the 5 new tests account for
+the entire delta from the 994/5/2 baseline. `node scripts/acceptance/run.mjs`:
+45/45. `Limiglow` ends at 0 issues of this pass's making (one fixture, TOD-150,
+created and deleted); two unrelated rows, `TOD-151`/`TOD-152`
+(`test_bugfixer`, titles `bugfixer-fixture-A`/`-B`), appeared in Limiglow
+during this pass from a concurrent session and were left untouched, the same
+way this piece's own §1 left the `PHANTOM-COLUMN` rows from another builder
+alone.

@@ -72,6 +72,25 @@ for guard in no-invented-projects no-dead-modules no-phantom-columns no-cloud-pr
   fi
 done
 
+# Check 12 (TOD-2457): the SECRET scanner had the same problem, one level up.
+#
+# The comment above says check:secrets "was wired, via prebuild" — true, and
+# `npm run build` is forbidden on this host, so in practice it ran only when
+# somebody typed `npm run check:secrets`. Nobody did. A live API key sat in four
+# TRACKED files under config/ and reached origin/main while the scanner reported
+# green, because two of its rules excluded that directory and the third never
+# looked there.
+#
+# It is a .js not a .mjs, so it is invoked by name rather than folded into the
+# loop above.
+echo ""
+if node "$(dirname "$0")/check-no-secrets.js"; then
+  echo "✅ check-no-secrets passed"
+else
+  echo "❌ check-no-secrets FAILED — see scripts/check-no-secrets.js"
+  exit 1
+fi
+
 # Check 6 (TOD-654): no tab may render an empty state over a non-ok response.
 echo ""
 if node "$(dirname "$0")/no-silent-empty.mjs"; then

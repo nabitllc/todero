@@ -121,14 +121,13 @@ const PATTERNS = [
     label: 'Discord bot token',
     regex: true,
     why: 'a three-segment bot token — a live credential, not configuration',
-    // App tree, scripts, docs, migrations — everything except the archived
-    // companion checkout under config/, carved out for exactly the reason the
-    // OpenRouter rule below already documents: those are standalone bots
-    // tracked separately that still embed keys, and failing every build on
-    // them would mean this rule gets deleted rather than obeyed. They are a
-    // rotation job, not a build gate. Said out loud in the verdict at the
-    // bottom so the scope is visible rather than implied.
-    paths: ['.', ':(exclude)config/**', ...SECRET_EXCLUDES],
+    // The whole tree. TOD-2457 removed a `:(exclude)config/**` that had been
+    // here on the reasoning that those archived bots embed keys and failing
+    // every build on them would get the rule deleted rather than obeyed. The
+    // reasoning was sound and the outcome was still a live credential on
+    // origin/main for months. config/ is now gitignored instead, which takes it
+    // out of `git grep --untracked` scope without leaving an exception behind.
+    paths: ['.', ...SECRET_EXCLUDES],
     fix: 'read it from process.env, or from a hub connection — lib/connections.ts, POST /api/connections/hub.',
   },
   {
@@ -170,15 +169,32 @@ const PATTERNS = [
     // would fire on prose.
     ignoreCase: true,
     why: 'a name meaning "credential" set to a long quoted literal (any case)',
-    paths: ['.', ':(exclude)config/**', ...SECRET_EXCLUDES],
+    paths: ['.', ...SECRET_EXCLUDES],
     fix: 'read it from process.env, or from a hub connection — lib/connections.ts.',
   },
   {
     needle: 'sk-or-' + 'v1-',
     why: 'OpenRouter API key',
-    // App tree only. `config/scripts/*.py` are archived standalone bots that
-    // still embed a key; they are outside the Next app and tracked separately.
-    paths: ['app/', 'lib/', 'components/', 'hooks/'],
+    // TOD-2457: WAS `['app/','lib/','components/','hooks/']`, and that narrowness
+    // is why this rule ran green for months over a live key. The key sat in four
+    // files under config/ — a directory this rule never looked at and the two
+    // generic rules above explicitly excluded — and those files were TRACKED and
+    // pushed to origin/main. Three guards agreeing on a blind spot is not three
+    // guards.
+    //
+    // The whole tree now. config/ is out of scope again, but by being gitignored
+    // (.gitignore:62) rather than by a pathspec exception: this scanner runs
+    // `git grep --untracked`, which applies exclude-standard to the whole walk
+    // and so does not descend into ignored paths.
+    //
+    // MEASURED, and it is NOT airtight: `git add -f config/x.py` makes the file
+    // tracked, and git grep STILL skips it, because the exclude-standard walk
+    // wins over the file being in the index. So an ignored directory is not "a
+    // place no key can be committed from" — an earlier draft of this comment
+    // claimed exactly that and a probe disproved it in one command. The
+    // IGNORED_TRACKED check below is what actually closes it: it fails if
+    // anything under config/ is in the index at all, whatever the file says.
+    paths: ['.', ...SECRET_EXCLUDES],
     fix: 'read it from process.env.OPENROUTER_API_KEY.',
   },
   {
@@ -238,6 +254,48 @@ for (const { needle, label, regex, ignoreCase, why, paths, fix } of PATTERNS) {
   }
 }
 
+// ─── Structural check: no ignored directory may be tracked ──────────────────
+//
+// TOD-2457. The rules above are `git grep --untracked`, which applies
+// exclude-standard to the whole walk — so it skips a gitignored path EVEN WHEN
+// THAT PATH IS TRACKED. Measured: `git add -f config/probe.py` containing a
+// live-shaped key, and every rule above still exits 0.
+//
+// That matters because untracking config/ is the entire remediation for a key
+// that reached origin/main from there. If one `git add -f` silently puts a file
+// back inside a directory no rule can see, the remediation has a hole the exact
+// width of the original defect.
+//
+// So: these directories are declared ignored-and-must-stay-untracked, and this
+// checks the INDEX rather than the file contents. It cannot be defeated by how
+// a credential is spelled, because it never reads one.
+const IGNORED_TRACKED = [
+  {
+    dir: 'config/',
+    why: 'the archived companion checkout — untracked at TOD-2457 after a live API key was found committed here and pushed to origin/main',
+  },
+]
+
+for (const { dir, why } of IGNORED_TRACKED) {
+  const res = spawnSync('git', ['ls-files', '--', dir], { cwd: REPO, encoding: 'utf8' })
+  if (res.error) {
+    console.error(`check-no-secrets: could not run git ls-files — ${res.error.message}`)
+    process.exit(2)
+  }
+  const tracked = res.stdout.split('\n').filter(Boolean)
+  if (tracked.length > 0) {
+    failed = true
+    console.error(`\n  TRACKED FILES IN AN IGNORED DIRECTORY: ${dir}`)
+    console.error(`  ${why}.`)
+    console.error(`  ${tracked.length} file(s) are in the index here. The credential rules`)
+    console.error('  above CANNOT SEE THEM — git grep skips ignored paths even when tracked.')
+    for (const f of tracked.slice(0, 10)) console.error(`    ${f}`)
+    if (tracked.length > 10) console.error(`    … and ${tracked.length - 10} more`)
+    console.error(`  Fix: git rm -r --cached ${dir}  (the files stay on disk)`)
+    console.error('')
+  }
+}
+
 if (failed) {
   console.error('The database seam is lib/db.ts. Nothing above it may name a vendor,')
   console.error('a project URL, a credential, or a vendor HTTP path.')
@@ -266,9 +324,13 @@ console.log('  Checked: 2 generic credential rules (three-segment bot-token shap
 console.log('           a credential-shaped NAME assigned a long quoted literal),')
 console.log('           4 named values (one project ref, JWTs with a payload, a')
 console.log('           full-privilege key name in a value, an OpenRouter key),')
-console.log('           and 3 database-seam rules.')
+console.log('           and 3 database-seam rules. Plus a structural check that')
+console.log(`           no file under ${IGNORED_TRACKED.map(d => d.dir).join(', ')} is tracked — those paths are`)
+console.log('           invisible to every rule above, tracked or not.')
 console.log('  NOT checked: unquoted shell assignments, credential shapes with no')
-console.log('           rule above (AWS, Stripe, GitHub, SSH keys), anything under')
-console.log('           config/ (the archived companion checkout — rotate separately),')
-console.log('           and files git ignores.')
+console.log('           rule above (AWS, Stripe, GitHub, SSH keys), and anything')
+console.log('           git ignores — which now includes config/, the archived')
+console.log('           companion checkout, untracked at TOD-2457 after a live key')
+console.log('           was found committed there. Its key needs rotating; this')
+console.log('           scanner cannot tell you whether that happened.')
 console.log('  This is not a statement that the tree contains no credential.')

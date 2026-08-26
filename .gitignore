@@ -52,3 +52,11 @@ output.txt
 
 # Database exports — history, not source. Keep out of git.
 exports/
+
+# TOD-2457: the archived companion checkout. Untracked at the owner's
+# direction after a live OpenRouter key was found committed to origin/main in
+# four files here. Ignoring it is also what removes the carve-outs from
+# scripts/check-no-secrets.js: that scanner runs `git grep --untracked`, which
+# does not descend into ignored paths, so the exclusion is now structural
+# rather than a hardcoded exception the next key can hide behind.
+config/

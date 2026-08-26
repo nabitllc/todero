@@ -21,8 +21,17 @@
 // plus two refusals that depend on the row rather than the destination and so
 // never show up in a "fresh backlog row" sweep at all:
 //
-//   backlog        403  from ANY other status — `Only main/po/ops can reset an
-//                       issue to backlog.` The board's operator is `michael`.
+//   backlog        403  from ANY other status, for an actor who is none of
+//                       `main`/`po`/`ops` and not the signed-in owner —
+//                       `Only main/po/ops or the workspace owner can reset an
+//                       issue to backlog.` Measured 2026-08-26 against the
+//                       running server: `defined -> backlog` as the signed-in
+//                       owner (no `transitioned_by` sent) is 200, not 403 —
+//                       `route.ts`'s backlog guard already carries an
+//                       `isOwnerActor()` bypass (commit 62d9d82, TOD-2452).
+//                       A row that also carries a `sprint` hits a SECOND
+//                       refusal on that same 200 path: the `backlog_no_sprint`
+//                       CHECK. See `BACKLOG_RESET_ROLES` and `moveBody` below.
 //   anything       403  from a `closed` card — `Issue is closed and read-only.`
 //
 // Two of those refusals put a raw SQLite `CHECK constraint failed: …` string on
@@ -72,6 +81,7 @@
 
 import { VALID_RESOLUTION_TYPES } from '@/lib/constants'
 import { mappedStatuses } from '@/lib/pipeline-stages'
+import { isOwnerActor } from '@/lib/operator-identity'
 
 /** The row shape this module reads. Every field is optional; a row may be legacy. */
 export type MoveIssue = Record<string, unknown>
@@ -113,23 +123,36 @@ export type MoveVerdict =
 
 /**
  * Roles the MC API accepts as able to reset an issue to `backlog`
- * (`app/api/issues/route.ts:1632`, `KAOS_ROLES`). Mirrored, not imported: that
- * route is a server module and this predicate runs in the browser bundle.
+ * (`app/api/issues/route.ts:1718`, `KAOS_ROLES`). Mirrored, not imported: that
+ * route is a server module and this predicate runs in the browser bundle, and
+ * `KAOS_ROLES` is a local, unexported const there — there is no import to
+ * reach for. That gap is written up in
+ * `docs/rebuild/pieces/pieces6/moves-that-complete.md` §4 as a request to
+ * export it (or move it beside `OWNER_IDENTITY` in `lib/operator-identity.ts`,
+ * which already is shared and already is imported by both sides — see below).
+ * Until then, `BACKLOG_RESET_ROLES` is exported so
+ * `lib/__tests__/issue-moves.test.ts` can catch drift the moment `route.ts`'s
+ * copy changes and this one does not, rather than trusting the mirror by eye.
  *
- * The list contains no owner bypass — unlike `route.ts:570` and `route.ts:587`,
- * which both call `isOwnerActor()`. A signed-in owner resolves to the actor
- * `michael` (`lib/session-actor.ts:36`), so a board move to `backlog` from any
- * other status returns 403 for the one human who uses this board. Measured:
- * `defined -> backlog` as the owner is 403; the same PATCH carrying
- * `transitioned_by: 'po'` is 200.
+ * The owner is NOT part of this list — `isOwnerActor()`, imported directly
+ * from `lib/operator-identity.ts` below, decides that half. That module (not
+ * `lib/session-actor.ts`, which is server-only) is written to be safe in the
+ * browser bundle and is the one piece of this predicate that cannot drift from
+ * the server, because both sides call the same function.
  *
- * The board does NOT send `'po'`. Writing an actor the operator is not into the
- * transition record would be a fabrication in the audit trail, and the point of
- * this piece is to stop the board lying about what it can do. The destination is
- * shown disabled with the real reason, and the one-line API fix is written up in
- * `docs/rebuild/pieces/pieces6/moves-that-complete.md` §4.
+ * Measured 2026-08-26 against the running server, fresh `ops` fixture,
+ * `mc-role=owner` cookie, no `transitioned_by` in the body (so the server
+ * resolves the actor itself via `resolveSessionActor` -> `michael`):
+ * `defined -> backlog` is **200**, not 403. `route.ts`'s backlog guard already
+ * has an `isOwnerActor()` bypass (`route.ts:1730`, landed in the same commit
+ * that created this file, 62d9d82 / TOD-2452) — the comment that used to live
+ * here ("Measured: defined -> backlog as the owner is 403") described a state
+ * that commit had already fixed on the server side one file over, and nobody
+ * came back to update the client mirror or this file's own tests. That
+ * contradiction is the defect this revision corrects; nothing below asserts
+ * anything this session did not itself measure.
  */
-const BACKLOG_RESET_ROLES: readonly string[] = ['main', 'po', 'ops']
+export const BACKLOG_RESET_ROLES: readonly string[] = ['main', 'po', 'ops']
 
 /** Types the MC API applies the test/commit gates to (`route.ts:1763`, `:1934`). */
 const GATED_TYPES: readonly string[] = ['task', 'bug', 'ops']
@@ -283,6 +306,22 @@ export function requiredFieldsForMove(issue: MoveIssue, toStatus: string): MoveF
     return out
   }
 
+  if (toStatus === 'backlog') {
+    // route.ts:1718-1735, plus `backlog_no_sprint`
+    // (`CHECK (NOT (status='backlog' AND sprint IS NOT NULL))`).
+    //
+    // Nothing here for the operator to type: the actor check is `moveVerdict`'s
+    // job (`BACKLOG_RESET_ROLES` / `isOwnerActor`, above), and the sprint the
+    // CHECK objects to is a value the row ALREADY carries, not one the sheet
+    // is collecting. There's no form field for "please don't have a sprint" —
+    // `moveBody` clears it in the same PATCH instead, unconditionally, whether
+    // this list is empty or not. Kept as its own branch (rather than falling
+    // through to the bottom `return out`) so the backlog case is visible here,
+    // next to the CHECK it exists to satisfy, instead of reading as "nothing
+    // is required to reach backlog" by omission.
+    return out
+  }
+
   return out
 }
 
@@ -323,13 +362,13 @@ export function moveVerdict(
 
   if (from === toStatus) return { kind: 'current' }
 
-  // route.ts:1631-1637
+  // route.ts:1718-1735
   if (toStatus === 'backlog') {
-    if (!actor || !BACKLOG_RESET_ROLES.includes(actor)) {
+    if (!actor || (!BACKLOG_RESET_ROLES.includes(actor) && !isOwnerActor(actor))) {
       return {
         kind: 'blocked',
         reason: `Sending an issue back to Backlog is reserved for ${BACKLOG_RESET_ROLES.join(', ')}` +
-          `, and you are signed in as ${actor ?? 'no one the workflow knows'}. ` +
+          ` or the workspace owner, and you are signed in as ${actor ?? 'no one the workflow knows'}. ` +
           'Ask one of them, or reset it from the agent side.',
       }
     }
@@ -372,11 +411,26 @@ export function unmetFields(
 /**
  * The PATCH body for a move, given the collected values.
  *
- * Only fields the move actually needs are included: sending `sprint` on a move
- * to `backlog` would violate `CHECK (NOT (status='backlog' AND sprint IS NOT
- * NULL))` and produce a 500 — measured, verbatim:
- * `CHECK constraint failed: (NOT ((status = 'backlog') AND (sprint IS NOT NULL)))`.
- * So the body is built from the requirement list, never from the whole form.
+ * Only fields the move actually needs are included: sending a FORM-collected
+ * `sprint` on a move to `backlog` would violate `CHECK (NOT (status='backlog'
+ * AND sprint IS NOT NULL))` and produce a 500 — measured, verbatim:
+ * `CHECK constraint failed: (NOT ((status = 'backlog') AND (sprint IS NOT
+ * NULL)))`. So the body is built from the requirement list, never from the
+ * whole form.
+ *
+ * A move TO `backlog` is a second, separate case: the row can already carry a
+ * `sprint` from before (any card that was ever `open`/`in_progress`/etc.
+ * does), and the same CHECK fires on that pre-existing value even when the
+ * form supplies nothing at all — measured 2026-08-26, an `in_progress` row
+ * with `sprint: '2026-08-26'`, bare `{id, status: 'backlog'}` as the owner:
+ * 500, the identical CHECK string. The backlog-reset handler
+ * (`route.ts:1718-1753`) resets `worked_by`, `started_at` and `submitted_at`
+ * unconditionally but does not touch `sprint` unless the PATCH body says to —
+ * so this function says to. Measured: the same request with `sprint: null`
+ * added to the body is 200, and reads back `sprint: null`. That is not a value
+ * the operator types; there is no field for it in `requiredFieldsForMove`
+ * (see its own `backlog` branch). It is sent whenever the row currently has
+ * one, so the move that was offered as `ready` actually completes.
  */
 export function moveBody(
   issue: MoveIssue,
@@ -384,6 +438,9 @@ export function moveBody(
   values: Readonly<Record<string, string>>,
 ): Record<string, unknown> {
   const body: Record<string, unknown> = { id: issue.id, status: toStatus }
+  if (toStatus === 'backlog' && str(issue.sprint)) {
+    body.sprint = null
+  }
   for (const f of requiredFieldsForMove(issue, toStatus)) {
     const v = (values[f.field] ?? '').trim()
     if (v) body[f.field] = v

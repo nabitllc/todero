@@ -12,6 +12,8 @@
 // signed-in owner. The measurements and the exact server strings are recorded in
 // `docs/rebuild/pieces/pieces6/moves-that-complete.md` §2.
 
+import fs from 'node:fs'
+import path from 'node:path'
 import {
   moveVerdict,
   requiredFieldsForMove,
@@ -19,6 +21,7 @@ import {
   moveBody,
   humaniseMoveFailure,
   todaysSprint,
+  BACKLOG_RESET_ROLES,
   type MoveIssue,
 } from '@/lib/issue-moves'
 import { VALID_STATUSES } from '@/lib/constants'
@@ -205,12 +208,17 @@ describe('the exact fields each refusal asked for', () => {
 })
 
 describe('moves the board cannot complete are blocked, not hidden and not offered', () => {
-  it('blocks backlog from any other status for the signed-in owner', () => {
-    // Measured: defined -> backlog as `michael` is 403
-    // "Only main/po/ops can reset an issue to backlog."
+  it('allows backlog from any other status for the signed-in owner', () => {
+    // Measured 2026-08-26 against the running server: `defined -> backlog` as
+    // the owner (mc-role=owner, no transitioned_by sent) is 200, not 403.
+    // route.ts's backlog guard (route.ts:1730) already carries an
+    // isOwnerActor() bypass, landed in 62d9d82 (TOD-2452) — the same commit
+    // that created this predicate. The comment this replaces ("Measured:
+    // defined -> backlog as `michael` is 403") described a state the server
+    // side of that very commit had already fixed; only the client mirror and
+    // this test were left claiming otherwise.
     const v = moveVerdict(freshBacklogRow({ status: 'defined' }), 'backlog', OWNER)
-    expect(v.kind).toBe('blocked')
-    if (v.kind === 'blocked') expect(v.reason).toMatch(/main, po, ops/)
+    expect(v.kind).toBe('ready')
   })
 
   it('allows backlog for an actor the API accepts', () => {
@@ -219,8 +227,43 @@ describe('moves the board cannot complete are blocked, not hidden and not offere
     expect(moveVerdict(freshBacklogRow({ status: 'defined' }), 'backlog', 'ops').kind).toBe('ready')
   })
 
+  it('blocks backlog for a signed-in actor who is neither owner nor main/po/ops', () => {
+    // Measured: the same PATCH carrying transitioned_by: 'viewer' is 403
+    // "Only main/po/ops or the workspace owner can reset an issue to backlog."
+    const v = moveVerdict(freshBacklogRow({ status: 'defined' }), 'backlog', 'viewer')
+    expect(v.kind).toBe('blocked')
+    if (v.kind === 'blocked') expect(v.reason).toMatch(/main, po, ops/)
+  })
+
   it('blocks backlog when nobody is signed in, the way the server does', () => {
     expect(moveVerdict(freshBacklogRow({ status: 'defined' }), 'backlog', undefined).kind).toBe('blocked')
+  })
+
+  it('mirrors the server\'s KAOS_ROLES verbatim — fails loudly the moment the two drift', () => {
+    // This is the guard the fix asked for: `KAOS_ROLES` in route.ts is a local,
+    // unexported const (the request to export it, or move it beside
+    // OWNER_IDENTITY in lib/operator-identity.ts, is written up in
+    // moves-that-complete.md §4), so this predicate cannot IMPORT it and can
+    // only mirror it by hand. A silent mirror is exactly how the false
+    // "defined -> backlog is 403" comment survived a commit that fixed the
+    // server. This test reads route.ts's own source and fails if its list
+    // ever changes without this one changing too.
+    const routeSrc = fs.readFileSync(
+      path.join(process.cwd(), 'app/api/issues/route.ts'),
+      'utf8',
+    )
+    const match = routeSrc.match(/const KAOS_ROLES = (\[[^\]]*\])/)
+    expect(match).not.toBeNull()
+    const serverRoles: string[] = JSON.parse(match![1].replace(/'/g, '"'))
+    expect([...BACKLOG_RESET_ROLES]).toEqual(serverRoles)
+  })
+
+  it('allows backlog for a card carrying a sprint, for the owner', () => {
+    // The actor gate and the sprint CHECK are two separate refusals on the
+    // same destination — this only proves the actor half. The sprint half is
+    // proved by `moveBody` clearing it (see 'the body the sheet sends' below).
+    const v = moveVerdict(freshBacklogRow({ status: 'in_progress', sprint: '2026-08-26' }), 'backlog', OWNER)
+    expect(v.kind).toBe('ready')
   })
 
   it('blocks every destination on a closed card', () => {
@@ -256,10 +299,32 @@ describe('the body the sheet sends', () => {
       .toEqual({ id: 'row-1', status: 'in_progress', sprint: '2026-08-26' })
   })
 
-  it('never attaches a sprint to a move to backlog', () => {
+  it('never attaches a FORM-typed sprint value to a move to backlog', () => {
     // Measured: `{status:'backlog', sprint:'2026-08-26'}` is 500
     // "CHECK constraint failed: (NOT ((status = 'backlog') AND (sprint IS NOT NULL)))".
+    // The row here has no sprint of its own (freshBacklogRow's default), so
+    // there is nothing to clear either — this only proves a value sitting in
+    // `values` (there is no backlog form field that would put one there) can't
+    // leak into the body.
     const body = moveBody(freshBacklogRow({ status: 'defined' }), 'backlog', { sprint: '2026-08-26' })
+    expect(body).toEqual({ id: 'row-1', status: 'backlog' })
+    expect(body).not.toHaveProperty('sprint')
+  })
+
+  it('clears a sprint the row already carries when moving to backlog', () => {
+    // Measured 2026-08-26: an `in_progress` row with `sprint: '2026-08-26'`,
+    // bare `{id, status: 'backlog'}` as the owner, is 500 — the identical CHECK
+    // string above. The same request with `sprint: null` added is 200 and
+    // reads back `sprint: null`. `route.ts`'s backlog-reset handler resets
+    // `worked_by`/`started_at`/`submitted_at` unconditionally but not `sprint`
+    // unless told to, so the client has to say so.
+    const row = freshBacklogRow({ status: 'in_progress', sprint: '2026-08-26' })
+    expect(moveBody(row, 'backlog', {})).toEqual({ id: 'row-1', status: 'backlog', sprint: null })
+  })
+
+  it('does not add a sprint key when the row has none to clear', () => {
+    const row = freshBacklogRow({ status: 'defined', sprint: null })
+    const body = moveBody(row, 'backlog', {})
     expect(body).toEqual({ id: 'row-1', status: 'backlog' })
     expect(body).not.toHaveProperty('sprint')
   })
