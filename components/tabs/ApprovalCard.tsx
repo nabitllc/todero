@@ -227,6 +227,9 @@ export default function ApprovalCard({
   onDecide: (decision: Decision, responseData: unknown) => void
 }) {
   const d = describeApproval(entry)
+  const { project } = useProjectScope()
+  const lookup = useIssueExistence(entry, project)
+  const gate = approveGate(entry, lookup)
   const [reason, setReason] = useState('')
   const [showReason, setShowReason] = useState(false)
 
@@ -279,18 +282,35 @@ export default function ApprovalCard({
         </div>
       )}
 
+      {/* The server's own preflight, on this row, before any click. A refusal
+          is readable here instead of arriving as a 409 after the click. */}
+      {gate.reason && (
+        <p className="mb-3 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[11px] leading-snug text-white/55">
+          <span className="font-mono text-[10px] text-white/35">
+            {gate.block === 'UNVERIFIED' ? 'not yet verified' : `server would refuse: ${gate.block}`}
+          </span>
+          <br />
+          {gate.reason}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         {/* No approve button when approving would change nothing. The server
             refuses that case with a 422; rendering the button anyway would
-            just be an invitation to get refused. */}
-        {d.approveLabel && (
+            just be an invitation to get refused. Every OTHER refusal keeps the
+            button visible but dead, with the reason above it — see
+            approveGate(). `gate.label` is describeApproval()'s label, so the
+            words on an enabled button are unchanged. */}
+        {gate.label && (
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || !gate.enabled}
+            aria-disabled={busy || !gate.enabled}
+            title={gate.reason ?? undefined}
             onClick={() => onDecide('approved', reason.trim() ? { reason: reason.trim() } : undefined)}
-            className="px-3 py-1.5 text-[11px] font-medium rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-1.5 text-[11px] font-medium rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600/20 transition-colors"
           >
-            {d.approveLabel}
+            {gate.label}
           </button>
         )}
         {showReason ? (
