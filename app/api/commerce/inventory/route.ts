@@ -23,13 +23,20 @@
  *     * an unknown sku          — an adjustment cannot conjure a product
  *   A refused adjustment writes NOTHING: not the level, not the audit row.
  *
- * READ-MODIFY-WRITE, HONESTLY
- *   The adjustment reads the current level and writes `on_hand + delta`. On a
- *   single-operator storefront that is correct; under genuine concurrency two
- *   simultaneous adjustments could interleave. The floor under that is the
- *   `CHECK (on_hand >= 0)` in migration 064, which makes the worst case a
- *   refused write rather than negative stock. Saying so here rather than
- *   claiming an atomicity this does not have.
+ * ATOMIC UNDER CONCURRENCY (TOD-2449)
+ *   This used to read the current level and write `on_hand + delta` as two
+ *   separate statements — correct for one operator, and PROVEN wrong under
+ *   real concurrency: 20 concurrent `delta: -1` requests against a SKU seeded
+ *   to 999 all answered 200, and the SKU read back 980, not 979. One decrement
+ *   was lost with no error anywhere in the 20 responses.
+ *
+ *   The handler below is compare-and-swap: the write's WHERE clause pins
+ *   `on_hand` to the exact value just read, in the same statement as the
+ *   write, so a write only lands if nothing else changed the row first. A
+ *   lost race is detected (the WHERE matches zero rows) and retried against a
+ *   fresh read, bounded at 8 attempts, rather than silently overwritten. See
+ *   docs/rebuild/pieces/pieces7/commerce-hardening.md for the concurrency
+ *   test and the before/after numbers.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -82,7 +89,7 @@ function isBelowReorder(row: LevelRow): boolean {
 }
 
 export const GET = withPermission(
-  'projects:read',
+  'commerce:read',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate
@@ -181,7 +188,7 @@ export const GET = withPermission(
 )
 
 export const PATCH = withPermission(
-  'projects:write',
+  'commerce:write',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate
@@ -215,43 +222,95 @@ export const PATCH = withPermission(
     }
     const { sku, location, delta, reason } = adjustment.value
 
-    const { data: level, error: readError } = await db()
-      .from('inventory_levels')
-      .select('*')
-      .eq('project', project)
-      .eq('sku', sku)
-      .eq('location', location)
-      .maybeSingle<LevelRow>()
-    if (readError) return dbQueryErrorResponse(readError, 'inventory_levels')
+    // ATOMIC ADJUST, PROVEN UNDER CONCURRENCY (TOD-2449).
+    //
+    // The comment this replaced said "read-modify-write, honestly" and pointed
+    // at the CHECK (on_hand >= 0) as the floor under a lost update. Measured
+    // against the running server: seed one SKU to 999, fire 20 concurrent
+    // `delta: -1` PATCHes at it. All 20 answered 200. Final on_hand read back
+    // 980, not 979 — one decrement vanished, silently, with no error anywhere
+    // in the 20 responses. That is the defect this replaces, not a theoretical
+    // one.
+    //
+    // THE FIX is compare-and-swap, not a bigger lock: the UPDATE's WHERE clause
+    // pins `on_hand` to the exact value just read, in the SAME statement as the
+    // write (`UPDATE ... WHERE on_hand = <value just read> RETURNING *`). If
+    // another writer changed the row first, this WHERE matches zero rows and
+    // `RETURNING *` comes back empty — that is the signal, not an error — so
+    // the loop re-reads the now-current value and tries again. Two writers can
+    // race the read, but only one can ever win a given write, because the
+    // write and the check-that-nothing-moved are one statement, not two.
+    //
+    // No new adapter method, no raw SQL, no transaction isolation level to get
+    // wrong: this is the same `.update().eq()` chain every other route in this
+    // file already uses, with one more `.eq('on_hand', …)` added to it.
+    const MAX_ATTEMPTS = 8
+    let level: LevelRow | null = null
+    let nextOnHand: number | null = null
+    const now = new Date().toISOString()
 
-    if (!level) {
-      // An adjustment cannot conjure a product. 404 rather than creating the
-      // row, and 404 rather than 403 so a scoped caller cannot use this
-      // endpoint to discover which SKUs exist in another storefront.
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const { data: current, error: readError } = await db()
+        .from('inventory_levels')
+        .select('*')
+        .eq('project', project)
+        .eq('sku', sku)
+        .eq('location', location)
+        .maybeSingle<LevelRow>()
+      if (readError) return dbQueryErrorResponse(readError, 'inventory_levels')
+
+      if (!current) {
+        // An adjustment cannot conjure a product. 404 rather than creating the
+        // row, and 404 rather than 403 so a scoped caller cannot use this
+        // endpoint to discover which SKUs exist in another storefront.
+        return NextResponse.json(
+          {
+            error: 'not_found',
+            message:
+              `${project} has no stock record for sku "${sku}" at location "${location}". ` +
+              `Create the product first — an adjustment records a change to something that exists.`,
+          },
+          { status: 404 },
+        )
+      }
+
+      const attemptNext = applyAdjustment(current.on_hand, delta)
+      if (!attemptNext.ok) {
+        return NextResponse.json({ error: 'below_zero', message: attemptNext.why }, { status: 422 })
+      }
+
+      const { data: written, error: writeError } = await db()
+        .from('inventory_levels')
+        .update({ on_hand: attemptNext.value, updated_at: now })
+        .eq('project', project)
+        .eq('sku', sku)
+        .eq('location', location)
+        .eq('on_hand', current.on_hand)
+        .select('*')
+      if (writeError) return dbQueryErrorResponse(writeError, 'inventory_levels')
+
+      if (((written ?? []) as unknown[]).length > 0) {
+        level = current
+        nextOnHand = attemptNext.value
+        break
+      }
+      // The WHERE matched nothing: another write landed between our read and
+      // our write. Loop and re-read the now-current value — never apply this
+      // attempt's delta on top of a value we know is stale.
+    }
+
+    if (level === null || nextOnHand === null) {
       return NextResponse.json(
         {
-          error: 'not_found',
+          error: 'conflict',
           message:
-            `${project} has no stock record for sku "${sku}" at location "${location}". ` +
-            `Create the product first — an adjustment records a change to something that exists.`,
+            `too many concurrent writers to "${sku}" at "${location}" — the adjustment did not land ` +
+            `after ${MAX_ATTEMPTS} attempts. Nothing was changed; retry the adjustment.`,
         },
-        { status: 404 },
+        { status: 409 },
       )
     }
-
-    const next = applyAdjustment(level.on_hand, delta)
-    if (!next.ok) {
-      return NextResponse.json({ error: 'below_zero', message: next.why }, { status: 422 })
-    }
-
-    const now = new Date().toISOString()
-    const { error: writeError } = await db()
-      .from('inventory_levels')
-      .update({ on_hand: next.value, updated_at: now })
-      .eq('project', project)
-      .eq('sku', sku)
-      .eq('location', location)
-    if (writeError) return dbQueryErrorResponse(writeError, 'inventory_levels')
+    const next = { ok: true as const, value: nextOnHand }
 
     // The audit row is written only AFTER the level actually changed. An audit
     // trail that records intentions rather than effects is worse than none.

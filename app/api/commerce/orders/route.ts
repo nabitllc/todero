@@ -90,7 +90,7 @@ function present(row: OrderRow) {
 }
 
 export const GET = withPermission(
-  'projects:read',
+  'commerce:read',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate
@@ -183,7 +183,7 @@ export const GET = withPermission(
 )
 
 export const POST = withPermission(
-  'projects:write',
+  'commerce:write',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate
@@ -270,7 +270,7 @@ export const POST = withPermission(
 )
 
 export const PATCH = withPermission(
-  'projects:write',
+  'commerce:write',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate

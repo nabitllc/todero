@@ -24,12 +24,18 @@
  *   would otherwise create a product priced 0 while the caller believed they
  *   had set a price. Every refusal below writes nothing.
  *
- * PERMISSIONS
- *   Reads take `projects:read` and writes take `projects:write` — the existing
- *   permission pair whose scope is "this project's own records". A dedicated
- *   `commerce:*` pair would be better, but lib/rbac-types.ts is outside this
- *   piece's ownership and inventing a permission there is a change to the
- *   authorisation model, not a commerce change.
+ * PERMISSIONS (TOD-2449)
+ *   Reads take `commerce:read` and writes take `commerce:write` — a
+ *   dedicated pair, not borrowed from `projects:*`. It used to be borrowed,
+ *   and the reasoning against that is worth keeping: `projects:read`/`write`
+ *   answers "can this caller touch this project's records at all", and every
+ *   role that could read or write a project's issues could therefore read or
+ *   write its storefront too, with no way to grant one without the other.
+ *   `lib/rbac-types.ts:ROLE_PERMISSIONS` now grants `commerce:read` /
+ *   `commerce:write` to the same roles that held `projects:read` /
+ *   `projects:write` (additive — no role's effective access changed), so this
+ *   is the seam a future role split (e.g. a bookkeeper who reads commerce but
+ *   not issues) hangs off, not yet a behaviour change.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -80,7 +86,7 @@ function present(row: ProductRow) {
 }
 
 export const GET = withPermission(
-  'projects:read',
+  'commerce:read',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate
@@ -128,7 +134,7 @@ export const GET = withPermission(
 )
 
 export const POST = withPermission(
-  'projects:write',
+  'commerce:write',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate
@@ -235,7 +241,7 @@ export const POST = withPermission(
 )
 
 export const PATCH = withPermission(
-  'projects:write',
+  'commerce:write',
   async (req: NextRequest): Promise<NextResponse> => {
     const gate = dbUnavailableResponse()
     if (gate) return gate

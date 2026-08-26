@@ -20,6 +20,8 @@ export type Permission =
   | 'projects:read'
   | 'projects:write'
   | 'projects:admin'
+  | 'commerce:read'
+  | 'commerce:write'
   | 'settings:read'
   | 'settings:write'
   | 'calendar:read'
@@ -57,6 +59,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sprints:read', 'sprints:write', 'sprints:admin',
     'agents:read', 'agents:write', 'agents:spawn', 'agents:admin',
     'projects:read', 'projects:write', 'projects:admin',
+    'commerce:read', 'commerce:write',
     'settings:read', 'settings:write',
     'calendar:read', 'calendar:write',
     'memory:read', 'memory:write',
@@ -68,6 +71,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sprints:read', 'sprints:write',
     'agents:read', 'agents:write', 'agents:spawn',
     'projects:read', 'projects:write',
+    'commerce:read', 'commerce:write',
     'settings:read',
     'calendar:read', 'calendar:write',
     'memory:read', 'memory:write',
@@ -79,6 +83,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sprints:read', 'sprints:write', 'sprints:admin',
     'agents:read', 'agents:write', 'agents:spawn', 'agents:admin',
     'projects:read', 'projects:write', 'projects:admin',
+    'commerce:read', 'commerce:write',
     'settings:read', 'settings:write',
     'calendar:read', 'calendar:write',
     'memory:read', 'memory:write',
@@ -90,6 +95,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sprints:read', 'sprints:write',
     'agents:read', 'agents:write', 'agents:spawn',
     'projects:read', 'projects:write',
+    'commerce:read', 'commerce:write',
     'settings:read', 'settings:write',
     'calendar:read', 'calendar:write',
     'memory:read', 'memory:write',
@@ -100,6 +106,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sprints:read',
     'agents:read',
     'projects:read',
+    'commerce:read',
     'settings:read',
     'calendar:read',
     'memory:read',
@@ -110,6 +117,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sprints:read',
     'agents:read', 'agents:spawn',
     'projects:read',
+    'commerce:read',
     'calendar:read',
     'memory:read', 'memory:write',
   ],
@@ -118,6 +126,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'sprints:read',
     'agents:read',
     'projects:read',
+    'commerce:read',
     'memory:read',
   ],
 } as const

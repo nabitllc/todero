@@ -110,21 +110,26 @@ export function useAgentStatus({
   addFeed, setBoardTasks,
 }: UseAgentStatusOptions) {
   // ── Board task polling ──
+  // TOD (agent-visualization-fidelity): this used to fetch('/api/tasks') on
+  // its own 30s interval, independent of OfficeCanvas.tsx's near-identical
+  // 60s poll of the same question ("what is each agent working on right
+  // now?") into the SAME `boardTasksRef`. The route never existed, so both
+  // intervals 404'd forever; fixing the URL here too would have just made it
+  // two real, redundant reads of the same `issues` query instead — doubling
+  // live Supabase egress for no new data, the exact cost this file's sibling
+  // poll already raises its own interval to avoid (see its "raised 30s→60s
+  // (Supabase egress)" comment).
+  //
+  // OfficeCanvas.tsx owns the one real fetch now (`/api/issues?status=
+  // in_progress`) and writes it into `boardTasksRef`, which is the SAME ref
+  // object this hook receives as a prop. This effect no longer talks to the
+  // network at all — it only mirrors that ref into the `boardTasks` REACT
+  // STATE, which is what OfficeSidebar actually renders (OfficeCanvas reads
+  // the ref directly and never sees this state).
   useEffect(() => {
-    const fetchTasks = async () => {
-      try {
-        const res = await fetch('/api/tasks');
-        const data = await res.json();
-        if (!Array.isArray(data)) return;
-        const map: Record<string, string> = {};
-        data.filter((t: any) => t.status === 'in_progress' && t.assignee && t.title)
-          .forEach((t: any) => { map[t.assignee] = t.title; });
-        boardTasksRef.current = map;
-        setBoardTasks({ ...map });
-      } catch (e) { }
-    };
-    fetchTasks();
-    const t = setInterval(fetchTasks, 30000);
+    const sync = () => setBoardTasks({ ...boardTasksRef.current });
+    sync();
+    const t = setInterval(sync, 5000);
     return () => clearInterval(t);
   }, [boardTasksRef, setBoardTasks]);
 

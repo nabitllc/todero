@@ -160,13 +160,22 @@ export default function OfficeCanvas(props: OfficeCanvasProps) {
   },[]);
 
   // ── Board task polling ─────────────────────────────────────────────────────
+  // TOD (agent-visualization-fidelity): this used to call '/api/tasks', a
+  // route that has never existed in this app (no `tasks` table either) — every
+  // poll 404'd, on TWO independent intervals (this one and the identical query
+  // in useAgentStatus.ts), forever. There is no separate "tasks" concept here:
+  // "what is this agent working on" IS an issue with status=in_progress and an
+  // assignee, which already lives on the `issues` table `/api/issues` reads.
+  // The Office is a fleet-wide (cross-project) surface — middleware.ts already
+  // stamps `x-mc-all-projects` for it — so this asks across every project on
+  // purpose, the same way every other fleet/* read does.
   useEffect(()=>{
     const fetchTasks=async()=>{
       try{
-        const r=await fetchJson<any[]>('/api/tasks');
+        const r=await fetchJson<{ data: any[] }>('/api/issues?status=in_progress&limit=0');
         if(!r.ok){ setPollError('tasks', r.error); return; }
         setPollError('tasks', null);
-        const data=r.data;
+        const data=r.data?.data;
         if(!Array.isArray(data)) return;
         const map:Record<string,string>={};
         data.filter((t:any)=>t.status==='in_progress'&&t.assignee&&t.title)
