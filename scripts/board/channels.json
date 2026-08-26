@@ -49,18 +49,18 @@
     {
       "name": "Data Layer & Schema Management",
       "baseline": 0.5,
-      "current": 3,
+      "current": 6,
       "goal": 9,
-      "evidence": "The author’s Supabase project ref is no longer a compile-time constant anywhere. But three tables still do not exist, three routes still 500, there is still no migration runner, and five migration prefixes still collide.",
+      "evidence": "agent_memory had the DAILY NOTES shape while fourteen call sites in fourteen files wrote key/value — my brief said seven. Not one reads it as daily notes; every daily-notes reader already targets agent_memory_files, so reshaping made 14 true and 0 false. Settings -> Infra 502 is now 200. The health check was unsound BOTH ways: it probed existence with select(id) while four healthy tables have no id column, and it never probed shape at all, which is why it stayed green while two features were broken. Existence and shape are now distinguished and proven in both directions.",
       "goal_text": "builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.",
       "wave": 4
     },
     {
       "name": "Observability & Honest Reporting",
       "baseline": 1,
-      "current": 6,
+      "current": 7,
       "goal": 9,
-      "evidence": "Every card now prints the query behind its number, and a smoothing pass confirmed nearly all of them trace. Three guards were each proven to FAIL when they should this wave, which none of them could do before. Held back and RED: scripts/no-invented-projects.mjs exits 1 with 46 references across 7 files no builder owned — including the PROJECT_EMOJI table at app/api/issues/route.ts:147 that HANDOFF records as having already survived two sweeps, now a third. Kemuni SME and Vespera SME render as live roster rows.",
+      "evidence": "scripts/no-invented-projects.mjs now exits 0. It exited 1 with 46 references across seven unowned files, and Kemuni SME and Vespera SME rendered as live Fleet roster rows. The PROJECT_EMOJI table HANDOFF records as surviving two sweeps survived a third because it was DEAD CODE — nothing read it, so every sweep asking 'what breaks if this goes' correctly answered 'nothing' and moved on. Only a declaration scanner found it. Three fabrications three critics named are fixed, each with a test proven to fail against the old behaviour (4 of 31, 4 of 51, 5 of 7). Held back: roughly thirty duration formatters remain outside the ones collapsed, and app/page.tsx still reads a timestamp with no provenance.",
       "goal_text": "Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.",
       "wave": null
     },
@@ -76,18 +76,18 @@
     {
       "name": "Agent Fleet Operations",
       "baseline": 0.5,
-      "current": 5,
+      "current": 7,
       "goal": 9,
-      "evidence": "Liveness now distinguishes FOUR states where the roster collapsed everything to one — live, offline, never, and unknown for a store that could not be read. Verified on screen simultaneously: 30 registered, 2 live, 1 offline, 27 never checked in, each row carrying its own timestamp and the 10-minute window that classified it. The Run control renders disabled with the dispatch reason; instrumenting window.fetch and clicking three times sent zero requests. The test file is the first in this rebuild to survive a revert check — reverting the classifier fails 11 of 25. Held back: registered_at is laundered into 'heartbeat N ago', so a self-registered row with an empty heartbeat store still reports a hook event, and never is unreachable for it.",
+      "evidence": "Liveness carries PROVENANCE now, not just a value. A registration with no check-in inherited its creation time as lastSeenAt and Fleet worded it as a hook event — measured with the heartbeat store readable and empty: 'last event 4m ago' over zero events. AgentDto now carries lastSeenSource, each builder sets it from the branch it took, and the classifier returns never for any non-heartbeat source — the same refusal it already made for an unread store. CrewTab fails CLOSED when the field is missing, and /api/connect stops discarding the heartbeat write warning. Four states, all reachable, all sourced.",
       "goal_text": "builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.",
       "wave": 4
     },
     {
       "name": "Run Safety & Enforcement",
       "baseline": 0,
-      "current": 4,
+      "current": 6,
       "goal": 9,
-      "evidence": "Migration 060 adds run_steps and the trace drills from a cost number to the step that caused it. Nullability is load-bearing and mutation-proven, 5 for 5: a null cost renders no dollar column at all rather than a fabricated /usr/bin/bash.00, and a recorded 0 does render. Percentages use largest-remainder and sum to exactly 100. Ceilings come from lib/agent-budget.ts and say when they are defaults rather than configured. Held back hard: NOTHING writes run_steps in production — lib/claude-code.ts never calls it, so the shipped database has zero rows and every user sees the empty state. runTouchedPaidProvider reads cost_usd and never provider, so a step recording provider anthropic with a null cost renders a sentence that is false against its own row.",
+      "evidence": "runTouchedPaidProvider read cost_usd and never provider, while the screen printed the design rule verbatim — false against a step whose own row said anthropic. It reads provider now, and the word 'paid' left BOTH the code and the screen, because run_steps records WHICH provider and never whether it charges: calling one paid would have replaced one fabrication with another. Two more lies in the same panel are gone — a dollar total divided by steps that recorded no dollars, and a cost-bearing group vanishing from the bars while its dollars stayed in the total. Held back: nothing writes run_steps in production, so the shipped surface is still empty.",
       "goal_text": "Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.",
       "wave": 4
     },
@@ -112,9 +112,9 @@
     {
       "name": "Approval & Human-in-the-loop",
       "baseline": 0,
-      "current": 6,
+      "current": 7,
       "goal": 9,
-      "evidence": "Judged 7/10 by a critic who verified all 27 acceptance items and proved four fail-closed gates by MUTATION — deleting each one turns a test red, 4 for 4. Approving a request whose target issue is gone answers 409 TARGET_MISSING and leaves the row pending, because approving would report success while changing nothing. Refusals are recorded as first-class audit rows, and a FAILED effect is recorded as failed rather than applied. Held back: two of four cards still offer an Approve button the server refuses with 409 — describeApproval ignores its own module preflight; decided_by is the client-side literal 'michael' while mc-auth exists and is not consulted; and requestApproval() has zero callers, so approving is a repair action, not a gate anything waits on.",
+      "evidence": "Every refusal path now reaches the operator. ApprovalCard claimed a label could not promise an effect the server would refuse; the check it cited compares type-key sets only, and two of four live cards offered a button the server answers 409 to. approveGate runs the route own preflightDecision and shows the server reason VERBATIM for every code, disabled rather than absent. The audit trail records refusals and failed effects as failed. Held back: decided_by is still a client-side literal while mc-auth exists, and requestApproval() has no callers, so approving repairs rather than gates.",
       "goal_text": "Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.",
       "wave": 4
     },
