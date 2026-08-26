@@ -88,9 +88,24 @@ if (health.status === 0 || health.status === 404) {
 const SCOPED_PROJECT = 'Limiglow'
 const PROBE_KEY_PREFIX = 'SCOPEPROBE'
 
-async function findLiveForeign() {
+/**
+ * @param {string} [bust] a unique value when this must NOT be answered from cache.
+ *
+ * TOD-2482: this function is called twice — once before creating a probe row and
+ * once after — with what used to be a BYTE-IDENTICAL url and headers. The route
+ * caches issues reads for 30s keyed on `url.search` plus the scope headers, so
+ * the second call was answered with the FIRST call's empty body, `foreign`
+ * stayed null, and the guard skipped. Intermittently: only when the cache had
+ * expired in between did it work.
+ *
+ * The guard was racing the cache of the route it is testing, and the symptom was
+ * a guard that passed or failed depending on timing. Measured: with the leak
+ * deliberately restored, two consecutive runs gave exit 1 and exit 1; with it
+ * reverted, exit 0 and exit 1.
+ */
+async function findLiveForeign(bust) {
   // Deliberately WITHOUT include_archived: this must be a row the probes can see.
-  const inv = await req('/api/issues?limit=0&all_projects=1')
+  const inv = await req(`/api/issues?limit=0&all_projects=1${bust ? `&_probe=${bust}` : ''}`)
   try {
     const j = JSON.parse(inv.body)
     const rows = j?.data ?? j
@@ -126,7 +141,9 @@ if (!foreign) {
     }),
   })
   if (created.status >= 200 && created.status < 300) {
-    foreign = await findLiveForeign()
+    // Cache-busted: the identical query was issued moments ago and its empty
+    // answer is still cached for 30s.
+    foreign = await findLiveForeign(key)
     if (foreign) createdProbe = foreign
   }
 }
@@ -150,7 +167,13 @@ async function cleanupProbe() {
 const leaks = (body) => body.includes(foreign.project) || (foreign.task_key && body.includes(foreign.task_key))
 
 const failures = []
+// TOD-2482: counted, not hardcoded. The verdict line used to print the literal
+// `${8 + 2}`, so it would have gone on claiming "10 live probes" the moment a
+// probe was added or removed — a guard misreporting its own coverage, which is
+// the class this whole script exists to catch, one level up.
+let checksRun = 0
 const check = (name, ok, detail) => {
+  checksRun++
   if (!ok) failures.push({ name, detail })
 }
 
@@ -174,6 +197,96 @@ const check = (name, ok, detail) => {
 {
   const r = await req('/api/db/issues?select=id,task_key,project&limit=200', { referer: FLEET_REFERER })
   check('db proxy, fleet destination', !leaks(r.body), `status ${r.status} :: ${r.body.slice(0, 160)}`)
+}
+
+// ── 2b. the task_key lookup — the one door none of the ten probes opened ────
+//
+// TOD-2482. Reported by the owner. The leak itself had been closed hours earlier
+// at TOD-2480, but the report was right about the GUARD: every probe above is a
+// LIST read or a db-proxy read, and not one requests a `task_key`. So the
+// highest-privilege read path on the route — the branch that uses the ADMIN
+// client, selects `*`, and applies NO archive filter — had zero coverage while
+// this script printed "scope holds under 10 live probes".
+//
+// The sharpest version of the miss is four lines above. Section 2's own comment
+// names the exact symptom — "SearchOverlay is mounted on every screen, so Cmd-K
+// on Fleet used to return another project's backlog" — and then probes only the
+// db proxy. Cmd-K's identifier leg does not go there; SearchOverlay.tsx sends it
+// to `/api/issues?task_key=`. The guard tested the route in the rationale's
+// REBUTTAL and not the route in the rationale's SYMPTOM.
+//
+// ─── WHY THESE PROBES PROVE THEIR OWN FIXTURE FIRST ────────────────────────
+// The first draft of this section asserted the refusals directly and every one
+// of them "passed or failed" against a key that no longer existed. The route
+// returns 404 for a MISSING row (route.ts:913) BEFORE it consults scope at all,
+// so `404 not-found` is byte-identical to `404 refused`. A probe that cannot
+// tell those apart reports on nothing — which is the exact defect class this
+// script exists to catch, one level up, inside the catcher.
+//
+// So: FIXTURE first, by a route that does not depend on slug round-tripping.
+// If the fixture cannot be resolved the probes SKIP LOUDLY and say the fixture
+// is the reason. That is not a pass and it does not pretend to be one.
+{
+  const key = foreign.task_key
+  const proj = foreign.project
+  // Establishes scope by an explicit param rather than a referer, so this does
+  // not also depend on middleware's title-case slug codec round-tripping.
+  const alive = await req(
+    `/api/issues?task_key=${encodeURIComponent(key)}&project=${encodeURIComponent(proj)}`,
+  )
+  const fixtureOk = alive.status === 200 && alive.body.includes(key)
+
+  if (!fixtureOk) {
+    // NOT a skip. A skip exits 0, and exiting 0 over a boundary this script did
+    // not test is the precise failure it exists to prevent — the verdict line
+    // below would go on claiming "scope holds under N live probes" while N of
+    // them never ran. Caught in the act: an earlier draft skipped here, and a
+    // run with the leak deliberately restored exited 0.
+    check(
+      'task_key FIXTURE could not be established — refusal probes did not run',
+      false,
+      `task_key=${key} did not resolve from its own project "${proj}" — status ${alive.status}. ` +
+        `This route answers 404 for a missing row BEFORE it checks scope (route.ts:913), so a ` +
+        `refusal and a not-found are byte-identical and these probes cannot report on anything. ` +
+        `Fix the fixture, not the boundary.`,
+    )
+  } else {
+    check('task_key fixture resolves from its own project', true, '')
+
+    // The leak, as reported: a cross-project destination resolves no scope, and
+    // this branch used to return the FULL row for any key.
+    {
+      const r = await req(`/api/issues?task_key=${encodeURIComponent(key)}`, { referer: FLEET_REFERER })
+      check(
+        'task_key, fleet destination, refuses',
+        r.status === 404 && !r.body.includes(proj),
+        `status ${r.status} :: ${r.body.slice(0, 160)}`,
+      )
+    }
+    // No referer at all. The LIST read on this same route refuses here, and so
+    // does the db proxy — this branch was the one issues read that fell OPEN
+    // where every neighbour failed closed.
+    {
+      const r = await req(`/api/issues?task_key=${encodeURIComponent(key)}`)
+      check(
+        'task_key, no referer, refuses',
+        r.status === 400 && !r.body.includes(proj),
+        `status ${r.status} :: ${r.body.slice(0, 160)}`,
+      )
+    }
+    // A cross-project destination may name exactly ONE project: its own.
+    {
+      const r = await req(
+        `/api/issues?task_key=${encodeURIComponent(key)}&project=${encodeURIComponent(proj)}`,
+        { referer: FLEET_REFERER },
+      )
+      check(
+        'task_key + foreign project from fleet, refuses',
+        r.status === 400 && !r.body.includes(`"project":"${proj}"`),
+        `status ${r.status} :: ${r.body.slice(0, 160)}`,
+      )
+    }
+  }
 }
 
 // ── 3. an unresolvable scope must REFUSE, not widen ─────────────────────────
@@ -257,7 +370,7 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log(`PASS: scope holds under ${8 + 2} live probes (scoped reads, cross-project destination,`)
+console.log(`PASS: scope holds under ${checksRun} live probes (scoped reads, cross-project destination,`)
 console.log(`      refusal without scope, forged headers, filter override, write path,`)
 console.log(`      explicit in-scope filter from a cross-project destination — both directions).`)
 console.log(`      Probe row: ${foreign.task_key ?? foreign.id} in "${foreign.project}".`)
