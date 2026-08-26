@@ -194,12 +194,12 @@
       "n": 6,
       "name": "Operator surface",
       "chip": "in flight",
-      "when": "25 Aug · 16:05 → running (6 rounds)",
+      "when": "25 Aug · 16:05 → 26 Aug · 04:00 (fan-out wave)",
       "minutes": 190,
-      "agents": 6,
+      "agents": 18,
       "tokens": 0,
       "cost": 0,
-      "lede": "Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder’s summary. Six rounds: <b>4 → 5 → 6 → 6 → 6</b>. The no-progress halt has fired. The score is flat while the findings get <i>deeper</i> — see the note below — so the halt is reading a signal that cannot move while five of six destinations are still undesigned.",
+      "lede": "Michael: “Fan out sub-agents, one per piece… For every piece, a separate sub-agent with fresh context inspects the actual code, never the builder’s summary.” The orchestrator had been building SERIALLY for six rounds and was the bottleneck. This wave ran <b>seven builders concurrently</b> on disjoint channels, then four judges. Channel average <b>2.42 → 4.26</b>. Still <b>0 of 19 cleared</b>.",
       "before": [
         "Twenty nav entries plus a divider, appended one at a time — never designed",
         "<code>projectFilter={selectedBusiness}</code> — every tab's “project filter” was the <b>business</b>, so selecting one project selected everything",
@@ -217,7 +217,14 @@
         "The card contract is real and verified: <code>components/nav/Card.tsx</code> carries metric, <b>source provenance</b>, optional action, and id-keyed collapse that survives reload",
         "Round 5 put every bolt-time decision in one module and killed three defects: an expired row won the soonest-remaining reduce (headline read <b>“ended left”</b> while a live bolt had 8h58m), the <code>24h</code> badge was a literal stamped on rows with no window, and date-only boundaries parsed as <b>UTC</b> — so at UTC-4 every bolt read “ended” four hours early",
         "Round 6: the critic broke round 5 in round 5’s own shape. The READER was fixed and a comment asserted the WRITER agreed; it did not. <code>sprint-start</code> stamped the UTC date, so after 8pm it wrote <b>tomorrow</b> as the start and the screen showed <code>24h</code> above <b>“26h 26m left”</b> at 0% elapsed. One stamp now matches one parser, with a round-trip test that fails against the old writer",
-        "Measured limit of the loop: three consecutive rounds scored <b>6</b> while each critic broke something a layer deeper than the last. A wave score cannot move while 5 of 6 destinations are untouched, so it is the wrong progress signal for a per-piece halt — the Wave 3 halt bug in a new form"
+        "Measured limit of the loop: three consecutive rounds scored <b>6</b> while each critic broke something a layer deeper than the last. A wave score cannot move while 5 of 6 destinations are untouched, so it is the wrong progress signal for a per-piece halt — the Wave 3 halt bug in a new form",
+        "<b>Seven builders, seven honest failure reports.</b> Every one named something it could not do honestly, unprompted — a wrong artboard, an unsourceable number, a boundary it would not cross. That property is worth more than the code",
+        "A live Discord bot token was removed from source in both copies — and it was <b>already dead</b>: a builder posted it to Discord and got <code>401</code>, so every notification had been failing silently behind a swallowed <code>.catch()</code>",
+        "A critic found <code>credential_env_var</code> was an <b>arbitrary environment-variable read oracle</b> — a <code>viewer</code> could read six characters of any secret in the process, and <code>/test</code> then sent the full value to discord.com. Now scoped to the provider’s declared variable",
+        "<code>GET /api/issues?task_key=</code> returned the full row for <b>any</b> key when no scope resolved — session cookie plus curl enumerated every project — while the LIST path refused that identical caller. One route, two opposite answers",
+        "The smoothing pass measured <b>nine independent duration formatters</b> producing six spellings of one duration, while <code>lib/time.ts</code>, whose header declares it the single source of truth, has <b>zero importers</b>",
+        "It also found five of six Settings views <b>unlinkable</b> — including the credential card added hours earlier, sitting at the one URL that could not be reloaded",
+        "Three guards were each proven to FAIL when they should, which none could do before. <code>no-unscoped-issues</code> could not fail at all: it picked an ARCHIVED probe row, so the archive clause hid it before the scope clause ever ran"
       ]
     }
   ],

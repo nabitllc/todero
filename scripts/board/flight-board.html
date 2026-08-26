@@ -142,7 +142,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Wave</span><span class="v">3</span></div>
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">8.7 → 6.2 → 9.3 → 10</span></div>
-  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 2.7 (goal 8.9)</span></div>
+  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 4.3 (goal 8.9)</span></div>
   <div class="kv"><span class="k">Spent</span><span class="v mono">32.67M tok · ~$149</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
@@ -180,6 +180,42 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Linear's issue list — server-side paging with an exact total, so no screen ever shows a number computed from a truncated slice.</div>
       </div>
       <div class="card">
+        <div class="head"><span class="cname">Observability &amp; Honest Reporting</span><span class="chip moving">in progress</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">6.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+5.0]</b> Every card now prints the query behind its number, and a smoothing pass confirmed nearly all of them trace. Three guards were each proven to FAIL when they should this wave, which none of them could do before. Held back and RED: scripts/no-invented-projects.mjs exits 1 with 46 references across 7 files no builder owned — including the PROJECT_EMOJI table at app/api/issues/route.ts:147 that HANDOFF records as having already survived two sweeps, now a third. Kemuni SME and Vespera SME render as live roster rows.</div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Navigation &amp; Deep Linking</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">5.0<i>/8</i></span>
+        </div>
+        <div class="gap"><b>[+4.0]</b> Six destinations, path-based URLs, and renamed views resolve through LEGACY_VIEW_MAP so an old bookmark lands where it meant to rather than on the destination default. A smoothing pass then found five of six Settings views unlinkable — parseURL tested LEGACY_TAB_MAP before isDestinationId, and that branch discards the view segment — which meant the Connections card holding credential custody sat at the one URL that could not be reloaded. Fixed and verified through a reload. Held back: the palette cannot open an issue because no issue route exists.</div>
+        <div class="goal"><span class="glab">Goal</span> Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Approval &amp; Human-in-the-loop</span><span class="chip building">wave 4</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">6.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+6.0]</b> Judged 7/10 by a critic who verified all 27 acceptance items and proved four fail-closed gates by MUTATION — deleting each one turns a test red, 4 for 4. Approving a request whose target issue is gone answers 409 TARGET_MISSING and leaves the row pending, because approving would report success while changing nothing. Refusals are recorded as first-class audit rows, and a FAILED effect is recorded as failed rather than applied. Held back: two of four cards still offer an Approve button the server refuses with 409 — describeApproval ignores its own module preflight; decided_by is the client-side literal 'michael' while mc-auth exists and is not consulted; and requestApproval() has zero callers, so approving is a repair action, not a gate anything waits on.</div>
+        <div class="goal"><span class="glab">Goal</span> Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Search &amp; Findability</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">5.0<i>/8</i></span>
+        </div>
+        <div class="gap"><b>[+4.0]</b> A command palette resolving destinations, views and issues, derived from components/nav/config.ts rather than a second hardcoded list — its round-trip test verifies a token resolves back to its own destination and view AT RUNTIME, so a renamed view cannot silently land on the destination default. The sprint-to-bolt rename is pinned by test. A foreign task_key does not leak: from a Limiglow page TOD-1 renders 'not found in Limiglow' with no trace of the other project in the DOM. No new API surface was added, on the grounds that a second issues-reading endpoint is a second place the boundary must be re-derived. Held back: Enter lands on Work then List rather than the issue, because no issue route exists, and the palette carries no verbs.</div>
+        <div class="goal"><span class="glab">Goal</span> Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list.</div>
+      </div>
+      <div class="card">
         <div class="head"><span class="cname">Portability &amp; Host Independence</span><span class="chip moving">in progress</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
@@ -198,13 +234,13 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Observability &amp; Honest Reporting</span><span class="chip moving">in progress</span></div>
+        <div class="head"><span class="cname">Agent Visualization Fidelity</span><span class="chip building">wave 6</span></div>
         <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
+          <div class="bar"><div class="ghost" style="width:30%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">5.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+4.0]</b> scripts/no-unscoped-issues.mjs is now proven in BOTH directions: PASS against the correct server, FAIL exit 1 against one with project narrowing removed. It previously could not fail at all — it selected its probe row with include_archived=1 and then probed without it, so the archive clause hid the row before the scope clause was ever exercised, and it printed PASS against a server with scoping disabled. Held back because the acceptance harness still carries ZERO bolt/time checks, so 45/45 is a nothing-else-broke signal rather than evidence for the work of the last four rounds.</div>
-        <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
+        <div class="gap"><b>[+2.0]</b> The Office states '0 of 30 agents report a workspace folder — the positions on the floor below are decorative', computed from the field so the wording self-corrects if agents ever report one. That is the honest version of a surface that previously implied position meant something. Held back: GET /api/tasks 404s on every poll from two independent pollers, 30s and 60s, and the roster still lists Kemuni SME and Vespera SME — agents for projects that do not exist.</div>
+        <div class="goal"><span class="glab">Goal</span> pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Work Management UI</span><span class="chip building">wave 6</span></div>
@@ -216,13 +252,40 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Agent Visualization Fidelity</span><span class="chip building">wave 6</span></div>
+        <div class="head"><span class="cname">Agent Fleet Operations</span><span class="chip building">wave 4</span></div>
         <div class="meter">
-          <div class="bar"><div class="ghost" style="width:30%"></div><div class="fill" style="width:40%"></div><div class="pin" style="left:90%"></div></div>
+          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">5.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+4.5]</b> Liveness now distinguishes FOUR states where the roster collapsed everything to one — live, offline, never, and unknown for a store that could not be read. Verified on screen simultaneously: 30 registered, 2 live, 1 offline, 27 never checked in, each row carrying its own timestamp and the 10-minute window that classified it. The Run control renders disabled with the dispatch reason; instrumenting window.fetch and clicking three times sent zero requests. The test file is the first in this rebuild to survive a revert check — reverting the classifier fails 11 of 25. Held back: registered_at is laundered into 'heartbeat N ago', so a self-registered row with an empty heartbeat store still reports a hook event, and never is unreachable for it.</div>
+        <div class="goal"><span class="glab">Goal</span> builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Learning &amp; Memory Loop</span><span class="chip building">wave 4</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">5.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+4.0]</b> The builder found the artboard was WRONG and said so rather than building to it: the single 1,300-token budget is two budgets — identity, 1300 x 6 = 7,800, always loaded, and retrieval, 1,300, per task. Both now render separately with their real constants, and drift tests fail if either constant moves. Six artboard elements could not be sourced and each renders an explicit absence naming what is missing rather than a plausible number. A critic called it the most honest surface in the app. Held back: nothing populates the store on this instance, so every panel is an honest empty.</div>
+        <div class="goal"><span class="glab">Goal</span> Hermes Agent — records what it tried and failed after each task, retrieves it on similar ones by FTS5, and caps in-context memory so overflow errors instead of truncating.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Secrets &amp; Credential Custody</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">5.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+4.0]</b> The live bot token is out of source in both copies, and it was already DEAD — a builder posted it to Discord and got 401, so every notification had been failing silently. Migration 059 puts the credential in a separate table from the connection, so a leak requires a deliberate second query rather than any select(*). check-no-secrets.js now names its own coverage and ends 'This is not a statement that the tree contains no credential', and its credential-name rule is case-insensitive after a critic measured that SCREAMING_SNAKE-only left camelCase uncovered. Held back: a critic found credential_env_var was an arbitrary env-var READ ORACLE readable by a viewer — now scoped to the provider's declared variable — and resolveHubDiscord still has zero callers, so the operator can add Discord to a hub and nothing reads the row.</div>
+        <div class="goal"><span class="glab">Goal</span> Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Run Safety &amp; Enforcement</span><span class="chip building">wave 4</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:40%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">4.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+1.0]</b> The fabricated meetings and canned minutes are gone. But critics found the canvas still advances a progress bar on a frame timer to 95%, and discards the live/stale/ended distinction it already computes. State is still inferred, not observed from hook events.</div>
-        <div class="goal"><span class="glab">Goal</span> pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.</div>
+        <div class="gap"><b>[+4.0]</b> Migration 060 adds run_steps and the trace drills from a cost number to the step that caused it. Nullability is load-bearing and mutation-proven, 5 for 5: a null cost renders no dollar column at all rather than a fabricated /usr/bin/bash.00, and a recorded 0 does render. Percentages use largest-remainder and sum to exactly 100. Ceilings come from lib/agent-budget.ts and say when they are defaults rather than configured. Held back hard: NOTHING writes run_steps in production — lib/claude-code.ts never calls it, so the shipped database has zero rows and every user sees the empty state. runTouchedPaidProvider reads cost_usd and never provider, so a step recording provider anthropic with a null cost renders a sentence that is false against its own row.</div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Data Layer &amp; Schema Management</span><span class="chip building">wave 4</span></div>
@@ -243,51 +306,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Agent Fleet Operations</span><span class="chip building">wave 4</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:20%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">2.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+1.5]</b> The roster endpoint returns 200 instead of 500. Everything else is unchanged: nine hardcoded-fallback references still invent agents when the fetch fails, there is no registration protocol or heartbeat, and dispatch is deliberately blocked pending an enforceable ceiling.</div>
-        <div class="goal"><span class="glab">Goal</span> builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Run Safety &amp; Enforcement</span><span class="chip building">wave 4</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:20%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">2.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+2.0]</b> A hard dispatch guard now exists and is verified blocking: Todero cannot spawn agents at all. That is safety by prohibition, not by governance. No concurrency cap, no wall clock, no no-progress halt, no run counter, and the ledger still has zero finalized rows.</div>
-        <div class="goal"><span class="glab">Goal</span> Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Navigation &amp; Deep Linking</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:10%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">1.0<i>/8</i></span>
-        </div>
-        <div class="gap"><b>[=]</b> Untouched. Every deep link still collapses to Overview, and the agent detail page at /crew/[id] remains unreachable dead code. Scheduled for Wave 6.</div>
-        <div class="goal"><span class="glab">Goal</span> Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Search &amp; Findability</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:10%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">1.0<i>/8</i></span>
-        </div>
-        <div class="gap"><b>[=]</b> Unmeasured until now, and a real gap: 2,440 issues live in one project and the ⌘K overlay shipped a service_role key to every browser while querying a hardcoded project ref. Finding a specific issue, run or conversation is currently guesswork.</div>
-        <div class="goal"><span class="glab">Goal</span> Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Learning &amp; Memory Loop</span><span class="chip building">wave 4</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:10%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">1.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[=]</b> Untouched so far. The write half exists from TOD-489 but is dead off macOS; the retrieval half was never built and context is injected uncapped and unranked. Scheduled for Wave 4.</div>
-        <div class="goal"><span class="glab">Goal</span> Hermes Agent — records what it tried and failed after each task, retrieves it on similar ones by FTS5, and caps in-context memory so overflow errors instead of truncating.</div>
-      </div>
-      <div class="card">
         <div class="head"><span class="cname">Commerce Operations</span><span class="chip building">wave 7</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:0%"></div><div class="pin" style="left:80%"></div></div>
@@ -304,24 +322,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="gap"><b>[=]</b> Post-MVP, added 25 Aug. Today authentication is three shared passwords and every record is global. For anyone else to run Todero for their own business, identity and per-tenant isolation have to be real. Deliberately after one project works well.</div>
         <div class="goal"><span class="glab">Goal</span> Linear — sign in and see only your workspace. Anyone runs Todero for their own business and projects, isolated from everyone else.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Secrets &amp; Credential Custody</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:10%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">1.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[=]</b> lib/encryption.ts implements AES-256-GCM and migrations/045 defines a connections table — but CONNECTIONS_ENCRYPTION_KEY is unset, only one route calls the utility, and that route 500d at session start. Meanwhile .env.local holds 16 plaintext secrets and a service_role key sat in 70 commits of history. The design exists; none of it runs.</div>
-        <div class="goal"><span class="glab">Goal</span> Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Approval &amp; Human-in-the-loop</span><span class="chip building">wave 4</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:0%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">0.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[=]</b> Untouched. Inbox approve is reachable but nothing distinguishes urgency: the Overview shows “Needs your attention 5” as a flat list, so a blocked release and an FYI look identical. Slack solved this fifteen years ago with unread vs mention vs thread-participant, and it is the single most transferable idea in the comparator set.</div>
-        <div class="goal"><span class="glab">Goal</span> Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Customer Conversations</span><span class="chip building">wave 7</span></div>
@@ -342,18 +342,18 @@ section{margin-top:42px;scroll-margin-top:16px}
           <span class="wn">Wave 6</span>
           <span class="wname">Operator surface</span>
           <span class="chip cleared">complete</span>
-          <span class="wwhen">25 Aug · 16:05 → running (6 rounds)</span>
+          <span class="wwhen">25 Aug · 16:05 → 26 Aug · 04:00 (fan-out wave)</span>
         </div>
-        <p class="wlede">Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder’s summary. Six rounds: &lt;b>4 → 5 → 6 → 6 → 6&lt;/b>. The no-progress halt has fired. The score is flat while the findings get &lt;i>deeper&lt;/i> — see the note below — so the halt is reading a signal that cannot move while five of six destinations are still undesigned.</p>
+        <p class="wlede">Michael: “Fan out sub-agents, one per piece… For every piece, a separate sub-agent with fresh context inspects the actual code, never the builder’s summary.” The orchestrator had been building SERIALLY for six rounds and was the bottleneck. This wave ran &lt;b>seven builders concurrently&lt;/b> on disjoint channels, then four judges. Channel average &lt;b>2.42 → 4.26&lt;/b>. Still &lt;b>0 of 19 cleared&lt;/b>.</p>
         <div class="spend">
           <span><i>time</i>3h 10m</span>
-          <span><i>agents</i>6</span>
+          <span><i>agents</i>18</span>
           <span><i>tokens</i>—</span>
           <span><i>est. cost</i>—</span>
         </div>
         <div class="ba">
           <div><div class="balab before">Before</div><ul><li>Twenty nav entries plus a divider, appended one at a time — never designed</li><li><code>projectFilter={selectedBusiness}</code> — every tab's “project filter” was the <b>business</b>, so selecting one project selected everything</li><li>Vespera and Kemuni sprint cards rendered from <b>hardcoded date constants</b>, expired, reading “0 days left · 100% elapsed” on the landing screen</li><li>Today's Standup was a <b>400 on every load</b> — a predicate inside <code>or()</code> could not be negated</li></ul></div>
-          <div class="aft"><div class="balab after">After</div><ul><li><b>Six destinations</b> + Chat as a ⌘J overlay; all six fit a phone bottom bar with no “more” menu</li><li>Scope enforced at the <b>seam</b> — middleware stamps it, the proxy injects it. All <b>18 exempted client call sites became correct without being edited</b>, which is the test of the right layer</li><li>An unresolvable scope now <b>refuses</b> rather than widening; forged headers and cross-origin referers refused</li><li>Round 1 shipped a sentence asserting scoping the code did not do; round 2's guard promised enforcement it did not perform; the harness itself carried a <b>literal backspace byte</b> where a <code></code> belonged. All three found and fixed — the instruments now get checked before their verdicts are believed</li><li>Landing screen reads “Limiglow has 0 issues yet — that is correct, not broken”, “No active sprint for Limiglow”, “No recent activity”</li><li>Round 4 measured: <b>0px gutter</b> at 1280/1024/820/375 with no horizontal scroll, and Now down to <b>752px in an 800px viewport</b> from ~1,250 — it fits one screen</li><li>Round 4 shipped the fabrication it was written to prevent: a hardcoded <code>24h</code> badge fires on rows with <b>no window at all</b>, and an expired row wins the soonest-remaining reduce — the headline read <b>“ended left”</b> while a live bolt had 8h58m to run. TOD-2401 in new clothes</li><li>The card contract is real and verified: <code>components/nav/Card.tsx</code> carries metric, <b>source provenance</b>, optional action, and id-keyed collapse that survives reload</li><li>Round 5 put every bolt-time decision in one module and killed three defects: an expired row won the soonest-remaining reduce (headline read <b>“ended left”</b> while a live bolt had 8h58m), the <code>24h</code> badge was a literal stamped on rows with no window, and date-only boundaries parsed as <b>UTC</b> — so at UTC-4 every bolt read “ended” four hours early</li><li>Round 6: the critic broke round 5 in round 5’s own shape. The READER was fixed and a comment asserted the WRITER agreed; it did not. <code>sprint-start</code> stamped the UTC date, so after 8pm it wrote <b>tomorrow</b> as the start and the screen showed <code>24h</code> above <b>“26h 26m left”</b> at 0% elapsed. One stamp now matches one parser, with a round-trip test that fails against the old writer</li><li>Measured limit of the loop: three consecutive rounds scored <b>6</b> while each critic broke something a layer deeper than the last. A wave score cannot move while 5 of 6 destinations are untouched, so it is the wrong progress signal for a per-piece halt — the Wave 3 halt bug in a new form</li></ul></div>
+          <div class="aft"><div class="balab after">After</div><ul><li><b>Six destinations</b> + Chat as a ⌘J overlay; all six fit a phone bottom bar with no “more” menu</li><li>Scope enforced at the <b>seam</b> — middleware stamps it, the proxy injects it. All <b>18 exempted client call sites became correct without being edited</b>, which is the test of the right layer</li><li>An unresolvable scope now <b>refuses</b> rather than widening; forged headers and cross-origin referers refused</li><li>Round 1 shipped a sentence asserting scoping the code did not do; round 2's guard promised enforcement it did not perform; the harness itself carried a <b>literal backspace byte</b> where a <code></code> belonged. All three found and fixed — the instruments now get checked before their verdicts are believed</li><li>Landing screen reads “Limiglow has 0 issues yet — that is correct, not broken”, “No active sprint for Limiglow”, “No recent activity”</li><li>Round 4 measured: <b>0px gutter</b> at 1280/1024/820/375 with no horizontal scroll, and Now down to <b>752px in an 800px viewport</b> from ~1,250 — it fits one screen</li><li>Round 4 shipped the fabrication it was written to prevent: a hardcoded <code>24h</code> badge fires on rows with <b>no window at all</b>, and an expired row wins the soonest-remaining reduce — the headline read <b>“ended left”</b> while a live bolt had 8h58m to run. TOD-2401 in new clothes</li><li>The card contract is real and verified: <code>components/nav/Card.tsx</code> carries metric, <b>source provenance</b>, optional action, and id-keyed collapse that survives reload</li><li>Round 5 put every bolt-time decision in one module and killed three defects: an expired row won the soonest-remaining reduce (headline read <b>“ended left”</b> while a live bolt had 8h58m), the <code>24h</code> badge was a literal stamped on rows with no window, and date-only boundaries parsed as <b>UTC</b> — so at UTC-4 every bolt read “ended” four hours early</li><li>Round 6: the critic broke round 5 in round 5’s own shape. The READER was fixed and a comment asserted the WRITER agreed; it did not. <code>sprint-start</code> stamped the UTC date, so after 8pm it wrote <b>tomorrow</b> as the start and the screen showed <code>24h</code> above <b>“26h 26m left”</b> at 0% elapsed. One stamp now matches one parser, with a round-trip test that fails against the old writer</li><li>Measured limit of the loop: three consecutive rounds scored <b>6</b> while each critic broke something a layer deeper than the last. A wave score cannot move while 5 of 6 destinations are untouched, so it is the wrong progress signal for a per-piece halt — the Wave 3 halt bug in a new form</li><li><b>Seven builders, seven honest failure reports.</b> Every one named something it could not do honestly, unprompted — a wrong artboard, an unsourceable number, a boundary it would not cross. That property is worth more than the code</li><li>A live Discord bot token was removed from source in both copies — and it was <b>already dead</b>: a builder posted it to Discord and got <code>401</code>, so every notification had been failing silently behind a swallowed <code>.catch()</code></li><li>A critic found <code>credential_env_var</code> was an <b>arbitrary environment-variable read oracle</b> — a <code>viewer</code> could read six characters of any secret in the process, and <code>/test</code> then sent the full value to discord.com. Now scoped to the provider’s declared variable</li><li><code>GET /api/issues?task_key=</code> returned the full row for <b>any</b> key when no scope resolved — session cookie plus curl enumerated every project — while the LIST path refused that identical caller. One route, two opposite answers</li><li>The smoothing pass measured <b>nine independent duration formatters</b> producing six spellings of one duration, while <code>lib/time.ts</code>, whose header declares it the single source of truth, has <b>zero importers</b></li><li>It also found five of six Settings views <b>unlinkable</b> — including the credential card added hours earlier, sitting at the one URL that could not be reloaded</li><li>Three guards were each proven to FAIL when they should, which none could do before. <code>no-unscoped-issues</code> could not fail at all: it picked an ARCHIVED probe row, so the archive clause hid it before the scope clause ever ran</li></ul></div>
         </div>
       </div>
       <div class="wave done" id="wave-5.5">
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 135ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 236ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -595,7 +595,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">boot-migrations</span><span class="gcount">2/2</span></summary>
-          <div class="chk ok"><span class="cid">no-colliding-migrations</span><span class="cdet">63 unique prefixes</span></div>
+          <div class="chk ok"><span class="cid">no-colliding-migrations</span><span class="cdet">69 unique prefixes</span></div>
           <div class="chk ok"><span class="cid">migration-ledger-exists</span><span class="cdet">schema_migrations referenced</span></div>
         </details>
         <details class="grp ok">
@@ -707,7 +707,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="shead"><h2>Ledger</h2><div class="note">What the program has cost</div></div>
   <div class="spend" style="margin-top:12px">
     <span><i>wall clock</i>22h 50m</span>
-    <span><i>agents</i>334</span>
+    <span><i>agents</i>346</span>
     <span><i>subagent tokens</i>32.67M</span>
     <span><i>est. cost</i>~$149</span>
     <span><i>waves</i>8</span>

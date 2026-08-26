@@ -40,9 +40,9 @@
     {
       "name": "Agent Visualization Fidelity",
       "baseline": 3,
-      "current": 4,
+      "current": 5,
       "goal": 9,
-      "evidence": "The fabricated meetings and canned minutes are gone. But critics found the canvas still advances a progress bar on a frame timer to 95%, and discards the live/stale/ended distinction it already computes. State is still inferred, not observed from hook events.",
+      "evidence": "The Office states '0 of 30 agents report a workspace folder — the positions on the floor below are decorative', computed from the field so the wording self-corrects if agents ever report one. That is the honest version of a surface that previously implied position meant something. Held back: GET /api/tasks 404s on every poll from two independent pollers, 30s and 60s, and the roster still lists Kemuni SME and Vespera SME — agents for projects that do not exist.",
       "goal_text": "pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.",
       "wave": 6
     },
@@ -58,9 +58,9 @@
     {
       "name": "Observability & Honest Reporting",
       "baseline": 1,
-      "current": 5,
+      "current": 6,
       "goal": 9,
-      "evidence": "scripts/no-unscoped-issues.mjs is now proven in BOTH directions: PASS against the correct server, FAIL exit 1 against one with project narrowing removed. It previously could not fail at all — it selected its probe row with include_archived=1 and then probed without it, so the archive clause hid the row before the scope clause was ever exercised, and it printed PASS against a server with scoping disabled. Held back because the acceptance harness still carries ZERO bolt/time checks, so 45/45 is a nothing-else-broke signal rather than evidence for the work of the last four rounds.",
+      "evidence": "Every card now prints the query behind its number, and a smoothing pass confirmed nearly all of them trace. Three guards were each proven to FAIL when they should this wave, which none of them could do before. Held back and RED: scripts/no-invented-projects.mjs exits 1 with 46 references across 7 files no builder owned — including the PROJECT_EMOJI table at app/api/issues/route.ts:147 that HANDOFF records as having already survived two sweeps, now a third. Kemuni SME and Vespera SME render as live roster rows.",
       "goal_text": "Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.",
       "wave": null
     },
@@ -76,45 +76,45 @@
     {
       "name": "Agent Fleet Operations",
       "baseline": 0.5,
-      "current": 2,
+      "current": 5,
       "goal": 9,
-      "evidence": "The roster endpoint returns 200 instead of 500. Everything else is unchanged: nine hardcoded-fallback references still invent agents when the fetch fails, there is no registration protocol or heartbeat, and dispatch is deliberately blocked pending an enforceable ceiling.",
+      "evidence": "Liveness now distinguishes FOUR states where the roster collapsed everything to one — live, offline, never, and unknown for a store that could not be read. Verified on screen simultaneously: 30 registered, 2 live, 1 offline, 27 never checked in, each row carrying its own timestamp and the 10-minute window that classified it. The Run control renders disabled with the dispatch reason; instrumenting window.fetch and clicking three times sent zero requests. The test file is the first in this rebuild to survive a revert check — reverting the classifier fails 11 of 25. Held back: registered_at is laundered into 'heartbeat N ago', so a self-registered row with an empty heartbeat store still reports a hook event, and never is unreachable for it.",
       "goal_text": "builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.",
       "wave": 4
     },
     {
       "name": "Run Safety & Enforcement",
       "baseline": 0,
-      "current": 2,
+      "current": 4,
       "goal": 9,
-      "evidence": "A hard dispatch guard now exists and is verified blocking: Todero cannot spawn agents at all. That is safety by prohibition, not by governance. No concurrency cap, no wall clock, no no-progress halt, no run counter, and the ledger still has zero finalized rows.",
+      "evidence": "Migration 060 adds run_steps and the trace drills from a cost number to the step that caused it. Nullability is load-bearing and mutation-proven, 5 for 5: a null cost renders no dollar column at all rather than a fabricated /usr/bin/bash.00, and a recorded 0 does render. Percentages use largest-remainder and sum to exactly 100. Ceilings come from lib/agent-budget.ts and say when they are defaults rather than configured. Held back hard: NOTHING writes run_steps in production — lib/claude-code.ts never calls it, so the shipped database has zero rows and every user sees the empty state. runTouchedPaidProvider reads cost_usd and never provider, so a step recording provider anthropic with a null cost renders a sentence that is false against its own row.",
       "goal_text": "Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.",
       "wave": 4
     },
     {
       "name": "Learning & Memory Loop",
       "baseline": 1,
-      "current": 1,
+      "current": 5,
       "goal": 9,
-      "evidence": "Untouched so far. The write half exists from TOD-489 but is dead off macOS; the retrieval half was never built and context is injected uncapped and unranked. Scheduled for Wave 4.",
+      "evidence": "The builder found the artboard was WRONG and said so rather than building to it: the single 1,300-token budget is two budgets — identity, 1300 x 6 = 7,800, always loaded, and retrieval, 1,300, per task. Both now render separately with their real constants, and drift tests fail if either constant moves. Six artboard elements could not be sourced and each renders an explicit absence naming what is missing rather than a plausible number. A critic called it the most honest surface in the app. Held back: nothing populates the store on this instance, so every panel is an honest empty.",
       "goal_text": "Hermes Agent — records what it tried and failed after each task, retrieves it on similar ones by FTS5, and caps in-context memory so overflow errors instead of truncating.",
       "wave": 4
     },
     {
       "name": "Navigation & Deep Linking",
       "baseline": 1,
-      "current": 1,
+      "current": 5,
       "goal": 8,
-      "evidence": "Untouched. Every deep link still collapses to Overview, and the agent detail page at /crew/[id] remains unreachable dead code. Scheduled for Wave 6.",
+      "evidence": "Six destinations, path-based URLs, and renamed views resolve through LEGACY_VIEW_MAP so an old bookmark lands where it meant to rather than on the destination default. A smoothing pass then found five of six Settings views unlinkable — parseURL tested LEGACY_TAB_MAP before isDestinationId, and that branch discards the view segment — which meant the Connections card holding credential custody sat at the one URL that could not be reloaded. Fixed and verified through a reload. Held back: the palette cannot open an issue because no issue route exists.",
       "goal_text": "Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.",
       "wave": 6
     },
     {
       "name": "Approval & Human-in-the-loop",
       "baseline": 0,
-      "current": 0,
+      "current": 6,
       "goal": 9,
-      "evidence": "Untouched. Inbox approve is reachable but nothing distinguishes urgency: the Overview shows “Needs your attention 5” as a flat list, so a blocked release and an FYI look identical. Slack solved this fifteen years ago with unread vs mention vs thread-participant, and it is the single most transferable idea in the comparator set.",
+      "evidence": "Judged 7/10 by a critic who verified all 27 acceptance items and proved four fail-closed gates by MUTATION — deleting each one turns a test red, 4 for 4. Approving a request whose target issue is gone answers 409 TARGET_MISSING and leaves the row pending, because approving would report success while changing nothing. Refusals are recorded as first-class audit rows, and a FAILED effect is recorded as failed rather than applied. Held back: two of four cards still offer an Approve button the server refuses with 409 — describeApproval ignores its own module preflight; decided_by is the client-side literal 'michael' while mc-auth exists and is not consulted; and requestApproval() has zero callers, so approving is a repair action, not a gate anything waits on.",
       "goal_text": "Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.",
       "wave": 4
     },
@@ -157,19 +157,19 @@
     {
       "name": "Secrets & Credential Custody",
       "baseline": 1,
-      "current": 1,
+      "current": 5,
       "goal": 9,
       "wave": 6,
-      "evidence": "lib/encryption.ts implements AES-256-GCM and migrations/045 defines a connections table — but CONNECTIONS_ENCRYPTION_KEY is unset, only one route calls the utility, and that route 500d at session start. Meanwhile .env.local holds 16 plaintext secrets and a service_role key sat in 70 commits of history. The design exists; none of it runs.",
+      "evidence": "The live bot token is out of source in both copies, and it was already DEAD — a builder posted it to Discord and got 401, so every notification had been failing silently. Migration 059 puts the credential in a separate table from the connection, so a leak requires a deliberate second query rather than any select(*). check-no-secrets.js now names its own coverage and ends 'This is not a statement that the tree contains no credential', and its credential-name rule is case-insensitive after a critic measured that SCREAMING_SNAKE-only left camelCase uncovered. Held back: a critic found credential_env_var was an arbitrary env-var READ ORACLE readable by a viewer — now scoped to the provider's declared variable — and resolveHubDiscord still has zero callers, so the operator can add Discord to a hub and nothing reads the row.",
       "goal_text": "Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only."
     },
     {
       "name": "Search & Findability",
       "baseline": 1,
-      "current": 1,
+      "current": 5,
       "goal": 8,
       "wave": 6,
-      "evidence": "Unmeasured until now, and a real gap: 2,440 issues live in one project and the ⌘K overlay shipped a service_role key to every browser while querying a hardcoded project ref. Finding a specific issue, run or conversation is currently guesswork.",
+      "evidence": "A command palette resolving destinations, views and issues, derived from components/nav/config.ts rather than a second hardcoded list — its round-trip test verifies a token resolves back to its own destination and view AT RUNTIME, so a renamed view cannot silently land on the destination default. The sprint-to-bolt rename is pinned by test. A foreign task_key does not leak: from a Limiglow page TOD-1 renders 'not found in Limiglow' with no trace of the other project in the DOM. No new API surface was added, on the grounds that a second issues-reading endpoint is a second place the boundary must be re-derived. Held back: Enter lands on Work then List rather than the issue, because no issue route exists, and the palette carries no verbs.",
       "goal_text": "Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list."
     }
   ]

@@ -17,10 +17,25 @@ schema migrations.
 
 **Git: commit to `rebuild/2026-08-26` ONLY. Never `main`. Never push.**
 
-**Stop rule:** halt and wait if the harness goes red and one round cannot fix
-it, or if two consecutive critics score flat WITH no new defect found. A flat
-score WITH a new defect found is convergence — keep going. Moving to the next
-channel is not stopping.
+**Stop rule — REPLACED 2026-08-26 by the owner:**
+
+> "continue loop until Todero is shippable with all channels having a score
+> higher to competitor. stop only if I ask you to stop."
+
+So: **do not stop on flat scores.** Do not stop at the end of a wave. Do not
+stop because the queue emptied — when it does, pick the next-worst channel off
+`scripts/board/channels.json` and write a piece for it, or run the
+Paperclip.ing feature study. The loop ends when the owner says so, or when
+every channel in `channels.json` clears its goal.
+
+A RED gate is still not a reason to stop — it is the next piece. Fix it as the
+highest-priority work in the following round and say so on the board. What must
+never happen is continuing to BUILD on a red gate while reporting green.
+
+**Update the flight board after EVERY wave** — owner's instruction, 2026-08-26.
+Re-score `channels.json` with measured evidence, regenerate, republish to the
+one artifact URL. Every raise carries what earned it AND what holds it back, so
+a channel cannot drift up on vibes.
 
 ## The real scoreboard
 
