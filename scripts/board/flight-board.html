@@ -142,7 +142,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Wave</span><span class="v">3</span></div>
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">8.7 → 6.2 → 9.3 → 10</span></div>
-  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 2.4 (goal 8.9)</span></div>
+  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 2.7 (goal 8.9)</span></div>
   <div class="kv"><span class="k">Spent</span><span class="v mono">32.67M tok · ~$149</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
@@ -164,19 +164,19 @@ section{margin-top:42px;scroll-margin-top:16px}
       <div class="card">
         <div class="head"><span class="cname">Identity, Auth &amp; Access Control</span><span class="chip moving">in progress</span></div>
         <div class="meter">
-          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">6.0<i>/8</i></span>
+          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">7.0<i>/8</i></span>
         </div>
-        <div class="gap"><b>[+5.5]</b> All five authorization checks pass: owner reads 200, anonymous read 401, anonymous DELETE 401, a forged mc-role cookie 401. Held back from the goal because authentication is still three shared passwords that double as their own session tokens — no users, no logout, no rate limiting.</div>
+        <div class="gap"><b>[+6.5]</b> All five authorization checks pass, and ?all_projects=1 no longer defeats the task_key scope boundary — a client-controlled query string had been able to read any issue by key across projects, defeating the 404 whose stated purpose was preventing exactly that. Verified: scoped lookup of a foreign key returns 404 with and without the param, while a scope-blind script still resolves it. Held back from the goal because authentication is still three shared passwords doubling as their own session tokens — no users, no logout, no rate limiting.</div>
         <div class="goal"><span class="glab">Goal</span> builderz-labs — per-agent API keys and viewer/operator/admin roles over real sessions, replacing three shared passwords that double as their own tokens.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Work Management API (MC API)</span><span class="chip moving">in progress</span></div>
         <div class="meter">
-          <div class="bar"><div class="ghost" style="width:20%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">6.0<i>/9</i></span>
+          <div class="bar"><div class="ghost" style="width:20%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">7.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+4.0]</b> The 1,000-row cap is gone: the API now reports total=3,071 with a has_more flag, so counts can be true for the first time. Lifecycle validation and enumerated status gates were always real. Short of goal because no UI surface renders the total yet.</div>
+        <div class="gap"><b>[+5.0]</b> GET /api/issues now applies ?type= and ?has_due=, both validated and both refusing bad input with a 400 that names the allowed values. Both were previously unavailable: type was read nowhere despite being accepted, and due_date had no predicate in buildQuery() at all, so a card asking what is due could not be made truthful. Held back because ?limit=0 still means every matching row rather than count-only, and app/page.tsx:479 uses it purely to obtain a count — thousands of rows fetched to render one number.</div>
         <div class="goal"><span class="glab">Goal</span> Linear's issue list — server-side paging with an exact total, so no screen ever shows a number computed from a truncated slice.</div>
       </div>
       <div class="card">
@@ -198,6 +198,24 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.</div>
       </div>
       <div class="card">
+        <div class="head"><span class="cname">Observability &amp; Honest Reporting</span><span class="chip moving">in progress</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">5.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+4.0]</b> scripts/no-unscoped-issues.mjs is now proven in BOTH directions: PASS against the correct server, FAIL exit 1 against one with project narrowing removed. It previously could not fail at all — it selected its probe row with include_archived=1 and then probed without it, so the archive clause hid the row before the scope clause was ever exercised, and it printed PASS against a server with scoping disabled. Held back because the acceptance harness still carries ZERO bolt/time checks, so 45/45 is a nothing-else-broke signal rather than evidence for the work of the last four rounds.</div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Work Management UI</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">5.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+4.0]</b> Work now renders inside cards carrying the full contract — one question as the title, an exact count from a printed query, a collapse that survives reload, an empty state naming the project, and an error that replaces the body rather than an empty state appearing over a failure. Verified with 66 fixture rows. Held back from the goal because design/Work.dc.html specifies PER-COLUMN counts on the board (Backlog 2,904 / Ready 38 / In progress 2) and the card carries one project total instead, so the operator still cannot see where work is piling up — the destination's own question.</div>
+        <div class="goal"><span class="glab">Goal</span> Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.</div>
+      </div>
+      <div class="card">
         <div class="head"><span class="cname">Agent Visualization Fidelity</span><span class="chip building">wave 6</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:30%"></div><div class="fill" style="width:40%"></div><div class="pin" style="left:90%"></div></div>
@@ -214,24 +232,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="gap"><b>[+2.5]</b> The author’s Supabase project ref is no longer a compile-time constant anywhere. But three tables still do not exist, three routes still 500, there is still no migration runner, and five migration prefixes still collide.</div>
         <div class="goal"><span class="glab">Goal</span> builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Observability &amp; Honest Reporting</span><span class="chip moving">in progress</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:30%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">3.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+2.0]</b> Status now reports unknown and checkedAt instead of asserting green, and the hardcoded ok literals are gone from the Infra tab. Critics found the same fake greens surviving on every other surface, plus an unmeasured cost chart on the very screen that was de-faked. Still zero per-run tracing.</div>
-        <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Work Management UI</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:30%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">3.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+2.0]</b> A shared fetch hook exists and no component parses a body without checking res.ok. But critics found the hook throws away the response envelope, so the true total never reaches a screen, and PipelineTab was never converted and still renders the exact lie the work targeted.</div>
-        <div class="goal"><span class="glab">Goal</span> Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Pipeline Fidelity</span><span class="chip building">wave 6</span></div>
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 240ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 135ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -595,7 +595,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">boot-migrations</span><span class="gcount">2/2</span></summary>
-          <div class="chk ok"><span class="cid">no-colliding-migrations</span><span class="cdet">61 unique prefixes</span></div>
+          <div class="chk ok"><span class="cid">no-colliding-migrations</span><span class="cdet">63 unique prefixes</span></div>
           <div class="chk ok"><span class="cid">migration-ledger-exists</span><span class="cdet">schema_migrations referenced</span></div>
         </details>
         <details class="grp ok">
