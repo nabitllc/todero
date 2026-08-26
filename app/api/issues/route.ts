@@ -1669,9 +1669,20 @@ export async function PATCH(req: NextRequest) {
 
   if (fields.status === 'backlog' && before?.status !== 'backlog') {
     const KAOS_ROLES = ['main', 'po', 'ops']
-    if (!transitionedBy || !KAOS_ROLES.includes(transitionedBy)) {
+    // TOD-2452: the workspace OWNER was refused here, and this is the only
+    // actor guard in this file without the bypass. The other two have it at
+    // :570 and :587, one of them under a "DO NOT REMOVE — maintenance
+    // transitions require this" comment. So sending a card back to Backlog —
+    // the most common board gesture there is — answered 403 to the person who
+    // owns the workspace, from every UI.
+    //
+    // A builder found it by measuring every one of the 16 destinations rather
+    // than trusting the five it was told about, and refused the easy fix:
+    // it could have made the move succeed by sending transitioned_by: 'po',
+    // which would write an actor the operator is not into the audit trail.
+    if (!transitionedBy || (!KAOS_ROLES.includes(transitionedBy) && !isOwnerActor(transitionedBy))) {
       return NextResponse.json(
-        { error: 'Only main/po/ops can reset an issue to backlog.', field: 'transitioned_by' },
+        { error: 'Only main/po/ops or the workspace owner can reset an issue to backlog.', field: 'transitioned_by' },
         { status: 403 }
       )
     }
