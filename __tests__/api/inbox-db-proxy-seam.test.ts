@@ -104,6 +104,28 @@ const route = require('@/app/api/db/[...path]/route') as typeof import('@/app/ap
 
 const VIEWER_PASSWORD = process.env.MC_VIEWER_PASSWORD ?? 'view2026'
 
+const OWNER_PASSWORD = process.env.MC_PASSWORD ?? 'kaos2026'
+
+/**
+ * A LEGITIMATE owner session. Added at TOD-2479 for the control below.
+ *
+ * The control used to send `forgedViewer` and expect 200, which asserted that a
+ * read-only credential claiming `mc-role=owner` could still write
+ * `notifications` — the same escalation this suite exists to close, one table
+ * over, written down as expected behaviour. The orchestrator fixed the GATE as
+ * well as the table list, so that assertion now fails, correctly.
+ *
+ * The control's PURPOSE is preserved exactly: if a fix refuses everything, this
+ * still goes red and says so. Only the credential changed, from a forged one to
+ * a real one.
+ */
+function owner(url: string, init: RequestInit = {}): NextRequest {
+  const req = new NextRequest(`http://localhost:3000${url}`, init as never)
+  req.cookies.set('mc-auth', OWNER_PASSWORD)
+  req.cookies.set('mc-role', 'owner')
+  return req
+}
+
 /** A read-only session whose `mc-role` cookie claims to be the owner. */
 function forgedViewer(url: string, init: RequestInit = {}): NextRequest {
   const req = new NextRequest(`http://localhost:3000${url}`, init as never)
@@ -233,9 +255,21 @@ describe('SEAM-1: /api/db/inbox is a second, ungated writer to the approval deci
     expect(res.status).toBe(401)
   })
 
-  it('a table this seam does not touch is still writable by a non-viewer session', async () => {
+  it('a table this seam does not touch is still writable by a real owner session', async () => {
     // `notifications` is the control: if a fix refuses everything, this fails
     // and says so, instead of the suite going green for the wrong reason.
+    const res = await route.PATCH(
+      owner('/api/db/notifications?id=eq.n1', {
+        method: 'PATCH',
+        body: JSON.stringify({ read: true }),
+      }),
+      { params: { path: ['notifications'] } },
+    )
+    expect(res.status).toBe(200)
+  })
+  it('and a FORGED viewer cannot write notifications either — TOD-2479', async () => {
+    // The escalation is closed for every table, not just the one this seam
+    // named. Before the gate was fixed this returned 200.
     const res = await route.PATCH(
       forgedViewer('/api/db/notifications?id=eq.n1', {
         method: 'PATCH',
@@ -243,6 +277,6 @@ describe('SEAM-1: /api/db/inbox is a second, ungated writer to the approval deci
       }),
       { params: { path: ['notifications'] } },
     )
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(403)
   })
 })

@@ -15,6 +15,9 @@
 // route together with `lib/db/browser.ts` and `lib/db/query-params.ts`.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveDecisionRole } from '@/lib/approvals'
+import { sessionCredentials } from '@/app/api/inbox/actor'
+import { hasPermission } from '@/lib/rbac-types'
 import { db, DbConfigurationError, type DbQueryBuilder, type DbResult } from '@/lib/db'
 import {
   applyFilters,
@@ -41,7 +44,18 @@ const READABLE_TABLES = new Set([
 ])
 
 /** Subset of the above the browser may also write to. */
-const WRITABLE_TABLES = new Set(['issues', 'notifications', 'inbox'])
+// TOD-2479. `inbox` is deliberately NOT writable here. Deciding an approval goes
+// through PATCH /api/inbox, which resolves the role from the CREDENTIAL and files
+// the attempt in `approval_decisions`. Nothing in the app ever wrote inbox
+// through this proxy — the only occurrence of "/api/db/inbox" outside tests and
+// comments is a comment in lib/runtimes/token-ledger.ts, and both UI callers that
+// decide an approval PATCH the gated route instead.
+//
+// Leaving it writable meant a session holding only the READ-ONLY password could
+// approve an agent's request by naming itself "owner" in a cookie. Measured: the
+// update reached the database as
+// {"status":"approved","resolved_by":"definitely-not-a-human-bot"}.
+const WRITABLE_TABLES = new Set(['issues', 'notifications'])
 
 // ─── scope-reaches-the-server ────────────────────────────────────────────────
 //
@@ -195,8 +209,34 @@ function isAuthenticated(req: NextRequest): boolean {
   return allowed.includes(auth)
 }
 
-function isViewer(req: NextRequest): boolean {
-  return req.cookies.get('mc-role')?.value === 'viewer'
+/**
+ * TOD-2479. May this request write through the proxy?
+ *
+ * Derived from the CREDENTIAL in `mc-auth`. `mc-role` is a string the client
+ * types: it may NARROW this, never widen it.
+ *
+ * The predecessor, `isViewer()`, asked only whether the client had volunteered
+ * `mc-role=viewer` — so `mc-auth=<the read-only password>` plus `mc-role=owner`
+ * wrote freely, and so did omitting `mc-role` altogether. Measured over HTTP on
+ * 2026-08-26 against /api/issues, where the identical defect deleted a real row.
+ *
+ * BOTH halves of this fix matter and neither replaces the other. Removing
+ * `inbox` from WRITABLE_TABLES above closes the one table that was reachable;
+ * this closes the CLASS, so the next table added to that set does not reopen it.
+ * middleware.ts now derives the role the same way, but a route that is only safe
+ * because something in front of it is safe is not safe — this handler is called
+ * directly by tests today and could be called directly by anything tomorrow.
+ */
+function mayWrite(req: NextRequest): boolean {
+  const { role } = resolveDecisionRole(
+    {
+      sessionPassword: req.cookies.get('mc-auth')?.value ?? null,
+      claimedRole: req.cookies.get('mc-role')?.value ?? null,
+      agentRoleHeader: req.headers.get('x-agent-role'),
+    },
+    sessionCredentials(),
+  )
+  return !!role && hasPermission(role, 'issues:write')
 }
 
 /**
@@ -251,7 +291,7 @@ async function handle(req: NextRequest, segments: string[]): Promise<NextRespons
   }
 
   const isWrite = req.method !== 'GET' && req.method !== 'HEAD'
-  if (isWrite && (isViewer(req) || !WRITABLE_TABLES.has(table))) {
+  if (isWrite && (!mayWrite(req) || !WRITABLE_TABLES.has(table))) {
     return NextResponse.json({ error: `Read-only through this endpoint: ${table}` }, { status: 403 })
   }
 
