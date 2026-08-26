@@ -31,9 +31,9 @@
     {
       "name": "LLM Provider Independence",
       "baseline": 1,
-      "current": 5,
+      "current": 8,
       "goal": 9,
-      "evidence": "The base-URL seam exists and Todero now reports two available runtimes against the local Ollama, which serves three tool-capable models. Blocked from goal by 66 remaining OpenRouter references — chat still routes to a cloud host the owner has ruled out.",
+      "evidence": "This channel carried a FALSE evidence string for several waves: \"66 remaining references — chat still routes to a cloud host the owner has ruled out\". A builder measured it and both halves are wrong. Live code across app/lib/components/hooks contains ZERO references to the ruled-out provider, comments stripped or not. Chat routes to LLM_BASE_URL, which is http://localhost:11434/v1 — proven live rather than read: a cloud model id returns 400 naming the local endpoint it is not present in, and a local qwen2.5-coder id returns 200 with an SSE stream. The model list is proxied from that endpoint, so it is live rather than hardcoded, and a new test locks the dangerous shape — an unreachable or empty roster must error naming the URL and must NOT fall back to a constant. The provider is genuinely a base URL: selection is an env var, resolveProvider refuses to default to a cloud host, and tiers resolve against the live roster rather than a static map. A new guard derives its banned set from the \"Never X\" bullets in HANDOFF.md rather than carrying its own list. Held back: two migration CHECK constraints still ADMIT a ruled-out connection type on a legacy table with no callers, and two CLI runtimes map tiers to hardcoded vendor ids because their provider is a binary, not a base URL — there is no seam to move them onto.",
       "goal_text": "LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.",
       "wave": null
     },

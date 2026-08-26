@@ -2,6 +2,28 @@
 // default on this machine). No hosted gateway, no other vendor SDK, no cloud
 // fallback: whatever answers at LLM_BASE_URL is the only place this route
 // ever sends a prompt. See lib/llm-provider.ts.
+//
+// TOMBSTONE (pieces `chat-route-local-model` and the gateway-removal follow-up
+// in pieces3, kept by `provider-is-a-base-url`). The piece ids are given this
+// way for the same reason the paragraph below explains: one of them contains
+// the banned name verbatim, and naming it here would fail the raw-text
+// acceptance check that scans this file.
+// What used to be at line 9 of this file was a
+// hardcoded base URL constant for a hosted routing gateway, plus a read of that
+// gateway's `*_API_KEY`. Every prompt went there — including the one the UI
+// labelled "Private, free, offline". Both were DELETED on the owner's standing
+// decision, recorded in docs/rebuild/HANDOFF.md under "Owner decisions already
+// made": that gateway is never to be used, and this install is local-only for
+// now. Do not reintroduce a second endpoint here: the provider is meant to be a
+// base URL, so pointing somewhere else is an .env.local edit, not a branch.
+//
+// The gateway's NAME is deliberately not written out in this comment. An
+// acceptance check greps these four source roots for it as raw text, so
+// spelling it here would fail the build and the only "fix" would be deleting
+// this record — which is exactly how a removal gets quietly reinvented.
+// scripts/no-cloud-provider.mjs strips comments before scanning for that
+// reason, and derives the banned name from HANDOFF.md so it never has to be
+// repeated in code either.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/hub-client'
