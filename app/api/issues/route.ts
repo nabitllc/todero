@@ -827,7 +827,13 @@ export async function GET(req: NextRequest) {
       .maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (!data) return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
-    if (scope && !crossProject && !allProjects && data.project !== scope) {
+    // TOD-2420: `allProjects` used to appear in this condition, so a
+    // CLIENT-CONTROLLED query string (`?all_projects=1`) defeated the very
+    // boundary the comment below says this 404 exists to hold. The header
+    // `x-mc-all-projects` stays because middleware.ts owns it and strips a
+    // forged one — the scope guard proves that. A query param has no such
+    // protection: anyone who can type a URL can set it.
+    if (scope && !crossProject && data.project !== scope) {
       // 404, deliberately, not 403: a scoped caller should not be able to use
       // this endpoint to discover which keys exist outside its own project.
       return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
@@ -892,6 +898,17 @@ export async function GET(req: NextRequest) {
   // VALID_TYPES the POST path uses, so an unknown type refuses rather than
   // returning an unfiltered set that looks like a real answer.
   const typeParam = url.searchParams.get('type')
+  // TOD-2420: `has_due=1` narrows to rows that actually carry a due date.
+  // Without it the Work "What is due?" card had no way to ask its own question
+  // and rendered the project total instead — a card whose printed query
+  // visibly did not match its title.
+  const hasDueParam = url.searchParams.get('has_due')
+  if (hasDueParam !== null && hasDueParam !== '1' && hasDueParam !== '0') {
+    return NextResponse.json(
+      { error: `Invalid has_due "${hasDueParam}" — must be 1 or 0.` },
+      { status: 400 },
+    )
+  }
   if (typeParam !== null && !VALID_TYPES.includes(typeParam)) {
     return NextResponse.json(
       { error: `Invalid type "${typeParam}" — allowed: ${VALID_TYPES.join(', ')}.` },
@@ -915,11 +932,24 @@ export async function GET(req: NextRequest) {
   // middleware.ts's resolved scope, stamped on `x-mc-project` (from this
   // request's own path, or its Referer; see that file's block comment).
   // `?project=` explicit still wins outright; a resolved scope is now used
-  // exactly as if the caller had passed it. `?all_projects=1` is the explicit
-  // opt-out for a caller that wants every project on purpose even though a
-  // scope was resolvable — read but ignored on purpose otherwise, it exists
-  // so a future caller can say "yes, all of them" instead of that being
-  // indistinguishable from "nobody thought about it".
+  // exactly as if the caller had passed it.
+  //
+  // TOD-2420: this used to describe `?all_projects=1` as "the explicit opt-out
+  // for a caller that wants every project on purpose even though a scope was
+  // resolvable", and then, in the same sentence, as "read but ignored on
+  // purpose". Both halves were in the file at once; a critic read the first and
+  // reported a parameter accepted and ignored. The second half was the true
+  // one, and the behaviour it describes is CORRECT and deliberate:
+  //
+  //   On list reads `?all_projects=1` does nothing, because a query string is
+  //   client-controlled and widening scope from one would be a scope escape any
+  //   browser tab could type. Widening happens only through the server-set
+  //   `x-mc-all-projects` header, which middleware.ts owns and which the scope
+  //   guard proves cannot be forged.
+  //
+  // The param is still PARSED on the task_key branch above so an explicit
+  // caller is distinguishable from an absent-minded one in logs — it no longer
+  // grants anything.
   //
   // ProjectsTab (settings/projects) and the Fleet/Runs aggregates are
   // deliberately cross-project (build instruction 4) — middleware.ts never
@@ -1022,6 +1052,8 @@ export async function GET(req: NextRequest) {
     if (assigneeParam) q = q.eq('assignee', assigneeParam)
     if (statusParam) q = q.eq('status', statusParam)
     if (typeParam) q = q.eq('type', typeParam)
+    if (hasDueParam === '1') q = q.not('due_date', 'is', null)
+    if (hasDueParam === '0') q = q.is('due_date', null)
     if (parentIdParam) q = q.eq('parent_id', parentIdParam)
     if (search) {
       q = q.ilike('title', `%${search}%`)

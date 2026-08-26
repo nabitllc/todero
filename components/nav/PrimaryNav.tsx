@@ -64,7 +64,11 @@ function badgeFor(destId: DestinationId, badges: NavBadges): { text: string; ton
   if (destId === 'fleet') return badges.fleetLive !== null ? { text: String(badges.fleetLive), tone: 'dim' } : null
   if (destId === 'work') return badges.workIssues !== null ? { text: String(badges.workIssues), tone: 'dim' } : null
   if (destId === 'memory') return badges.memoryFiles !== null ? { text: String(badges.memoryFiles), tone: 'dim' } : null
-  if (destId === 'runs') return { text: 'new', tone: 'dim' }
+  // TOD-2420: this returned the literal string 'new' forever, in the same badge
+  // slot where the other four destinations render live counts. A hardcoded word
+  // sitting among real numbers reads as data. Runs has no count to show yet, so
+  // it shows nothing rather than something invented.
+  if (destId === 'runs') return null
   return null
 }
 

@@ -924,7 +924,7 @@ export default function Home() {
             {destination === 'work' && view === 'list' && (
               <WorkViewCard
                 id="work-backlog" title="What is in the backlog?"
-                projectFilter={selectedProject} countLabel="issues"
+                projectFilter={selectedProject} countFilter="&status=backlog" countLabel="in backlog"
                 emptyMessage={(p) => `${p} has no issues yet — that is correct, not broken.`}
               >
                 <IssuesTab projectFilter={selectedProject} />
@@ -947,9 +947,9 @@ export default function Home() {
 
             {destination === 'work' && view === 'bolt' && (
               <WorkViewCard
-                id="work-due" title="What is due, and what is in flight?"
-                projectFilter={selectedProject} countLabel="issues"
-                emptyMessage={(p) => `Nothing is scheduled for ${p} yet — that is correct, not broken.`}
+                id="work-due" title="What is due?"
+                projectFilter={selectedProject} countFilter="&has_due=1" countLabel="with a due date"
+                emptyMessage={(p) => `No issue in ${p} carries a due date yet — that is correct, not broken. The pipeline and calendar below still show what exists.`}
               >
                 {workBoltSubView === 'pipeline' && <PipelineTab projectFilter={selectedProject} />}
                 {workBoltSubView === 'due-dates' && (

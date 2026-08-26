@@ -9,7 +9,7 @@
 // state that names the thing it is empty about instead of reading as
 // breakage.
 //
-// Built here (Now/OverviewTab.tsx is this piece's only card CONSUMER) so the
+// Built here (consumers today: OverviewTab.tsx (Now), WorkViewCard.tsx (Work), BoltScheduleCard.tsx (Settings)) so the
 // five other destinations — later pieces, per the piece doc — inherit the
 // same contract instead of each inventing its own card chrome.
 
