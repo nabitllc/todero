@@ -152,7 +152,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <a href="#waves">Waves<i>8 run</i></a>
   <a href="#next">What's next<i>3 queued</i></a>
   <a href="#harness">Harness<i>45/45</i></a>
-  <a href="#decisions">Decisions<i>0 open</i></a>
+  <a href="#decisions">Decisions<i>5 open</i></a>
   <a href="#method">Method</a>
   <a href="#ledger">Ledger<i>~$149</i></a>
 </nav>
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 239ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 204ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -634,8 +634,63 @@ section{margin-top:42px;scroll-margin-top:16px}
 </section>
 
 <section id="decisions">
-  <div class="shead"><h2>Decisions</h2><div class="note">0 awaiting your veto</div></div>
+  <div class="shead"><h2>Decisions</h2><div class="note">5 awaiting your veto</div></div>
   <p class="lede">Design calls I have made rather than asked about, so the work can continue — each with the reasoning and the tradeoff, so you can overrule one cheaply. A decision that lands changes the design canvas too; the two must never disagree.</p>
+      <div class="dec recommended" id="dec-all-channels-vs-multitenancy">
+        <div class="dhead"><span class="dtitle">The stop rule cannot be satisfied as written</span><span class="chip building">awaiting you</span></div>
+        <div class="dq">You said the loop ends when every channel clears its goal. You also said multi-tenancy is post-MVP and to skip it. It sits at 1/8. Which instruction wins?</div>
+        <div class="drec"><span class="dlab">Recommendation</span>Redefine done as <b>18 of 19</b>, with Multi-tenancy &amp; Identity formally EXEMPT and shown on the board as exempt rather than failing. The loop then has a reachable finish line.</div>
+        <div class="dwhy">These two standing orders contradict, and I have been running on the second one — skipping multi-tenancy every wave — while reporting against the first. That means the completion condition I am working toward is one I have already decided in advance can never be met. A finish line that cannot be crossed is not a finish line; it is an instruction to run forever, which may be what you want, but it should be a thing you chose rather than a side effect of two rules meeting.</div>
+        <div class="dgrid">
+          <div><span class="dlab">Tradeoff</span>If Todero is ever going to host a second customer's business alongside Limiglow, multi-tenancy is not post-MVP and this exemption is wrong — it is the one channel whose absence is invisible until the day it is catastrophic. Exempting it also means the average never reaches the goal average, so that headline number stops being the measure.</div>
+          <div><span class="dlab">What changes</span>If exempt: the board marks it EXEMPT, the average is computed over 18, and the loop can terminate. If not exempt: it becomes the next piece, and it is a large one — schema, scoping, and every guard.</div>
+        </div>
+        <div class="dpat">The same question will return for any channel you rule out of scope. Better to have one rule for exemption than a case-by-case skip.</div>
+      </div>
+      <div class="dec recommended" id="dec-fleet-issues-scope">
+        <div class="dhead"><span class="dtitle">Fleet cannot read issues at all</span><span class="chip building">awaiting you</span></div>
+        <div class="dq">Two deliberate rules contradict and picking wrong widens a security boundary. Which reading is right?</div>
+        <div class="drec"><span class="dlab">Recommendation</span><b>Option 1</b> — an explicit <code>project=eq.&lt;in-scope&gt;</code> filter satisfies the scope requirement regardless of which destination the request came from. It is the smallest change and it is literally what the refusal message already instructs the caller to do.</div>
+        <div class="dwhy">Reproduced 5/5 with curl: the same query with the same &lt;code>/p/limiglow/&lt;/code> in the referer returns 200 from a Work page and 400 &lt;code>unscoped_issues_read&lt;/code> from a Fleet page. Both halves are on purpose — middleware refuses to stamp a project on &lt;code>fleet/*&lt;/code> and &lt;code>runs/*&lt;/code> because they are cross-project aggregates, and the issues guard then fails closed on any read with no resolved scope. Together they mean a user-visible loader on Fleet 400s forever. The scope guard passes throughout, because none of its ten probes send an explicit in-scope filter from a cross-project destination — the guard is not wrong, that case is simply outside it.</div>
+        <div class="dgrid">
+          <div><span class="dlab">Tradeoff</span>Option 2 — let Fleet reads span projects — is what the middleware's own comment implies, and is the most useful, but it deliberately widens the boundary this whole rebuild spent nine leaks closing. Option 3 — Fleet should not read issues at all — is the most conservative and makes the loader the defect, but it removes information you may actually want on that screen. I will not resolve this unattended; a wrong pick here is a security regression, not a bug.</div>
+          <div><span class="dlab">What changes</span>Whichever is chosen, a probe for this exact case gets added to scripts/no-unscoped-issues.mjs, so the next person cannot rediscover it.</div>
+        </div>
+        <div class="dpat">Any destination declared cross-project inherits this same question. Runs is the other one.</div>
+      </div>
+      <div class="dec recommended" id="dec-conversations-provider">
+        <div class="dhead"><span class="dtitle">Customer Conversations has no way to send</span><span class="chip building">awaiting you</span></div>
+        <div class="dq">WhatsApp is the benchmark and no provider decision exists. Which transport should Todero actually speak?</div>
+        <div class="drec"><span class="dlab">Recommendation</span>Build the <b>provider-agnostic half now</b> — inbound webhook shape, an outbound adapter interface, and the approval gate — and pick no provider until you say. I will not choose one.</div>
+        <div class="dwhy">The store, the lifecycle and the approval rule already exist, and the owner rule you set — you approve, Todero sends — is enforced by a CHECK CONSTRAINT rather than a policy in a route, which a builder proved by rebuilding the schema without the checks and showing the identical inserts accepted. What is missing is a transport. Picking one is not a technical call: it decides where your customers' messages live, what the per-message cost is, and which account gets suspended if something goes wrong.</div>
+        <div class="dgrid">
+          <div><span class="dlab">Tradeoff</span>Until a provider is chosen this channel cannot pass 7 — an outbox that cannot send is a draft folder. Building the adapter interface first costs a little rework if the chosen provider has an awkward shape, but building against a guessed provider costs all of it.</div>
+          <div><span class="dlab">What changes</span>Non-provider half lands in the next wave regardless. The provider lands when you name one.</div>
+        </div>
+        <div class="dpat">Same shape as any external integration: build to the seam, let the owner pick the vendor.</div>
+      </div>
+      <div class="dec recommended" id="dec-dispatch-for-safety-proof">
+        <div class="dhead"><span class="dtitle">The safety ceilings have never been watched firing</span><span class="chip building">awaiting you</span></div>
+        <div class="dq">Run Safety cannot clear its goal while dispatch is off. Do you want one controlled window to prove the ceilings actually fire?</div>
+        <div class="drec"><span class="dlab">Recommendation</span><b>One supervised window</b>, with you present, on Limiglow only, with a short wall-clock cap — enough to watch a concurrency ceiling and a no-progress halt actually trigger. Not an unattended enablement.</div>
+        <div class="dwhy">This wave found that an equality filter on the blocked flag matched zero rows on the live host, which silently disarmed the WIP ceilings for eight of nine agent lanes. It is fixed and proven red-then-green on both dialects. But that defect existed precisely because nothing had ever exercised those ceilings against a real run — and everything I can currently prove about them is still an argument from code and unit tests, which is the exact class of evidence that failed here.</div>
+        <div class="dgrid">
+          <div><span class="dlab">Tradeoff</span>The kill switch exists for a good reason and I have not touched it and will not. Enabling dispatch even briefly means real agents spawning against real work; the risk is a runaway watcher, which is the specific thing the guard's own comment names. Doing nothing is also a real choice — it just means this channel stays capped at 7 and the ceilings stay unproven.</div>
+          <div><span class="dlab">What changes</span>If yes: a scripted window with an explicit stop, and the observed firings recorded on the board. If no: I mark the channel capped and say why on its evidence line.</div>
+        </div>
+        <div class="dpat">Anything guarded by a kill switch has this problem — the guard cannot be proven without briefly lifting it.</div>
+      </div>
+      <div class="dec recommended" id="dec-commerce-contention-ceiling">
+        <div class="dhead"><span class="dtitle">Inventory refuses more than half its writes under load</span><span class="chip building">awaiting you</span></div>
+        <div class="dq">The compare-and-swap ceiling is 8 attempts. That refuses 55% of writes at 20-way contention and 90% at 80-way. Correct, honest, and possibly unusable — what should it be?</div>
+        <div class="drec"><span class="dlab">Recommendation</span><b>Serialize per SKU</b>. Keep the honest 409, but make genuine contention on one SKU queue rather than collide, so a flash sale or a bulk sync does not bounce off the wall.</div>
+        <div class="dwhy">The stock arithmetic is now exactly right at 20, 30, 50 and 80-way — every run lands on the correct final count with zero lost updates, which is a real improvement over losing 18 of 20. But an operator console or a storefront sync that gets refused more often than not is not something you can point at a real store. Worth knowing how this surfaced: the original measurement claimed zero conflicts, and that number came from backgrounded curl processes that never actually overlapped on Windows. The refusal rate was always there; nobody had measured concurrency.</div>
+        <div class="dgrid">
+          <div><span class="dlab">Tradeoff</span>Raising the attempt ceiling just moves the wall and adds latency. Backoff helps a little and hurts tail latency. Per-SKU serialization is the real fix and is the most work, and it introduces a queue that itself needs a depth limit and an honest refusal when full. Doing nothing is defensible while there is no storefront attached.</div>
+          <div><span class="dlab">What changes</span>Whichever you pick, the current refusal rate stays stated on the board rather than hidden.</div>
+        </div>
+        <div class="dpat">This recurs for any hot row. Orders will hit it next.</div>
+      </div>
       <div class="dec accepted" id="dec-infra-placement">
         <div class="dhead"><span class="dtitle">Infra</span><span class="chip cleared">accepted</span></div>
         <div class="dq">Own destination, folded into Settings, or something else?</div>
