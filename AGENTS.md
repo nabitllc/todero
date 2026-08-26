@@ -84,8 +84,26 @@ and the office floor. Override the file's location with `AGENTS_MD_PATH`.
 | growth | Growth | Growth Strategist | Claude Sonnet 4.6 | Active |
 | content | Content Creator | Blog, SEO, email, help docs | Claude Sonnet 4.6 | Active |
 | community | Community Mgr | Social content, brand voice | Claude Sonnet 4.6 | Active |
-| kemuni-sme | Kemuni SME | Kemuni Product Specialist | Claude Sonnet 4.6 | Active |
-| vespera-sme | Vespera SME | Vespera Product Specialist | Claude Sonnet 4.6 | Active |
+
+> **no-invented-projects-sweep — two rows removed from the table above.**
+> `| kemuni-sme | Kemuni SME | Kemuni Product Specialist | Claude Sonnet 4.6 | Active |`
+> `| vespera-sme | Vespera SME | Vespera Product Specialist | Claude Sonnet 4.6 | Active |`
+>
+> Neither agent exists, and neither does the project each claimed to specialise
+> in — `Kemuni` and `Vespera` are not in `PROJECT_PREFIX` (`lib/constants.ts`).
+> Both rows said `Active`.
+>
+> This file is the reason the earlier sweeps did not finish the job. Per the
+> paragraph above, **this table is the roster**: `loadAgentRoster()` parses it at
+> request time and `GET /api/agents` serves exactly these rows. So deleting the
+> two ids from `AGENT_META` in `lib/agent-roster.ts` changed only how those rows
+> were *styled* — they kept rendering on the Fleet roster as live agents, just
+> without an emoji or colour. Markdown is also explicitly outside what
+> `scripts/no-invented-projects.mjs` scans, so a green guard run never covered
+> this. The removal above is what actually takes them off the floor.
+>
+> The tombstone is kept deliberately: it must live *below* the table, because
+> the parser stops at the first line that does not begin with `|`.
 
 ## Issue Creation Protocol
 
@@ -117,7 +135,14 @@ Before calling the issues API, verify:
 
 - `type` is correct: `epic`, `feature`, `task`, `bug`, or `ops`
 - `parent_id` is set to the correct parent (feature for tasks, epic for features)
-- `project` matches the correct business unit (Vespera, Kemuni, Mission Control, Infrastructure)
+- `project` matches the correct business unit. The canonical list is
+  `PROJECT_PREFIX` in `lib/constants.ts` — today: `Todero`, `Limiglow`,
+  `Mission Control`, `Infrastructure`. Read it there rather than trusting this
+  line to stay current.
+  *(no-invented-projects-sweep: this checklist item read "(Vespera, Kemuni,
+  Mission Control, Infrastructure)". It is a MANDATORY pre-flight check that
+  agents follow when creating issues, so it was actively instructing them to
+  file work under two projects that do not exist.)*
 - `priority` is set appropriately
 - `acceptance_criteria` is defined (required for sprint issues)
 - `assignee` is a valid agent ID
@@ -145,7 +170,9 @@ Approved work routes to `deployer`; released work routes to `auditor`; closing a
 1. KAOS creates sprint issues following the Issue Creation Protocol above.
 2. Builder implements code changes and moves issues to `in_review`.
 3. Tester reviews and either passes or fails (→ `open` with notes).
-4. For MC/Vespera passed issues: Designer reviews UI against design-system.md.
+4. For passed issues with a UI surface: Designer reviews against design-system.md.
+   <!-- no-invented-projects-sweep: read "For MC/Vespera passed issues". Vespera
+        is not a project this installation has. -->
    - Designer approves → parent issue marked `done`.
    - Designer rejects → creates fix task for builder, parent reopened.
 5. KAOS monitors progress and adjusts priorities as needed.
@@ -182,10 +209,13 @@ You are {AgentName}. {Task description here.}
    You are Builder. Work on MC-491: replace inline styles with Tailwind tokens...
    ```
 
-3. **Multi-workspace spawns** (e.g., Vespera):
+3. **Multi-workspace spawns** (a workspace other than this one):
    ```bash
-   CONTEXT=$(bash scripts/spawn-context.sh /path/to/vespera)
+   CONTEXT=$(bash scripts/spawn-context.sh /path/to/workspace)
    ```
+   <!-- no-invented-projects-sweep: the example named "Vespera" and
+        /path/to/vespera. Genericised — it was an example pointing at a
+        workspace that does not exist. -->
 
 ### What Gets Loaded
 

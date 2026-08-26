@@ -137,12 +137,12 @@ const SEVERITY_CHIP_STYLES: Record<string, string> = {
   S3: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
 }
 
+// no-invented-projects-sweep: 'kemuni-sme' (#3b82f6) and 'vespera-sme'
+// (#a855f7) were entries here and in ASSIGNEE_MAP below. Neither agent exists.
 const ASSIGNEE_DOT_COLORS: Record<string, string> = {
   main: '#818cf8',
   scout: '#3b82f6',
   ops: '#f59e0b',
-  'kemuni-sme': '#3b82f6',
-  'vespera-sme': '#a855f7',
   builder: '#f97316',
   tester: '#22c55e',
   michael: '#6b7280',
@@ -177,12 +177,17 @@ const ALL_STATUSES = [
   { value:'closed',          label:'Closed' },
 ]
 
+// no-invented-projects-sweep: 'kemuni-sme' {🚀, 'Kemuni SME'} and 'vespera-sme'
+// {🖤, 'Vespera SME'} were entries here. Every READ of this map is a `?? fallback`
+// lookup, so their removal is cosmetic for existing rows — but this map is also
+// enumerated with Object.entries() to populate SIX assignee <option> dropdowns
+// below. That made it a WRITE path: an operator could pick "🚀 Kemuni SME" from
+// a picker and assign real work to an agent that does not exist. That is the
+// part that mattered.
 const ASSIGNEE_MAP: Record<string,{emoji:string;name:string}> = {
   main:          {emoji:'🧠', name:'KAOS'},
   scout:         {emoji:'🔍', name:'Scout'},
   ops:           {emoji:'⚙️', name:'Ingo'},
-  'kemuni-sme':  {emoji:'🚀', name:'Kemuni SME'},
-  'vespera-sme': {emoji:'🖤', name:'Vespera SME'},
   builder:       {emoji:'🔨', name:'Builder'},
   tester:        {emoji:'🧪', name:'Tester'},
   michael:       {emoji:'👤', name:'Michael'},

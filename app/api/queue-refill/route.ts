@@ -2,7 +2,7 @@
 //
 // Called by agent-kicker.sh (hourly) and by the heartbeat every 15 min.
 // Logic:
-//   1. For each agent lane (builder, ops, kemuni-sme, vespera-sme):
+//   1. For each agent lane (builder, ops):
 //      a. Count how many open issues are assigned to that agent
 //      b. If below the QUEUE_MIN threshold, find refined issues assigned to that agent
 //      c. Promote up to (QUEUE_MIN - current_open) issues from refined → open
@@ -24,11 +24,20 @@ const QUEUE_MIN = 5
 const PROMOTE_MAX = 10  // safety cap: never promote more than this per run per agent
 
 // Lane config: which agents to refill and what type/project filters apply
+//
+// no-invented-projects-sweep: two more lanes stood here —
+//   { agent: 'kemuni-sme',  typeFilter: ['task','bug','ops'], project: 'Kemuni'  }
+//   { agent: 'vespera-sme', typeFilter: ['task','bug','ops'], project: 'Vespera' }
+// Neither agent nor either project exists. These were not display strings: this
+// route WRITES. Each lane counts open issues for its agent and then PATCHes
+// real rows refined -> open, setting `assignee: lane.agent` — so a run could
+// have stamped a live issue with an assignee no one can dispatch to. It never
+// did only because both `.eq('project', ...)` filters match zero rows, and
+// because dispatch is held off by lib/dispatch-guard.ts / TODERO_DISPATCH_ENABLED.
+// That kill switch is a backstop, not the fix; the fix is that the lanes are gone.
 const LANES = [
   { agent: 'builder', typeFilter: ['task', 'bug'],         project: 'Todero' },
   { agent: 'ops',     typeFilter: ['ops'],                 project: null },     // ops = any project
-  { agent: 'kemuni-sme', typeFilter: ['task','bug','ops'], project: 'Kemuni' },
-  { agent: 'vespera-sme', typeFilter: ['task','bug','ops'], project: 'Vespera' },
 ]
 
 export async function POST(_req: NextRequest) {

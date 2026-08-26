@@ -59,3 +59,37 @@ check 3 in the guard, and it is why the guard exists.
 9. Verified on the **running** app, not by reading source: Fleet's roster lists
    neither `Kemuni SME` nor `Vespera SME`.
 10. No files outside the owned list are modified, and no git command is run.
+
+## RESULT
+
+Guard: **1 → 0**. `tsc --noEmit` clean. Acceptance 45/45 (`dispatch-guard-untouched`
+still passing). `npm test` 588 passed / 5 failed — byte-identical to the baseline
+captured before any edit, same three suites (`agents-route`,
+`agents-unconfigured`, `spawn-live`). Smoke test passing. Fleet verified in a
+real browser at `/b/todero/p/limiglow/fleet/team`: 28 roster cards, no
+`Kemuni SME`, no `Vespera SME`. No DB fixtures were created; Limiglow still has
+zero issues and `TOD-1` is still archived under `Todero`.
+
+**Historical rows: nothing was re-prefixed.** No key prefix was removed — this
+piece never edited `PROJECT_PREFIX`, and `Mission Control`/`Infrastructure` are
+kept for the reason in item 5. Separately, this install's database contains
+**zero** rows with project `Kemuni` or `Vespera` and zero with a `*-sme`
+assignee, so even the cosmetic `'—'` in the ProjectsTab Key column that
+`lib/constants.ts` warns about has nothing to render against here.
+
+### Found, not fixed — outside the owned files
+
+- `app/api/status/route.ts:133` — the Status page's Vercel tile probes
+  `https://api.vercel.com/v6/deployments?app=vespera&limit=1&teamId=team_BPpNtsCP3vmSt4R0r8MXbxiJ`.
+  A **live outbound request** for deployments of a project that does not exist,
+  with a hardcoded team id. The guard cannot see it: `app=vespera` is not
+  `project=`, so it is outside check 2's project-position patterns. Whatever
+  that tile reports about "Vercel" is about nothing.
+- `data/*.json` and `config/ASSET-MANIFEST.md` still carry both names. Both are
+  in the guard's documented skip list (legacy seed data; companion-repo docs)
+  and are tracked separately — a green guard run does not clear them.
+- `__tests__/agent-roster.test.ts:45` asserts
+  `resolveAgentIdentity('Kemuni SME').id === 'kemuni-sme'`. It still passes and
+  is **not** a fabrication: the id is produced by the generic slugifier fallback
+  in `resolveAgentIdentity`, not by any registry entry, so the test exercises
+  string normalisation and is independent of both `AGENT_META` and `AGENTS.md`.

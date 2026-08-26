@@ -13,12 +13,22 @@ export interface AgentConfig {
   escalationTriggers: string[]
 }
 
+// no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' had a row in EVERY
+// one of the five maps in this file — MODEL_MAP, QUEUE_FILTER_MAP,
+// ESCALATION_MAP, SKILLS_MAP and SYSTEM_PROMPT_MAP. Neither agent exists.
+//
+// Two of those rows were the load-bearing ones. QUEUE_FILTER_MAP published
+// `type=epic&project=Kemuni&status=backlog` and `...&project=Vespera&...` as
+// this endpoint's answer for "what work should this agent pick up" — a query
+// against two projects that are not in PROJECT_PREFIX and therefore match no
+// row, served as configuration rather than as an error. And MODEL_MAP is the
+// registry GET/`?id=` validates against (`if (!MODEL_MAP[agentId] && ...)`)
+// *and* the list the no-argument GET enumerates, so both ids were returned to
+// callers as real, configured agents. They are not.
 const MODEL_MAP: Record<string, string> = {
   main:          'claude-sonnet-4-6',
   scout:         'claude-sonnet-4-6',
   ops:           'claude-haiku-4-5',
-  'kemuni-sme':  'claude-sonnet-4-6',
-  'vespera-sme': 'claude-sonnet-4-6',
   'todero-sme':  'claude-sonnet-4-6',
   'infra-sme':   'claude-sonnet-4-6',
   builder:       'claude-sonnet-4-6',
@@ -36,8 +46,6 @@ const MODEL_MAP: Record<string, string> = {
 
 const QUEUE_FILTER_MAP: Record<string, string> = {
   'todero-sme':  'type=epic&project=Todero&status=backlog',
-  'kemuni-sme':  'type=epic&project=Kemuni&status=backlog',
-  'vespera-sme': 'type=epic&project=Vespera&status=backlog',
   'infra-sme':   'type=epic&project=Infrastructure&status=backlog',
   builder:       'type=task,bug&status=open&assignee=builder',
   tester:        'type=task,bug&status=code_review',
@@ -56,8 +64,6 @@ const ESCALATION_MAP: Record<string, string[]> = {
   scout:         ['Source unreachable', 'Conflicting findings require judgment', 'Competitive signal requires strategy discussion'],
   po:            ['Feature scope too large for 1-5 tasks', 'Missing parent epic', 'Cross-SME dependency'],
   deployer:      ['PR not merged', 'CI failing', 'Rollback required'],
-  'kemuni-sme':  ['UX/design heavy → designer review required', 'Security concern in AC', 'Cross-project dependency'],
-  'vespera-sme': ['UX/design heavy → designer review required', 'Security concern in AC', 'Cross-project dependency'],
   'todero-sme':  ['UX/design heavy → designer review required', 'Security concern in AC', 'Cross-project dependency'],
   'infra-sme':   ['UX/design heavy → designer review required', 'Security concern in AC', 'Cross-project dependency'],
   auditor:       ['Drift found in production', 'Config mismatch detected', 'Task hygiene violations >3'],
@@ -69,8 +75,6 @@ const SKILLS_MAP: Record<string, string[]> = {
   main:          ['Orchestration', 'Memory', 'Strategy', 'Comms', 'Delegation'],
   scout:         ['Web Research', 'Summarization', 'Trends'],
   ops:           ['Infrastructure', 'Monitoring', 'Alerts'],
-  'kemuni-sme':  ['Product Strategy', 'Kemuni', 'PropTech'],
-  'vespera-sme': ['Product Strategy', 'Vespera', 'Community'],
   'todero-sme':  ['Product Strategy', 'Todero', 'Platform'],
   'infra-sme':   ['Infrastructure', 'DevOps', 'Security'],
   builder:       ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'],
@@ -98,8 +102,6 @@ const SYSTEM_PROMPT_MAP: Record<string, string> = {
   scout:         DB_SOURCE,
   po:            DB_SOURCE,
   deployer:      DB_SOURCE,
-  'kemuni-sme':  DB_SOURCE,
-  'vespera-sme': DB_SOURCE,
   'todero-sme':  DB_SOURCE,
   'infra-sme':   DB_SOURCE,
   designer:      DB_SOURCE,

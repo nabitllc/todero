@@ -31,8 +31,11 @@ const TYPE_EMOJI: Record<string, string> = {
   feature:'✨', task:'🔧', bug:'🐛', ops:'⚙️', epic:'🎯', subtask:'↩️',
 }
 
+// no-invented-projects-sweep: 'kemuni-sme':'🚀' and 'vespera-sme':'🖤' were
+// entries here. Neither agent exists. The lookup at the call site already
+// falls back to '👤', so an unrecognised assignee still renders.
 const ASSIGNEE_EMOJI: Record<string, string> = {
-  main:'🧠', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤',
+  main:'🧠', scout:'🔍', ops:'⚙️',
   builder:'🔨', tester:'🧪', michael:'👤', designer:'🎨', auditor:'🔎',
   growth:'📈', po:'📋', ux:'🎨',
 }

@@ -37,8 +37,11 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   'ux': 'designer',
   'scout': 'scout',
   'ops': 'ops',
-  'kemuni-sme': 'kemuni-sme',
-  'vespera-sme': 'vespera-sme',
+  // no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' mapped to
+  // themselves here. Neither agent exists. This map is the activation gate —
+  // activateAgentAsync() returns early for any assignee absent from it — so
+  // their entries were what let a review transition try to wake a fabricated
+  // agent. 'todero-sme' and the real ids stay.
   'todero-sme': 'todero-sme',  // DO NOT REMOVE — SME epic decomposer
   'main': 'main',
   'KAOS': 'main',
@@ -85,7 +88,13 @@ function activateCodeReviewAgents(taskKey: string, title: string) {
 // Has been reverted 3+ times by Builder agents on stale branches.
 // ═══════════════════════════════════════════════════════════════════════════
 const STATUS_PICKUP_LANES: Record<string, string[]> = {
-  backlog:        ['po', 'todero-sme'],  // kemuni-sme, vespera-sme paused — Todero-only focus
+  // no-invented-projects-sweep: this line's comment used to read "kemuni-sme,
+  // vespera-sme paused — Todero-only focus". Corrected, not deleted: "paused"
+  // says the two agents exist and are coming back. They do not and are not.
+  // The guard strips comments before scanning, so it never saw this — a stale
+  // comment asserting a fabrication is real is exactly how the entry gets
+  // restored by the next reader acting in good faith.
+  backlog:        ['po', 'todero-sme'],
   defined:        ['po'],
   refined:        ['po'],
   open:           ['builder', 'ops', 'scout'],
@@ -144,9 +153,25 @@ const QUEUE_CHANNEL           = '1494440278524694608' // #1-queue
 // and store the new one per hub via Settings -> Connections (migration 059);
 // lib/connections.ts resolveHubDiscord() returns it, or null, never a constant.
 
-const PROJECT_EMOJI: Record<string, string> = {
-  Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️'
-}
+// no-invented-projects-sweep: a `PROJECT_EMOJI` table stood here, mapping
+//   Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️'
+// Two of those four keys were projects that do not exist. The whole
+// declaration is gone rather than trimmed to its two real keys, and that is
+// deliberate — see below.
+//
+// WHY THIS ONE SURVIVED THREE SWEEPS (docs/rebuild/HANDOFF.md counts two before
+// this piece). It is DEAD CODE. Nothing in the repository ever read
+// PROJECT_EMOJI: a full-tree grep matches this file and the guard's own header
+// prose, and nothing else. A sweep that reasons from call sites — "what breaks
+// if this goes?" — gets the answer "nothing", finds no reader to follow, and
+// leaves it alone. Only a check that inspects DECLARATIONS rather than USAGE
+// sees it at all, which is check 3 in scripts/no-invented-projects.mjs.
+//
+// So the table is not reduced to `{ 'Mission Control': '🧠', Infrastructure: '⚙️' }`.
+// A two-key dead table is still dead, still unread, and still an empty slot
+// shaped exactly like the one a future session refilled twice. If a project
+// emoji is ever genuinely needed, derive it where it is rendered, from
+// PROJECT_PREFIX in lib/constants.ts — the one canonical list.
 
 function postDiscord(channelId: string, content: string) {
   const token = process.env.DISCORD_BOT_TOKEN
@@ -351,9 +376,14 @@ function getSupabase(): DbAdapter {
 }
 
 // ── Activity event capture ────────────────────────────────────────────────────
+// no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were members here.
+// Neither agent exists. Membership decides actor_type on every recorded
+// activity event, so either id would have been written to the event log as
+// actor_type 'agent'; absent, they classify as 'human', which is wrong too but
+// is at least not an assertion that a nonexistent agent acted.
 const KNOWN_AGENT_IDS = new Set([
   'builder', 'tester', 'designer', 'ux', 'scout', 'ops',
-  'kemuni-sme', 'vespera-sme', 'main', 'KAOS', 'auditor',
+  'main', 'KAOS', 'auditor',
   'deployer', 'po', 'monitor-stale', 'heartbeat',
 ])
 
@@ -559,7 +589,11 @@ async function validateWorkflowTransition(
       return { transition: null, error: { error: 'Only po, michael, or kaos can execute this transition', field: 'transitioned_by' } }
     }
   } else if (conditionRole === 'po_main_sme') {
-    const allowed = ['po', 'main', 'michael', 'kaos', 'todero-sme', 'kemuni-sme', 'vespera-sme']
+    // no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were in this
+    // allowlist. Neither agent exists. This is an AUTHORIZATION list — it named
+    // two nonexistent principals as permitted to execute a guarded workflow
+    // transition. Removing them narrows the allowlist; it cannot widen it.
+    const allowed = ['po', 'main', 'michael', 'kaos', 'todero-sme']
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
       return { transition: null, error: { error: 'Only po, michael, kaos, or an SME can execute this transition', field: 'transitioned_by' } }
     }
@@ -1232,9 +1266,16 @@ export async function POST(req: NextRequest) {
   }
 
   // Hub SME by project — used for epic owner/assignee
+  //
+  // no-invented-projects-sweep: two branches stood at the top of this function,
+  //   if (proj === 'Kemuni')  return 'kemuni-sme'
+  //   if (proj === 'Vespera') return 'vespera-sme'
+  // and this is a WRITE path: the return value becomes effectiveOwner for every
+  // newly created epic. Neither project can reach it — normalizeProjectName()
+  // has no alias for either and PROJECT_PREFIX no key — so both branches were
+  // unreachable AND named agents that do not exist. Falling through to
+  // 'todero-sme' is what already happened in practice.
   function hubSmeForProject(proj: string): string {
-    if (proj === 'Kemuni') return 'kemuni-sme'
-    if (proj === 'Vespera') return 'vespera-sme'
     if (proj === 'Infrastructure') return 'infra-sme'
     return 'todero-sme'
   }
@@ -1735,12 +1776,17 @@ export async function PATCH(req: NextRequest) {
     const currentAssignee = fields.assignee ?? before?.assignee
     if (currentAssignee && REVIEWER_ONLY_AGENTS.includes(currentAssignee) && !fields.assignee) {
       const issueType = (fields.type ?? before?.type ?? 'task') as string
-      const issueProject = (fields.project ?? before?.project ?? 'Todero') as string
-      if (issueProject === 'Kemuni') {
-        fields.assignee = 'kemuni-sme'
-      } else if (issueProject === 'Vespera') {
-        fields.assignee = 'vespera-sme'
-      } else if (issueType === 'ops') {
+      // no-invented-projects-sweep: this chain opened with
+      //   if (issueProject === 'Kemuni')       fields.assignee = 'kemuni-sme'
+      //   else if (issueProject === 'Vespera') fields.assignee = 'vespera-sme'
+      // Another WRITE path — the auto-reassign that fires when a reviewer bounces
+      // an issue back to open. Had a legacy row carrying project 'Kemuni' or
+      // 'Vespera' passed through here, it would have been PATCHed to an assignee
+      // that does not exist and then stalled with no agent able to claim it.
+      // Such rows now fall to the 'builder' default like any other project.
+      // The `issueProject` binding that fed those two tests went with them:
+      // nothing else in this block read it.
+      if (issueType === 'ops') {
         fields.assignee = 'ops'
       } else {
         fields.assignee = 'builder'

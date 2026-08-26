@@ -8,7 +8,11 @@ function getSupabase() {
   return db()
 }
 
-const AGENT_ACTORS = new Set(['builder','tester','designer','ops','scout','kemuni-sme','vespera-sme','main','KAOS','auditor','deployer','po'])
+// no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were members of
+// this set. Neither agent exists. An id listed here is classified 'agent'
+// rather than 'system', so their presence made the feed able to attribute an
+// event to a fabricated agent as though it were a real one.
+const AGENT_ACTORS = new Set(['builder','tester','designer','ops','scout','main','KAOS','auditor','deployer','po'])
 const HUMAN_ACTORS = new Set(['michael'])
 
 function actorType(assignee: string): 'agent' | 'human' | 'system' {
@@ -18,9 +22,13 @@ function actorType(assignee: string): 'agent' | 'human' | 'system' {
   return 'system'
 }
 
+// no-invented-projects-sweep: 'kemuni-sme': 'Kemuni SME' and
+// 'vespera-sme': 'Vespera SME' were entries here. This map is what turned a
+// fabricated id into a polished display name in the activity feed; without it
+// an unknown actor falls through to the raw id, which is the honest rendering.
 const ACTOR_NAMES: Record<string, string> = {
   builder: 'Builder', tester: 'Tester', designer: 'Designer', ops: 'Ingo',
-  scout: 'Scout', 'kemuni-sme': 'Kemuni SME', 'vespera-sme': 'Vespera SME',
+  scout: 'Scout',
   main: 'KAOS', KAOS: 'KAOS', michael: 'Michael', auditor: 'Auditor',
   deployer: 'Deployer', po: 'PO',
 }

@@ -21,12 +21,14 @@ const TYPE_BADGE: Record<string, { bg: string; text: string }> = {
   subtask: { bg: 'bg-slate-600/30',   text: 'text-slate-300'  },
 }
 
+// no-invented-projects-sweep: 'kemuni-sme' (#3b82f6) and 'vespera-sme'
+// (#a855f7) were entries in this map and in ASSIGNEE_INITIALS below. Neither
+// agent exists. Both maps are keyed lookups with a fallback, so an id that is
+// absent simply renders as the neutral unknown-assignee avatar.
 const ASSIGNEE_COLORS: Record<string, string> = {
   main:         '#818cf8',
   scout:        '#3b82f6',
   ops:          '#f59e0b',
-  'kemuni-sme': '#3b82f6',
-  'vespera-sme':'#a855f7',
   builder:      '#f97316',
   tester:       '#22c55e',
   michael:      '#6b7280',
@@ -41,8 +43,6 @@ const ASSIGNEE_INITIALS: Record<string, string> = {
   main:         'K',
   scout:        'S',
   ops:          'O',
-  'kemuni-sme': 'KS',
-  'vespera-sme':'VS',
   builder:      'B',
   tester:       'T',
   michael:      'M',
