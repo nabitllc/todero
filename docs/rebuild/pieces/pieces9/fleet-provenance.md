@@ -535,3 +535,218 @@ Each item is a command and the result you should get.
   version** of `route.ts` swapped in and got the **identical crash**. Not mine.
 - **Stray probe files left in the tree by another lane:**
   `__tests__/runtimes/zzprobe-reach.test.ts`, `zzprobe2.test.ts`, `zzprobe3.test.ts`.
+
+---
+
+## 10. ROUND 4 — THE SEAM WAS LANDED (2026-08-26, later the same day)
+
+Round 3 could not edit the five surfaces, so it moved its remaining diffs out of §6's prose and
+into `__tests__/fleet/fleet-provenance-seams.test.ts`. This section records applying them. It
+appends to the doc's history; nothing above is rewritten.
+
+### 10.1 Suite, before and after
+
+```
+npx jest __tests__/fleet/fleet-provenance-seams.test.ts
+  BEFORE:  Tests: 6 failed, 6 total
+  AFTER:   Tests: 1 failed, 5 passed, 6 total
+```
+
+The one still red is `app/page.tsx` — the orchestrator owns that file and is editing it
+concurrently, so this lane may not touch it. It is left RED deliberately. The suite was not
+weakened, no assertion was disabled, and this lane is **not** complete.
+
+### 10.2 What I applied, verbatim where the diff was right
+
+| File | Change |
+|---|---|
+| `components/tabs/AgentDetailView.tsx` | added `currentTaskLabel` (and `currentTaskSource`) to the local wire type; both render sites now read `currentTaskLabel` |
+| `components/tabs/AgentsTab.tsx` | the green-dot emerald line reads `currentTaskLabel` |
+| `components/tabs/OverviewTab.tsx` | added `currentTaskLabel` to `LiveAgentRow`; the fleet strip reads it |
+| `components/tabs/ChatTab.tsx` | the `/agents` roster line reads `currentTaskLabel` |
+| `app/api/agent-responsibilities/route.ts` | `loadFleetRoster()` replaces `loadAgentRoster()`; `rosterFacts()` is async; **both** call sites awaited |
+
+`grep -n 'rosterFacts()'` before applying found exactly the two call sites the diff named (GET
+~121, POST ~163). No third had appeared.
+
+The ChatTab claim in the brief — "one of the five is a roster prompt fed to an LLM" — is true and
+I checked it rather than assuming: the `/agents` output is appended to the conversation as an
+assistant message, and `ChatTab.tsx:1033` builds `historyMessages` from
+`[...convToUse.messages, userMsg]` and POSTs the whole thing to `/api/chat`. The roster line does
+reach a model's context verbatim.
+
+### 10.3 Where I DEPARTED from the diff, and why
+
+**`RosterFacts.source` is `fleetSearchLine(load)`, not `load.rosterPath`.**
+
+The diff said `source: load.rosterPath` and then flagged the consequence for the lander rather
+than resolving it. Taken literally it would have shipped this piece's own defect class one rung
+down. `ResponsibilitiesCard.tsx:177` renders the value inside the sentence:
+
+> The fleet declares **28** agents, read from `<source>`
+
+With `load.rosterPath` that sentence asserts AGENTS.md declared 28 agents. It declares 14. A
+count from three sources under a provenance naming one file is precisely "a value dressed as a
+fact it is not" — the thing `lib/fleet-liveness.ts` refuses to do with heartbeats. So the route
+uses `fleetSearchLine(load)`, which exists for exactly this and is pinned by
+`__tests__/api/fleet-roster-union.test.ts`.
+
+Measured after the change (live, this host, cookie `mc-role=owner` + internal header):
+
+```
+GET /api/agent-responsibilities?business_id=2bcb6477-...
+  fleet.agents  : 28          (was 14)
+  fleet.source  : fleet = C:\Development\Todero\AGENTS.md
+                    U C:\Development\Mich-Brain2\Global_Agents U agent_registrations
+                    (real separator is U+222A)
+  fleet.warning : null
+GET /api/agents
+  agents        : 28
+  bySource      : {"agents-md":14,"registered":1,"vault":13}
+```
+
+The two screens now answer "who exists" with the same number, from the same union, and say so.
+
+One wording nit I am NOT fixing because the file is not mine: the card's sentence now reads
+"read from fleet = A U B U C", which is true but clumsy. The fix belongs in
+`components/tabs/ResponsibilitiesCard.tsx`'s phrasing, not in the value.
+
+**Emerald is no longer spent on a board row.** `AgentDetailView.tsx` painted the task string
+emerald — a colour that asserts the agent is working — regardless of provenance. The diff said
+"consider a neutral tone for the assigned case". It is now conditional on
+`currentTaskSource === 'heartbeat'`, i.e. the agent's own check-in; `assigned:`/`unsourced:`/an
+absent source all get neutral `text-white/50`. It **fails closed**: a missing source is not a
+heartbeat, the same stance `CrewTab.tsx:236` already takes.
+
+### 10.4 BEYOND THE DIFF — a SIXTH surface the seam did not name
+
+The seam says five surfaces. There are **six**.
+
+```
+components/nav/NowSignal.tsx:68
+  <span className="text-white/70 text-xs truncate">{a.currentTask || 'heartbeat just now'}</span>
+```
+
+It is the same code path as the OverviewTab strip the diff *does* name — same green dot, same
+`truncate`, same `'heartbeat just now'` fallback string, and it is fed the same unmapped
+`liveAgents` array from `app/page.tsx` (`setLiveAgents(rows)` at :309 does no field mapping, so
+`currentTaskLabel` reaches it already). `NowSignal`'s local `AgentLike` type carries
+`currentTask` and would need `currentTaskLabel` added, exactly like `LiveAgentRow` did.
+
+`components/nav/NowSignal.tsx` is **not this lane's file** and is untouched. This is the
+"guarded one canonicaliser and missed a second" failure mode the program has already paid for
+once: Now is the first screen an operator sees, so leaving it raw means the ambiguous string
+survives in the most-read place while five quieter surfaces are fixed. The seam suite will go
+green without it, which is the point of writing it down here.
+
+### 10.5 BEYOND THE DIFF — the two "lander should check" items, checked
+
+- **`capabilityBacking()` and vault ids — NOT a defect.** `getAgentCapabilities()` returns `[]`
+  for an id absent from `AGENT_REGISTRY`, and `capabilityBacking()` returns **`null`** on an
+  empty capability list, never `false`. `ResponsibilitiesCard.tsx:228` renders the warning glyph
+  only on `backing === false`. So the 14 newly-assignable agents render with *no* warning ("we
+  do not know"), not with a false "not capability-backed". Verified by running
+  `capabilityBacking(area, id)` against five real vault ids (`vault_curator`, `prd_writer`,
+  `bug_fixer`, `ui_ux_critic`, `code_reviewer`) in a throwaway jest file, since it is a pure
+  function; all five returned `null`. The throwaway file was deleted.
+- **`fleetSearchLine` is now used** — see §10.3.
+
+### 10.6 COMMENTS THAT ARE NOW FALSE — one fixed, three reported
+
+The seam warned that its own check strips comments, so a stale comment would not keep it red.
+It named one. There are four.
+
+Fixed (my file):
+
+- `app/api/agent-responsibilities/route.ts` header — "Only the roster is, and `loadAgentRoster()`
+  is the only thing this route asks" is gone; the header now names the union and records why the
+  narrower question was the wrong one. The "an agent id NO ROSTER DECLARES" bullet became "NO
+  SOURCE DECLARES".
+
+Reported, NOT touched (not this lane's files):
+
+- **`app/api/agents/fleet-roster.ts`, `fleetSearchLine`'s doc comment** — says **"NO PRODUCTION
+  CALLER YET"** and points at this exact unapplied seam. That is now false: this route calls it.
+- **`lib/agent-responsibilities.ts:227`** — `RosterFacts.agentIds` is documented as "Ids the
+  roster **file** actually declares." It is now the three-source union, and `source` is a search
+  sentence rather than a path.
+- **`lib/fleet-liveness.ts:661-665`** — the comment enumerating the surfaces that render the bare
+  string still lists them as unfixed, and cites `app/page.tsx:738` (now :754).
+
+### 10.7 Gate, run by me, at the end of round 4
+
+```
+npx tsc --noEmit                   exit 0, no output
+npm test                           4 failed, 2 skipped, 2330 passed, 2336 total
+                                   (3 suites failed, 1 skipped, 116 passed of 120)
+node scripts/acceptance/run.mjs    45/45 passing (12234ms), harness score 10/10
+bash scripts/smoke-test-layout.sh  FAILS at the ninth guard — not mine, see §10.8
+```
+
+The four failing tests, named and attributed:
+
+1. `fleet-provenance-seams > app/page.tsx ...` — **mine, deliberately red**, orchestrator's file.
+2. `pieces9-seams > /api/costs/breakdown must not hide the cost of runs that failed` — another
+   lane's seam, awaiting its own lander.
+3. `pieces9-seams > MemoryTab must show a failed run as failed` — likewise.
+4. `spawn-live > names a log file that exists on disk and grows` — the known standing failure.
+
+`__tests__/agents-route.test.ts > answers 200 with the roster...` failed in **one** of three full
+runs and passes in isolation (`3 passed, 3 total`). It is a live-HTTP test and five agents are
+hitting this dev server; recorded as load flake, not a defect.
+
+### 10.8 The layout smoke test fails on a guard another lane is mid-edit — with evidence
+
+`bash scripts/smoke-test-layout.sh` passes the secret scanner and the honest-error guard, then
+fails in `scripts/no-unscoped-issues.mjs`. **That script is uncommitted work in progress by
+another lane** (`git status` shows it modified; `git diff` shows +71 lines labelled TOD-2482
+adding four new `task_key` probes). This lane changed no issues code and cannot have caused it.
+
+It is **not** a stale fixture, and the failing control is **right**. Reproduced by hand with the
+guard's own credentials:
+
+```
+# the LIST branch hands out the probe row
+GET /api/issues?limit=0&all_projects=1        -> 1 row: TOD-469, project "Todero", live
+
+# the TASK_KEY branch cannot resolve that same row, by any route in
+GET /api/issues?task_key=TOD-469                                 -> 404
+GET /api/issues?task_key=TOD-469   (referer /p/todero/work/list) -> 404
+GET /api/issues?task_key=TOD-469   (referer /p/Todero/work/list) -> 404
+GET /api/issues?task_key=TOD-469&project=Todero                  -> 404
+GET /api/issues?task_key=TOD-469&all_projects=1                  -> 404
+```
+
+One route's list branch returns a live row that its own `task_key` branch says does not exist,
+from that row's own project, with the project named explicitly. This is an **over-refusal**, the
+mirror image of the leak TOD-2480 closed. The new control probe ("task_key, its OWN project,
+still resolves") was written precisely to catch a fix that refuses everything, and it is doing
+its job. Not weakened, not worked around, not mine to fix — handed to the lane that owns the
+guard and the issues route.
+
+### 10.9 Still red after round 4
+
+- `app/page.tsx:754` — the sixth assertion. Orchestrator-owned; must be applied there.
+- `components/nav/NowSignal.tsx:68` — §10.4. Nothing enforces it; the seam suite goes green
+  without it.
+- The three false comments in §10.6.
+- The scope guard in §10.8.
+
+### 10.10 What I could NOT observe
+
+**No browser was available to this lane.** Every claim above about the API is a live HTTP
+request I made; every claim about the *screen* is a source reading, not a rendered pixel.
+
+Specifically unobserved: **I never saw a provenance-worded label render.** All 28 agents are
+idle right now — `GET /api/agents` returns `currentTaskLabel: null` on 28 of 28 rows and
+`currentTaskSource: 'none'` on 28 of 28. So the swapped expressions are type-checked, unit-
+tested at `taskLabel()`, and seam-tested for presence, but the string `reported: ...` /
+`assigned: ...` has not been seen on screen by me. The conditional emerald in §10.3 is likewise
+unexercised on live data for the same reason. §9's "`who is stuck` is structurally empty on real
+data" is still true and is the same underlying gap.
+
+### 10.11 Fixtures
+
+None created. Nothing was written to `agent_responsibilities`, no issue rows were created or
+deleted, and `TOD-1` was not touched. The only file created was a throwaway jest file under
+`__tests__/fleet/`, deleted in the same command that ran it (§10.5).

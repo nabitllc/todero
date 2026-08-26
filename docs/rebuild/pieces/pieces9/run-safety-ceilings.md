@@ -549,3 +549,131 @@ Issues: `LIMI-SWEEP-PROBE`, `LIMI-STALL-PROBE`. `agent_budgets` is back to the
   `/api/run-agent`, which 503s — while its own issue-mutating passes run ungated.
   Worth naming loudly because §7.1 asks that same route to start stopping runs
   and blocking issues.
+
+---
+
+## 10. The seam landed — `/api/cron/watchdog` now runs the sweep (2026-08-26)
+
+Appended by the cron/watchdog lane. §9's line "the sweep still has no scheduled
+caller" is now **out of date**; §7.1 is applied. Nothing above this section was
+rewritten — read it as history.
+
+### 10.1 What was applied
+
+`lib/__tests__/agent-budget-sweep-seam.test.ts`: **1 failed / 1 total → 1 passed
+/ 1 total.** The printed diff went in verbatim, in three hunks:
+
+```diff
+  app/api/cron/watchdog/route.ts
++ import { sweepInFlightCeilings } from '@/lib/agent-budget'
+  … in GET(), after isAuthorized() and before createAdminClient():
++ const ceilingSweep = await sweepInFlightCeilings()
+  … in the response body:
++   ceilingSweep,
+```
+
+Placed **before** the stale-claim queries, not after. A run past its ceiling
+should be stopped and blocked for triage by the mechanism that knows *why*, not
+merely recycled to `open` by the watchdog's reset as if the agent had simply
+died. Both can touch one issue in a single tick — the ceiling stop sets
+`is_blocked`, the reset moves `status` — and "open but blocked, awaiting a
+human" is the intended end state, not a collision.
+
+### 10.2 Beyond the diff — three things the seam's author could not see
+
+**(a) `ok` was about to start lying.** The diff as printed leaves
+`ok: failed.length === 0`, so the watchdog would answer `ok:true` on a tick
+whose ceiling sweep could not read `agent_runs` at all.
+`POST /api/heartbeat/sweep` refuses to do exactly that — its own comment: the
+caller must be able to tell "looked at everything, stopped nothing" from "could
+not look". Pasting the diff unchanged would have rebuilt that dishonesty one
+level up, in the route that now runs on the timer. Changed to
+`ok: failed.length === 0 && ceilingSweep.errors.length === 0`. No test asserted
+the old value (checked: nothing under `__tests__/` or `scripts/acceptance/`
+imports this route).
+
+**(b) The "never throws" claim in the pasted comment was not quite true.**
+`sweepInFlightCeilings` returns read failures in `.errors`, but `db().from()`
+still *throws* `DbConfigurationError` on an unconfigured database. The comment
+that went into the route says so, and names the `dbUnavailableResponse()` guard
+above it as the thing that makes it moot. A comment asserting a stronger
+property than the code has is the defect class this doc keeps finding.
+
+**(c) The honest call-site list at the top of `lib/agent-budget.ts` was stale
+the moment the seam landed**, and its own last line says "keep this list
+honest". Updated — with the caveat below, which is the part that matters.
+
+### 10.3 Verified today, over real HTTP, against `db.sqlite`
+
+`TODERO_DB_PROVIDER=sqlite`; `createAdminClient()` is `db()` (`lib/hub-client.ts:99`),
+so the watchdog's own queries and the sweep read one store, not two.
+
+```
+GET /api/cron/watchdog                    → 401   (no x-todero-internal header)
+GET /api/cron/watchdog  + internal secret → 200 in 4.2s
+  {"ok":true,…,"ceilingSweep":{"scanned":0,"stopped":[],"skipped":0,"errors":[]}}
+```
+
+Then with a fixture — issue `LIM-SEAMPROBE` (project **Limiglow**) plus one
+`agent_runs` row, `status='running'`, `started_at` 2h old (past the 1h
+`maxRunMs`, inside the 6h stale window), `pid` null:
+
+```
+tick 1  ceilingSweep {"scanned":1,"stopped":[{"runId":"seamprobe-run-0001",
+        "agentId":"seam-ceiling-probe","taskKey":"LIM-SEAMPROBE",
+        "ceiling":"wall_clock"}],"skipped":0,"errors":[]}
+tick 2  ceilingSweep {"scanned":0,"stopped":[],"skipped":0,"errors":[]}   ← idempotent
+
+agent_runs  status=stopped  stopped_reason=wall_clock  stopped_at=…21:18:34Z
+issues      is_blocked=1    blocked_by=system:ceiling_stop:wall_clock
+inbox       1 row, type=ceiling_stop, status=pending
+agent_memory 1 row, key=ceiling_stop
+```
+
+That is the wall-clock ceiling firing **through the scheduled route**, on a run
+that never sent a heartbeat — the failure mode §3.1 was built for — with the
+stop recorded in all four places. Dispatch was **not** enabled to get this:
+`TODERO_DISPATCH_ENABLED` was untouched and `dispatch-guard-armed` /
+`dispatch-guard-untouched` are still green in the harness.
+
+Fixtures deleted and verified: `{"inbox":1,"agent_memory":1,"agent_runs":1,"issues":1}`,
+residue 0 in every table. A second, separate probe row (`LIM-SEAMPROBE2`, §10.4)
+was also deleted. `db.sqlite` is back to its one row, `TOD-1`, archived, untouched.
+
+### 10.4 Still red, and why — none of it mine
+
+**The sweep is now only as scheduled as the watchdog is, and on THIS host the
+watchdog is not scheduled at all.** `vercel.json` runs `/api/cron/watchdog` every
+30 min *on a Vercel deployment*. Locally the driver is `scripts/agent-kicker.sh`,
+and its watchdog call (line 33) is `curl -sf "$BASE/api/cron/watchdog"` with **no
+`x-todero-internal` header** — `middleware.ts:300` gates every `/api/` path on
+either that secret or a session, so it answers **401**. Measured today: the same
+URL is 401 bare and 200 with the header. The script defines `SECRET` at line 16
+and only uses it on the `run-agent` POST. Not my file, not fixed here; the
+one-line fix is to pass `-H "x-todero-internal: $SECRET"` on lines 27 and 33.
+Until then the ceiling sweep runs on the timer in production and by hand here.
+
+**`bash scripts/smoke-test-layout.sh` is red on its last guard, and it is not
+this change.** `scripts/no-unscoped-issues.mjs` is *uncommitted, mid-edit by
+another lane right now* (`git status`: ` M`). Its new §2b adds four `task_key`
+probes; three fail, including its own control `task_key, its OWN project, still
+resolves`. Diagnosis, so the owning lane does not chase a phantom leak: **the
+route is fine and the probe row is already gone by §2b.** Proof — a Limiglow row
+inserted by hand and asked for directly:
+
+```
+GET /api/issues?task_key=LIM-SEAMPROBE2  Referer /p/limiglow/work/list → 200, full row
+GET /api/issues?task_key=LIM-SEAMPROBE2  no referer                    → 400 unscoped_issues_read
+```
+
+Both are the intended answers. §2b's 404s are `!data` at `app/api/issues/route.ts:913`
+— no row found — which happens *before* any scope logic runs. The committed
+version of the guard (`git show HEAD:` → run from the scratchpad) still prints
+`PASS: scope holds under 10 live probes`. So: the working-tree guard is red, the
+shipped guard is green, and the boundary itself is intact.
+
+**Untouched on purpose:** `lib/dispatch-guard.ts`, `TODERO_DISPATCH_ENABLED`,
+`app/api/heartbeat/sweep/route.ts` (its header comment lines 22–26 now says
+"SEAM — NOT YET WIRED … nothing schedules it", which this change made false —
+flagged to the orchestrator, not edited, because that file is not mine), and the
+ceiling ORDER in `lib/agent-budget.ts`, which is argued and was not touched.

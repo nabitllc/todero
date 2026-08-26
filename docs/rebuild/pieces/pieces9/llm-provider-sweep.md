@@ -275,3 +275,93 @@ Breakdown of the full-run failures, because "15 failed" needs an account:
 Fixtures: **none created.** Every measurement used synthetic HTTP servers in the session
 scratchpad or read-only live GETs. No row was written to any table, `Limiglow` or otherwise.
 All probe ports (19601-19610, 19621-19625, 19731) are closed.
+
+---
+
+## 9. SEAM REQUESTS APPLIED — 2026-08-26, by the routes lane
+
+`__tests__/api/llm-kind-seam-requests.test.ts` was **0/4 passing (4 failures) before,
+4/4 after**. This section is written by the lane that owns the three route files §5 could
+not touch. It does not amend §1-§8; it records what happened downstream of them.
+
+### 9.1 What was applied
+
+| File | Change |
+|---|---|
+| `app/api/settings/usage/route.ts` | Lead word now comes from `localLlmProbe.value.kind`, not the literal `"unreachable"`. `reasonFrom()`'s `lastIndexOf(' — ')` → `indexOf(' — ')`. `kind` added to the JSON body. |
+| `app/api/business-agents/route.ts` | `kind: resolved.kind` added to the 400/502 body. |
+| `app/api/onboarding/route.ts` | `kind: resolved.kind` added to the 400/502 body. |
+
+### 9.2 Measured — the effect of the change, run by me today
+
+The seam's claim in §5 was re-derived from scratch rather than taken on trust. A synthetic
+server on `127.0.0.1:19843` answering Ollama's NATIVE `{"models":[…]}` shape (the
+missing-`/v1` case) was probed by a **byte-identical copy** of the shipped
+`lib/llm-provider.ts` (sha256 `a237f33b…0d53aa44`, verified equal to the tree's copy — Node
+24 will not type-strip a `.ts` under a CommonJS `package.json`, so the file was run from the
+scratchpad as `.mts`). `fetchLiveModels()` returned `kind: 'not-openai-compatible'`. Applying
+the OLD and NEW slicing expressions verbatim to that real message:
+
+```
+OLD CARD: unreachable — http://127.0.0.1:19843 — set LLM_BASE_URL to http://127.0.0.1:19843/v1.
+NEW CARD: not an OpenAI-compatible endpoint — http://127.0.0.1:19843 — the OpenAI /models
+          shape is {"data":[{"id":…}]}, so this endpoint speaks a different API. Top-level
+          keys: models. If this is Ollama, the base URL needs its /v1 suffix — set
+          LLM_BASE_URL to http://127.0.0.1:19843/v1.
+```
+
+§5's claim is confirmed, verbatim, including the invented word "unreachable" for an endpoint
+that answered HTTP 200.
+
+### 9.3 Beyond the diff — three things the seam did not say
+
+1. **The AFTER block does not compile as written.** `localLlmResult`'s inline type annotation
+   has no `kind` member, so adding one is an excess-property error under `strict`. The
+   annotation and the `LiveModelsFailureKind` import were added; without them `npx tsc
+   --noEmit` fails. The lane that wrote the diff could not run the file, exactly as warned.
+
+2. **The `rejected` fallback was NOT applied as written.** The diff falls back to
+   `'unreachable'` when the probe promise rejects. `fetchLiveModels()` catches every network
+   failure itself and returns `kind: 'unreachable'` for it, so a *rejection* reaching this
+   branch is an internal fault of unknown shape — calling it "unreachable" is the same
+   invented diagnosis this change exists to delete, one layer up. That branch now emits **no
+   `kind` at all** and leads with `probe failed`. Absence, not a plausible label. If a later
+   round wants the diff's literal text back, it should say why a rejection is a network fact.
+
+3. **`kind` reaches the wire and stops there — the second code path is in a file this lane
+   does not own.** `components/tabs/SettingsTab.tsx:312` renders
+   `statusLabel={data.localLlm.ok ? … : 'Unreachable'}` — a hardcoded badge that says
+   *Unreachable* for all three kinds, on the very card §5 measured. Its wire type
+   (`SettingsTab.tsx:30`) also does not declare `kind`. The detailed sentence below the badge
+   (`:317`) is now correct; **the badge above it is still the original defect.** Same on the
+   other two routes: `components/OnboardingWizard.tsx:238` does `throw new Error(data.error)`
+   and discards `data.kind`; nothing consumes `/api/business-agents`' error body at all. So
+   the stated benefit — "a client can branch on WHY without string-matching prose" — is
+   **available but not yet realized on any screen.**
+
+### 9.4 Not observed
+
+- **The failure branch was never exercised over HTTP.** `LLM_BASE_URL` is read at module load
+  by the already-running shared :3000 dev server and Ollama on this machine is healthy, so
+  `GET /api/settings/usage` returns the SUCCESS branch. Verified live (internal-secret call,
+  HTTP 200): `localLlm.ok: true`, three model ids, `error: null`, and no `kind` key — the
+  intended honest absence. `database` came back `provider: "sqlite"`, `dbLimitBytes: null`,
+  `plan: null` — the "Supabase — Free Tier — 500 MB" correction is **not** regressed. The new
+  `else` branch is covered by `tsc` and by 9.2's arithmetic, **not** by an end-to-end request.
+- **No browser.** The badge finding in 9.3.3 is a source read, not a screenshot.
+
+### 9.5 Gates — run by me, today
+
+| Gate | Result |
+|---|---|
+| `__tests__/api/llm-kind-seam-requests.test.ts` | **0/4 → 4/4** |
+| `npx tsc --noEmit` | **exit 0, zero output** |
+| `npx jest` (full) | **2329 passed, 5 failed, 2 skipped / 2336**; 116 suites passed, 3 failed, 1 skipped |
+| `node scripts/acceptance/run.mjs` | **45/45, harness 10/10** (16727 ms) |
+| `bash scripts/smoke-test-layout.sh` | **exit 0, 12 green guards** (the brief said nine; four nav + eight script guards are green) |
+
+The three red suites, none of them this lane's files: `runtimes/spawn-live` (known baseline),
+`fleet/fleet-provenance-seams` (RED seam request against `app/page.tsx`, orchestrator-owned),
+`runtimes/pieces9-seams` (RED seam requests against `/api/costs/breakdown` and `MemoryTab`).
+
+Fixtures: **none created.** No row written to any table. Port 19843 closed.

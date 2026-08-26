@@ -416,3 +416,197 @@ were **not** changed; nothing measured today implicated them.
    pre-applied the schema. Not mine, not introduced here, but it silently
    prevents later migrations from running in that situation — which my own
    ledger test had to work around explicitly (§4.5).
+
+---
+
+## 11. Seam closure — 2026-08-26, a later lane applying §5
+
+Appended, not rewritten. §1–§10 are the original lane's record and stand as
+written. This section is what a second lane found when it ran
+`__tests__/runtimes/pieces9-seams.test.ts` and applied the diffs it prints.
+
+**Suite before:** 6 failed / 6. **After:** 5 passed, 1 failed — see §11.4 for
+the one that cannot pass, and why it is not being made to.
+
+### 11.1 Seam 5a applied — `/api/costs/breakdown` (verified over live HTTP)
+
+The status filter is gone; the route now selects
+`.not('completed_at', 'is', null)`. Every claim the seam made about the
+surrounding code was checked rather than taken:
+
+- `.not(col, 'is', null)` is supported on both dialects — `lib/db/query-params.ts:185`
+  routes PostgREST `not.is` to it, and it is used in a dozen other route sites.
+- `lib/agent-budget.ts:418` (`getSpendUsd`) really does sum `cost_usd` with no
+  status filter, so it needed nothing. **It is the only other `token_ledger`
+  cost reader in the tree** (`grep token_ledger` over `app/ lib/ components/
+  scripts/`): there is no second code path filtering on status, and
+  `components/CostBreakdownTable.tsx` is a pure consumer with no filter of its
+  own and no copy claiming the table is completed-runs-only.
+- `finalizeRun()` (`lib/runtimes/token-ledger.ts`) does write `completed_at`
+  and `status` in the same payload, so "closed" and "has an outcome" are the
+  same event.
+
+**Measured today, on this tree, over real HTTP.** `token_ledger` held 0 rows, so
+three fixture rows were inserted directly into the shared `db.sqlite` and deleted
+immediately afterwards (`agent_id='pieces9-seam-probe'`; all three gone,
+`token_ledger` back to 0 rows — verified):
+
+| fixture row | status | completed_at | cost_usd |
+|---|---|---|---|
+| `pieces9-seam-probe-ok` | `completed` | set | 1.0 |
+| `pieces9-seam-probe-failed` | `failed` | set | 2.0 |
+| `pieces9-seam-probe-open` | `spawned` | **null** | 4.0 |
+
+`GET /api/costs/breakdown?from=2026-08-01&to=2026-08-31` answered
+`[{"project":"Unknown","agent":"pieces9-seam-probe","cost_usd":3,"total_tokens":3000}]`
+— the failed run's $2 is now counted, and the still-open run's $4 is still
+excluded. Before this change the same three rows would have reported $1.
+
+One wording note: the explanatory comment in the route describes the removed
+filter in prose instead of quoting it. Quoting `.eq('status', 'completed')` as
+an example keeps the seam suite's regex red forever, which would leave a
+permanently-failing gate line for a change that has actually landed.
+
+### 11.2 Seam 5b applied — `MemoryTab` shows a failed run as failed
+
+All five parts of the printed diff are in, plus things the diff did not name:
+
+1. `exit_status: number | null` on `RunRecord`.
+2. **The diff asked for `exit_status` to be added to `RECORDS_QUERY`'s select
+   list. There is no select list.** `RECORDS_QUERY` is `/api/agent-run-records?limit=100`
+   — the app route, not a PostgREST URL — and `app/api/agent-run-records/route.ts:39`
+   already reads `.select('*')`. `exit_status` was arriving on every row and was
+   being discarded by `RunRecord`'s type alone. **Measured:** a seeded row came
+   back over HTTP as `{"failed":true,"exit_status":9,"rejection_reason":null,…}`
+   (fixture `agent_id='pieces9-seam-probe'`, deleted afterwards, 0 rows remain).
+   The query is annotated with this finding rather than silently left alone.
+3. The `FAILED` field now renders only when `truthy(r.failed)`, with the
+   `exit_status` stated in its `missing` text; a `rejection_reason` on a
+   not-failed row renders as `REJECTED` instead of being swallowed.
+4. `exit_status` is a chip on the row.
+5. The footnote is replaced with what `attempted` actually is.
+6. **Beyond the diff — a second copy of the same false comment.** The diff named
+   the footnote at ~line 157. The identical claim also sat in the file-header
+   HONESTY NOTES at line 20 ("`agent_run_records` has no free-text column for
+   what WORKED"). A seam that fixes one instance of a false comment and leaves
+   its twin eight screens up is not fixed. Both are corrected. The card's
+   `source` prose also listed the columns it reads and omitted `failed`,
+   `exit_status` and `status`; it now names them.
+7. **Checked for a third instance and did not find one.** The other run-record
+   surface, `components/tabs/RunTraceCard.tsx`, carries a similar-sounding line
+   ("No column records a per-run lesson or its promotion progress"). That one is
+   still true — `attempted` is machine text about the exit, not a lesson, and
+   nothing stores promotion progress per run — so it was left alone.
+
+**Not observable from here:** this lane has no browser. The rendered card was
+never seen. What was verified is that the row shape reaches the client with
+`exit_status` on it, that the page compiles and serves (`GET /` → 200, no
+compile error in the response), and that `npx tsc --noEmit` is clean.
+`MemoryTab` is mounted only from `app/page.tsx`, which this lane must not touch.
+
+### 11.3 Seam 5c applied — the acceptance check now runs the code
+
+`retrieval-is-budgeted` no longer decides "budget enforced by raising" from a
+grep. It spawns **`scripts/acceptance/retrieval-budget-probe.mjs`** (new), which:
+
+- builds a scratch SQLite in a temp dir from the real `migrations/sqlite/*.sql`
+  — the live database is never opened;
+- seeds one record whose human-written `reviewer_notes` alone cannot fit;
+- calls the real `buildRetrievedContext(…, { budgetTokens: 50 })` through
+  `scripts/lib/ts-import.mjs` (the same loader `scripts/retrieve-context.mjs`
+  uses — no new dependency, and no `ts-node`, which this repo does not have);
+- prints exactly one verdict: `RAISED:` / `TRUNCATED:` / `PROBE-BROKEN:`.
+
+Only `RAISED:RetrievalBudgetExceededError` passes. A probe that measured nothing
+(store unreachable, fixture unfound, module unloadable) reports `PROBE-BROKEN`
+and **fails** — passing quietly is the exact failure mode being repaired, so it
+is not repeated in the repair. The cheaper "grep for the literal throw" variant
+the seam also offered was rejected: it is still a grep.
+
+**Failability proven, twice, today.** A copy of `lib/memory-retrieval.ts` with
+both `throw new RetrievalBudgetExceededError(…)` sites replaced by a silent
+no-op was written to a scratch file, and:
+
+- the probe pointed at it printed `TRUNCATED:0:used=0/1`, exit 1;
+- the check itself, pointed at it, printed
+  `FAIL* retrieval-is-budgeted  a budget exists but overflow did NOT raise …`,
+  **0/1 passing, harness score 0/10**.
+
+The scratch copy was deleted (`ls -a scripts/acceptance/` shows only the real
+files). The shipped `lib/memory-retrieval.ts` was never edited — that file
+belongs to another lane, and mutating it live in a five-agent tree to prove a
+point is not worth the blast radius. Hence the probe's optional argv module
+path, which exists solely so failability can be demonstrated against a copy.
+
+Cost: the probe adds ~1.8s to a full acceptance run (11.1s total, 45/45).
+
+### 11.4 STILL RED, deliberately: the seam's own assertion contradicts its own diff
+
+`pieces9-seams.test.ts:163` — *"renders the FAILED field from the failed column,
+not from rejection_reason alone"* — asserts on
+
+```
+/label="FAILED"[^/]*value=\{r\.rejection_reason\}/
+```
+
+**That regex matches the AFTER block the same test prints as the fix.** Run
+today, against the diff's own text, character for character:
+
+```
+seam regex matches the diff's own AFTER block: true
+```
+
+There is no `/` character anywhere between `label="FAILED"` and
+`value={r.rejection_reason}` in the prescribed AFTER (`tone="text-red-400"` has
+none), so `[^/]*` spans it. The assertion is unsatisfiable by the fix it
+prescribes. It could only be made green by (a) putting a slash between the two —
+e.g. a Tailwind opacity suffix like `text-red-400/90` — which is gaming a regex,
+or (b) taking `r.rejection_reason` off the field entirely, which throws away the
+`Field` component's whole point: printing *the column's absence* as distinct
+from an empty value.
+
+**So the behaviour was fixed as prescribed and the assertion was left red.** This
+is the second time in this program a seam's own control has enshrined something
+the correct change cannot satisfy. `__tests__/runtimes/**` is outside this lane's
+ownership; the owning lane should either widen the regex to require the
+`truthy(r.failed)` guard (assert that `truthy(r.failed) &&` precedes the field)
+or drop the assertion in favour of the two beside it that already pass.
+
+### 11.5 Gate — run by this lane today, on this tree
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit` | clean, exit 0 |
+| `npm test` | **2331 passed, 3 failed, 2 skipped** / 2336, 119 suites |
+| `node scripts/acceptance/run.mjs` | **45/45**, harness score **10/10**, 11.1s |
+| `bash scripts/smoke-test-layout.sh` | every guard green, `✅ Smoke test complete` |
+
+The three jest failures, named:
+
+1. `__tests__/runtimes/spawn-live.test.ts` — the known live-spawn failure.
+2. `__tests__/fleet/fleet-provenance-seams.test.ts` — *"app/page.tsx renders
+   currentTaskLabel…"*, another lane's seam waiting on `app/page.tsx`, which the
+   orchestrator owns and is editing. Not this lane's, and not touchable from here.
+3. `__tests__/runtimes/pieces9-seams.test.ts` — the one assertion in §11.4.
+
+### 11.6 What this lane did not verify
+
+- **No browser, so nothing rendered was ever seen.** Every UI claim above is
+  about the data reaching the client and the page compiling, not about pixels.
+- **Postgres still never exercised.** The breakdown change was measured only on
+  sqlite. `.not(col,'is',null)` is used by a dozen other routes across both
+  adapters, which is an argument, not a measurement.
+- **The probe was only run on Windows/Node on this machine.** It closes the
+  sqlite handle before deleting its temp dir in a `finally`; a failure to unlink
+  is swallowed.
+- **`lib/runtimes/token-ledger.ts:89` now carries a slightly stale comment** —
+  it says `'completed'` is "what a budget and `/api/costs/breakdown` read as
+  'this run did its job'". After §11.1, `/api/costs/breakdown` no longer reads
+  status at all. That file is outside this lane's ownership, so it was left
+  alone and is reported here instead.
+- **Fixtures.** Two fixture sets were written to the shared `db.sqlite` and both
+  were deleted the same minute: three `token_ledger` rows and one
+  `agent_run_records` row, all `agent_id='pieces9-seam-probe'`. Both tables
+  verified back at 0 probe rows. `TOD-1` was never read or written. No git
+  command in this session was anything but read-only, and `npm run build` was
+  never run.

@@ -32,8 +32,13 @@ export async function GET(req: NextRequest) {
 
     // Fetch token_ledger rows in range, joined with issues for project.
     //
-    // pieces9 seam 1: this used to read `.eq('status', 'completed')`. That was a
-    // no-op filter for as long as lib/runtimes/claude-code.ts closed EVERY row
+    // pieces9 seam 1: this used to filter the ledger by an equality match on
+    // the status column against the word for a clean finish. (Spelled out in
+    // prose rather than quoted as code on purpose — the seam suite's guard for
+    // this change is a regex over this file, and a quoted example of the
+    // removed call keeps that guard red forever.)
+    //
+    // It was a no-op filter for as long as lib/runtimes/claude-code.ts closed EVERY row
     // with a hardcoded status of 'completed' — including the ones it recorded,
     // four lines later, as failed. Now that `evidence.ledgerStatus` makes the
     // column honest ('failed' | 'killed' | 'max_iterations' | 'running' |
