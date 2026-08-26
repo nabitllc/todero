@@ -652,11 +652,24 @@ async function validateWorkflowTransition(
           missing.push('commit_sha or feature_branch or pr_url (at least one required)')
         }
       }
-    } else if (v === 'test_status_passed') {
-      if (merged.test_status !== 'passed') {
-        missing.push('test_status=passed')
-      }
-    } else if (v === 'dual_review_passed') {
+    } else if (v === 'test_status_passed' || v === 'dual_review_passed') {
+      // TOD-2446: `test_status_passed` used to be its own branch asking
+      // `merged.test_status !== 'passed'`. `test_status` is not a column on
+      // `issues`, so that gate had exactly two outcomes and neither was the one
+      // it was written for: a caller who omitted the field got 400 "missing
+      // required fields: test_status=passed", and a caller who supplied it got
+      // 500 "no such column: test_status" from the write a few hundred lines
+      // below. It could not pass. What it was PROTECTING is real, though —
+      // "review signed off before this issue may be approved" — so it is
+      // aliased onto the check that expresses that against columns which exist,
+      // rather than deleted (deleting it would drop the branch through to the
+      // generic `merged[v]` case and produce a different permanent 400).
+      //
+      // This is not a new opinion. Migration 007 already replaced this
+      // validator with `dual_review_passed` in the seeded transitions, and the
+      // live workflow_transitions table (7 rows, measured) names
+      // `test_status_passed` nowhere. The alias exists for installations still
+      // carrying the older seed from config/migrations/008 and 009.
       const { bothPassed } = computeDualReviewState(merged)
       if (!bothPassed) {
         missing.push('tester_status=passed and designer_status=passed')
@@ -1602,6 +1615,32 @@ export async function PATCH(req: NextRequest) {
   // carry no session cookie, so they still have to send their own identity.
   const transitionedBy = (_transitionedBy as string | undefined) ?? resolveSessionActor(req)
 
+  // TOD-2446: refuse `test_status` in the body instead of 500ing on it.
+  //
+  // TOD-2445 removed the three places the SERVER wrote this field, but nothing
+  // stops a CLIENT from sending it: `fields` is the request body minus four
+  // named keys, and it goes into `.update()` verbatim. Measured on this branch
+  // before the fix — `PATCH {"id":…,"test_status":"passed"}` -> HTTP 500 `no
+  // such column: test_status`. That still matters because prompt text in
+  // lib/agent-queue.ts instructs the Tester agent to do exactly this, so the
+  // outage was one agent run away from returning.
+  //
+  // 422 with the real column names is the honest answer: the field does not
+  // exist, is not being added (see the tombstone in lib/issues.ts), and the
+  // caller needs to know what to send instead. A 500 tells them nothing.
+  if ('test_status' in fields) {
+    return NextResponse.json(
+      {
+        error:
+          '`test_status` is not a field on an issue and never gets written. The review verdict lives in ' +
+          '`tester_status` and `designer_status`; the combined value is derived from those two, not stored. ' +
+          'Send `tester_status` or `designer_status` (passed | failed | pending) instead.',
+        field: 'test_status',
+      },
+      { status: 422 }
+    )
+  }
+
   // Hub-scoped query context: when business_id is provided, scope all lookups to that hub
   const hubScope = scopeBusinessId ? getHubClient(scopeBusinessId as string) : null
 
@@ -2034,16 +2073,24 @@ export async function PATCH(req: NextRequest) {
   if (before) {
     if (before.status === 'code_review' && ['tester', 'designer', 'ux'].includes(transitionedBy ?? '')) {
       if (transitionedBy === 'tester') {
-        if (fields.tester_status === undefined && (fields.tester_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
-          fields.tester_status = fields.test_status === 'failed' || fields.status === 'open' ? 'failed' : 'passed'
+        // TOD-2446: `fields.test_status` was one of the three signals here and
+        // one of the two verdict inputs. It is not a column, so a body that
+        // carried it 500'd on the write regardless of what this branch decided;
+        // a body that did not carry it left the term permanently `undefined`.
+        // Either way it contributed nothing. `tester_notes` and `status` are
+        // the signals that actually arrive, and a tester who means "failed"
+        // says so with `status: 'open'` or an explicit `tester_status`.
+        if (fields.tester_status === undefined && (fields.tester_notes !== undefined || fields.status !== undefined)) {
+          fields.tester_status = fields.status === 'open' ? 'failed' : 'passed'
         }
         fields.tested_by = transitionedBy
         if (fields.tester_reviewed_at === undefined) fields.tester_reviewed_at = new Date().toISOString()
       }
 
       if (transitionedBy === 'designer' || transitionedBy === 'ux') {
-        if (fields.designer_status === undefined && (fields.designer_notes !== undefined || fields.test_status !== undefined || fields.status !== undefined)) {
-          fields.designer_status = fields.test_status === 'failed' || fields.status === 'open' ? 'failed' : 'passed'
+        // TOD-2446: same removal as the tester branch above — see that comment.
+        if (fields.designer_status === undefined && (fields.designer_notes !== undefined || fields.status !== undefined)) {
+          fields.designer_status = fields.status === 'open' ? 'failed' : 'passed'
         }
         fields.designed_by = transitionedBy === 'ux' ? 'designer' : transitionedBy
         if (fields.designer_reviewed_at === undefined) fields.designer_reviewed_at = new Date().toISOString()

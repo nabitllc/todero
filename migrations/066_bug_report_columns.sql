@@ -1,0 +1,64 @@
+-- 066: restore the four bug-report columns the baseline dropped, and record why
+--      `test_status` is NOT among them. Postgres dialect; the SQLite copy is
+--      migrations/sqlite/066_bug_report_columns.sql.
+--
+-- WHAT THIS FIXES — a live, reproducible deadlock
+--   Measured on this branch before this migration, against the running API:
+--
+--     PATCH bug defined -> open, no environment  -> 400 "Cannot move to open:
+--                                                    missing required fields:
+--                                                    environment"
+--     PATCH bug defined -> open, WITH environment -> 500 "no such column:
+--                                                    environment"
+--
+--   Both directions fail, so no bug in this installation can leave `defined`.
+--   That is the same outage shape TOD-2445 fixed for `test_status` — a
+--   validator gating on a field the table cannot hold — on a different column,
+--   still live. The gate is seeded by migrations/005 and /023 and by the SQLite
+--   baseline itself (workflow_transitions, issue_type='bug',
+--   defined -> open, validators [... ,"environment"]), and the create handler
+--   in app/api/issues/route.ts warns about the field on every bug POST.
+--
+-- WHY THESE FOUR COLUMNS ARE ADDED RATHER THAN THE REFERENCES REMOVED
+--   They are SOURCE data. Nothing in the codebase can derive "where was this
+--   bug found" or "what did you expect to happen" from another column; a human
+--   or an agent types them or the information does not exist. They were real
+--   columns before the migration to this repo's own schema — added by
+--   config/migrations/009_seed_remaining_workflows.sql, which is the COMPANION
+--   repo's migration directory and is not applied by `npm run db:migrate` — and
+--   the pre-Neon export still carries their values (exports/supabase/issues.json,
+--   3078 rows: environment and steps_to_reproduce non-null on 8 rows,
+--   expected_behavior and actual_behavior on 4). They were lost when
+--   000_baseline_schema.sql was written, not deliberately retired.
+--
+--   Deleting the references instead would have removed a gate that protects
+--   something real — a bug must say where it was found before anyone is asked
+--   to work on it — and would have silently discarded the "Bug Details" panel
+--   in components/tabs/BoardTab.tsx and the DoR check beside it, both of which
+--   are correct code that has simply had nothing to read.
+--
+-- WHY `test_status` IS NOT ADDED HERE  (read this before adding it)
+--   It is the opposite case, and the difference is the whole point of this
+--   migration having a comment:
+--
+--     * It is DERIVED, not source. computeDualReviewState() in
+--       lib/issue-routing.ts already returns `overallTestStatus` from
+--       `tester_status` and `designer_status`, both of which are real columns.
+--     * A stored copy demonstrably drifts. In the same 3078-row export,
+--       `test_status` was populated on every row, and on 372 of them (12.1%)
+--       it disagreed with the value derived from the two review columns —
+--       'passed' sitting on rows whose tester and designer were both still
+--       'pending'. It was a second source of truth and it was wrong one time
+--       in eight.
+--     * This project already decided this. Migration 007 replaced the
+--       `test_status_passed` validator with `dual_review_passed`, and the live
+--       workflow_transitions table (7 rows) names `test_status_passed` nowhere.
+--
+--   Its tombstones are in lib/issues.ts, components/tabs/BoardTab.tsx,
+--   app/api/issues/route.ts, lib/issue-routing.ts and lib/pipeline-stages.ts.
+--   scripts/no-phantom-columns.mjs fails the moment live code names it again.
+
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS steps_to_reproduce TEXT;
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS expected_behavior  TEXT;
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS actual_behavior    TEXT;
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS environment        TEXT;

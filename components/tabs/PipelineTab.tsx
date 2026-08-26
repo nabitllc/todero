@@ -45,6 +45,15 @@ import {
   columnForStatus,
   type PipelineColumn,
 } from '@/lib/pipeline-stages'
+import {
+  moveVerdict,
+  moveBody,
+  unmetFields,
+  humaniseMoveFailure,
+  type MoveField,
+  type MoveVerdict,
+} from '@/lib/issue-moves'
+import { sessionOperator } from '@/lib/operator-identity'
 import { isBlocked, nextPRWindow } from '@/lib/pipeline'
 import { Button } from '@/components/ui'
 import { issuesUrl } from '@/lib/db/browser'
@@ -550,25 +559,39 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
           issue={actionSheetIssue}
           error={moveError}
           onClose={() => { setActionSheetIssue(null); setMoveError(null) }}
-          onMove={async (status) => {
+          onMove={async (status, values) => {
             const target = actionSheetIssue
             setMoveError(null)
             // Optimistic, but never left standing over a refusal: the MC API
             // enforces the lifecycle gates, and a rejected move rolls back and
-            // shows the API's own sentence.
+            // shows a sentence a person wrote.
             const before = target.status
             setIssues(prev => prev ? prev.map(i => i.id === target.id ? { ...i, status } : i) : prev)
             // The MC API — the route that validates against VALID_STATUSES and
             // runs the transition rules. The old code PATCHed the db proxy
             // directly, bypassing all of it.
+            //
+            // The body now carries whatever this particular move requires, built
+            // by `moveBody()` from the same predicate that decided to offer the
+            // move at all. It is still the SERVER that enforces every one of
+            // those requirements: a PATCH sent past this component is refused by
+            // exactly the same rules, which is why the failure branch below is
+            // not dead code and must never be removed.
             const r = await fetchJson<Issue>('/api/issues', {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: target.id, status }),
+              body: JSON.stringify(moveBody(target, status, values)),
             })
             if (!r.ok) {
               setIssues(prev => prev ? prev.map(i => i.id === target.id ? { ...i, status: before } : i) : prev)
-              setMoveError(r.error.message || `The move to "${status}" was refused.`)
+              // Raw database text never reaches the screen. When the humaniser
+              // has to replace a message, the original goes to the console —
+              // the fallback sentence tells the operator to look for it there.
+              const human = humaniseMoveFailure(r.error.message, status, r.error.status)
+              if (human !== r.error.message) {
+                console.warn('[pipeline] move refused, raw server message:', r.error.message)
+              }
+              setMoveError(human)
               return
             }
             setActionSheetIssue(null)
@@ -898,9 +921,91 @@ function IssueCard({ issue, parent, onLongPressStart, onLongPressEnd, onOpenMove
 /* ── Move sheet — statuses, grouped by the column that displays them ──
    Offering a COLUMN would be ambiguous: six of the eight hold more than one
    status, so "move to In review" cannot say which of code_review /
-   product_review / feature_review it means. */
+   product_review / feature_review it means.
+
+   Every row is now labelled with what that move needs, decided by
+   `moveVerdict()` in `lib/issue-moves.ts`. Measured against the running API on
+   2026-08-26: of the sixteen destinations this sheet offered unconditionally,
+   ELEVEN completed on a bare `{id, status}` and FIVE were refused — two of them
+   with a raw `CHECK constraint failed: …` string put straight on the operator's
+   screen. Two further refusals (`backlog` from anywhere else, anything from a
+   closed card) depend on the row rather than the destination.
+
+   The sheet no longer sends a move it has been told will fail. It either
+   collects what the move needs first, or shows the destination disabled with
+   the reason. It never HIDES one: an operator who cannot see `code_review`
+   learns nothing; an operator told what `code_review` needs learns everything.
+
+   The server is still the authority. Nothing here is enforcement — the MC API
+   re-checks every one of these rules and refuses a PATCH that skips this
+   component entirely. */
 function MoveSheet({ issue, error, onClose, onMove }: {
-  issue: Issue; error: string | null; onClose: () => void; onMove: (status: string) => void
+  issue: Issue
+  error: string | null
+  onClose: () => void
+  onMove: (status: string, values: Record<string, string>) => void
+}) {
+  // The workflow identity this PATCH will be attributed to — the same value the
+  // server derives from the session cookie when the body omits one
+  // (`lib/session-actor.ts:36`). Read here rather than passed down because this
+  // sheet only ever renders from a click, long after hydration.
+  const actor = sessionOperator()
+
+  /** The destination whose fields are being collected, or null for the list. */
+  const [collecting, setCollecting] = useState<{ status: string; fields: readonly MoveField[] } | null>(null)
+
+  const verdicts = useMemo(() => {
+    const m = new Map<string, MoveVerdict>()
+    for (const col of PIPELINE_COLUMNS) {
+      for (const s of col.statuses) m.set(s, moveVerdict(issue, s, actor))
+    }
+    return m
+  }, [issue, actor])
+
+  if (collecting) {
+    return (
+      <MoveSheetShell issue={issue} error={error} onClose={onClose}>
+        <MoveFieldForm
+          status={collecting.status}
+          fields={collecting.fields}
+          onBack={() => setCollecting(null)}
+          onSubmit={values => onMove(collecting.status, values)}
+        />
+      </MoveSheetShell>
+    )
+  }
+
+  return (
+    <MoveSheetShell issue={issue} error={error} onClose={onClose}>
+      <div className="py-1">
+        {PIPELINE_COLUMNS.map(col => (
+          <div key={col.id}>
+            <div className="px-4 pt-3 pb-1 text-[9px] uppercase tracking-wider text-white/25">{col.label}</div>
+            {col.statuses.map(status => (
+              <MoveOption
+                key={status}
+                status={status}
+                hex={col.hex}
+                verdict={verdicts.get(status) ?? { kind: 'blocked', reason: 'This board has no verdict for that status.' }}
+                onChoose={v => {
+                  if (v.kind === 'ready') onMove(status, {})
+                  else if (v.kind === 'needs') setCollecting({ status, fields: v.fields })
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-white/5">
+        <Button variant="ghost" size="md" onClick={onClose} className="w-full justify-center py-3">Cancel</Button>
+      </div>
+    </MoveSheetShell>
+  )
+}
+
+/** The bottom-sheet chrome, shared by the list view and the field form. */
+function MoveSheetShell({ issue, error, onClose, children }: {
+  issue: Issue; error: string | null; onClose: () => void; children: React.ReactNode
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/90 backdrop-blur-sm" onClick={onClose}>
@@ -908,7 +1013,7 @@ function MoveSheet({ issue, error, onClose, onMove }: {
         className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-2xl border border-white/10 bg-[#0f0f0f] shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
-        <div className="px-4 py-3 border-b border-white/5 sticky top-0 bg-[#0f0f0f]">
+        <div className="px-4 py-3 border-b border-white/5 sticky top-0 bg-[#0f0f0f] z-10">
           <div className="w-10 h-1 rounded-full bg-white/10 mx-auto mb-2" />
           <div className="text-xs text-white/60 font-medium truncate">{issue.task_key} — {issue.title}</div>
           <div className="text-[10px] text-white/25 mt-0.5">
@@ -920,31 +1025,146 @@ function MoveSheet({ issue, error, onClose, onMove }: {
             {error}
           </div>
         )}
-        <div className="py-1">
-          {PIPELINE_COLUMNS.map(col => (
-            <div key={col.id}>
-              <div className="px-4 pt-3 pb-1 text-[9px] uppercase tracking-wider text-white/25">{col.label}</div>
-              {col.statuses.map(status => (
-                <button
-                  key={status}
-                  onClick={() => onMove(status)}
-                  disabled={issue.status === status}
-                  className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 ${
-                    issue.status === status ? 'text-white/25' : 'text-white/60 hover:bg-white/5 active:bg-white/10'
-                  }`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: col.hex }} />
-                  <span className="font-mono text-[12px]">{status}</span>
-                  {issue.status === status && <span className="text-[10px] text-white/25 ml-auto">Current</span>}
-                </button>
-              ))}
-            </div>
-          ))}
-        </div>
-        <div className="border-t border-white/5">
-          <Button variant="ghost" size="md" onClick={onClose} className="w-full justify-center py-3">Cancel</Button>
-        </div>
+        {children}
       </div>
     </div>
+  )
+}
+
+/**
+ * One destination row.
+ *
+ * `blocked` renders as a disabled row that still shows the status and the
+ * reason — deliberately not hidden, and deliberately not a tap that fails.
+ * `needs` renders enabled with a summary of what it will ask for, so the
+ * operator knows the cost before committing to the tap.
+ */
+function MoveOption({ status, hex, verdict, onChoose }: {
+  status: string; hex: string; verdict: MoveVerdict; onChoose: (v: MoveVerdict) => void
+}) {
+  const disabled = verdict.kind === 'current' || verdict.kind === 'blocked'
+  const note =
+    verdict.kind === 'current' ? 'Current'
+    : verdict.kind === 'needs' ? `Needs ${verdict.fields.map(f => f.label.toLowerCase()).join(', ')}`
+    : null
+
+  return (
+    <div>
+      <button
+        onClick={() => !disabled && onChoose(verdict)}
+        disabled={disabled}
+        aria-describedby={verdict.kind === 'blocked' ? `move-blocked-${status}` : undefined}
+        className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 ${
+          disabled ? 'text-white/25 cursor-not-allowed' : 'text-white/60 hover:bg-white/5 active:bg-white/10'
+        }`}
+      >
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ background: hex, opacity: disabled ? 0.3 : 1 }}
+        />
+        <span className="font-mono text-[12px]">{status}</span>
+        {note && (
+          <span className={`text-[10px] ml-auto shrink-0 ${verdict.kind === 'needs' ? 'text-amber-300/70' : 'text-white/25'}`}>
+            {note}
+          </span>
+        )}
+      </button>
+      {verdict.kind === 'blocked' && (
+        <p id={`move-blocked-${status}`} className="px-4 pb-2 -mt-1 text-[10px] leading-snug text-white/30">
+          {verdict.reason}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Collect what the destination needs, then send it in the same PATCH.
+ *
+ * All of a move's fields at once, not one per round trip: `code_review` on a
+ * task needs four, and the API reports them one refusal at a time, so prompting
+ * from the error message alone would make the operator submit four times.
+ */
+function MoveFieldForm({ status, fields, onBack, onSubmit }: {
+  status: string
+  fields: readonly MoveField[]
+  onBack: () => void
+  onSubmit: (values: Record<string, string>) => void
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {}
+    for (const f of fields) seed[f.field] = f.defaultValue ?? ''
+    return seed
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const unmet = unmetFields(fields, values)
+  const set = (field: string, v: string) => setValues(prev => ({ ...prev, [field]: v }))
+
+  return (
+    <form
+      className="px-4 py-3"
+      onSubmit={e => { e.preventDefault(); if (unmet.length === 0 && !submitting) { setSubmitting(true); onSubmit(values) } }}
+    >
+      <p className="text-[11px] text-white/50 mb-3">
+        Moving to <span className="font-mono text-white/70">{status}</span> needs{' '}
+        {fields.length === 1 ? 'one more thing' : `${fields.length} more things`}. The board asks for{' '}
+        {fields.length === 1 ? 'it' : 'them'} here so the move goes through the first time.
+      </p>
+
+      {fields.map(f => (
+        <div key={f.field} className="mb-3">
+          <label htmlFor={`move-field-${f.field}`} className="block text-[11px] font-medium text-white/70">
+            {f.label}
+          </label>
+          <p className="text-[10px] text-white/35 mb-1 leading-snug">{f.why}</p>
+          {f.kind === 'select' ? (
+            <select
+              id={`move-field-${f.field}`}
+              value={values[f.field] ?? ''}
+              onChange={e => set(f.field, e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 text-[12px] text-white/80"
+            >
+              <option value="">Choose one…</option>
+              {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          ) : f.kind === 'longtext' ? (
+            <textarea
+              id={`move-field-${f.field}`}
+              rows={3}
+              value={values[f.field] ?? ''}
+              placeholder={f.placeholder}
+              onChange={e => set(f.field, e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 text-[12px] text-white/80 placeholder:text-white/20"
+            />
+          ) : (
+            <input
+              id={`move-field-${f.field}`}
+              type={f.kind === 'date' ? 'date' : 'text'}
+              value={values[f.field] ?? ''}
+              placeholder={f.placeholder}
+              onChange={e => set(f.field, e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-black/40 px-2 py-1.5 text-[12px] text-white/80 placeholder:text-white/20"
+            />
+          )}
+          {f.minLength && f.minLength > 1 && (
+            <p className="text-[10px] text-white/25 mt-0.5">
+              {(values[f.field] ?? '').trim().length}/{f.minLength} characters minimum
+            </p>
+          )}
+        </div>
+      ))}
+
+      <div className="flex gap-2 pt-1 pb-2">
+        <Button type="button" variant="ghost" size="md" onClick={onBack} className="flex-1 justify-center">Back</Button>
+        <Button type="submit" variant="primary" size="md" disabled={unmet.length > 0 || submitting} className="flex-1 justify-center">
+          {submitting ? 'Moving…' : `Move to ${status}`}
+        </Button>
+      </div>
+      {unmet.length > 0 && (
+        <p className="pb-3 text-[10px] text-white/30">
+          Still needed: {fields.filter(f => unmet.includes(f.field)).map(f => f.label.toLowerCase()).join(', ')}.
+        </p>
+      )}
+    </form>
   )
 }

@@ -22,6 +22,17 @@ export interface KanbanColumn {
   color: string
 }
 
+// @db-table issues
+//
+// EVERY FIELD BELOW IS A COLUMN ON `issues`, and scripts/no-phantom-columns.mjs
+// enforces that against the live schema. The annotation above is what binds this
+// interface to that table — it is read from the raw source, so do not delete it.
+//
+// TOD-2446: this interface is where the `test_status` fabrication lived longest.
+// It declared a field that is not a column, BoardTab rendered it, and the API
+// wrote it; every PATCH into or out of `code_review` answered HTTP 500 `no such
+// column: test_status`. A type that lies about the row shape is how a phantom
+// survives a sweep: `t.test_status` type-checks, so nothing objects.
 export interface Task {
   id: string
   title: string
@@ -48,7 +59,23 @@ export interface Task {
   task_key?: string
   severity?: string
   status_category?: 'Planned' | 'Ongoing' | 'SignOff' | 'Done' | null
-  test_status?: string
+  // TOD-2446 TOMBSTONE — `test_status?: string` was declared here and is GONE.
+  // It is not a column on `issues` (57 columns, measured with PRAGMA
+  // table_info; none of them this one) and it is not being added, because the
+  // combined review verdict is DERIVED, not stored:
+  // `computeDualReviewState()` in lib/issue-routing.ts already returns
+  // `overallTestStatus` from the two real columns below.
+  //
+  // The pre-Neon export (exports/supabase/issues.json, 3078 rows) proves why a
+  // stored copy is the wrong shape: `test_status` was populated on all 3078
+  // rows there, and on 372 of them (12.1%) it DISAGREED with the value derived
+  // from `tester_status`/`designer_status` — 'passed' sitting on rows whose two
+  // reviewers were both still 'pending'. It was a second source of truth that
+  // drifted. Migration 007 had already reached the same conclusion by replacing
+  // the `test_status_passed` validator with `dual_review_passed`.
+  //
+  // If you need the combined verdict, call computeDualReviewState(). Do not
+  // re-add the field.
   tester_status?: string
   tester_notes?: string
   tested_by?: string

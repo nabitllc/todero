@@ -1659,15 +1659,13 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   </div>
                 )}
 
-                {/* Test Status */}
-                {t.test_status && t.test_status !== 'none' && (
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-1">Test Status</p>
-                    <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full border ${t.test_status === 'passed' ? 'bg-green-500/10 text-green-400 border-green-500/30' : t.test_status === 'failed' ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-white/5 text-white/40 border-white/10'}`}>
-                      {t.test_status}
-                    </span>
-                  </div>
-                )}
+                {/* TOD-2446 TOMBSTONE — a "Test Status" badge stood here, reading
+                    `t.test_status`. That is not a column on `issues`, so the value
+                    was `undefined` on every row the API has ever returned and the
+                    badge never rendered once. It is deleted rather than repaired:
+                    the Review Status pair above already shows the two REAL columns
+                    this badge was a stale, drifting summary of. Do not re-add it —
+                    call computeDualReviewState() if a combined verdict is wanted. */}
 
                 {/* PR URL */}
                 {t.pr_url && (
