@@ -78,6 +78,58 @@ async function providerDetail(provider) {
 }
 
 /**
+ * `llmStatus()` (via `lib/llm-provider.ts`) parses `${baseUrl}/models` with
+ * `res.json().catch(() => null)` and defaults a parse failure to an empty
+ * model list — so a 200-OK response from ANY server, OpenAI-shaped or not,
+ * reports `{ ok: true, models: [] }`. Measured directly (see
+ * docs/rebuild/pieces/pieces7/clone-and-run.md): pointing `LLM_BASE_URL` at a
+ * plain HTTP server that answers with an HTML page reports the exact same
+ * "reachable yes — 0 models" a real Ollama with nothing pulled yet would.
+ * Those are not the same problem and do not have the same fix, so when the
+ * model list comes back empty, both `setup` and `doctor` make this separate,
+ * read-only request and look at what actually came back before repeating the
+ * same "0 models" sentence for both.
+ *
+ * Returns `{ looksOpenAiShaped: true | false | null, detail }` — `null` means
+ * this second probe itself failed and the caller should say "unknown", not
+ * fold it into either verdict.
+ */
+export async function probeOpenAiShape(baseUrl) {
+  try {
+    const res = await fetch(`${baseUrl}/models`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+    const contentType = res.headers.get('content-type') ?? ''
+    const text = await res.text()
+    let parsed
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return {
+        looksOpenAiShaped: false,
+        detail: `responded ${res.status}, Content-Type: ${contentType || '(none)'} — body is not JSON, so this is not an OpenAI-compatible endpoint`,
+      }
+    }
+    if (!Array.isArray(parsed?.data)) {
+      return {
+        looksOpenAiShaped: false,
+        detail: `responded ${res.status} with valid JSON, but no top-level "data" array — the OpenAI \`/v1/models\` shape is {"data":[...]}, so this endpoint is answering a different API`,
+      }
+    }
+    return { looksOpenAiShaped: true, detail: 'valid OpenAI /v1/models shape, genuinely zero models listed' }
+  } catch (err) {
+    // The shared fetch that got the caller here already succeeded once
+    // (status.ok was true), so a failure on this second, independent request
+    // is reported as unknown rather than folded into either verdict.
+    return {
+      looksOpenAiShaped: null,
+      detail: `could not re-probe: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+}
+
+/**
  * Live model roster from whatever answers at LLM_BASE_URL.
  * `{ ok, baseUrl, models[] }` or `{ ok: false, baseUrl, error }`.
  */

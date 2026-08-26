@@ -42,7 +42,7 @@ import { EOL } from 'node:os'
 
 import { REPO_ROOT, importTs } from './lib/ts-import.mjs'
 import { loadEnvFiles, parseEnvText, isPlaceholder } from './lib/env-file.mjs'
-import { llmStatus, requiredEnvReport, dropPlaceholderEnv } from './lib/env-report.mjs'
+import { llmStatus, requiredEnvReport, dropPlaceholderEnv, probeOpenAiShape } from './lib/env-report.mjs'
 import { requireNodeVersion } from './lib/node-version.mjs'
 
 // Before anything is written or probed: step 5 applies the sqlite migrations
@@ -203,6 +203,20 @@ async function checkLlm() {
 
   line(`${status.models.length} model${status.models.length === 1 ? '' : 's'} available:`)
   for (const id of status.models) line(`  - ${id}`)
+
+  // A 200-OK from ANY server, OpenAI-shaped or not, reports "0 models" the
+  // same way a real Ollama with nothing pulled yet does (measured directly —
+  // see docs/rebuild/pieces/pieces7/clone-and-run.md). Say which one this is,
+  // here, at setup time — not as a 500 the first time chat is used.
+  if (status.models.length === 0) {
+    const shape = await probeOpenAiShape(status.baseUrl)
+    if (shape.looksOpenAiShaped === false) {
+      line(`this endpoint is reachable but is NOT an OpenAI-compatible API:`)
+      line(`  ${shape.detail}`)
+      bullet(`Point LLM_BASE_URL at an actual OpenAI-compatible server instead —`)
+      line(`   Ollama (http://localhost:11434/v1), OpenRouter, Together, Azure, vLLM, …`)
+    }
+  }
 
   const wanted = process.env.LLM_MODEL?.trim()
   if (wanted && !status.models.includes(wanted)) {

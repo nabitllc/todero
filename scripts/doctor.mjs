@@ -29,6 +29,7 @@ import {
   requiredEnvReport,
   recommendedGaps,
   dropPlaceholderEnv,
+  probeOpenAiShape,
 } from './lib/env-report.mjs'
 
 // The app resolves TODERO_DIR from the working directory; run from anywhere.
@@ -248,6 +249,20 @@ async function reportLlm() {
 
   row('reachable', `yes — ${status.models.length} model${status.models.length === 1 ? '' : 's'}`)
   for (const id of status.models) row('', `- ${id}`)
+
+  if (status.models.length === 0) {
+    const shape = await probeOpenAiShape(status.baseUrl)
+    if (shape.looksOpenAiShaped === false) {
+      row('shape', 'NOT an OpenAI-compatible endpoint')
+      note(shape.detail)
+      problems.push(`${status.baseUrl} answered but is not an OpenAI-compatible API — ${shape.detail}`)
+    } else if (shape.looksOpenAiShaped === true) {
+      note('OpenAI-shaped and reachable; pull a model, e.g. `ollama pull qwen2.5-coder:7b`')
+    } else {
+      row('shape', 'unknown')
+      note(shape.detail)
+    }
+  }
 
   const wanted = process.env.LLM_MODEL?.trim()
   if (wanted) {
