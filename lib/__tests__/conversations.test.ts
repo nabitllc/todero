@@ -465,3 +465,53 @@ describe('migrations/063_conversations.sql — the Postgres dialect refuses the 
     ).rejects.toThrow(/conversations_thread_unique/)
   })
 })
+
+// ─── The card, rendered ─────────────────────────────────────────────────────
+//
+// components/tabs/ConversationsTab.tsx is not mounted in app/page.tsx — wiring
+// a card into the shell belongs to the orchestrator, and app/page.tsx is
+// outside this piece's ownership. So the strings it puts on screen are pinned
+// HERE instead of being described in prose: the component is rendered to static
+// markup and the markup is read back.
+//
+// What this can and cannot prove is worth being exact about. React effects do
+// not run during renderToStaticMarkup, so this covers the pre-fetch render —
+// the title, the printed source, and the no-project-yet empty state. The
+// loaded, empty and error bodies are pinned through the pure functions that
+// produce their text (emptyConversationsMessage, describeMessageState) and were
+// observed against the live API by request, not by screenshot.
+
+describe('ConversationsTab — the strings the card puts on screen', () => {
+  // Required lazily so the import cost lands only in this block.
+  /* eslint-disable @typescript-eslint/no-var-requires */
+  const React = require('react')
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const ConversationsTab = require('../../components/tabs/ConversationsTab').default
+
+  it('asks one question as its title', () => {
+    const html = renderToStaticMarkup(React.createElement(ConversationsTab, { projectFilter: 'Limiglow' }))
+    expect(html).toContain('Who is waiting on a reply?')
+  })
+
+  it('prints the exact query it reads, as the card\'s source', () => {
+    const html = renderToStaticMarkup(React.createElement(ConversationsTab, { projectFilter: 'Limiglow' }))
+    expect(html).toContain('/api/conversations?project=Limiglow')
+    expect(html).toContain(conversationsQuery('Limiglow'))
+  })
+
+  it('renders no metric before a real number has arrived — never a placeholder 0', () => {
+    const html = renderToStaticMarkup(React.createElement(ConversationsTab, { projectFilter: 'Limiglow' }))
+    expect(html).not.toContain('awaiting approval')
+  })
+
+  it('refuses to guess a scope: with no project it says so instead of listing everything', () => {
+    const html = renderToStaticMarkup(React.createElement(ConversationsTab, { projectFilter: null }))
+    expect(html).toContain('No project selected yet, so there is no conversation scope to read.')
+    expect(html).toContain('/api/conversations — waiting for a project scope')
+  })
+
+  it('has no Send control anywhere in its markup', () => {
+    const html = renderToStaticMarkup(React.createElement(ConversationsTab, { projectFilter: 'Limiglow' }))
+    expect(html).not.toMatch(/>\s*Send\s*</)
+  })
+})

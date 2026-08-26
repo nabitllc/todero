@@ -143,11 +143,16 @@ an adjective.
     message to already be `approved` — from `draft` it is **409** with the
     sentence *"a draft cannot be sent: it must be approved first — that is the
     whole rule this surface exists to enforce"*. And the endpoint records a send
-    a transport performed; it does not perform one. Mechanically: **no file this
-    piece owns contains an outbound `fetch(`/`http` request to any customer
-    channel**, and `lib/conversations.ts` imports neither `lib/db` nor
-    `next/server` (it is pure, which is what lets the test above run the refusals
-    without a database).
+    a transport performed; it does not perform one.
+
+    Mechanically, and stated as a grep a critic can re-run:
+    `grep -rn "fetch(\|http://\|https://\|axios\|WebSocket"` over every file this
+    piece owns returns **exactly three hits, all in `ConversationsTab.tsx`, and
+    all same-origin paths beginning `/api/conversations`** — the card reading its
+    own API. There is no absolute URL, no provider SDK and no socket anywhere in
+    the piece. `lib/conversations.ts` has **zero imports of any kind**, which is
+    both why it is provably free of a transport and what lets the test above run
+    every refusal without a database.
 
 15. **Approving requires more than writing, and the line is drawn where it is
     actually enforceable.** Drafting is `projects:write`; approving additionally
@@ -202,6 +207,23 @@ an adjective.
     beyond the 5 known pre-existing ones (`agents-route`, `agents-unconfigured`,
     `spawn-live`), and every fixture row inserted during verification is deleted
     afterwards with the count confirmed back at 0.
+
+## How items 16–20 were observed, and where the observation stops
+
+`ConversationsTab.tsx` is **not mounted anywhere**: wiring a card into the shell
+means editing `app/page.tsx`, which this piece is forbidden to touch (three other
+builders are in that file this round). So the card was never seen in a browser,
+and saying otherwise would be the unbacked claim this loop keeps shipping one of
+per round.
+
+What WAS observed instead, and how:
+
+| Claim | How it was checked |
+|---|---|
+| title, printed `source`, no-project empty state, no metric before a real number, no Send control | `renderToStaticMarkup` of the real component inside `lib/__tests__/conversations.test.ts` — the markup is read back and asserted |
+| the empty-state sentence, the approved-and-waiting sentence, every state label | the pure functions that produce them, asserted verbatim |
+| every number the card shows | the live API responses those numbers are read from, by `curl` |
+| an error REPLACING the body | **not observed.** It is structural — the error branch returns a `Card` with `<ApiErrorBanner>` as its only child and no `empty` prop, so the two cannot render together — but React effects do not run under static rendering and there is no DOM test environment in this repo (`jest-environment-node`, no jsdom, no RTL). This is the one acceptance item resting on reading the code rather than running it. |
 
 ## What is still missing after this piece — stated, not hidden
 

@@ -137,6 +137,15 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
     }, 500)
   }, [])
 
+  // The move sheet used to be reachable ONLY by a 500ms touch long-press, so on
+  // a desktop — the machine an operator actually watches this board from — a
+  // card could not be moved at all. Long-press stays for phones; this is the
+  // pointer/keyboard route to the same sheet.
+  const openMove = useCallback((issue: Issue) => {
+    setMoveError(null)
+    setActionSheetIssue(issue)
+  }, [])
+
   const handleLongPressEnd = useCallback(() => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current)
@@ -448,6 +457,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
               filter={filter}
               onLongPressStart={handleLongPressStart}
               onLongPressEnd={handleLongPressEnd}
+              onOpenMove={openMove}
               emptyLine={`${projectFilter} has no issues in this stage yet — that is correct, not broken.`}
             />
           ) : roster.error ? (
@@ -497,6 +507,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
                       compact
                       onLongPressStart={handleLongPressStart}
                       onLongPressEnd={handleLongPressEnd}
+                      onOpenMove={openMove}
                       emptyLine="—"
                     />
                   </div>
@@ -572,7 +583,7 @@ export default function PipelineTab({ projectFilter }: { projectFilter?: string 
 /* ── The board: N columns, one bucket each ── */
 function Board({
   columns, buckets, allIssues, childrenMap, wip, countdown, filter, compact, emptyLine,
-  onLongPressStart, onLongPressEnd,
+  onLongPressStart, onLongPressEnd, onOpenMove,
 }: {
   columns: PipelineColumn[]
   buckets: Record<string, Issue[]>
@@ -585,6 +596,7 @@ function Board({
   emptyLine: string
   onLongPressStart: (i: Issue) => void
   onLongPressEnd: () => void
+  onOpenMove: (i: Issue) => void
 }) {
   const width = compact ? 200 : 240
   return (
@@ -641,6 +653,7 @@ function Board({
                         childRows={childrenMap[row.id] ?? []}
                         onLongPressStart={() => onLongPressStart(row)}
                         onLongPressEnd={onLongPressEnd}
+                        onOpenMove={() => onOpenMove(row)}
                       />
                     ) : (
                       <IssueCard
@@ -649,6 +662,7 @@ function Board({
                         parent={row.parent_id ? allIssues.find(x => x.id === row.parent_id) ?? null : null}
                         onLongPressStart={() => onLongPressStart(row)}
                         onLongPressEnd={onLongPressEnd}
+                        onOpenMove={() => onOpenMove(row)}
                       />
                     ),
                   )}
@@ -752,9 +766,25 @@ function StatusText({ status }: { status: unknown }) {
   )
 }
 
+/** Opens the move sheet with a pointer or the keyboard. */
+function MoveButton({ taskKey, onOpenMove }: { taskKey: string; onOpenMove: () => void }) {
+  return (
+    <button
+      type="button"
+      data-move-button={taskKey}
+      aria-label={`Move ${taskKey} to another status`}
+      title={`Move ${taskKey} to another status`}
+      onClick={e => { e.stopPropagation(); onOpenMove() }}
+      className="ml-auto shrink-0 px-1 rounded text-[11px] leading-none text-white/25 hover:text-white/70 hover:bg-white/10"
+    >
+      ⋯
+    </button>
+  )
+}
+
 /* ── Feature Card ── */
-function FeatureCard({ feature, childRows, onLongPressStart, onLongPressEnd }: {
-  feature: Issue; childRows: Issue[]; onLongPressStart: () => void; onLongPressEnd: () => void
+function FeatureCard({ feature, childRows, onLongPressStart, onLongPressEnd, onOpenMove }: {
+  feature: Issue; childRows: Issue[]; onLongPressStart: () => void; onLongPressEnd: () => void; onOpenMove: () => void
 }) {
   // "Done" is derived from the column model, not from a second hardcoded list
   // of statuses that can drift away from it.
@@ -780,6 +810,7 @@ function FeatureCard({ feature, childRows, onLongPressStart, onLongPressEnd }: {
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
         <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-blue-500/20 text-blue-400">{feature.task_key}</span>
         <StatusText status={feature.status} />
+        <MoveButton taskKey={feature.task_key} onOpenMove={onOpenMove} />
       </div>
       <div className="text-[11px] text-white/60 leading-tight mb-2 line-clamp-2">{feature.title}</div>
       {total > 0 && (
@@ -800,8 +831,8 @@ const REVIEW_CLASSES: Record<string, string> = {
   failed: 'bg-red-500/20 text-red-400',
   pending: 'bg-white/5 text-white/40',
 }
-function IssueCard({ issue, parent, onLongPressStart, onLongPressEnd }: {
-  issue: Issue; parent: Issue | null; onLongPressStart: () => void; onLongPressEnd: () => void
+function IssueCard({ issue, parent, onLongPressStart, onLongPressEnd, onOpenMove }: {
+  issue: Issue; parent: Issue | null; onLongPressStart: () => void; onLongPressEnd: () => void; onOpenMove: () => void
 }) {
   const blocked = isBlocked(issue)
   const typeColor = TYPE_COLORS[issue.type] || '#71717a'
@@ -836,6 +867,7 @@ function IssueCard({ issue, parent, onLongPressStart, onLongPressEnd }: {
         ) : (
           <span className="text-[8px] text-white/25 shrink-0" title="no assignee">unassigned</span>
         )}
+        <MoveButton taskKey={issue.task_key} onOpenMove={onOpenMove} />
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">
         <StatusText status={issue.status} />
