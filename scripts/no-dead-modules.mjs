@@ -88,6 +88,17 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // can check. An entry that is no longer needed FAILS THE RUN — see above.
 const ALLOWLIST = [
   {
+    file: 'components/IssueDetailOverlay.tsx',
+    reason:
+      'issue-permalink piece (pieces7): built, tested (self-contained, two props) ' +
+      'and ready, but app/page.tsx — the only place that can mount it — is owned by ' +
+      'the orchestrator this round, not by this piece. docs/rebuild/pieces/pieces7/' +
+      'issue-permalink.md §3f is the exact one-line JSX diff that wires it in ' +
+      '(next to <ChatOverlay/>). The moment that diff lands, this file becomes ' +
+      'reachable, this entry goes stale, and the run correctly fails until removed — ' +
+      'that is the intended prompt, not a bug in the allowlist.',
+  },
+  {
     file: 'components/tabs/AgentsTab.tsx',
     reason:
       'Its default export (the legacy roster grid) is genuinely unrendered — the ' +

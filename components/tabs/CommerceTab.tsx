@@ -122,6 +122,12 @@ export default function CommerceTab({ projectFilter }: CommerceTabProps) {
   const [reason, setReason] = useState('')
   const [adjustError, setAdjustError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // TOD-2449: `advance()` used to ignore the PATCH response entirely — a
+  // refused transition (permission denied, illegal state, a 500) reloaded the
+  // same unfulfilled list and looked, to the operator, exactly like a
+  // successful click that happened to do nothing. `orderActionError` is the
+  // same surfaced-refusal pattern `adjustError` already uses below.
+  const [orderActionError, setOrderActionError] = useState<string | null>(null)
 
   async function submitAdjustment(sku: string, location: string) {
     if (!projectFilter) return
@@ -154,12 +160,26 @@ export default function CommerceTab({ projectFilter }: CommerceTabProps) {
 
   async function advance(orderNumber: string, to: string) {
     if (!projectFilter) return
-    await fetch('/api/commerce/orders', {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ project: projectFilter, order_number: orderNumber, fulfilment_status: to }),
-    })
-    reloadOrders()
+    setOrderActionError(null)
+    try {
+      const res = await fetch('/api/commerce/orders', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ project: projectFilter, order_number: orderNumber, fulfilment_status: to }),
+      })
+      const body = (await res.json().catch(() => ({}))) as { message?: string }
+      if (!res.ok) {
+        // The server's own refusal, shown verbatim — the same stance
+        // submitAdjustment already takes below. Without this, a refused
+        // transition reloaded the identical unfulfilled list and looked
+        // exactly like a click that silently did nothing.
+        setOrderActionError(`${orderNumber}: ${body.message ?? `the transition was refused (${res.status})`}`)
+        return
+      }
+      reloadOrders()
+    } catch (e) {
+      setOrderActionError(`${orderNumber}: ${e instanceof Error ? e.message : 'could not reach the server'}`)
+    }
   }
 
   if (!projectFilter) {
@@ -214,6 +234,11 @@ export default function CommerceTab({ projectFilter }: CommerceTabProps) {
                 </button>
               </div>
             ))}
+            {orderActionError && (
+              <p role="alert" className="pt-2 text-[11px] text-red-400 leading-snug">
+                {orderActionError}
+              </p>
+            )}
           </div>
         )}
       </Card>

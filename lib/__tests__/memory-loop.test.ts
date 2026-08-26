@@ -264,3 +264,142 @@ describe('promoteHotPatterns idempotency (round-3 repair)', () => {
     expect(content).not.toContain('distinct pattern number 0 repeats')
   }, 30_000)
 })
+
+/**
+ * pieces7/memory-loop — recordRunOnExit() is the ONE function every runtime
+ * adapter (claude-code.ts, codex.ts, cursor.ts, openai-api.ts) actually calls
+ * from watchChildExit's onExit callback: it is the real hook between "a
+ * dispatched agent's process exited" and a written agent_run_records row.
+ * Despite that, it had zero test coverage anywhere in this repo before this
+ * piece — every existing test in this file and in memory-retrieval.test.ts
+ * seeds agent_run_records through writeRunRecord() directly, never through
+ * the exit-time function that reads the issue row fresh.
+ *
+ * Verified live against the running dev server's own ./db.sqlite as part of
+ * this piece (see docs/rebuild/pieces/pieces7/memory-loop.md) that a real
+ * claudeCodeRuntime.spawn() → spawnDetached() → watchChildExit() → exactly
+ * this function → INSERT chain fires end to end. This is the repeatable,
+ * scratch-database version of that same proof, run against the function
+ * directly so it does not depend on a live server or a real spawn.
+ */
+describe('recordRunOnExit — the real spawn-exit hook (previously untested)', () => {
+  let scratchDir: string
+  let dbPath: string
+  let closeHandles: Array<() => void> = []
+  const originalEnv = {
+    provider: process.env.TODERO_DB_PROVIDER,
+    sqlitePath: process.env.TODERO_SQLITE_PATH,
+  }
+
+  beforeEach(() => {
+    scratchDir = mkdtempSync(join(tmpdir(), 'todero-record-run-on-exit-test-'))
+    dbPath = join(scratchDir, 'db.sqlite')
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Database = require('better-sqlite3') as typeof import('better-sqlite3')
+    const db = new Database(dbPath)
+    const files = readdirSync(SQLITE_MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort()
+    for (const file of files) {
+      db.exec(readFileSync(join(SQLITE_MIGRATIONS_DIR, file), 'utf8'))
+    }
+    db.close()
+
+    process.env.TODERO_DB_PROVIDER = 'sqlite'
+    process.env.TODERO_SQLITE_PATH = dbPath
+    closeHandles = []
+  })
+
+  afterEach(() => {
+    for (const close of closeHandles) close()
+    closeHandles = []
+
+    if (originalEnv.provider === undefined) delete process.env.TODERO_DB_PROVIDER
+    else process.env.TODERO_DB_PROVIDER = originalEnv.provider
+    if (originalEnv.sqlitePath === undefined) delete process.env.TODERO_SQLITE_PATH
+    else process.env.TODERO_SQLITE_PATH = originalEnv.sqlitePath
+
+    if (existsSync(scratchDir)) rmSync(scratchDir, { recursive: true, force: true })
+  })
+
+  function loadModules() {
+    let mods: { memoryLoop: typeof import('../memory-loop'); db: typeof import('../db').db }
+    jest.isolateModules(() => {
+      /* eslint-disable @typescript-eslint/no-var-requires */
+      const memoryLoop = require('../memory-loop') as typeof import('../memory-loop')
+      const db = (require('../db') as typeof import('../db')).db
+      const sqliteAdapter = require('../db/sqlite-adapter') as typeof import('../db/sqlite-adapter')
+      /* eslint-enable @typescript-eslint/no-var-requires */
+      closeHandles.push(() => sqliteAdapter.closeSqlite())
+      mods = { memoryLoop, db }
+    })
+    return mods!
+  }
+
+  it('reads the issue row fresh and writes a matching agent_run_records row', async () => {
+    const { memoryLoop, db } = loadModules()
+
+    const insert = await db().from('issues').insert({
+      id: 'issue-exit-1',
+      task_key: 'TOD-9001',
+      title: 'Fixture: exit-hook coverage',
+      status: 'open',
+      sprint: 'fixture',
+      rejection_count: 2,
+      last_rejection_reason: 'PATCH rejected: missing regression_test',
+      reviewer_notes: 'same mistake as last time',
+    })
+    expect(insert.error).toBeNull()
+
+    await memoryLoop.recordRunOnExit({ agentId: 'exit-hook-agent', taskId: 'issue-exit-1' })
+
+    const { data } = await db()
+      .from('agent_run_records')
+      .select('*')
+      .eq('agent_id', 'exit-hook-agent')
+    const rows = (data ?? []) as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      task_key: 'TOD-9001',
+      status: 'open',
+      rejection_count: 2,
+      rejection_reason: 'PATCH rejected: missing regression_test',
+      reviewer_notes: 'same mistake as last time',
+    })
+    // Genuinely unobservable from a pid-liveness watcher — never guessed.
+    expect(rows[0].attempted).toBeNull()
+    expect(rows[0].exit_status).toBeNull()
+    expect(Boolean(rows[0].succeeded)).toBe(false)
+  })
+
+  it('writes nothing when no taskId is given — not every spawn attaches one', async () => {
+    const { memoryLoop, db } = loadModules()
+    await memoryLoop.recordRunOnExit({ agentId: 'exit-hook-agent' })
+    const { data } = await db().from('agent_run_records').select('*').eq('agent_id', 'exit-hook-agent')
+    expect(data ?? []).toHaveLength(0)
+  })
+
+  it('writes nothing, and never throws, when taskId points at an issue that does not exist', async () => {
+    const { memoryLoop, db } = loadModules()
+    await expect(
+      memoryLoop.recordRunOnExit({ agentId: 'exit-hook-agent', taskId: 'does-not-exist' }),
+    ).resolves.toBeUndefined()
+    const { data } = await db().from('agent_run_records').select('*').eq('agent_id', 'exit-hook-agent')
+    expect(data ?? []).toHaveLength(0)
+  })
+
+  it('writes nothing when the issue row has no task_key — agent_run_records.task_key is required', async () => {
+    const { memoryLoop, db } = loadModules()
+    const insert = await db().from('issues').insert({
+      id: 'issue-exit-no-key',
+      title: 'Fixture: issue with no task_key',
+      status: 'open',
+      sprint: 'fixture',
+    })
+    expect(insert.error).toBeNull()
+
+    await memoryLoop.recordRunOnExit({ agentId: 'exit-hook-agent', taskId: 'issue-exit-no-key' })
+
+    const { data } = await db().from('agent_run_records').select('*').eq('agent_id', 'exit-hook-agent')
+    expect(data ?? []).toHaveLength(0)
+  })
+})

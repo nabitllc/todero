@@ -216,19 +216,113 @@ export function sanitizeIlikePattern(query: string): string {
 }
 
 /**
+ * Structured narrowing the modifier grammar below can express. Every field is
+ * a value already proven, live, to be something `app/api/db/[...path]/route.ts`
+ * can answer (see `parseSearchInput`'s own comment for the request that
+ * proved each one) — this is data, not a second copy of validation logic.
+ */
+export interface SearchFilters {
+  /** `in:<status>` — one of `lib/constants.ts`'s `VALID_STATUSES`. */
+  status?: string
+  /** `from:<assignee>` — no enum exists for this column; any value narrows. */
+  assignee?: string
+  /** `before:<YYYY-MM-DD>` — `created_at < this date`. */
+  beforeDate?: string
+}
+
+/**
  * The query string after `issues?` for the text-search leg. The project and
  * archived clauses are deliberately ABSENT: app/api/db/[...path]/route.ts
  * injects both from the middleware-resolved scope and fails closed (400
  * `unscoped_issues_read`) when it cannot — adding them here would be a second
  * copy of a boundary that is already enforced, and a client-supplied
  * `project=` can only ever narrow, never widen.
+ *
+ * `text` may be empty when `filters` alone is doing the narrowing (`in:closed`
+ * typed with nothing else) — the free-text `or=(...)` clause is omitted
+ * entirely in that case rather than emitted as a matches-everything `%%`
+ * pattern, so the query string a reviewer reads says exactly what ran.
+ *
+ * Measured 2026-08-26 against the running server, a fresh Limiglow `ops`
+ * fixture: `status=eq.backlog&assignee=eq.po&created_at=lt.2026-08-27`
+ * combined with an `or=(...)` text clause returned exactly that one row,
+ * scoped to Limiglow by the same Referer-derived header every other call
+ * through this seam already relies on — no new scope logic was added here.
  */
-export function issueSearchQuery(query: string, limit = 8): string {
-  const pattern = encodeURIComponent(`%${sanitizeIlikePattern(query)}%`)
-  return (
-    `issues?or=(title.ilike.${pattern},task_key.ilike.${pattern})` +
-    `&order=updated_at.desc&limit=${limit}&select=task_key,title,status,type,assignee`
-  )
+export function issueSearchQuery(text: string, filters: SearchFilters = {}, limit = 8): string {
+  const parts: string[] = []
+  const cleanText = sanitizeIlikePattern(text)
+  if (cleanText) {
+    const pattern = encodeURIComponent(`%${cleanText}%`)
+    parts.push(`or=(title.ilike.${pattern},task_key.ilike.${pattern})`)
+  }
+  if (filters.status) parts.push(`status=eq.${encodeURIComponent(filters.status)}`)
+  if (filters.assignee) parts.push(`assignee=eq.${encodeURIComponent(filters.assignee)}`)
+  if (filters.beforeDate) parts.push(`created_at=lt.${encodeURIComponent(filters.beforeDate)}`)
+  parts.push('order=updated_at.desc', `limit=${limit}`, 'select=task_key,title,status,type,assignee')
+  return `issues?${parts.join('&')}`
+}
+
+// ─── search modifiers (in: / from: / before:) ────────────────────────────────
+
+/** Modifier prefixes this palette understands. Anything else that LOOKS like
+ *  a modifier (`word:value`) is refused, not folded into the free-text search
+ *  — a filter that silently does nothing is the fabrication class this
+ *  rebuild keeps paying for (see the piece doc). */
+const KNOWN_MODIFIERS = new Set(['in', 'from', 'before'])
+
+const DATE_MODIFIER = /^\d{4}-\d{2}-\d{2}$/
+
+export type ParsedSearch =
+  | { ok: true; filters: SearchFilters; text: string }
+  /** A modifier was typed that this search cannot honour. `message` is shown
+   *  in place of results — never silently dropped in favour of an unfiltered
+   *  list, which would look like a narrower answer than it is. */
+  | { ok: false; message: string }
+
+/**
+ * Split `query` into recognised modifiers plus the remaining free text.
+ * `validStatuses` is passed in (rather than imported from `lib/constants.ts`
+ * here) so a test can supply a small fixture list without dragging in the
+ * whole enum module — the caller (SearchOverlay) passes the real one.
+ */
+export function parseSearchInput(query: string, validStatuses: readonly string[]): ParsedSearch {
+  const tokens = query.trim().split(/\s+/).filter(Boolean)
+  const filters: SearchFilters = {}
+  const textParts: string[] = []
+  for (const token of tokens) {
+    const m = /^([A-Za-z]+):(.*)$/.exec(token)
+    if (!m) { textParts.push(token); continue }
+    const modifier = m[1].toLowerCase()
+    const rawValue = m[2]
+    if (!KNOWN_MODIFIERS.has(modifier)) {
+      return {
+        ok: false,
+        message: `"${modifier}:" is not a modifier this search supports. Supported: in:, from:, before:.`,
+      }
+    }
+    if (!rawValue) {
+      return { ok: false, message: `"${modifier}:" needs a value after the colon.` }
+    }
+    if (modifier === 'in') {
+      const status = rawValue.toLowerCase()
+      if (!validStatuses.includes(status)) {
+        return {
+          ok: false,
+          message: `"in:${rawValue}" is not a status this board has. Valid: ${validStatuses.join(', ')}.`,
+        }
+      }
+      filters.status = status
+    } else if (modifier === 'from') {
+      filters.assignee = rawValue
+    } else if (modifier === 'before') {
+      if (!DATE_MODIFIER.test(rawValue)) {
+        return { ok: false, message: `"before:${rawValue}" must be a date like before:2026-08-01.` }
+      }
+      filters.beforeDate = rawValue
+    }
+  }
+  return { ok: true, filters, text: textParts.join(' ') }
 }
 
 // ─── scope, read off the URL the server itself scoped by ─────────────────────

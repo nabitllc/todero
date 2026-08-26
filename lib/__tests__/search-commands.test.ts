@@ -14,6 +14,7 @@ import {
   matchCommands,
   navPlanFor,
   normalizeTaskKey,
+  parseSearchInput,
   pathForView,
   projectFromPath,
   resolveNavToken,
@@ -265,6 +266,74 @@ describe('the issues text query', () => {
     expect(q).not.toMatch(/project=/)
     expect(q).not.toMatch(/archived_at=/)
     expect(q).not.toMatch(/all_projects/)
+  })
+
+  // Measured 2026-08-26 against the running server (Limiglow `ops` fixture
+  // TOD-155): this exact shape, sent through app/api/db/[...path]/route.ts
+  // with a Limiglow Referer, returned precisely that one row.
+  it('adds a structured filter per SearchFilters field, and omits an empty one', () => {
+    const q = issueSearchQuery('permalink', { status: 'backlog', assignee: 'po', beforeDate: '2026-08-27' })
+    expect(q).toMatch(/status=eq\.backlog/)
+    expect(q).toMatch(/assignee=eq\.po/)
+    expect(q).toMatch(/created_at=lt\.2026-08-27/)
+    expect(q).toMatch(/or=\(/)
+  })
+
+  it('omits the or() clause entirely when filters alone are narrowing', () => {
+    // A `%%` ilike would silently match every row — this asserts no such
+    // clause is emitted rather than trusting it to be harmless.
+    const q = issueSearchQuery('', { status: 'closed' })
+    expect(q).not.toMatch(/or=\(/)
+    expect(q).toMatch(/status=eq\.closed/)
+  })
+})
+
+describe('parseSearchInput — search modifiers', () => {
+  const STATUSES = ['backlog', 'open', 'closed']
+
+  it('parses in:/from:/before: into structured filters and leaves free text alone', () => {
+    const r = parseSearchInput('foo in:backlog from:ops before:2026-08-01 bar', STATUSES)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.filters).toEqual({ status: 'backlog', assignee: 'ops', beforeDate: '2026-08-01' })
+    expect(r.text).toBe('foo bar')
+  })
+
+  it('lower-cases in: values so "in:Backlog" still matches the status', () => {
+    const r = parseSearchInput('in:Backlog', STATUSES)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.filters.status).toBe('backlog')
+  })
+
+  // Catches: a filter that quietly does nothing instead of saying so — the
+  // fabrication class this rebuild keeps paying for (see the piece doc).
+  it('refuses an unsupported modifier rather than treating it as free text', () => {
+    const r = parseSearchInput('to:someone', STATUSES)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.message).toMatch(/"to:" is not a modifier/)
+  })
+
+  it('refuses a status in: does not have, and names the valid ones', () => {
+    const r = parseSearchInput('in:nonsense', STATUSES)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.message).toMatch(/backlog, open, closed/)
+  })
+
+  it('refuses a before: value that is not a plain date', () => {
+    const r = parseSearchInput('before:yesterday', STATUSES)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.message).toMatch(/before:2026-08-01/)
+  })
+
+  it('refuses a modifier with no value after the colon', () => {
+    const r = parseSearchInput('in:', STATUSES)
+    expect(r.ok).toBe(false)
+  })
+
+  it('an empty query is a valid, empty result — not a refusal', () => {
+    const r = parseSearchInput('', STATUSES)
+    expect(r.ok).toBe(true)
+    if (r.ok) { expect(r.filters).toEqual({}); expect(r.text).toBe('') }
   })
 })
 

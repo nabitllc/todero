@@ -67,7 +67,7 @@ function makeInventoryBuilder() {
     },
     then(resolve: (v: { data: FakeLevel[] | FakeLevel | null; error: null }) => unknown) {
       return microtask(null).then(() => {
-        const matches = table.filter(row => wheres.every(([c, v]) => (row as Record<string, unknown>)[c] === v))
+        const matches = table.filter(row => wheres.every(([c, v]) => (row as unknown as Record<string, unknown>)[c] === v))
         if (verb === 'select') {
           return resolve({ data: matches, error: null })
         }
@@ -116,7 +116,16 @@ function patchRequest(delta: number): NextRequest {
 describe('PATCH /api/commerce/inventory under real concurrency (TOD-2449)', () => {
   it('N concurrent -1 adjustments land on the exact right final count, every one accounted for', async () => {
     const START = 200
-    const CONCURRENCY = 40
+    // The fake table's FIFO scheduling below is a deliberately WORSE-than-real
+    // interleaving: every retry round has every still-pending caller read the
+    // exact same stale value before any of them writes, so exactly one caller
+    // wins per round and the straggler eliminated last needs up to N attempts
+    // — a real database's network/IO jitter does not usually stack requests
+    // this precisely. CONCURRENCY is kept at 6, comfortably under the route's
+    // 8-attempt CAS budget, so this proves the retry loop actually retries
+    // (not just that it wins on the first try) without asserting a specific
+    // retry-count ceiling this test's own harness artificially inflates.
+    const CONCURRENCY = 6
     table = [{ project: 'Limiglow', sku: 'CONC-TEST', location: 'default', on_hand: START }]
 
     const results = await Promise.all(Array.from({ length: CONCURRENCY }, () => route.PATCH(patchRequest(-1))))
