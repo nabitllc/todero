@@ -181,6 +181,21 @@ export interface SqlFlavour {
    * `lib/db.ts` guarantees. Defaults to the node-postgres mapping below.
    */
   toDbError?(cause: unknown): DbError
+  /**
+   * Columns `table` declares as boolean, when the dialect can say so ahead of
+   * compiling. This exists for exactly one reason: `lib/db/query-params.ts`
+   * hands `eq`/`neq` values through as STRINGS (`is_blocked=eq.false` →
+   * `"false"`, not `false`) so that a text column holding the literal word
+   * "false" keeps comparing as a string. Postgres tolerates this for free —
+   * `col = $1` with `$1` unspecified infers its type from `col`, and the
+   * boolean input parser accepts `'true'`/`'false'` text — so the postgres
+   * flavour below leaves this hook unset. SQLite has no such inference: a
+   * TEXT '0'/'false' parameter never equals an INTEGER-affinity 0/1 column,
+   * so `sqlite-adapter.ts` supplies this from its own column-kind catalogue
+   * and `pg-sql.ts` uses it to coerce the literal — see
+   * `coerceBooleanLiteral` there.
+   */
+  booleanColumns?(table: string): ReadonlySet<string>
 }
 
 const POSTGRES: SqlFlavour = { dialect: 'postgres' }
@@ -385,13 +400,16 @@ export class SqlQueryBuilder implements DbQueryBuilder {
       const isRead = this.spec.verb === 'select'
       let rows: DbRow[] = []
       let count: number | null = null
+      // Resolved once per run(), not per WHERE clause — the same reason
+      // `primaryKeyColumns` above is cached rather than looked up per call.
+      const booleanColumns = this.flavour.booleanColumns?.(this.spec.table)
 
       if (!(isRead && this.spec.head)) {
         const batches = isRead ? [this.spec.rows] : this.insertBatches()
         const allRows = this.spec.rows
         for (const batch of batches) {
           this.spec.rows = batch
-          const statement = compile(this.spec)
+          const statement = compile(this.spec, booleanColumns)
           const executed = await this.exec.query(statement.text, statement.values)
           rows = rows.concat(executed.rows)
           // Left null when the driver reports no row count, exactly as before —
@@ -402,7 +420,7 @@ export class SqlQueryBuilder implements DbQueryBuilder {
       }
 
       if (this.countMode) {
-        const counted = compileCount(this.spec)
+        const counted = compileCount(this.spec, booleanColumns)
         const result = await this.exec.query(counted.text, counted.values)
         count = Number(result.rows[0]?.count ?? 0)
       }

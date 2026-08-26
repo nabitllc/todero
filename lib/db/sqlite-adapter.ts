@@ -229,6 +229,25 @@ function kindsFor(db: SqliteDatabase, table: string): Map<string, ColumnKind> {
   return kinds
 }
 
+/**
+ * Boolean-declared columns of `table`, from the same catalogue lookup
+ * `kindsFor` already does for row decoding — see `SqlFlavour.booleanColumns`
+ * in `pg-adapter.ts` for why this exists. Skipped while a test has injected
+ * its own executor via `setSqliteExecutor`: that executor is not guaranteed
+ * to be a real `better-sqlite3` handle `pragma_table_info` can run against,
+ * and no test currently relies on the coercion, so the safe default is to
+ * fall back to the pre-fix, uncoerced behaviour rather than open a real file
+ * out from under an injected one.
+ */
+function booleanColumnsFor(table: string): ReadonlySet<string> {
+  if (injected) return new Set()
+  const db = open()
+  const kinds = kindsFor(db, table)
+  const out = new Set<string>()
+  for (const [column, kind] of kinds) if (kind === 'boolean') out.add(column)
+  return out
+}
+
 function decodeValue(kind: ColumnKind, value: unknown): unknown {
   if (value === null || value === undefined) return value
   if (kind === 'boolean') return value !== 0 && value !== '0'
@@ -375,6 +394,7 @@ export const sqliteAdapterFactory: DbAdapterFactory = {
           dialect: 'sqlite',
           splitRaggedInserts: true,
           toDbError,
+          booleanColumns: booleanColumnsFor,
         } satisfies SqlFlavour),
       rpc: async (fn: string, params?: DbRow): Promise<DbResult> => {
         try {

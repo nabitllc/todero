@@ -163,6 +163,33 @@ function sqliteContainsPredicate(column: string, value: unknown, params: Params)
   )
 }
 
+/**
+ * `lib/db/query-params.ts` hands `eq`/`neq` values through as strings, on
+ * purpose — coercing `"007"` to a number would change the query, and the
+ * same reasoning protects a text column that legitimately holds the word
+ * "false". `is` is the one operator that already gets a real boolean,
+ * because `is` only ever means null/true/false.
+ *
+ * `booleanColumns` is how eq/neq get the same treatment WITHOUT guessing:
+ * only a column the schema itself declares boolean is eligible, and only the
+ * exact literal `is`'s own parser accepts (`true`/`false`, case-insensitive)
+ * is coerced. A boolean-declared column can hold no other string value in
+ * either dialect, so this narrows the mismatch to nothing: a text column is
+ * never in the set, and a boolean column can never legitimately hold the
+ * string "false" as data to be string-matched.
+ */
+function coerceBooleanLiteral(
+  column: string,
+  value: unknown,
+  booleanColumns: ReadonlySet<string> | undefined,
+): unknown {
+  if (!booleanColumns?.has(column) || typeof value !== 'string') return value
+  const v = value.toLowerCase()
+  if (v === 'true') return true
+  if (v === 'false') return false
+  return value
+}
+
 function isPredicate(column: string, value: unknown): string {
   if (value === null) return `${ident(column)} IS NULL`
   if (value === true) return `${ident(column)} IS TRUE`
@@ -173,8 +200,14 @@ function isPredicate(column: string, value: unknown): string {
 }
 
 /** One `column <op> value` comparison as a SQL predicate. */
-function predicateSql(predicate: DbPredicate, params: Params, dialect: SqlDialect): string {
-  const { column, op, value } = predicate
+function predicateSql(
+  predicate: DbPredicate,
+  params: Params,
+  dialect: SqlDialect,
+  booleanColumns?: ReadonlySet<string>,
+): string {
+  const { column, op } = predicate
+  const value = coerceBooleanLiteral(column, predicate.value, booleanColumns)
   if (op === 'is') return isPredicate(column, value)
   if (op === 'contains') return containsPredicate(column, value, params, dialect)
   if (op === 'in') {
@@ -201,19 +234,24 @@ function predicateSql(predicate: DbPredicate, params: Params, dialect: SqlDialec
   return `${ident(column)} ${operator} ${params.bind(value)}`
 }
 
-function whereSql(parts: readonly WherePart[], params: Params, dialect: SqlDialect): string {
+function whereSql(
+  parts: readonly WherePart[],
+  params: Params,
+  dialect: SqlDialect,
+  booleanColumns?: ReadonlySet<string>,
+): string {
   if (parts.length === 0) return ''
   const rendered = parts.map(part => {
     if (part.kind === 'or') {
       if (part.predicates.length === 0) return 'FALSE'
       return `(${part.predicates
         .map(p => {
-          const sql = predicateSql(p, params, dialect)
+          const sql = predicateSql(p, params, dialect, booleanColumns)
           return p.negated ? `NOT (${sql})` : sql
         })
         .join(' OR ')})`
     }
-    const sql = predicateSql(part.predicate, params, dialect)
+    const sql = predicateSql(part.predicate, params, dialect, booleanColumns)
     return part.negated ? `NOT (${sql})` : sql
   })
   return ` WHERE ${rendered.join(' AND ')}`
@@ -297,7 +335,7 @@ function conflictSql(spec: PgQuerySpec): string {
 }
 
 /** Compile the query the builder described into one parameterised statement. */
-export function compile(spec: PgQuerySpec): SqlStatement {
+export function compile(spec: PgQuerySpec, booleanColumns?: ReadonlySet<string>): SqlStatement {
   const dialect = spec.dialect ?? 'postgres'
   const params = new Params(dialect)
   let text: string
@@ -307,7 +345,7 @@ export function compile(spec: PgQuerySpec): SqlStatement {
       const projection = spec.head ? '1' : columnList(spec.columns)
       text =
         `SELECT ${projection} FROM ${ident(spec.table)}` +
-        whereSql(spec.where, params, dialect) +
+        whereSql(spec.where, params, dialect, booleanColumns) +
         orderSql(spec.order) +
         windowSql(spec, params, dialect)
       break
@@ -325,14 +363,14 @@ export function compile(spec: PgQuerySpec): SqlStatement {
       const assignments = columns.map(c => `${ident(c)} = ${params.bind(patch[c])}`).join(', ')
       text =
         `UPDATE ${ident(spec.table)} SET ${assignments}` +
-        whereSql(spec.where, params, dialect) +
+        whereSql(spec.where, params, dialect, booleanColumns) +
         returningSql(spec)
       break
     }
     case 'delete':
       text =
         `DELETE FROM ${ident(spec.table)}` +
-        whereSql(spec.where, params, dialect) +
+        whereSql(spec.where, params, dialect, booleanColumns) +
         returningSql(spec)
       break
     default:
@@ -347,14 +385,15 @@ export function compile(spec: PgQuerySpec): SqlStatement {
  * rather than a window function: the data query may carry LIMIT/OFFSET, and the
  * count must ignore both.
  */
-export function compileCount(spec: PgQuerySpec): SqlStatement {
+export function compileCount(spec: PgQuerySpec, booleanColumns?: ReadonlySet<string>): SqlStatement {
   const dialect = spec.dialect ?? 'postgres'
   const params = new Params(dialect)
   // SQLite's count(*) is already an integer and has no `::` cast syntax.
   const projection = dialect === 'sqlite' ? 'count(*) AS count' : 'count(*)::int AS count'
   return {
     text:
-      `SELECT ${projection} FROM ${ident(spec.table)}` + whereSql(spec.where, params, dialect),
+      `SELECT ${projection} FROM ${ident(spec.table)}` +
+      whereSql(spec.where, params, dialect, booleanColumns),
     values: params.values,
   }
 }
