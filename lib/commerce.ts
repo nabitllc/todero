@@ -374,7 +374,16 @@ export function validateNewProduct(body: Record<string, unknown>): Verdict<NewPr
     return no('title is required — a product with no name cannot be sold or found')
   }
 
-  const currency = normaliseCurrency(typeof body.currency === 'string' ? body.currency : 'USD')
+  // `currency` defaults to USD only when OMITTED. A present-but-wrong-type
+  // value (a number like ISO 4217's numeric 392 for JPY, `null`, an object)
+  // used to fall into the same `typeof !== 'string'` branch as "omitted" and
+  // silently become USD — the one currency defect in this file that failed
+  // silently instead of refusing loudly. A caller sending numeric 392 got a
+  // product priced in USD with no error anywhere.
+  if (body.currency !== undefined && typeof body.currency !== 'string') {
+    return no(`currency must be a string, got ${JSON.stringify(body.currency)} (${typeof body.currency})`)
+  }
+  const currency = normaliseCurrency(body.currency ?? 'USD')
   if (!currency.ok) return no(currency.why)
 
   if (body.price === undefined && body.price_minor === undefined) {
@@ -586,7 +595,13 @@ export function validateNewOrder(body: Record<string, unknown>): Verdict<NewOrde
   const orderNumber = body.order_number.trim()
   if (orderNumber.length > 64) return no(`order_number is ${orderNumber.length} characters; the limit is 64`)
 
-  const currency = normaliseCurrency(typeof body.currency === 'string' ? body.currency : 'USD')
+  // Same rule as validateNewProduct: default to USD only when `currency` is
+  // OMITTED. A present-but-wrong-type value (a number, `null`) used to be
+  // treated identically to "omitted" and silently become USD.
+  if (body.currency !== undefined && typeof body.currency !== 'string') {
+    return no(`currency must be a string, got ${JSON.stringify(body.currency)} (${typeof body.currency})`)
+  }
+  const currency = normaliseCurrency(body.currency ?? 'USD')
   if (!currency.ok) return no(currency.why)
 
   if (!Array.isArray(body.line_items) || body.line_items.length === 0) {

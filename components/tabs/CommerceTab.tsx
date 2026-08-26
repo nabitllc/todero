@@ -122,7 +122,7 @@ export default function CommerceTab({ projectFilter }: CommerceTabProps) {
   const [reason, setReason] = useState('')
   const [adjustError, setAdjustError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  // TOD-2449: `advance()` used to ignore the PATCH response entirely — a
+  // `advance()` used to ignore the PATCH response entirely — a
   // refused transition (permission denied, illegal state, a 500) reloaded the
   // same unfulfilled list and looked, to the operator, exactly like a
   // successful click that happened to do nothing. `orderActionError` is the
@@ -174,6 +174,13 @@ export default function CommerceTab({ projectFilter }: CommerceTabProps) {
         // transition reloaded the identical unfulfilled list and looked
         // exactly like a click that silently did nothing.
         setOrderActionError(`${orderNumber}: ${body.message ?? `the transition was refused (${res.status})`}`)
+        // A 409 means the order's ACTUAL state moved out from under this
+        // click (someone else already fulfilled it, or the read this button
+        // was drawn from was already stale) — the list still shows the order
+        // as unfulfilled unless it is reloaded here too. Every other refusal
+        // (403 permission, 422 bad state, a 500) does not mean the order
+        // changed, so only 409 reloads.
+        if (res.status === 409) reloadOrders()
         return
       }
       reloadOrders()

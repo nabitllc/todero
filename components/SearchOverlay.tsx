@@ -350,7 +350,17 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh]" onClick={onClose}>
+    // z-[200], not z-[100]: components/IssueDetailOverlay.tsx sits at
+    // z-[150], and Cmd-K's global listener (app/page.tsx) has no guard
+    // against opening while that overlay is showing — measured 2026-08-26,
+    // reproducible any time a permalink or a palette "Open <key>" is
+    // already on screen. At z-[100] the palette rendered BELOW the issue
+    // dialog: invisible, but still focused (the input still grabs focus on
+    // open), so a keystroke went to a control nobody could see or click.
+    // The newest thing the operator opened is the one they can interact
+    // with, so this palette now outranks the issue overlay rather than the
+    // reverse.
+    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[12vh]" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         className="relative w-full max-w-[560px] mx-4 bg-[#111] border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden"

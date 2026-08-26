@@ -24,7 +24,12 @@
  *   would otherwise create a product priced 0 while the caller believed they
  *   had set a price. Every refusal below writes nothing.
  *
- * PERMISSIONS (TOD-2449)
+ * PERMISSIONS
+ *   (Ticket note: this used to be cited as "TOD-2449". Verified against git:
+ *   that ticket's actual commit (cc101d5) only touched
+ *   scripts/board/channels.json and flight-board.html — unrelated. This
+ *   change landed in an unattributed checkpoint commit (5a42434) with no
+ *   ticket of its own; not re-cited with another guess.)
  *   Reads take `commerce:read` and writes take `commerce:write` — a
  *   dedicated pair, not borrowed from `projects:*`. It used to be borrowed,
  *   and the reasoning against that is worth keeping: `projects:read`/`write`

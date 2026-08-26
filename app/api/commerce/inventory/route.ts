@@ -23,7 +23,14 @@
  *     * an unknown sku          — an adjustment cannot conjure a product
  *   A refused adjustment writes NOTHING: not the level, not the audit row.
  *
- * ATOMIC UNDER CONCURRENCY (TOD-2449)
+ * ATOMIC UNDER CONCURRENCY
+ *   (Ticket note: this route and its doc used to cite "TOD-2449" for the fix
+ *   below. Verified against git: TOD-2449's actual commit
+ *   (cc101d5) only touched scripts/board/channels.json and
+ *   flight-board.html — a board-score update, unrelated. The CAS fix itself
+ *   landed in an unattributed checkpoint commit (5a42434) with no ticket
+ *   number of its own. Citing 2449 was wrong, not just stale; removed rather
+ *   than replaced with another guess.)
  *   This used to read the current level and write `on_hand + delta` as two
  *   separate statements — correct for one operator, and PROVEN wrong under
  *   real concurrency: 20 concurrent `delta: -1` requests against a SKU seeded
@@ -222,7 +229,8 @@ export const PATCH = withPermission(
     }
     const { sku, location, delta, reason } = adjustment.value
 
-    // ATOMIC ADJUST, PROVEN UNDER CONCURRENCY (TOD-2449).
+    // ATOMIC ADJUST, PROVEN UNDER CONCURRENCY. (Not TOD-2449 — see the
+    // "Ticket note" in this file's header comment for the correction.)
     //
     // The comment this replaced said "read-modify-write, honestly" and pointed
     // at the CHECK (on_hand >= 0) as the floor under a lost update. Measured
@@ -314,7 +322,30 @@ export const PATCH = withPermission(
 
     // The audit row is written only AFTER the level actually changed. An audit
     // trail that records intentions rather than effects is worse than none.
-    await db().from('commerce_actions').insert({
+    //
+    // ITS ERROR MUST BE CHECKED (found by a critic forcing the `object_type`
+    // CHECK constraint to fail here: the insert was fired with no destructure,
+    // the PATCH still answered 200 with a moved `on_hand`, and the SKU's
+    // audit total never changed — stock and ledger diverged silently while
+    // the response said the move was clean). TOD-2443 already drew this
+    // lesson for the fulfilment path in orders/route.ts by writing the audit
+    // BEFORE the stock write, so a failed audit leaves stock untouched. That
+    // ordering does not transfer here: this handler is compare-and-swap, and
+    // the audit's `from_value`/`to_value` are only known to be ACCURATE once
+    // a CAS attempt has actually landed — writing them first would mean
+    // auditing a move that might still lose its race and never happen.
+    //
+    // So the write comes first here, and a failed audit is handled by a
+    // best-effort COMPENSATING write: CAS `on_hand` back from `next.value` to
+    // `level.on_hand`, pinned the same way the forward write was pinned. If
+    // that lands, the net effect is "nothing happened" and the response says
+    // so. If it does NOT land (another writer moved the row again in the
+    // interim — the same kind of race this whole handler exists to catch),
+    // there is no third statement that can fix it: the db seam
+    // (lib/db.ts) has no cross-table transaction, on either dialect, so
+    // stock and ledger can genuinely diverge here. That is stated to the
+    // caller in words rather than hidden behind a 200.
+    const { error: auditError } = await db().from('commerce_actions').insert({
       project,
       action: 'inventory.adjust',
       object_type: 'inventory',
@@ -325,6 +356,46 @@ export const PATCH = withPermission(
       actor: commerceActor(req),
       created_at: now,
     })
+
+    if (auditError) {
+      const { data: reverted } = await db()
+        .from('inventory_levels')
+        .update({ on_hand: level.on_hand, updated_at: new Date().toISOString() })
+        .eq('project', project)
+        .eq('sku', sku)
+        .eq('location', location)
+        .eq('on_hand', next.value)
+        .select('*')
+
+      if (((reverted ?? []) as unknown[]).length > 0) {
+        return NextResponse.json(
+          {
+            error: 'audit_write_failed',
+            message:
+              `stock for "${sku}" at "${location}" was NOT changed: the audit row could not be ` +
+              `written (${auditError.message}), and the stock change was reverted (${level.on_hand} ` +
+              `-> ${next.value} -> ${level.on_hand}). Stock does not change without a recorded reason; retry.`,
+          },
+          { status: 500 },
+        )
+      }
+
+      // The revert itself lost its CAS race — some other writer moved the row
+      // again before this compensation landed. There is no fourth statement
+      // that resolves this cleanly without a real transaction: say so.
+      return NextResponse.json(
+        {
+          error: 'audit_write_failed_unreconciled',
+          message:
+            `stock for "${sku}" at "${location}" moved to on_hand=${next.value} but the audit row ` +
+            `could not be written (${auditError.message}), AND the compensating revert lost its own ` +
+            `race against a concurrent writer. Stock and its audit trail have diverged for this SKU ` +
+            `and need manual reconciliation — this db seam has no cross-table transaction on either ` +
+            `dialect, so this handler cannot guarantee atomicity across the two writes.`,
+        },
+        { status: 500 },
+      )
+    }
 
     return NextResponse.json({
       project,

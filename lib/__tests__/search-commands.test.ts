@@ -325,6 +325,35 @@ describe('parseSearchInput — search modifiers', () => {
     if (!r.ok) expect(r.message).toMatch(/before:2026-08-01/)
   })
 
+  // Regression 2026-08-26: DATE_MODIFIER's old shape-only regex (four
+  // digits, dash, two digits, dash, two digits) let a calendar-impossible
+  // value through validation, reach a live query, and render results under
+  // "ISSUES MATCHING THIS FILTER" as though the filter had been honoured.
+  it.each(['9999-99-99', '2026-13-45', '2026-02-30', '2023-02-29'])(
+    'refuses a shape-valid but calendar-impossible before: value — %s',
+    v => {
+      const r = parseSearchInput(`before:${v}`, STATUSES)
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.message).toMatch(new RegExp(`before:${v}`))
+    },
+  )
+
+  it('accepts a real leap-day date (2024 is a leap year)', () => {
+    const r = parseSearchInput('before:2024-02-29', STATUSES)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.filters.beforeDate).toBe('2024-02-29')
+  })
+
+  // Regression 2026-08-26: `from:` stored the raw-cased value, so
+  // `from:Po` 0-matched a real assignee (`po`) — a case mismatch reading
+  // identically to "this person has no issues", indistinguishable to the
+  // operator from the truth.
+  it('lower-cases from: values so "from:Po" still narrows to assignee po', () => {
+    const r = parseSearchInput('from:Po', STATUSES)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.filters.assignee).toBe('po')
+  })
+
   it('refuses a modifier with no value after the colon', () => {
     const r = parseSearchInput('in:', STATUSES)
     expect(r.ok).toBe(false)

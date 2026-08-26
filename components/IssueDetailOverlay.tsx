@@ -23,7 +23,7 @@ import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { projectFromPath } from '@/lib/search-commands'
 import { issuePermalinkPath } from '@/lib/issue-permalink'
-import { readyIssueVerbs, runIssueVerb, type IssueVerb } from '@/lib/issue-verbs'
+import { readyIssueVerbs, runIssueVerb, withheldIssueVerbs, type IssueVerb } from '@/lib/issue-verbs'
 import type { MoveIssue } from '@/lib/issue-moves'
 
 interface IssueRow extends MoveIssue {
@@ -59,6 +59,11 @@ export default function IssueDetailOverlay({ taskKey, onClose }: Props) {
   const [verbBusy, setVerbBusy] = useState<string | null>(null)
   const [verbMessage, setVerbMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  // Collapsed by default — this is the honesty a fresh critic found missing
+  // (a closed issue showed zero verbs and zero reason, see
+  // lib/issue-verbs.ts's `withheldIssueVerbs` header), not a promoted primary
+  // action; the ready verbs above stay the fast path for the common case.
+  const [showWithheld, setShowWithheld] = useState(false)
 
   const scopeProject = typeof window !== 'undefined' ? projectFromPath(window.location.pathname) : null
 
@@ -126,6 +131,7 @@ export default function IssueDetailOverlay({ taskKey, onClose }: Props) {
   }
 
   const verbs = row ? readyIssueVerbs(row) : []
+  const withheld = row ? withheldIssueVerbs(row) : []
 
   return (
     <div
@@ -224,6 +230,32 @@ export default function IssueDetailOverlay({ taskKey, onClose }: Props) {
                     <p className={`text-xs mt-2 ${verbMessage.ok ? 'text-emerald-400' : 'text-red-400'}`}>
                       {verbMessage.text}
                     </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── withheld moves: "Never hide it" (lib/issue-moves.ts's own
+                  header). A closed issue used to show verbs.length === 0 and
+                  stop there — no verb, no reason, nothing distinguishing
+                  "closed and read-only" from "the palette has no opinion".
+                  Every reason below is moveVerdict's own, unmodified. */}
+              {withheld.length > 0 && (
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <button
+                    type="button"
+                    onClick={() => setShowWithheld(v => !v)}
+                    className="text-[10px] uppercase tracking-wider text-white/35 hover:text-white/55"
+                  >
+                    {showWithheld ? 'Hide' : 'Show'} {withheld.length} withheld move{withheld.length > 1 ? 's' : ''}
+                  </button>
+                  {showWithheld && (
+                    <ul className="mt-2 space-y-1.5">
+                      {withheld.map(w => (
+                        <li key={w.toStatus} className="text-xs text-white/45">
+                          <span className="text-white/60">{w.label}:</span> {w.reason}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}

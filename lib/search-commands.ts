@@ -273,6 +273,27 @@ const KNOWN_MODIFIERS = new Set(['in', 'from', 'before'])
 
 const DATE_MODIFIER = /^\d{4}-\d{2}-\d{2}$/
 
+/**
+ * `DATE_MODIFIER` only proves SHAPE (four digits, dash, two digits, dash, two
+ * digits) — it does not prove the date exists. Measured 2026-08-26 against
+ * the running palette: `before:9999-99-99` and `before:2026-13-45` both
+ * passed the shape check, reached the live `/api/db/issues` query as
+ * `created_at=lt.9999-99-99`, and rendered whatever came back under "ISSUES
+ * MATCHING THIS FILTER" — a filter that looks honoured while naming a date
+ * that was never checked. `Date.UTC` normalises an out-of-range month/day
+ * (month 13 rolls into the next year, day 45 rolls past the end of the
+ * month) rather than rejecting it, so the round-trip below — rebuild the
+ * string from the UTC components `Date.UTC` actually stored and compare —
+ * is what catches the rollover; a plain `!isNaN(new Date(s).getTime())`
+ * would not, because `new Date('9999-99-99')` still parses to SOME date.
+ */
+function isValidCalendarDate(s: string): boolean {
+  if (!DATE_MODIFIER.test(s)) return false
+  const [y, mo, d] = s.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, mo - 1, d))
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d
+}
+
 export type ParsedSearch =
   | { ok: true; filters: SearchFilters; text: string }
   /** A modifier was typed that this search cannot honour. `message` is shown
@@ -314,10 +335,16 @@ export function parseSearchInput(query: string, validStatuses: readonly string[]
       }
       filters.status = status
     } else if (modifier === 'from') {
-      filters.assignee = rawValue
+      // Lower-cased for the same reason `in:` is (above): assignee ids are
+      // stored lowercase (`po`, `builder`, `michael`, …), and `=eq.` in
+      // PostgREST is case-sensitive, so `from:Po` used to 0-match — not
+      // because po has no issues, but because the exact string "Po" does not
+      // exist in the column. That reads identically to "no issues", which is
+      // the fabrication class this rebuild keeps paying for.
+      filters.assignee = rawValue.toLowerCase()
     } else if (modifier === 'before') {
-      if (!DATE_MODIFIER.test(rawValue)) {
-        return { ok: false, message: `"before:${rawValue}" must be a date like before:2026-08-01.` }
+      if (!isValidCalendarDate(rawValue)) {
+        return { ok: false, message: `"before:${rawValue}" must be a real date like before:2026-08-01.` }
       }
       filters.beforeDate = rawValue
     }

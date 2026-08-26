@@ -572,3 +572,444 @@ issues.
   is generic, but I did not fabricate a third project to test it — the
   existing two were sufficient to prove the boundary in both directions
   (foreign key blocked, own key allowed).
+
+---
+
+## 9. Second pass (2026-08-26) — fresh-critic review, response
+
+A fresh critic scored this piece 7/10 against the running app. This section
+answers each finding: what I measured myself before touching anything, what
+I changed, the seam diff for `app/page.tsx` (orchestrator-owned — I read it,
+did not edit it), and what I still could not verify.
+
+### 9.0 Tooling available this session
+
+No browser tool was reachable from this agent invocation (the task briefing
+referenced `mcp__Claude_Browser__*`; it was not present in my tool list).
+Every DOM-level claim below (anchor presence, hover/status-bar, Cmd-click
+new-tab) is therefore verified by reading the rendered output shape and the
+exact click-handler logic, plus live `curl` calls against the running dev
+server (logged in with `POST /api/auth-form`, `password=kaos2026`) for every
+claim that is really about the server's answer — not by watching a DOM in a
+real browser. Flagged again in §9.13.
+
+### 9.1 The biggest gap — corrected scope, then fixed what I own
+
+**Correction to the brief:** "Work → List" is `components/tabs/IssuesTab.tsx`,
+**not** a file on my owned list (`BoardTab.tsx`, `PipelineTab.tsx`,
+`IssueDetailOverlay.tsx`, `SearchOverlay.tsx`, `search-commands.ts`,
+`issue-permalink.ts`, `issue-verbs.ts`). Confirmed by reading
+`app/page.tsx`'s render tree: `destination==='work' && view==='board'`
+renders `BoardTab` (mine); `destination==='work' && view==='list'` renders
+`IssuesTab` (not mine, not touched). The critic's own repro —
+`document.querySelectorAll('a').length === 0` on "Work → List" — points at
+a file outside this piece's ownership. I did not edit it.
+
+**What I did fix, in files I own:**
+
+- `components/tabs/BoardTab.tsx` (Work → Board, and its swimlane/"Needs You"
+  views) — every `task_key` badge (4 render sites: the shared kanban card
+  used by every swimlane, the "Needs You" queue, the feature-swimlane
+  header, and the open-issue detail drawer's own header) is now a real
+  `<a href="/i/<key>">` via a new local `IssueKeyLink` component.
+- `components/tabs/PipelineTab.tsx` — same treatment on `FeatureCard` and
+  `IssueCard` (this board had no detail view of any kind before this —
+  confirmed with `grep -n "detailTask\|setDetail"` returning nothing — so
+  this is net-new reachability, not a replacement).
+
+**How the anchor behaves, and why each part is true:**
+- `href` = `issuePermalinkPath(currentPath, taskKey)` — a real path, not a
+  `javascript:` no-op, so middle-click, Cmd/Ctrl-click, and right-click →
+  Copy Link Address are the browser's own native handling of a real anchor
+  — nothing in this piece's code runs for those; there is nothing to
+  disable.
+- The `onClick` checks `e.metaKey || e.ctrlKey || e.shiftKey || e.altKey ||
+  e.button !== 0` and returns without `preventDefault()` for any of those —
+  this is what leaves modified/middle clicks to native browser behaviour
+  (React's synthetic `onClick` never blocks the browser's own default
+  action unless `preventDefault` is called).
+- On a plain left click, it calls `preventDefault()` +
+  `lib/issue-permalink.ts`'s new `navigateToIssuePermalink(taskKey)` —
+  `pushState` + a dispatched `popstate`, the identical idiom
+  `SearchOverlay.tsx`'s own `openIssue` already used, and app/page.tsx's
+  real back/forward listener already re-parses on any `popstate`, synthetic
+  or real. No new navigation path was invented.
+- `stopPropagation()` keeps the anchor from also triggering the card's own
+  `onClick` (which still opens `BoardTab`'s local edit-capable detail
+  drawer for a click anywhere else on the card) — the existing drawer is
+  unchanged; the anchor is additive.
+
+**Measured:** `npx tsc --noEmit` — 0 errors touching these files (0 errors
+repo-wide). `GET /p/limiglow/work/board` (logged-in cookie) still returns
+200 with no server-side crash. **Not measured: an actual browser DOM count
+of `a[href*="/i/"]`, a real Cmd-click opening a tab, or a real hover showing
+the status-bar URL** — no browser tool this session; see §9.13.
+
+**Handoff, not applied:** `components/tabs/IssuesTab.tsx` (Work → List) —
+the identical `IssueKeyLink` pattern applies cleanly at its two render
+sites (`grep -n task_key components/tabs/IssuesTab.tsx` → the desktop-row
+span at `issue.task_key??'—'` and the mobile-row span, both currently
+inside a row whose own `onClick={() => handleExpand(issue.id)}` opens an
+inline edit form — same "anchor + stopPropagation, existing onClick
+untouched" shape as `BoardTab.tsx`'s fix). I did not apply it: that file is
+not on my owned list and none of my instructions authorize editing outside
+it.
+
+### 9.2 The seam has zero test coverage — what I actually closed, and what I did not
+
+**I could not do option (a)** (a jsdom test rendering `app/page.tsx`
+directly): `jest.config.js` sets `testEnvironment: "node"`, and
+`jest-environment-jsdom` is not installed — verified with `ls
+node_modules/jest-environment-jsdom` (no such directory) — and there is not
+a single `.test.tsx` file anywhere in this repo (`find . -name "*.test.tsx"`
+returned nothing). Adding that dependency mid-session, with two other
+agents actively running against this same `node_modules`/dev-server
+process, was judged too risky to do unasked and out of my file ownership
+(`package.json` is not on my owned list). `parseURL`/`buildPath` are also
+not exported from `app/page.tsx`, so even installing jsdom would not make
+them importable without an edit to that file.
+
+**I did option (b)**, and I am explicit about what it does and does not
+close:
+
+- New pure function `lib/issue-permalink.ts`'s `issueUrlSyncPath(issueIsOpen,
+  currentPath, canonicalPath): string | null` — folds BOTH parts of the
+  guard (is an issue open; did the canonical path actually change) into one
+  tested decision.
+- Pinned by 4 new cases in `lib/__tests__/issue-permalink.test.ts`'s
+  `issueUrlSyncPath` describe block, plus a `navigateToIssuePermalink` case
+  (window/PopStateEvent stubbed by hand, since this test file also runs
+  under `testEnvironment: "node"`).
+- **PROOF, performed live, this session:** I applied the critic's exact
+  mutation shape to the real function — `lib/issue-permalink.ts`,
+  `if (issueIsOpen) return null` → `if (false && issueIsOpen) return null`
+  — and re-ran `npx jest lib/__tests__/issue-permalink.test.ts`. Result:
+  2 tests failed by name: `issueUrlSyncPath › refuses to sync — returns
+  null — whenever an issue is open, no matter how the paths differ` and
+  `issueUrlSyncPath › MUTATION PROBE: a version that ignores issueIsOpen
+  would fail the first case above`. I then reverted the mutation and
+  re-ran: 35/35 green again (file backed up before the mutation, restored
+  after — the repo is clean of it now).
+
+**What this does NOT prove, stated plainly:** `app/page.tsx` still has not
+imported this function. Until the seam diff below is applied, mutating
+`app/page.tsx`'s own guard — exactly what the critic did — is still not
+caught by anything in this repo's test suite, because nothing can import or
+render that file today (see the jsdom gap above). The gap the critic found
+is narrowed (the decision logic itself is now pinned, and the call site the
+diff produces has almost nothing left to mutate) but not closed until the
+diff lands. I will not claim otherwise.
+
+**Seam diff — `app/page.tsx`:**
+
+```diff
+-import { parseIssueKeyFromPath } from '@/lib/issue-permalink'
++import {
++  ISSUE_BACKDROP_DESTINATION,
++  ISSUE_BACKDROP_VIEW,
++  issueBackdropPath,
++  issueUrlSyncPath,
++  parseIssueKeyFromPath,
++  rawIssueSegment,
++} from '@/lib/issue-permalink'
+```
+
+Second URL-sync effect (the one the critic mutated), in the
+`[selectedBusiness, selectedProject, issueKey]` effect body:
+
+```diff
+   useEffect(() => {
+     if (typeof window === 'undefined' || !selectedProject) return
+-    // TOD-2462: an open issue permalink owns the address bar. ...
+-    if (issueKey) return
+     const path = buildPath(selectedBusiness, destination, view, selectedProject)
+     const current = window.location.pathname + window.location.search
+-    if (current !== path) {
+-      window.history.replaceState({ biz: selectedBusiness, destination, view, project: selectedProject }, '', path)
++    const sync = issueUrlSyncPath(issueKey !== null, current, path)
++    if (sync) {
++      window.history.replaceState({ biz: selectedBusiness, destination, view, project: selectedProject }, '', sync)
+     }
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [selectedBusiness, selectedProject, issueKey])
+```
+
+### 9.3 Fabrication 1 — inverted comment on `issueBackdropPath` — FIXED
+
+Confirmed exactly as the critic measured: `DEFAULT_VIEW.work === 'board'`,
+so `'list' !== 'board'` is true and the path IS `/p/<slug>/work/list`,
+never the bare `/work`. The comment claimed the opposite and inverted the
+reason. Rewritten in place (`lib/issue-permalink.ts`, on
+`issueBackdropPath`) to state the correct path and the correct direction of
+the reasoning, and a new regression test (`issueBackdropPath › never
+collapses to the bare destination path`) pins the shape so a comment
+disagreeing with the code again is at least contradicted by a named,
+failing assertion next time.
+
+### 9.4 Fabrication 2 — dead exports claiming a guarantee nothing provides — PARTIALLY FIXED, seam diff for the rest
+
+Confirmed: `ISSUE_BACKDROP_DESTINATION`, `ISSUE_BACKDROP_VIEW`,
+`issueBackdropPath` had exactly one importer — their own test file —
+confirmed with a repo grep for `issueBackdropPath|ISSUE_BACKDROP` excluding
+node_modules: only `lib/issue-permalink.ts` and
+`lib/__tests__/issue-permalink.test.ts`. `app/page.tsx` hardcodes
+`'work'`/`'list'` independently at its `parseURL` issue branch and at the
+`<IssueDetailOverlay onClose>` prop.
+
+I chose neither of the critic's two options exactly: I did not delete the
+exports (they are correct and about to have a real second importer, see
+below), and I could not import them into `app/page.tsx` myself. Instead I
+rewrote both comments to say, in the code today, that the guarantee is not
+live yet and to point at this section for the diff — so the comment no
+longer overclaims regardless of when the diff lands. The diff itself:
+
+```diff
+   const goTo = useCallback((dest: DestinationId, v?: string) => {
+     const resolved = v && viewsOf(dest).includes(v) ? v : DEFAULT_VIEW[dest]
+     setDestination(dest)
+     setView(resolved)
++    // issue-permalink piece: navigating away closes an open issue overlay.
++    // Before this, PrimaryNav/MobileNav navigation left `issueKey` set
++    // while the URL moved to e.g. `/fleet` — the overlay stayed mounted,
++    // showing an issue, over a screen whose OWN address bar named
++    // something else, and that URL reloads straight to Fleet with no
++    // memory an issue was ever open. See §9.5 (defect 4).
++    setIssueKey(null)
+     pushURL(selectedBusiness, dest, resolved, selectedProject)
+   }, [selectedBusiness, selectedProject, pushURL])
+```
+
+```diff
+-      <IssueDetailOverlay taskKey={issueKey} onClose={() => { setIssueKey(null); goTo('work', 'list') }} />
++      <IssueDetailOverlay taskKey={issueKey} onClose={() => {
++        setIssueKey(null)
++        // issue-permalink piece: closing an overlay is not navigation.
++        // `goTo('work','list')` PUSHED a history entry, so `history.length`
++        // grew on every open+close and Back immediately RE-OPENED the
++        // issue (see §9.9, the wart) — replaceState instead. Uses the
++        // shared constants so this and SearchOverlay's own "closed"
++        // destination cannot drift apart.
++        setDestination(ISSUE_BACKDROP_DESTINATION)
++        setView(ISSUE_BACKDROP_VIEW)
++        window.history.replaceState(
++          { biz: selectedBusiness, destination: ISSUE_BACKDROP_DESTINATION, view: ISSUE_BACKDROP_VIEW, project: selectedProject },
++          '',
++          issueBackdropPath(window.location.pathname),
++        )
++      }} />
+```
+
+Once both land, `ISSUE_BACKDROP_DESTINATION`/`ISSUE_BACKDROP_VIEW`/
+`issueBackdropPath` have a second, real importer and the comment becomes
+literally true; until then it says so.
+
+### 9.5 Fabrication 3 / defect scope — `before:` accepted impossible dates — FIXED
+
+Measured live against the running server BEFORE fixing anything:
+`GET /api/db/issues?created_at=lt.9999-99-99&limit=3&select=task_key` with a
+valid `Referer` → 200, `[{"task_key":"TOD-169"}]` (my own fixture, see
+§9.11) — confirms the critic's finding that the server-side proxy does no
+date validation at all and a shape-only-valid-but-impossible date reaches a
+live query.
+
+Fixed at the client boundary this piece owns (`lib/search-commands.ts`,
+`parseSearchInput`): `DATE_MODIFIER` (shape regex) is now followed by
+`isValidCalendarDate`, which rebuilds the string from `Date.UTC`'s actual
+normalised year/month/day and compares — `new Date('9999-99-99')` still
+*parses* to some date (a plain `isNaN` check would not have caught it); the
+round-trip comparison does, because `Date.UTC` silently rolls an
+out-of-range month/day into the next month/year rather than rejecting it,
+and the round-trip exposes that roll-over as a mismatch.
+
+New tests: `it.each(['9999-99-99', '2026-13-45', '2026-02-30',
+'2023-02-29'])` (the last is 2023, not a leap year — Feb 29 does not exist)
+all refused with a message naming the offending value; `2024-02-29`
+(genuine leap day) accepted. `npx jest lib/__tests__/search-commands.test.ts`
+→ 60/60 green (54 previous + 6 new).
+
+Piece doc §5's claim that `before:` "refuses anything that isn't a plain
+date" was true of the SHAPE check only — correcting that here per the "do
+not rewrite history" rule rather than editing §5 itself.
+
+### 9.6 Defect: `from:` case-sensitive — FIXED (lower-cased, not full-directory validation)
+
+Measured live, before fixing: `GET /api/db/issues?assignee=eq.po&...` → 200,
+1 row (my fixture, assignee `po`); `assignee=eq.Po` (capital P) → 200, `[]`
+— confirms the exact repro. I chose "match case-insensitively" over "reject
+by name against a directory": all evidence in this codebase (`ASSIGNEE_MAP`
+lookups in `BoardTab.tsx` all `.toLowerCase()` their key; no uppercase
+assignee literal exists anywhere in `lib/*.ts`) is that assignee ids are
+canonically lowercase, the same way `in:`'s status values already are and
+are already lower-cased in this same function — so `from:` now does the
+identical `.toLowerCase()` `in:` already did, rather than reaching into
+`lib/agent-roster.ts` (explicitly off-limits this round — another agent is
+actively changing it) to build a name-validated refusal. Re-measured live
+after the fix: `from:Po` in the palette now builds `assignee=eq.po`, which
+is the query that returned the 1 row above.
+
+New test: `lower-cases from: values so "from:Po" still narrows to assignee
+po`.
+
+### 9.7 Defect: unparseable key silently succeeds — seam diff (not applicable without app/page.tsx)
+
+Measured before fixing: `GET /api/issues?task_key=notakey` with a Limiglow
+`Referer` → 404, `{"error":"No issue found for task_key=notakey"}` — a raw,
+un-normalised, garbage segment is safe to hand straight through to the
+existing `IssueDetailOverlay` "missing" render path; no new endpoint, no
+new validation needed server-side.
+
+New `lib/issue-permalink.ts` export: `rawIssueSegment(pathname): string |
+null` — same prefix-peeling as `parseIssueKeyFromPath`, but returns the RAW
+segment regardless of whether it parses, distinct from that function's
+existing (and still-tested-unchanged) "normalised or null" contract.
+
+Seam diff — `parseURL`'s issue branch:
+
+```diff
+   if (rest[0] === 'i' && rest[1]) {
+-    const issueKey = parseIssueKeyFromPath(window.location.pathname)
++    // A malformed/truncated permalink used to fall through to the `now`
++    // default below, and the mount-time replaceState rewrote the address
++    // bar before the operator saw any evidence an issue had been
++    // requested. `rawIssueSegment` is the fallback: it is SAFE to hand to
++    // IssueDetailOverlay unnormalised — its GET 404s cleanly on any string
++    // (measured live 2026-08-26, see the piece doc §9.7) — so "notakey not
++    // found in Limiglow" renders instead of a silent bounce to `/now`.
++    const issueKey = parseIssueKeyFromPath(window.location.pathname) ?? rawIssueSegment(window.location.pathname)
+     if (issueKey) {
+       return { destination: 'work', view: 'list', business, project, openChat: false, issueKey }
+     }
+   }
+```
+
+Not applied — `app/page.tsx` is orchestrator-owned.
+
+### 9.8 Defect: palette invisible-but-focused underneath the overlay — FIXED
+
+Confirmed by reading both files' JSX root: `SearchOverlay.tsx` was
+`z-[100]`; `IssueDetailOverlay.tsx` is `z-[150]`. `app/page.tsx`'s Cmd-K
+listener (`if ((e.metaKey || e.ctrlKey) && e.key === 'k')`) has no guard
+against `issueKey` being set, so both can be simultaneously mounted.
+
+Fixed within the one file I own that needed changing:
+`components/SearchOverlay.tsx`'s root `z-[100]` → `z-[200]` (above
+`IssueDetailOverlay`'s `z-[150]`). The newest thing the operator opened
+(the palette, opened second) now outranks the older one — visible,
+clickable, and receives the keystroke that was already landing in its
+(previously hidden) input. `IssueDetailOverlay.tsx` itself is unchanged.
+**Not verified in a real browser** (no browser tool) — verified by reading
+the two `z-[…]` values and CSS stacking-context rules (a child of
+`position: fixed` with a higher `z-index` paints and hit-tests above a
+sibling with a lower one, given both are top-level fixed overlays with no
+intervening stacking context — true here since both mount as direct
+children of `app/page.tsx`'s render tree).
+
+### 9.9 Wart: closing pushes a history entry, always lands on work/list
+
+Addressed as part of the §9.4 seam diff (the `onClose` prop): switched
+`goTo('work','list')` (which `pushURL`s) to an explicit `replaceState` to
+`issueBackdropPath(...)`, which fixes the `history.length` growth /
+back-reopens-the-issue half of this. The second half — "return to the
+destination the permalink was opened FROM (now/fleet/etc.), not always
+work/list" — is not attempted: it needs a new piece of state
+(`previousDestination`/`previousView`, captured wherever `issueKey` is
+first set, in `app/page.tsx`, which also owns the several places an issue
+can become "open") and the critic filed it as the lowest-severity item
+("ONE WART", below the four numbered defects). Given the size of the rest
+of this list, I judged fixing the history-growth bug the seam diff already
+did was the honest stopping point rather than doing a partial version of
+the second half.
+
+### 9.10 Free honesty — withheld verbs now show their real reason
+
+`lib/issue-verbs.ts`: new `withheldIssueVerbs(issue)`, alongside the
+existing (unchanged) `readyIssueVerbs`. Iterates the exact same
+`moveVerdict` calls `readyIssueVerbs` already makes; for every `blocked`
+verdict it surfaces `verdict.reason` verbatim, and for every `needs`
+verdict it names the missing field labels. `lib/issue-moves.ts` — not on my
+owned list — is untouched; this only reads more of what it already
+computes.
+
+`components/IssueDetailOverlay.tsx`: a collapsed-by-default "Show N
+withheld moves" toggle beneath the ready-verb buttons, rendering each
+withheld move's label + real reason when expanded. Collapsed by default so
+it does not compete with the ready verbs (the fast path) for attention.
+
+New tests in `lib/__tests__/issue-verbs.test.ts` (5): a closed issue's
+withheld reasons all mention "closed and read-only" (verbatim from
+`moveVerdict`, not paraphrased); a status is never both ready AND withheld;
+`refined`'s "needs" reason names the actual missing fields (Description,
+Test tier, for a gated `ops` row); `defined`'s "no owner" block gives a
+real sentence. `npx jest lib/__tests__/issue-verbs.test.ts` → 13/13 green
+(8 previous + 5 new).
+
+### 9.11 Fixtures
+
+Created and deleted, project Limiglow, this session: `TOD-169` (type
+`ops`, title "prd_implementer fixture — issue-permalink verification"),
+used for the §9.5/§9.6/§9.7 live measurements above.
+`POST /api/issues` → 200 →
+`DELETE /api/issues?id=303aa4b0-644c-44d5-8c8f-c203ee4d5f69` → 200 →
+re-`GET ?task_key=TOD-169` → 404, confirmed gone.
+
+Also closed out the prior session's flagged-but-undeleted fixture from §7
+above (`TOD-155`, id `0a2fa43f-cd3e-4261-8be7-0b7a1cc304b9`): the dev
+server is healthy this session (every curl in §9.5–§9.7 returned a real
+JSON body, not the 500 HTML page §7 described), so I ran the exact
+`DELETE` that note asked for. `GET ?task_key=TOD-155` already answered 404
+before I ran it (so either it was cleaned up by someone else in the
+meantime, or the key was reassigned by the sequence — Supabase `DELETE
+.eq('id', ...)` against a non-matching id also returns `{ok:true}`, so this
+DELETE cannot by itself distinguish "found and removed" from "already
+gone"); either way, the row is confirmed absent now. Did not touch any
+other row in Limiglow — did not enumerate or delete anything belonging to
+the concurrent agent mentioned in my instructions.
+
+### 9.12 Gate numbers (this session, after all changes above)
+
+- `npx tsc --noEmit` → 0 errors (repo-wide).
+- `npm test` → 1081 passed, 5 failed, 2 skipped (1088 total). The 5
+  failures are exactly the baseline-known set — `__tests__/api/
+  agents-route.test.ts` (2), `__tests__/runtimes/spawn-live.test.ts` (1),
+  `__tests__/api/agents-unconfigured.test.ts` (1), plus one more in that
+  same small cluster — unrelated to this piece's files, unchanged by
+  anything here. 1081 vs. the 1055 baseline is +26 new passing tests, all
+  mine (§9.2, §9.5, §9.6, §9.10) plus whatever the two concurrent agents
+  added in their own files.
+- `node scripts/acceptance/run.mjs` → 45/45 passing, harness score 10/10 —
+  unchanged from baseline.
+- `bash scripts/smoke-test-layout.sh` → all guards passed: layout (4),
+  `no-invented-projects`, `no-dead-modules`, `no-phantom-columns`,
+  `no-cloud-provider`, `check-no-secrets`, Honest-error guard
+  (`no-silent-empty.mjs`), Scope guard (`no-unscoped-issues.mjs`) — the
+  latter two named explicitly since CLAUDE.md calls them out by name; both
+  ran and both passed.
+
+### 9.13 What I did NOT verify this pass
+
+- **No browser tool.** Every claim about pixel-level rendering, real
+  Cmd-click/middle-click new-tab behaviour, hover status-bar text, and
+  actual z-index stacking on screen is inferred from code + CSS semantics,
+  not observed. Flagged inline at each defect above, not just here.
+- **The three `app/page.tsx` seam diffs (§9.2, §9.4, §9.7) are unapplied.**
+  I did not and cannot verify their combined behavior end-to-end — each is
+  reasoned through by hand and, where possible, backed by a live
+  measurement of the piece either side of the diff (e.g. §9.7's "a raw
+  segment 404s safely" is a live-server fact independent of whether the
+  diff has landed).
+- **`goTo`'s `setIssueKey(null)` addition (§9.4) is untested against a real
+  render.** I did not build a way to exercise `app/page.tsx`'s actual
+  component tree this session (see §9.2) — I traced the fix by reading
+  every call site of `goTo` and `setIssueKey` in the file, not by watching
+  it run.
+- **Whether raising `SearchOverlay`'s z-index to 200 has any other overlay
+  in the app that now unexpectedly sits below it that didn't before.** I
+  checked every `z-[…]` literal in `IssueDetailOverlay.tsx` and
+  `SearchOverlay.tsx` (the only two files I touched for this) and in
+  `BoardTab.tsx`'s own modals (50/60/70, well below both) — I did not grep
+  the entire remaining ~250-file tree for a `z-[` above 150 that might now
+  read strangely relative to the palette; I consider this low-risk (a
+  command palette outranking most modals is the conventional choice) but
+  did not exhaustively confirm it.
+- **`components/tabs/IssuesTab.tsx` (Work → List) remains without a real
+  anchor.** See §9.1 — out of my ownership, not touched, pattern handed off.

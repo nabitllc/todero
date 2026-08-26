@@ -746,7 +746,52 @@ ${responseFields}
   // spawns an agent, so it must be the one that carries the task key/title
   // through to retrieval — without them, loadContextFromDB cannot rank
   // anything and retrieval degrades to "nothing to search for".
-  const loadedContext = await loadContextFromDB(agentId, task.task_key ?? task.id, task.title ?? '')
+  //
+  // TOD-2412 repair: loadContextFromDB → buildRetrievedContext can throw
+  // RetrievalBudgetExceededError (lib/memory-retrieval.ts) when the single
+  // top-ranked past record is too big to fit the context budget on its own —
+  // a deliberate refusal to silently truncate it. This call used to sit
+  // outside any try/catch, so that refusal reached the caller as a bare,
+  // unstructured Next.js 500 with no code and none of the token numbers the
+  // exception already carries — an operator got a crash, not a diagnosis.
+  // Caught here the same way the spawn-failure path below handles a dead
+  // dispatch: the claim taken in Step 5 and the 'running' agent_runs row from
+  // Step 7 are undone (no process is ever spawned for this claim), and the
+  // response names the blocking record and both token numbers so an operator
+  // can act on TODERO_MEMORY_RETRIEVAL_BUDGET_TOKENS or promoteHotPatterns()
+  // without reading server logs.
+  let loadedContext: LoadedAgentContext
+  try {
+    loadedContext = await loadContextFromDB(agentId, task.task_key ?? task.id, task.title ?? '')
+  } catch (err) {
+    if (err instanceof RetrievalBudgetExceededError) {
+      console.error(`[run-agent] retrieval budget exceeded for ${agentId}/${task.task_key ?? task.id}: ${err.message}`)
+      await db()
+        .from('issues')
+        .update({ status: config.pickupStatus, started_at: null, heartbeat_at: null, updated_at: new Date().toISOString() })
+        .eq('id', task.id)
+      if (agentRunId) {
+        await db()
+          .from('agent_runs')
+          .update({ status: 'error', error: err.message, finished_at: new Date().toISOString() })
+          .eq('id', agentRunId)
+      }
+      return NextResponse.json(
+        {
+          error: err.message,
+          code: 'RETRIEVAL_BUDGET_EXCEEDED',
+          agent: agentId,
+          taskKey: err.taskKey,
+          blockingRecordKey: err.blockingRecordKey,
+          blockTokens: err.blockTokens,
+          budgetTokens: err.budgetTokens,
+          hint: 'Raise TODERO_MEMORY_RETRIEVAL_BUDGET_TOKENS or consolidate that record via promoteHotPatterns().',
+        },
+        { status: 503 },
+      )
+    }
+    throw err
+  }
   const context = `# WORKSPACE IDENTITY\n\n${loadedContext.text}`
 
   // Size guardrail — warn if prompt context exceeds 25KB (approx 6k tokens)

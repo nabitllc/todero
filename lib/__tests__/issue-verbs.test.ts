@@ -9,7 +9,7 @@
 // unconditionally) — this file is not asserting the actor-gated `backlog`
 // path, which lib/__tests__/issue-moves.test.ts already owns.
 
-import { readyIssueVerbs, runIssueVerb } from '../issue-verbs'
+import { readyIssueVerbs, runIssueVerb, withheldIssueVerbs } from '../issue-verbs'
 import type { MoveIssue } from '../issue-moves'
 
 describe('readyIssueVerbs', () => {
@@ -45,6 +45,47 @@ describe('readyIssueVerbs', () => {
   it('offers nothing for a closed (read-only) issue', () => {
     const issue: MoveIssue = { id: 'x', status: 'closed', type: 'ops', owner: 'ops' }
     expect(readyIssueVerbs(issue)).toEqual([])
+  })
+})
+
+// Regression 2026-08-26: a critic found the overlay showing ZERO verbs and
+// ZERO explanation on a closed issue, even though `moveVerdict` had "This
+// issue is closed and read-only" in hand the whole time. `readyIssueVerbs`
+// staying empty here is correct (closed is genuinely read-only) — the bug
+// was that nothing surfaced WHY. `withheldIssueVerbs` is that "why".
+describe('withheldIssueVerbs', () => {
+  it('names the real reason a closed issue offers nothing, verbatim from moveVerdict', () => {
+    const issue: MoveIssue = { id: 'x', status: 'closed', type: 'ops', owner: 'ops' }
+    const withheld = withheldIssueVerbs(issue)
+    expect(withheld.length).toBeGreaterThan(0)
+    expect(withheld.every(w => /closed and read-only/.test(w.reason))).toBe(true)
+  })
+
+  it('never withholds the row\'s own current status', () => {
+    const issue: MoveIssue = { id: 'x', status: 'backlog', type: 'ops', owner: 'ops' }
+    expect(withheldIssueVerbs(issue).some(w => w.toStatus === 'backlog')).toBe(false)
+  })
+
+  it('is disjoint from readyIssueVerbs — a status is never both offered and withheld', () => {
+    const issue: MoveIssue = { id: 'x', status: 'backlog', type: 'ops', owner: 'ops' }
+    const ready = new Set(readyIssueVerbs(issue).map(v => v.toStatus))
+    const withheld = new Set(withheldIssueVerbs(issue).map(v => v.toStatus))
+    for (const s of withheld) expect(ready.has(s)).toBe(false)
+  })
+
+  it('names the missing fields for a "needs" verdict — refined needs a description', () => {
+    const issue: MoveIssue = { id: 'x', status: 'backlog', type: 'ops', owner: 'ops' }
+    const withheld = withheldIssueVerbs(issue)
+    const refined = withheld.find(w => w.toStatus === 'refined')
+    expect(refined).toBeDefined()
+    expect(refined?.reason).toMatch(/Needs/)
+    expect(refined?.reason).toMatch(/Test tier/)
+  })
+
+  it('gives the no-owner block a real sentence for "defined", not a bare refusal', () => {
+    const issue: MoveIssue = { id: 'x', status: 'backlog', type: 'ops' }
+    const defined = withheldIssueVerbs(issue).find(w => w.toStatus === 'defined')
+    expect(defined?.reason).toMatch(/has no owner/)
   })
 })
 

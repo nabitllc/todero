@@ -8,6 +8,7 @@ import { useApiList } from '@/hooks/useApiData'
 import { useAgentRoster } from '@/hooks/useAgentRoster'
 import { agentDisplay } from '@/lib/agents-config'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
+import { issuePermalinkPath, navigateToIssuePermalink } from '@/lib/issue-permalink'
 
 interface Issue {
   id: string; title: string; description?: string; status: string;
@@ -15,6 +16,41 @@ interface Issue {
   parent_id?: string; task_key?: string; acceptance_criteria?: string;
   sprint?: string; due_date?: string; created_at?: string; updated_at?: string;
   resolution_type?: string;
+}
+
+// TOD-2463: Work -> List had ZERO anchors. A critic measured
+// `document.querySelectorAll('a').length === 0` on this entire screen and named
+// it the biggest gap in the permalink piece: on Linear every issue row is a real
+// <a href>, which is why "no screen unreachable" is true there without anyone
+// working at it — the URL falls out of the UI. Here the only two producers of a
+// permalink were the command palette and a Copy button inside an overlay you
+// could only reach through the palette.
+//
+// Copied verbatim from components/tabs/BoardTab.tsx, deliberately: the two
+// boards should not drift into two idioms for the same gesture. A shared
+// component is the right end state; it is not this piece's file to create.
+//
+// `href` is a real path, so middle-click, Cmd/Ctrl-click and right-click ->
+// Copy Link Address are the browser's own handling and nothing here runs for
+// them. The onClick returns WITHOUT preventDefault for any modified click,
+// which is what leaves those to the browser. stopPropagation keeps the anchor
+// from also firing the row's own expand handler.
+function IssueKeyLink({ taskKey, className }: { taskKey: string; className?: string }) {
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+  return (
+    <a
+      href={issuePermalinkPath(currentPath, taskKey)}
+      onClick={e => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        navigateToIssuePermalink(taskKey)
+      }}
+      className={className}
+    >
+      {taskKey}
+    </a>
+  )
 }
 
 const STATUS_OPTIONS = ['backlog','defined','open','in_progress','code_review','product_review','approved','completed','released','closed']
@@ -248,7 +284,9 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                       ✓
                     </span>
                   </span>
-                  <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-lg bg-white/5 text-white/40 w-fit">{issue.task_key??'—'}</span>
+                  {issue.task_key
+                    ? <IssueKeyLink taskKey={issue.task_key} className="text-[11px] font-mono px-1.5 py-0.5 rounded-lg bg-white/5 text-white/40 w-fit hover:text-white/70 hover:underline" />
+                    : <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-lg bg-white/5 text-white/40 w-fit">—</span>}
                   <TypeBadge value={issue.type ?? 'task'} />
                   <span className="text-xs text-white/60 truncate">{issue.title}</span>
                   <StatusBadge value={issue.status} />
@@ -265,7 +303,9 @@ export default function IssuesTab({ projectFilter }: { projectFilter?: string | 
                   className={'md:hidden grid grid-cols-[70px_1fr_80px] gap-2 px-3 py-2.5 cursor-pointer transition-all border-b border-white/10 ' +
                     (expandedId === issue.id ? 'bg-white/5' : 'hover:bg-white/3')}
                 >
-                  <span className="text-[10px] font-mono px-1 py-0.5 rounded-lg bg-white/5 text-white/40 w-fit">{issue.task_key??'—'}</span>
+                  {issue.task_key
+                    ? <IssueKeyLink taskKey={issue.task_key} className="text-[10px] font-mono px-1 py-0.5 rounded-lg bg-white/5 text-white/40 w-fit hover:text-white/70 hover:underline" />
+                    : <span className="text-[10px] font-mono px-1 py-0.5 rounded-lg bg-white/5 text-white/40 w-fit">—</span>}
                   <span className="text-[11px] text-white/60 truncate">{issue.title}</span>
                   <StatusBadge value={issue.status} />
                 </div>

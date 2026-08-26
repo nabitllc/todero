@@ -135,7 +135,7 @@ export async function recordRunOnExit(entry: ExitRecordInput): Promise<void> {
   try {
     const { data, error } = await db()
       .from('issues')
-      .select('task_key,status,rejection_count,last_rejection_reason,reviewer_notes')
+      .select('task_key,title,status,rejection_count,last_rejection_reason,reviewer_notes')
       .eq('id', entry.taskId)
       .limit(1)
     if (error) {
@@ -144,6 +144,7 @@ export async function recordRunOnExit(entry: ExitRecordInput): Promise<void> {
     }
     const issue = ((data ?? [])[0] ?? undefined) as {
       task_key?: string | null
+      title?: string | null
       status?: string | null
       rejection_count?: number | null
       last_rejection_reason?: string | null
@@ -159,12 +160,26 @@ export async function recordRunOnExit(entry: ExitRecordInput): Promise<void> {
     const dbError = await writeRunRecord({
       agentId: entry.agentId,
       taskKey,
+      // TOD-2412 repair: this select used to stop at reviewer_notes, so
+      // every exit-recorded row carried task_title: null. Both search
+      // engines put task_title in the haystack (memory-retrieval.ts
+      // searchPortable / searchSqliteFts), and significantTerms() strips
+      // the task_key deliberately — so a clean run (no rejection, no
+      // reviewer note) wrote a row with NO searchable content at all.
+      // `title` is already sitting in the row this function reads; unlike
+      // attempted/succeeded/exit_status (deferred to the Strategist per
+      // doc §8 — those are judgements about an outcome this pid-liveness
+      // watcher cannot observe), the title costs nothing extra to read.
+      taskTitle: issue?.title ?? null,
       status: issue?.status ?? null,
       rejectionCount: issue?.rejection_count ?? undefined,
       rejectionReason: issue?.last_rejection_reason ?? null,
       reviewerNotes: issue?.reviewer_notes ?? null,
       // Genuinely unobservable from a pid-liveness watcher — explicit null,
-      // not a guessed 0 ("succeeded") or 1 ("failed").
+      // not a guessed 0 ("succeeded") or 1 ("failed"). watchChildExit (see
+      // lib/runtimes/detached-spawn.ts) only confirms process.kill(pid, 0)
+      // fails; it never captures a real exit code or signal, so there is
+      // nothing honest to fill in here at this call site.
       exitStatus: null,
     })
     if (dbError) {

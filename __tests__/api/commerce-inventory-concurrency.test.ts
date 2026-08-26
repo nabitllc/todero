@@ -1,5 +1,11 @@
 /**
- * TOD-2449 — the inventory adjust, proven atomic under concurrency.
+ * The inventory adjust, proven atomic under concurrency.
+ *
+ * (Ticket note: this file used to cite "TOD-2449". Verified against git:
+ * that ticket's actual commit only touched scripts/board files, unrelated to
+ * this fix — see the "Ticket note" in app/api/commerce/inventory/route.ts's
+ * header for the correction. This fix landed in an unattributed checkpoint
+ * commit with no ticket of its own.)
  *
  * This is the same measurement made against the live dev server (see
  * docs/rebuild/pieces/pieces7/commerce-hardening.md), reproduced here as a
@@ -13,7 +19,7 @@
  * so N concurrently-invoked PATCH calls really do interleave their reads and
  * writes — this is not N sequential calls dressed up as concurrent ones.
  *
- * This probe fails against the pre-TOD-2449 read-modify-write handler: run it
+ * This probe fails against the pre-fix read-modify-write handler: run it
  * against a checkout of that revision and the final `on_hand` undercounts
  * (fewer decrements landed than requests that returned 200) — the same
  * defect measured live against the dev server (999 -> 20 concurrent -1s ->
@@ -113,7 +119,7 @@ function patchRequest(delta: number): NextRequest {
   })
 }
 
-describe('PATCH /api/commerce/inventory under real concurrency (TOD-2449)', () => {
+describe('PATCH /api/commerce/inventory under real concurrency', () => {
   it('N concurrent -1 adjustments land on the exact right final count, every one accounted for', async () => {
     const START = 200
     // The fake table's FIFO scheduling below is a deliberately WORSE-than-real
@@ -140,8 +146,9 @@ describe('PATCH /api/commerce/inventory under real concurrency (TOD-2449)', () =
     const succeeded = statuses.filter(s => s === 200).length
 
     expect(table[0].on_hand).toBe(START - succeeded)
-    // With CAS retries bounded at 8 attempts and only 40-way contention on one
-    // row, every request should in practice succeed — assert that too, so a
+    // With CAS retries bounded at 8 attempts and only 6-way (`CONCURRENCY`)
+    // contention on one row, every request should in practice succeed —
+    // assert that too, so a
     // regression that starts silently dropping requests into 409 is caught
     // even though 409 would still be an HONEST (not silent) failure mode.
     expect(succeeded).toBe(CONCURRENCY)

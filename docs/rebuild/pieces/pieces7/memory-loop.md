@@ -219,9 +219,19 @@ follow-up: issues WHERE project='Limiglow' = 1 row remaining, id 0a2fa43f-...,
   not mistaken for something I forgot to clean up.
 ```
 
-`Limiglow` ends with the same issue count it had before I started (1, not 0
-— that one pre-existed me). `agent_run_records` ends at 0, the exact count it
-had before I started.
+`Limiglow` ended this section with the same issue count it had before I
+started (1, not 0 — that one, TOD-155, pre-existed me). `agent_run_records`
+ended at 0, the exact count it had before I started.
+
+**Correction (2026-08-26, TOD-2412 session):** the sentence above is now
+stale. Measured directly against the live `db.sqlite` this session
+(`SELECT id, task_key, title FROM issues WHERE project = 'Limiglow'` via a
+read-only better-sqlite3 connection): **Limiglow holds 0 issues**, not 1.
+TOD-155 is gone — removed by someone else's cleanup after this section was
+written, not by this session's work (this session created and deleted its
+own scratch-sqlite fixtures only, per §8 below, and never touched the live
+`db.sqlite`'s `issues` table). Recorded here so the number above is not
+read as still-current.
 
 The throwaway `.mts` scripts used above were written to and deleted from the
 repo root (`_e2e_memory_proof.mts`, `_e2e_memory_retrieval_proof.mts`,
@@ -394,3 +404,232 @@ outside my ownership, also pre-existing, also not touched.
   documented defaults on every real exit-triggered row (§8) — a real
   limitation on how informative "what it tried" is today, left to the
   Strategist rather than changed unilaterally.
+
+## 11. TOD-2412 repair — the missing `task_title`, an unpinned guard, and an unstructured 500 (bug_fixer pass, 2026-08-26)
+
+A fresh-context critic reviewed §1–10 above and scored the piece 8/10. This
+section is that critic's three findings, verified independently (not taken
+on faith) and fixed. Every "Measured:" line below is something I personally
+ran today, in this session.
+
+### 11a. `recordRunOnExit`'s select never read `title` — every lifecycle row was unsearchable on a clean run
+
+The critic's claim: `recordRunOnExit` (`lib/memory-loop.ts`, was line 138)
+selected `task_key,status,rejection_count,last_rejection_reason,
+reviewer_notes` — not `title` — so every row it wrote carried
+`task_title: null`, and because both search engines put `task_title` in the
+haystack (`lib/memory-retrieval.ts`'s `searchSqliteFts` /
+`searchPortable`) while `significantTerms()` deliberately strips the
+`task_key`, a clean run (no rejection, no reviewer note — the common case)
+wrote a row with nothing searchable in it at all.
+
+**Measured, before touching anything:** `grep -n "select(" lib/memory-loop.ts`
+confirmed the claim exactly — line 138 read
+`.select('task_key,status,rejection_count,last_rejection_reason,reviewer_notes')`.
+`grep -n "title" migrations/000_baseline_schema.sql migrations/sqlite/000_baseline.sql`
+confirmed `issues.title` is a real, `NOT NULL` column in both dialects — the
+field was sitting unread in the row this function already fetches, not
+missing from the schema.
+
+**Fix:** added `title` to the select, and threaded it into `writeRunRecord`'s
+`taskTitle` field (which already accepted it — the write side was never the
+gap).
+
+**Proof, both directions, by test — not by reading the diff:**
+- Added `lib/__tests__/memory-loop.test.ts` → *"a clean run (no rejection) is
+  retrievable later by its issue title alone"*: writes an exit record for an
+  issue with `rejection_count: 0`, `last_rejection_reason: null`,
+  `reviewer_notes: null` (a genuinely clean run), then calls the real
+  `searchRunRecords()` from a SECOND, unrelated task query that shares only
+  title vocabulary (`'TOD-9200 burst traffic keeps stalling queries against
+  the pool'` against a title of `'Connection pool exhausts under burst
+  traffic and stalls queries'`) and asserts the clean-run record comes back.
+- **Measured RED before the fix**: reverted the select to the original
+  (title-less) string and re-ran just this test —
+  `expect(rows[0].task_title).toBe(...)` failed with `Received: null`,
+  reproducing the exact defect the critic described, word for word.
+- **Measured GREEN after the fix**: same test, select restored — passes.
+- Both `npx tsc --noEmit` (0 errors) and the full `lib/__tests__/memory-*`
+  suite (46/46) were re-run after restoring the fix, not just the one test.
+
+### 11b. A mutant survived: `if (!entry.taskId) return` was untested independently of the `task_key` guard
+
+The critic's claim: mutation-testing `recordRunOnExit`'s four existing tests
+against "delete the `if (!entry.taskId) return` guard" left all four green —
+with no `taskId`, the issue lookup below finds no row, `taskKey` ends up
+`null`, and the *separate* "no task_key" guard catches it for the wrong
+reason. The existing "writes nothing when no taskId is given" test only
+asserted on the table (empty either way), never on which guard fired.
+
+**Measured, by running the mutation myself:** deleted the guard
+(`if (!entry.taskId) { console.warn(...); return }`) and re-ran the existing
+`recordRunOnExit` describe block — confirmed all 4 pre-existing tests stayed
+green, exactly as the critic reported.
+
+**Fix:** added a 5th test — *"the missing-taskId guard fires its own
+warning, not the missing-task_key guard's"* — that spies on `console.warn`
+and asserts the EXACT, guard-specific message
+(`[memory-loop] no taskId on exit for agent=exit-hook-agent — skipping
+agent_run_records write`), which the other guard's message (naming the issue
+id, not "no taskId") can never produce.
+
+**Measured RED under the same mutation**: with the guard deleted, this new
+test fails with:
+```
+Expected: "[memory-loop] no taskId on exit for agent=exit-hook-agent — skipping agent_run_records write"
+Received: "[memory-loop] issue undefined has no task_key — skipping exit record for exit-hook-agent (agent_run_records.task_key is required)"
+```
+— by name, exactly as mutation testing requires. Restored the guard;
+re-ran; green. `lib/__tests__/memory-loop.test.ts` now has 10 tests (was 8),
+all green.
+
+### 11c. `RetrievalBudgetExceededError` reached the client as a bare, unstructured 500
+
+The critic's claim: `app/api/run-agent/route.ts`'s call to
+`loadContextFromDB` (Step 9, was line 749) sat outside the route's only
+`try` (lines 659–690, the inbox-response lookup), so a real
+`RetrievalBudgetExceededError` — thrown deliberately when the single
+top-ranked past record can't fit the context budget — reached an operator as
+an unhandled exception: a bare Next.js 500 with none of the diagnostic
+fields (`blockingRecordKey`, `blockTokens`, `budgetTokens`) the exception
+already carries.
+
+**Measured, before touching anything:**
+`grep -n "loadContextFromDB(agentId"` confirmed the call site and that no
+enclosing `try` existed above it in the function.
+
+**Fix:** wrapped the call in `try`/`catch`, narrowed on
+`err instanceof RetrievalBudgetExceededError`, and:
+1. Answers `503` with `{ error, code: 'RETRIEVAL_BUDGET_EXCEEDED', agent,
+   taskKey, blockingRecordKey, blockTokens, budgetTokens, hint }` — the
+   exception's own fields, not re-derived.
+2. **Undoes the claim** Step 5 already took and marks the Step 7
+   `agent_runs` row `'error'` — mirroring the existing spawn-failure path a
+   few hundred lines below verbatim (same fields, same intent: no process
+   was ever spawned for this claim, so the issue must be pickup-eligible
+   again on the next tick instead of sitting claimed with nothing running).
+   This second part was not explicitly asked for, but is the same concern
+   the spawn-failure branch already exists to close, triggered one step
+   earlier — leaving the claim dangling behind a "clean" 503 would trade an
+   unstructured crash for a structured one that still leaves the issue stuck.
+
+**Proof — a real, isolated route test, not a logic trace:** new
+`lib/__tests__/memory-run-agent-retrieval-budget.test.ts` drives the actual
+exported `POST` handler (not a reimplementation of its logic) through a real
+scratch sqlite database, all the way to Step 9, mocking only the gates
+irrelevant to this path (permission/pause/loop-breaker/budget-ceiling/
+vault-manifest-sync — each mocked to "allow", the same resolution an
+unconfigured host already reaches) and `buildRetrievedContext` itself
+(mocked to throw the **real, unmodified** `RetrievalBudgetExceededError`
+class via `jest.requireActual`, so `instanceof` in the route's catch block
+is exercised against the genuine class). Three assertions, each independently
+measured:
+1. `res.status === 503` and the body matches
+   `{ code: 'RETRIEVAL_BUDGET_EXCEEDED', agent, taskKey: 'TOD-9300',
+   blockingRecordKey: 'TOD-9299', blockTokens: 16018, budgetTokens: 1300 }`.
+2. The issue's `status` reverts to `pickupStatus` (`'open'`) and
+   `started_at` is cleared.
+3. The `agent_runs` row opened at claim time is `status: 'error'` with the
+   exception's message in `error`, not left at `'running'`.
+
+**Measured RED before the fix**: reverted the route to the original
+uncached `const loadedContext = await loadContextFromDB(...)` (no
+try/catch) and re-ran the same 3 tests — all 3 failed with the raw
+`RetrievalBudgetExceededError` propagating out of `POST` uncaught, stack
+trace included in the failure output. Restored the fix; re-ran; 3/3 green.
+
+One incidental, out-of-scope finding surfaced while building this test and
+recorded here rather than silently worked around: `app/api/run-agent/route.ts`
+hardcodes `is_blocked=eq.false` into every non-`skipAssigneeFilter` lane's
+eligibility query, and `lib/db/query-params.ts` deliberately keeps filter
+values as literal strings ("the seam serialises them back into the same
+comparison either way"). Against Postgres/PostgREST that string casts to a
+real boolean; against the **sqlite** adapter (`lib/db/sqlite-adapter.ts`,
+declared `BOOLEAN` columns use NUMERIC affinity) a bound `TEXT 'false'`
+compared to a stored `INTEGER 0` matches nothing — **every real dispatch
+lane running on the sqlite provider silently never picks up eligible work**
+(the eligibility query for a normal, non-`skipAssigneeFilter` lane always
+returns zero rows). I did not fix this — `lib/db/sqlite-adapter.ts` and
+`lib/db/query-params.ts` are outside this piece's ownership — and worked
+around it in my own test by giving the test's fake queue config
+`skipAssigneeFilter: true` (the same flag the real `main` lane already
+uses), which drops that filter entirely. Flagging for whoever owns the db
+seam; this is unrelated to memory-loop/memory-retrieval/memory-budget and I
+did not verify whether it also affects the Postgres/Supabase path (it
+should not, by the reasoning above, but I did not measure that).
+
+### 11d. Gate — exact numbers, this session
+
+```
+npx tsc --noEmit                     0 errors
+npm test                             1081 passed, 5 failed, 2 skipped, 1088 total
+                                      (the 5 failures, by full name, are pre-existing
+                                      and untouched by this piece:
+                                        __tests__/agents-route.test.ts ×3
+                                          — a DIFFERENT route, app/api/agents/route.ts,
+                                            not this piece's app/api/run-agent/route.ts
+                                        __tests__/api/agents-unconfigured.test.ts ×1
+                                        __tests__/runtimes/spawn-live.test.ts ×1
+                                      — matches this piece's stated baseline
+                                      "5 failed in agents-route/agents-unconfigured/
+                                      spawn-live" exactly by category. Passed count is
+                                      higher than the stated baseline (1055) because
+                                      three other agents were committing to their own
+                                      owned files in this same working tree throughout
+                                      this session, adding tests of their own; my own
+                                      net addition was +5 tests (2 in memory-loop.test.ts,
+                                      3 in the new memory-run-agent-retrieval-budget.test.ts).)
+node scripts/acceptance/run.mjs      45/45 passing, harness score 10/10
+bash scripts/smoke-test-layout.sh    all guards pass — sidebar, mobile nav (lg:hidden,
+                                      1 instance), no-invented-projects, no-dead-modules,
+                                      no-phantom-columns, no-cloud-provider,
+                                      check-no-secrets (9 rules, 0 hits), honest-error
+                                      guard, scope guard (10 live probes) — all ✅
+```
+
+`git status` (read-only, not run to stage anything) shows the changes are
+confined to this session's owned files:
+`lib/memory-loop.ts`, `app/api/run-agent/route.ts`,
+`lib/__tests__/memory-loop.test.ts`,
+`lib/__tests__/memory-run-agent-retrieval-budget.test.ts` (new),
+`docs/rebuild/pieces/pieces7/memory-loop.md`.
+
+### 11e. What I did not do, and why
+
+- **Did not fix the deferred three** (`attempted`/`succeeded`/`exit_status`
+  staying at their defaults, §8) — out of scope per this session's
+  instructions and the critic's own agreement that those are unobservable-
+  outcome judgements for the Strategist, not this piece.
+- **Did not change the `availability: 'unavailable'` → `console.warn`
+  degrade** at `loadContextFromDB` (route.ts, near the `buildRetrievedContext`
+  call) into a client-visible field. It is real and documented (the comment
+  names exactly what happens and why), but the successful-dispatch response
+  body (`{ ok, agent, runtime, task, spawned, pid, ... }`) has no field for
+  retrieval diagnostics today, and adding one is a response-shape change
+  beyond this bug's fix, not a minimal one. Recorded as a decision, not
+  silently left unconsidered: an operator debugging "why didn't my agent get
+  past experience" still has to read server logs for this one case, unlike
+  the budget-overflow case fixed above.
+- **Did not fix the sqlite `is_blocked=eq.false` string-vs-integer mismatch**
+  found incidentally (§11c) — outside this piece's file ownership.
+- **Did not lift `TODERO_DISPATCH_ENABLED` on the shared dev server** to
+  prove §11c live end-to-end against a real spawn — the owner directive
+  guard is intentional and shared with three other agents' work; the
+  isolated route test (its own, separate Jest module registry, its own
+  `TODERO_DISPATCH_ENABLED=1` scoped to that process only) exercises the
+  same code path without touching the shared server's env, consistent with
+  §9's same choice for the original piece.
+- **Did not run `npm run build`** — forbidden this session (kills the shared
+  dev server).
+
+**Post-gate note:** `npx tsc --noEmit` was clean (0 errors, §11d) when I ran
+the gate. Re-running it once more at the very end of this session, before
+writing this report, now shows 2 errors — both in
+`__tests__/api/commerce-audit-atomicity.test.ts(126-127)`
+(`FakeLevel[]`/`FakeOrder[]` not assignable to `Record<string, unknown>[]`).
+That file is `??` (untracked) in `git status`, outside this piece's
+ownership (commerce is explicitly another agent's scope this session), and
+was not present in that state when I ran the clean gate. This is someone
+else's in-flight work landing mid-session, not a regression from this piece
+— zero errors remain in any file this piece touched. Flagging for the
+orchestrator, same as §10's stash-conflict note.

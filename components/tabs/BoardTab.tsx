@@ -10,6 +10,43 @@ import { readApiError, formatApiError } from '@/hooks/useApiData'
 import { sessionOperator } from '@/lib/operator-identity'
 import { toBoundaryString } from '@/lib/bolt-time'
 import { VALID_STATUSES } from '@/lib/constants'
+import { issuePermalinkPath, navigateToIssuePermalink } from '@/lib/issue-permalink'
+
+/**
+ * A REAL anchor to an issue's permalink, not a div wearing a click handler —
+ * issue-permalink piece, 2026-08-26. A critic measured
+ * `document.querySelectorAll('a[href*="/i/"]').length === 0` on this
+ * screen: every task_key badge was a `<span>` inside a card whose own
+ * `onClick` opened this file's local detail drawer, so middle-click,
+ * Cmd-click and right-click "Copy Link Address" all did nothing — the
+ * permalink existed but nothing on the Board produced one. This renders a
+ * genuine `href` (native new-tab/copy-link behaviour costs nothing extra)
+ * and, for a plain unmodified left click only, pushes the SPA route instead
+ * of letting the browser do a full page load — the exact idiom
+ * `lib/issue-permalink.ts`'s `navigateToIssuePermalink` and
+ * `components/SearchOverlay.tsx`'s `openIssue` already use.
+ *
+ * Deliberately does NOT replace the card's own onClick (which still opens
+ * this file's own edit-capable detail drawer for a click anywhere else on
+ * the card) — `stopPropagation` keeps the two from fighting over one click.
+ */
+function IssueKeyLink({ taskKey, className }: { taskKey: string; className?: string }) {
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+  return (
+    <a
+      href={issuePermalinkPath(currentPath, taskKey)}
+      onClick={e => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        navigateToIssuePermalink(taskKey)
+      }}
+      className={className}
+    >
+      {taskKey}
+    </a>
+  )
+}
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -498,7 +535,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
         onMouseLeave={e => { e.currentTarget.style.borderColor = dragId === task.id ? '#555' : '#27272a' }}>
         <div className="px-2.5 pt-2 pb-2 pr-7">
           <div className="flex items-center justify-between mb-1">
-            {task.task_key && <span className="text-[10px] font-mono font-bold text-white/40">{task.task_key}</span>}
+            {task.task_key && <IssueKeyLink taskKey={task.task_key} className="text-[10px] font-mono font-bold text-white/40 hover:text-white/70 hover:underline" />}
           </div>
           <p className="text-white text-xs font-medium leading-snug line-clamp-2 mb-2">{task.title}</p>
           <div className="flex items-center gap-1 flex-wrap">
@@ -792,7 +829,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   <span className="text-amber-400 text-[10px] font-semibold shrink-0">Needs You</span>
                   <p className="text-white text-xs font-medium truncate flex-1">{t.title}</p>
                   {t.project && <Chip label={t.project} />}
-                  {t.task_key && <span className="text-[9px] font-mono text-white/30 shrink-0">{t.task_key}</span>}
+                  {t.task_key && <IssueKeyLink taskKey={t.task_key} className="text-[9px] font-mono text-white/30 hover:text-white/60 hover:underline shrink-0" />}
                 </div>
               ))}
             </div>
@@ -861,7 +898,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                   <div onClick={toggleCollapse} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/5 transition-colors select-none"
                     style={{ borderLeft: group.feature ? `3px solid ${PRIORITY_COLORS[group.feature.priority || 'medium'] || '#3f3f46'}` : '3px solid #27272a' }}>
                     {group.feature?.task_key && (
-                      <span className="text-[10px] font-mono font-bold text-white/40 shrink-0">{group.feature.task_key}</span>
+                      <IssueKeyLink taskKey={group.feature.task_key} className="text-[10px] font-mono font-bold text-white/40 hover:text-white/70 hover:underline shrink-0" />
                     )}
                     <span className="text-sm font-semibold text-white/70 flex-1 min-w-0 truncate">{group.label}</span>
                     {group.feature?.project && <span className="text-[10px] text-white/40">{group.feature.project}</span>}
@@ -1426,7 +1463,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 )}
 
                 {/* Title */}
-                {t.task_key && <span className="text-[10px] font-mono text-white/30 bg-white/10 px-2 py-0.5 rounded-full">{t.task_key}</span>}
+                {t.task_key && <IssueKeyLink taskKey={t.task_key} className="text-[10px] font-mono text-white/30 bg-white/10 px-2 py-0.5 rounded-full hover:text-white/60" />}
                 <h2 className="text-white text-lg font-semibold leading-snug">{t.title}</h2>
 
                 {/* Status + Priority badges */}

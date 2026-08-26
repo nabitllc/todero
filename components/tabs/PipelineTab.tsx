@@ -60,6 +60,38 @@ import { issuesUrl } from '@/lib/db/browser'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 import { useAgentRoster, rosterEmptyReason, type RosterAgent } from '@/hooks/useAgentRoster'
+import { issuePermalinkPath, navigateToIssuePermalink } from '@/lib/issue-permalink'
+
+/**
+ * A REAL anchor to an issue's permalink — issue-permalink piece, 2026-08-26.
+ * This board had NO detail view at all before this (no `onClick` anywhere
+ * near a `task_key`, confirmed: `grep -n "detailTask\|setDetail" PipelineTab
+ * .tsx` returned nothing), so this is net-new reachability, not a
+ * replacement of an existing handler. Same idiom as
+ * `components/tabs/BoardTab.tsx`'s own `IssueKeyLink` and
+ * `components/SearchOverlay.tsx`'s `openIssue`: a genuine `href` (native
+ * Cmd-click/middle-click/"Copy Link Address"), and a plain left click
+ * pushes the SPA route via `lib/issue-permalink.ts`'s
+ * `navigateToIssuePermalink` instead of a full page load.
+ */
+function IssueKeyLink({ taskKey, className, style }: { taskKey: string; className?: string; style?: React.CSSProperties }) {
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+  return (
+    <a
+      href={issuePermalinkPath(currentPath, taskKey)}
+      onClick={e => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        navigateToIssuePermalink(taskKey)
+      }}
+      className={className}
+      style={style}
+    >
+      {taskKey}
+    </a>
+  )
+}
 
 /** Row caps, named once so the header can print the same numbers it enforces. */
 const IN_FLIGHT_LIMIT = 400
@@ -831,7 +863,7 @@ function FeatureCard({ feature, childRows, onLongPressStart, onLongPressEnd, onO
       onContextMenu={e => e.preventDefault()}
     >
       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-blue-500/20 text-blue-400">{feature.task_key}</span>
+        <IssueKeyLink taskKey={feature.task_key} className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-blue-500/20 text-blue-400 hover:bg-blue-500/30" />
         <StatusText status={feature.status} />
         <MoveButton taskKey={feature.task_key} onOpenMove={onOpenMove} />
       </div>
@@ -876,9 +908,11 @@ function IssueCard({ issue, parent, onLongPressStart, onLongPressEnd, onOpenMove
     >
       <div className="flex items-center justify-between gap-1 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0" style={{ background: `${typeColor}20`, color: typeColor }}>
-            {issue.task_key}
-          </span>
+          <IssueKeyLink
+            taskKey={issue.task_key}
+            className="text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0"
+            style={{ background: `${typeColor}20`, color: typeColor }}
+          />
           <span className="text-[11px] text-white/60 truncate">{issue.title}</span>
         </div>
         {issue.assignee ? (

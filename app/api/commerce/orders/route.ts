@@ -328,14 +328,45 @@ export const PATCH = withPermission(
     }
 
     const now = new Date().toISOString()
-    const { error: writeError } = await db()
+
+    // CAS the order's OWN status too, pinned to the exact value just read
+    // (`.eq('fulfilment_status', order.fulfilment_status)`), and check the
+    // returned rows. Without this, two concurrent PATCHes for the SAME order
+    // can both read `unfulfilled`, both pass the transition check, and both
+    // reach the stock-moving loop below — shipping the same order's stock
+    // twice. This is the same compare-and-swap shape already proven for
+    // `inventory_levels`'s own writer (see the "Ticket note" in
+    // inventory/route.ts's header — that fix was previously mis-cited as
+    // TOD-2449, which is actually an unrelated board-score commit); an order
+    // is a row like any other and races the same way under concurrent
+    // PATCHes to it.
+    const { data: claimed, error: writeError } = await db()
       .from('orders')
       .update({ fulfilment_status: move.value, updated_at: now })
       .eq('project', project)
       .eq('order_number', orderNumber)
+      .eq('fulfilment_status', order.fulfilment_status)
+      .select('*')
     if (writeError) return dbQueryErrorResponse(writeError, 'orders')
+    if (((claimed ?? []) as unknown[]).length === 0) {
+      return NextResponse.json(
+        {
+          error: 'conflict',
+          message:
+            `${orderNumber} was already moved to a different fulfilment state by a concurrent request. ` +
+            `Nothing was changed here; re-read the order and retry if the move is still correct.`,
+        },
+        { status: 409 },
+      )
+    }
 
-    await db().from('commerce_actions').insert({
+    // The audit row's error MUST be checked (TOD-2443, and the same lesson
+    // this route already learned once for the stock-moving audit below). The
+    // order row already changed by the time this insert runs, so a failed
+    // audit here is handled the same way as a failed audit after a
+    // compare-and-swap write: attempt a compensating CAS revert of the claim
+    // just taken, and say plainly whether that landed.
+    const { error: orderAuditError } = await db().from('commerce_actions').insert({
       project,
       action: 'order.fulfilment',
       object_type: 'order',
@@ -346,6 +377,38 @@ export const PATCH = withPermission(
       actor: commerceActor(req),
       created_at: now,
     })
+    if (orderAuditError) {
+      const { data: reverted } = await db()
+        .from('orders')
+        .update({ fulfilment_status: order.fulfilment_status, updated_at: new Date().toISOString() })
+        .eq('project', project)
+        .eq('order_number', orderNumber)
+        .eq('fulfilment_status', move.value)
+        .select('*')
+      if (((reverted ?? []) as unknown[]).length > 0) {
+        return NextResponse.json(
+          {
+            error: 'audit_write_failed',
+            message:
+              `${orderNumber} was NOT moved: the audit row could not be written (${orderAuditError.message}), ` +
+              `and the fulfilment_status change was reverted (${order.fulfilment_status} -> ${move.value} -> ` +
+              `${order.fulfilment_status}). No stock was touched. Retry.`,
+          },
+          { status: 500 },
+        )
+      }
+      return NextResponse.json(
+        {
+          error: 'audit_write_failed_unreconciled',
+          message:
+            `${orderNumber} moved to fulfilment_status=${move.value} but the audit row could not be written ` +
+            `(${orderAuditError.message}), AND the compensating revert lost its own race against a concurrent ` +
+            `writer. The order and its audit trail have diverged and need manual reconciliation — this db seam ` +
+            `has no cross-table transaction on either dialect, so this handler cannot guarantee atomicity here.`,
+        },
+        { status: 500 },
+      )
+    }
 
     // TOD-2443. Fulfilling an order MOVES STOCK. Without this the two ledgers
     // this channel just built describe the same physical goods and cannot
@@ -363,8 +426,34 @@ export const PATCH = withPermission(
     // WHICH lines went (order_line_items has no fulfilled-quantity column), so
     // decrementing there would be inventing a number. That absence is stated in
     // the response rather than guessed at.
+    //
+    // ATOMIC PER LINE (this fix). This used to be a plain read-then-write with
+    // no `.eq('on_hand', …)` on the final update — the exact lost-update shape
+    // already fixed on the direct adjust endpoint (inventory/route.ts's PATCH
+    // handler), just not ported here until now. A
+    // critic could not force drift through it on this synchronous SQLite host
+    // in 34 attempts, but that is a property of this host's lack of a real
+    // network round trip between read and write, not of the code: on the
+    // Postgres adapter this repo is migrating to, that window is real. Each
+    // line below now runs the SAME bounded compare-and-swap loop
+    // `app/api/commerce/inventory/route.ts`'s PATCH handler uses.
+    //
+    // ORDERING, AND WHY IT IS THE OPPOSITE OF THE AUDIT-FIRST COMMENT THIS
+    // REPLACED: the old code wrote the audit row BEFORE the (non-CAS) stock
+    // write, which was safe when the write was a single, unconditional
+    // statement that could not itself fail to land. A CAS write CAN fail to
+    // land (a lost race), and its own `from_value`/`to_value` are only known
+    // to be ACCURATE once an attempt has actually landed — auditing them
+    // first would sometimes audit a move that never happened. So, matching
+    // the inventory PATCH handler's fix in the same wave: the CAS write comes
+    // first, the audit second, and a failed audit is handled by a
+    // best-effort compensating CAS revert of the stock write — the same
+    // pattern, for the same reason, as the order-status claim above. If the
+    // revert itself loses its race, that is stated as an unreconciled
+    // divergence rather than hidden behind a 200 or a misleading 500.
     const stockMoves: { sku: string; quantity: number; on_hand: number | null }[] = []
     let stockNote: string | null = null
+    const MAX_STOCK_ATTEMPTS = 8
 
     if (move.value === 'fulfilled' && order.fulfilment_status !== 'fulfilled') {
       const { data: lines } = await db()
@@ -373,59 +462,108 @@ export const PATCH = withPermission(
         .eq('order_id', order.id)
 
       for (const line of (lines ?? []) as { sku: string; quantity: number }[]) {
-        const { data: level } = await db()
-          .from('inventory_levels')
-          .select('id,on_hand')
-          .eq('project', project)
-          .eq('sku', line.sku)
-          .limit(1)
-          .maybeSingle()
+        let moved = false
 
-        if (!level) {
-          // Say it rather than silently skipping: a line with no stock record
-          // is a real gap in the catalogue, not a no-op.
-          stockMoves.push({ sku: line.sku, quantity: line.quantity, on_hand: null })
-          continue
+        for (let attempt = 1; attempt <= MAX_STOCK_ATTEMPTS && !moved; attempt++) {
+          const { data: level } = await db()
+            .from('inventory_levels')
+            .select('id,on_hand')
+            .eq('project', project)
+            .eq('sku', line.sku)
+            .limit(1)
+            .maybeSingle()
+
+          if (!level) {
+            // Say it rather than silently skipping: a line with no stock
+            // record is a real gap in the catalogue, not a no-op.
+            stockMoves.push({ sku: line.sku, quantity: line.quantity, on_hand: null })
+            moved = true
+            break
+          }
+
+          const next = Number(level.on_hand) - Number(line.quantity)
+          const writeNow = new Date().toISOString()
+
+          const { data: written, error: stockWriteError } = await db()
+            .from('inventory_levels')
+            .update({ on_hand: next, updated_at: writeNow })
+            .eq('id', level.id)
+            .eq('on_hand', level.on_hand)
+            .select('*')
+          if (stockWriteError) return dbQueryErrorResponse(stockWriteError, 'inventory_levels')
+
+          if (((written ?? []) as unknown[]).length === 0) {
+            // Lost the race: another writer moved this SKU between our read
+            // and our write. Re-read and retry — never apply this attempt's
+            // delta on top of a value already known to be stale.
+            continue
+          }
+
+          const { error: lineAuditError } = await db().from('commerce_actions').insert({
+            project,
+            action: 'inventory.adjust',
+            object_type: 'inventory',
+            object_ref: line.sku,
+            from_value: String(level.on_hand),
+            to_value: String(next),
+            reason: `fulfilled order ${orderNumber}`,
+            actor: commerceActor(req),
+            created_at: writeNow,
+          })
+
+          if (lineAuditError) {
+            const { data: revertedStock } = await db()
+              .from('inventory_levels')
+              .update({ on_hand: level.on_hand, updated_at: new Date().toISOString() })
+              .eq('id', level.id)
+              .eq('on_hand', next)
+              .select('*')
+            if (((revertedStock ?? []) as unknown[]).length > 0) {
+              return NextResponse.json(
+                {
+                  error: 'audit_write_failed',
+                  message:
+                    `${orderNumber} is fulfilment_status=fulfilled (already recorded), but stock for ` +
+                    `"${line.sku}" was NOT moved: the audit row could not be written ` +
+                    `(${lineAuditError.message}), and the stock change was reverted (${level.on_hand} -> ` +
+                    `${next} -> ${level.on_hand}). Lines already moved this call: ` +
+                    `${JSON.stringify(stockMoves)}. Retry the stock move for "${line.sku}" directly via ` +
+                    `PATCH /api/commerce/inventory.`,
+                },
+                { status: 500 },
+              )
+            }
+            return NextResponse.json(
+              {
+                error: 'audit_write_failed_unreconciled',
+                message:
+                  `${orderNumber} is fulfilment_status=fulfilled (already recorded). Stock for "${line.sku}" ` +
+                  `moved to on_hand=${next} but its audit row could not be written ` +
+                  `(${lineAuditError.message}), AND the compensating revert lost its own race. Stock and its ` +
+                  `audit trail have diverged for this SKU and need manual reconciliation — this db seam has ` +
+                  `no cross-table transaction on either dialect.`,
+              },
+              { status: 500 },
+            )
+          }
+
+          stockMoves.push({ sku: line.sku, quantity: line.quantity, on_hand: next })
+          moved = true
         }
 
-        const next = Number(level.on_hand) - Number(line.quantity)
-
-        // Write the AUDIT ROW FIRST, and check it. TOD-2443: my first version
-        // wrote object_type 'inventory_level', which the CHECK on
-        // commerce_actions refuses — and the insert's error was not checked, so
-        // stock moved 14 -> 4 while the audit recorded nothing and the response
-        // said the move was clean. Item 27's guarantee is that stock never
-        // changes without a recorded reason; an unchecked insert cannot make
-        // that guarantee, it can only appear to.
-        //
-        // Ordering it first means the failure mode is a refused move with an
-        // intact ledger, not a silent move with a missing one.
-        const { error: auditError } = await db().from('commerce_actions').insert({
-          project,
-          action: 'inventory.adjust',
-          object_type: 'inventory',
-          object_ref: line.sku,
-          from_value: String(level.on_hand),
-          to_value: String(next),
-          reason: `fulfilled order ${orderNumber}`,
-          actor: commerceActor(req),
-          created_at: now,
-        })
-        if (auditError) {
+        if (!moved) {
           return NextResponse.json(
             {
-              error: 'audit_write_failed',
+              error: 'conflict',
               message:
-                `stock for "${line.sku}" was NOT moved: the audit row could not be written ` +
-                `(${auditError.message}). Stock does not change without a recorded reason, so ` +
-                `the order stays ${order.fulfilment_status}.`,
+                `${orderNumber} is fulfilment_status=fulfilled (already recorded). Stock for "${line.sku}" did ` +
+                `not move after ${MAX_STOCK_ATTEMPTS} attempts — too many concurrent writers to that SKU. ` +
+                `Lines already moved this call: ${JSON.stringify(stockMoves)}. Retry the stock move for ` +
+                `"${line.sku}" directly via PATCH /api/commerce/inventory.`,
             },
-            { status: 500 },
+            { status: 409 },
           )
         }
-
-        await db().from('inventory_levels').update({ on_hand: next, updated_at: now }).eq('id', level.id)
-        stockMoves.push({ sku: line.sku, quantity: line.quantity, on_hand: next })
       }
     } else if (move.value === 'partially_fulfilled') {
       stockNote =

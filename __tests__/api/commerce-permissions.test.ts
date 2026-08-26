@@ -1,5 +1,10 @@
 /**
- * TOD-2449 — commerce:read / commerce:write, proven both ways.
+ * commerce:read / commerce:write, proven both ways.
+ *
+ * (Ticket note: this file used to cite "TOD-2449". Verified against git:
+ * that ticket's actual commit only touched scripts/board files, unrelated to
+ * this permission split — see the "Ticket note" in
+ * app/api/commerce/inventory/route.ts's header for the correction.)
  *
  * Before this test existed, every /api/commerce/* route was gated on
  * `projects:read` / `projects:write` — permissions that exist for a
@@ -118,9 +123,11 @@ describe('commerce:write is a real, independently-enforced permission', () => {
         },
         error: null,
       },
-      // the fulfilment UPDATE
-      { data: null, error: null },
-      // the commerce_actions audit INSERT
+      // the fulfilment UPDATE — CAS, so it must return the matched row(s)
+      // for the handler to treat the claim as won (an empty array reads as
+      // "another writer already changed this order" and returns 409).
+      { data: [{ id: 'ord-1', fulfilment_status: 'fulfilled' }], error: null },
+      // the commerce_actions audit INSERT (order.fulfilment)
       { data: null, error: null },
       // line items lookup for the stock-move step
       { data: [], error: null },

@@ -402,4 +402,102 @@ describe('recordRunOnExit — the real spawn-exit hook (previously untested)', (
     const { data } = await db().from('agent_run_records').select('*').eq('agent_id', 'exit-hook-agent')
     expect(data ?? []).toHaveLength(0)
   })
+
+  /**
+   * TOD-2412 repair: the select at the top of recordRunOnExit used to stop
+   * at reviewer_notes, so `task_title` was never read from the issue row —
+   * every exit-recorded row carried task_title: null regardless of what the
+   * issue was titled. Both search engines (memory-retrieval.ts's
+   * searchSqliteFts and searchPortable) put task_title in the haystack, and
+   * significantTerms() deliberately strips the task_key — so a CLEAN run
+   * (no rejection, no reviewer note — the common case) wrote a row with
+   * literally nothing searchable in it.
+   *
+   * This proves the fix the way the bug actually bites: write a clean-run
+   * exit record for one task (no rejectionReason, no reviewerNotes — the
+   * defaults writeRunRecord already applies), then retrieve it from a
+   * SECOND, unrelated task's search query that shares only title
+   * vocabulary. Before this fix this returns zero records — task_title was
+   * null, and there is nothing else in the row for that query to match.
+   */
+  it('a clean run (no rejection) is retrievable later by its issue title alone', async () => {
+    const { memoryLoop, db } = loadModules()
+
+    const insert = await db().from('issues').insert({
+      id: 'issue-exit-clean-1',
+      task_key: 'TOD-9100',
+      title: 'Connection pool exhausts under burst traffic and stalls queries',
+      status: 'done',
+      sprint: 'fixture',
+      rejection_count: 0,
+      last_rejection_reason: null,
+      reviewer_notes: null,
+    })
+    expect(insert.error).toBeNull()
+
+    await memoryLoop.recordRunOnExit({ agentId: 'exit-hook-title-agent', taskId: 'issue-exit-clean-1' })
+
+    const { data } = await db()
+      .from('agent_run_records')
+      .select('*')
+      .eq('agent_id', 'exit-hook-title-agent')
+    const rows = (data ?? []) as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    // The row itself carries the title — the direct, unmediated proof.
+    expect(rows[0].task_title).toBe('Connection pool exhausts under burst traffic and stalls queries')
+    expect(rows[0].rejection_reason).toBeNull()
+    expect(rows[0].reviewer_notes).toBeNull()
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { searchRunRecords } = require('../memory-retrieval') as typeof import('../memory-retrieval')
+    // A LATER, unrelated task's query — different key, different phrasing —
+    // that shares only the title's vocabulary with the clean-run record.
+    const result = await searchRunRecords(
+      'exit-hook-title-agent',
+      'TOD-9200 burst traffic keeps stalling queries against the pool',
+      8,
+    )
+    expect(result.availability).toBe('available')
+    expect(result.records.map(r => r.taskKey)).toContain('TOD-9100')
+    const matched = result.records.find(r => r.taskKey === 'TOD-9100')
+    expect(matched?.taskTitle).toBe('Connection pool exhausts under burst traffic and stalls queries')
+  })
+
+  /**
+   * Mutation-testing gap the critic found: the four existing tests above
+   * all go RED (by name) under "never write" / "invent a task_key" /
+   * "throw instead of swallow" mutants, but deleting the
+   * `if (!entry.taskId) return` guard on its own leaves all four GREEN —
+   * with no taskId, the issue lookup below just finds no row, taskKey ends
+   * up null, and the SEPARATE "no task_key" guard (line ~154) catches it
+   * for the wrong reason. The existing "writes nothing when no taskId is
+   * given" test only asserts on the table, which both guards leave empty
+   * identically.
+   *
+   * This test pins the FIRST guard specifically, by its own distinct
+   * console.warn message (`no taskId on exit for agent=...`), which the
+   * second guard never produces (its message names the issue id, not "no
+   * taskId"). Delete the `if (!entry.taskId) return` line and this goes red
+   * by name — verified below.
+   */
+  it('the missing-taskId guard fires its own warning, not the missing-task_key guard\'s (pins the guard mutation-testing found unpinned)', async () => {
+    const { memoryLoop } = loadModules()
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await memoryLoop.recordRunOnExit({ agentId: 'exit-hook-agent' })
+      expect(warnSpy).toHaveBeenCalledWith(
+        '[memory-loop] no taskId on exit for agent=exit-hook-agent — skipping agent_run_records write',
+      )
+      // The distinct message the OTHER guard (issue found but no task_key)
+      // produces must never fire here — if the taskId guard were deleted,
+      // the code would fall through to the issue lookup and, finding no row
+      // for an undefined id, hit the has-no-task_key path instead.
+      const noTaskKeyMessages = warnSpy.mock.calls
+        .map(args => String(args[0]))
+        .filter(msg => msg.includes('has no task_key'))
+      expect(noTaskKeyMessages).toHaveLength(0)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
 })

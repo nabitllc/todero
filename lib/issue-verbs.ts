@@ -63,6 +63,50 @@ export function readyIssueVerbs(issue: MoveIssue): IssueVerb[] {
   return out
 }
 
+export interface WithheldIssueVerb extends IssueVerb {
+  /** Why this move is not offered as a one-tap verb — `moveVerdict`'s own
+   *  `blocked.reason`, or a sentence naming the fields a `needs` verdict
+   *  would require. Always a real sentence, never a bare "no". */
+  readonly reason: string
+}
+
+/**
+ * Every status `readyIssueVerbs` did NOT offer — `moveVerdict`'s `needs` and
+ * `blocked` kinds — paired with the real reason `lib/issue-moves.ts` already
+ * computed for withholding it. `current` is skipped; that is not a withheld
+ * move, it is the row's own status.
+ *
+ * Free honesty, not a new rule: this reuses the exact predicate
+ * `readyIssueVerbs` already calls, and lib/issue-moves.ts is unchanged and
+ * unowned by this piece — see that file's own header, which already says
+ * "Never hide it: an operator who cannot see `code_review` learns nothing".
+ * A fresh critic found the overlay hiding both the verb AND the reason on a
+ * closed issue, even though `moveVerdict` had "This issue is closed and
+ * read-only" in hand the whole time (see the piece doc, 2026-08-26). This is
+ * that reason, surfaced, not fabricated: it is copied verbatim from the
+ * verdict this module already resolved to decide whether to offer the verb.
+ */
+export function withheldIssueVerbs(issue: MoveIssue): WithheldIssueVerb[] {
+  const actor = sessionOperator()
+  const out: WithheldIssueVerb[] = []
+  for (const status of mappedStatuses()) {
+    if (status === issue.status) continue
+    const verdict = moveVerdict(issue, status, actor)
+    const label = status === 'backlog' ? 'Send to Backlog' : `Move to ${statusLabel(status)}`
+    if (verdict.kind === 'blocked') {
+      out.push({ toStatus: status, label, reason: verdict.reason })
+    } else if (verdict.kind === 'needs') {
+      const fieldList = verdict.fields.map(f => f.label).join(', ')
+      out.push({
+        toStatus: status,
+        label,
+        reason: `Needs ${fieldList} first — collect ${verdict.fields.length === 1 ? 'it' : 'them'} on the Pipeline board's move sheet.`,
+      })
+    }
+  }
+  return out
+}
+
 export type RunVerbResult = { ok: true } | { ok: false; message: string }
 
 /**

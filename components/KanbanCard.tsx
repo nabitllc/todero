@@ -2,6 +2,38 @@
 import React from 'react'
 import { Lock } from 'lucide-react'
 import type { Task } from '@/lib/issues'
+import { issuePermalinkPath, navigateToIssuePermalink } from '@/lib/issue-permalink'
+
+// TOD-2463: the real render site for an issue key on the board.
+//
+// A builder converted components/tabs/BoardTab.tsx:538 believing it was this —
+// it is a duplicate local copy that nothing renders. Measured in a browser
+// afterwards: TOD-174 was ON the board and `a[href*="/i/"]` counted ZERO, and
+// the element that actually rendered was a SPAN carrying THIS file's className.
+// That is why the anchor lives here.
+//
+// `href` is a real path, so middle-click, Cmd/Ctrl-click and right-click ->
+// Copy Link Address are the browser's own handling and nothing here runs for
+// them. The onClick returns WITHOUT preventDefault for any modified click,
+// which is what leaves those alone. stopPropagation keeps the anchor from also
+// firing the card's own click handler.
+function IssueKeyLink({ taskKey, className }: { taskKey: string; className?: string }) {
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+  return (
+    <a
+      href={issuePermalinkPath(currentPath, taskKey)}
+      onClick={e => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        navigateToIssuePermalink(taskKey)
+      }}
+      className={className}
+    >
+      {taskKey}
+    </a>
+  )
+}
 
 // ─── color maps ────────────────────────────────────────────────────────────────
 
@@ -96,7 +128,7 @@ export function KanbanCard({ task, dragging, onClick, onDragStart, onDragEnd }: 
         {/* task key */}
         {task.task_key && (
           <div className="mb-1">
-            <span className="text-[10px] font-mono font-bold text-white/40">{task.task_key}</span>
+            <IssueKeyLink taskKey={task.task_key} className="text-[10px] font-mono font-bold text-white/40 hover:text-white/70 hover:underline" />
           </div>
         )}
 
