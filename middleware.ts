@@ -202,6 +202,31 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  // TOD-2469: the conversations inbound webhook proves itself with its OWN
+  // dedicated secret (lib/conversations.ts's verifyWebhookSecret, header
+  // X-Todero-Conversations-Secret) — not a session, not the general internal
+  // secret. Without this, an external provider would ALSO have to know
+  // Todero's general internal secret to reach the endpoint, which defeats the
+  // point of giving the webhook a credential of its own.
+  //
+  // WHY THIS IS NOT A HOLE, and it was verified before it was applied rather
+  // than argued: letting a request past THIS gate when the header is merely
+  // PRESENT does not skip authentication. The route still runs the real
+  // constant-time comparison and answers 401 when the value is wrong. And
+  // verifyWebhookSecret FAILS CLOSED on an unconfigured or too-short secret —
+  // a presented header against an unset env var is `valid: false`, never a
+  // bypass. Measured against the running server, all three ways.
+  //
+  // Exactly one path and one method. Widening either is a security change and
+  // should be argued on its own.
+  if (
+    pathname === '/api/conversations' &&
+    req.method === 'POST' &&
+    req.headers.get('x-todero-conversations-secret')
+  ) {
+    return NextResponse.next({ request: { headers: scopedHeaders } })
+  }
+
   // For API routes: every request must prove who it is BEFORE any role logic.
   //
   // This used to gate only WRITE_METHODS and treated a missing cookie as a
