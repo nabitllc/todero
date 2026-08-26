@@ -91,6 +91,45 @@ the environment traps below, and the instruction to report what it could NOT do
 honestly. A builder that reports a gap is worth more than one that reports
 success.
 
+## Migration number registry — allocate BEFORE dispatching a builder
+
+Two builders picking the same prefix is a collision the acceptance harness
+already checks for (`no-colliding-migrations`). The orchestrator allocates;
+builders never choose their own.
+
+| # | Owner | What |
+|---|---|---|
+| 058 | orchestrator | `hub_settings` — per-hub key/value. LANDED. |
+| 059 | connections builder | per-hub connections (Discord credential custody) |
+| 060 | runs builder | `run_steps` — per-step traces |
+| 061 | approvals builder | approval decisions / audit trail |
+
+Next free: **062**.
+
+## Integration is the orchestrator's job, and it is a real job
+
+The owner: *"you are the one who commits and combines their work making sure
+the code doesn't break each other"*, and *"between waves, spawn one fresh agent
+to test what was built and smooth it into one coherent thing."*
+
+So the wave boundary has three distinct steps, and skipping any one of them is
+how a green wave ships a broken app:
+
+1. **Wire** — the orchestrator alone edits `app/page.tsx` and
+   `components/nav/config.ts` to mount what builders produced. Builders never
+   touch either; that is why they can run concurrently at all.
+2. **Gate the COMBINATION, not the pieces.** Each builder gates its own work in
+   isolation, which proves nothing about the merge. After wiring, run
+   `npx tsc --noEmit`, `node scripts/acceptance/run.mjs`, `npx jest`, and
+   `bash scripts/smoke-test-layout.sh` over the combined tree.
+3. **Smooth** — one fresh agent that owns nothing, greps everything, and tests
+   the app as a whole: duplicated logic across pieces, two components solving
+   the same problem differently, a defect sitting in the gap between two
+   ownership boundaries. `HANDOFF.md` records why this is mandatory — a
+   hardcoded emoji table survived two sweeps by living exactly there.
+
+Only then do the per-piece critics' verdicts mean anything about the product.
+
 ## Per round, without exception
 
 1. Write the piece spec to `docs/rebuild/pieces/pieces6/<id>.md` with a numbered
