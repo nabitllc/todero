@@ -13,18 +13,24 @@ export interface AgentCapability {
   type?: 'consultant' | 'permanent'
 }
 
+// no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were members of
+// this union and of AGENT_REGISTRY below. Neither agent exists on any host, and
+// neither of the projects they claimed to be domain experts for (Kemuni,
+// Vespera) is a project this installation has. They are removed rather than
+// disabled: a union member is what lets a caller write the id at all, and
+// AGENT_REGISTRY was read by components/crew/AgentDetailView.tsx to render a
+// detail page for whatever id the URL carried. Restoring either is a
+// regression, not a fix — scripts/no-invented-projects.mjs enforces it.
 export type AgentId =
   | 'main' | 'scout' | 'ops' | 'builder' | 'tester' | 'deployer'
-  | 'kemuni-sme' | 'vespera-sme' | 'ux' | 'designer' | 'po'
+  | 'ux' | 'designer' | 'po'
   | 'growth' | 'security' | 'community' | 'content' | 'auditor'
 
 export const AGENT_REGISTRY: Record<AgentId, AgentCapability> = {
   main:          { id: 'main',        name: 'KAOS',           emoji: '🧠', role: 'Chief Orchestrator',     color: '#6b7280', description: 'Main orchestrator. Strategy, memory, delegation, comms.', capabilities: ['Orchestration', 'Memory', 'Strategy', 'Comms', 'Delegation'], floor: true },
   scout:         { id: 'scout',       name: 'Scout',          emoji: '🔍', role: 'Research Agent',          color: '#a855f7', description: 'Morning scan: goth scene, competitors, PropTech trends.', capabilities: ['Web Research', 'Summarization', 'Trends'], floor: true },
   ops:           { id: 'ops',         name: 'Ingo',            emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', description: 'Infrastructure monitoring, deployment ops, system health.', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true },
-  'kemuni-sme':  { id: 'kemuni-sme',  name: 'Kemuni SME',     emoji: '🚀', role: 'Kemuni Product Expert',  color: '#3b82f6', description: 'Domain expert for Kemuni platform. PropTech strategy & features.', capabilities: ['Product Strategy', 'Kemuni', 'PropTech'], floor: true },
-  'vespera-sme': { id: 'vespera-sme', name: 'Vespera SME',    emoji: '🖤', role: 'Vespera Product Expert', color: '#ec4899', description: 'Domain expert for Vespera. Goth community, events, culture.', capabilities: ['Product Strategy', 'Vespera', 'Community'], floor: true },
-  builder:       { id: 'builder',     name: 'Builder',        emoji: '🔨', role: 'Coding Agent',            color: '#f59e0b', description: 'On-demand coding. Next.js, Supabase, Vespera and Kemuni builds.', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true },
+  builder:       { id: 'builder',     name: 'Builder',        emoji: '🔨', role: 'Coding Agent',            color: '#f59e0b', description: 'On-demand coding. Next.js, Supabase, TypeScript.', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true },
   tester:        { id: 'tester',      name: 'Tester',         emoji: '🧪', role: 'QA Agent',                color: '#06b6d4', description: 'Code review, QA, test suites, DoD enforcement.', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true },
   deployer:      { id: 'deployer',    name: 'Deployer',       emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', description: 'Deployments, webhooks, release notes.', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true },
   ux:            { id: 'ux',          name: 'UX Designer',    emoji: '🎨', role: 'UX & Design Agent',       color: '#ec4899', description: 'UI review, mobile UX, design system, accessibility.', capabilities: ['UI Review', 'Mobile UX', 'Design System', 'Accessibility'], floor: false, type: 'consultant' },

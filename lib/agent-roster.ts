@@ -33,8 +33,14 @@ export const AGENT_META: Record<string, AgentMeta> = {
   'main':        { name: 'KAOS',        emoji: '🧠', role: 'Chief Orchestrator',   color: '#6b7280', capabilities: ['Orchestration', 'Memory', 'Strategy', 'Comms', 'Delegation'], floor: true,  model: 'claude-sonnet-4-6', queue_filter: [] },
   'scout':       { name: 'Scout',       emoji: '🔍', role: 'Research Agent',        color: '#a855f7', capabilities: ['Web Research', 'Summarization', 'Trends'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: ['open'] },
   'ops':         { name: 'Ingo',        emoji: '⚙️', role: 'Infrastructure Watchdog', color: '#10b981', capabilities: ['Infrastructure', 'Monitoring', 'Alerts'], floor: true,                  model: 'claude-haiku-4-5',  queue_filter: ['open'] },
-  'kemuni-sme':  { name: 'Kemuni SME',  emoji: '🚀', role: 'Kemuni Product Expert', color: '#3b82f6', capabilities: ['Product Strategy', 'Kemuni', 'PropTech'], floor: true,                   model: 'claude-sonnet-4-6', queue_filter: [] },
-  'vespera-sme': { name: 'Vespera SME', emoji: '🖤', role: 'Vespera Product Expert', color: '#ec4899', capabilities: ['Product Strategy', 'Vespera', 'Community'], floor: true,                model: 'claude-sonnet-4-6', queue_filter: [] },
+  // no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were entries here.
+  // Removing them does NOT by itself stop the roster naming them: loadAgentRoster()
+  // reads AGENTS.md, and this host's AGENTS.md:87-88 still lists both rows. What
+  // this removal does change is that neither id can now pick up an emoji, colour,
+  // capability list or `floor: true` from code — a roster row for an agent that
+  // does not exist renders as an unstyled unknown instead of a fully dressed
+  // "Kemuni Product Expert". AGENTS.md is owned by another agent; see the piece
+  // report for that finding.
   'builder':     { name: 'Builder',     emoji: '🔨', role: 'Coding Agent',           color: '#f59e0b', capabilities: ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'], floor: true,     model: 'claude-sonnet-4-6', queue_filter: ['open'] },
   'tester':      { name: 'Tester',      emoji: '🧪', role: 'QA Agent',               color: '#06b6d4', capabilities: ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'], floor: true,     model: 'claude-haiku-4-5',  queue_filter: ['code_review'] },
   'deployer':    { name: 'Deployer',    emoji: '🚀', role: 'Deploy Agent',            color: '#8b5cf6', capabilities: ['Deployments', 'Webhooks', 'Release Notes'], floor: true,                model: 'claude-haiku-4-5',  queue_filter: ['approved'] },

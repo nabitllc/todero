@@ -20,9 +20,7 @@ export const AGENT_DISPLAY: Record<string,{name:string;emoji:string;role:string;
   main:          {name:'KAOS',        emoji:'🧠', role:'Chief of Staff',    color:'#6b7280', desc:'Main orchestrator. Strategy, memory, delegation, comms.', capabilities:['Orchestration','Memory','Strategy','Comms','Delegation']},
   scout:         {name:'Scout',       emoji:'🔍', role:'Research Agent',    color:'#a855f7', desc:'Morning scan: goth scene, competitors, PropTech trends.', capabilities:['Web Research','Summarization','Trends']},
   ops:           {name:'Ingo',         emoji:'⚙️', role:'Operations Agent',  color:'#6b7280', desc:'Infrastructure monitoring, deployment ops, system health.', capabilities:['Monitoring','Deploys','Health Checks']},
-  'kemuni-sme':  {name:'Kemuni SME',  emoji:'🚀', role:'Kemuni Specialist', color:'#3b82f6', desc:'Domain expert for Kemuni platform. PropTech strategy & features.', capabilities:['PropTech','Strategy','Features']},
-  'vespera-sme': {name:'Vespera SME', emoji:'🖤', role:'Vespera Specialist',color:'#a855f7', desc:'Domain expert for Vespera. Goth community, events, culture.', capabilities:['Events','Community','Culture']},
-  builder:       {name:'Builder',     emoji:'🔨', role:'Coding Agent',      color:'#3b82f6', desc:'On-demand coding. Next.js, Supabase, Vespera and Kemuni builds.', capabilities:['Next.js','Supabase','TypeScript','APIs']},
+  builder:       {name:'Builder',     emoji:'🔨', role:'Coding Agent',      color:'#3b82f6', desc:'On-demand coding. Next.js, Supabase, TypeScript.', capabilities:['Next.js','Supabase','TypeScript','APIs']},
   tester:        {name:'Tester',      emoji:'🧪', role:'QA Agent',          color:'#ef4444', desc:'Automated testing, bug detection, regression checks.', capabilities:['Testing','QA','Bug Detection']},
 }
 
@@ -92,4 +90,14 @@ export const TYPE_COLORS: Record<string,string> = { feature:'#3b82f6', bug:'#ef4
 export const TOAST_COLORS = { started: '#60a5fa', done: '#34d399', error: '#f87171', default: '#00ff88' }
 
 // Agent emoji map for toasts
-export const AGENT_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', 'kemuni-sme':'🚀', 'vespera-sme':'🖤', deployer:'🚀' }
+//
+// no-invented-projects-sweep: 'kemuni-sme':'🚀' and 'vespera-sme':'🖤' were keys
+// here, and matching entries were in AGENT_DISPLAY above. Neither agent exists.
+// This is the table shape HANDOFF.md records as having survived two rounds of a
+// sweep whose job was removing it — a hardcoded map keyed by a name nobody
+// re-reads, decorated so it looks like data. Both maps are lookup-only (a miss
+// falls back to '🤖' / the raw id at every call site: app/page.tsx:509,
+// components/ActiveAgentsCard.tsx:183-184, components/tabs/ActivityTab.tsx),
+// so removing keys cannot break rendering — it only stops the app decorating an
+// agent it has no evidence exists.
+export const AGENT_EMOJI: Record<string,string> = { main:'🧠', builder:'🔨', tester:'🧪', scout:'🔍', ops:'⚙️', deployer:'🚀' }

@@ -45,8 +45,13 @@ export const AGENT_MAP: Record<string, AgentDisplay> = {
   'growth':      { emoji: '📈', name: 'Growth',          role: 'Growth Strategist' },
   'content':     { emoji: '✍️', name: 'Content Creator', role: 'Content & SEO' },
   'community':   { emoji: '🖤', name: 'Community Mgr',   role: 'Community' },
-  'kemuni-sme':  { emoji: '🚀', name: 'Kemuni SME',      role: 'Kemuni Specialist' },
-  'vespera-sme': { emoji: '🖤', name: 'Vespera SME',     role: 'Vespera Specialist' },
+  // no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were the last two
+  // entries here. The header above already explains that this map is presentation
+  // only and may never be iterated to answer "which agents are there?" — but a
+  // presentation entry is still a claim that an id is meaningful, and these two
+  // ids name agents no host declares, for projects this installation does not
+  // have. A miss now returns the neutral 🤖 fallback via agentDisplay(), which is
+  // the correct answer for an id nothing else recognises.
 }
 
 /** Display fields for an id, or neutral placeholders when it is unknown. */

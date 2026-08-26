@@ -30,14 +30,30 @@ const CORE_FIELDS: FieldDefinition[] = [
   { name: 'description',         label: 'Description',         fieldType: 'textarea', required: false },
   { name: 'status',              label: 'Status',              fieldType: 'select',   required: true,  defaultValue: 'backlog',
     options: ['backlog','defined','refined','open','in_progress','code_review','product_review','approved','released','underway','feature_review','draft','active','wrapped','completed','closed'] },
+  // no-invented-projects-sweep: this options list read
+  //   ['Todero','Kemuni','Vespera','Infrastructure','Mission Control']
+  // — a dropdown offering the operator two projects that do not exist. 'Kemuni'
+  // and 'Vespera' are gone; 'Limiglow' (the one real managed project) takes their
+  // place. 'Infrastructure' and 'Mission Control' remain only because they still
+  // carry legacy task-key prefixes for historical rows (see PROJECT_PREFIX in
+  // lib/constants.ts); they are not targets for new work.
+  //
+  // This list should ultimately come from GET /api/projects, not from source.
+  // That change belongs to the sibling piece no-invented-projects.md, which owns
+  // the screens; this file is static config that admin views read, and swapping
+  // it for a fetch here would change its type from data to promise. Recorded
+  // rather than silently left alone.
   { name: 'project',             label: 'Project',             fieldType: 'select',   required: true,
-    options: ['Todero','Kemuni','Vespera','Infrastructure','Mission Control'] },
+    options: ['Todero','Limiglow','Infrastructure','Mission Control'] },
   { name: 'priority',            label: 'Priority',            fieldType: 'select',   required: true,  defaultValue: 'medium',
     options: ['critical','high','medium','low'] },
+  // no-invented-projects-sweep: 'kemuni-sme' and 'vespera-sme' were offered in
+  // both lists. Assigning an issue to an agent that does not exist parks it
+  // forever — no queue lane claims it and no watchdog notices.
   { name: 'assignee',            label: 'Assignee',            fieldType: 'select',   required: true,
-    options: ['builder','ops','tester','designer','po','scout','main','kemuni-sme','vespera-sme','infra-sme','todero-sme'] },
+    options: ['builder','ops','tester','designer','po','scout','main','infra-sme','todero-sme'] },
   { name: 'owner',               label: 'Owner',               fieldType: 'select',   required: false,
-    options: ['builder','ops','tester','designer','po','scout','main','kemuni-sme','vespera-sme','infra-sme','todero-sme'] },
+    options: ['builder','ops','tester','designer','po','scout','main','infra-sme','todero-sme'] },
   { name: 'reviewer',            label: 'Reviewer',            fieldType: 'select',   required: false,
     options: ['tester','designer','po','main'] },
   { name: 'sprint',              label: 'Sprint',              fieldType: 'date',     required: false },

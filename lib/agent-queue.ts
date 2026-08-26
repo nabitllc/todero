@@ -211,11 +211,11 @@ Refine this issue: add description, acceptance criteria, set priority, severity,
 - EPICS: verify child features exist and have AC.
 
 CRITICAL — assignee rules when creating or refining child tasks:
-- Todero tasks/bugs → assignee: "builder"
+- Tasks/bugs → assignee: "builder"
 - Ops tasks (any project) → assignee: "ops"
-- Kemuni tasks → assignee: "kemuni-sme"
-- Vespera tasks → assignee: "vespera-sme"
 - NEVER set assignee to "po" — PO only refines, never implements.
+- NEVER invent an assignee. If no rule above fits, use "builder" and say why in the
+  description. An assignee that is not in the roster is a dead task.
 
 REQUIRED — test_tier must be set on every task, bug, and ops issue before moving to refined:
 - "smoke"       → config change, tiny fix, no new code paths (tester: build + spot check)
@@ -378,47 +378,23 @@ Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /a
     ],
   },
 
-  'kemuni-sme': {
-    agentId: 'kemuni-sme',
-    model: 'sonnet',
-    pickupStatus: 'backlog',
-    extraFilters: 'type=eq.epic&project=eq.Kemuni',
-    wipExtraFilter: 'started_at=not.is.null',
-    dorFields: ['description', 'acceptance_criteria'],
-    wipLimit: 1,
-    workingStatus: 'backlog',
-    completionStatus: 'draft',
-    checkBlocking: false,
-    sortOrder: 'priority.asc,created_at.asc',
-    fetchLimit: 5,
-    promptPrefix: `You are Kemuni SME. Decompose Kemuni epics into child features.
-Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Kemuni, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"kemuni-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=kemuni-sme.`,
-    modelChain: [
-      { runtime: 'claude-code', alias: 'sonnet' },
-      { runtime: 'codex',       alias: 'sonnet' },
-    ],
-  },
-
-  'vespera-sme': {
-    agentId: 'vespera-sme',
-    model: 'sonnet',
-    pickupStatus: 'backlog',
-    extraFilters: 'type=eq.epic&project=eq.Vespera',
-    wipExtraFilter: 'started_at=not.is.null',
-    dorFields: ['description', 'acceptance_criteria'],
-    wipLimit: 1,
-    workingStatus: 'backlog',
-    completionStatus: 'draft',
-    checkBlocking: false,
-    sortOrder: 'priority.asc,created_at.asc',
-    fetchLimit: 5,
-    promptPrefix: `You are Vespera SME. Decompose Vespera epics into child features.
-Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Vespera, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"vespera-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=vespera-sme.`,
-    modelChain: [
-      { runtime: 'claude-code', alias: 'sonnet' },
-      { runtime: 'codex',       alias: 'sonnet' },
-    ],
-  },
+  // no-invented-projects-sweep: two more lanes were here, 'kemuni-sme' and
+  // 'vespera-sme'. They were not merely roster decoration — they were the most
+  // dangerous instance of the invented projects in this repo:
+  //
+  //   extraFilters: 'type=eq.epic&project=eq.Kemuni'
+  //   promptPrefix: '... POST /api/issues (type:feature, project:Kemuni, ...)'
+  //
+  // A live dispatch of either lane would have WRITTEN rows into the issues table
+  // under a project that does not exist, from a prompt telling the agent to do
+  // exactly that. Nothing has run, but only because lib/dispatch-guard.ts is off
+  // by default — the kill switch was the only thing standing between this text
+  // and the database. Deleted at the source rather than filtered downstream: a
+  // queue config IS the instruction, so there is nowhere downstream to filter.
+  //
+  // getQueueConfig() returns undefined for both ids now, and
+  // app/api/run-agent/route.ts:457 already answers an unknown agent id with
+  // `Unknown agent: <id>` and the list of real ones. No caller needs a change.
 
   'infra-sme': {
     agentId: 'infra-sme',
