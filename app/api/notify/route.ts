@@ -6,12 +6,28 @@
 //     "text": "required — the message body",
 //     "channels": ["discord-alerts", "telegram-dm", "telegram-group"],
 //     "discordChannelId": "optional — override channel",
-//     "level": "info" | "warn" | "error"
+//     "level": "info" | "warn" | "error",
+//     "business_id": "optional — resolve Discord credential per-hub"
 //   }
 //
 // Channel registry is below. Adding a new named channel: one line in CHANNELS.
+//
+// connections-discord / FEEDBACK.md item 9, wave 7. This endpoint used to be
+// "the one place to rotate tokens" in name only: it read
+// process.env.DISCORD_BOT_TOKEN directly, so a per-hub credential added
+// through Settings -> Connections (lib/connections.ts, migration 059) was
+// never consulted by anything that actually sends a message.
+// `resolveHubDiscord()` had zero callers anywhere in the tree — grep it.
+//
+// When a caller names `business_id`, the Discord send now resolves through
+// `resolveHubDiscord()`: a hub's own stored/env connection first, and the
+// process-wide `DISCORD_BOT_TOKEN` only as the documented fallback for a hub
+// with no connection row. When no connection AND no env fallback exist, the
+// send is REFUSED with a message naming the hub — never a silent post as
+// somebody else's bot, and never a silent no-op either.
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
+import { resolveHubDiscord } from '@/lib/connections'
 
 // ── Token config (lazy getters — fail at request time, not module load) ─────
 // Module-load reads break `next build` on CI, which doesn't have .env.local
@@ -50,21 +66,42 @@ const CHANNELS: Record<string, ChannelConfig> = {
 }
 
 // ── Transport implementations ───────────────────────────────────────────────
-async function sendDiscord(channelId: string, text: string): Promise<{ ok: boolean; status?: number; error?: string }> {
+/**
+ * `businessId` is optional because most existing callers (circuit-breaker,
+ * cron/queue-refill, cron/watchdog, run-sprint) send system-wide alerts with
+ * no hub context — for those, `resolveHubDiscord(undefined)` falls straight
+ * through to its own env-var fallback, which is the same behaviour this
+ * function had before. A caller that DOES name a hub gets that hub's own
+ * connection, and an honest refusal (never a silent post, never a silent
+ * env-var fallback) when the hub has neither a connection nor the env var.
+ */
+async function sendDiscord(
+  channelId: string,
+  text: string,
+  businessId?: string,
+): Promise<{ ok: boolean; status?: number; error?: string; source?: string }> {
   try {
-    const token = requireEnv('DISCORD_BOT_TOKEN')
+    const resolved = await resolveHubDiscord(businessId ?? null)
+    if (!resolved) {
+      return {
+        ok: false,
+        error: businessId
+          ? `no Discord connection is configured for hub "${businessId}", and DISCORD_BOT_TOKEN is not set as a process-wide fallback`
+          : 'DISCORD_BOT_TOKEN is not set, and no business_id was given to resolve a per-hub connection',
+      }
+    }
     const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bot ${token}`,
+        'Authorization': `Bot ${resolved.token}`,
         'Content-Type': 'application/json',
         'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
       },
       body: JSON.stringify({ content: text.slice(0, 2000) }),  // Discord limit
     })
-    if (res.ok) return { ok: true, status: res.status }
+    if (res.ok) return { ok: true, status: res.status, source: resolved.source }
     const err = await res.text().catch(() => '')
-    return { ok: false, status: res.status, error: err.slice(0, 200) }
+    return { ok: false, status: res.status, error: err.slice(0, 200), source: resolved.source }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
@@ -129,6 +166,7 @@ export async function POST(req: NextRequest) {
     channels?: string[]
     discordChannelId?: string
     level?: 'info' | 'warn' | 'error'
+    business_id?: string
   }
   try {
     body = await req.json()
@@ -140,6 +178,11 @@ export async function POST(req: NextRequest) {
   if (!text) {
     return NextResponse.json({ error: 'text is required' }, { status: 400 })
   }
+
+  // Optional — see sendDiscord() for what this changes and what it does not.
+  const businessId = typeof body.business_id === 'string' && body.business_id.trim() !== ''
+    ? body.business_id.trim()
+    : undefined
 
   // If no channels specified, default based on level
   let channels = body.channels ?? []
@@ -154,7 +197,7 @@ export async function POST(req: NextRequest) {
     channels.push(`adhoc:discord:${body.discordChannelId}`)
   }
 
-  const results: Array<{ channel: string; ok: boolean; status?: number; error?: string }> = []
+  const results: Array<{ channel: string; ok: boolean; status?: number; error?: string; source?: string }> = []
 
   for (const channelName of channels) {
     // Rate limit check
@@ -166,7 +209,7 @@ export async function POST(req: NextRequest) {
     // Ad-hoc override handling
     if (channelName.startsWith('adhoc:discord:')) {
       const id = channelName.slice('adhoc:discord:'.length)
-      const r = await sendDiscord(id, text)
+      const r = await sendDiscord(id, text, businessId)
       results.push({ channel: channelName, ...r })
       continue
     }
@@ -186,7 +229,7 @@ export async function POST(req: NextRequest) {
     }
 
     const r = cfg.transport === 'discord'
-      ? await sendDiscord(target, text)
+      ? await sendDiscord(target, text, businessId)
       : await sendTelegram(target, text)
     results.push({ channel: channelName, ...r })
   }

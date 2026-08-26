@@ -23,6 +23,14 @@
 //   outbound request to any address a customer could be reached at anywhere in
 //   this piece. `record_send` records a send that something ELSE performed and
 //   reported; it does not perform one.
+//
+// TWO SEAMS ADDED FOR THE PROVIDER NOBODY HAS CHOSEN YET (TOD-2470)
+//   `OutboundTransport` below is where a future adapter plugs in — zero
+//   implementations, on purpose (see that block for why picking one is not
+//   this piece's decision). `verifyWebhookSecret` is the credential a future
+//   provider's inbound call presents, checked against a secret this piece owns
+//   and no other route reads — see that block for why it is deliberately NOT
+//   `lib/internal-auth.ts`'s secret.
 
 // ─── Vocabularies ───────────────────────────────────────────────────────────
 //
@@ -81,6 +89,22 @@ export interface MessageRow {
   approved_by: string | null
   sent_at: string | null
   sent_via: string | null
+  /**
+   * The provider's own id for the inbound event that produced this row.
+   * NULL for every outbound message and for an inbound one whose provider
+   * gave none. Migration 070's partial UNIQUE index is what makes a retried
+   * webhook delivery idempotent instead of a second customer message.
+   */
+  external_id: string | null
+  /**
+   * The message THIS one answers — "a reply threads instead of drowning the
+   * channel" at the level of one conversation with several open questions,
+   * not just at the level of one thread per contact (migration 063 already
+   * gives every contact one thread; this is the finer grain inside it).
+   * Outbound only — see `validateMessage`'s refusal for why an inbound
+   * message can never carry one.
+   */
+  reply_to_message_id: string | null
 }
 
 // ─── Verdicts ───────────────────────────────────────────────────────────────
@@ -173,13 +197,22 @@ export function resolveScope(headerScope: string | null, queryProject: string | 
 // ─── Writes ─────────────────────────────────────────────────────────────────
 
 /** Accepted keys for POST /api/conversations — an INBOUND message arriving. */
-export const INBOUND_KEYS = ['channel', 'contact', 'contact_name', 'body'] as const
+export const INBOUND_KEYS = ['channel', 'contact', 'contact_name', 'body', 'external_id'] as const
 
 export interface InboundWrite {
   channel: Channel
   contact: string
   contact_name: string | null
   body: string
+  /**
+   * The provider's own id for this event — a WhatsApp `wamid`, a Twilio
+   * `MessageSid`, whatever the future adapter's provider calls it. Optional:
+   * a caller with no such id (a human typing a test message through the UI)
+   * still gets a normal insert. A caller that HAS one and sends it twice gets
+   * the same row back both times — see the route's handling of the partial
+   * UNIQUE index migration 070 adds.
+   */
+  external_id: string | null
 }
 
 /**
@@ -214,6 +247,9 @@ export function validateInbound(body: unknown): Verdict<InboundWrite> {
   const text = required(b.body, 'body', 20_000)
   if (!text.ok) return text
 
+  const externalId = optional(b.external_id, 'external_id', 200)
+  if (!externalId.ok) return externalId
+
   return {
     ok: true,
     value: {
@@ -221,18 +257,28 @@ export function validateInbound(body: unknown): Verdict<InboundWrite> {
       contact: contact.value,
       contact_name: contactName.value,
       body: text.value,
+      external_id: externalId.value,
     },
   }
 }
 
 /** Accepted keys for POST /api/conversations/<id>/messages. */
-export const MESSAGE_KEYS = ['direction', 'body', 'author'] as const
+export const MESSAGE_KEYS = ['direction', 'body', 'author', 'reply_to_message_id'] as const
 
 export interface MessageWrite {
   direction: Direction
   state: MessageState
   body: string
   author: string | null
+  /**
+   * The message this draft answers — "a reply threads instead of drowning
+   * the channel" applied inside one conversation, not just across ones (see
+   * migration 063's per-contact UNIQUE for that coarser grain). Validated
+   * here only as a well-formed id; whether it names a REAL message in THIS
+   * conversation is a database question, answered by the route (this module
+   * has no db import) and by migration 070's foreign key.
+   */
+  reply_to_message_id: string | null
 }
 
 /**
@@ -269,6 +315,9 @@ export function validateMessage(body: unknown): Verdict<MessageWrite> {
   const author = optional(b.author, 'author', 200)
   if (!author.ok) return author
 
+  const replyTo = optional(b.reply_to_message_id, 'reply_to_message_id', 100)
+  if (!replyTo.ok) return replyTo
+
   const dir = direction.value as Direction
   if (dir === 'inbound' && author.value) {
     // An inbound message's author is the thread's contact. Accepting a second
@@ -279,10 +328,25 @@ export function validateMessage(body: unknown): Verdict<MessageWrite> {
       why: 'author may not be set on an inbound message — an inbound message is written by the conversation\'s contact',
     }
   }
+  if (dir === 'inbound' && replyTo.value) {
+    // A customer's own message is never "a reply to" anything Todero tracks —
+    // only a drafted outbound answer threads to the question it addresses.
+    return {
+      ok: false,
+      status: 422,
+      why: 'reply_to_message_id may not be set on an inbound message — only an outbound reply threads to another message',
+    }
+  }
 
   return {
     ok: true,
-    value: { direction: dir, state: dir === 'inbound' ? 'received' : 'draft', body: text.value, author: author.value },
+    value: {
+      direction: dir,
+      state: dir === 'inbound' ? 'received' : 'draft',
+      body: text.value,
+      author: author.value,
+      reply_to_message_id: replyTo.value,
+    },
   }
 }
 
@@ -421,6 +485,163 @@ export function planTransition(
   return { ok: true, value: { state: 'sent', sent_at: nowIso, sent_via: request.sent_via as string } }
 }
 
+// ─── Outbound adapter seam — zero implementations ──────────────────────────
+//
+// WHAT THIS IS
+// ------------
+// The interface a future transport adapter (WhatsApp, a web widget, whatever
+// the owner eventually picks) will implement. Nothing in this codebase
+// implements it today, and nothing in this file calls `.send()` on anything —
+// grep for `fetch(\|http://\|https://\|axios\|WebSocket` over every file this
+// piece owns and this file adds zero new hits to that count.
+//
+// WHY THIS PIECE DOES NOT PICK A PROVIDER
+// ----------------------------------------
+// WhatsApp is the owner's own benchmark and he has not chosen a transport.
+// That choice decides where his customers' messages live, what each message
+// costs, and whose account is on the hook if a provider suspends it — not a
+// decision an implementation phase gets to make on his behalf. A stub that
+// logged "sent" and did nothing would be a worse lie than the empty seam
+// below: a caller reading this file would have every reason to believe a
+// message left the building.
+//
+// WHY THE TYPE SYSTEM REFUSES A DRAFT HERE, NOT JUST THE DATABASE
+// -----------------------------------------------------------------
+// `ApprovedOutboundMessage.approved_at`/`approved_by` are `string`, not
+// `string | null` — the shape a fresh `MessageRow` off the database actually
+// has. `toApprovedOutboundMessage()` below is the ONLY function in this file
+// that produces one, and it refuses anything not `state === 'approved'`
+// (with the SAME sentence `planTransition` uses for the same refusal — one
+// rule, not two copies that could drift). There is no cast anywhere in this
+// piece that narrows a nullable field back to non-null, so a draft cannot
+// reach an `OutboundTransport.send()` call by construction, not merely by
+// convention. Migration 063/070's CHECK constraints back the identical
+// refusal at the row level, so the guarantee holds even against a future
+// caller that never imports this module at all.
+
+export interface ApprovedOutboundMessage {
+  id: string
+  conversation_id: string
+  body: string
+  /** Never null here — see the header above for why that is provable, not asserted. */
+  approved_at: string
+  approved_by: string
+}
+
+/** What a transport reports back after attempting one send. */
+export type OutboundSendResult =
+  | { ok: true; providerMessageId: string }
+  | { ok: false; error: string }
+
+/**
+ * The seam itself. A future adapter implements this; ZERO adapters exist in
+ * this codebase. `send()` performing the actual delivery and reporting a
+ * result is the adapter's job — turning that result into a `record_send`
+ * action against PATCH …/messages/<id> is its CALLER's job, and neither one is
+ * this file, which is why `record_send` stays a call nothing here makes.
+ */
+export interface OutboundTransport {
+  /** A name for logs and for `sent_via` — 'whatsapp-cloud-api', 'web-widget', … */
+  readonly name: string
+  send(message: ApprovedOutboundMessage): Promise<OutboundSendResult>
+}
+
+/**
+ * The only legal way to produce an `ApprovedOutboundMessage`. Refuses
+ * anything that is not a currently-approved outbound message, reusing
+ * `DRAFT_CANNOT_SEND`'s exact wording so the refusal a caller sees here and
+ * the refusal `planTransition` gives for the equivalent attempt read as the
+ * same rule rather than two independently-worded ones.
+ */
+export function toApprovedOutboundMessage(
+  row: Pick<MessageRow, 'id' | 'conversation_id' | 'direction' | 'state' | 'body' | 'approved_at' | 'approved_by'>,
+): Verdict<ApprovedOutboundMessage> {
+  if (row.direction !== 'outbound') {
+    return { ok: false, status: 409, why: `an ${row.direction} message is never sent to a customer through this seam` }
+  }
+  if (row.state !== 'approved' || !row.approved_at || !row.approved_by) {
+    return { ok: false, status: 409, why: DRAFT_CANNOT_SEND }
+  }
+  return {
+    ok: true,
+    value: {
+      id: row.id,
+      conversation_id: row.conversation_id,
+      body: row.body,
+      approved_at: row.approved_at,
+      approved_by: row.approved_by,
+    },
+  }
+}
+
+// ─── Inbound webhook authentication ────────────────────────────────────────
+//
+// A DEDICATED secret, not `lib/internal-auth.ts`'s `TODERO_INTERNAL_SECRET`.
+// That secret authorises Todero's OWN server-to-server calls system-wide
+// (cron, watchdogs, agent callbacks) — handing it to an external provider's
+// webhook caller would mean a leak of the conversations webhook reaches every
+// internal route this app has, not just this one. `CONVERSATIONS_WEBHOOK_SECRET`
+// grants EXACTLY the inbound door: `verifyWebhookSecret()` is read from
+// nowhere but this piece's own POST route, and its result is never treated as
+// an RBAC role or handed a permission.
+//
+// WHAT THIS DOES AND DOES NOT REACH
+// -----------------------------------
+// `middleware.ts` (not owned by this piece) gates EVERY `/api/*` route before
+// a request reaches any route handler at all, on either a session cookie or
+// `lib/internal-auth.ts`'s secret — see this piece's docs/rebuild
+// piece doc for the exact diff that would let a caller presenting ONLY this
+// secret reach the route in a real deployment. Until that diff lands, this
+// function is real and independently correct — proven directly against the
+// exported route handler in `lib/__tests__/conversations-webhook.test.ts`,
+// the same way `__tests__/api/commerce-permissions.test.ts` proves RBAC by
+// calling the handler directly rather than through the Next.js middleware
+// chain — but it does not yet make the endpoint reachable from the open
+// internet without also knowing Todero's general internal secret.
+
+export const WEBHOOK_SECRET_HEADER = 'x-todero-conversations-secret'
+export const WEBHOOK_SECRET_ENV = 'CONVERSATIONS_WEBHOOK_SECRET'
+
+/**
+ * `presented: false`  — no secret header at all; the caller may still be an
+ *   internal/human caller authenticated the OLD way (session or agent role),
+ *   so the route falls through to the existing RBAC check in that case.
+ * `presented: true, valid: false` — the caller CLAIMED to be a webhook and was
+ *   wrong. This must never silently fall through to a weaker check — that
+ *   would let a guessed secret be retried for free under a friendlier
+ *   failure mode. It is refused on its own, immediately, with a 401.
+ * `presented: true, valid: true` — authenticated. No RBAC role is consulted;
+ *   this credential proves exactly one thing, "I am allowed to record an
+ *   inbound customer message," and nothing else in this app reads it.
+ */
+export type WebhookAuth =
+  | { presented: false }
+  | { presented: true; valid: false }
+  | { presented: true; valid: true }
+
+/** Constant-time compare — avoids leaking the secret through response timing. */
+function safeEqualSecret(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
+}
+
+/**
+ * Check the inbound-webhook secret a request presented. Absence of
+ * configuration must never grant access — an unset or too-short
+ * `CONVERSATIONS_WEBHOOK_SECRET` makes every presented value `valid: false`,
+ * never `presented: false` (a caller who bothered to send the header gets a
+ * real refusal, not a silent fallthrough that looks like a misconfiguration
+ * accidentally worked).
+ */
+export function verifyWebhookSecret(headerValue: string | null | undefined): WebhookAuth {
+  if (!headerValue) return { presented: false }
+  const expected = process.env[WEBHOOK_SECRET_ENV]
+  if (!expected || expected.length < 16) return { presented: true, valid: false }
+  return { presented: true, valid: safeEqualSecret(headerValue, expected) }
+}
+
 // ─── Reading ────────────────────────────────────────────────────────────────
 
 /**
@@ -444,6 +665,8 @@ export function normalizeMessageRow(raw: Record<string, unknown>): MessageRow {
     approved_by: text(raw.approved_by),
     sent_at: text(raw.sent_at),
     sent_via: text(raw.sent_via),
+    external_id: text(raw.external_id),
+    reply_to_message_id: text(raw.reply_to_message_id),
   }
 }
 

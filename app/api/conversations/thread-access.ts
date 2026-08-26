@@ -37,7 +37,7 @@ import { CONVERSATIONS_SCOPE, resolveProjectScope } from '@/lib/scope'
 export const CONVERSATION_COLUMNS =
   'id,project,channel,contact,contact_name,status,last_message_at,created_at'
 export const MESSAGE_COLUMNS =
-  'id,conversation_id,direction,state,body,author,created_at,approved_at,approved_by,sent_at,sent_via'
+  'id,conversation_id,direction,state,body,author,created_at,approved_at,approved_by,sent_at,sent_via,external_id,reply_to_message_id'
 
 export type ScopeOutcome = { project: string } | { refusal: NextResponse }
 

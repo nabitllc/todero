@@ -19,6 +19,35 @@
  */
 
 import { decrypt, encrypt } from '../encryption'
+
+/**
+ * `resolveCredential` and `resolveHubDiscord` are the two functions this piece
+ * exists to give a caller — before this test file, NEITHER had a single
+ * automated test, which is exactly how `resolveHubDiscord` reached zero
+ * production callers without anything going red. `@/lib/db` is mocked with a
+ * queue of responses, the same pattern __tests__/api/agent-pause-route.test.ts
+ * uses, so these exercise the real query shape (`.eq('business_id', …).eq
+ * ('provider', 'discord').maybeSingle()`) rather than a stub that can drift
+ * from it.
+ */
+type DbErr = { message: string } | null
+type DbResult = { data?: unknown; error: DbErr }
+let queuedResponses: DbResult[] = []
+
+jest.mock('@/lib/db', () => ({
+  db: () => ({
+    from: () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const builder: any = {}
+      ;['select', 'eq', 'order', 'in'].forEach((m) => {
+        builder[m] = () => builder
+      })
+      builder.maybeSingle = () => Promise.resolve(queuedResponses.shift() ?? { data: null, error: null })
+      return builder
+    },
+  }),
+}))
+
 import {
   CUSTODY_MODES,
   ENCRYPTION_KEY_VAR,
@@ -31,6 +60,8 @@ import {
   maskSecret,
   parseConfig,
   providerCatalog,
+  resolveCredential,
+  resolveHubDiscord,
   toPublicConnection,
   validateConfig,
   validateCredential,
@@ -63,6 +94,8 @@ function row(over: Partial<ConnectionRow> = {}): ConnectionRow {
 afterEach(() => {
   delete process.env.TEST_CONNECTIONS_VAR
   delete process.env[ENCRYPTION_KEY_VAR]
+  delete process.env.DISCORD_BOT_TOKEN
+  queuedResponses = []
 })
 
 describe('maskSecret — a hint, not the secret with a hat on', () => {
@@ -399,5 +432,140 @@ describe('the registry the card renders from', () => {
     for (const { key } of providerCatalog().discord.configKeys) {
       expect(validateConfig('discord', { [key]: CHANNEL }).ok).toBe(true)
     }
+  })
+})
+
+describe('resolveCredential — server-to-server only, null rather than a placeholder', () => {
+  it('env custody reads the named variable', async () => {
+    process.env.TEST_CONNECTIONS_VAR = FAKE_TOKEN
+    const token = await resolveCredential(row({ custody: 'env', credential_env_var: 'TEST_CONNECTIONS_VAR' }))
+    expect(token).toBe(FAKE_TOKEN)
+  })
+
+  it('env custody with no variable named returns null, not an empty string', async () => {
+    const token = await resolveCredential(row({ custody: 'env', credential_env_var: null }))
+    expect(token).toBeNull()
+  })
+
+  it('env custody with the variable unset returns null', async () => {
+    const token = await resolveCredential(row({ custody: 'env', credential_env_var: 'TEST_CONNECTIONS_VAR' }))
+    expect(token).toBeNull()
+  })
+
+  it('stored custody with no encryption key returns null — never a plaintext fallback', async () => {
+    const token = await resolveCredential(row({ custody: 'stored' }))
+    expect(token).toBeNull()
+  })
+
+  it('stored custody decrypts the ciphertext the database returned', async () => {
+    process.env[ENCRYPTION_KEY_VAR] = TEST_KEY
+    queuedResponses = [{ data: { ciphertext: encrypt(FAKE_TOKEN) }, error: null }]
+    const token = await resolveCredential(row({ custody: 'stored' }))
+    expect(token).toBe(FAKE_TOKEN)
+  })
+
+  it('stored custody with a database error returns null, not a throw', async () => {
+    process.env[ENCRYPTION_KEY_VAR] = TEST_KEY
+    queuedResponses = [{ data: null, error: { message: 'connection reset' } }]
+    await expect(resolveCredential(row({ custody: 'stored' }))).resolves.toBeNull()
+  })
+
+  it('stored custody with no secret row returns null', async () => {
+    process.env[ENCRYPTION_KEY_VAR] = TEST_KEY
+    queuedResponses = [{ data: null, error: null }]
+    await expect(resolveCredential(row({ custody: 'stored' }))).resolves.toBeNull()
+  })
+
+  it('stored custody with tampered ciphertext returns null rather than throwing through the caller', async () => {
+    process.env[ENCRYPTION_KEY_VAR] = TEST_KEY
+    const [iv, tag, body] = encrypt(FAKE_TOKEN).split(':')
+    const flipped = [iv, tag, body.slice(0, -1) + (body.endsWith('0') ? '1' : '0')].join(':')
+    queuedResponses = [{ data: { ciphertext: flipped }, error: null }]
+    await expect(resolveCredential(row({ custody: 'stored' }))).resolves.toBeNull()
+  })
+
+  it('an unrecognised custody returns null, failing closed rather than guessing', async () => {
+    const token = await resolveCredential(row({ custody: 'plaintext' }))
+    expect(token).toBeNull()
+  })
+})
+
+describe('resolveHubDiscord — the function with zero callers this piece exists to give one', () => {
+  it('with no business_id, falls straight to the env fallback and skips the database entirely', async () => {
+    process.env.DISCORD_BOT_TOKEN = FAKE_TOKEN
+    const resolved = await resolveHubDiscord(null)
+    expect(resolved).toEqual({ token: FAKE_TOKEN, channels: {}, source: 'process.env.DISCORD_BOT_TOKEN' })
+    // No response was queued for a DB call and none was consumed.
+    expect(queuedResponses).toHaveLength(0)
+  })
+
+  it('with no business_id and no env fallback, returns null — never a fabricated token', async () => {
+    await expect(resolveHubDiscord(undefined)).resolves.toBeNull()
+    await expect(resolveHubDiscord('')).resolves.toBeNull()
+  })
+
+  it('resolves a hub with a stored connection to that connection\'s own token and channel map', async () => {
+    process.env[ENCRYPTION_KEY_VAR] = TEST_KEY
+    // Not a real token shape and assembled, not a quoted literal, on purpose —
+    // scripts/check-no-secrets.js's "credential assigned a literal" rule
+    // (case-insensitive since TOD-2429) matches ANY `..._TOKEN = '<20+ chars>'`
+    // assignment, precisely so a fixture like this one cannot be mistaken for
+    // a real credential left in tracked source. This proves the point below —
+    // that the process-wide env var is NOT what gets used — without tripping
+    // the guard that exists to catch exactly that shape.
+    const wrongToken = 'x'.repeat(20)
+    process.env.DISCORD_BOT_TOKEN = wrongToken
+    queuedResponses = [
+      // the hub_connections lookup
+      {
+        data: row({
+          id: 'conn-1',
+          business_id: 'hub-1',
+          custody: 'stored',
+          config: `{"alerts_channel":"${CHANNEL}"}`,
+        }),
+        error: null,
+      },
+      // resolveCredential's ciphertext lookup
+      { data: { ciphertext: encrypt(FAKE_TOKEN) }, error: null },
+    ]
+    const resolved = await resolveHubDiscord('hub-1')
+    expect(resolved?.token).toBe(FAKE_TOKEN)
+    expect(resolved?.token).not.toBe(wrongToken)
+    expect(resolved?.channels).toEqual({ alerts_channel: CHANNEL })
+    expect(resolved?.source).toMatch(/^hub_connections\(conn-1\) custody=stored$/)
+  })
+
+  it('a hub with a connection row but no readable credential falls through to the env fallback, not to a refusal', async () => {
+    process.env.DISCORD_BOT_TOKEN = FAKE_TOKEN
+    queuedResponses = [
+      // stored custody, but no encryption key set — resolveCredential returns null
+      // without a second DB call, so only one response is queued.
+      { data: row({ id: 'conn-2', business_id: 'hub-2', custody: 'stored' }), error: null },
+    ]
+    const resolved = await resolveHubDiscord('hub-2')
+    expect(resolved).toEqual({ token: FAKE_TOKEN, channels: {}, source: 'process.env.DISCORD_BOT_TOKEN' })
+  })
+
+  it('a hub with no connection row and no env fallback returns null — an honest refusal, not a silent post', async () => {
+    queuedResponses = [{ data: null, error: null }]
+    await expect(resolveHubDiscord('hub-no-connection')).resolves.toBeNull()
+  })
+
+  it('a database error resolving the hub falls through to the env fallback rather than throwing', async () => {
+    process.env.DISCORD_BOT_TOKEN = FAKE_TOKEN
+    queuedResponses = [{ data: null, error: { message: 'connection reset' } }]
+    const resolved = await resolveHubDiscord('hub-3')
+    expect(resolved).toEqual({ token: FAKE_TOKEN, channels: {}, source: 'process.env.DISCORD_BOT_TOKEN' })
+  })
+
+  it('never returns the token anywhere but the token field — the source string names the connection, not the credential', async () => {
+    process.env[ENCRYPTION_KEY_VAR] = TEST_KEY
+    queuedResponses = [
+      { data: row({ id: 'conn-4', business_id: 'hub-4', custody: 'stored' }), error: null },
+      { data: { ciphertext: encrypt(FAKE_TOKEN) }, error: null },
+    ]
+    const resolved = await resolveHubDiscord('hub-4')
+    expect(resolved?.source).not.toContain(FAKE_TOKEN)
   })
 })

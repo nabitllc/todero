@@ -38,9 +38,11 @@ import {
   normalizeMessageRow,
   planTransition,
   resolveScope,
+  toApprovedOutboundMessage,
   validateAction,
   validateInbound,
   validateMessage,
+  verifyWebhookSecret,
   type ActionRequest,
   type MessageRow,
 } from '../conversations'
@@ -61,6 +63,8 @@ function outbound(patch: Partial<MessageRow> = {}): MessageRow {
     approved_by: null,
     sent_at: null,
     sent_via: null,
+    external_id: null,
+    reply_to_message_id: null,
     ...patch,
   }
 }
@@ -137,6 +141,106 @@ describe('planTransition — "You approve; Todero sends", in that order', () => 
   })
 })
 
+// ─── The outbound adapter seam: a draft cannot reach it ─────────────────────
+//
+// `OutboundTransport` has zero implementations in this codebase (see its own
+// header for why). What IS here, and provable without any transport existing,
+// is that `toApprovedOutboundMessage()` — the only function that produces the
+// value an implementation's `send()` accepts — refuses everything that is not
+// a currently-approved outbound message. This is the test the deliverable
+// asks for: proof that an unapproved draft cannot reach the adapter.
+
+describe('toApprovedOutboundMessage — the only door onto OutboundTransport.send()', () => {
+  it('REFUSES a draft, with the exact sentence planTransition uses for the same rule', () => {
+    const verdict = toApprovedOutboundMessage(outbound({ state: 'draft' }))
+    expect(verdict.ok).toBe(false)
+    if (verdict.ok) throw new Error('unreachable')
+    expect(verdict.status).toBe(409)
+    expect(verdict.why).toBe(DRAFT_CANNOT_SEND)
+  })
+
+  it('REFUSES an approved row missing either stamp — never trusts state alone', () => {
+    const missingApprover = outbound({ state: 'approved', approved_at: NOW, approved_by: null })
+    expect(toApprovedOutboundMessage(missingApprover).ok).toBe(false)
+    const missingStamp = outbound({ state: 'approved', approved_at: null, approved_by: 'michael' })
+    expect(toApprovedOutboundMessage(missingStamp).ok).toBe(false)
+  })
+
+  it('REFUSES an inbound message regardless of its state', () => {
+    const verdict = toApprovedOutboundMessage(outbound({ direction: 'inbound', state: 'received' }))
+    expect(verdict.ok).toBe(false)
+    if (verdict.ok) throw new Error('unreachable')
+    expect(verdict.why).toContain('never sent to a customer through this seam')
+  })
+
+  it('ACCEPTS an approved outbound message and narrows the nullable stamps to real strings', () => {
+    const row = outbound({ state: 'approved', approved_at: NOW, approved_by: 'michael' })
+    const verdict = toApprovedOutboundMessage(row)
+    expect(verdict.ok).toBe(true)
+    if (!verdict.ok) throw new Error('unreachable')
+    expect(verdict.value).toEqual({
+      id: row.id,
+      conversation_id: row.conversation_id,
+      body: row.body,
+      approved_at: NOW,
+      approved_by: 'michael',
+    })
+    // The type system's half of the proof: `approved_at`/`approved_by` are
+    // typed `string`, not `string | null`, on `ApprovedOutboundMessage` — the
+    // line below only compiles because verdict.value narrowed them. A draft's
+    // `approved_at: null` could never be assigned here; `npx tsc --noEmit`
+    // failing on this line IS the type-level half of this test.
+    const stillApprovedAt: string = verdict.value.approved_at
+    expect(stillApprovedAt).toBe(NOW)
+  })
+
+  it('is sent nowhere: nothing in this module calls OutboundTransport.send', () => {
+    const source = readFileSync(join(__dirname, '..', 'conversations.ts'), 'utf8')
+    expect(source).not.toMatch(/\.send\(/)
+  })
+})
+
+// ─── Inbound webhook authentication: refused both ways ──────────────────────
+
+describe('verifyWebhookSecret — a dedicated credential, refused both ways', () => {
+  const ENV_KEY = 'CONVERSATIONS_WEBHOOK_SECRET'
+  const REAL_SECRET = 'a-fake-secret-for-tests-only-0123456789'
+  let previous: string | undefined
+
+  beforeAll(() => { previous = process.env[ENV_KEY] })
+  afterAll(() => {
+    if (previous === undefined) delete process.env[ENV_KEY]
+    else process.env[ENV_KEY] = previous
+  })
+
+  it('reports no credential presented when the header is absent — falls through to RBAC', () => {
+    process.env[ENV_KEY] = REAL_SECRET
+    expect(verifyWebhookSecret(null)).toEqual({ presented: false })
+    expect(verifyWebhookSecret(undefined)).toEqual({ presented: false })
+    expect(verifyWebhookSecret('')).toEqual({ presented: false })
+  })
+
+  it('REFUSES a wrong secret outright — never falls through to a weaker check', () => {
+    process.env[ENV_KEY] = REAL_SECRET
+    expect(verifyWebhookSecret('guessed-wrong-value')).toEqual({ presented: true, valid: false })
+  })
+
+  it('ACCEPTS the exact configured secret', () => {
+    process.env[ENV_KEY] = REAL_SECRET
+    expect(verifyWebhookSecret(REAL_SECRET)).toEqual({ presented: true, valid: true })
+  })
+
+  it('refuses EVERY presented value when nothing is configured — absence of config never grants access', () => {
+    delete process.env[ENV_KEY]
+    expect(verifyWebhookSecret('anything-at-all')).toEqual({ presented: true, valid: false })
+  })
+
+  it('refuses a configured secret that is suspiciously short, the same way', () => {
+    process.env[ENV_KEY] = 'short'
+    expect(verifyWebhookSecret('short')).toEqual({ presented: true, valid: false })
+  })
+})
+
 // ─── The write seam: the caller never chooses the state ─────────────────────
 
 describe('validateMessage — an outbound message is ALWAYS created as a draft', () => {
@@ -180,7 +284,7 @@ describe('validateMessage — an outbound message is ALWAYS created as a draft',
     expect(verdict.ok).toBe(false)
     if (verdict.ok) throw new Error('unreachable')
     expect(verdict.status).toBe(400)
-    expect(verdict.why).toBe('unknown field "urgency" — accepted fields: direction, body, author')
+    expect(verdict.why).toBe('unknown field "urgency" — accepted fields: direction, body, author, reply_to_message_id')
   })
 
   it('rejects a blank body, a missing direction and an invented direction', () => {
@@ -197,6 +301,21 @@ describe('validateMessage — an outbound message is ALWAYS created as a draft',
     if (verdict.ok) throw new Error('unreachable')
     expect(verdict.status).toBe(422)
   })
+
+  it('accepts reply_to_message_id on an outbound draft — the finer thread grain', () => {
+    const verdict = validateMessage({ direction: 'outbound', body: 'yes, in stock', reply_to_message_id: 'm-1' })
+    expect(verdict.ok).toBe(true)
+    if (!verdict.ok) throw new Error('unreachable')
+    expect(verdict.value.reply_to_message_id).toBe('m-1')
+  })
+
+  it('REFUSES reply_to_message_id on an inbound message — a customer message never "replies to" one', () => {
+    const verdict = validateMessage({ direction: 'inbound', body: 'hi', reply_to_message_id: 'm-1' })
+    expect(verdict.ok).toBe(false)
+    if (verdict.ok) throw new Error('unreachable')
+    expect(verdict.status).toBe(422)
+    expect(verdict.why).toContain('reply_to_message_id may not be set on an inbound message')
+  })
 })
 
 describe('validateInbound — the inbound door has no direction parameter', () => {
@@ -209,6 +328,7 @@ describe('validateInbound — the inbound door has no direction parameter', () =
       contact: '+15550100',
       contact_name: null,
       body: 'is it in stock?',
+      external_id: null,
     })
   })
 
@@ -226,6 +346,20 @@ describe('validateInbound — the inbound door has no direction parameter', () =
     if (verdict.ok) throw new Error('unreachable')
     expect(verdict.status).toBe(400)
     expect(verdict.why).toContain('unknown field "direction"')
+  })
+
+  it('accepts a provider event id — the idempotency key a real webhook needs', () => {
+    const verdict = validateInbound({ channel: 'whatsapp', contact: 'x', body: 'y', external_id: 'wamid.ABC123' })
+    expect(verdict.ok).toBe(true)
+    if (!verdict.ok) throw new Error('unreachable')
+    expect(verdict.value.external_id).toBe('wamid.ABC123')
+  })
+
+  it('treats a missing external_id as null, not an empty string', () => {
+    const verdict = validateInbound({ channel: 'whatsapp', contact: 'x', body: 'y' })
+    expect(verdict.ok).toBe(true)
+    if (!verdict.ok) throw new Error('unreachable')
+    expect(verdict.value.external_id).toBeNull()
   })
 })
 
@@ -463,6 +597,112 @@ describe('migrations/063_conversations.sql — the Postgres dialect refuses the 
     await expect(
       pg.query(`INSERT INTO conversations (project, channel, contact) VALUES ('Limiglow', 'whatsapp', '+15550100')`),
     ).rejects.toThrow(/conversations_thread_unique/)
+  })
+})
+
+// ─── Migration 070: a finer thread grain, and an idempotent inbound door ────
+//
+// Same discipline as the 063 blocks above: execute the REAL migration file,
+// both dialects, and offer it rows the application would never produce. A
+// test that only inserted one external_id once would pass against a schema
+// with no unique index at all — the case that matters is the SECOND insert
+// of the same provider event id.
+
+describe('migrations/sqlite/070 — idempotent external_id, threaded replies', () => {
+  let sqlite: InstanceType<typeof Database>
+
+  beforeAll(() => {
+    sqlite = new Database(':memory:')
+    sqlite.exec(readFileSync(join(MIGRATIONS, 'sqlite', '063_conversations.sql'), 'utf8'))
+    sqlite.exec(readFileSync(join(MIGRATIONS, 'sqlite', '070_conversations_threads_and_idempotency.sql'), 'utf8'))
+    sqlite
+      .prepare(`INSERT INTO conversations (id, project, channel, contact) VALUES ('c1', 'Limiglow', 'whatsapp', '+15550100')`)
+      .run()
+  })
+
+  afterAll(() => sqlite.close())
+
+  it('REJECTS a second message with the same external_id — a retried webhook is not a second customer message', () => {
+    sqlite
+      .prepare(
+        `INSERT INTO conversation_messages (conversation_id, direction, state, body, external_id) VALUES ('c1', 'inbound', 'received', 'hi', 'wamid-1')`,
+      )
+      .run()
+    expect(() =>
+      sqlite
+        .prepare(
+          `INSERT INTO conversation_messages (conversation_id, direction, state, body, external_id) VALUES ('c1', 'inbound', 'received', 'hi again', 'wamid-1')`,
+        )
+        .run(),
+    ).toThrow(/UNIQUE constraint failed/i)
+  })
+
+  it('ACCEPTS any number of messages with NO external_id — the partial index does not collide on NULL', () => {
+    expect(() =>
+      sqlite
+        .prepare(`INSERT INTO conversation_messages (conversation_id, direction, state, body) VALUES ('c1', 'inbound', 'received', 'a')`)
+        .run(),
+    ).not.toThrow()
+    expect(() =>
+      sqlite
+        .prepare(`INSERT INTO conversation_messages (conversation_id, direction, state, body) VALUES ('c1', 'inbound', 'received', 'b')`)
+        .run(),
+    ).not.toThrow()
+  })
+
+  it('lets an outbound draft name the message it replies to', () => {
+    const parent = sqlite
+      .prepare(`INSERT INTO conversation_messages (conversation_id, direction, state, body) VALUES ('c1', 'inbound', 'received', 'is it in stock?') RETURNING id`)
+      .get() as { id: string }
+    expect(() =>
+      sqlite
+        .prepare(
+          `INSERT INTO conversation_messages (conversation_id, direction, state, body, reply_to_message_id) VALUES ('c1', 'outbound', 'draft', 'yes', ?)`,
+        )
+        .run(parent.id),
+    ).not.toThrow()
+  })
+})
+
+describe('migrations/070 — the Postgres dialect keeps the same two rules', () => {
+  let pg: PGlite
+
+  beforeAll(async () => {
+    pg = await PGlite.create()
+    await pg.exec(readFileSync(join(MIGRATIONS, '063_conversations.sql'), 'utf8'))
+    await pg.exec(readFileSync(join(MIGRATIONS, '070_conversations_threads_and_idempotency.sql'), 'utf8'))
+    await pg.query(`INSERT INTO conversations (id, project, channel, contact)
+                    VALUES ('11111111-1111-4111-8111-111111111111', 'Limiglow', 'whatsapp', '+15550100')`)
+  }, 60_000)
+
+  afterAll(async () => { await pg.close() })
+
+  it('REJECTS a second message with the same external_id', async () => {
+    await pg.query(
+      `INSERT INTO conversation_messages (conversation_id, direction, state, body, external_id)
+       VALUES ('11111111-1111-4111-8111-111111111111', 'inbound', 'received', 'hi', 'wamid-1')`,
+    )
+    await expect(
+      pg.query(
+        `INSERT INTO conversation_messages (conversation_id, direction, state, body, external_id)
+         VALUES ('11111111-1111-4111-8111-111111111111', 'inbound', 'received', 'hi again', 'wamid-1')`,
+      ),
+    ).rejects.toThrow(/conversation_messages_external_id_unique/)
+  })
+
+  it('ACCEPTS a self-referencing reply_to_message_id within the same thread', async () => {
+    const { rows } = await pg.query<{ id: string }>(
+      `INSERT INTO conversation_messages (conversation_id, direction, state, body)
+       VALUES ('11111111-1111-4111-8111-111111111111', 'inbound', 'received', 'is it in stock?') RETURNING id`,
+    )
+    const parentId = rows[0].id
+    await expect(
+      pg.query(
+        `INSERT INTO conversation_messages (conversation_id, direction, state, body, reply_to_message_id)
+         VALUES ('11111111-1111-4111-8111-111111111111', 'outbound', 'draft', 'yes', $1)`,
+        [parentId],
+      ),
+    ).resolves.toBeDefined()
   })
 })
 

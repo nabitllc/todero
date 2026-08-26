@@ -201,11 +201,55 @@ type ColumnKind = 'boolean' | 'json'
 const columnKinds = new Map<string, Map<string, ColumnKind>>()
 
 /**
+ * Columns that MEAN boolean but are declared plain `INTEGER` in the sqlite
+ * migration that created them (`succeeded`/`failed` in
+ * `migrations/sqlite/040_agent_run_records.sql`, `ok` in
+ * `migrations/sqlite/060_run_steps.sql`) even though their postgres twin
+ * declares them `boolean` (`migrations/040_agent_run_records.sql`,
+ * `migrations/060_run_steps.sql`). See
+ * docs/rebuild/pieces/pieces7/boolean-columns.md §1 for the full inventory
+ * and why these three (and only these three) are the gap.
+ *
+ * WHY A CURATED LIST AND NOT A NAME HEURISTIC (`is_*`, `*_ok`, `*ed`, …):
+ * a heuristic that guesses wrong silently coerces a real integer column
+ * (`rejection_count`, `exit_status`, `duration_ms`, `step_no` all sit right
+ * next to these three) — that is a WORSE, quieter bug than the one this
+ * fixes. This list is hand-verified against the postgres migration for the
+ * same table.column, not guessed from the name.
+ *
+ * WHY NOT MIGRATE THE SQLITE DECLARATION TO `BOOLEAN` INSTEAD (which would
+ * make this list unnecessary — `kindsFor` already trusts a real `BOOLEAN`
+ * declaration): SQLite cannot `ALTER TABLE … ALTER COLUMN … TYPE` — changing
+ * a declared type needs the create-copy-drop-rename rebuild dance, and both
+ * `agent_run_records` and `run_steps` are written continuously by every live
+ * agent run (`lib/runtimes/*.ts`) while four other agents work in this repo
+ * concurrently this session. A schema rebuild racing a concurrent writer is
+ * exactly the risk this override avoids taking on a shared, actively-written
+ * file. See the piece doc for the deferred migration plan.
+ *
+ * If you add an entry here, the table.column MUST exist, MUST be declared
+ * `INTEGER` (not already `BOOLEAN`) in `migrations/sqlite/*.sql`, and MUST be
+ * declared `boolean` in the matching `migrations/*.sql` twin — the guard at
+ * `scripts/check-boolean-columns.mjs` verifies exactly that on every run and
+ * fails if it drifts.
+ */
+export const BOOLEAN_MEANING_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
+  agent_run_records: ['succeeded', 'failed'],
+  run_steps: ['ok'],
+}
+
+/**
  * Which columns of `table` need decoding, from SQLite's own catalogue.
  *
  * The baseline declares JSON columns as `JSON_TEXT` and boolean columns as
  * `BOOLEAN` precisely so this lookup exists — a plain `TEXT` column holding
  * `[1,2]` is text, and guessing by looking at values would corrupt it.
+ *
+ * `BOOLEAN_MEANING_OVERRIDES` is consulted ONLY for a column the catalogue
+ * itself declares `INTEGER` — a column already declared `BOOLEAN` needs no
+ * override, and an override naming a column declared something else (e.g. a
+ * future migration that changes it to `TEXT`) is deliberately not honoured
+ * silently; the guard catches that drift instead of this function guessing.
  */
 function kindsFor(db: SqliteDatabase, table: string): Map<string, ColumnKind> {
   const cached = columnKinds.get(table)
@@ -216,10 +260,12 @@ function kindsFor(db: SqliteDatabase, table: string): Map<string, ColumnKind> {
       name: string
       type: string
     }>
+    const overrides = BOOLEAN_MEANING_OVERRIDES[table]
     for (const row of rows) {
       const declared = String(row.type ?? '').toUpperCase()
       if (declared.startsWith('JSON')) kinds.set(row.name, 'json')
       else if (declared === 'BOOLEAN') kinds.set(row.name, 'boolean')
+      else if (declared === 'INTEGER' && overrides?.includes(row.name)) kinds.set(row.name, 'boolean')
     }
   } catch {
     // No such table — the query about to run will report that itself, with the

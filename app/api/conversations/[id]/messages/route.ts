@@ -21,6 +21,17 @@
  * draft: as far as the customer is concerned nothing has happened yet, and a
  * thread that jumped to the top of the list because an agent wrote something
  * nobody approved would report activity that did not occur.
+ *
+ * THREADING WITHIN ONE CONVERSATION (migration 070)
+ * ----------------------------------------------------
+ * `reply_to_message_id` is optional and, when present, must name a message
+ * that ALREADY EXISTS in THIS SAME conversation — checked here with a plain
+ * lookup (`.eq('conversation_id', conversation.id)`), not trusted from the
+ * request. A caller naming a message from a different thread is refused a
+ * 400 rather than silently creating a cross-thread reference: this endpoint
+ * is already scoped to one conversation via `loadThreadInScope`, and letting
+ * a reply point outside it would be a second, quieter way to leak across a
+ * boundary the rest of this piece refuses to widen.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -57,6 +68,25 @@ export const POST = withPermission(
       )
     }
 
+    if (verdict.value.reply_to_message_id) {
+      const { data: replyRows, error: replyError } = await db()
+        .from('conversation_messages')
+        .select('id')
+        .eq('id', verdict.value.reply_to_message_id)
+        .eq('conversation_id', conversation.id)
+        .limit(1)
+      if (replyError) return dbQueryErrorResponse(replyError, 'conversation_messages')
+      const replyRow = Array.isArray(replyRows) ? replyRows[0] : replyRows
+      if (!replyRow) {
+        return NextResponse.json(
+          {
+            error: `reply_to_message_id "${verdict.value.reply_to_message_id}" does not name a message in this conversation`,
+          },
+          { status: 400 },
+        )
+      }
+    }
+
     const now = new Date().toISOString()
     const { data, error } = await db()
       .from('conversation_messages')
@@ -68,6 +98,7 @@ export const POST = withPermission(
         body: verdict.value.body,
         author: verdict.value.author,
         created_at: now,
+        reply_to_message_id: verdict.value.reply_to_message_id,
       })
       .select(MESSAGE_COLUMNS)
 
