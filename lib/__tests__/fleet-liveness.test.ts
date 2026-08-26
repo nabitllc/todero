@@ -29,6 +29,7 @@ import {
   summarizeFleet,
   fleetProvenanceLine,
   fleetHeadline,
+  type FleetLivenessInput,
 } from '../fleet-liveness'
 import { classifyLiveness as OLD_classifyLiveness } from '../agent-liveness'
 
@@ -43,7 +44,7 @@ function oldRouteLiveness(lastSeenAt: number | null, storeReadable: boolean) {
 
 describe('classifyFleetLiveness — the 10-minute window design/Fleet.dc.html specifies', () => {
   it('calls a 5-second-old heartbeat live (and so did the old rule — this is the case they agree on)', () => {
-    const input = { lastSeenAt: NOW - 5 * SECOND, observed: true, source: 'heartbeat' }
+    const input: FleetLivenessInput = { lastSeenAt: NOW - 5 * SECOND, observed: true, source: 'heartbeat' }
     expect(classifyFleetLiveness(input, NOW)).toBe('live')
     // Documented on purpose: agreement here is what makes the DISAGREEMENTS
     // below meaningful rather than a wholesale change of vocabulary.
@@ -89,8 +90,8 @@ describe('never vs. unknown — the two facts the old code collapsed into one', 
   })
 
   it('DIVERGES: "no agent ever checked in" and "we did not look" no longer render as the same state', () => {
-    const neverChecked = { lastSeenAt: null, observed: true, source: 'heartbeat' }
-    const notMeasured = { lastSeenAt: null, observed: false, source: 'none' }
+    const neverChecked: FleetLivenessInput = { lastSeenAt: null, observed: true, source: 'heartbeat' }
+    const notMeasured: FleetLivenessInput = { lastSeenAt: null, observed: false, source: 'none' }
     // The old route gave both the identical answer — that is the defect.
     expect(oldRouteLiveness(neverChecked.lastSeenAt, true)).toBe(
       oldRouteLiveness(notMeasured.lastSeenAt, false),
@@ -142,12 +143,12 @@ describe('describeLiveness — the words, and what they must never contain', () 
   })
 
   it('badge and state can never drift apart', () => {
-    for (const input of [
+    for (const input of ([
       { lastSeenAt: NOW - SECOND, observed: true, source: 'heartbeat' },
       { lastSeenAt: NOW - 30 * MINUTE, observed: true, source: 'heartbeat' },
       { lastSeenAt: null, observed: true, source: 'heartbeat' },
       { lastSeenAt: null, observed: false, source: 'none' },
-    ]) {
+    ] as FleetLivenessInput[])) {
       const d = describeLiveness(input, NOW)
       expect(d.badge).toBe(d.state)
     }
@@ -169,7 +170,7 @@ describe('formatAge', () => {
 })
 
 describe('summarizeFleet / fleetHeadline — counts, not estimates', () => {
-  const rows = [
+  const rows: FleetLivenessInput[] = [
     { lastSeenAt: NOW - 5 * SECOND, observed: true, source: 'heartbeat' },   // live
     { lastSeenAt: NOW - 2 * MINUTE, observed: true, source: 'heartbeat' },   // live under the 10m window
     { lastSeenAt: NOW - 15 * MINUTE, observed: true, source: 'heartbeat' },  // offline
@@ -189,7 +190,7 @@ describe('summarizeFleet / fleetHeadline — counts, not estimates', () => {
   })
 
   it('DIVERGES: an unreadable store counts as `unknown`, not as four agents that never checked in', () => {
-    const blind = rows.map(r => ({ ...r, observed: false, source: 'none' }))
+    const blind: FleetLivenessInput[] = rows.map(r => ({ ...r, observed: false, source: 'none' }))
     expect(blind.every(r => oldRouteLiveness(r.lastSeenAt, false) === 'never')).toBe(true)
     const s = summarizeFleet(blind, NOW)
     expect(s.unknown).toBe(4)

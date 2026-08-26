@@ -135,7 +135,11 @@ function rowToRegistration(row: Record<string, unknown>): AgentRegistration | nu
   const id = toStringOrNull(row.id)
   const registeredAt = toEpochMs(row.registered_at)
   if (!id || registeredAt === null) return null
-  const lastSeenAt = toEpochMs(row.last_seen_at) ?? registeredAt
+  // The fallback is kept for `status`, but it is no longer the only thing a
+  // caller can see: `recordedLastSeenAt` stays null when the column is empty,
+  // so nothing downstream can mistake a registration timestamp for a check-in.
+  const recordedLastSeenAt = toEpochMs(row.last_seen_at)
+  const lastSeenAt = recordedLastSeenAt ?? registeredAt
   return {
     id,
     name: toStringOrNull(row.name) ?? id,
@@ -144,6 +148,7 @@ function rowToRegistration(row: Record<string, unknown>): AgentRegistration | nu
     capabilities: toCapabilities(row.capabilities),
     connectionId: toStringOrNull(row.connection_id),
     registeredAt,
+    recordedLastSeenAt,
     lastSeenAt,
   }
 }
@@ -227,6 +232,13 @@ export async function registerAgent(input: RegisterInput): Promise<RegistrationR
     capabilities: input.capabilities ?? [],
     connectionId: input.connectionId,
     registeredAt: now,
+    // A fresh POST /api/connect writes `last_seen_at` too, so this IS a
+    // recorded value — but it is recorded by the REGISTRATION, and
+    // GET /api/agents labels it `lastSeenSource: 'registration'` for exactly
+    // that reason: the heartbeat store is the only thing that yields
+    // `'heartbeat'`. POST /api/connect also bridges into that store (see
+    // app/api/connect/route.ts), and now reports it when that write fails.
+    recordedLastSeenAt: now,
     lastSeenAt: now,
   }
   return writeRegistration(reg)
@@ -256,7 +268,10 @@ export async function setRegistrationStatus(
     return { data: null, store: existing.store, warning: existing.warning ?? `agent '${id}' is not registered`, error: existing.error }
   }
   const lastSeenAt = status === 'offline' ? Date.now() - STALE_WINDOW_MS - 1 : existing.data.lastSeenAt
-  return writeRegistration({ ...existing.data, status, lastSeenAt })
+  // Both fields move together: `registrationToRow()` writes `last_seen_at`
+  // from `lastSeenAt`, so leaving `recordedLastSeenAt` behind would make the
+  // in-memory record disagree with the row it just wrote.
+  return writeRegistration({ ...existing.data, status, lastSeenAt, recordedLastSeenAt: lastSeenAt })
 }
 
 /**
@@ -340,7 +355,11 @@ export async function touchRegistration(
     // exist there either is a real no-op: nothing to touch.
     const existing = await readRegistration(id)
     if (!existing.data) return { data: null, store: existing.store, warning: existing.warning, error: existing.error }
-    const result = await writeRegistration({ ...existing.data, lastSeenAt: lastSeenAtMs })
+    const result = await writeRegistration({
+      ...existing.data,
+      lastSeenAt: lastSeenAtMs,
+      recordedLastSeenAt: lastSeenAtMs,
+    })
     return { data: null, store: result.store, warning: result.warning, error: result.error }
   } catch (e) {
     return { data: null, store: null, warning: e instanceof Error ? e.message : String(e), error: null }

@@ -6,19 +6,51 @@
 //
 // The rule this file exists to enforce: an approve button that does not say
 // what it approves is worse than no button. Every string below — including
-// the button labels — comes from `describeApproval()` in lib/approvals.ts,
-// which is the SAME module `preflightDecision()` uses to decide whether the
-// server will accept the click. A label therefore cannot promise an effect
-// the server would refuse: `app/api/inbox/route.ts` throws at import time if
-// its dispatch table and that registry ever disagree.
+// the button labels — comes from `describeApproval()` in lib/approvals.ts.
 //
-// A type with no registered effect gets NO approve button at all
+// WHAT THIS FILE USED TO CLAIM, AND WHY IT WAS FALSE.
+//
+//     "A label therefore cannot promise an effect the server would refuse:
+//      app/api/inbox/route.ts throws at import time if its dispatch table and
+//      that registry ever disagree."
+//
+// That import-time check compares two SETS OF TYPE KEYS. It proves that every
+// describable type is dispatchable. It cannot see anything about THIS ROW —
+// and the server's refusals are per-row: `preflightDecision()` 409s an
+// approval whose agent id is empty (NO_AGENT) or whose target issue has
+// vanished (TARGET_MISSING). `describeApproval()` never called it. Measured:
+// of four approval cards rendered live, TWO carried an Approve button the
+// server refuses with a 409.
+//
+// So the guarantee is no longer asserted in a comment — it is executed.
+// `approveGate()` below runs the SAME `preflightDecision()` the route runs,
+// on this row, and a refused row gets a disabled button carrying the server's
+// own sentence. What makes a label safe is that one call, not the set check.
+//
+// The one thing this surface cannot know for free is whether the target issue
+// still exists — that is a database fact, and the route looks it up before it
+// decides. This card looks it up too (`useIssueExistence` below), and until
+// the answer arrives the button is DISABLED rather than optimistically live:
+// an unanswered question is not a yes.
+//
+// A type with no registered effect still gets NO approve button at all
 // (`approveLabel === null`), because approving it would record a decision
 // that changes nothing — and the server refuses it with a 422 rather than
-// returning a green tick over a no-op.
+// returning a green tick over a no-op. Its reason is now shown, instead of
+// the button silently not being there.
 
-import React, { useState } from 'react'
-import { describeApproval, type ApprovalRow } from '@/lib/approvals'
+import React, { useEffect, useState } from 'react'
+import {
+  approvalTarget,
+  describeApproval,
+  preflightDecision,
+  type ApprovalRow,
+  type PreflightRefusalCode,
+  type TargetLookup,
+} from '@/lib/approvals'
+import { fetchJson } from '@/hooks/useApiData'
+import { issuesUrl } from '@/lib/db/browser'
+import { useProjectScope } from '@/components/nav/ProjectScope'
 
 export interface InboxEntry extends ApprovalRow {
   id: string
@@ -42,6 +74,133 @@ export function timeRemaining(expiresAt: string | null): string {
   if (diff <= 0) return 'expired'
   const m = Math.floor(diff / 60000)
   return m > 0 ? `expires in ${m}m` : `expires in ${Math.floor(diff / 1000)}s`
+}
+
+// ─── The gate ────────────────────────────────────────────────────────────────
+
+/**
+ * `'unverified'` — the existence of this row's target issue has not been
+ * established yet (still loading, or the lookup itself failed). It is NOT a
+ * synonym for "no issue to check": that case is a real `TargetLookup` with
+ * `issueExists: null`.
+ */
+export type ApprovalLookup = TargetLookup | 'unverified'
+
+/** This surface's own pre-server code, for the one question it must ask first. */
+export type ApproveBlock = PreflightRefusalCode | 'UNVERIFIED'
+
+/** What the Approve button may be, on THIS row, right now. */
+export interface ApproveGate {
+  /** The label to render, or null when no approve button may exist at all. */
+  label: string | null
+  /** May it be clicked? False whenever the server would refuse the click. */
+  enabled: boolean
+  /** The refusal, VERBATIM from lib/approvals.ts, or null when approvable. */
+  reason: string | null
+  /** Which gate answered, for tests and for the tone of the note. */
+  block: ApproveBlock | null
+}
+
+/**
+ * Ask the server's own preflight what would happen, and shape the button
+ * around the answer.
+ *
+ * Pure: every fact it needs is an argument, so
+ * components/tabs/__tests__/approval-card.test.ts can prove the refusals
+ * rather than a reviewer asserting them.
+ *
+ * `NO_REGISTERED_EFFECT` keeps its existing treatment — no button at all,
+ * because there is nothing for a button to do — and every OTHER refusal code
+ * renders the button disabled with the reason attached. Disabled rather than
+ * hidden on purpose: an operator looking at a request that cannot be approved
+ * needs to know WHY it cannot, and a button that simply is not there answers
+ * no question at all.
+ */
+export function approveGate(row: ApprovalRow, lookup: ApprovalLookup): ApproveGate {
+  const d = describeApproval(row)
+  const target = approvalTarget(row)
+
+  // The one question this surface must answer before it can ask the preflight
+  // anything. Answering it with a guess is what a green button over a 409 is.
+  if (lookup === 'unverified' && target.needsIssue) {
+    const ref = target.taskKey ?? target.issueId ?? 'the issue this request points at'
+    return {
+      label: d.approveLabel,
+      enabled: false,
+      block: 'UNVERIFIED',
+      reason:
+        `Approving this unblocks ${ref}, and the server refuses the decision with a 409 if that issue no longer exists. ` +
+        `Whether it does has not been established yet, so the button stays closed rather than promising an effect that may be refused.`,
+    }
+  }
+
+  const preflight = preflightDecision({
+    row,
+    decision: 'approved',
+    lookup: lookup === 'unverified' ? { issueExists: null } : lookup,
+  })
+
+  if (preflight.ok) {
+    return { label: d.approveLabel, enabled: d.approveLabel !== null, reason: null, block: null }
+  }
+
+  if (preflight.code === 'NO_REGISTERED_EFFECT') {
+    return { label: null, enabled: false, reason: preflight.reason, block: preflight.code }
+  }
+
+  return { label: d.approveLabel, enabled: false, reason: preflight.reason, block: preflight.code }
+}
+
+/**
+ * Does this row's target issue still exist?
+ *
+ * `app/api/inbox/route.ts` asks this with an admin client before it decides;
+ * this asks it through the browser's scoped issues seam, so the answer is
+ * "visible in this project and not archived" rather than "exists anywhere".
+ * The two differ only for a row pointing outside the project you are looking
+ * at or at an archived issue — and in both of those cases this errs toward
+ * DISABLING a button the server might have accepted, which is the safe
+ * direction: over-refusal costs a reload, over-promising costs the operator a
+ * 409 and their trust in the button.
+ *
+ * A failed lookup returns `'unverified'` and stays there. Fail closed: a
+ * request that did not answer is not a row that exists.
+ */
+function useIssueExistence(entry: InboxEntry, project: string | null): ApprovalLookup {
+  const target = approvalTarget(entry)
+  const needs = target.needsIssue
+  const byKey = target.taskKey
+  const byId = target.issueId
+  const [lookup, setLookup] = useState<ApprovalLookup>(
+    needs ? 'unverified' : { issueExists: null, issueRef: null },
+  )
+
+  useEffect(() => {
+    if (!needs) {
+      setLookup({ issueExists: null, issueRef: null })
+      return
+    }
+    if (!project) return
+    const ref = byKey ?? byId
+    if (!ref) return
+    const filter = byKey
+      ? `task_key=eq.${encodeURIComponent(byKey)}`
+      : `id=eq.${encodeURIComponent(byId as string)}`
+    let cancelled = false
+    fetchJson<unknown>(issuesUrl(`${filter}&select=id&limit=1`, { project })).then(r => {
+      if (cancelled) return
+      if (!r.ok) {
+        // Not proof of absence and not proof of presence. Say neither.
+        setLookup('unverified')
+        return
+      }
+      const rows = Array.isArray(r.data) ? r.data : []
+      setLookup({ issueExists: rows.length > 0, issueRef: ref })
+    })
+    return () => { cancelled = true }
+  }, [needs, byKey, byId, project])
+
+  return lookup
 }
 
 function Consequence({ label, text, tone }: { label: string; text: string; tone: 'emerald' | 'amber' }) {

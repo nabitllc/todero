@@ -27,10 +27,11 @@ import {
   ceilingSourceNote,
   costByStep,
   formatMs,
+  formatStepCost,
   formatStepNo,
   formatTokens,
   formatUsd,
-  runTouchedPaidProvider,
+  runTouchedProvider,
   traceTotals,
   type CeilingTone,
   type RunBudget,
@@ -104,7 +105,10 @@ export default function RunTraceCard({ runId, agentId, startedAt, completedAt, s
 
   const rows = steps.data.steps
   const totals = traceTotals(rows)
-  const paid = runTouchedPaidProvider(rows)
+  // `paid` was the old name for this and was wrong twice over: it was
+  // computed from cost_usd alone, and the schema does not record whether a
+  // provider charges. It decides one thing — whether the dollar column exists.
+  const hasDollarColumn = runTouchedProvider(rows)
   const breakdown = costByStep(rows)
 
   return (
@@ -172,14 +176,17 @@ export default function RunTraceCard({ runId, agentId, startedAt, completedAt, s
                         <span className="font-mono text-[10.5px] text-white/45 min-w-[52px] text-right">
                           {formatMs(step.duration_ms)}
                         </span>
-                        {/* design/Run.dc.html: the dollar column appears only
-                            when a run touches a paid provider. The condition is
-                            lib/run-trace.ts's runTouchedPaidProvider — i.e. a
-                            non-null run_steps.cost_usd — so a local run renders
-                            no column at all rather than a row of $0.00. */}
-                        {paid && (
-                          <span className="font-mono text-[10.5px] text-white/45 min-w-[62px] text-right">
-                            {formatUsd(step.cost_usd)}
+                        {/* design/Run.dc.html puts the dollar column behind
+                            "a run touches a paid provider". The condition is
+                            lib/run-trace.ts's runTouchedProvider, which reads
+                            run_steps.provider AND run_steps.cost_usd — so a
+                            local run with neither renders no column at all
+                            rather than a row of $0.00, and a step that named a
+                            provider without a measured cost SAYS so here
+                            instead of disappearing behind a hidden column. */}
+                        {hasDollarColumn && (
+                          <span className="font-mono text-[10.5px] text-white/45 min-w-[62px] text-right whitespace-nowrap">
+                            {formatStepCost(step)}
                           </span>
                         )}
                       </div>
@@ -192,7 +199,7 @@ export default function RunTraceCard({ runId, agentId, startedAt, completedAt, s
                 <span className="font-mono text-[10.5px] text-white/50">totals from the rows above:</span>
                 <span className="font-mono text-[11px] text-white/75">{formatTokens(totals.tokens)} tokens</span>
                 <span className="font-mono text-[11px] text-white/75">{formatMs(totals.durationMs)}</span>
-                {paid && <span className={`font-mono text-[11px] ${OK_TONE}`}>{formatUsd(totals.costUsd)}</span>}
+                {hasDollarColumn && <span className={`font-mono text-[11px] ${OK_TONE}`}>{formatUsd(totals.costUsd)}</span>}
               </div>
             </>
           )}
@@ -216,7 +223,7 @@ export default function RunTraceCard({ runId, agentId, startedAt, completedAt, s
                       <span className="font-mono text-[11px] text-white/[0.62] flex-1 truncate">{group.tool}</span>
                       <span className="font-mono text-[11px] text-white/75">{formatTokens(group.tokens)}</span>
                       <span className="font-mono text-[11px] text-white/45 min-w-[34px] text-right">{group.pct}%</span>
-                      {paid && (
+                      {hasDollarColumn && (
                         <span className="font-mono text-[11px] text-white/45 min-w-[62px] text-right">
                           {formatUsd(group.costUsd)}
                         </span>
@@ -237,15 +244,38 @@ export default function RunTraceCard({ runId, agentId, startedAt, completedAt, s
               </div>
             )}
 
-            {/* Three distinct sentences, because three distinct facts. A run
-                with no rows at all must not be described as "cost_usd is null
-                for every step" — there is no step to say that about. */}
+            {/* A tool with dollars but no token count has no bar to appear
+                in — a bar is a share of a token total it is not part of — so
+                its money used to land in the total with nothing on screen
+                accounting for it. The bars and this line now add up. */}
+            {breakdown.costOnlyGroups.length > 0 && (
+              <p className="font-mono text-[10px] text-white/35 leading-relaxed mt-2">
+                the bars above account for {formatUsd(breakdown.barredCostUsd)} of the{' '}
+                {formatUsd(breakdown.totalCostUsd)} total.{' '}
+                {breakdown.costOnlyGroups.map(g => `${g.tool} (${formatUsd(g.costUsd)}, ${g.steps} step${g.steps === 1 ? '' : 's'})`).join(', ')}{' '}
+                recorded {breakdown.costOnlyGroups.length === 1 ? 'a cost' : 'costs'} but no token count, so{' '}
+                {breakdown.costOnlyGroups.length === 1 ? 'it has no bar' : 'they have no bars'} — the dollars are
+                still in the total.
+              </p>
+            )}
+
+            {/* Distinct sentences, because distinct facts. A run with no rows
+                at all must not be described as "cost_usd is null for every
+                step" — there is no step to say that about. And the total's
+                denominator is the count of steps that RECORDED a cost, not the
+                count of rows: "$0.5000 across 3 steps" when one step of three
+                carried the money is a fabricated average. */}
             <p className="font-mono text-[10px] text-white/35 leading-relaxed mt-3">
               {rows.length === 0
-                ? 'no cost can be attributed either — the dollar column appears only when a run touches a paid provider, and this run recorded no steps at all.'
-                : paid
-                  ? `dollar figures are summed run_steps.cost_usd — ${formatUsd(breakdown.totalCostUsd)} across ${rows.length} step${rows.length === 1 ? '' : 's'}.`
-                  : `no step recorded a dollar cost (run_steps.cost_usd is null for all ${rows.length} step${rows.length === 1 ? '' : 's'}), so no dollar column is shown. The dollar column appears only when a run touches a paid provider.`}
+                ? 'no cost can be attributed either — the dollar column appears only when a step records a run_steps.cost_usd or names a run_steps.provider, and this run recorded no steps at all.'
+                : breakdown.stepsWithCost > 0
+                  ? `dollar figures are summed run_steps.cost_usd — ${formatUsd(breakdown.totalCostUsd)} across ${breakdown.stepsWithCost} of ${rows.length} step${rows.length === 1 ? '' : 's'}.` +
+                    (breakdown.stepsWithoutCost > 0
+                      ? ` ${breakdown.stepsWithoutCost} step${breakdown.stepsWithoutCost === 1 ? '' : 's'} recorded no cost_usd and ${breakdown.stepsWithoutCost === 1 ? 'is' : 'are'} excluded from that total — not counted as zero.`
+                      : '')
+                  : hasDollarColumn
+                    ? `no step recorded a dollar cost (run_steps.cost_usd is null for all ${rows.length} step${rows.length === 1 ? '' : 's'}), but ${breakdown.stepsWithProviderNoCost} step${breakdown.stepsWithProviderNoCost === 1 ? '' : 's'} named a provider (${breakdown.providersWithoutCost.join(', ')}) — provider recorded, cost not measured. run_steps stores WHICH provider, never whether it charges, so nothing here calls it paid.`
+                    : `no step recorded a dollar cost and no step named a provider (run_steps.cost_usd and run_steps.provider are null for all ${rows.length} step${rows.length === 1 ? '' : 's'}), so no dollar column is shown.`}
             </p>
           </Panel>
 

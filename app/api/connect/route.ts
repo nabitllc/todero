@@ -102,7 +102,21 @@ export async function POST(req: NextRequest) {
   // Connecting IS a check-in: bridge into the same heartbeat store /api/agents
   // reads for liveness, so the Crew tab and Office roster show this agent as
   // live immediately rather than waiting for its first explicit heartbeat.
-  await recordHeartbeat({ agentId, task: null })
+  //
+  // The result used to be DISCARDED. `recordHeartbeat()` returns
+  // `{ data, store, warning, error }` precisely because that write can fail or
+  // degrade, and throwing it away meant a heartbeat that never landed was
+  // indistinguishable from one that did — the agent then read as checked-in
+  // for the whole ten-minute window on the strength of a write nobody
+  // checked. The registration itself succeeded, so this is not a 500; it is
+  // reported in the body, named, so a client can see that the bridge did not
+  // happen and send its own heartbeat.
+  const beat = await recordHeartbeat({ agentId, task: null })
+  const heartbeatWarning =
+    beat.data === null
+      ? `registered, but the connect-time check-in was NOT recorded: ${beat.error?.message ?? beat.warning ?? 'the heartbeat store did not accept the write'}. ` +
+        `This agent will read as never having checked in until it POSTs ${'/api/agents/' + encodeURIComponent(agentId) + '/heartbeat'} itself.`
+      : beat.warning
 
   const heartbeatUrl = `/api/agents/${encodeURIComponent(agentId)}/heartbeat`
 
@@ -122,6 +136,10 @@ export async function POST(req: NextRequest) {
       capabilities: result.data.capabilities,
       store: result.store,
       warning: result.warning,
+      // The check-in half of connect, reported rather than assumed.
+      heartbeat_recorded: beat.data !== null,
+      heartbeat_store: beat.store,
+      heartbeat_warning: heartbeatWarning,
     },
     { headers: NO_STORE },
   )
@@ -141,7 +159,10 @@ export async function GET() {
         status: r.status,
         capabilities: r.capabilities,
         registered_at: new Date(r.registeredAt).toISOString(),
-        last_seen_at: new Date(r.lastSeenAt).toISOString(),
+        // The RECORDED check-in, or null. This used to serialise
+        // `r.lastSeenAt`, which silently substitutes `registered_at` when the
+        // column is empty — a null rendered as a plausible timestamp.
+        last_seen_at: r.recordedLastSeenAt === null ? null : new Date(r.recordedLastSeenAt).toISOString(),
       })),
       store: result.store,
       warning: result.warning,

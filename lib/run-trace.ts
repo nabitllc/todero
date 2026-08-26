@@ -303,16 +303,56 @@ export function formatStepNo(stepNo: number): string {
 // ─── The dollar column's condition ──────────────────────────────────────────
 
 /**
- * design/Run.dc.html: "The dollar column appears only when a run touches a
- * paid provider."
+ * WHY THIS IS NO LONGER CALLED `runTouchedPaidProvider`.
  *
- * The condition is a column, not a guess: TRUE as soon as one step carries a
- * non-null `cost_usd` — INCLUDING a recorded 0, which is a real measurement of
- * a paid provider that charged nothing (a cache hit). FALSE when every step's
- * cost is null, which is what a local model on this host actually writes.
+ * design/Run.dc.html writes the rule as "the dollar column appears only when a
+ * run touches a paid provider", and this function was named for it and then
+ * answered from a different column entirely: `steps.some(s => s.cost_usd !==
+ * null)`. `run_steps.provider` was validated by validateStepWrite(), stored by
+ * POST /api/run-steps, returned by GET /api/run-steps — and read by nothing.
+ *
+ * Measured: a step with `provider = 'anthropic'` and `cost_usd = NULL`
+ * rendered "no step recorded a dollar cost … The dollar column appears only
+ * when a run touches a paid provider" directly beside a row that said
+ * `anthropic`. The sentence and the row it described contradicted each other.
+ *
+ * The fix reads `provider`. The column now decides the thing it is named for:
+ * a run that named a provider has a dollar column, and the step whose cost was
+ * never measured says so in that column (see {@link formatStepCost}) instead
+ * of the column vanishing over it.
+ *
+ * WHAT IS DELIBERATELY NOT CLAIMED. `run_steps` records WHICH provider, never
+ * whether that provider CHARGES. Deciding that 'anthropic' is paid and
+ * 'ollama' is free would put a price list in this file — knowledge, not data,
+ * and the next provider string would be classified by a table nobody updated.
+ * So the word "paid" leaves the code and the screen: the honest predicate is
+ * "this run touched a provider, or recorded a cost", and
+ * components/tabs/RunTraceCard.tsx says exactly that in place of the design
+ * rule's shorter sentence.
  */
-export function runTouchedPaidProvider(steps: readonly RunStepRow[]): boolean {
-  return steps.some(s => s.cost_usd !== null)
+export function runTouchedProvider(steps: readonly RunStepRow[]): boolean {
+  // A recorded 0 still counts: a cache hit that really cost $0.00 is a
+  // measurement, and only `null` means nobody measured.
+  return steps.some(s => s.provider !== null || s.cost_usd !== null)
+}
+
+/**
+ * What one step shows in the dollar column.
+ *
+ *   a recorded cost      -> the money, via {@link formatUsd}
+ *   a provider, no cost  -> "<provider> · cost not measured"
+ *   neither              -> an em dash, like every other unmeasured column
+ *
+ * The middle case is the one that did not exist before: a step naming a
+ * provider with a null cost either hid the whole column (when no step in the
+ * run had a cost) or rendered a bare em dash indistinguishable from a step
+ * that touched no provider at all. Naming the provider and the absence
+ * separately is what makes the two legible.
+ */
+export function formatStepCost(step: RunStepRow): string {
+  if (step.cost_usd !== null) return formatUsd(step.cost_usd)
+  if (step.provider !== null) return `${step.provider} · cost not measured`
+  return '—'
 }
 
 // ─── Cost by step ───────────────────────────────────────────────────────────
@@ -328,6 +368,13 @@ export interface CostGroup {
   steps: number
 }
 
+/** A tool whose steps recorded dollars but no tokens. It gets no bar. */
+export interface CostOnlyGroup {
+  tool: string
+  costUsd: number
+  steps: number
+}
+
 export interface CostBreakdown {
   groups: CostGroup[]
   /** Sum of every recorded `tokens`. 0 when nothing recorded one. */
@@ -335,6 +382,34 @@ export interface CostBreakdown {
   /** Steps whose `tokens` column is null — named, never counted as zero. */
   stepsWithoutTokens: number
   totalCostUsd: number | null
+  /**
+   * How many steps recorded a `cost_usd` at all — the DENOMINATOR the card
+   * prints beside `totalCostUsd`. It used to print `steps.length`, so a run
+   * where one step of three recorded $0.50 read "$0.5000 across 3 steps": a
+   * total divided by a count of rows that did not contribute to it.
+   */
+  stepsWithCost: number
+  /** Steps whose `cost_usd` is null — excluded from the total, never zeroed. */
+  stepsWithoutCost: number
+  /** Steps that named a provider but recorded no cost. */
+  stepsWithProviderNoCost: number
+  /** The distinct providers of those steps, sorted, so the card can name them. */
+  providersWithoutCost: string[]
+  /**
+   * Tools whose steps recorded a cost but NO tokens.
+   *
+   * `groups` is a share of a token total, so a tool with no tokens cannot
+   * have a bar — but it used to be dropped entirely while its dollars stayed
+   * inside `totalCostUsd`, so the visible rows summed to LESS than the
+   * printed total with nothing on screen saying so. Named here instead.
+   */
+  costOnlyGroups: CostOnlyGroup[]
+  /**
+   * The cost the BARS account for: `groups`' costs summed, or null when none
+   * of them recorded one. `barredCostUsd` + `costOnlyGroups` = `totalCostUsd`,
+   * which is the property that makes the panel auditable by eye.
+   */
+  barredCostUsd: number | null
 }
 
 /**
@@ -351,9 +426,18 @@ export interface CostBreakdown {
  */
 export function costByStep(steps: readonly RunStepRow[]): CostBreakdown {
   const stepsWithoutTokens = steps.filter(s => s.tokens === null).length
-  const totalCostUsd = steps.some(s => s.cost_usd !== null)
-    ? steps.reduce((sum, s) => sum + (s.cost_usd ?? 0), 0)
+  const withCost = steps.filter(s => s.cost_usd !== null)
+  const totalCostUsd = withCost.length > 0
+    ? withCost.reduce((sum, s) => sum + (s.cost_usd ?? 0), 0)
     : null
+  const providerNoCost = steps.filter(s => s.cost_usd === null && s.provider !== null)
+  const providersWithoutCost = [...new Set(providerNoCost.map(s => s.provider as string))].sort()
+  const counts = {
+    stepsWithCost: withCost.length,
+    stepsWithoutCost: steps.length - withCost.length,
+    stepsWithProviderNoCost: providerNoCost.length,
+    providersWithoutCost,
+  }
 
   const byTool = new Map<string, { tokens: number; costUsd: number | null; steps: number }>()
   for (const s of steps) {
@@ -364,9 +448,20 @@ export function costByStep(steps: readonly RunStepRow[]): CostBreakdown {
     byTool.set(s.tool, entry)
   }
 
+  // Every tool whose dollars will not be inside a bar, because it has no
+  // tokens to take a share of. Sorted by money, then name, so the order is a
+  // fact about the data rather than about Map insertion.
+  const costOnlyGroups: CostOnlyGroup[] = [...byTool.entries()]
+    .filter(([, e]) => e.tokens === 0 && e.costUsd !== null)
+    .map(([tool, e]) => ({ tool, costUsd: e.costUsd as number, steps: e.steps }))
+    .sort((a, b) => b.costUsd - a.costUsd || a.tool.localeCompare(b.tool))
+
+  const barred = [...byTool.values()].filter(e => e.tokens > 0 && e.costUsd !== null)
+  const barredCostUsd = barred.length > 0 ? barred.reduce((sum, e) => sum + (e.costUsd ?? 0), 0) : null
+
   const totalTokens = [...byTool.values()].reduce((sum, e) => sum + e.tokens, 0)
   if (totalTokens === 0) {
-    return { groups: [], totalTokens: 0, stepsWithoutTokens, totalCostUsd }
+    return { groups: [], totalTokens: 0, stepsWithoutTokens, totalCostUsd, ...counts, costOnlyGroups, barredCostUsd }
   }
 
   const raw = [...byTool.entries()]
@@ -396,6 +491,9 @@ export function costByStep(steps: readonly RunStepRow[]): CostBreakdown {
     totalTokens,
     stepsWithoutTokens,
     totalCostUsd,
+    ...counts,
+    costOnlyGroups,
+    barredCostUsd,
   }
 }
 

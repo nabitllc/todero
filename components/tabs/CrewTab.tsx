@@ -63,6 +63,7 @@ import {
   fleetProvenanceLine,
   summarizeFleet,
   type FleetLiveness,
+  type FleetLivenessInput,
 } from '@/lib/fleet-liveness'
 
 // ── Types over the two endpoints this file reads ─────────────────────────────
@@ -76,6 +77,13 @@ interface RosterRowData {
   model?: string
   lastSeenAt: number | null
   livenessSource?: 'heartbeat' | 'none'
+  /**
+   * WHERE `lastSeenAt` came from. Optional only because this is a wire type
+   * and an older server may not send it; `livenessOf()` below then FAILS
+   * CLOSED and treats the row as carrying no hook event, rather than
+   * defaulting to the flattering answer. See lib/fleet-liveness.ts.
+   */
+  lastSeenSource?: 'heartbeat' | 'registration' | 'none'
   rosterSource?: string
   rosterPath?: string | null
   /** Brain2 manifest fields, or null when the vault does not name this id. */
@@ -147,6 +155,26 @@ const LIVENESS_TONE: Record<FleetLiveness, string> = {
   offline: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
   never: 'text-white/45 border-white/15 bg-white/5',
   unknown: 'text-purple-300 border-purple-500/40 bg-purple-500/10',
+}
+
+/**
+ * One roster row -> the three facts lib/fleet-liveness.ts classifies on.
+ *
+ * ONE place, used by both the per-row badge and the fleet summary, so the
+ * headline and the row it counts can never disagree about a provenance.
+ *
+ * FAILS CLOSED on `lastSeenSource`: a server that does not report it is a
+ * server whose provenance is unknown, and unknown provenance is not a hook
+ * event. The alternative default — assuming 'heartbeat' — is precisely the
+ * fabrication this field was added to end: a registration timestamp worded as
+ * "heartbeat 4m ago" over a fleet with zero hook events.
+ */
+function livenessOf(env: AgentsEnvelope | null) {
+  return (row: RosterRowData): FleetLivenessInput => ({
+    lastSeenAt: row.lastSeenAt ?? null,
+    observed: (row.livenessSource ?? env?.livenessSource) === 'heartbeat',
+    source: row.lastSeenSource ?? 'none',
+  })
 }
 
 /**
@@ -270,10 +298,7 @@ function RosterCard({
 
   const rows = env?.agents ?? []
   const observed = env?.livenessSource === 'heartbeat'
-  const inputs = rows.map(r => ({
-    lastSeenAt: r.lastSeenAt ?? null,
-    observed: (r.livenessSource ?? env?.livenessSource) === 'heartbeat',
-  }))
+  const inputs = rows.map(livenessOf(env))
   const summary = summarizeFleet(inputs, now)
 
   // GET /api/agents takes no limit or offset — it returns the union of every
@@ -334,10 +359,7 @@ function RosterCard({
       )}
       <ul className="divide-y divide-white/5">
         {rows.map(row => {
-          const desc = describeLiveness(
-            { lastSeenAt: row.lastSeenAt ?? null, observed: (row.livenessSource ?? env?.livenessSource) === 'heartbeat' },
-            now,
-          )
+          const desc = describeLiveness(livenessOf(env)(row), now)
           return (
             <li key={row.id} className="py-2.5 flex flex-col gap-1.5">
               <div className="flex items-center gap-2">

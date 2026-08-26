@@ -269,9 +269,11 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
         const hPx=Math.max(9,Math.round(T*0.10));
         ctx.font=`${hPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="left";
         ctx.beginPath();ctx.arc(mx2+dw*0.06,my2+dh*0.12,T*0.04,0,Math.PI*2);ctx.fillStyle=hColor;ctx.fill();
-        const ago=orchRun.startedAt?Math.round((Date.now()-new Date(orchRun.startedAt).getTime())/60000):0;
-        const agoStr=ago<60?`${ago}m`:ago<1440?`${Math.floor(ago/60)}h`:`${Math.floor(ago/1440)}d`;
-        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr}`,mx2+dw*0.12,my2+dh*0.16);
+        // one-clock: was a local formatter that rendered "Last: 0m" when
+        // startedAt was null — "last run 0 minutes ago" for a run that never
+        // happened. formatSince returns null there, so the panel says so.
+        const agoStr=formatSince(orchRun.startedAt);
+        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr??"—"}`,mx2+dw*0.12,my2+dh*0.16);
         ctx.fillStyle="#00ff88";ctx.fillText(`${orchRun.todayTasks} tasks`,mx2+dw*0.04,my2+dh*0.30);
         if(orchRun.todayErrors>0){ctx.fillStyle="#ff4444";ctx.fillText(`${orchRun.todayErrors} err`,mx2+dw*0.04,my2+dh*0.44);}
         ctx.font=`bold ${Math.round(T*0.11)}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
@@ -340,9 +342,8 @@ export function drawFurniture(ctx:CanvasRenderingContext2D,T:number,cam:any,agen
         // Status dot
         ctx.beginPath();ctx.arc(mx2+dw*0.06,my2+dh*0.15,T*0.04,0,Math.PI*2);ctx.fillStyle=hColor;ctx.fill();
         // Last run time
-        const ago=run.startedAt?Math.round((Date.now()-new Date(run.startedAt).getTime())/60000):0;
-        const agoStr=ago<60?`${ago}m`:ago<1440?`${Math.floor(ago/60)}h`:`${Math.floor(ago/1440)}d`;
-        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr}`,mx2+dw*0.12,my2+dh*0.19);
+        const agoStr=formatSince(run.startedAt);
+        ctx.fillStyle="#6a6a8e";ctx.fillText(`Last: ${agoStr??"—"}`,mx2+dw*0.12,my2+dh*0.19);
         // Tasks today
         ctx.fillStyle="#00ff88";ctx.fillText(`${run.todayTasks} tasks`,mx2+dw*0.04,my2+dh*0.38);
         // Errors

@@ -68,6 +68,26 @@ type RosterSource = 'agents-md' | 'registered' | 'vault' | 'both' | 'none'
  */
 type LivenessSource = 'heartbeat' | 'none'
 
+/**
+ * WHERE this row's `lastSeenAt` actually came from — a DIFFERENT question
+ * from `LivenessSource`, which says whether the heartbeat STORE could be read
+ * at all.
+ *
+ *   'heartbeat'    — `agent_heartbeats` (or its fallback) held a check-in for
+ *                    this agent. This is the only value that is a hook event.
+ *   'registration' — the number is `agent_registrations.last_seen_at` /
+ *                    `registered_at`: proof the agent exists, not proof it
+ *                    checked in.
+ *   'none'         — there is no timestamp for this agent at all.
+ *
+ * It exists because the two were collapsed: lib/agent-registrations.ts read
+ * `toEpochMs(row.last_seen_at) ?? registeredAt`, this route put that number in
+ * `lastSeenAt`, and lib/fleet-liveness.ts worded it "heartbeat 4m ago" over a
+ * fleet with zero hook events. `never` was unreachable for any self-registered
+ * row. The value travels WITH the timestamp so no consumer has to guess.
+ */
+type LastSeenSource = 'heartbeat' | 'registration' | 'none'
+
 /** One agent row as the dashboard renders it. */
 type AgentDto = {
   id: string
@@ -80,6 +100,8 @@ type AgentDto = {
   isRunning: boolean
   /** Epoch ms of this agent's last heartbeat, or null if it never sent one. */
   lastSeenAt: number | null
+  /** Which store `lastSeenAt` came from. See {@link LastSeenSource}. */
+  lastSeenSource: LastSeenSource
   /** live / stale / idle / never — see lib/agent-heartbeats.ts. */
   liveness: Liveness
   /** How that was determined. 'none' means the claim could not be made. */
@@ -321,6 +343,10 @@ function buildAgents(
     // reports the issue; it just no longer masquerades as liveness.
     const beat = state.heartbeats.get(id) ?? null
     const lastSeenAt = beat?.lastSeen ?? null
+    // Only the heartbeat store feeds this branch, so the provenance is not a
+    // guess: it is 'heartbeat' when there is a beat and 'none' when there is
+    // not. A roster row has no registration timestamp to fall back on.
+    const lastSeenSource: LastSeenSource = lastSeenAt === null ? 'none' : 'heartbeat'
     const liveness: Liveness =
       state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
     const isRunning = liveness === 'live'
@@ -354,6 +380,7 @@ function buildAgents(
       status: isActive ? 'active' : isScheduled ? 'scheduled' : 'idle',
       isRunning,
       lastSeenAt,
+      lastSeenSource,
       liveness,
       livenessSource: state.livenessSource,
       nextRunTs,
@@ -420,7 +447,13 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
   const now = Date.now()
   const beat = state.heartbeats.get(reg.id) ?? null
   const beatSeen = beat?.lastSeen ?? null
-  const regSeen = state.livenessSource === 'none' ? null : reg.lastSeenAt
+  // `reg.recordedLastSeenAt`, NOT `reg.lastSeenAt`: the latter substitutes
+  // `registeredAt` when the column is empty, and that substitution is what
+  // made `never` unreachable for every self-registered row — the row's own
+  // registration time came back out of this function dressed as a check-in.
+  // A row with no recorded check-in now yields null here, and null is
+  // classified `never`, which is the truth.
+  const regSeen = state.livenessSource === 'none' ? null : reg.recordedLastSeenAt
   const lastSeenAt =
     reg.status === 'offline'
       ? beatSeen === null
@@ -429,6 +462,12 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
           ? beatSeen
           : Math.min(beatSeen, regSeen)
       : beatSeen ?? regSeen
+  // Provenance is the branch actually taken, not an inference: the number is
+  // a hook event only when it IS the heartbeat store's number. Anything that
+  // came out of `agent_registrations` is labelled as such, however recent it
+  // is, and lib/fleet-liveness.ts refuses to word it as a heartbeat.
+  const lastSeenSource: LastSeenSource =
+    lastSeenAt === null ? 'none' : lastSeenAt === beatSeen ? 'heartbeat' : 'registration'
   const liveness: Liveness = state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
   const isRunning = liveness === 'live'
   const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
@@ -453,6 +492,7 @@ function buildRegistrationAgent(reg: AgentRegistration, state: RunState, vaultBy
     status: isRunning ? 'active' : 'idle',
     isRunning,
     lastSeenAt,
+    lastSeenSource,
     liveness,
     livenessSource: state.livenessSource,
     nextRunTs: null,
@@ -517,6 +557,7 @@ function buildVaultOnlyAgent(
   const now = Date.now()
   const beat = state.heartbeats.get(agent.id) ?? null
   const lastSeenAt = beat?.lastSeen ?? null
+  const lastSeenSource: LastSeenSource = lastSeenAt === null ? 'none' : 'heartbeat'
   const liveness: Liveness = state.livenessSource === 'none' ? 'never' : classifyLiveness(lastSeenAt, now)
   const isRunning = liveness === 'live'
   const agoMin = lastSeenAt ? Math.round((now - lastSeenAt) / 60000) : null
@@ -534,6 +575,7 @@ function buildVaultOnlyAgent(
     status: isRunning ? 'active' : 'idle',
     isRunning,
     lastSeenAt,
+    lastSeenSource,
     liveness,
     livenessSource: state.livenessSource,
     nextRunTs: null,
