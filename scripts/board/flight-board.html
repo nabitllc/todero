@@ -143,13 +143,13 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">8.7 → 6.2 → 9.3 → 10</span></div>
   <div class="kv"><span class="k">Channels</span><span class="v mono">0.9 → 6.8 (goal 8.9)</span></div>
-  <div class="kv"><span class="k">Spent</span><span class="v mono">38.09M tok · ~$149</span></div>
+  <div class="kv"><span class="k">Spent</span><span class="v mono">44.25M tok · ~$149</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
 
 <nav class="index">
   <a href="#channels">Channels<i>1/18 cleared</i></a>
-  <a href="#waves">Waves<i>11 run</i></a>
+  <a href="#waves">Waves<i>12 run</i></a>
   <a href="#next">What's next<i>3 queued</i></a>
   <a href="#harness">Harness<i>45/45</i></a>
   <a href="#decisions">Decisions<i>0 open</i></a>
@@ -207,15 +207,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Observability &amp; Honest Reporting</span><span class="chip building">wave 8</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:80%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">8.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+7.0]</b> WAVE 8 closed the held-back item and found its twin still live. lib/llm-provider.ts had silently defaulted a JSON-parse failure to an empty model list, so a server that is not OpenAI-compatible reported the IDENTICAL 'reachable, 0 models' a real Ollama with nothing pulled reports — two very different problems, one indistinguishable answer, and the one an operator would act on was the invisible one. Fixed. This was the only lane of ten whose critic said it MEETS its goal, at 8/10. It still does not go up, because that same critic found the identical defect STILL LIVE ONE FILE OVER at lib/runtimes/openai-api.ts:136 — fixed in the same file, missed in its neighbour, which is how a whole class survives a fix that was genuinely correct.</div>
-        <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
-      </div>
-      <div class="card">
         <div class="head"><span class="cname">Navigation &amp; Deep Linking</span><span class="chip building">wave 8</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:80%"></div></div>
@@ -225,13 +216,22 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Run Safety &amp; Enforcement</span><span class="chip building">wave 6</span></div>
+        <div class="head"><span class="cname">Identity, Auth &amp; Access Control</span><span class="chip building">wave 9</span></div>
         <div class="meter">
-          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
+          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">6.0<i>/8</i></span>
+        </div>
+        <div class="gap"><b>[+5.5]</b> UP ONE, AND THE EVIDENCE IS MINE RATHER THAN A BUILDER'S — the rule is that no channel rises on a self-report, and this rises on measurements I took over real HTTP. Wave 9's verify critic found the lane's own work had not moved middleware at all ('unchanged this wave', md5 confirmed), so the escalation it reported was still live. I reproduced it: a READ-ONLY credential deleted a real issue FIVE ways — mc-role=owner 200, god 200, notarole 200, and THE COOKIE OMITTED ENTIRELY 200, a fail-open documented nowhere and reached only AFTER the session gate had admitted a human. The same forgery worked one route down on the db proxy, and that suite's own control test ENSHRINED it by asserting a forged viewer could still write a neighbouring table. And a successful login assigned an attacker-controlled `from` to window.location — verified live, evil.example.com/phish delivered into the page — at the moment an operator has just typed a password and most trusts the screen. All closed, all re-measured after: five variants 403, proxy 403, owner still 200. Sign-out existed as an endpoint with NO CALLER and now has one. WHAT KEEPS IT AT 6: `mc-auth` IS the password, so the session check is an unthrottled oracle — 30 wrong cookie values gave 30 immediate 401s while /api/auth throttles the same password to 10 per window, a ~220x differential in favour of the door with no lock. That needs the credential to stop being the password, which is a schema change, not a middleware edit.</div>
+        <div class="goal"><span class="glab">Goal</span> builderz-labs — per-agent API keys and viewer/operator/admin roles over real sessions, replacing three shared passwords that double as their own tokens.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Observability &amp; Honest Reporting</span><span class="chip building">wave 9</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">7.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+7.0]</b> A second layer of protection had been silently off and nothing said so. An equality filter on the blocked flag matched ZERO rows on the live SQLite host — no error, an empty result indistinguishable from 'there are none' — and that filter is ANDed into the eligible-issues query for EIGHT OF NINE agent-queue lanes, is main's entire blocked-issue triage filter, and sits in four WIP-ceiling counts. A ceiling whose count always reads 0 never fires. It hid because the is-filter parses to a real boolean while the eq-filter stays a string, so the two read as synonyms; and because Postgres infers the parameter type for free, so every Postgres-run test passed while SQLite — what a fresh clone runs — compared TEXT to INTEGER and never matched. Fixed at the seam rather than the call sites, on the SQLite flavour only, keyed off the schema-declared column type so a text column genuinely holding the word 'false' is untouched; proven red-then-green on both dialects and over real HTTP. The dispatch kill switch was never affected and both of its acceptance checks still pass. HELD BACK, and stated rather than fixed: three more boolean-meaning columns are declared INTEGER rather than BOOLEAN in the sqlite migrations, so they would reproduce this exactly the moment a query-string filter targeted one, and this fix cannot catch them because it keys off the declared type. Also the ceilings have never been observed FIRING against a real dispatch run, because dispatch is off by owner directive.</div>
-        <div class="goal"><span class="glab">Goal</span> Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.</div>
+        <div class="gap"><b>[+6.0]</b> DOWN ONE. Wave 9's verify critic went back to scripts/doctor.mjs — THE FIRST THING AN OPERATOR ON A NEW MACHINE RUNS — and found it still misreporting, after this channel was credited for making it unable to fake a green. It exits 1 correctly on a corrupt database and a dead Postgres, which I verified myself; that part holds. What the critic found is a different surface of the same tool still asserting more than it measured. Also this wave, and it is why the number moves rather than holding: a seam suite carrying this channel's guarantee went 4 PASSED / 4 TOTAL with the defect COMPLETELY RESTORED — every failure arm back to the word 'unreachable' — because three of its four assertions were source greps. The live half was on screen too: Settings rendered 'Unreachable' for an endpoint answering HTTP 200 with the wrong shape, sending an operator to restart a server that was already running. Both fixed, the second with a behavioural suite that fails on the exact mutation the grep survives. A channel about honest reporting cannot hold a score set by checks that could not tell a fix from its defect.</div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Learning &amp; Memory Loop</span><span class="chip building">wave 6</span></div>
@@ -270,15 +270,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Doppler / Vercel env — secrets encrypted at rest, scoped per service, revocable without redeploy, and never printed. Todero holds delegated tokens only.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Identity, Auth &amp; Access Control</span><span class="chip building">wave 8</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">5.0<i>/8</i></span>
-        </div>
-        <div class="gap"><b>[+4.5]</b> WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 4/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. THE WORST VERDICT OF THE WAVE, and it is the security channel. The critic's words: the identity model is untouched, and the two things it is claimed to protect both fall over. Six fabrications in one lane. Authentication is still three shared passwords that double as their own session tokens — no users, no real logout, and rate limiting that the critic did not find convincing. I am taking this down two points rather than one because a channel that guards access should never be scored on intent, and because everything I previously credited it with came from a builder's own account rather than an adversarial one. WHAT WOULD MOVE IT: real sessions replacing the shared passwords, and every refusal proven BOTH WAYS — the denied case getting a real status, the allowed case still succeeding.</div>
-        <div class="goal"><span class="glab">Goal</span> builderz-labs — per-agent API keys and viewer/operator/admin roles over real sessions, replacing three shared passwords that double as their own tokens.</div>
-      </div>
-      <div class="card">
         <div class="head"><span class="cname">Work Management UI</span><span class="chip building">wave 8</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
@@ -295,6 +286,24 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="gap"><b>[+5.5]</b> WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 6/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. THE REAL WIN HERE IS NOT THE SCORE. Three of the five 'known failures' that had been red for the ENTIRE program — agents-route and agents-unconfigured — are fixed. Every gate report I have written said '5 known failures' and moved past them, including my own, for eight waves. A permanently red test is a test nobody reads, and it took a standing instruction to find out why rather than to route around it. Only spawn-live remains, and it is a genuine environment dependency. The channel still drops one point: the critic found the single new wire field this piece exists to add is computed in a place that does not make it trustworthy.</div>
         <div class="goal"><span class="glab">Goal</span> builderz-labs — POST /api/connect registers an agent and returns the URLs to use next; 30s heartbeats, offline at 10min. Liveness from data, never an array.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Run Safety &amp; Enforcement</span><span class="chip building">wave 9</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">6.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+6.0]</b> DOWN ONE, and it is the verify critic's finding rather than mine: A DISPATCHED AGENT CAN TURN OFF ITS OWN WALL-CLOCK CEILING, AND NOTHING NOTICES. Alongside it: `checkInFlightCeilings` has exactly ONE caller and there is no supervisor-side trigger, so the enforcement exists and effectively nothing runs it. That is the same shape as the defect this channel was raised for last wave — an eq filter matching zero rows so a ceiling whose count always read 0 never fired — one level up. A ceiling an agent can disable is not a ceiling; it is a setting. The scheduled sweep landed this wave and is real, but a sweep whose subject can opt out is not enforcement. lib/dispatch-guard.ts and TODERO_DISPATCH_ENABLED remain untouched and both acceptance checks pass. Watching a ceiling fire against a real dispatch run is the owner's supervised window, planned wave 11 and never to be run unattended.</div>
+        <div class="goal"><span class="glab">Goal</span> Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Approval &amp; Human-in-the-loop</span><span class="chip building">wave 9</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">6.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+6.0]</b> UP ONE, on the same measured basis. Wave 9's verify critic named it exactly: 'the approval decision has TWO writers and only one of them was gated.' A session holding only the read-only password could approve an agent's request by naming itself owner in a cookie — the write reached the database as {status:approved, resolved_by:definitely-not-a-human-bot}. Closed both ways: `inbox` came out of the proxy's writable set, AND the proxy's own gate now derives the role from the credential, because removing one table does not fix the class. Verified live: forged viewer 403 on inbox and on notifications, real owner 200. HELD AT 6: the critic's judge-stage finding that the piece's headline property — 'the role IS provable' — was false in the running app is only partly answered. The gate is fixed; whether every approval path attributes its actor honestly has not been re-judged.</div>
+        <div class="goal"><span class="glab">Goal</span> Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Pipeline Fidelity</span><span class="chip building">wave 8</span></div>
@@ -315,15 +324,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Approval &amp; Human-in-the-loop</span><span class="chip building">wave 8</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">5.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+5.0]</b> WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 5/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. The critic found the piece's own headline safety property FALSE in the running app — 'the role IS provable' does not hold — with six fabrications alongside it. An approval surface whose actor attribution cannot be trusted is not an approval surface; it is a button. The one thing in this area that IS solid stays solid and is the standard to copy: lib/conversations.ts enforces 'you approve, Todero sends' as a CHECK CONSTRAINT rather than route policy, proven by rebuilding the schema without the checks and watching the identical inserts get accepted, and an agent can draft but cannot approve its own draft (201 then 403, measured live).</div>
-        <div class="goal"><span class="glab">Goal</span> Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.</div>
-      </div>
-      <div class="card">
         <div class="head"><span class="cname">Multi-tenancy &amp; Identity</span><span class="chip untouched">exempt — post-MVP</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:10%"></div><div class="pin" style="left:80%"></div></div>
@@ -337,23 +337,42 @@ section{margin-top:42px;scroll-margin-top:16px}
 
 <section id="waves">
   <div class="shead"><h2>Waves</h2><div class="note">Newest first. No fixed round count.</div></div>
-      <div class="wave in flight" id="wave-9">
+      <div class="wave done" id="wave-10">
+        <div class="whead">
+          <span class="wn">Wave 10</span>
+          <span class="wname">The judging turns on itself</span>
+          <span class="chip cleared">complete</span>
+          <span class="wwhen">26 Aug · 18:40 → 19:30</span>
+        </div>
+        <p class="wlede">A four-lane workflow applied the seams wave 9 could not reach — and its critics turned the mutation budget on the SEAM SUITES THEMSELVES. Channel average &lt;b>6.8 → 6.78&lt;/b>: two full waves of thirty agents, four security fixes, and the aggregate did not move, because the judging got harder at the same rate the product got better. That is the honest shape of a scoreboard nobody is grading for themselves.</p>
+        <div class="spend">
+          <span><i>time</i>50m</span>
+          <span><i>agents</i>8</span>
+          <span><i>tokens</i>991k</span>
+          <span><i>est. cost</i>—</span>
+        </div>
+        <div class="ba">
+          <div><div class="balab before">Before</div><ul><li>A seam suite reported <b>4 passed, 4 total</b> with its defect FULLY RESTORED — three of four assertions were <code>src.includes(&lt;one exact string&gt;)</code></li><li>Settings said "Unreachable" for an endpoint answering <b>HTTP 200</b> with the wrong shape — sending an operator to restart a server already running</li><li>A MemoryTab seam stayed RED after being <b>correctly applied</b>: its assertion matched the fix as well as the bug, so the only way to satisfy it was to make the component worse</li><li>The scope guard had no <code>task_key</code> probe at all, and was racing the 30s cache of the route it tests</li></ul></div>
+          <div class="aft"><div class="balab after">After</div><ul><li>A behavioural suite that fails on the exact mutation the grep survives — same mutation: grep <b>4/4 green</b>, behaviour <b>4 failed</b></li><li>The badge derives from the failure kind: Wrong API / Error status / Unreachable / Probe failed</li><li>Assertions now name the PROPERTY, not a fragment of the rendering</li><li>17 probes, counted rather than a hardcoded <code>${8 + 2}</code>, and a fixture failure is a FAILURE — a skip exits 0, which is green over an untested boundary</li></ul></div>
+        </div>
+      </div>
+      <div class="wave done" id="wave-9">
         <div class="whead">
           <span class="wn">Wave 9</span>
           <span class="wname">Judge, build, judge again</span>
           <span class="chip cleared">complete</span>
-          <span class="wwhen">26 Aug · 15:00 → (workflow: 10 lanes × 3 stages)</span>
+          <span class="wwhen">26 Aug · 15:00 → 18:40</span>
         </div>
         <p class="wlede">Wave 8's repair rounds were &lt;b>never judged&lt;/b> — a builder said it fixed the gap and nothing checked. So this wave runs &lt;b>judge → build → verify&lt;/b>: stage 1 judges what wave 8 left, stage 2 builds against that verdict, and stage 3 re-judges what stage 2 built, hunting the pattern this program keeps finding — a gap closed in one place and a weaker version of it introduced somewhere else.</p>
         <div class="spend">
-          <span><i>time</i>running</span>
+          <span><i>time</i>3h 40m</span>
           <span><i>agents</i>30</span>
-          <span><i>tokens</i>—</span>
+          <span><i>tokens</i>5.17M</span>
           <span><i>est. cost</i>—</span>
         </div>
         <div class="ba">
           <div><div class="balab before">Before</div><ul><li>Ten channels carrying critic verdicts that no second pass had confirmed</li><li>The humaniser is “a whitelist masquerading as a rule, and none of its guards can tell” — seven fabrications in one lane</li><li>Tests that cover the pure helpers and never the components that consume them</li><li>The safety ceilings have still never been <b>watched firing</b></li></ul></div>
-          <div class="aft"><div class="balab after">After</div><ul><li>in flight</li></ul></div>
+          <div class="aft"><div class="balab after">After</div><ul><li>Ten judge→build→verify lanes, 30 agents, zero errors. Verify-stage scores <b>5-7, one meets goal</b> — the SECOND independent panel to land in that range, which is what a calibrated board looks like</li><li><b>Four security boundaries closed</b>, every one verified by the orchestrator over real HTTP: a read-only credential deleting anything five ways; the same forgery one route down; a Fleet page reading every project; a login handing the operator to another site</li><li>Nineteen red-on-purpose seam assertions applied. 20 seam suites, 319 tests, all green</li><li><b>1,163 → 2,339 passing.</b> The failure set is ONE: spawn-live</li></ul></div>
         </div>
       </div>
       <div class="wave done" id="wave-8">
@@ -551,9 +570,9 @@ section{margin-top:42px;scroll-margin-top:16px}
 <section id="next">
   <div class="shead"><h2>What's next</h2><div class="note">Queued, in order</div></div>
   <div style="margin-top:10px">
-        <div class="pw"><span class="pn">Wave 10</span><span class="pname">Paperclip.ing feature study</span><span class="pd">Find a feature Paperclip.ing has that would make a big impact in Todero, build our version, loop until ours scores higher — the owner's standing instruction for when the queue empties.</span></div>
-        <div class="pw"><span class="pn">Wave 11</span><span class="pname">The supervised dispatch window</span><span class="pd">One window, owner present, Limiglow only, short wall-clock cap — enough to watch a concurrency ceiling and a no-progress halt actually fire. Decided 26 Aug; needs the owner to say when. Not an unattended enablement.</span></div>
-        <div class="pw"><span class="pn">Wave 12</span><span class="pname">Multi-tenancy</span><span class="pd">EXEMPT by owner decision and out of the scoring. The trigger for un-exempting it is Todero hosting a second customer's business alongside Limiglow.</span></div>
+        <div class="pw"><span class="pn">Wave 11</span><span class="pname">The supervised dispatch window</span><span class="pd">Owner present, Limiglow only, short wall-clock cap — enough to watch a concurrency ceiling and a no-progress halt actually fire. Decided; needs him to say when. A verify critic just found a dispatched agent can turn off its own wall-clock ceiling and nothing notices, which makes this more urgent, not less.</span></div>
+        <div class="pw"><span class="pn">Wave 12</span><span class="pname">Paperclip.ing feature study</span><span class="pd">The owner's standing instruction for when the queue empties: find a feature it has that would make a big impact here, build ours, loop until ours scores higher.</span></div>
+        <div class="pw"><span class="pn">Wave 13</span><span class="pname">Multi-tenancy</span><span class="pd">EXEMPT by owner decision and out of the scoring. The trigger for un-exempting it is Todero hosting a second customer's business alongside Limiglow.</span></div>
   </div>
 </section>
 
@@ -591,7 +610,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 307ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 243ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -671,7 +690,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">memory-loop-retrieval</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">retrieval-is-budgeted</span><span class="cdet">budget enforced by raising, not truncating</span></div>
+          <div class="chk ok"><span class="cid">retrieval-is-budgeted</span><span class="cdet">budget enforced by raising, not truncating — buildRetrievedContext() actually raised on an oversized record (50-token budget, scratch sqlite)</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">inbox-approval</span><span class="gcount">1/1</span></summary>
@@ -818,11 +837,11 @@ section{margin-top:42px;scroll-margin-top:16px}
 <section id="ledger">
   <div class="shead"><h2>Ledger</h2><div class="note">What the program has cost</div></div>
   <div class="spend" style="margin-top:12px">
-    <span><i>wall clock</i>29h 29m</span>
-    <span><i>agents</i>418</span>
-    <span><i>subagent tokens</i>38.09M</span>
+    <span><i>wall clock</i>33h 59m</span>
+    <span><i>agents</i>426</span>
+    <span><i>subagent tokens</i>44.25M</span>
     <span><i>est. cost</i>~$149</span>
-    <span><i>waves</i>11</span>
+    <span><i>waves</i>12</span>
   </div>
   <p class="foot" style="margin-top:14px;border:0;padding:0">
     <b style="color:var(--ink)">How the cost figure is made, since the board should hold itself to its own rule.</b>

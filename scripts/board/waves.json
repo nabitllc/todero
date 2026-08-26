@@ -289,11 +289,11 @@
     {
       "n": 9,
       "name": "Judge, build, judge again",
-      "chip": "in flight",
-      "when": "26 Aug · 15:00 → (workflow: 10 lanes × 3 stages)",
-      "minutes": null,
+      "chip": "done",
+      "when": "26 Aug · 15:00 → 18:40",
+      "minutes": 220,
       "agents": 30,
-      "tokens": 0,
+      "tokens": 5170303,
       "cost": 0,
       "lede": "Wave 8's repair rounds were <b>never judged</b> — a builder said it fixed the gap and nothing checked. So this wave runs <b>judge → build → verify</b>: stage 1 judges what wave 8 left, stage 2 builds against that verdict, and stage 3 re-judges what stage 2 built, hunting the pattern this program keeps finding — a gap closed in one place and a weaker version of it introduced somewhere else.",
       "before": [
@@ -303,24 +303,54 @@
         "The safety ceilings have still never been <b>watched firing</b>"
       ],
       "after": [
-        "in flight"
+        "Ten judge→build→verify lanes, 30 agents, zero errors. Verify-stage scores <b>5-7, one meets goal</b> — the SECOND independent panel to land in that range, which is what a calibrated board looks like",
+        "<b>Four security boundaries closed</b>, every one verified by the orchestrator over real HTTP: a read-only credential deleting anything five ways; the same forgery one route down; a Fleet page reading every project; a login handing the operator to another site",
+        "Nineteen red-on-purpose seam assertions applied. 20 seam suites, 319 tests, all green",
+        "<b>1,163 → 2,339 passing.</b> The failure set is ONE: spawn-live"
       ],
       "quotes": []
+    },
+    {
+      "n": 10,
+      "name": "The judging turns on itself",
+      "chip": "done",
+      "when": "26 Aug · 18:40 → 19:30",
+      "minutes": 50,
+      "agents": 8,
+      "tokens": 991290,
+      "cost": 0,
+      "lede": "A four-lane workflow applied the seams wave 9 could not reach — and its critics turned the mutation budget on the SEAM SUITES THEMSELVES. Channel average <b>6.8 → 6.78</b>: two full waves of thirty agents, four security fixes, and the aggregate did not move, because the judging got harder at the same rate the product got better. That is the honest shape of a scoreboard nobody is grading for themselves.",
+      "before": [
+        "A seam suite reported <b>4 passed, 4 total</b> with its defect FULLY RESTORED — three of four assertions were <code>src.includes(&lt;one exact string&gt;)</code>",
+        "Settings said \"Unreachable\" for an endpoint answering <b>HTTP 200</b> with the wrong shape — sending an operator to restart a server already running",
+        "A MemoryTab seam stayed RED after being <b>correctly applied</b>: its assertion matched the fix as well as the bug, so the only way to satisfy it was to make the component worse",
+        "The scope guard had no <code>task_key</code> probe at all, and was racing the 30s cache of the route it tests"
+      ],
+      "after": [
+        "A behavioural suite that fails on the exact mutation the grep survives — same mutation: grep <b>4/4 green</b>, behaviour <b>4 failed</b>",
+        "The badge derives from the failure kind: Wrong API / Error status / Unreachable / Probe failed",
+        "Assertions now name the PROPERTY, not a fragment of the rendering",
+        "17 probes, counted rather than a hardcoded <code>${8 + 2}</code>, and a fixture failure is a FAILURE — a skip exits 0, which is green over an untested boundary"
+      ],
+      "quotes": [
+        "Four harness errors today, all mine. It has now been wrong more often than the product.",
+        "The right mechanism for CARRYING a diff across an ownership boundary, and the wrong one for KEEPING it."
+      ]
     }
   ],
   "planned": [
     {
-      "n": 10,
-      "name": "Paperclip.ing feature study",
-      "detail": "Find a feature Paperclip.ing has that would make a big impact in Todero, build our version, loop until ours scores higher — the owner's standing instruction for when the queue empties."
-    },
-    {
       "n": 11,
       "name": "The supervised dispatch window",
-      "detail": "One window, owner present, Limiglow only, short wall-clock cap — enough to watch a concurrency ceiling and a no-progress halt actually fire. Decided 26 Aug; needs the owner to say when. Not an unattended enablement."
+      "detail": "Owner present, Limiglow only, short wall-clock cap — enough to watch a concurrency ceiling and a no-progress halt actually fire. Decided; needs him to say when. A verify critic just found a dispatched agent can turn off its own wall-clock ceiling and nothing notices, which makes this more urgent, not less."
     },
     {
       "n": 12,
+      "name": "Paperclip.ing feature study",
+      "detail": "The owner's standing instruction for when the queue empties: find a feature it has that would make a big impact here, build ours, loop until ours scores higher."
+    },
+    {
+      "n": 13,
       "name": "Multi-tenancy",
       "detail": "EXEMPT by owner decision and out of the scoring. The trigger for un-exempting it is Todero hosting a second customer's business alongside Limiglow."
     }

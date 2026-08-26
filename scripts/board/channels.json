@@ -4,11 +4,11 @@
     {
       "name": "Identity, Auth & Access Control",
       "baseline": 0.5,
-      "current": 5,
+      "current": 6,
       "goal": 8,
-      "evidence": "WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 4/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. THE WORST VERDICT OF THE WAVE, and it is the security channel. The critic's words: the identity model is untouched, and the two things it is claimed to protect both fall over. Six fabrications in one lane. Authentication is still three shared passwords that double as their own session tokens — no users, no real logout, and rate limiting that the critic did not find convincing. I am taking this down two points rather than one because a channel that guards access should never be scored on intent, and because everything I previously credited it with came from a builder's own account rather than an adversarial one. WHAT WOULD MOVE IT: real sessions replacing the shared passwords, and every refusal proven BOTH WAYS — the denied case getting a real status, the allowed case still succeeding.",
+      "evidence": "UP ONE, AND THE EVIDENCE IS MINE RATHER THAN A BUILDER'S — the rule is that no channel rises on a self-report, and this rises on measurements I took over real HTTP. Wave 9's verify critic found the lane's own work had not moved middleware at all ('unchanged this wave', md5 confirmed), so the escalation it reported was still live. I reproduced it: a READ-ONLY credential deleted a real issue FIVE ways — mc-role=owner 200, god 200, notarole 200, and THE COOKIE OMITTED ENTIRELY 200, a fail-open documented nowhere and reached only AFTER the session gate had admitted a human. The same forgery worked one route down on the db proxy, and that suite's own control test ENSHRINED it by asserting a forged viewer could still write a neighbouring table. And a successful login assigned an attacker-controlled `from` to window.location — verified live, evil.example.com/phish delivered into the page — at the moment an operator has just typed a password and most trusts the screen. All closed, all re-measured after: five variants 403, proxy 403, owner still 200. Sign-out existed as an endpoint with NO CALLER and now has one. WHAT KEEPS IT AT 6: `mc-auth` IS the password, so the session check is an unthrottled oracle — 30 wrong cookie values gave 30 immediate 401s while /api/auth throttles the same password to 10 per window, a ~220x differential in favour of the door with no lock. That needs the credential to stop being the password, which is a schema change, not a middleware edit.",
       "goal_text": "builderz-labs — per-agent API keys and viewer/operator/admin roles over real sessions, replacing three shared passwords that double as their own tokens.",
-      "wave": 8
+      "wave": 9
     },
     {
       "name": "Work Management API (MC API)",
@@ -58,11 +58,11 @@
     {
       "name": "Observability & Honest Reporting",
       "baseline": 1,
-      "current": 8,
+      "current": 7,
       "goal": 9,
-      "evidence": "WAVE 8 closed the held-back item and found its twin still live. lib/llm-provider.ts had silently defaulted a JSON-parse failure to an empty model list, so a server that is not OpenAI-compatible reported the IDENTICAL 'reachable, 0 models' a real Ollama with nothing pulled reports — two very different problems, one indistinguishable answer, and the one an operator would act on was the invisible one. Fixed. This was the only lane of ten whose critic said it MEETS its goal, at 8/10. It still does not go up, because that same critic found the identical defect STILL LIVE ONE FILE OVER at lib/runtimes/openai-api.ts:136 — fixed in the same file, missed in its neighbour, which is how a whole class survives a fix that was genuinely correct.",
+      "evidence": "DOWN ONE. Wave 9's verify critic went back to scripts/doctor.mjs — THE FIRST THING AN OPERATOR ON A NEW MACHINE RUNS — and found it still misreporting, after this channel was credited for making it unable to fake a green. It exits 1 correctly on a corrupt database and a dead Postgres, which I verified myself; that part holds. What the critic found is a different surface of the same tool still asserting more than it measured. Also this wave, and it is why the number moves rather than holding: a seam suite carrying this channel's guarantee went 4 PASSED / 4 TOTAL with the defect COMPLETELY RESTORED — every failure arm back to the word 'unreachable' — because three of its four assertions were source greps. The live half was on screen too: Settings rendered 'Unreachable' for an endpoint answering HTTP 200 with the wrong shape, sending an operator to restart a server that was already running. Both fixed, the second with a behavioural suite that fails on the exact mutation the grep survives. A channel about honest reporting cannot hold a score set by checks that could not tell a fix from its defect.",
       "goal_text": "Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.",
-      "wave": 8
+      "wave": 9
     },
     {
       "name": "Work Management UI",
@@ -85,11 +85,11 @@
     {
       "name": "Run Safety & Enforcement",
       "baseline": 0,
-      "current": 7,
+      "current": 6,
       "goal": 9,
-      "evidence": "A second layer of protection had been silently off and nothing said so. An equality filter on the blocked flag matched ZERO rows on the live SQLite host — no error, an empty result indistinguishable from 'there are none' — and that filter is ANDed into the eligible-issues query for EIGHT OF NINE agent-queue lanes, is main's entire blocked-issue triage filter, and sits in four WIP-ceiling counts. A ceiling whose count always reads 0 never fires. It hid because the is-filter parses to a real boolean while the eq-filter stays a string, so the two read as synonyms; and because Postgres infers the parameter type for free, so every Postgres-run test passed while SQLite — what a fresh clone runs — compared TEXT to INTEGER and never matched. Fixed at the seam rather than the call sites, on the SQLite flavour only, keyed off the schema-declared column type so a text column genuinely holding the word 'false' is untouched; proven red-then-green on both dialects and over real HTTP. The dispatch kill switch was never affected and both of its acceptance checks still pass. HELD BACK, and stated rather than fixed: three more boolean-meaning columns are declared INTEGER rather than BOOLEAN in the sqlite migrations, so they would reproduce this exactly the moment a query-string filter targeted one, and this fix cannot catch them because it keys off the declared type. Also the ceilings have never been observed FIRING against a real dispatch run, because dispatch is off by owner directive.",
+      "evidence": "DOWN ONE, and it is the verify critic's finding rather than mine: A DISPATCHED AGENT CAN TURN OFF ITS OWN WALL-CLOCK CEILING, AND NOTHING NOTICES. Alongside it: `checkInFlightCeilings` has exactly ONE caller and there is no supervisor-side trigger, so the enforcement exists and effectively nothing runs it. That is the same shape as the defect this channel was raised for last wave — an eq filter matching zero rows so a ceiling whose count always read 0 never fired — one level up. A ceiling an agent can disable is not a ceiling; it is a setting. The scheduled sweep landed this wave and is real, but a sweep whose subject can opt out is not enforcement. lib/dispatch-guard.ts and TODERO_DISPATCH_ENABLED remain untouched and both acceptance checks pass. Watching a ceiling fire against a real dispatch run is the owner's supervised window, planned wave 11 and never to be run unattended.",
       "goal_text": "Paperclip — budgets per agent, and at the limit they stop. Portkey — the cap is enforced in the request path, outside the agent, so it cannot be reasoned past.",
-      "wave": 6
+      "wave": 9
     },
     {
       "name": "Learning & Memory Loop",
@@ -112,11 +112,11 @@
     {
       "name": "Approval & Human-in-the-loop",
       "baseline": 0,
-      "current": 5,
+      "current": 6,
       "goal": 9,
-      "evidence": "WAVE 8 RE-JUDGED THIS DOWNWARD. A fresh critic with a mutation-test budget scored this piece 5/10 where my board had the channel at 7. The repair round then addressed the named gap, but NOTHING HAS RE-JUDGED THE REPAIR — so this number reflects what a critic actually measured, not what a builder reported afterwards. The critic found the piece's own headline safety property FALSE in the running app — 'the role IS provable' does not hold — with six fabrications alongside it. An approval surface whose actor attribution cannot be trusted is not an approval surface; it is a button. The one thing in this area that IS solid stays solid and is the standard to copy: lib/conversations.ts enforces 'you approve, Todero sends' as a CHECK CONSTRAINT rather than route policy, proven by rebuilding the schema without the checks and watching the identical inserts get accepted, and an agent can draft but cannot approve its own draft (201 then 403, measured live).",
+      "evidence": "UP ONE, on the same measured basis. Wave 9's verify critic named it exactly: 'the approval decision has TWO writers and only one of them was gated.' A session holding only the read-only password could approve an agent's request by naming itself owner in a cookie — the write reached the database as {status:approved, resolved_by:definitely-not-a-human-bot}. Closed both ways: `inbox` came out of the proxy's writable set, AND the proxy's own gate now derives the role from the credential, because removing one table does not fix the class. Verified live: forged viewer 403 on inbox and on notifications, real owner 200. HELD AT 6: the critic's judge-stage finding that the piece's headline property — 'the role IS provable' — was false in the running app is only partly answered. The gate is fixed; whether every approval path attributes its actor honestly has not been re-judged.",
       "goal_text": "Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.",
-      "wave": 8
+      "wave": 9
     },
     {
       "name": "Pipeline Fidelity",
