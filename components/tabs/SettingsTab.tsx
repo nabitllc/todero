@@ -27,7 +27,7 @@ interface UsageData {
   // Owner directive: no hosted LLM gateway, no cloud LLM. This is a live read of
   // ${LLM_BASE_URL}/models made fresh for the request — baseUrl/models come
   // straight off that response, never a hardcoded roster or a fabricated plan.
-  localLlm: { baseUrl: string; models: string[]; ok: boolean; error: string | null; lastChecked: string }
+  localLlm: { baseUrl: string; models: string[]; ok: boolean; error: string | null; kind?: 'unreachable' | 'error-status' | 'not-openai-compatible'; lastChecked: string }
   cloudflare: { kaos: { up: boolean; lastChecked: string } }
   discord: { connected: boolean; lastChecked: string }
   // TOD: kill-fake-infra-greens — no `plan`: this server cannot read the
@@ -370,11 +370,27 @@ export default function SettingsTab() {
             field below is a live read of ${LLM_BASE_URL}/models made for
             this request. On failure there is nothing measured to caption or
             timestamp — no plan string, no "checked Ns ago" — just the URL
-            and the reason it didn't answer. */}
+            and what actually went wrong.
+            TOD-2483: this comment used to end "the reason it didn't answer",
+            and the badge below said "Unreachable" for every failure. Both were
+            the invented verdict the kind field exists to remove: an endpoint
+            that answers HTTP 200 with the wrong SHAPE did answer, and telling
+            an operator it is unreachable sends them to check a server that is
+            already running. */}
         <ServiceCard emoji="🖥️" name="Local LLM"
           plan={data.localLlm.ok ? data.localLlm.baseUrl : ''}
           status={data.localLlm.ok ? 'active' : 'error'}
-          statusLabel={data.localLlm.ok ? `${data.localLlm.models.length} model${data.localLlm.models.length === 1 ? '' : 's'}` : 'Unreachable'}
+          statusLabel={
+            data.localLlm.ok
+              ? `${data.localLlm.models.length} model${data.localLlm.models.length === 1 ? '' : 's'}`
+              : data.localLlm.kind === 'not-openai-compatible' ? 'Wrong API'
+                : data.localLlm.kind === 'error-status' ? 'Error status'
+                  : data.localLlm.kind === 'unreachable' ? 'Unreachable'
+                    // No kind means the probe itself failed in a shape nobody
+                    // classified. Say that rather than picking the most likely
+                    // one — a guess here is indistinguishable from a measurement.
+                    : 'Probe failed'
+          }
           lastChecked={data.localLlm.ok ? data.localLlm.lastChecked : undefined}>
           {data.localLlm.ok ? (
             <div className="text-xs text-white/60">{data.localLlm.models.length > 0 ? data.localLlm.models.join(', ') : 'reachable but no models pulled'}</div>
