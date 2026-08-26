@@ -27,17 +27,14 @@
         "name": "next"
       }
     ],
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "target": "es2017"
   },
   "include": [
     "next-env.d.ts",
     ".next/types/**/*.ts",
     "**/*.ts",
-    "**/*.tsx",
-    ".next-critic-agents/types/**/*.ts",
-    ".next-critic2/types/**/*.ts",
-    ".next-verify/types/**/*.ts",
-    ".next-critic/types/**/*.ts"
+    "**/*.tsx"
   ],
   "exclude": [
     "node_modules",

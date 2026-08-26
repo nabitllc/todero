@@ -133,14 +133,28 @@ const ALERTS_CHANNEL          = '1485333335868834063'
 const CREATED_CHANNEL         = '1492576650137964694'
 
 const QUEUE_CHANNEL           = '1494440278524694608' // #1-queue
-const DISCORD_BOT_TOKEN = 'MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo'
+// TOD-2424: a live Discord bot token was a source literal here, used as the
+// fallback whenever the env var was unset. It is gone, and there is no fallback
+// constant to replace it — a credential that can be read from the repo is a
+// credential every clone carries.
+//
+// The token was also DEAD: POST to Discord with it returns 401. Every
+// notification this file has sent recently failed silently, because the fetch
+// below swallows its result in .catch(). Rotate in the Discord Developer Portal
+// and store the new one per hub via Settings -> Connections (migration 059);
+// lib/connections.ts resolveHubDiscord() returns it, or null, never a constant.
 
 const PROJECT_EMOJI: Record<string, string> = {
   Vespera: '🖤', Kemuni: '🚀', 'Mission Control': '🧠', Infrastructure: '⚙️'
 }
 
 function postDiscord(channelId: string, content: string) {
-  const token = process.env.DISCORD_BOT_TOKEN ?? DISCORD_BOT_TOKEN
+  const token = process.env.DISCORD_BOT_TOKEN
+  if (!token) {
+    // Say nothing was sent, rather than posting with a fallback nobody set.
+    console.warn('[discord] no credential configured — not posting to', channelId)
+    return
+  }
   fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
     method: 'POST',
     headers: {
@@ -266,7 +280,11 @@ function notifyWatchers(issue: {
   const watchers = issue.watchers
   if (!watchers || watchers.length === 0) return
 
-  const token = process.env.DISCORD_BOT_TOKEN ?? DISCORD_BOT_TOKEN
+  const token = process.env.DISCORD_BOT_TOKEN
+  if (!token) {
+    console.warn('[discord] no credential configured — not notifying watchers')
+    return
+  }
   const key = issue.task_key ?? '?'
   const resType = RESOLUTION_LABELS[issue.resolution_type ?? ''] ?? (issue.resolution_type ?? 'Resolved')
   const notes = (issue.closing_notes ?? issue.implementation_notes ?? 'No closing notes provided.').slice(0, 400)

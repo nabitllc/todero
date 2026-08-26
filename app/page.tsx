@@ -29,6 +29,7 @@ import PipelineTab from '@/components/tabs/PipelineTab'
 import IssuesTab from '@/components/tabs/IssuesTab'
 import AutomationsTab from '@/components/tabs/AutomationsTab'
 import BoltScheduleCard from '@/components/tabs/BoltScheduleCard'
+import ConnectionsCard from '@/components/tabs/ConnectionsCard'
 import WorkViewCard from '@/components/tabs/WorkViewCard'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
@@ -975,6 +976,8 @@ export default function Home() {
               <div className="space-y-4">
                 {/* TOD-2415: the hour bolts open and close, per hub. */}
                 <BoltScheduleCard hubName={selectedBusiness} />
+                {/* TOD-2424: per-hub Discord credential custody. */}
+                <ConnectionsCard hubName={selectedBusiness} />
                 <AutomationsTab displayCrons={displayCrons} cronsError={cronsError} cronsMeta={cronsMeta} />
               </div>
             )}

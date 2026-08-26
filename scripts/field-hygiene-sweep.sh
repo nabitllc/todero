@@ -19,7 +19,12 @@ set -euo pipefail
 
 NOTIFY="${1:-}"
 DISCORD_CHANNEL="1363614854124605479"  # #agent-logs
-DISCORD_TOKEN="MTQ4NjA0MTQ3MTUwNDM1MTMxMw.GoiBGW.VS2nGK2X1LMjMjkOBL9NqrOVeUdZfbGo9HdAyo"
+# TOD-2424: this was a second live copy of the bot token, in a shell script.
+# Read it from the environment; the script now says so instead of carrying it.
+DISCORD_TOKEN="${DISCORD_BOT_TOKEN:-}"
+if [ -z "$DISCORD_TOKEN" ]; then
+  echo "[field-hygiene] DISCORD_BOT_TOKEN is not set — not notifying." >&2
+fi
 
 python3 << 'PYEOF'
 import subprocess, json, os, sys
