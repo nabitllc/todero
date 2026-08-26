@@ -62,7 +62,8 @@ string. "Rendered string" means text present in the DOM of
    **all five** of: `question` (what is being asked), `agent` (which agent
    asked), `ifApproved` (what happens on approval), `ifRefused` (what happens
    on refusal), `approveLabel` (a button label that names the consequence).
-   No field may be an empty string for any input row.
+   It also returns `refuseLabel` and `confirmRefuseLabel` for the refusal
+   path. No field may be an empty string for any input row.
 
 2. For `type: 'loop_breaker_pause'` with `context.last_issue_id` set,
    `approveLabel` names **both** halves of the real effect — the agent id and

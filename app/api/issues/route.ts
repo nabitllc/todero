@@ -851,7 +851,38 @@ export async function GET(req: NextRequest) {
     // `x-mc-all-projects` stays because middleware.ts owns it and strips a
     // forged one — the scope guard proves that. A query param has no such
     // protection: anyone who can type a URL can set it.
-    if (scope && !crossProject && data.project !== scope) {
+    // TOD-2427. This branch used to gate its 404 on `if (scope && ...)`, so
+    // whenever NO scope resolved it returned the full row for ANY key. Two
+    // callers hit that, and both were measured, not theorised:
+    //
+    //   1. no Referer at all -> 200, full row. Anyone holding the session
+    //      cookie could enumerate every key in every project by curl, while
+    //      the LIST read on this same route answered 400 for that identical
+    //      caller. One route, two opposite answers to the same question.
+    //   2. a cross-project destination (fleet/*, runs/*, settings/projects),
+    //      where middleware deliberately resolves no scope. Reproduced live:
+    //      TOD-1 (project Todero) returned 200 from a Limiglow Fleet page, and
+    //      SearchOverlay had to filter it out client-side to avoid printing it.
+    //
+    // So an unresolvable scope now REFUSES, exactly as the list path does, and
+    // says how to ask deliberately. An explicit `?project=` establishes scope
+    // for a scope-blind caller; a foreign key under that project still 404s.
+    // The `x-mc-all-projects` header still bypasses, because middleware owns it
+    // and the scope guard proves a forged one is ignored — unlike a query
+    // string, which is whatever the caller types.
+    const keyScope = scope || url.searchParams.get('project')
+    if (!keyScope && !crossProject) {
+      return NextResponse.json(
+        {
+          error: 'unscoped_issues_read',
+          message:
+            `Looking up task_key=${taskKey} has no project scope. Request it from a ` +
+            `/p/<project> screen, or pass project=<name> to name the scope deliberately.`,
+        },
+        { status: 400 },
+      )
+    }
+    if (keyScope && !crossProject && data.project !== keyScope) {
       // 404, deliberately, not 403: a scoped caller should not be able to use
       // this endpoint to discover which keys exist outside its own project.
       return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })

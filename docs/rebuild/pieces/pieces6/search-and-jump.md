@@ -153,13 +153,28 @@ status, or a test that fails when the behaviour regresses.
    response. Nothing on that row is defaulted or invented; a field the row
    omits is a field the response did not carry.
 
-7. **A foreign key does not leak.** From a page scoped to Limiglow, typing
-   `TOD-1` — which exists, in project Todero — renders
+7. **A foreign key does not leak — from any screen.** From a page scoped to
+   Limiglow, typing `TOD-1` — which exists, in project Todero — renders
    `TOD-1 — not found in Limiglow`, and nothing else. The palette never prints
    the string `Todero`, never a status, never a 403, never "you don't have
-   access to this". The row is not activatable (`aria-disabled="true"`); Enter
-   on it does nothing. The underlying request is the app's existing 404 path;
-   this piece adds no bypass, no `all_projects=1`, and no second endpoint.
+   access to this". The row is not activatable; Enter on it does nothing. The
+   underlying request is the app's existing 404 path; this piece adds no
+   bypass, no `all_projects=1`, and no second endpoint.
+
+   **Including on Fleet, Runs and Settings → Projects.** Found while building
+   this and fixed here: `/api/issues?task_key=` applies its 404 only
+   `if (scope && …)`, and `middleware.ts` resolves NO scope for those three
+   deliberately-cross-project destinations — so from
+   `/p/limiglow/fleet/office` the endpoint returned `TOD-1` in full, project
+   and all. That is the same hole `app/api/db/[...path]/route.ts` closed for
+   the other seam, whose comment names *this component* as the reason:
+   "SearchOverlay is mounted unconditionally, so Cmd-K pressed on the Fleet
+   screen returned another project's backlog". The leaking route is not this
+   piece's to edit, so the palette refuses to render a row whose `project`
+   differs from the one its own URL names, and its provenance line no longer
+   claims a server-side scope it cannot guarantee. This is a refusal, not an
+   enforcement claim: the server-side 404 is still the boundary, and the
+   underlying asymmetry is reported for the owner of `app/api/issues/**`.
 
 8. **A failed leg shows its failure.** Each of the three groups holds its own
    `{data | error}` and neither is coerced from the other. When the issues
@@ -226,3 +241,26 @@ specific regression, not merely to pass today:
 - **`projectFromPath`** — fails if the palette's idea of the scope name drifts
   from `middleware.ts`'s `slugToProjectName`, which is what decides the
   wording of the "not found in <project>" line in item 7.
+
+## Defect found, NOT owned, NOT fixed here
+
+`app/api/issues/route.ts`, GET, the `task_key` branch. Its 404 is guarded by
+`if (scope && !crossProject && data.project !== scope)`. Two ways `scope` is
+falsy, both of which hand over the full row for any key:
+
+1. **A cross-project destination.** `middleware.ts` resolves no scope for
+   Fleet, Runs and Settings → Projects, so `?task_key=` is unfiltered there.
+   Reproduced live: `referer: /p/limiglow/fleet/office` → **200**, full TOD-1
+   row including `project: "Todero"`. The palette now declines to render it
+   (item 7), but the endpoint still answers.
+2. **No `Referer` at all.** `referer` absent → **200**, full row. The LIST
+   read on the same route fails closed in the same situation (**400**
+   `unscoped_issues_read`), and so does `/api/db/issues`. The task_key branch
+   is the one issues read that falls open where its neighbours refuse, so
+   anyone with the session cookie can enumerate keys with plain `curl`.
+
+`scripts/no-unscoped-issues.mjs` does not cover this: all ten of its probes go
+through list reads and the db proxy; none of them ask for a `task_key`.
+Suggested for whoever owns that route: treat `crossProject` as the only
+widening signal (it already is on the list path) and fail closed when neither
+a scope nor that header is present.

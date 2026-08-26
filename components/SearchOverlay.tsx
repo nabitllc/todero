@@ -144,14 +144,34 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
       setKeyLeg({ state: 'loading', data: null, error: null })
       const r = await fetchJson<IssueRow>(endpoint, { signal: ctrl.signal })
       if (ctrl.signal.aborted) return
-      if (r.ok) setKeyLeg({ state: 'ok', data: r.data, error: null })
+      // FOUND WHILE BUILDING THIS, and fixed here because the leaking file is
+      // not this piece's to edit: `/api/issues?task_key=` only applies its 404
+      // when middleware.ts resolved a scope. On Fleet, Runs and Settings →
+      // Projects — the destinations middleware.ts deliberately marks
+      // CROSS-PROJECT — no scope resolves, so that branch hands over ANY key's
+      // full row. Verified live: on /p/limiglow/fleet/office, `TOD-1`
+      // (project Todero) came back 200 with its title and project.
+      //
+      // app/api/db/[...path]/route.ts already refuses `issues` for exactly
+      // those destinations, and its comment names THIS COMPONENT as the reason:
+      // "SearchOverlay is mounted unconditionally, so Cmd-K pressed on the
+      // Fleet screen returned another project's backlog". The task_key branch
+      // is the same hole in a different door.
+      //
+      // The server's 404 remains the boundary; this is the palette declining
+      // to be the one surface that renders a row from outside the project its
+      // own URL names. It widens nothing and it is not claimed as enforcement.
+      if (r.ok && r.data && scopeProject && r.data.project && r.data.project !== scopeProject) {
+        setKeyLeg({ state: 'missing', data: null, error: null })
+      }
+      else if (r.ok) setKeyLeg({ state: 'ok', data: r.data, error: null })
       // 404 is the scope boundary doing its job, and it is indistinguishable —
       // deliberately — from a key that does not exist at all. Say only that.
       else if (r.status === 404) setKeyLeg({ state: 'missing', data: null, error: null })
       else setKeyLeg({ state: 'idle', data: null, error: r.error })
     }, 180)
     return () => { ctrl.abort(); clearTimeout(t) }
-  }, [open, taskKey])
+  }, [open, taskKey, scopeProject])
 
   // ── leg 3: issue text search ───────────────────────────────────────────────
   const textEndpoint = useMemo(
@@ -289,7 +309,13 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
               <GroupHeader
                 id="grp-key"
                 title={`Issue ${taskKey}`}
-                source={`GET /api/issues?task_key=${taskKey} — scoped server-side to ${scopeName}`}
+                // Factual, not a claim about enforcement: the request, and the
+                // rule this palette applies to its answer.
+                source={
+                  scopeProject
+                    ? `GET /api/issues?task_key=${taskKey} — shown only if it belongs to ${scopeProject}`
+                    : `GET /api/issues?task_key=${taskKey} — this URL names no project, so no project filter applies`
+                }
               />
               {keyLeg.state === 'loading' && <div className="px-4 py-2 text-xs text-white/30">Resolving {taskKey}…</div>}
               {keyLeg.error && <div className="px-2 pb-2"><ApiErrorBanner error={keyLeg.error} /></div>}
@@ -387,8 +413,12 @@ export default function SearchOverlay({ open, onClose, onNavigate }: SearchOverl
             </div>
           )}
 
-          {/* Only reachable when every leg is idle or empty AND none errored. */}
-          {options.length === 0 && !keyLeg.error && !textLeg.error && keyLeg.state !== 'missing' && (
+          {/* Last resort only: no group above rendered anything at all (a
+              one-character query too short to search on). When a group IS
+              present it already states its own outcome — an empty result, or
+              its error — and repeating "nothing matches" under it would put a
+              second, vaguer verdict next to the specific one. */}
+          {options.length === 0 && !taskKey && !textEndpoint && (
             <div className="px-4 py-6 text-center text-xs text-white/25">
               nothing matches “{trimmed}” — no destination, no action, no issue
             </div>
