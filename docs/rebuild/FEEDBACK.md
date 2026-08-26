@@ -68,13 +68,76 @@ Michael, on the running app:
 
 ---
 
+## 2026-08-25 (later) · Hub, rail and bolts, from the running app
+
+Transcribed 2026-08-26. These words were given in conversation on the running
+app and, until now, survived only inside code comments in `BusinessRail.tsx`,
+`PrimaryNav.tsx` and `app/page.tsx`. A critic scoring round 4 could find no repo
+record for them and correctly flagged them as unsourced authority. Michael
+confirmed they are his. They are recorded here because this file's own first
+line says feedback held outside the record is the thing that gets lost — and
+that is exactly what happened.
+
+7. **"Survive similar to Slack. Left pane has 'Workspace'... Todero 'Hub' should
+   be similar to Slack 'Workspace'. User can be part of multiple hubs, with a
+   specific account/RBAC on each workspace. For now, we only have one Hub
+   (Limiglow) until we know Todero works properly... later user should be able
+   to create/join different hubs (similar to Paperclip)."**
+   -> The 14px rail is the HUB switcher, and it stays permanently. It does not
+   move into Settings. Multi-hub membership and per-hub RBAC are post-MVP.
+   Status: LANDED (round 4) — and it **supersedes** item 2 above and the
+   `cards-and-identity` piece spec, both of which say the rail shows PROJECTS
+   and that businesses move into Settings. Where they disagree, this wins;
+   it is also the version recorded in `HANDOFF.md:83-85`.
+
+8. **"Bolts tell the summary of what agents have done in 24h"** and **"the
+   'Start' is not meant for bolts."**
+   -> A bolt is a fixed 24h window summarising AGENT work; it opens
+   automatically at a set time. The old "Run Sprint" button is neither a bolt
+   nor a sprint — it starts a goal-scoped run of arbitrary length, and is now
+   "Start builder run".
+   Status: PARTIAL. The rename landed. The automatic open at a set time does
+   NOT work and cannot: `sprints.start_date`/`end_date` are `DATE` columns
+   (`migrations/000_baseline_schema.sql:76-77`, never altered), so a bolt cannot
+   carry an hour. Hour-accurate bolts need a `TIMESTAMPTZ` migration — an open
+   decision, deliberately not taken inside `bolt-time`.
+
+## 2026-08-26 · Discord belongs to a hub, not to the source tree
+
+Asked how to handle a Discord bot token found hardcoded in 29 files on `main`
+and used as a live fallback in `app/api/issues/route.ts`, Michael:
+
+9. **"Same way settings show connected tools, Discord should be there so
+   something can be added per project. What currently exists might be broken
+   anyway so good to set up something the user can add Discord from scratch to
+   a hub."**
+   -> Discord becomes a **per-hub connection configured in Settings**, added by
+   the user from scratch, alongside the other connected tools. The credential
+   lives in the connection record, not in source. This replaces the existing
+   hardcoded channel IDs and token rather than patching them, on the assumption
+   that what is there now is broken anyway.
+   Status: OPEN -> a Settings/Connections piece. Note this removes the token
+   from SOURCE but not from the 16 commits already carrying it; rotating it in
+   the Discord Developer Portal is a separate action, and Michael's to take.
+
+---
+
 ## Earlier, still open
 
-- Push/PR visibility: 10 commits sit on `rebuild/2026-08-24` with no upstream,
-  so none of this is visible outside this machine. `CLAUDE.md` says never push.
-  Awaiting a decision — see the note in `BRIEF.md`.
+- ~~Push/PR visibility~~ **RESOLVED 2026-08-25.** The rebuild merged to `main`
+  as PRs #32 and #33; `origin/main` and the local tree are identical. The
+  `rebuild/2026-08-24` branch is gone from both sides, and origin was pruned
+  from 94 branches to one.
 - The 71 MB Supabase export exists on one machine only. It should have a second
   copy before anything upstream is deleted.
-- `lib/agent-capabilities.ts` defines `kemuni-sme` / `vespera-sme` agents and
-  `lib/agent-queue.ts` has rules that POST issues under `project:Kemuni` — the
-  invented-project defect one layer down, in dispatch. Guarded off, not fixed.
+- Invented projects, **re-measured 2026-08-26 and 12x larger than recorded.**
+  This was written as two files. It is **24 source files**, and it reaches the
+  MC API itself: `app/api/issues/route.ts` auto-assigns issues to `kemuni-sme`
+  at `:1141` and `:1644`, allowlists both agents at `:338` and `:544`, and
+  carries a four-project emoji table at `:139` — which is the very table
+  `HANDOFF.md` records as having already survived two rounds of a sweep whose
+  job was removing it. `lib/constants.ts:8-9,19-22` still maps `VES`/`KEM`.
+  Dispatch is guarded off, so nothing has run. Tombstone comments naming the
+  deleted constants (`lib/mc-constants.ts:4,44,76`, `app/page.tsx:54`) are
+  correct and should stay; `scripts/acceptance/checks.mjs:141` uses
+  `/Users/kemuniagent` as a mac-path DETECTOR pattern and is also fine.
