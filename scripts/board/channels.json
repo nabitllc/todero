@@ -49,9 +49,9 @@
     {
       "name": "Data Layer & Schema Management",
       "baseline": 0.5,
-      "current": 6,
+      "current": 7,
       "goal": 9,
-      "evidence": "agent_memory had the DAILY NOTES shape while fourteen call sites in fourteen files wrote key/value — my brief said seven. Not one reads it as daily notes; every daily-notes reader already targets agent_memory_files, so reshaping made 14 true and 0 false. Settings -> Infra 502 is now 200. The health check was unsound BOTH ways: it probed existence with select(id) while four healthy tables have no id column, and it never probed shape at all, which is why it stayed green while two features were broken. Existence and shape are now distinguished and proven in both directions.",
+      "evidence": "Every one of the 41 required tables now declares a shape column the health check probes, and the guard proved itself the moment required-tables was regenerated: seven new commerce and conversations tables arrived with no probe and turned the suite red within seconds. Each now probes the column carrying its reason to exist — conversation_messages.approved_at pins the approve-before-send storage, orders.total_minor and products.price_minor pin money as an integer. /api/health reports ok with malformed:[] and missingTables:[]. Held back: migrations 063-065 apply from empty against PGlite, but the SQLite dialect of 062 is once-only rather than idempotent, documented rather than claimed otherwise.",
       "goal_text": "builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.",
       "wave": 4
     },
@@ -121,28 +121,28 @@
     {
       "name": "Pipeline Fidelity",
       "baseline": 2,
-      "current": 3,
+      "current": 6,
       "goal": 9,
       "wave": 6,
-      "evidence": "Swim lanes are real — BoardTab has together/business/feature/sprint — but there is no lane by agent, the one that matters for a fleet. And the Pipeline cannot reflect true state by construction: 7 invented display stages against 11 real lifecycle statuses, with column membership decided by ad-hoc conditions in the render. It also hardcodes a 4-agent array and filters on a status string absent from the lifecycle module.",
+      "evidence": "All 16 lifecycle statuses map across 8 columns, each exactly once, as DATA a test enumerates rather than conditions in JSX — and the completeness test is red in both directions (unmapping a status fails 5 of 53 saying an issue in it would be invisible; inventing one fails 3 of 53). The lane by agent is real: 29 lanes from 28 live roster rows, and the 22 agents with no work in flight are each still named. THE FINDING: test_status is not a column on issues, so undefined === 'passed' was the only path into UX Review — one of seven columns was mathematically unreachable and six statuses fell through to a catch-all. Held back: PATCH /api/issues to code_review is BROKEN on this host because issue-routing writes that phantom column, and PipelineTab is now 950 lines.",
       "goal_text": "Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through."
     },
     {
       "name": "Customer Conversations",
       "baseline": 0,
-      "current": 0,
+      "current": 5,
       "goal": 9,
       "wave": 7,
-      "evidence": "New scope, added 25 Aug. Todero must not only build a project but operate it — the first real test is answering customers on WhatsApp and on the site. Nothing exists: no conversation store, no draft-approve-send path, no channel integration beyond outbound Discord/Telegram alerts.",
+      "evidence": "From nothing to a store, a lifecycle and a surface. The owner rule — 'You approve; Todero sends' — is a CHECK CONSTRAINT, not a policy in a route: state=sent with approved_at NULL throws in both dialects. The builder proved that is not decorative by rebuilding the same schema WITHOUT the checks and showing the identical inserts accepted. An agent can draft and cannot approve its own draft (201 then 403). No transport exists, proven mechanically: grep for fetch/http/axios/WebSocket across every owned file returns three hits, all same-origin. Held back: no inbound webhook and no provider — WhatsApp is the benchmark and no provider decision exists — and the card was wired at the wave boundary but has not been watched rendering in a browser.",
       "goal_text": "Slack — a reply threads instead of drowning the channel. Grok Bot — drafts while you are away, surfaces only what needs approval. You approve; Todero sends."
     },
     {
       "name": "Commerce Operations",
       "baseline": 0,
-      "current": 0,
+      "current": 5,
       "goal": 8,
       "wave": 7,
-      "evidence": "New scope, added 25 Aug. Operating a storefront means orders, catalog and inventory are objects an operator acts on. Todero has none of them — it models issues and agents only. This is the channel that decides whether Todero is a dev tool or a business console.",
+      "evidence": "Orders, products and inventory are objects with two real actions — inventory adjust and order fulfilment — both persisted and re-read from the database rather than from React state. Money is an integer count of minor units, and the load-bearing reason is that THE TWO HOSTS MUST AGREE: Postgres has exact NUMERIC, SQLite has none, so a NUMERIC column would be exact on Postgres and an IEEE float on the host a fresh clone gets — and every Postgres-run test would still pass. An unknown currency is refused rather than assumed to have two decimals, because assuming is a silent 100x error. Commerce fails closed harder than issues: no all-projects mode at all. Held back: no provider integration, no commerce:* permission (reads borrow projects:read), the inventory adjust is read-modify-write rather than atomic, and the card is wired but unwatched.",
       "goal_text": "Shopify admin — orders, catalog and inventory as first-class objects you can act on, not a dashboard that only reports what happened."
     },
     {
