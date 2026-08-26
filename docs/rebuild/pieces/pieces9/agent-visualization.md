@@ -684,3 +684,174 @@ Each of these is a command with an expected result. None requires reading my pro
 | Honest absence | not applicable | `unknown` ≠ `never`; hollow pip for both; the floor-wide line is computed from real counts and self-corrects | **we win** |
 
 The remaining honest loss is latency, and it is named as such rather than smoothed over.
+
+---
+
+## 12. §9 closed — OfficeCanvas mounted for real, and the tripwire is gone
+
+§9's diff landed (jsdom + `@testing-library/react` in `package.json`,
+`testEnvironment: "node"` with the jest.config.js the DOM-suite docblock relies
+on). `__tests__/office-wiring.test.ts`'s tripwire — **"the jsdom seam — a
+tripwire, not coverage"** — was read as a claim to verify, not a fact, per this
+session's brief, precisely because this piece doc's own track record (§5, §7,
+and the header of officePolling.ts/officeWiring.ts) is three prior corrections
+of a prior agent's own overstatements. It checked out: the tripwire's `expect`
+really did read `jsdomInstalled: false` before this change and the message it
+printed really did match what §9 promised. That message is now honored:
+`__tests__/office-canvas.dom.test.tsx` exists, the tripwire is deleted, and
+office-wiring.test.ts's other 48 tests are untouched (verified with `git diff`
+on that file — a two-line delta: the tripwire block removed, replaced by a
+one-line pointer comment to the new suite).
+
+### What the new suite asserts, and how each assertion was proved capable of failing
+
+Three tests, each named by the property it checks:
+
+1. **CONTROL — mounting produces real DOM, not a blank div.**
+   `expect(container.querySelector('canvas')).toBeTruthy()`.
+   Mutation: changed OfficeCanvas's render to `return null` before its real
+   JSX. **CAUGHT** — not even a clean assertion failure: the mount throws
+   (`Cannot read properties of null (reading 'getContext')`), because the
+   simulation effect's `canvasRef.current` is null when there's no `<canvas>`
+   to ref. Either way, the test goes red. Reverted.
+
+2. **The board-task poll effect writes `boardTasksRef`, from a real
+   `fetchJson` round trip.** `fetchJson` is stubbed only at the network
+   boundary (per-URL, keyed on the real `BOARD_TASKS_QUERY` constant so the
+   test cannot silently drift from the real query string); `boardTaskPollOutcome`
+   and `applyBoardTaskOutcome` run for real. Asserts
+   `boardTasksRef.current` equals `{ nova: 'Fix the flaky test' }` after the
+   effect's fetch resolves.
+   Mutation: at the call site, changed
+   `applyBoardTaskOutcome(boardTaskPollOutcome(r), boardTasksRef, setPollError)`
+   to pass a throwaway `{ current: {} }` instead of the real `boardTasksRef`.
+   **CAUGHT** (`toEqual` failure — `boardTasksRef.current` stayed `{}`).
+   Reverted.
+
+3. **A click on the agent sets `selectedIdRef`, observed at the next
+   `drawAgents` call.** `selectedIdRef` is not a prop — it is created inside
+   OfficeCanvas by its own `useRef`, so there is no way to read it directly
+   from outside without editing the component. The one place its value
+   crosses back out is `drawOptionsFromRefs(drawRefs, frame).selectedId`,
+   which is the third argument to every `drawAgents` call — so `drawAgents`
+   is mocked as a **captured** spy (not just a no-op) and the assertion reads
+   its last call's `options.selectedId`. A `Harness` component holds
+   `selectedId` in real `useState`, the way `components/AgentOffice.tsx`
+   does, so the click's `setSelectedId` call is a genuine prop round-trip,
+   not a spy reporting on itself. `initAgents` is mocked to return one
+   fixture agent at a known `px:100, py:100`; the camera starts at
+   `{x:0,y:0,z:1}` (set by the real resize effect against a stubbed
+   `clientWidth`/`clientHeight`), so a synthetic `mousedown`+`mouseup` at
+   `clientX:100, clientY:100` lands on it. Before the click, asserts
+   `selectedId === null`; after, `selectedId === 'nova'`.
+   Two mutations, both against files this lane does not own and both
+   reverted immediately after observing red:
+   - Commented out the sync effect body, `selectedIdRef.current=selectedId;`
+     (line 186). **CAUGHT** (`selectedId` stayed `null` after the click).
+   - Changed the click handler's `setSelectedId((id)=>id===best.id?null:best.id)`
+     to `setSelectedId((id)=>null)` (line 910), i.e., broke the click's own
+     hit-test-to-selection wiring rather than the sync effect. **CAUGHT**,
+     same assertion, same reason: the click no longer selects anything.
+
+All four mutations were caught; `git status` after each revert showed only
+the pre-existing untracked `office-canvas.dom.test.tsx`, confirming no
+mutation leaked into the diff being reported.
+
+### What jsdom made necessary to stub, and why each stub does not touch the thing under test
+
+- `HTMLCanvasElement.prototype.getContext` returns a `Proxy` that no-ops any
+  method/property access. Confirmed first, empirically, against this
+  project's own installed `jsdom` (not assumed): a bare `new JSDOM('<canvas>')`
+  throws `Not implemented: HTMLCanvasElement.prototype.getContext` and
+  `canvas.getContext('2d')` returns `null`. Canvas *painting* is not a
+  property this file asserts on.
+- `components/office/officeDrawing`'s painting functions (`drawFloor`,
+  `drawFurniture`, `drawParticles`, `drawMinimap`, `saveMemory`,
+  `createAudio`, `captureFrame`) are replaced with `jest.fn()`. `initAgents`
+  is replaced with a fixture (known pixel position) rather than the real
+  desk-layout math, because the property under test is "did the click reach
+  the right ref", not "did initAgents lay out desks correctly" — that is
+  covered elsewhere (`office-bubble-render.test.ts` et al.) and is not this
+  file's job to re-prove. `drawAgents` is the one exception: mocked but
+  **captured**, because it is the only channel this file has to read
+  `selectedIdRef`'s value without exposing that ref as a prop. Everything
+  else `officeDrawing` exports (`tileCenterPx`, `nowts`, `getDayNight`,
+  `clampCam`, `applyCamera`, `countWaitingByAgent`) is left real via
+  `jest.requireActual` + spread, including inside `officePolling.ts`, which
+  imports `countWaitingByAgent` from the same module — that import resolves
+  to the same mock, and the mock deliberately keeps it real rather than
+  stubbing it, since the "waiting on you" poll's own decision function is not
+  something this file wanted to weaken as a side effect of mocking its
+  sibling.
+- `fetchJson` (network) and `fetchAgentRuns` (a plain `fetch` call in
+  `hooks/useAgentStatus.ts`, not `fetchJson` — checked by reading that file
+  rather than assumed) are stubbed per-URL, so every poll effect gets a
+  controlled, immediate answer instead of a test hitting a real server or
+  hanging.
+
+None of the above touches `officePolling.ts` or `officeWiring.ts` — the two
+files that hold the actual decisions — or the effect bodies inside
+`OfficeCanvas.tsx` that call them. Those ran for real in every test above,
+which is what makes the mutation results above mean something.
+
+### What this file does NOT pin, stated plainly rather than smoothed over
+
+- **The roster-poll → heartbeat-liveness path** (`applyRosterOutcome`'s
+  `livenessRef` half, and the `livenessHonestyLine` feed message). The test
+  fixture's `/api/agents` mock is a bare `[{id:'nova',name:'Nova'}]` array
+  chosen only to make `rosterRef.current` truthy so `ensureAgents()` would
+  run; nothing here asserts what `livenessRef.current` ends up holding.
+  That path is already pinned by executing tests — `office-wiring.test.ts`'s
+  `applyRosterOutcome` suite calls the real function directly — so this file
+  intentionally did not re-prove it through a much heavier full-mount path.
+- **The "waiting on you" poll's effect wiring** (`applyWaitingOutcome` being
+  handed `waitingRef`/`lastUnroutedMsgRef` correctly from inside
+  OfficeCanvas). `WAITING_QUERY` falls through this file's `fetchJson` mock
+  to the default not-ok stub, deliberately, so no bubble exists to interfere
+  with the click test above. That means this file does NOT close the "~6
+  lines hand these functions their refs" gap for the waiting effect
+  specifically — only for the board-task effect (assertion 2) and the
+  selection sync effect (assertion 3). A follow-up mounting test could add a
+  fourth case (`WAITING_QUERY` → ok, assert `waitingRef.current` and a bubble
+  hot-spot at the right pixel via `bubbleHit`), but it was left out here
+  rather than padded in, because it was not yet mutation-tested and the
+  brief's own rule is "if a behaviour cannot be pinned... say so plainly and
+  do not ship a grep in its place." This is not a grep gap — it is an
+  honestly uncovered one.
+- **The roster/agent-runs/status/SSE polling effects' internal state
+  transitions** (mood decay, task-completion feed lines, the SSE-vs-poll
+  fallback, subagent sprite drawing). None of these are exercised because the
+  fixture agent never enters a `working` state and the simulation only ran a
+  handful of real animation frames before each assertion's `waitFor`
+  resolved. These are unit-tested elsewhere as pure logic where they've been
+  extracted (e.g., the board-task mirror suite); the raw inline forEach
+  blocks that remain inside OfficeCanvas.tsx's SSE/poll effects (roughly
+  lines 320-548) are still not reachable by an executing assertion anywhere
+  in this repo, mounted or not, and this file does not claim otherwise.
+
+### Gate numbers, this session
+
+```
+npx tsc --noEmit                    0 errors.
+
+npm test                            Test Suites: 1 failed, 1 skipped, 121 passed, 122 of 123 total
+                                     Tests: 1 failed, 2 skipped, 2344 passed, 2347 total
+                                     37.4s
+  The one failure: __tests__/runtimes/spawn-live.test.ts — a real spawned
+  child process failing on this host (a null-byte in an inherited env var,
+  `DATABASE_URL`, per its own error text), unrelated to this lane and named
+  in the brief as the expected/known failure. office-wiring.test.ts's
+  remaining 48 tests: green. The new office-canvas.dom.test.tsx: 3/3 green.
+
+node scripts/acceptance/run.mjs     45/45, harness score 10/10.
+                                     First run: 11166ms (loaded server, per
+                                     the brief's warning). Re-run: 4163ms.
+
+bash scripts/smoke-test-layout.sh   exit 0. Nine guards, all PASS.
+```
+
+### Fixtures
+
+None created or touched this session — this lane's work was two test files
+and this doc; no live-server row was written, so there is nothing to clean up
+and no risk to `TOD-504`–`TOD-514` (owner's demo data) or `TOD-1`.

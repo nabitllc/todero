@@ -538,24 +538,7 @@ describe('the bubble is a door — the actionability the benchmark has and we di
 })
 
 // -----------------------------------------------------------------------------
-describe('the jsdom seam — a tripwire, not coverage', () => {
-  // Everything above executes real functions. What none of it does is MOUNT
-  // OfficeCanvas, so the ~6 remaining lines that hand these functions their
-  // refs are still unexecuted. Closing that needs jsdom, which is a
-  // package.json + jest.config.js change this lane does not own. The exact
-  // diff is docs/rebuild/pieces/pieces9/agent-visualization.md §9.
-  //
-  // This test does not pretend to be that coverage. It is a tripwire: the day
-  // someone lands the seam, it FAILS, with the next step in its message —
-  // so the dependency cannot arrive without the migration being noticed.
-  it('fails the moment jsdom lands, so the DOM suite is not forgotten', () => {
-    let present = false
-    try { require.resolve('jest-environment-jsdom'); present = true } catch { present = false }
-    expect({
-      jsdomInstalled: present,
-      nextStep: present
-        ? 'jsdom is now installed. Add __tests__/office-canvas.dom.test.tsx with @jest-environment jsdom, mount OfficeCanvas with stub refs, and assert the poll effects write the refs and the click sets selectedIdRef — then delete this tripwire. See pieces9/agent-visualization.md §9.'
-        : 'not installed; nothing to migrate yet',
-    }).toEqual({ jsdomInstalled: false, nextStep: 'not installed; nothing to migrate yet' })
-  })
-})
+// The jsdom seam this file used to carry as a tripwire ("the jsdom seam — a
+// tripwire, not coverage") is now closed by __tests__/office-canvas.dom.test.tsx,
+// which mounts OfficeCanvas for real under `@jest-environment jsdom`. See
+// docs/rebuild/pieces/pieces9/agent-visualization.md §9 for the mutation proof.
