@@ -885,6 +885,19 @@ export async function GET(req: NextRequest) {
   const businessIdParam = url.searchParams.get('business_id')
   const assigneeParam = url.searchParams.get('assignee')
   const statusParam = url.searchParams.get('status')
+  // TOD-2416: `type` was read nowhere on this GET, so `?type=epic` was accepted
+  // and silently ignored — an Epics card asking for a count of epics got a
+  // count of every issue. That is the "parameter accepted and then ignored"
+  // defect this rebuild already paid a round for. Validated against the same
+  // VALID_TYPES the POST path uses, so an unknown type refuses rather than
+  // returning an unfiltered set that looks like a real answer.
+  const typeParam = url.searchParams.get('type')
+  if (typeParam !== null && !VALID_TYPES.includes(typeParam)) {
+    return NextResponse.json(
+      { error: `Invalid type "${typeParam}" — allowed: ${VALID_TYPES.join(', ')}.` },
+      { status: 400 },
+    )
+  }
 
   // ─── scope-reaches-the-server ───────────────────────────────────────────
   //
@@ -1008,6 +1021,7 @@ export async function GET(req: NextRequest) {
     if (effectiveProject) q = q.eq('project', effectiveProject)
     if (assigneeParam) q = q.eq('assignee', assigneeParam)
     if (statusParam) q = q.eq('status', statusParam)
+    if (typeParam) q = q.eq('type', typeParam)
     if (parentIdParam) q = q.eq('parent_id', parentIdParam)
     if (search) {
       q = q.ilike('title', `%${search}%`)

@@ -29,6 +29,7 @@ import PipelineTab from '@/components/tabs/PipelineTab'
 import IssuesTab from '@/components/tabs/IssuesTab'
 import AutomationsTab from '@/components/tabs/AutomationsTab'
 import BoltScheduleCard from '@/components/tabs/BoltScheduleCard'
+import WorkViewCard from '@/components/tabs/WorkViewCard'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
@@ -47,7 +48,7 @@ import ChatOverlay from '@/components/nav/ChatOverlay'
 import RunsView from '@/components/nav/RunsView'
 import NowSignal from '@/components/nav/NowSignal'
 import { ProjectScopeProvider } from '@/components/nav/ProjectScope'
-import { DEFAULT_VIEW, LEGACY_TAB_MAP, isDestinationId, viewsOf, destinationOf, type DestinationId } from '@/components/nav/config'
+import { DEFAULT_VIEW, LEGACY_TAB_MAP, LEGACY_VIEW_MAP, isDestinationId, viewsOf, destinationOf, type DestinationId } from '@/components/nav/config'
 import { dbUrl, dbRestHeaders, issuesUrl } from '@/lib/db/browser'
 import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
@@ -69,7 +70,7 @@ const WORK_EPICS_SUB_VIEWS = [
   { id: 'features', label: 'Features' },
   { id: 'roadmap', label: 'Product Board' },
 ]
-const WORK_SPRINT_SUB_VIEWS = [
+const WORK_BOLT_SUB_VIEWS = [
   { id: 'pipeline', label: 'Pipeline' },
   { id: 'due-dates', label: 'Due dates' },
 ]
@@ -143,7 +144,12 @@ function parseURL(): ParsedURL {
   if (first && isDestinationId(first)) {
     const destination = first as DestinationId
     const second = rest[1]
-    const view = second && viewsOf(destination).includes(second) ? second : DEFAULT_VIEW[destination]
+    // A renamed view resolves through LEGACY_VIEW_MAP before falling back, so
+    // an old bookmark lands on the surface it named rather than on the
+    // destination default (which looks like success and shows the wrong page).
+    const aliased = second ? LEGACY_VIEW_MAP[destination]?.[second] : undefined
+    const resolved = aliased ?? second
+    const view = resolved && viewsOf(destination).includes(resolved) ? resolved : DEFAULT_VIEW[destination]
     return { destination, view, business, project, openChat: false }
   }
   return { destination: 'now', view: 'overview', business, project, openChat: false }
@@ -353,7 +359,7 @@ export default function Home() {
   // the builder report — everything here is still reachable by clicking,
   // just not independently deep-linkable yet).
   const [workEpicsSubView, setWorkEpicsSubView] = useState<string>('map')
-  const [workSprintSubView, setWorkSprintSubView] = useState<string>('pipeline')
+  const [workBoltSubView, setWorkBoltSubView] = useState<string>('pipeline')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped issue rows
   const [issueActivity, setIssueActivity] = useState<any[] | null>(null)
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week')
@@ -862,17 +868,17 @@ export default function Home() {
             projectIssueTotal={destination === 'now' || destination === 'work' ? projectIssueTotal : null}
             subViews={
               destination === 'work' && view === 'epics' ? WORK_EPICS_SUB_VIEWS :
-              destination === 'work' && view === 'sprint' ? WORK_SPRINT_SUB_VIEWS :
+              destination === 'work' && view === 'bolt' ? WORK_BOLT_SUB_VIEWS :
               undefined
             }
             activeSubView={
               destination === 'work' && view === 'epics' ? workEpicsSubView :
-              destination === 'work' && view === 'sprint' ? workSprintSubView :
+              destination === 'work' && view === 'bolt' ? workBoltSubView :
               undefined
             }
             onSelectSubView={
               destination === 'work' && view === 'epics' ? setWorkEpicsSubView :
-              destination === 'work' && view === 'sprint' ? setWorkSprintSubView :
+              destination === 'work' && view === 'bolt' ? setWorkBoltSubView :
               undefined
             }
           >
@@ -900,20 +906,56 @@ export default function Home() {
               pill row DestinationShell renders from `subViews` above) — see
               components/nav/config.ts for the full old -> new table.
             */}
+            {/* TOD-2416: Work's four cards, per FEEDBACK.md item 4 — Bolt board,
+                Backlog, Epics, Due. The legacy tabs are WRAPPED, not rewritten;
+                what the card adds is the contract they never had (one question,
+                an exact count, the query printed, persisted collapse, an empty
+                state that names the project, and an error that replaces the
+                body rather than an empty state appearing over a failure). */}
             {destination === 'work' && view === 'board' && (
-              <BoardTab featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} projectFilter={selectedProject} />
+              <WorkViewCard
+                id="work-bolt-board" title="What is the work, and where is it stuck?"
+                projectFilter={selectedProject} countLabel="issues"
+                emptyMessage={(p) => `${p} has no issues on the board yet — that is correct, not broken. Cards appear here as work is created.`}
+              >
+                <BoardTab featureFilter={boardFeatureFilter} featureFilterName={boardFeatureFilterName} onClearFeatureFilter={() => { setBoardFeatureFilter(undefined); setBoardFeatureFilterName(undefined) }} projectFilter={selectedProject} />
+              </WorkViewCard>
             )}
-            {destination === 'work' && view === 'list' && <IssuesTab projectFilter={selectedProject} />}
-
-            {destination === 'work' && view === 'epics' && workEpicsSubView === 'map' && <EpicMapTab />}
-            {destination === 'work' && view === 'epics' && workEpicsSubView === 'features' && (
-              <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); goTo('work', 'board') }} projectFilter={selectedProject} />
+            {destination === 'work' && view === 'list' && (
+              <WorkViewCard
+                id="work-backlog" title="What is in the backlog?"
+                projectFilter={selectedProject} countLabel="issues"
+                emptyMessage={(p) => `${p} has no issues yet — that is correct, not broken.`}
+              >
+                <IssuesTab projectFilter={selectedProject} />
+              </WorkViewCard>
             )}
-            {destination === 'work' && view === 'epics' && workEpicsSubView === 'roadmap' && <ProductBoardTab projectFilter={selectedProject} />}
 
-            {destination === 'work' && view === 'sprint' && workSprintSubView === 'pipeline' && <PipelineTab projectFilter={selectedProject} />}
-            {destination === 'work' && view === 'sprint' && workSprintSubView === 'due-dates' && (
-              <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedProject} cronsMeta={cronsMeta} />
+            {destination === 'work' && view === 'epics' && (
+              <WorkViewCard
+                id="work-epics" title="What are the epics, and how do they break down?"
+                projectFilter={selectedProject} countFilter="&type=epic" countLabel="epics"
+                emptyMessage={(p) => `${p} has no epics yet — that is correct, not broken.`}
+              >
+                {workEpicsSubView === 'map' && <EpicMapTab />}
+                {workEpicsSubView === 'features' && (
+                  <FeaturesTab onViewIssues={(featureId, featureName) => { setBoardFeatureFilter(featureId); setBoardFeatureFilterName(featureName); goTo('work', 'board') }} projectFilter={selectedProject} />
+                )}
+                {workEpicsSubView === 'roadmap' && <ProductBoardTab projectFilter={selectedProject} />}
+              </WorkViewCard>
+            )}
+
+            {destination === 'work' && view === 'bolt' && (
+              <WorkViewCard
+                id="work-due" title="What is due, and what is in flight?"
+                projectFilter={selectedProject} countLabel="issues"
+                emptyMessage={(p) => `Nothing is scheduled for ${p} yet — that is correct, not broken.`}
+              >
+                {workBoltSubView === 'pipeline' && <PipelineTab projectFilter={selectedProject} />}
+                {workBoltSubView === 'due-dates' && (
+                  <CalendarTab calendarIssues={calendarIssues} calendarError={calendarError ?? projectsError} sprintProjects={sprintProjects} calendarView={calendarView} setCalendarView={setCalendarView} displayCrons={displayCrons} nextRuns={nextRuns} cronModal={cronModal} setCronModal={setCronModal} projectFilter={selectedProject} cronsMeta={cronsMeta} />
+                )}
+              </WorkViewCard>
             )}
 
             {destination === 'fleet' && view === 'team' && (

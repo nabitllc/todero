@@ -56,7 +56,7 @@ export const DESTINATIONS: Destination[] = [
       { id: 'board', label: 'Board' },
       { id: 'list', label: 'List' },
       { id: 'epics', label: 'Epics' },
-      { id: 'sprint', label: 'Sprint' },
+      { id: 'bolt', label: 'Bolt board' },
     ],
   },
   {
@@ -146,12 +146,15 @@ export const LEGACY_TAB_MAP: Record<string, [DestinationId, string]> = {
   infra: ['settings', 'infra'],
   team: ['fleet', 'team'],
   office: ['fleet', 'office'],
-  calendar: ['work', 'sprint'],
+  // TOD-2416: 'sprint' was this view's id until the Bolt board rename.
+  // A bookmarked /work/sprint must still land, so it maps like any legacy id.
+  sprint: ['work', 'bolt'],
+  calendar: ['work', 'bolt'],
   memory: ['memory', 'memory'],
   board: ['work', 'board'],
   features: ['work', 'epics'],
   'epic-map': ['work', 'epics'],
-  pipeline: ['work', 'sprint'],
+  pipeline: ['work', 'bolt'],
   issues: ['work', 'list'],
   projects: ['settings', 'projects'],
   'product-board': ['work', 'epics'],
@@ -170,4 +173,17 @@ export function viewsOf(dest: DestinationId): string[] {
 
 export function destinationOf(id: DestinationId): Destination {
   return DESTINATIONS.find(d => d.id === id)!
+}
+
+/**
+ * TOD-2416: views that were RENAMED, by destination. A bookmark to the old
+ * segment must land where it meant to, not silently fall back to the
+ * destination's default — `/work/sprint` resolving to the Board looks like it
+ * worked while showing the wrong surface, which is worse than a 404.
+ *
+ * LEGACY_TAB_MAP handles old TOP-LEVEL tab ids; this handles the second
+ * segment, which that map never sees.
+ */
+export const LEGACY_VIEW_MAP: Partial<Record<DestinationId, Record<string, string>>> = {
+  work: { sprint: 'bolt' },
 }
