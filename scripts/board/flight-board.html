@@ -342,9 +342,9 @@ section{margin-top:42px;scroll-margin-top:16px}
           <span class="wn">Wave 6</span>
           <span class="wname">Operator surface</span>
           <span class="chip cleared">complete</span>
-          <span class="wwhen">25 Aug · 16:05 → running (3 rounds)</span>
+          <span class="wwhen">25 Aug · 16:05 → running (4 rounds)</span>
         </div>
-        <p class="wlede">Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder's summary. Three rounds so far: 4/10, 5/10, third being scored.</p>
+        <p class="wlede">Michael: “Can you redistribute Todero UIUX before continuing in the next waves? Looping until the UIUX shows the way you planned it to show.” Scored against design/Nav.dc.html and its six sibling artboards — a spec that is a FILE, so a critic checks the running app against it rather than against the builder’s summary. Four rounds: &lt;b>4 → 5 → 6 → 6&lt;/b>. Round 4 is the wave’s first flat score; one more halts it.</p>
         <div class="spend">
           <span><i>time</i>3h 10m</span>
           <span><i>agents</i>6</span>
@@ -353,7 +353,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="ba">
           <div><div class="balab before">Before</div><ul><li>Twenty nav entries plus a divider, appended one at a time — never designed</li><li><code>projectFilter={selectedBusiness}</code> — every tab's “project filter” was the <b>business</b>, so selecting one project selected everything</li><li>Vespera and Kemuni sprint cards rendered from <b>hardcoded date constants</b>, expired, reading “0 days left · 100% elapsed” on the landing screen</li><li>Today's Standup was a <b>400 on every load</b> — a predicate inside <code>or()</code> could not be negated</li></ul></div>
-          <div class="aft"><div class="balab after">After</div><ul><li><b>Six destinations</b> + Chat as a ⌘J overlay; all six fit a phone bottom bar with no “more” menu</li><li>Scope enforced at the <b>seam</b> — middleware stamps it, the proxy injects it. All <b>18 exempted client call sites became correct without being edited</b>, which is the test of the right layer</li><li>An unresolvable scope now <b>refuses</b> rather than widening; forged headers and cross-origin referers refused</li><li>Round 1 shipped a sentence asserting scoping the code did not do; round 2's guard promised enforcement it did not perform; the harness itself carried a <b>literal backspace byte</b> where a <code></code> belonged. All three found and fixed — the instruments now get checked before their verdicts are believed</li><li>Landing screen reads “Limiglow has 0 issues yet — that is correct, not broken”, “No active sprint for Limiglow”, “No recent activity”</li></ul></div>
+          <div class="aft"><div class="balab after">After</div><ul><li><b>Six destinations</b> + Chat as a ⌘J overlay; all six fit a phone bottom bar with no “more” menu</li><li>Scope enforced at the <b>seam</b> — middleware stamps it, the proxy injects it. All <b>18 exempted client call sites became correct without being edited</b>, which is the test of the right layer</li><li>An unresolvable scope now <b>refuses</b> rather than widening; forged headers and cross-origin referers refused</li><li>Round 1 shipped a sentence asserting scoping the code did not do; round 2's guard promised enforcement it did not perform; the harness itself carried a <b>literal backspace byte</b> where a <code></code> belonged. All three found and fixed — the instruments now get checked before their verdicts are believed</li><li>Landing screen reads “Limiglow has 0 issues yet — that is correct, not broken”, “No active sprint for Limiglow”, “No recent activity”</li><li>Round 4 measured: <b>0px gutter</b> at 1280/1024/820/375 with no horizontal scroll, and Now down to <b>752px in an 800px viewport</b> from ~1,250 — it fits one screen</li><li>Round 4 shipped the fabrication it was written to prevent: a hardcoded <code>24h</code> badge fires on rows with <b>no window at all</b>, and an expired row wins the soonest-remaining reduce — the headline read <b>“ended left”</b> while a live bolt had 8h58m to run. TOD-2401 in new clothes</li><li>The card contract is real and verified: <code>components/nav/Card.tsx</code> carries metric, <b>source provenance</b>, optional action, and id-keyed collapse that survives reload</li></ul></div>
         </div>
       </div>
       <div class="wave done" id="wave-5.5">
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 627ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 209ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
