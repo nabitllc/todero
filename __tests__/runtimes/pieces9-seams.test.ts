@@ -160,10 +160,34 @@ describe('SEAM: MemoryTab must show a failed run as failed (RED until applied)',
     expect(memoryTabSrc.includes('exit_status') || MEMORY_TAB_DIFF).toBe(true)
   })
 
-  it('renders the FAILED field from the failed column, not from rejection_reason alone', () => {
-    const rendersFromRejectionReasonOnly =
-      /label="FAILED"[^/]*value=\{r\.rejection_reason\}/.test(memoryTabSrc)
-    expect(!rendersFromRejectionReasonOnly || MEMORY_TAB_DIFF).toBe(true)
+  // TOD-2484: THIS ASSERTION USED TO MATCH THE FIX AS WELL AS THE BUG.
+  //
+  // It was `/label="FAILED"[^/]*value=\{r\.rejection_reason\}/`. The corrected
+  // component STILL contains that sequence — `value={r.rejection_reason}` is
+  // the right thing to render, and the fix was to GUARD it behind
+  // `truthy(r.failed)` and give it a `missing` string that names exit_status.
+  // So the seam stayed red after being correctly applied, and the only way to
+  // satisfy it would have been to make the component worse.
+  //
+  // That is the third assertion found today that cannot tell its fix from its
+  // defect, and it is the reason a source check needs to name the PROPERTY
+  // rather than a fragment of the rendering. The property here is the guard.
+  //
+  // NOT BEHAVIOURAL, and that is a limitation rather than a choice:
+  // jest-environment-jsdom is not installed and there is no @testing-library,
+  // so nothing in this repo can render a component. Adding that dependency
+  // touches a shared package.json while other agents are writing, so it is
+  // written up rather than taken unilaterally.
+  it('guards the FAILED field behind the failed column, not rejection_reason alone', () => {
+    const failedField = memoryTabSrc.match(/\{truthy\(r\.failed\)[\s\S]{0,400}?label="FAILED"/)
+    const namesExitStatusWhenReasonAbsent =
+      /missing=\{`failed=true, exit_status=\$\{r\.exit_status/.test(memoryTabSrc)
+    // A separate, UNGUARDED FAILED field would defeat the guard above, so the
+    // absence of one is part of the property.
+    const unguarded = /(?<!truthy\(r\.failed\)[\s\S]{0,400})<Field\s+label="FAILED"/.test(memoryTabSrc)
+    expect(
+      (!!failedField && namesExitStatusWhenReasonAbsent && !unguarded) || MEMORY_TAB_DIFF,
+    ).toBe(true)
   })
 
   it('does not still claim that no column records what the run did', () => {

@@ -751,7 +751,15 @@ export default function Home() {
     if (row?.liveness === 'live') {
       // Deliberately NOT falling back to the newest agent_runs title: that row
       // is hours old and never closed, so it described work that had finished.
-      return { dot: 'green', label: row.currentTask || 'Heartbeat just now' }
+      // TOD-2484: currentTaskLabel, not currentTask. The API ships the same
+        // string pre-worded with its PROVENANCE FIRST — "reported:" when the
+        // agent said so, "assigned:" when only the board does, "unsourced:"
+        // when nobody has. Provenance leads because every one of these call
+        // sites renders inside a `truncate` and truncation eats the TAIL, so a
+        // trailing qualifier would be cut off exactly where it matters. This
+        // one prints in GREEN beside a live dot, which is the flattering guess
+        // the fleet-provenance piece exists to stop.
+        return { dot: 'green', label: row.currentTaskLabel || 'Heartbeat just now' }
     }
     if (row?.liveness === 'stale') return { dot: 'amber', label: `Stale — last heartbeat ${seenAgo}${openSuffix}` }
     if (row?.liveness === 'idle')  return { dot: 'grey',  label: `Idle — last heartbeat ${seenAgo}${openSuffix}` }
