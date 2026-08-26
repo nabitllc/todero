@@ -360,12 +360,13 @@ function BoltStatusCard({ projectFilter }: { projectFilter: string | null }) {
     // `windowMs === null ? 'Bolt'`, which is how a row with no start date got
     // a "24h" badge printed above "10d left".
     const noun = kind === 'bolt' ? 'Bolt' : kind === 'sprint' ? 'Sprint' : 'Untimed'
-    const label = row.name ?? (
-      row.sprint_number != null
-        ? (kind === 'unknown' ? `#${row.sprint_number}` : `${noun} ${row.sprint_number}`)
-        : noun
-    )
-    return { row, remainingMs, pct, label, noun, windowLabel }
+    // `sprints.name` is NOT NULL in both schemas and is in this card's select,
+    // so `row.name ?? <fallback>` never falls through — round 5 computed `noun`
+    // into an unreachable branch and it rendered nowhere. The noun is a
+    // separate visible element now, so the tile states what KIND of window it
+    // is and not only how long it is.
+    const label = row.name ?? (row.sprint_number != null ? `#${row.sprint_number}` : 'Window')
+    return { row, remainingMs, pct, label, noun, windowLabel, kind }
   })
   // The soonest row still in the FUTURE. Round 4 reduced on remainingMs, which
   // goes negative once a row expires, so the most-expired row always won.
@@ -387,7 +388,7 @@ function BoltStatusCard({ projectFilter }: { projectFilter: string | null }) {
       }
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {computed.map(({ row, remainingMs, pct, label, windowLabel }) => {
+        {computed.map(({ row, remainingMs, pct, label, noun, windowLabel, kind }) => {
           const urgent = remainingMs !== null && remainingMs <= 3 * 3600000 && remainingMs > 0
           const ended = remainingMs !== null && remainingMs <= 0
           return (
@@ -395,8 +396,8 @@ function BoltStatusCard({ projectFilter }: { projectFilter: string | null }) {
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-white/50 text-[10px] font-semibold uppercase tracking-widest">{label}</span>
                 {row.project && <span className="text-white/25 text-[9px]">{row.project}</span>}
-                {windowLabel && (
-                  <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/40 font-mono">{windowLabel}</span>
+                {kind !== 'unknown' && windowLabel && (
+                  <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/40 font-mono">{noun} · {windowLabel}</span>
                 )}
                 {urgent && <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-400 font-semibold">DUE SOON</span>}
               </div>

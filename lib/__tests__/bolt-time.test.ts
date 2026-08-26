@@ -17,6 +17,7 @@ import {
   formatRemaining,
   parseBoundary,
   pickHeadline,
+  toBoundaryString,
 } from '../bolt-time'
 
 const HOUR = 3600000
@@ -182,5 +183,72 @@ describe('pickHeadline — a dead row must not hijack a live countdown', () => {
   it('ignores an end-dateless row rather than letting it outrank a live one', () => {
     const h = pickHeadline([{ start_date: '2026-08-26' }, live], now)
     expect(h.state).toBe('live')
+  })
+})
+
+
+describe('toBoundaryString — the writer must agree with the reader', () => {
+  it('round-trips: a stamped boundary parses back to the same instant', () => {
+    const d = new Date(2026, 7, 25, 21, 41, 0) // local 9:41pm
+    const parsed = parseBoundary(toBoundaryString(d))!
+    expect(parsed.getFullYear()).toBe(2026)
+    expect(parsed.getMonth()).toBe(7)
+    expect(parsed.getDate()).toBe(25) // TODAY, not tomorrow
+    expect(parsed.getHours()).toBe(0)
+  })
+
+  it('DIFFERS from toISOString().split()[0] whenever local and UTC dates differ', () => {
+    // The exact defect. At 21:41 in a UTC-4 zone the UTC date is already
+    // tomorrow, so the writer stamped a start_date in the future.
+    const d = new Date(2026, 7, 25, 21, 41, 0)
+    const utcStamp = d.toISOString().split('T')[0]
+    const ours = toBoundaryString(d)
+    if (utcStamp !== ours) {
+      expect(parseBoundary(utcStamp)!.getTime()).toBeGreaterThan(parseBoundary(ours)!.getTime())
+    }
+    expect(ours).toBe('2026-08-25')
+  })
+
+  it('THE INVARIANT: a bolt written now never has more remaining than its own window', () => {
+    // This is the assertion that would have failed on the shipped code and
+    // caught the writer/reader mismatch: a 24h bolt cannot have 26h left.
+    const now = new Date(2026, 7, 25, 21, 41, 0)
+    const tomorrow = new Date(now.getTime() + 86400000)
+
+    const written = { start_date: toBoundaryString(now), end_date: toBoundaryString(tomorrow) }
+    const { windowMs } = classifyWindow(written.start_date, written.end_date)
+    const head = pickHeadline([written], now.getTime())
+    expect(head.state).toBe('live')
+    if (head.state !== 'live') throw new Error('unreachable')
+    expect(windowMs).not.toBeNull()
+    expect(head.remainingMs).toBeLessThanOrEqual(windowMs!)
+  })
+
+  it('the OLD writer breaks that invariant, which is why the test earns its place', () => {
+    const now = new Date(2026, 7, 25, 21, 41, 0)
+    const tomorrow = new Date(now.getTime() + 86400000)
+    const oldWritten = {
+      start_date: now.toISOString().split('T')[0],
+      end_date: tomorrow.toISOString().split('T')[0],
+    }
+    const { windowMs } = classifyWindow(oldWritten.start_date, oldWritten.end_date)
+    const head = pickHeadline([oldWritten], now.getTime())
+    if (head.state !== 'live') throw new Error('expected live')
+    // Only assert the break where local and UTC actually disagree at this hour.
+    if (oldWritten.start_date !== toBoundaryString(now)) {
+      expect(head.remainingMs).toBeGreaterThan(windowMs!)
+    }
+  })
+})
+
+describe('formatRemaining — "0 units left" must not reappear one unit down', () => {
+  it('renders under 30 seconds as <1m, never "0m"', () => {
+    expect(formatRemaining(20000)).toBe('<1m')
+    expect(formatRemaining(1)).toBe('<1m')
+    expect(formatRemaining(20000)).not.toBe('0m')
+  })
+
+  it('still reports a genuinely expired window as ended', () => {
+    expect(formatRemaining(0)).toBe('ended')
   })
 })

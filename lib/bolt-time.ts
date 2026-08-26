@@ -1,6 +1,17 @@
 // lib/bolt-time.ts
 //
-// TOD-2413 (bolt-time): every bolt/sprint time decision, in one file.
+// TOD-2413 (bolt-time), TOD-2414 (the writer half).
+//
+// Every bolt/sprint time decision reachable from the Now and Work surfaces:
+// parsing a boundary, stamping one, classifying a window, formatting what
+// remains, and choosing which row a card's headline describes.
+//
+// Scoped deliberately rather than claimed absolutely. An earlier version of
+// this line said "every bolt-time decision lives here and nowhere else" and a
+// critic falsified it in one grep: components/tabs/BoardTab.tsx carried its own
+// window classification. That copy now calls toBoundaryString, but the honest
+// form of the claim is the list above, which can be checked, not the word
+// "everywhere", which cannot.
 //
 // Round 4 of wave 6 hardened `formatRemaining` against the TOD-2401 rounding
 // bug and left the SELECTION that feeds it unguarded, so the landing screen
@@ -10,19 +21,30 @@
 // here now, and the Work destination's bolt board consumes this rather than
 // growing a second copy.
 //
-// ── The two structural facts this module exists to respect ──────────────────
+// ── The facts this module exists to respect ─────────────────────────────────
 //
-// 1. `sprints.start_date` and `sprints.end_date` are DATE, not TIMESTAMPTZ
-//    (migrations/000_baseline_schema.sql:76-77, never altered). A bolt cannot
-//    carry an hour. Every bolt is midnight-to-midnight by construction, and
-//    HANDOFF.md's "opens automatically at a set time" is not reachable without
-//    a migration. This module renders exactly the precision the column can
-//    support and no more.
-//
-// 2. A date-only string parses as UTC. `new Date('2026-08-27')` is
+// 1. A date-only string parses as UTC. `new Date('2026-08-27')` is
 //    2026-08-27T00:00:00Z, which for an operator at UTC-4 is 8pm on the 26th —
 //    so an unmodified parse makes a bolt read "ended" four hours early. Bolt
 //    boundaries are wall-clock dates, so they are parsed as LOCAL midnight.
+//
+// 2. Because of (1), a boundary must be WRITTEN the same way it is read.
+//    `new Date().toISOString().split('T')[0]` is the UTC date, and after
+//    20:00 in a UTC-4 zone that is TOMORROW — so a bolt written that way and
+//    read by `parseBoundary` starts in the future, and renders a "24h" badge
+//    above "26h 26m left" with a 0%-elapsed bar. That is the round-4 defect
+//    reappearing through the writer instead of the reader. Every caller that
+//    stamps a boundary must use `toBoundaryString`, and there is a round-trip
+//    test asserting the writer's output survives the reader.
+//
+// 3. Column types differ by store, so this module does NOT assume a precision.
+//    `migrations/000_baseline_schema.sql:76-77` declares DATE for Postgres/Neon,
+//    but the live SQLite store types both columns TEXT and round-trips a full
+//    `2026-08-25T20:00:00` correctly. An earlier version of this comment claimed
+//    hour-accurate bolts were structurally impossible and needed a migration;
+//    that is true of the Postgres baseline only, and was wrong about the
+//    deployment actually running. `parseBoundary` therefore respects whatever
+//    precision the value carries rather than flattening it to a date.
 
 /** A row shaped like the `sprints` columns this module reads. */
 export interface BoltRow {
@@ -70,6 +92,21 @@ export function parseBoundary(value: string | null | undefined): Date | null {
   }
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+/**
+ * Stamp a boundary the way `parseBoundary` reads one: the LOCAL calendar date.
+ *
+ * Every writer must use this. `new Date().toISOString().split('T')[0]` is the
+ * UTC date, and a writer using it disagrees with this module's reader by the
+ * operator's offset — which at UTC-4 means that after 8pm it writes tomorrow,
+ * and the bolt opens in the future. The round-trip test in
+ * lib/__tests__/bolt-time.test.ts asserts writer-then-reader holds; it fails
+ * against `toISOString().split('T')[0]`.
+ */
+export function toBoundaryString(date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 /** Render a duration as the window's own length. Hours under two days, days above. */
@@ -123,6 +160,9 @@ export function formatRemaining(ms: number): string {
   // floored hour can round 59.97 minutes up to a literal "60m" instead of
   // carrying into the next hour.
   const totalMinutes = Math.round(ms / 60000)
+  // Under 30 seconds this rounds to 0 and would print "0m" with time still on
+  // the clock — the identical "0 units left" shape as TOD-2401, one unit down.
+  if (totalMinutes < 1) return '<1m'
   if (totalMinutes < 60) return `${totalMinutes}m`
   if (totalMinutes < 48 * 60) {
     const h = Math.floor(totalMinutes / 60)

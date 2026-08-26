@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
+import { toBoundaryString } from '@/lib/bolt-time'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 const SPRINT_START_CHANNEL = '1491991662757548144'
@@ -76,21 +77,27 @@ export async function POST(req: NextRequest) {
 
     const projectName = business?.name ?? 'Unknown'
 
-    // 3. Create new bolt — today's date to tomorrow's date.
+    // 3. Create new bolt — today's LOCAL date to tomorrow's LOCAL date.
     //
-    // This used to claim "24h: today 7am to tomorrow 7am". It never did that:
-    // the two values below are `.toISOString().split('T')[0]`, i.e. whole
-    // DATES, so the window is midnight to midnight and there is no 7am
-    // anywhere. `sprints.start_date` and `.end_date` are DATE columns
-    // (migrations/000_baseline_schema.sql:76-77, never altered), so an
-    // hour-accurate bolt — HANDOFF.md's "opens automatically at a set time" —
-    // is not reachable from this table without a TIMESTAMPTZ migration. That
-    // migration is a separate decision; until it is made, this writes whole
-    // dates and lib/bolt-time.ts renders exactly that precision and no more.
+    // TOD-2414. Two wrong comments have stood here. The first claimed
+    // "24h: today 7am to tomorrow 7am", which the code never did. The second
+    // claimed this wrote whole dates that lib/bolt-time.ts read back at exactly
+    // that precision — also false, and worse, because the two halves disagreed
+    // about WHICH midnight: this route stamped `toISOString().split('T')[0]`
+    // (UTC) and parseBoundary reads local midnight. After 20:00 in a UTC-4 zone
+    // those are different days, so the bolt was written to start TOMORROW and
+    // the landing screen rendered a "24h" badge above "26h 26m left" with a
+    // 0%-elapsed bar — the round-4 defect, arriving through the writer.
+    //
+    // toBoundaryString is the one stamp that matches the one parser, and
+    // lib/__tests__/bolt-time.test.ts round-trips writer -> reader to keep it
+    // that way. Precision is whatever the value carries: the Postgres baseline
+    // types these DATE, the live SQLite store types them TEXT and round-trips
+    // a full timestamp, so nothing here flattens an hour that was supplied.
     const today = new Date()
-    const startDate = today.toISOString().split('T')[0]
+    const startDate = toBoundaryString(today)
     const tomorrow = new Date(today.getTime() + 86400000)
-    const endDate = tomorrow.toISOString().split('T')[0]
+    const endDate = toBoundaryString(tomorrow)
 
     const { data: newSprint, error: sprintErr } = await db
       .from('sprints')

@@ -8,6 +8,7 @@ import type { Task as SharedTask, BoardGroupBy, KanbanColumn } from '@/lib/issue
 import { KanbanCard } from '@/components/KanbanCard'
 import { readApiError, formatApiError } from '@/hooks/useApiData'
 import { sessionOperator } from '@/lib/operator-identity'
+import { toBoundaryString } from '@/lib/bolt-time'
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -496,7 +497,13 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
   // - "future" sprints = sprint dates strictly after today
   // - "closed" sprints = past dates, hidden from the multiselect
   // Convention: issues.sprint is stored as a YYYY-MM-DD date string (not a UUID).
-  const todayISO = new Date().toISOString().slice(0, 10)
+  //
+  // TOD-2414: this line used to be `new Date().toISOString().slice(0, 10)`,
+  // which is the UTC date — so the comment above claiming "ET local" was false
+  // for the four hours each evening when the two disagree, and every sprint
+  // dated today was classified "future" during them. Same writer/reader
+  // boundary mismatch as app/api/sprint-start; one shared stamp now.
+  const todayISO = toBoundaryString()
   const allSprintDatesRaw = Array.from(new Set(tasks.map(t => t.sprint).filter(Boolean))) as string[]
   const activeSprintDates = allSprintDatesRaw.filter(s => s === todayISO)
   // If no sprint matches exactly today, fall back to the latest non-future date as "active"
@@ -670,7 +677,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
                 </button>
               ))
             })()}
-            <Button variant="secondary" size="sm" onClick={() => setNewTask({ status: 'backlog', priority: 'medium', sprint: new Date().toISOString().split('T')[0], project: projectFilter ?? undefined, assignee: 'builder', type: 'task' })}>
+            <Button variant="secondary" size="sm" onClick={() => setNewTask({ status: 'backlog', priority: 'medium', sprint: toBoundaryString(), project: projectFilter ?? undefined, assignee: 'builder', type: 'task' })}>
               + New Task
             </Button>
           </div>
@@ -1203,7 +1210,7 @@ function KanbanBoard({ featureFilter, featureFilterName, onClearFeatureFilter, p
               <FormGroup label="Sprint">
                 <Select value={newTask.sprint??''} onChange={e=>setNewTask({...newTask,sprint:e.target.value||undefined})}>
                   <option value="" className="bg-[#0f0f0f] text-white">None</option>
-                  {(() => { const today = new Date().toISOString().split('T')[0]; const opts = sprints.includes(today) ? sprints : [today, ...sprints]; return opts.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>) })()}
+                  {(() => { const today = toBoundaryString(); const opts = sprints.includes(today) ? sprints : [today, ...sprints]; return opts.map(s=><option key={s} value={s!} className="bg-[#0f0f0f] text-white">{s}</option>) })()}
                 </Select>
               </FormGroup>
               {/* Feature 1: Severity */}

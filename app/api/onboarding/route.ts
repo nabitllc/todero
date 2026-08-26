@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db, type DbAdapter } from '@/lib/db'
 import { dbUnavailableResponse } from '@/lib/db-http'
 import { resolveConfiguredModel } from '@/lib/llm-provider'
+import { toBoundaryString } from '@/lib/bolt-time'
 
 /**
  * Who owns a workspace created by the onboarding wizard.
@@ -56,8 +57,9 @@ export async function POST(req: Request) {
   const warnings: string[] = []
 
   // Create first sprint
-  const today = new Date().toISOString().split('T')[0]
-  const endDate = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
+  // TOD-2414: local stamps, matching lib/bolt-time.ts's parser.
+  const today = toBoundaryString()
+  const endDate = toBoundaryString(new Date(Date.now() + 30 * 86400000))
   const { error: sprintErr } = await supabase.from('sprints').insert({
     name: 'Sprint 1', project: name,
     goal: vision || 'Build something great',

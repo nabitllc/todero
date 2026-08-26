@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getHubClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
+import { toBoundaryString } from '@/lib/bolt-time'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 // Lazy token read — see app/api/notify/route.ts for rationale.
@@ -109,7 +110,8 @@ export async function POST(req: NextRequest) {
       .from('sprints')
       .update({
         status: 'closed',
-        end_date: new Date().toISOString().split('T')[0],
+        // TOD-2414: local stamp, matching lib/bolt-time.ts's parser.
+        end_date: toBoundaryString(),
       })
       .eq('business_id', hubId)
       .eq('id', activeSprint.id)
