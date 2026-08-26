@@ -186,7 +186,14 @@ function DashboardTab({ agent }: { agent: Agent }) {
 
   useEffect(() => {
     setLoading(true)
-    fetchJson<Issue[] | { data?: Issue[] }>(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0`)
+    // TOD-2480: `all_projects=1` deliberately. This panel is an agent-level
+    // aggregate — everything this agent carries, in every project it has
+    // touched — and it renders inside Fleet, a destination middleware resolves
+    // NO scope for. It used to get the cross-project read IMPLICITLY, because
+    // /api/issues treated "the referer is a Fleet page" as permission to drop
+    // the project clause. That implicit grant is gone; the read that genuinely
+    // wants every project now says so.
+    fetchJson<Issue[] | { data?: Issue[] }>(`/api/issues?assignee=${encodeURIComponent(agent.id)}&limit=0&all_projects=1`)
       .then(r => {
         if (!r.ok) { setIssuesError(r.error); setIssues(null); setLoading(false); return }
         setIssuesError(null)

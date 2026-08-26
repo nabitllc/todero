@@ -893,7 +893,14 @@ export async function GET(req: NextRequest) {
     // Uniqueness is why the lookup needs no filter to FIND the row. It is not a
     // reason to let a scoped caller READ it.
     const scope = req.headers.get('x-mc-project')
-    const crossProject = req.headers.get('x-mc-all-projects') === '1'
+    // TOD-2480. `x-mc-all-projects` is NOT a scope and is no longer read here.
+    // middleware.ts sets it and `x-mc-cross-project-hint` in the SAME branch,
+    // always together and never apart, so the only thing the boolean ever meant
+    // was "the referer is a fleet/runs/settings-projects page under some
+    // /p/<slug>" — and this route read it as "this caller may see every
+    // project". The hint carries the ONE project that destination names, which
+    // is a thing a request can be held to.
+    const crossProjectHint = req.headers.get('x-mc-cross-project-hint')
     const allProjects = ['1', 'true', 'yes'].includes(
       (url.searchParams.get('all_projects') ?? '').toLowerCase()
     )
@@ -929,8 +936,28 @@ export async function GET(req: NextRequest) {
     // The `x-mc-all-projects` header still bypasses, because middleware owns it
     // and the scope guard proves a forged one is ignored — unlike a query
     // string, which is whatever the caller types.
-    const keyScope = scope || url.searchParams.get('project')
-    if (!keyScope && !crossProject) {
+    const keyProjectParam = url.searchParams.get('project')
+    // A cross-project destination may name exactly ONE project: its own. Naming
+    // any other is the request a /p/<other> screen is already refused for, and
+    // it is refused here for the same reason.
+    if (crossProjectHint && keyProjectParam && keyProjectParam !== crossProjectHint) {
+      return NextResponse.json(
+        {
+          error: 'project_outside_scope',
+          message: `This screen is scoped to "${crossProjectHint}"; it cannot request "${keyProjectParam}".`,
+        },
+        { status: 400 },
+      )
+    }
+    // The hint is used AS the scope, never as a bypass: it is the project this
+    // request's own path/Referer names, computed by middleware from the
+    // browser's own signals and deleted from anything the caller sent. Every
+    // path below now ends in the SAME comparison; no branch returns the row
+    // without one. Note this branch uses the ADMIN client and select('*'), with
+    // no archive clause — which is why an archived foreign row came back in
+    // full, and why it is the worst of the parameters.
+    const keyScope = scope || keyProjectParam || crossProjectHint
+    if (!keyScope) {
       return NextResponse.json(
         {
           error: 'unscoped_issues_read',
@@ -941,7 +968,7 @@ export async function GET(req: NextRequest) {
         { status: 400 },
       )
     }
-    if (keyScope && !crossProject && data.project !== keyScope) {
+    if (data.project !== keyScope) {
       // 404, deliberately, not 403: a scoped caller should not be able to use
       // this endpoint to discover which keys exist outside its own project.
       return NextResponse.json({ error: `No issue found for task_key=${taskKey}` }, { status: 404 })
@@ -954,7 +981,19 @@ export async function GET(req: NextRequest) {
   // below) — the same `?limit=0` from a Limiglow-scoped tab and a Todero-
   // scoped tab must not share a cache entry, or whichever populated it first
   // wins for both until the 30s TTL expires.
-  const cacheKey = url.search + '|' + (req.headers.get('x-mc-project') ?? '')
+  // TOD-2480. The hint is part of the key for the same reason the scope is:
+  // this lookup runs BEFORE the scope predicate below, so any input the
+  // predicate reads and the key omits is a way to be served a body the
+  // predicate would have refused. It was omitted. `?project=Todero&limit=1`
+  // with NO Referer is legitimately allowed — a script naming its own scope —
+  // and cached under a key ending in '|'; the identical query string from
+  // /p/limiglow/fleet/team produced that same key, hit the cache, and never
+  // reached the refusal at all. Fixing the predicate without fixing this leaves
+  // the leak reachable for 30 seconds at a time.
+  const cacheKey =
+    url.search +
+    '|' + (req.headers.get('x-mc-project') ?? '') +
+    '|' + (req.headers.get('x-mc-cross-project-hint') ?? '')
   const cached = issuesCache.get(cacheKey)
   if (cached && Date.now() - cached.ts < ISSUES_CACHE_TTL) {
     return NextResponse.json(cached.data)
@@ -1068,7 +1107,8 @@ export async function GET(req: NextRequest) {
     (url.searchParams.get('all_projects') ?? '').toLowerCase()
   )
   const resolvedScope = req.headers.get('x-mc-project')
-  const crossProjectDestination = req.headers.get('x-mc-all-projects') === '1'
+  // TOD-2480. Not `x-mc-all-projects` — see the task_key branch above.
+  const crossProjectHint = req.headers.get('x-mc-cross-project-hint')
 
   // The reasoning above was honest and still wrong in its conclusion. It
   // declined to refuse an omitted scope because three acceptance checks call
@@ -1080,7 +1120,39 @@ export async function GET(req: NextRequest) {
   // condition oppositely: no resolvable scope 400s on /api/db/issues and
   // returned every project here — on the route EpicMapTab, ChatTab, IssuesTab,
   // FeaturesTab, ProductBoardTab and ProjectsTab all read.
-  if (!resolvedScope && !allProjectsParam && !crossProjectDestination && !projectParam) {
+  // TOD-2480. The owner's option 1, applied to the other half of the same seam:
+  // an EQUALITY against the project middleware computed from this request's own
+  // path/Referer. Never "any project filter satisfies scope".
+  if (crossProjectHint && projectParam && projectParam !== crossProjectHint) {
+    return NextResponse.json(
+      {
+        error: 'project_outside_scope',
+        message: `This screen is scoped to "${crossProjectHint}"; it cannot request "${projectParam}".`,
+      },
+      { status: 400 },
+    )
+  }
+
+  // `&& !crossProjectDestination` used to be a fourth clause here, and it WAS
+  // the leak: it made this condition false for every Fleet/Runs request before
+  // the other three were consulted, so a Limiglow-scoped Fleet page got a fully
+  // unscoped read of `issues`. The right frame is not "which parameter leaks" —
+  // effectiveProject was null, so the project predicate was ABSENT from the
+  // query entirely and every filter operated over every project: bare list,
+  // ?full=true, ?search=, ?assignee=, ?parent_id=, ?include_archived=1, all of
+  // them. /api/db/issues answers the identical condition with 400. Two halves
+  // of one seam answering one question oppositely is the defect this route was
+  // written to end.
+  //
+  // A genuinely cross-project screen is not refused — it asks the way a script
+  // asks, with all_projects=1, which officePolling and ProjectsTab already do.
+  // The difference is that it now has to SAY so.
+  //
+  // READ THIS AS WHAT IT IS: address-bar/data coherence, not tenancy. This app
+  // has one shared password per role and no per-project authorization anywhere,
+  // and the hint comes from a URL the caller controls. What is enforced is that
+  // the data on screen matches the project in the address bar.
+  if (!resolvedScope && !allProjectsParam && !projectParam) {
     return NextResponse.json(
       {
         error: 'unscoped_issues_read',

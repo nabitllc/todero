@@ -131,13 +131,31 @@ export async function GET(req: Request) {
   // handed over every project. That is the exact sentence this wave exists to
   // falsify, left standing on the route the piece named first.
   const resolvedScope = req.headers.get('x-mc-project')
-  const crossProjectDestination = req.headers.get('x-mc-all-projects') === '1'
+  // TOD-2480. Not `x-mc-all-projects`. middleware stamps that for EVERY
+  // cross-project destination, so it only ever meant "the referer is a fleet or
+  // runs page" — and this route read it as "may see every project", exactly as
+  // /api/issues did. That is the fixed-in-one-file-live-one-file-over pattern
+  // this program keeps paying for, and it was live here while the sibling was
+  // being fixed. The hint names the ONE project the destination claims to be.
+  const crossProjectHint = req.headers.get('x-mc-cross-project-hint')
+  const projectParam = searchParams.get('project')
   const wantsAllProjects = ['1', 'true', 'yes'].includes(
     (searchParams.get('all_projects') ?? '').toLowerCase()
   )
-  if (resolvedScope) {
-    query = query.eq('project', resolvedScope)
-  } else if (!wantsAllProjects && !crossProjectDestination) {
+  // A cross-project destination may name exactly one project: its own.
+  if (crossProjectHint && projectParam && projectParam !== crossProjectHint) {
+    return NextResponse.json(
+      {
+        error: 'project_outside_scope',
+        message: `This screen is scoped to "${crossProjectHint}"; it cannot request "${projectParam}".`,
+      },
+      { status: 400 },
+    )
+  }
+  const effectiveScope = resolvedScope || projectParam || null
+  if (effectiveScope) {
+    query = query.eq('project', effectiveScope)
+  } else if (!wantsAllProjects) {
     return NextResponse.json(
       {
         error: 'unscoped_issues_read',
