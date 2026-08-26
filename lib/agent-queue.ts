@@ -351,36 +351,11 @@ NEVER run git push to main directly. NEVER create a PR. NEVER merge to main your
     ],
   },
 
-  // ── SME agents: Epic decomposition only ──────────────────────────────────
-  // Each SME picks epics for their hub, creates 1-5 child features, moves
-  // epic to 'draft'. They do NOT implement code — no code access required.
-  // workingStatus === pickupStatus (backlog), so wipExtraFilter guards WIP count.
-  // DO NOT REMOVE wipExtraFilter — without it all backlog epics count as WIP.
-
-  'todero-sme': {
-    agentId: 'todero-sme',
-    model: 'sonnet',
-    pickupStatus: 'backlog',
-    extraFilters: 'type=eq.epic&project=eq.Todero',
-    wipExtraFilter: 'started_at=not.is.null',
-    dorFields: ['description', 'acceptance_criteria'],
-    wipLimit: 1,
-    workingStatus: 'backlog',
-    completionStatus: 'draft',
-    checkBlocking: false,
-    sortOrder: 'priority.asc,created_at.asc',
-    fetchLimit: 5,
-    promptPrefix: `You are Todero SME. Decompose Todero epics into child features.
-Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Todero, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"todero-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=todero-sme.`,
-    modelChain: [
-      { runtime: 'claude-code', alias: 'sonnet' },
-      { runtime: 'codex',       alias: 'sonnet' },
-    ],
-  },
-
-  // no-invented-projects-sweep: two more lanes were here, 'kemuni-sme' and
-  // 'vespera-sme'. They were not merely roster decoration — they were the most
-  // dangerous instance of the invented projects in this repo:
+  // ── SME agents: ALL FOUR LANES ARE GONE ──────────────────────────────────
+  //
+  // no-invented-projects-sweep deleted 'kemuni-sme' and 'vespera-sme' from
+  // here. They were not merely roster decoration — they were the most dangerous
+  // instance of the invented projects in this repo:
   //
   //   extraFilters: 'type=eq.epic&project=eq.Kemuni'
   //   promptPrefix: '... POST /api/issues (type:feature, project:Kemuni, ...)'
@@ -392,30 +367,55 @@ Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /a
   // and the database. Deleted at the source rather than filtered downstream: a
   // queue config IS the instruction, so there is nowhere downstream to filter.
   //
-  // getQueueConfig() returns undefined for both ids now, and
+  // ── one-scope-answer (2026-08-26): 'todero-sme' and 'infra-sme' went too ──
+  //
+  // A DIFFERENT DEFECT CLASS, which is why they survived that sweep. Their
+  // projects are real: `Todero` and `Infrastructure` are both keys of
+  // PROJECT_PREFIX, so `scripts/no-invented-projects.mjs` validated both ids and
+  // passed them — its check 1 asked whether `<x>` prefixes a canonical PROJECT,
+  // which was the wrong question. The defect is not an invented project. It is
+  // an UNDECLARED AGENT: measured 2026-08-26, no AGENTS.md in this repo declares
+  // either id. There are 19 of them; only the root file carries a roster table;
+  // that table has 14 rows and neither id is among them. loadAgentRoster()
+  // therefore cannot name them, and /crew/<id> and /api/agents already treat
+  // them as unknown — while THIS table handed both a live dispatch lane.
+  //
+  // What was deleted, verbatim in the parts that mattered:
+  //
+  //   'todero-sme': pickupStatus 'backlog', extraFilters
+  //     'type=eq.epic&project=eq.Todero', wipLimit 1, completionStatus 'draft',
+  //     promptPrefix "You are Todero SME. Decompose Todero epics into child
+  //     features… POST /api/issues (type:feature, project:Todero, …
+  //     assignee:po) … PATCH epic to draft with transitioned_by:'todero-sme' …
+  //     Self-chain: POST /api/run-agent?agent=todero-sme",
+  //     modelChain [claude-code/sonnet, codex/sonnet].
+  //
+  //   'infra-sme': identical shape against `Infrastructure` —
+  //     extraFilters 'type=eq.epic&project=eq.Infrastructure', prompt writing
+  //     features under project:Infrastructure, self-chaining to
+  //     ?agent=infra-sme.
+  //
+  // Unlike the Kemuni lanes these two would have written rows under projects
+  // that DO exist — attributed to, and self-chaining as, an agent that does
+  // not. Nothing downstream could have caught it: `transitioned_by` is a free
+  // string, and the rows would have looked ordinary forever.
+  //
+  // The shared lane header said: "Each SME picks epics for their hub, creates
+  // 1-5 child features, moves epic to 'draft'. They do NOT implement code — no
+  // code access required. workingStatus === pickupStatus (backlog), so
+  // wipExtraFilter guards WIP count. DO NOT REMOVE wipExtraFilter — without it
+  // all backlog epics count as WIP." Recorded because it is the design note a
+  // future SME lane would need; it is not an argument for keeping these two.
+  //
+  // getQueueConfig() returns undefined for all four ids now, and
   // app/api/run-agent/route.ts:457 already answers an unknown agent id with
   // `Unknown agent: <id>` and the list of real ones. No caller needs a change.
-
-  'infra-sme': {
-    agentId: 'infra-sme',
-    model: 'sonnet',
-    pickupStatus: 'backlog',
-    extraFilters: 'type=eq.epic&project=eq.Infrastructure',
-    wipExtraFilter: 'started_at=not.is.null',
-    dorFields: ['description', 'acceptance_criteria'],
-    wipLimit: 1,
-    workingStatus: 'backlog',
-    completionStatus: 'draft',
-    checkBlocking: false,
-    sortOrder: 'priority.asc,created_at.asc',
-    fetchLimit: 5,
-    promptPrefix: `You are Infrastructure SME. Decompose Infrastructure epics into child features.
-Steps: (1) Read epic description + AC. (2) Create 1-5 child features via POST /api/issues (type:feature, project:Infrastructure, parent_id:<epic_id>, assignee:po, priority:<inherit>). (3) PATCH epic to draft: {"id":"<id>","status":"draft","transitioned_by":"infra-sme","implementation_notes":"Decomposed into N features: [titles]"}. NEVER assign features to anyone other than "po". Self-chain: POST /api/run-agent?agent=infra-sme.`,
-    modelChain: [
-      { runtime: 'claude-code', alias: 'sonnet' },
-      { runtime: 'codex',       alias: 'sonnet' },
-    ],
-  },
+  //
+  // TO REINSTATE EITHER: add the id to the roster table in AGENTS.md FIRST.
+  // scripts/no-invented-projects.mjs now checks `<x>-sme` against the declared
+  // roster, so a lane re-added here without a roster row fails the guard with
+  // exit 1. Declaring the agent is the deliberate act; re-adding the lane
+  // without one is the accident this tombstone exists to stop.
 
   // ── Main (triage/orchestrator) ───────────────────────────────────────────
   // Picks up ANY is_blocked issue regardless of status or assignee.

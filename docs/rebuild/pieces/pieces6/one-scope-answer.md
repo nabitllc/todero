@@ -50,12 +50,14 @@ are both canonical.
 2. `app/api/conversations/thread-access.ts` calls `resolveProjectScope` from
    `@/lib/scope` and no longer imports `resolveScope` from `@/lib/conversations`.
    Observe: `grep -n "resolveScope" app/api/conversations/thread-access.ts`
-   prints nothing.
+   prints ONE line, and it is inside the header comment recording the
+   collapse. No import, no call. (A bare `grep -c` is the wrong probe here and
+   was corrected after it "failed" on the tombstone — the same mistake this
+   repo has made twice at a larger scale.)
 
 3. `app/api/commerce/scope.ts` calls `resolveProjectScope` from `@/lib/scope`
    and no longer imports `resolveCommerceScope` from `@/lib/commerce`.
-   Observe: `grep -n "resolveCommerceScope" app/api/commerce/scope.ts` prints
-   nothing.
+   Observe: as above — one comment-only mention, no import, no call.
 
 4. No refusal weakens on the wire. Every code and status that a client could
    observe before this piece is observed after it:
@@ -73,8 +75,9 @@ are both canonical.
 5. Neither surface gains a widening escape. `all_projects=1`,
    `x-mc-all-projects: 1`, `project=*` and `project=` (empty) all still refuse
    on both surfaces.
-   Observe: `lib/__tests__/scope.test.ts` asserts each; and
-   `grep -c "all_projects" lib/scope.ts` prints `0` outside comments.
+   Observe: `lib/__tests__/scope.test.ts` asserts each. `all_projects` appears
+   three times in `lib/scope.ts`, all three in comments explaining that it is
+   NOT read; there is no branch on it.
 
 6. The unified resolver applies the 120-character project-name cap to BOTH
    surfaces. Commerce did not have one before; gaining it is a tightening, and
@@ -154,6 +157,42 @@ are both canonical.
     green, and no probe of it is deleted, relaxed, or exempted.
 
 21. No git command is run by this piece. The orchestrator stages and commits.
+
+## MEASURED, after the work (2026-08-26)
+
+- **Wire behaviour unchanged.** All five rows of the item-4 table verified with
+  curl against the running dev server: same codes, same statuses.
+  `all_projects=1` and a forged `x-mc-all-projects: 1` still refuse on both
+  surfaces.
+- **Tests.** Before: 918 passed / 5 failed / 2 skipped / 925 total. After:
+  950 passed / 5 failed / 2 skipped / 957 total, with the SAME three failing
+  suites (`agents-route`, `agents-unconfigured`, `spawn-live`). `npx tsc
+  --noEmit` clean. `node scripts/acceptance/run.mjs` 45/45.
+  `bash scripts/smoke-test-layout.sh` green, including its 10-probe live scope
+  guard.
+- **The cap test fails against the old code, as required.** Aimed at
+  `lib/commerce.ts:resolveCommerceScope()`, a 121-character project returned
+  `{ ok: true, project: <121 chars> }`. Against `lib/scope.ts` it returns 400.
+- **Guard, both directions.** Scanning the two files this piece cleaned: exit
+  **0**. Reintroduce one `'todero-sme'` lane in `lib/agent-queue.ts`: exit
+  **1**, naming `lib/agent-queue.ts:420 todero-sme`. Remove it: exit **0**.
+  `AGENTS_MD_PATH=/nonexistent`: exit **2**, never 0.
+- **Guard is RED on the default roots, and correctly so.** Six references
+  remain, all in `app/api/issues/route.ts` — a DO NOT TOUCH file. This is the
+  guard proving a defect that is still there, not a broken guard. That script
+  is deliberately not wired into `smoke-test-layout.sh`, so nothing else goes
+  red. The exact lines are in the piece report for the orchestrator.
+- **A false positive was found and fixed on the way.** With check 1 tightened,
+  the guard flagged `components/tabs/ChatTab.tsx:373` — a plain `//` comment.
+  Cause: `ChatTab.tsx:121` contains a regex whose character class holds a
+  backtick, and the comment stripper did not model regex literals, so it sat in
+  template-literal state for the next sixty lines and stopped seeing `//` at
+  all. `stripComments` now models regex literals (character classes, `</div>`,
+  `=> /re/`). A guard that grades a tombstone as a defect is the exact failure
+  this repo has already lost two rounds to.
+- **Ownership note.** `lib/issue-type-config.ts`, listed as a live site for
+  both agents, was DELETED by a concurrent builder mid-session. That half of
+  the finding is now moot; it is not this piece's doing.
 
 ## Non-goals, stated so a later reader does not mistake them for misses
 

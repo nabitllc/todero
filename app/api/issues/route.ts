@@ -42,7 +42,12 @@ const ASSIGNEE_AGENT_MAP: Record<string, string | null> = {
   // activateAgentAsync() returns early for any assignee absent from it — so
   // their entries were what let a review transition try to wake a fabricated
   // agent. 'todero-sme' and the real ids stay.
-  'todero-sme': 'todero-sme',  // DO NOT REMOVE — SME epic decomposer
+  // TOD-2448: 'todero-sme' was here, carrying the comment "DO NOT REMOVE — SME
+  // epic decomposer". No AGENTS.md in this repo declares it — 19 files, one
+  // roster table, 14 ids, and it is not among them. A comment asserting a
+  // fabrication is real is the strongest version of the defect this file has
+  // been swept for three times: it instructs the next reader, acting in good
+  // faith, to leave it. Epic decomposition belongs to `po`, which IS declared.
   'main': 'main',
   'KAOS': 'main',
   'builder': 'builder',
@@ -94,7 +99,7 @@ const STATUS_PICKUP_LANES: Record<string, string[]> = {
   // The guard strips comments before scanning, so it never saw this — a stale
   // comment asserting a fabrication is real is exactly how the entry gets
   // restored by the next reader acting in good faith.
-  backlog:        ['po', 'todero-sme'],
+  backlog:        ['po'],  // TOD-2448: 'todero-sme' removed — no roster declares it.
   defined:        ['po'],
   refined:        ['po'],
   open:           ['builder', 'ops', 'scout'],
@@ -593,7 +598,7 @@ async function validateWorkflowTransition(
     // allowlist. Neither agent exists. This is an AUTHORIZATION list — it named
     // two nonexistent principals as permitted to execute a guarded workflow
     // transition. Removing them narrows the allowlist; it cannot widen it.
-    const allowed = ['po', 'main', 'michael', 'kaos', 'todero-sme']
+    const allowed = ['po', 'main', 'michael', 'kaos']  // TOD-2448: 'todero-sme' removed.
     if (!transitionedBy || !allowed.includes(transitionedBy)) {
       return { transition: null, error: { error: 'Only po, michael, kaos, or an SME can execute this transition', field: 'transitioned_by' } }
     }
@@ -1275,9 +1280,14 @@ export async function POST(req: NextRequest) {
   // has no alias for either and PROJECT_PREFIX no key — so both branches were
   // unreachable AND named agents that do not exist. Falling through to
   // 'todero-sme' is what already happened in practice.
-  function hubSmeForProject(proj: string): string {
-    if (proj === 'Infrastructure') return 'infra-sme'
-    return 'todero-sme'
+  // TOD-2448: this returned 'infra-sme' or 'todero-sme' — BOTH undeclared by
+  // every AGENTS.md in this repo. So an epic's owner and assignee were routed
+  // to an agent that does not exist, on every project. Epics route to `po`, the
+  // Product Owner, which is declared and whose queue prompt already decomposes
+  // epics into features. The per-project branch is gone rather than repointed:
+  // it existed only to pick between two fabrications.
+  function hubSmeForProject(_proj: string): string {
+    return 'po'
   }
 
   // Owner is always determined by issue type — callers cannot override.

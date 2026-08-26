@@ -25,12 +25,41 @@ export interface AgentConfig {
 // registry GET/`?id=` validates against (`if (!MODEL_MAP[agentId] && ...)`)
 // *and* the list the no-argument GET enumerates, so both ids were returned to
 // callers as real, configured agents. They are not.
+//
+// one-scope-answer (2026-08-26): 'todero-sme' and 'infra-sme' had a row in the
+// same five maps and are gone for a DIFFERENT reason. Their projects are real —
+// `Todero` and `Infrastructure` are both keys of PROJECT_PREFIX — so the
+// invented-projects guard validated and passed both ids. The defect is the
+// agent, not the project: measured 2026-08-26, no AGENTS.md in this repo
+// declares either id (19 files, one roster table, 14 rows, neither among them).
+//
+// What this endpoint published for them, and what it cost:
+//
+//   MODEL_MAP        'claude-sonnet-4-6' for both — and MODEL_MAP is what
+//                    `?id=` validates against (`if (!MODEL_MAP[agentId] && …)`)
+//                    AND what the no-argument GET enumerates. So
+//                    `GET /api/agent-config?id=todero-sme` answered 200 with a
+//                    complete configuration for an agent that does not exist,
+//                    and the list answered 16 agents where the roster has 14.
+//                    Measured before removal; it answers 404 now.
+//   QUEUE_FILTER_MAP 'type=epic&project=Todero&status=backlog' and
+//                    'type=epic&project=Infrastructure&status=backlog' — this
+//                    endpoint's published answer to "what work should this
+//                    agent pick up", for an agent nothing can dispatch.
+//   SKILLS_MAP       ['Product Strategy', 'Todero', 'Platform'] and
+//                    ['Infrastructure', 'DevOps', 'Security'].
+//   ESCALATION_MAP   ['UX/design heavy → designer review required', 'Security
+//                    concern in AC', 'Cross-project dependency'] for both.
+//   SYSTEM_PROMPT_MAP DB_SOURCE for both.
+//
+// The matching queue lanes went from lib/agent-queue.ts in the same change; see
+// the tombstone there for what those carried. To reinstate either id, add it to
+// the roster table in AGENTS.md first — scripts/no-invented-projects.mjs now
+// checks `<x>-sme` against the declared roster and fails on an undeclared one.
 const MODEL_MAP: Record<string, string> = {
   main:          'claude-sonnet-4-6',
   scout:         'claude-sonnet-4-6',
   ops:           'claude-haiku-4-5',
-  'todero-sme':  'claude-sonnet-4-6',
-  'infra-sme':   'claude-sonnet-4-6',
   builder:       'claude-sonnet-4-6',
   tester:        'claude-haiku-4-5',
   deployer:      'claude-haiku-4-5',
@@ -45,8 +74,6 @@ const MODEL_MAP: Record<string, string> = {
 }
 
 const QUEUE_FILTER_MAP: Record<string, string> = {
-  'todero-sme':  'type=epic&project=Todero&status=backlog',
-  'infra-sme':   'type=epic&project=Infrastructure&status=backlog',
   builder:       'type=task,bug&status=open&assignee=builder',
   tester:        'type=task,bug&status=code_review',
   po:            'type=feature,task,bug&status=backlog',
@@ -64,8 +91,6 @@ const ESCALATION_MAP: Record<string, string[]> = {
   scout:         ['Source unreachable', 'Conflicting findings require judgment', 'Competitive signal requires strategy discussion'],
   po:            ['Feature scope too large for 1-5 tasks', 'Missing parent epic', 'Cross-SME dependency'],
   deployer:      ['PR not merged', 'CI failing', 'Rollback required'],
-  'todero-sme':  ['UX/design heavy → designer review required', 'Security concern in AC', 'Cross-project dependency'],
-  'infra-sme':   ['UX/design heavy → designer review required', 'Security concern in AC', 'Cross-project dependency'],
   auditor:       ['Drift found in production', 'Config mismatch detected', 'Task hygiene violations >3'],
   designer:      ['Brand inconsistency', 'Accessibility failure', 'Mobile layout broken'],
   ux:            ['Brand inconsistency', 'Accessibility failure', 'Mobile layout broken'],
@@ -75,8 +100,6 @@ const SKILLS_MAP: Record<string, string[]> = {
   main:          ['Orchestration', 'Memory', 'Strategy', 'Comms', 'Delegation'],
   scout:         ['Web Research', 'Summarization', 'Trends'],
   ops:           ['Infrastructure', 'Monitoring', 'Alerts'],
-  'todero-sme':  ['Product Strategy', 'Todero', 'Platform'],
-  'infra-sme':   ['Infrastructure', 'DevOps', 'Security'],
   builder:       ['Coding', 'PRs', 'Refactoring', 'Next.js', 'Supabase'],
   tester:        ['Code Review', 'QA', 'Test Suites', 'DoD Enforcement'],
   deployer:      ['Deployments', 'Webhooks', 'Release Notes'],
@@ -102,8 +125,6 @@ const SYSTEM_PROMPT_MAP: Record<string, string> = {
   scout:         DB_SOURCE,
   po:            DB_SOURCE,
   deployer:      DB_SOURCE,
-  'todero-sme':  DB_SOURCE,
-  'infra-sme':   DB_SOURCE,
   designer:      DB_SOURCE,
   ux:            DB_SOURCE,
   auditor:       DB_SOURCE,

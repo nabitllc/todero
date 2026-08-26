@@ -4,6 +4,9 @@
  *   GET   /api/commerce/inventory                  -> { project, total, levels }
  *   GET   /api/commerce/inventory?below_reorder=1  -> only levels at/under their reorder point
  *   GET   /api/commerce/inventory?history=<sku>    -> the audit trail for one SKU
+ *                                                    (stock adjustments AND
+ *                                                     catalogue changes — see
+ *                                                     the handler for why both)
  *   PATCH /api/commerce/inventory                  -> ADJUST a level (the action)
  *
  * THE ACTION THIS ROUTE EXISTS FOR
@@ -55,6 +58,10 @@ interface LevelRow {
 interface ActionRow {
   id: string
   action: string
+  /** 'inventory' (a stock adjustment) or 'product' (a catalogue change).
+   *  Both are keyed by SKU, so both belong in one SKU's history — see the
+   *  `?history=` block for why this field has to be in the response. */
+  object_type: string
   object_ref: string
   from_value: string | null
   to_value: string
@@ -90,11 +97,36 @@ export const GET = withPermission(
       if (!sku.ok) {
         return NextResponse.json({ error: 'invalid_sku', message: sku.why }, { status: 422 })
       }
+      // WHY `.in([inventory, product])` AND NOT `.eq('inventory')`
+      //   `commerce_actions` is written from five sites. Three of them key the
+      //   row by SKU: inventory.adjust here (:~245), inventory.adjust again in
+      //   orders/route.ts when a fulfilment moves stock, and product.create /
+      //   product.update in products/route.ts — those last two write
+      //   `object_type: 'product'` with `object_ref` set to the SAME sku.
+      //
+      //   This read used to filter `object_type = 'inventory'`, so "what
+      //   happened to this SKU" answered with only half its own trail: every
+      //   price change, status change and the row's own creation were written
+      //   and then hidden from the only endpoint that reads the table. The
+      //   product rows were unreadable by ANY code path — not archived, not
+      //   filtered by choice, just unreachable.
+      //
+      //   Both kinds are keyed by SKU and both are things that happened to this
+      //   SKU, so both belong here; `object_type` is returned so a caller can
+      //   still tell a stock movement from a catalogue edit.
+      //
+      // STILL WRITE-ONLY, SAID PLAINLY
+      //   `order.fulfilment` rows (orders/route.ts) are keyed by ORDER NUMBER,
+      //   not by SKU, so they cannot surface through a SKU-keyed read and no
+      //   endpoint reads them today. They are written correctly and kept
+      //   deliberately — an audit trail nothing reads YET is a different thing
+      //   from one that is wrong — but nothing can currently show them. That
+      //   needs a read on the orders route, which this piece does not own.
       const { data, error, count } = await db()
         .from('commerce_actions')
         .select('*', { count: 'exact' })
         .eq('project', project)
-        .eq('object_type', 'inventory')
+        .in('object_type', ['inventory', 'product'])
         .eq('object_ref', sku.value)
         .order('created_at', { ascending: false })
         .limit(100)

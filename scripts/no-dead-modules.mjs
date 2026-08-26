@@ -87,7 +87,20 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // Files that are deliberately unreferenced. Every entry needs a reason a human
 // can check. An entry that is no longer needed FAILS THE RUN — see above.
 const ALLOWLIST = [
-  // { file: 'lib/example.ts', reason: 'why this is deliberately unreferenced' },
+  {
+    file: 'components/tabs/AgentsTab.tsx',
+    reason:
+      'Its default export (the legacy roster grid) is genuinely unrendered — the ' +
+      'fleet-cards piece replaced it with CrewTab and says so at ' +
+      'components/tabs/CrewTab.tsx:32. But the file is still the DECLARATION SITE of ' +
+      'the `RosterMeta` type, which app/page.tsx:21, components/tabs/CrewTab.tsx:56 ' +
+      'and hooks/useAgentRoster.ts:20 all import as a type. So deleting the file ' +
+      'breaks three live importers; the real fix is to move `RosterMeta` to a types ' +
+      'module and THEN delete the component, which is a piece of its own. ' +
+      'Owned by the fleet-cards piece, not by dead-code-sweep — flagged, not touched. ' +
+      'When RosterMeta moves and this file is deleted, this entry goes stale and ' +
+      'fails the run, which is the intended prompt to remove it.',
+  },
 ]
 
 // ─── Scope ───────────────────────────────────────────────────────────────────

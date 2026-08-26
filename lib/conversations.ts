@@ -146,70 +146,28 @@ function asObject(body: unknown): Verdict<Record<string, unknown>> {
 }
 
 // ─── Scope ──────────────────────────────────────────────────────────────────
+//
+// TOD-2448: this block used to hold its own copy of the resolver. So did
+// lib/commerce.ts. They were reported as differing only in an error string;
+// they differed in three ways, and the third was the interesting one — this
+// copy capped a project name at 120 characters and commerce's had NO cap at
+// all. Nobody chose that: it is one copy that never got the fix the other did.
+//
+// The resolver lives in lib/scope.ts now. The surface descriptor is DATA, not
+// strategy — it can change what a refusal is CALLED, never whether there is
+// one, and a test proves a hostile descriptor still cannot make an unscoped
+// request succeed. Both wire conflict codes are preserved deliberately:
+// merging them is client-visible and is the owner's call, not a refactor's.
 
-/**
- * The refusal a caller gets when no project could be resolved. Exported so the
- * test can pin the wording: a boundary that refuses without saying how to ask
- * deliberately just reads as a bug.
- */
-export const UNSCOPED_ERROR = 'unscoped_conversations_read'
-export const UNSCOPED_MESSAGE =
-  'This conversations request has no project scope. Request it from a /p/<project> screen, ' +
-  'or pass ?project=<name> to name one deliberately. There is no all-projects view of ' +
-  'customer conversations: a conversation belongs to exactly one project.'
+import { CONVERSATIONS_SCOPE, resolveProjectScope, unscopedScopeMessage, type ScopeVerdict } from './scope'
 
-export const SCOPE_CONFLICT_ERROR = 'scope_conflict'
+export type { ScopeVerdict }
+export const UNSCOPED_ERROR = CONVERSATIONS_SCOPE.unscopedError
+export const UNSCOPED_MESSAGE = unscopedScopeMessage(CONVERSATIONS_SCOPE)
+export const SCOPE_CONFLICT_ERROR = CONVERSATIONS_SCOPE.conflictError
 
-export type ScopeVerdict =
-  | { ok: true; project: string }
-  | { ok: false; error: string; message: string; status: 400 | 409 }
-
-/**
- * Resolve the one project this request may touch.
- *
- * `headerScope` is middleware.ts's `x-mc-project`, which the client cannot
- * forge (middleware deletes any inbound copy before recomputing it from the
- * request's own path or its Referer). `queryProject` is an explicit `?project=`,
- * which a script with no page context can use to say what it means.
- *
- * FAIL CLOSED, in three specific ways:
- *   1. Neither signal -> refuse (400). Absence is never "every project".
- *   2. Both signals, disagreeing -> refuse (409). A resolved scope NARROWS and
- *      is never overridden; answering the query param instead would make the
- *      address bar and the data on screen disagree.
- *   3. There is no widening escape hatch at all. `all_projects=1` — which
- *      app/api/issues/route.ts accepts for genuinely cross-project screens —
- *      has no meaning here and is not read, because no screen in this product
- *      shows one customer's thread next to another project's.
- */
 export function resolveScope(headerScope: string | null, queryProject: string | null): ScopeVerdict {
-  const header = headerScope?.trim() || null
-  const query = queryProject?.trim() || null
-
-  if (header && query && header !== query) {
-    return {
-      ok: false,
-      error: SCOPE_CONFLICT_ERROR,
-      status: 409,
-      message:
-        `This screen is scoped to "${header}" but the request asked for "${query}". ` +
-        'A resolved scope narrows and is never overridden — ask from a /p/<project> screen for that project instead.',
-    }
-  }
-
-  const project = header ?? query
-  if (!project) {
-    return { ok: false, error: UNSCOPED_ERROR, status: 400, message: UNSCOPED_MESSAGE }
-  }
-  if (project.length > 120) {
-    return {
-      ok: false,
-      error: UNSCOPED_ERROR,
-      status: 400,
-      message: `project name is too long (${project.length} characters, maximum 120).`,
-    }
-  }
-  return { ok: true, project }
+  return resolveProjectScope(headerScope, queryProject, CONVERSATIONS_SCOPE)
 }
 
 // ─── Writes ─────────────────────────────────────────────────────────────────

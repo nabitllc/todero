@@ -497,62 +497,28 @@ export function applyAdjustment(onHand: number, delta: number): Verdict<number> 
 }
 
 // ─── Scope ──────────────────────────────────────────────────────────────────
+//
+// TOD-2448: the resolver lives in lib/scope.ts. This copy and the one in
+// lib/conversations.ts were near-identical, and the difference nobody chose was
+// that THIS one had no project-name length cap while the other capped at 120.
+// The failing-first test: a 121-character project name used to return
+// { ok: true }; it now returns 400.
+//
+// `why` is kept as the field name so the existing suite stays green, and both
+// wire conflict codes are preserved — merging scope_conflict and scope_mismatch
+// is client-visible and is the owner's call.
 
-/**
- * The refusal a commerce endpoint returns when it cannot tell which
- * storefront it is being asked about.
- *
- * Fail closed, and say how to ask deliberately. Note what is NOT offered: an
- * `all_projects=1` widening. Every other list read in this app has one because
- * a fleet-wide view of agents is a real thing to want; a storefront read
- * spanning every project is not, and a client-controlled query string must
- * never widen a server-resolved boundary (TOD-2420).
- */
+import { COMMERCE_READ_SCOPE, COMMERCE_WRITE_SCOPE, resolveProjectScope, unscopedScopeMessage } from './scope'
+
 export function unscopedCommerceMessage(what: string): string {
-  return (
-    `This ${what} has no project scope. Todero operates one storefront at a time. ` +
-    `Request it from a /p/<project> screen, or pass project=<name> to name the ` +
-    `storefront deliberately. There is no all-projects mode for commerce.`
-  )
+  return unscopedScopeMessage(what === 'commerce write' ? COMMERCE_WRITE_SCOPE : COMMERCE_READ_SCOPE)
 }
 
-/**
- * Resolve the storefront a commerce request is about.
- *
- * `resolved` is middleware.ts's `x-mc-project` — computed by the server from
- * the request's own path or its Referer, and stripped from whatever the client
- * sent, so it cannot be forged. `requested` is an explicit `project=` for a
- * caller with no browser context (a script, a curl).
- *
- * A resolved scope NARROWS and is never overridden: a mismatch is refused
- * rather than answered, because answering it makes the address bar and the
- * data disagree.
- */
 export function resolveCommerceScope(
-  resolved: string | null,
-  requested: string | null,
-  kind: 'read' | 'write' = 'read',
+  resolved: string | null, requested: string | null, kind: 'read' | 'write' = 'read',
 ): { ok: true; project: string } | { ok: false; status: 400 | 409; error: string; why: string } {
-  if (resolved && requested && resolved !== requested) {
-    return {
-      ok: false,
-      status: 409,
-      error: 'scope_mismatch',
-      why:
-        `This screen is scoped to ${resolved} but the request asked for ${requested}. ` +
-        `A resolved scope narrows; it is never overridden.`,
-    }
-  }
-  const project = resolved ?? requested
-  if (!project) {
-    return {
-      ok: false,
-      status: 400,
-      error: kind === 'write' ? 'unscoped_commerce_write' : 'unscoped_commerce_read',
-      why: unscopedCommerceMessage(kind === 'write' ? 'commerce write' : 'commerce query'),
-    }
-  }
-  return { ok: true, project }
+  const v = resolveProjectScope(resolved, requested, kind === 'write' ? COMMERCE_WRITE_SCOPE : COMMERCE_READ_SCOPE)
+  return v.ok ? v : { ok: false, status: v.status, error: v.error, why: v.message }
 }
 
 // ─── Order ingest ───────────────────────────────────────────────────────────
