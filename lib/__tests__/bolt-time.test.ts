@@ -118,8 +118,14 @@ describe('formatRemaining — TOD-2401 must not reappear', () => {
     expect(formatRemaining(45 * 60000)).toBe('45m')
   })
 
-  it('carries 59.97 minutes into the next hour instead of printing "60m"', () => {
-    expect(formatRemaining(HOUR + 59.97 * 60000)).toBe('2h')
+  it('never prints "60m", and does not round a remaining time UP', () => {
+    // TOD-2434. This asserted '2h' when the formatter rounded. Truncation gives
+    // '1h 59m', which satisfies the rule this test exists for — never "60m" —
+    // and is strictly more honest: '2h' overstated the time remaining by 1.8
+    // seconds. On a countdown, rounding UP is the direction that lies.
+    expect(formatRemaining(HOUR + 59.97 * 60000)).toBe('1h 59m')
+    expect(formatRemaining(HOUR + 59.97 * 60000)).not.toBe('60m')
+    expect(formatRemaining(HOUR + 59.97 * 60000)).not.toBe('1h 60m')
   })
 
   it('reports an expired window as ended, with no negative number', () => {

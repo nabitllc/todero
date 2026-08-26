@@ -7,6 +7,7 @@ import { readApiError, type ApiError } from '@/hooks/useApiData'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import Card from '@/components/nav/Card'
 import { classifyWindow, formatRemaining, parseBoundary, pickHeadline } from '@/lib/bolt-time'
+import { formatDuration } from '@/lib/time'
 
 // cards-and-identity piece (Wave 6): Now's four cards — Needs you, Running
 // now, Bolt status, Recent activity. Every other panel this file used to
@@ -219,13 +220,11 @@ interface LiveAgentRow {
 
 interface AgentRunInfo { taskTitle: string; startedAt: string | null; status: string }
 
-function formatElapsed(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000))
-  const h = Math.floor(totalSec / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m`
-  return `${totalSec}s`
+function formatElapsed(elapsedMs: number): string {
+  // TOD-2434: one clock. This takes a DURATION in ms, not a timestamp — the
+  // call site computes the elapsed span itself. One of ~30 independent
+  // formatters that between them spelled a 26-hour duration six ways.
+  return formatDuration(elapsedMs)
 }
 
 function RunningNowCard({

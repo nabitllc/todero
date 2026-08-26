@@ -46,6 +46,8 @@
 //    deployment actually running. `parseBoundary` therefore respects whatever
 //    precision the value carries rather than flattening it to a date.
 
+import { formatCountdown } from './time'
+
 /** A row shaped like the `sprints` columns this module reads. */
 export interface BoltRow {
   start_date?: string | null
@@ -174,11 +176,11 @@ export function toLocalTimestamp(date: Date): string {
 
 /** Render a duration as the window's own length. Hours under two days, days above. */
 function windowLabelFor(windowMs: number): string {
-  if (windowMs < 48 * 3600000) {
-    const h = Math.round(windowMs / 3600000)
-    return h < 1 ? `${Math.round(windowMs / 60000)}m` : `${h}h`
-  }
-  return `${Math.round(windowMs / 86400000)}d`
+  // TOD-2434: delegates to the one clock. Kept as a named wrapper because the
+  // word "window" is what this call site means; the ARITHMETIC is no longer
+  // duplicated here. formatCountdown carries the TOD-2401 rule — hours, never
+  // days, right up to 48h — which is exactly what a window label needs.
+  return formatCountdown(windowMs)
 }
 
 /**
@@ -217,22 +219,13 @@ export function classifyWindow(
  * the fabrication TOD-2401 deleted.
  */
 export function formatRemaining(ms: number): string {
-  if (ms <= 0) return 'ended'
-  // Round to a single whole-minute integer FIRST, then derive h/m from THAT
-  // integer via floor/mod. Rounding the leftover minutes independently of the
-  // floored hour can round 59.97 minutes up to a literal "60m" instead of
-  // carrying into the next hour.
-  const totalMinutes = Math.round(ms / 60000)
-  // Under 30 seconds this rounds to 0 and would print "0m" with time still on
-  // the clock — the identical "0 units left" shape as TOD-2401, one unit down.
-  if (totalMinutes < 1) return '<1m'
-  if (totalMinutes < 60) return `${totalMinutes}m`
-  if (totalMinutes < 48 * 60) {
-    const h = Math.floor(totalMinutes / 60)
-    const m = totalMinutes % 60
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-  return `${Math.floor(ms / 86400000)}d`
+  // TOD-2434: this is now one line over lib/time.ts. The rule it existed to
+  // enforce — never day units under 48h, because a 24h bolt reading "0 days
+  // left" with nine hours to run is the TOD-2401 fabrication — lives in
+  // formatCountdown and is asserted in lib/__tests__/time.test.ts. Nine
+  // independent formatters produced six spellings of one duration; this file
+  // owned two of them.
+  return formatCountdown(ms)
 }
 
 /**

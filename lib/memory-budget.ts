@@ -26,6 +26,7 @@
 // this app actually stores; a row that is not present contributes nothing, and
 // a caller with no rows at all gets an empty section list, not a placeholder.
 
+import { formatAgo } from './time'
 /**
  * Mirrors `CONTEXT_BUDGET_TOKENS_DEFAULT` in lib/memory-retrieval.ts — the
  * per-task RETRIEVAL budget, ~1,300 tokens, kept small on purpose so a spawn
@@ -254,16 +255,9 @@ export function headroomTokens(selection: BudgetSelection): number {
  * print when a row has no `created_at` — the Fleet lesson: a missing time must
  * not render as a plausible age.
  */
-export function relativeTime(iso: string | null | undefined, now: number = Date.now()): string {
-  if (!iso) return ''
-  const t = new Date(iso).getTime()
-  if (!Number.isFinite(t)) return ''
-  const deltaSec = Math.round((now - t) / 1000)
-  const abs = Math.abs(deltaSec)
-  const unit =
-    abs < 60 ? `${abs}s` :
-    abs < 3600 ? `${Math.floor(abs / 60)}m` :
-    abs < 86400 ? `${Math.floor(abs / 3600)}h` :
-    `${Math.floor(abs / 86400)}d`
-  return deltaSec >= 0 ? `${unit} ago` : `in ${unit}`
+export function relativeTime(at: string | null | undefined, now: number = Date.now()): string {
+  // TOD-2434: one clock. Returns '' for an absent timestamp — never a plausible
+  // age — which is the property this function already had and lib/time.ts now
+  // guarantees for every caller.
+  return formatAgo(at, now)
 }

@@ -29,6 +29,7 @@ import ApiErrorBanner from '@/components/ApiErrorBanner'
 import Card from '@/components/nav/Card'
 import { useProjectScope } from '@/components/nav/ProjectScope'
 import ApprovalCard, { type Decision, type InboxEntry } from '@/components/tabs/ApprovalCard'
+import { formatAgo } from '@/lib/time'
 
 /** `scope` block GET /api/inbox returns whenever `project=` is given. */
 interface InboxScope {
@@ -74,13 +75,10 @@ const OUTCOME_STYLE: Record<DecisionRow['outcome'], { label: string; className: 
   refused: { label: 'REFUSED', className: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
 }
 
-function timeAgo(ts: string): string {
-  const diff = Date.now() - new Date(ts).getTime()
-  if (!Number.isFinite(diff)) return ts
-  if (diff < 60000) return `${Math.max(0, Math.floor(diff / 1000))}s ago`
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
-  return `${Math.floor(diff / 86400000)}d ago`
+function timeAgo(at: string | null | undefined): string {
+  // TOD-2434: one clock. Returns '' for an absent timestamp rather than a
+  // plausible age.
+  return formatAgo(at)
 }
 
 /** Per-item note: the server's refusal reason, or what a landed decision did. */

@@ -254,10 +254,16 @@ documented rules above.
    - `components/office/officeDrawing.ts` labels the canvas figure's timer
      `running <duration>`, not a bare `⏱ 12m`.
 
-10. **The thirteen become one.** No file outside `lib/time.ts` computes
-    `/ 60000`, `/ 3600000` or `/ 86400000` in order to render a duration. The
-    five files this piece owns import from `lib/time.ts`; the five it does not
-    own are listed in §HANDOFF with the exact replacement each needs.
+10. **Every file this piece owns computes no duration arithmetic of its own.**
+    `grep -n '60000\|3600000\|86400000'` over `lib/time.ts`'s five consumers
+    returns nothing but one threshold constant.
+
+    This is deliberately scoped rather than claimed absolutely. `lib/bolt-time.ts`
+    learned that lesson the hard way — its header records an earlier version
+    claiming "every bolt-time decision lives here and nowhere else", falsified
+    by a critic in one grep. **The app-wide claim would be false today**: the
+    sweep that named nine formatters undercounted. §REMAINING lists the ones
+    still outstanding, and none of them is in this piece's scope.
 
 11. **Gates.** `npx tsc --noEmit` clean; `npm test` at the known five
     pre-existing failures (`agents-route`, `agents-unconfigured`, `spawn-live`)
@@ -287,3 +293,58 @@ changes a call site.
 "do not print 60m", which truncation satisfies, while `'2h'` additionally
 overstates the remaining time by 1.8 seconds. Replace the expectation with
 `'1h 59m'` and keep a `.not.toBe('60m')` beside it.
+
+---
+
+## REMAINING — the sweep undercounted
+
+The piece was scoped to nine formatters. A grep for duration arithmetic
+(`/ 60000`, `/ 3600000`, `/ 86400000`) across `app/`, `components/`, `lib/` and
+`hooks/` finds more. None is in this piece's ownership, and none is fixed here.
+Listing them so the next round starts from a true number rather than from nine.
+
+**Renders an "ago" string, so it is a fourteenth+ spelling of an age:**
+
+| file | line | current behaviour |
+|---|---|---|
+| `components/ActiveAgentsCard.tsx` | 52 | `'just now'` under 1m |
+| `components/ActivityFeed.tsx` | 22 | `'just now'` under 1m |
+| `components/tabs/ActivityTab.tsx` | 182 | `'just now'` / `Xm ago` / `Xh ago` — caps at hours |
+| `components/tabs/AIServicesTab.tsx` | 52–54 | `'just now'` under 1m, caps at hours |
+| `components/crew/AgentDetailView.tsx` | 46 | rounds to minutes |
+| `components/tabs/AgentDetailView.tsx` | 127 | rounds to minutes (a second copy of the line above) |
+| `components/office/OfficeSidebar.tsx` | 261 | `Last active Xm ago` — minutes only, so 26h reads `1560m ago` |
+| `components/office/OfficeCanvas.tsx` | 638 | `idle Xm` — minutes only |
+| `components/tabs/AutomationsTab.tsx` | 129 | `Xm ago` — minutes only |
+| `components/tabs/CalendarTab.tsx` | 297 | `Xm ago` — minutes only (same line as above) |
+| `components/tabs/InfraTab.tsx` | 316 | rounds to minutes |
+| `lib/member-utils.tsx` | 47 | rounds to minutes |
+| `components/tabs/ApprovalCard.tsx` | 43 | a second countdown, independent of `formatCountdown` |
+| `components/tabs/ProductBoardTab.tsx` | 178 | rounds to minutes |
+| `lib/run-trace.ts` | 271, 278 | step durations, its own spelling |
+| `app/page.tsx` | 590, 672, 700 | `Xm ago` / minutes-until |
+| `app/api/activity-feed/route.ts` | 165 | server-side `agoMin` |
+| `app/api/agents/route.ts` | 337, 473, 563 | server-side `agoMin`, three copies |
+| `app/api/office-stream/route.ts` | 31 | server-side elapsed minutes |
+| `app/api/status/route.ts` | 267 | server-side elapsed minutes |
+
+**Not a duration formatter, and correctly left alone:** `lib/mc-constants.ts`
+`daysUntil` / `daysSince` return numbers, not strings, and no caller renders
+them as a duration.
+
+## A SECOND UNLABELLED DURATION, still live
+
+`components/tabs/OfficeTab.tsx:112` renders `formatElapsed(r.started_at)` — time
+since the run STARTED — as a bare duration under a "RECENT" heading, beside a
+run title. Observed on the running app with a fixture whose run took 26h and
+started 100h ago:
+
+- Fleet ▸ Office roster: `4d 4h` (start → now)
+- Runs table: `ran 1d 2h` (start → completed)
+
+Same run, two correct numbers, and only one of them says what it measures. This
+is acceptance item 9 applied to a file this piece does not own. The fix is one
+word, not a formatter: label it `started 4d 4h ago`. `OfficeTab.tsx:112` also
+falls back to `|| '<1m'` when `formatElapsed` returns null, which renders "under
+a minute" for a run whose `started_at` is null — a plausible number in place of
+a missing one. It should render `—`.

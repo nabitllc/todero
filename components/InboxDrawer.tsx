@@ -33,12 +33,19 @@ const STATUS_COLORS: Record<string, string> = {
 // no deadline, and "expired" (not the clock's generic "ended") for one whose
 // deadline has passed. Everything numeric comes from lib/time.ts.
 // See docs/rebuild/pieces/pieces6/one-clock.md.
-function timeRemaining(expiresAt: string | null): string {
+// Returns the WHOLE phrase, not a bare duration for a caller to prefix. The
+// call site used to render `expires ${timeRemaining(...)}`, which produced
+// "expires expired" and "expires —" once this function started returning
+// words as well as numbers. A duration must ship with the word that says what
+// it measures, and the only way to guarantee that is to build them together.
+function expiryLine(expiresAt: string | null): string {
   const at = toEpochMs(expiresAt)
-  if (at === null) return '—'
+  if (at === null) return 'no deadline'
   const diff = at - Date.now()
+  // "expired", not the clock's generic "ended" — this surface's own word for
+  // an approval whose window closed.
   if (diff <= 0) return 'expired'
-  return formatCountdown(diff)
+  return `expires in ${formatCountdown(diff)}`
 }
 
 /** The fallback shape PATCH /api/inbox writes to `context.resolution` when
@@ -403,7 +410,7 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
               <div className="flex items-center justify-between gap-2">
                 <span className="text-white/25 text-[10px]">
                   {view === 'pending'
-                    ? `expires ${timeRemaining(entry.expires_at)}`
+                    ? expiryLine(entry.expires_at)
                     : `resolved ${formatAgo(entry.resolved_at ?? entry.created_at)} by ${entry.resolved_by ?? '—'}`}
                 </span>
                 {view === 'pending' && (
