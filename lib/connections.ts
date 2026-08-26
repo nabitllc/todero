@@ -265,16 +265,51 @@ export function validateCredential(provider: string, raw: unknown): Verdict<stri
 }
 
 /**
- * An env var name, validated so it cannot be used to reach arbitrary process
- * state through a shell-ish string. Uppercase, digits and underscores only.
+ * The env var an `env`-custody connection may name.
+ *
+ * TOD-2429. This used to accept ANY /^[A-Z][A-Z0-9_]{2,63}$/ name, with a
+ * comment claiming it "cannot be used to reach arbitrary process state". It
+ * could. `toPublicConnection` reads `process.env[name]` and returns the last
+ * six characters plus a set/unset bit, so any name the caller chose became a
+ * read oracle over the whole server environment — measured: pointing a Discord
+ * connection at the database service-role key's variable returned that key's
+ * real tail, and a
+ * `viewer` (settings:read, no write permission at all) could read it.
+ *
+ * Worse than disclosure: POST /api/connections/hub/test then sends the FULL
+ * value of whatever the variable holds to discord.com in an Authorization
+ * header. That is an exfiltration primitive, not a leak.
+ *
+ * A connection may now name only the variable its own provider declares. The
+ * reference is provider-scoped, the way 1Password Connect and Doppler scope a
+ * secret reference to a declared path — you cannot repoint a Discord item at
+ * the database credential.
  */
 const ENV_VAR_NAME = /^[A-Z][A-Z0-9_]{2,63}$/
 
-export function validateEnvVarName(raw: unknown): Verdict<string> {
+export function validateEnvVarName(raw: unknown, spec: ProviderSpec): Verdict<string> {
   if (typeof raw !== 'string' || !ENV_VAR_NAME.test(raw)) {
     return { ok: false, why: 'credential_env_var must be an UPPER_SNAKE_CASE environment variable name', status: 422 }
   }
+  const allowed = allowedEnvVarsFor(spec)
+  if (!allowed.includes(raw)) {
+    return {
+      ok: false,
+      why:
+        `credential_env_var "${raw}" is not declared by this provider. ` +
+        `Allowed: ${allowed.join(', ')}. A connection may only name its own provider's ` +
+        `variable — otherwise the masked hint and the test call become a read oracle ` +
+        `over every secret in the process.`,
+      status: 422,
+    }
+  }
   return { ok: true, value: raw }
+}
+
+/** The env var names a provider declares. One today; a list so a provider can
+ *  later declare alternates without reopening the arbitrary-name hole. */
+export function allowedEnvVarsFor(spec: ProviderSpec): string[] {
+  return [spec.defaultEnvVar]
 }
 
 // ─── Encryption availability ────────────────────────────────────────────────

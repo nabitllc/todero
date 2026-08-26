@@ -157,7 +157,19 @@ const PATTERNS = [
       '["\'[:space:]]*[:=][[:space:]]*["\'][A-Za-z0-9_.:/+-]{20,}["\']',
     label: 'credential assigned a literal',
     regex: true,
-    why: 'a name meaning "credential" set to a long quoted literal',
+    // TOD-2429: case-INSENSITIVE, so `discordToken`, `apiKey` and `botSecret`
+    // match as well as DISCORD_TOKEN. A critic measured that this rule was
+    // SCREAMING_SNAKE-only while the verdict line advertised "a
+    // credential-shaped NAME" — a general claim from a narrow check, which is
+    // the same defect class this whole scanner exists to catch, one level down
+    // inside the fix. camelCase is the dominant identifier convention here, so
+    // most of the surface was uncovered.
+    //
+    // Per-rule, not global: the SHAPE rules above stay case-sensitive because a
+    // JWT or AKIA prefix means nothing in another case, and loosening them
+    // would fire on prose.
+    ignoreCase: true,
+    why: 'a name meaning "credential" set to a long quoted literal (any case)',
     paths: ['.', ':(exclude)config/**', ...SECRET_EXCLUDES],
     fix: 'read it from process.env, or from a hub connection — lib/connections.ts.',
   },
@@ -198,12 +210,16 @@ const PATTERNS = [
 
 let failed = false
 
-for (const { needle, label, regex, why, paths, fix } of PATTERNS) {
+for (const { needle, label, regex, ignoreCase, why, paths, fix } of PATTERNS) {
   // --untracked so a brand-new file cannot smuggle a match past the guard;
   // .gitignore still applies, so node_modules/ and .next/ stay out.
   // -F for a literal needle, -E when the rule needs context around the token.
   const matcher = regex ? '-E' : '-F'
-  const res = spawnSync('git', ['grep', '-n', '-I', matcher, '--untracked', needle, '--', ...paths], {
+  // Per-rule `-i`, never global: the SHAPE rules must stay case-sensitive,
+  // because a JWT or AKIA prefix means nothing in another case and loosening
+  // them would fire on prose.
+  const caseArgs = ignoreCase ? ['-i'] : []
+  const res = spawnSync('git', ['grep', '-n', '-I', matcher, ...caseArgs, '--untracked', needle, '--', ...paths], {
     cwd: REPO,
     encoding: 'utf8',
   })

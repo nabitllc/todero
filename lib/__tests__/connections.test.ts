@@ -207,13 +207,33 @@ describe('validateConfig — an unknown key is refused, not stored', () => {
 })
 
 describe('validateEnvVarName', () => {
-  it('accepts an UPPER_SNAKE_CASE name', () => {
-    expect(validateEnvVarName('DISCORD_BOT' + '_TOKEN').ok).toBe(true)
+  it('accepts the name its own provider declares', () => {
+    expect(validateEnvVarName('DISCORD_BOT' + '_TOKEN', PROVIDERS.discord).ok).toBe(true)
+  })
+
+  // TOD-2429. The validator used to accept ANY UPPER_SNAKE name, and
+  // toPublicConnection reads process.env[name] and returns its last six
+  // characters — so any name the caller chose was a read oracle over the whole
+  // server environment, readable by a `viewer`. Measured before the fix:
+  // pointing a Discord connection at the database service-role variable returned that
+  // key's real tail. POST /test then sends the FULL value to discord.com.
+  it('REFUSES a syntactically valid name the provider does not declare', () => {
+    for (const foreign of [
+      'SUPABASE_SERVICE' + '_ROLE_KEY',
+      'DATABASE_URL',
+      'MC_ADMIN_PASSWORD',
+      'CONNECTIONS_ENCRYPTION_KEY',
+      'LLM_API_KEY',
+    ]) {
+      const v = validateEnvVarName(foreign, PROVIDERS.discord)
+      expect(v.ok).toBe(false)
+      if (!v.ok) expect(v.status).toBe(422)
+    }
   })
 
   it('refuses anything that is not one, so a name cannot smuggle punctuation', () => {
     for (const bad of ['lowercase', 'HAS-DASH', 'HAS SPACE', '9LEADING', 'A', '', 42, null]) {
-      expect(validateEnvVarName(bad).ok).toBe(false)
+      expect(validateEnvVarName(bad, PROVIDERS.discord).ok).toBe(false)
     }
   })
 })

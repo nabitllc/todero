@@ -148,7 +148,19 @@ export const POST = withPermission('settings:write', async (req: NextRequest): P
   let credential: string | null = null
 
   if (custody === 'env') {
-    const verdict = validateEnvVarName(body.credential_env_var ?? spec.defaultEnvVar)
+    // TOD-2429: a `credential` sent alongside custody "env" used to be accepted
+    // and silently discarded, and the 201 then reported configured:true with a
+    // hint belonging to a DIFFERENT credential — the one in the env var. The
+    // caller had every reason to believe their token was stored. PATCH already
+    // refuses this exact combination; POST now does too.
+    if (body.credential !== undefined && body.credential !== null && body.credential !== '') {
+      return bad(
+        'a credential cannot be sent with custody "env" — that mode reads a named ' +
+          'environment variable and stores nothing. Use custody "stored" to store one.',
+        422,
+      )
+    }
+    const verdict = validateEnvVarName(body.credential_env_var ?? spec.defaultEnvVar, spec)
     if (!verdict.ok) return bad(verdict.why, verdict.status)
     envVar = verdict.value
   } else {
@@ -269,7 +281,11 @@ export const PATCH = withPermission('settings:write', async (req: NextRequest): 
   }
 
   if (body.credential_env_var !== undefined) {
-    const verdict = validateEnvVarName(body.credential_env_var)
+    // TOD-2429: the spec comes from the ROW's provider, not the request, so a
+    // caller cannot widen the allowlist by naming a different provider.
+    const rowSpec = PROVIDERS[row.provider as keyof typeof PROVIDERS]
+    if (!rowSpec) return bad(`connection has unknown provider "${row.provider}"`, 500)
+    const verdict = validateEnvVarName(body.credential_env_var, rowSpec)
     if (!verdict.ok) return bad(verdict.why, verdict.status)
     patch.credential_env_var = verdict.value
   }
@@ -336,6 +352,20 @@ export const DELETE = withPermission('settings:write', async (req: NextRequest):
       { error: `could not remove the stored credential, so the connection was left in place: ${secretError.message}` },
       { status: 500 },
     )
+  }
+
+  // TOD-2429: this returned `{deleted: id}` for an id that never existed —
+  // a status traced to no query. On a credential endpoint, "I removed that
+  // credential" is the one answer that must never be given about a row nobody
+  // looked for. Confirm it exists first, and 404 when it does not.
+  const { data: existing, error: lookupError } = await db()
+    .from(CONNECTIONS_TABLE)
+    .select('id')
+    .eq('id', id)
+    .maybeSingle()
+  if (lookupError) return dbQueryErrorResponse(lookupError, CONNECTIONS_TABLE)
+  if (!existing) {
+    return NextResponse.json({ error: `no connection with id "${id}"` }, { status: 404 })
   }
 
   const { error } = await db().from(CONNECTIONS_TABLE).delete().eq('id', id)
