@@ -11,6 +11,9 @@ import {
   LS_KEY,
 } from './officeConstants';
 import type { AgentRunInfo, ThemeKey } from './officeConstants';
+// one-clock (pieces6): every duration this canvas draws is spelled by the one
+// clock in lib/time.ts. See docs/rebuild/pieces/pieces6/one-clock.md.
+import { formatDuration, formatSince } from '@/lib/time';
 
 // The one roster shape initAgents() ever accepts: whatever /api/agents
 // actually returned (mapped in AgentOffice.tsx), never a hardcoded stand-in.
@@ -44,10 +47,13 @@ export function clamp(v:number,lo:number,hi:number){ return Math.max(lo,Math.min
 // tab can never disagree. There is no real completion fraction anywhere in
 // agent_runs, so this is intentionally text, not a bar: a bar implies a
 // measured percent-done that nothing computes.
+// one-clock (pieces6): the arithmetic is lib/time.ts's formatSince now. The
+// name and signature are kept because components/tabs/OfficeTab.tsx imports
+// this, and because "elapsed" is the word this surface uses. null still means
+// "started_at is null" — nothing was measured — which is why this returns null
+// rather than "0s": a run with no start time has no elapsed time.
 export function formatElapsed(startedAt: string | null | undefined): string | null {
-  if(!startedAt) return null;
-  const mins=Math.max(0,Math.round((Date.now()-new Date(startedAt).getTime())/60000));
-  return mins<1?"<1m":mins<60?`${mins}m`:`${Math.floor(mins/60)}h ${mins%60}m`;
+  return formatSince(startedAt);
 }
 
 export function mkBurst(x:number,y:number,color:string){
@@ -538,14 +544,20 @@ export function drawAgent(ctx:CanvasRenderingContext2D,ag:any,T:number,now:numbe
       const eW=Math.max(tlW,nlW),eH=ePx*1.5,eY=nlY+nlH+T*0.025;
       ctx.fillStyle="#151528";ctx.fillRect(px-eW/2,eY,eW,eH);
       ctx.fillStyle=color+"dd";ctx.textAlign="center";
-      ctx.fillText(`⏱ ${elapsed}`,px,eY+eH*0.75);
+      // one-clock: "running 12m", not a bare "⏱ 12m". This figure shows time
+      // since started_at, while the Runs table shows a finished run's total.
+      // Both are correct durations of the same run, so each says which it is.
+      ctx.fillText(`running ${elapsed}`,px,eY+eH*0.75);
     }
   }
   // Idle timer display
   if(state==="idle"&&active&&ag.lastStateChange){
-    const idleMins=Math.round((Date.now()-(ag.lastStateChange||Date.now()))/60000);
-    if(idleMins>=1){
-      const idleText=idleMins>=60?`${Math.floor(idleMins/60)}h ${idleMins%60}m`:`${idleMins}m`;
+    // one-clock: this was a fourteenth ad-hoc formatter. Same clock as
+    // everything else now; the >=60s gate keeps the label off the canvas for
+    // an agent that has only just gone idle.
+    const idleMs=Date.now()-(ag.lastStateChange||Date.now());
+    if(idleMs>=60000){
+      const idleText=formatDuration(idleMs);
       const iPx=Math.max(9,Math.round(T*0.10));
       ctx.font=`${iPx}px 'IBM Plex Mono',monospace`;ctx.textAlign="center";
       ctx.fillStyle="#4a4a6a";

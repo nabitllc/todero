@@ -23,7 +23,8 @@ import {
   formatTokens,
   formatUsd,
   normalizeStepRow,
-  runTouchedPaidProvider,
+  formatStepCost,
+  runTouchedProvider,
   traceTotals,
   validateStepWrite,
   type RunBudget,
@@ -74,26 +75,26 @@ const BUDGET: RunBudget = {
 
 // ─── the dollar column's condition ──────────────────────────────────────────
 
-describe('runTouchedPaidProvider — forbids a $0.00 column on a local run', () => {
+describe('runTouchedProvider — forbids a $0.00 column on a local run', () => {
   it('is FALSE when every step has a null cost_usd', () => {
     // The fabrication this forbids: summing `cost_usd ?? 0` across the run,
     // getting 0, and rendering "$0.00" as though it were measured.
-    expect(runTouchedPaidProvider(LOCAL_RUN)).toBe(false)
+    expect(runTouchedProvider(LOCAL_RUN)).toBe(false)
   })
 
   it('is TRUE as soon as ONE step carries a number', () => {
-    expect(runTouchedPaidProvider(PAID_RUN)).toBe(true)
-    expect(runTouchedPaidProvider([...LOCAL_RUN, step({ step_no: 6, cost_usd: 0.0001 })])).toBe(true)
+    expect(runTouchedProvider(PAID_RUN)).toBe(true)
+    expect(runTouchedProvider([...LOCAL_RUN, step({ step_no: 6, cost_usd: 0.0001 })])).toBe(true)
   })
 
   it('is TRUE for a recorded ZERO — a measured $0 is not an absent measurement', () => {
     // A cache hit on a paid provider really did cost $0. That is a number and
     // the column must appear; only `null` means nobody measured.
-    expect(runTouchedPaidProvider([step({ step_no: 1, cost_usd: 0 })])).toBe(true)
+    expect(runTouchedProvider([step({ step_no: 1, cost_usd: 0 })])).toBe(true)
   })
 
   it('is FALSE for a run with no steps at all', () => {
-    expect(runTouchedPaidProvider([])).toBe(false)
+    expect(runTouchedProvider([])).toBe(false)
   })
 })
 
@@ -400,5 +401,101 @@ describe('NO_STEPS_MESSAGE', () => {
 
   it('does not imply the run did nothing', () => {
     expect(NO_STEPS_MESSAGE).toContain('agent_runs row is real')
+  })
+})
+
+// ─── three-fabrications #2 ──────────────────────────────────────────────────
+//
+// `runTouchedPaidProvider` was named for the provider column and answered
+// from the cost column: `steps.some(s => s.cost_usd !== null)`. MEASURED: a
+// step with `provider = 'anthropic'` and `cost_usd = NULL` rendered
+//
+//     no step recorded a dollar cost (run_steps.cost_usd is null for all 1
+//     step), so no dollar column is shown. The dollar column appears only
+//     when a run touches a paid provider.
+//
+// while the row it described said `anthropic`. `run_steps.provider` was
+// validated, stored, returned by the API, and read by nothing.
+
+describe('the provider column is READ, not just stored', () => {
+  const PROVIDER_NO_COST: RunStepRow[] = [
+    step({ step_no: 1, tool: 'anthropic', what: 'asked the model', tokens: 1200, provider: 'anthropic' }),
+  ]
+
+  it('a step naming a provider with a null cost still opens the dollar column', () => {
+    // FAILS against the old cost-only predicate, which answered false here
+    // and hid the column over a row that says "anthropic".
+    expect(runTouchedProvider(PROVIDER_NO_COST)).toBe(true)
+  })
+
+  it('is still FALSE when no step names a provider AND none records a cost', () => {
+    expect(runTouchedProvider(LOCAL_RUN)).toBe(false)
+  })
+
+  it('renders that step as "cost not measured", naming the provider — not an em dash', () => {
+    expect(formatStepCost(PROVIDER_NO_COST[0])).toBe('anthropic · cost not measured')
+    // A step with neither is still an em dash, and a measured cost still wins.
+    expect(formatStepCost(step({ step_no: 2 }))).toBe('—')
+    expect(formatStepCost(step({ step_no: 3, provider: 'anthropic', cost_usd: 0.012 }))).toBe('$0.0120')
+  })
+
+  it('names the provider-only steps so the panel can say what is missing', () => {
+    const out = costByStep([...PROVIDER_NO_COST, step({ step_no: 2, tool: 'read', tokens: 300 })])
+    expect(out.stepsWithProviderNoCost).toBe(1)
+    expect(out.providersWithoutCost).toEqual(['anthropic'])
+  })
+})
+
+describe('the dollar total counts only the steps that recorded one', () => {
+  // MEASURED: "$0.5000 across 3 steps" when ONE of three recorded a cost.
+  const ONE_PAID: RunStepRow[] = [
+    step({ step_no: 1, tool: 'anthropic', tokens: 500, cost_usd: 0.5 }),
+    step({ step_no: 2, tool: 'read', tokens: 300 }),
+    step({ step_no: 3, tool: 'edit', tokens: 200 }),
+  ]
+
+  it('reports how many steps the total is actually over', () => {
+    const out = costByStep(ONE_PAID)
+    expect(out.totalCostUsd).toBeCloseTo(0.5, 6)
+    // The denominator the card prints. `3` here is the measured fabrication.
+    expect(out.stepsWithCost).toBe(1)
+    expect(out.stepsWithoutCost).toBe(2)
+  })
+
+  it('gives a run where every step recorded a cost no carve-out to make', () => {
+    expect(costByStep(PAID_RUN).stepsWithoutCost).toBe(0)
+    expect(costByStep(PAID_RUN).stepsWithCost).toBe(5)
+  })
+})
+
+describe('a tool with a cost but no tokens does not vanish from the breakdown', () => {
+  // `costByStep` filters its groups to `tokens > 0`, so this tool's bar never
+  // renders while its dollars still land in totalCostUsd — the visible rows
+  // sum to LESS than the printed total, with nothing on screen saying so.
+  const MIXED: RunStepRow[] = [
+    step({ step_no: 1, tool: 'read', tokens: 1000, cost_usd: 0.1 }),
+    step({ step_no: 2, tool: 'image', tokens: null, cost_usd: 0.4 }),
+  ]
+
+  it('still draws no bar for it — a bar is a share of a token total it is not in', () => {
+    const out = costByStep(MIXED)
+    expect(out.groups.map(g => g.tool)).toEqual(['read'])
+  })
+
+  it('but NAMES it and its dollars, and says what the bars add up to', () => {
+    const out = costByStep(MIXED)
+    expect(out.costOnlyGroups).toEqual([{ tool: 'image', costUsd: 0.4, steps: 1 }])
+    expect(out.barredCostUsd).toBeCloseTo(0.1, 6)
+    expect(out.totalCostUsd).toBeCloseTo(0.5, 6)
+    // The property the fix guarantees: what the bars show plus what is named
+    // outside them equals the printed total.
+    const named = (out.barredCostUsd ?? 0) + out.costOnlyGroups.reduce((s, g) => s + g.costUsd, 0)
+    expect(named).toBeCloseTo(out.totalCostUsd ?? 0, 6)
+  })
+
+  it('has nothing to name on a run where every cost is already in a bar', () => {
+    expect(costByStep(PAID_RUN).costOnlyGroups).toEqual([])
+    expect(costByStep(LOCAL_RUN).costOnlyGroups).toEqual([])
+    expect(costByStep(LOCAL_RUN).barredCostUsd).toBeNull()
   })
 })

@@ -7,6 +7,11 @@ import { AGENT_DISPLAY } from '@/lib/mc-constants'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
+// one-clock (pieces6): this file's local timeAgo is deleted. It rendered
+// 'just now' under a minute, which was one of the six spellings of a short
+// age; the clock says '12s ago', which is the same fact with the number in it.
+// See docs/rebuild/pieces/pieces6/one-clock.md.
+import { formatAgo } from '@/lib/time'
 
 interface Notification {
   id: string
@@ -19,15 +24,6 @@ interface Notification {
   dbId?: string // notifications table id for mark-read
 }
 
-function timeAgo(date: Date): string {
-  const mins = Math.round((Date.now() - date.getTime()) / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
-}
 
 export default function NotificationBell() {
   // null means "not loaded / load failed" — never coerced to [] on a
@@ -205,7 +201,7 @@ export default function NotificationBell() {
                       </div>
                       <p className="text-[10px] text-white/35 mt-0.5 truncate">{n.detail}</p>
                     </div>
-                    <span className="text-[9px] text-white/20 shrink-0 mt-0.5">{timeAgo(n.timestamp)}</span>
+                    <span className="text-[9px] text-white/20 shrink-0 mt-0.5">{formatAgo(n.timestamp)}</span>
                   </div>
                 </div>
               ))

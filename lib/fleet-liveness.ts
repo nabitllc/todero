@@ -73,7 +73,26 @@ export const OFFLINE_AFTER_MS = 10 * 60_000
  */
 export type FleetLiveness = 'live' | 'offline' | 'never' | 'unknown'
 
-/** The two fields a classification needs, from GET /api/agents' row shape. */
+/**
+ * WHERE a row's `lastSeenAt` came from. GET /api/agents' `lastSeenSource`.
+ *
+ *   heartbeat    — the heartbeat store answered. This, and only this, is a
+ *                  hook event, and only this may be worded as one.
+ *   registration — the number is `agent_registrations`' own timestamp. An
+ *                  agent that POSTed /api/connect and never checked in again
+ *                  has one of these, and it is NOT evidence of a heartbeat.
+ *   none         — there is no number at all.
+ *
+ * This field exists because the roster used to launder the second into the
+ * first: lib/agent-registrations.ts read
+ * `toEpochMs(row.last_seen_at) ?? registeredAt`, so a row with no recorded
+ * check-in inherited its REGISTRATION time, and this module then wrote
+ * "heartbeat 4m ago" over a fleet with zero hook events. A timestamp without
+ * its provenance cannot be worded honestly, so the provenance travels with it.
+ */
+export type LivenessProvenance = 'heartbeat' | 'registration' | 'none'
+
+/** The three fields a classification needs, from GET /api/agents' row shape. */
 export interface FleetLivenessInput {
   /** Epoch ms of the last recorded heartbeat, or null if the store held none. */
   lastSeenAt: number | null
@@ -84,6 +103,12 @@ export interface FleetLivenessInput {
    * and no liveness claim about the agent may be made from it.
    */
   observed: boolean
+  /**
+   * Where `lastSeenAt` came from. Required, with no default: a caller that
+   * does not know the provenance must say so (`'none'`) rather than have this
+   * module assume the flattering answer. See {@link LivenessProvenance}.
+   */
+  source: LivenessProvenance
 }
 
 /**
@@ -101,6 +126,11 @@ export function classifyFleetLiveness(
   offlineAfterMs: number = OFFLINE_AFTER_MS,
 ): FleetLiveness {
   if (!input.observed) return 'unknown'
+  // A registration timestamp is not a hook event. This module already refuses
+  // to make a claim from an unread store; it refuses to make one from the
+  // wrong column for the same reason — the row's own registration time is
+  // evidence that the agent EXISTS, never that it checked in.
+  if (input.source !== 'heartbeat') return 'never'
   if (input.lastSeenAt === null) return 'never'
   const age = now - input.lastSeenAt
   if (age < 0) return 'live'
@@ -171,12 +201,28 @@ export function describeLiveness(
         badge: state,
         label: `last heartbeat ${formatAge(now - (input.lastSeenAt as number))} ago — offline after ${window} of silence`,
       }
-    case 'never':
+    case 'never': {
+      // Three different absences, three different sentences. A row whose only
+      // timestamp is its registration has something real to report — WHEN it
+      // registered — and reporting that is not the same as reporting a
+      // heartbeat, so it may not borrow the heartbeat's words.
+      if (input.source === 'registration' && input.lastSeenAt !== null) {
+        const age = now - input.lastSeenAt
+        const when = age < 0 ? 'in the future by this host’s clock' : `${formatAge(age)} ago`
+        return {
+          state,
+          badge: state,
+          label:
+            `registered ${when} — that is agent_registrations' own timestamp, not a check-in: ` +
+            `no hook event has ever arrived for this agent`,
+        }
+      }
       return {
         state,
         badge: state,
         label: 'has never sent a heartbeat — the store was read and holds no check-in for this agent',
       }
+    }
     case 'unknown':
       return {
         state,
@@ -193,7 +239,11 @@ export interface FleetSummary {
   offline: number
   never: number
   unknown: number
-  /** Newest heartbeat anywhere in the fleet, or null when there is none. */
+  /**
+   * Newest HOOK EVENT anywhere in the fleet, or null when there is none.
+   * Rows whose timestamp came from `agent_registrations` are excluded — see
+   * {@link LivenessProvenance}.
+   */
   lastEventAt: number | null
   /** True when at least one row's store could be read. */
   anyObserved: boolean
@@ -216,7 +266,10 @@ export function summarizeFleet(
   for (const row of rows) {
     summary[classifyFleetLiveness(row, now, offlineAfterMs)] += 1
     if (row.observed) summary.anyObserved = true
-    if (row.observed && row.lastSeenAt !== null) {
+    // `lastEventAt` is the newest HOOK EVENT, and `fleetProvenanceLine` says
+    // so in those words. A registration timestamp is not one, so it may not
+    // be the number behind "last event 4m ago".
+    if (row.observed && row.source === 'heartbeat' && row.lastSeenAt !== null) {
       summary.lastEventAt =
         summary.lastEventAt === null ? row.lastSeenAt : Math.max(summary.lastEventAt, row.lastSeenAt)
     }

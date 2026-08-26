@@ -65,11 +65,20 @@ export async function GET() {
   // bad connection string — ok:false, which table, and the exact fix —
   // rather than staying green because the connection itself succeeded.
   try {
-    const { missing } = await checkRequiredTables()
-    result.schema = { missingTables: missing }
+    const { missing, malformed, unprobed } = await checkRequiredTables()
+    result.schema = { missingTables: missing, malformedTables: malformed, unprobedTables: unprobed }
     if (missing.length > 0) {
       result.ok = false
       result.missing = missing
+      result.fix = 'npm run db:migrate'
+    }
+    // A table that EXISTS at the wrong shape is just as broken a deploy as one
+    // that is absent, and used to report green — `agent_memory` carried the
+    // daily-notes shape while /api/settings/cost-history 502'd and
+    // /api/agent-pause 500'd against it. See lib/required-tables.ts.
+    if (malformed.length > 0) {
+      result.ok = false
+      result.malformed = malformed
       result.fix = 'npm run db:migrate'
     }
   } catch (e) {

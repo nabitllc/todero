@@ -4,6 +4,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { X, Inbox } from 'lucide-react'
 import { fetchJson, type ApiError } from '@/hooks/useApiData'
+import { formatAgo, formatCountdown, toEpochMs } from '@/lib/time'
 import ApiErrorBanner from '@/components/ApiErrorBanner'
 
 interface InboxEntry {
@@ -27,20 +28,17 @@ const STATUS_COLORS: Record<string, string> = {
   timeout: '#6b7280', explained: '#6366f1',
 }
 
+// one-clock (pieces6): both of this file's formatters are gone; the two things
+// that remain are the two WORDS this surface owns — "—" for an approval with
+// no deadline, and "expired" (not the clock's generic "ended") for one whose
+// deadline has passed. Everything numeric comes from lib/time.ts.
+// See docs/rebuild/pieces/pieces6/one-clock.md.
 function timeRemaining(expiresAt: string | null): string {
-  if (!expiresAt) return '—'
-  const diff = new Date(expiresAt).getTime() - Date.now()
+  const at = toEpochMs(expiresAt)
+  if (at === null) return '—'
+  const diff = at - Date.now()
   if (diff <= 0) return 'expired'
-  const m = Math.floor(diff / 60000)
-  const s = Math.floor((diff % 60000) / 1000)
-  return m > 0 ? `${m}m ${s}s` : `${s}s`
-}
-
-function timeAgo(ts: string): string {
-  const diff = Date.now() - new Date(ts).getTime()
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
-  return `${Math.floor(diff / 3600000)}h ago`
+  return formatCountdown(diff)
 }
 
 /** The fallback shape PATCH /api/inbox writes to `context.resolution` when
@@ -406,7 +404,7 @@ export default function InboxDrawer({ open, onClose, pendingCount }: InboxDrawer
                 <span className="text-white/25 text-[10px]">
                   {view === 'pending'
                     ? `expires ${timeRemaining(entry.expires_at)}`
-                    : `resolved ${timeAgo(entry.resolved_at ?? entry.created_at)} by ${entry.resolved_by ?? '—'}`}
+                    : `resolved ${formatAgo(entry.resolved_at ?? entry.created_at)} by ${entry.resolved_by ?? '—'}`}
                 </span>
                 {view === 'pending' && (
                   <div className="flex gap-1">

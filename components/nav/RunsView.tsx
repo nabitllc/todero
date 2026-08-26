@@ -27,6 +27,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { dbUrl, dbRestHeaders } from '@/lib/db/browser'
+import { formatElapsedBetween } from '@/lib/time'
 import { fetchJson } from '@/hooks/useApiData'
 import { useProjectScope } from './ProjectScope'
 import RunTraceCard from '@/components/tabs/RunTraceCard'
@@ -46,12 +47,30 @@ interface AgentRunRow {
   error: string | null
 }
 
-function fmtDuration(startedAt: string, completedAt: string | null): string {
-  const end = completedAt ? new Date(completedAt).getTime() : Date.now()
-  const ms = Math.max(0, end - new Date(startedAt).getTime())
-  const mins = Math.floor(ms / 60000)
-  const secs = Math.floor((ms % 60000) / 1000)
-  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`
+/**
+ * one-clock (pieces6): the duration and the word that says which duration it
+ * is.
+ *
+ * This column used to render a bare number from a local formatter, and the
+ * SAME run could read "30s" here (started -> completed) and "14h 37m" on the
+ * Fleet Office canvas (started -> now) with nothing on either screen saying
+ * which measurement it was. Both numbers were correct; the reader could not
+ * tell them apart. So the word ships with the number:
+ *
+ *   ran 30s        — the run finished, and this is how long it took
+ *   running 14h 37m — the run has not finished, and this is how long so far
+ *   —              — agent_runs.started_at is null, so nothing was measured
+ *
+ * The arithmetic is lib/time.ts's and nothing here duplicates it.
+ */
+function runDuration(startedAt: string, completedAt: string | null): { text: string; title: string } {
+  const value = formatElapsedBetween(startedAt, completedAt)
+  if (value === null) {
+    return { text: '—', title: 'agent_runs.started_at is null — this run’s duration was never recorded' }
+  }
+  return completedAt
+    ? { text: `ran ${value}`, title: 'agent_runs.started_at → completed_at' }
+    : { text: `running ${value}`, title: 'agent_runs.started_at → now — this run has not completed' }
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -172,7 +191,9 @@ export default function RunsView() {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-white/70 font-mono text-xs">{fmtDuration(r.started_at, r.completed_at)}</td>
+                    <td className="px-3 py-2.5 text-white/70 font-mono text-xs" title={runDuration(r.started_at, r.completed_at).title}>
+                      {runDuration(r.started_at, r.completed_at).text}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-white/70 font-mono text-xs">{r.tokens_used ?? '—'}</td>
                     <td className="px-3 py-2.5 text-right text-white/70 font-mono text-xs">{r.cost_usd != null ? `$${r.cost_usd.toFixed(2)}` : '—'}</td>
                   </tr>

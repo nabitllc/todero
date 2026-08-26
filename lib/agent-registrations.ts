@@ -46,6 +46,24 @@ export interface AgentRegistration {
   capabilities: unknown[]
   connectionId: string | null
   registeredAt: number
+  /**
+   * Epoch ms of the last RECORDED check-in — `agent_registrations.
+   * last_seen_at` — or null when that column holds nothing.
+   *
+   * This field exists because `lastSeenAt` below silently substitutes
+   * `registeredAt` when the column is empty, and a caller that renders a
+   * liveness claim needs to know which of the two it is holding. Reading
+   * `lastSeenAt` alone is how "registered 4m ago" became "heartbeat 4m ago"
+   * on the Fleet card over a fleet with zero hook events.
+   */
+  recordedLastSeenAt: number | null
+  /**
+   * `recordedLastSeenAt ?? registeredAt`. Kept because a registration IS an
+   * assertion that the agent existed at that moment, which is all
+   * `deriveStatus()` below needs. It is NOT evidence of a heartbeat: anything
+   * that words this number for an operator must consult
+   * `recordedLastSeenAt` (and, in GET /api/agents, the heartbeat store) first.
+   */
   lastSeenAt: number
 }
 

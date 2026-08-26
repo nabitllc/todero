@@ -7,6 +7,11 @@ import { StatusDot } from '@/components/ui/StatusDot'
 // TOD: kill-fake-infra-greens — imports the client-safe constants module, not
 // lib/theme.ts, which pulls in lib/db.ts's postgres adapter (Node-only `pg`,
 // needs `fs`) and broke the client bundle for every route on this host.
+// one-clock (pieces6): this file's local timeAgo is deleted. It capped at
+// minutes, so a check made 26 hours ago read "1560m ago"; and it said "just
+// now" under 10s, which was a seventh spelling of a short age.
+// See docs/rebuild/pieces/pieces6/one-clock.md.
+import { formatAgo } from '@/lib/time'
 import { THEMES, THEME_IDS } from '@/lib/theme-constants'
 import type { ThemeId } from '@/lib/theme-constants'
 import CostBreakdownTable from '@/components/CostBreakdownTable'
@@ -47,12 +52,6 @@ function barColor(pct: number): string {
   return '#22c55e'
 }
 
-function timeAgo(iso: string): string {
-  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
-  if (sec < 10) return 'just now'
-  if (sec < 60) return `${sec}s ago`
-  return `${Math.floor(sec / 60)}m ago`
-}
 
 function UsageBar({ value, max, label }: { value: number; max: number; label: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
@@ -90,7 +89,7 @@ function ServiceCard({ emoji, name, plan, status, statusLabel, children, lastChe
       </div>
       <div className="text-xs text-white/40 mb-2">{plan}</div>
       {children}
-      {lastChecked && <div className="text-[10px] text-white/20 mt-2">{timeAgo(lastChecked)}</div>}
+      {lastChecked && <div className="text-[10px] text-white/20 mt-2">{formatAgo(lastChecked)}</div>}
     </div>
   )
 }
