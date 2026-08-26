@@ -49,6 +49,7 @@ import PrimaryNav from '@/components/nav/PrimaryNav'
 import MobileNav from '@/components/nav/MobileNav'
 import DestinationShell from '@/components/nav/DestinationShell'
 import ChatOverlay from '@/components/nav/ChatOverlay'
+import IssueDetailOverlay from '@/components/IssueDetailOverlay'
 import RunsView from '@/components/nav/RunsView'
 import NowSignal from '@/components/nav/NowSignal'
 import { ProjectScopeProvider } from '@/components/nav/ProjectScope'
@@ -56,6 +57,7 @@ import { DEFAULT_VIEW, LEGACY_TAB_MAP, LEGACY_VIEW_MAP, isDestinationId, viewsOf
 import { dbUrl, dbRestHeaders, issuesUrl } from '@/lib/db/browser'
 import { fetchJson, formatApiError, useApiData, type ApiError } from '@/hooks/useApiData'
 import { runLiveness, type AgentRunStatus } from '@/hooks/useAgentStatus'
+import { parseIssueKeyFromPath } from '@/lib/issue-permalink'
 
 // BIZ_EMOJI was here: a six-name emoji table (Vespera, Kemuni, Mission Control,
 // Todero, Infrastructure, KAOS). The sibling piece banned exactly this shape —
@@ -107,10 +109,13 @@ interface ParsedURL {
   project: string | null
   /** True only for the legacy /chat bookmark — Chat is an overlay now, not a route. */
   openChat: boolean
+  /** Normalised task key (`TOD-9`) from an `/i/<key>` permalink segment, or
+   *  null. See lib/issue-permalink.ts — the issue-permalink piece. */
+  issueKey: string | null
 }
 
 function parseURL(): ParsedURL {
-  if (typeof window === 'undefined') return { destination: 'now', view: 'overview', business: null, project: null, openChat: false }
+  if (typeof window === 'undefined') return { destination: 'now', view: 'overview', business: null, project: null, openChat: false, issueKey: null }
   const parts = window.location.pathname.split('/').filter(Boolean)
   let business: string | null = null
   let rest = parts
@@ -137,13 +142,25 @@ function parseURL(): ParsedURL {
     if (legacyProj) project = slugToProjectName(legacyProj)
   }
 
+  // issue-permalink piece: `/i/<task-key>` names one issue, scoped by
+  // whatever `/p/<slug>` (or lack of one) precedes it above — never a
+  // destination, so it cannot collide with LEGACY_TAB_MAP or isDestinationId
+  // below. An unparseable key falls through to the ordinary destination
+  // parse rather than opening a blank overlay.
+  if (rest[0] === 'i' && rest[1]) {
+    const issueKey = parseIssueKeyFromPath(window.location.pathname)
+    if (issueKey) {
+      return { destination: 'work', view: 'list', business, project, openChat: false, issueKey }
+    }
+  }
+
   const first = rest[0]
   if (first === 'chat') {
-    return { destination: 'now', view: 'overview', business, project, openChat: true }
+    return { destination: 'now', view: 'overview', business, project, openChat: true, issueKey: null }
   }
   if (first && LEGACY_TAB_MAP[first]) {
     const [destination, view] = LEGACY_TAB_MAP[first]
-    return { destination, view, business, project, openChat: false }
+    return { destination, view, business, project, openChat: false, issueKey: null }
   }
   if (first && isDestinationId(first)) {
     const destination = first as DestinationId
@@ -154,9 +171,9 @@ function parseURL(): ParsedURL {
     const aliased = second ? LEGACY_VIEW_MAP[destination]?.[second] : undefined
     const resolved = aliased ?? second
     const view = resolved && viewsOf(destination).includes(resolved) ? resolved : DEFAULT_VIEW[destination]
-    return { destination, view, business, project, openChat: false }
+    return { destination, view, business, project, openChat: false, issueKey: null }
   }
-  return { destination: 'now', view: 'overview', business, project, openChat: false }
+  return { destination: 'now', view: 'overview', business, project, openChat: false, issueKey: null }
 }
 
 function buildPath(business: string | null, destination: DestinationId, view: string, project: string | null): string {
@@ -196,6 +213,10 @@ export default function Home() {
   const [destination, setDestination] = useState<DestinationId>('now')
   const [view, setView] = useState<string>('overview')
   const [chatOpen, setChatOpen] = useState(false)
+  // issue-permalink piece: the task key an `/i/<key>` URL named, or null.
+  // Rendered as an overlay over whatever destination/view is current — same
+  // shape as `chatOpen` above, never a destination of its own.
+  const [issueKey, setIssueKey] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currentIdentity, setCurrentIdentity] = useState<string | null>(null)
   const [clock, setClock] = useState('')
@@ -401,13 +422,21 @@ export default function Home() {
   // also resolves a legacy /chat bookmark to an overlay instead of a route, with
   // no extra back-button entry).
   useEffect(() => {
-    const { destination: d, view: v, business, project, openChat } = parseURL()
+    const { destination: d, view: v, business, project, openChat, issueKey: k } = parseURL()
     setDestination(d)
     setView(v)
     if (business) setSelectedBusiness(business)
     if (project) setSelectedProject(project)
     if (openChat) setChatOpen(true)
-    window.history.replaceState({ biz: business, destination: d, view: v, project }, '', buildPath(business, d, v, project))
+    if (k) {
+      // An issue permalink keeps its own URL exactly as loaded — canonicalising
+      // it to buildPath(d, v, project) would replace `/i/<key>` with `/work/list`
+      // in the address bar before the operator could ever reload it, which is
+      // the one thing a permalink has to survive.
+      setIssueKey(k)
+    } else {
+      window.history.replaceState({ biz: business, destination: d, view: v, project }, '', buildPath(business, d, v, project))
+    }
     const p = new URLSearchParams(window.location.search)
     const feat = p.get('feature')
     if (feat) setBoardFeatureFilter(feat)
@@ -468,13 +497,22 @@ export default function Home() {
   // only ever true in React state and never in the address bar.
   useEffect(() => {
     if (typeof window === 'undefined' || !selectedProject) return
+    // TOD-2462: an open issue permalink owns the address bar. The seam diff for
+    // the issue-permalink piece guarded the MOUNT-time replaceState (above) and
+    // stopped there; this second one fires on `[selectedBusiness,
+    // selectedProject]`, which resolve a tick LATER than mount on a cold load,
+    // so it overwrote `/p/limiglow/i/TOD-159` with
+    // `/b/todero/p/limiglow/work/list` before the operator could reload it.
+    // Measured in a browser: the overlay opened, the URL did not survive.
+    // Guarding one canonicaliser is not guarding the URL.
+    if (issueKey) return
     const path = buildPath(selectedBusiness, destination, view, selectedProject)
     const current = window.location.pathname + window.location.search
     if (current !== path) {
       window.history.replaceState({ biz: selectedBusiness, destination, view, project: selectedProject }, '', path)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBusiness, selectedProject])
+  }, [selectedBusiness, selectedProject, issueKey])
 
   // Real issue total for the scoped project — never a placeholder, never carried
   // over from a different project.
@@ -631,8 +669,9 @@ export default function Home() {
   // Browser back/forward
   useEffect(() => {
     const onPop = () => {
-      const { destination: d, view: v, business, project } = parseURL()
+      const { destination: d, view: v, business, project, issueKey: k } = parseURL()
       setDestination(d); setView(v); setSelectedBusiness(business); setSelectedProject(project)
+      setIssueKey(k)
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
@@ -1023,6 +1062,8 @@ export default function Home() {
       </div>
 
       <ChatOverlay open={chatOpen} onClose={() => { setChatOpen(false); setUnreadChat(false) }} selectedBusiness={selectedBusiness} />
+
+      <IssueDetailOverlay taskKey={issueKey} onClose={() => { setIssueKey(null); goTo('work', 'list') }} />
 
       <QuickActionFab
         onNavigate={navigate}
