@@ -142,7 +142,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Wave</span><span class="v">3</span></div>
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">8.7 → 6.2 → 9.3 → 10</span></div>
-  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 5.5 (goal 8.9)</span></div>
+  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 5.6 (goal 8.9)</span></div>
   <div class="kv"><span class="k">Spent</span><span class="v mono">32.67M tok · ~$149</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
@@ -173,10 +173,10 @@ section{margin-top:42px;scroll-margin-top:16px}
       <div class="card">
         <div class="head"><span class="cname">Work Management API (MC API)</span><span class="chip moving">in progress</span></div>
         <div class="meter">
-          <div class="bar"><div class="ghost" style="width:20%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">7.0<i>/9</i></span>
+          <div class="bar"><div class="ghost" style="width:20%"></div><div class="fill" style="width:80%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">8.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+5.0]</b> GET /api/issues now applies ?type= and ?has_due=, both validated and both refusing bad input with a 400 that names the allowed values. Both were previously unavailable: type was read nowhere despite being accepted, and due_date had no predicate in buildQuery() at all, so a card asking what is due could not be made truthful. Held back because ?limit=0 still means every matching row rather than count-only, and app/page.tsx:479 uses it purely to obtain a count — thousands of rows fetched to render one number.</div>
+        <div class="gap"><b>[+6.0]</b> The code-review lifecycle WORKS now. PATCH to or from code_review answered HTTP 500 in both directions because three sites wrote test_status, which is not a column on issues — 57 columns, none of them that — and the 42703 retry that strips 26 columns did not include it, so even the fallback failed identically. Proven end to end: in_progress -> code_review -> tester passes -> designer passes -> approved, every step a 500 before. A TEST WAS PINNING IT: issue-routing.test.ts asserted the phantom write and stayed green while that write 500d in production; it now asserts the absence. Also found: before?.test_status was always undefined, so the fail counter incremented on every failing PATCH. Held back: ?limit=0 still means every matching row and two callers use it purely to read one integer.</div>
         <div class="goal"><span class="glab">Goal</span> Linear's issue list — server-side paging with an exact total, so no screen ever shows a number computed from a truncated slice.</div>
       </div>
       <div class="card">
@@ -194,7 +194,7 @@ section{margin-top:42px;scroll-margin-top:16px}
           <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">7.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+6.0]</b> scripts/no-invented-projects.mjs now exits 0. It exited 1 with 46 references across seven unowned files, and Kemuni SME and Vespera SME rendered as live Fleet roster rows. The PROJECT_EMOJI table HANDOFF records as surviving two sweeps survived a third because it was DEAD CODE — nothing read it, so every sweep asking 'what breaks if this goes' correctly answered 'nothing' and moved on. Only a declaration scanner found it. Three fabrications three critics named are fixed, each with a test proven to fail against the old behaviour (4 of 31, 4 of 51, 5 of 7). Held back: roughly thirty duration formatters remain outside the ones collapsed, and app/page.tsx still reads a timestamp with no provenance.</div>
+        <div class="gap"><b>[+6.0]</b> Three guards proven in both directions, and the schema preflight now checks SHAPE rather than existence — it caught seven unprobed tables within seconds of a regeneration. agent_responsibilities was invisible to it because the route used a constant in .from() where the generator matches a literal, so health reported green on an install where its migration never ran; that trap is documented twice in this repo and was hit anyway. Held back and named: computeModelDefects() has a test NAMED after it that never calls it — gutting the function leaves 53/53 green — and RESPONSIBILITY_CONSUMERS is a typed literal while its card claims wiring a consumer updates it automatically. Both are the trusted-guard class, found by critics rather than by CI.</div>
         <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
       </div>
       <div class="card">
@@ -216,6 +216,15 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Slack — the difference between new, for-you, and a thread you are in. Grok Bot — surfaces only what needs you. You approve from your phone; Todero sends.</div>
       </div>
       <div class="card">
+        <div class="head"><span class="cname">Pipeline Fidelity</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:20%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">7.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+5.0]</b> All 16 lifecycle statuses map across 8 columns, each exactly once, as data a test enumerates — and the completeness test is red in both directions: unmapping a status fails 5 of 53 saying an issue in it would be invisible, inventing one fails 3 of 53 naming it. The lane by agent is real: 29 lanes from 28 live roster rows, with the 22 idle agents each still named, so an agent with nothing to do is distinguishable from one that does not exist. A smoothing pass then found BoardTab — the DEFAULT Work view — dropping six statuses silently: header reading "19 issues" over columns holding 12, with no warning that seven cards had gone. Not hypothetical: the MC API writes the status "underway" on two paths, so it happens in normal operation. Its three-column simplification stays, but its catch-all chip is now DERIVED from VALID_STATUSES minus everything already placed, so a status added to the lifecycle tomorrow appears rather than vanishing. Verified zero uncovered. Held back: 7 of 15 move-sheet transitions still cannot complete, two of them surfacing raw SQLite constraint text to the operator.</div>
+        <div class="goal"><span class="glab">Goal</span> Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through.</div>
+      </div>
+      <div class="card">
         <div class="head"><span class="cname">Run Safety &amp; Enforcement</span><span class="chip building">wave 4</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
@@ -232,15 +241,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="gap"><b>[+4.0]</b> Six destinations, path-based URLs, and renamed views resolve through LEGACY_VIEW_MAP so an old bookmark lands where it meant to rather than on the destination default. A smoothing pass then found five of six Settings views unlinkable — parseURL tested LEGACY_TAB_MAP before isDestinationId, and that branch discards the view segment — which meant the Connections card holding credential custody sat at the one URL that could not be reloaded. Fixed and verified through a reload. Held back: the palette cannot open an issue because no issue route exists.</div>
         <div class="goal"><span class="glab">Goal</span> Slack — every message has a permalink that opens it in context. LangSmith — every trace has a URL. Linear — any view is a link. No screen unreachable.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Pipeline Fidelity</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:20%"></div><div class="fill" style="width:60%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">6.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+4.0]</b> All 16 lifecycle statuses map across 8 columns, each exactly once, as DATA a test enumerates rather than conditions in JSX — and the completeness test is red in both directions (unmapping a status fails 5 of 53 saying an issue in it would be invisible; inventing one fails 3 of 53). The lane by agent is real: 29 lanes from 28 live roster rows, and the 22 agents with no work in flight are each still named. THE FINDING: test_status is not a column on issues, so undefined === 'passed' was the only path into UX Review — one of seven columns was mathematically unreachable and six statuses fell through to a catch-all. Held back: PATCH /api/issues to code_review is BROKEN on this host because issue-routing writes that phantom column, and PipelineTab is now 950 lines.</div>
-        <div class="goal"><span class="glab">Goal</span> Linear — group a board by any dimension, every column a real status. Plane — swim lanes. Todero adds a lane per agent, so you see what each one is working through.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Commerce Operations</span><span class="chip building">wave 7</span></div>
@@ -326,10 +326,10 @@ section{margin-top:42px;scroll-margin-top:16px}
       <div class="card">
         <div class="head"><span class="cname">Multi-tenancy &amp; Identity</span><span class="chip building">wave 9</span></div>
         <div class="meter">
-          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:0%"></div><div class="pin" style="left:80%"></div></div>
-          <span class="mnum">0.0<i>/8</i></span>
+          <div class="bar"><div class="ghost" style="width:0%"></div><div class="fill" style="width:10%"></div><div class="pin" style="left:80%"></div></div>
+          <span class="mnum">1.0<i>/8</i></span>
         </div>
-        <div class="gap"><b>[=]</b> Post-MVP, added 25 Aug. Today authentication is three shared passwords and every record is global. For anyone else to run Todero for their own business, identity and per-tenant isolation have to be real. Deliberately after one project works well.</div>
+        <div class="gap"><b>[+1.0]</b> Still deliberately post-MVP per HANDOFF — authentication remains three shared passwords and every record is global. One thing did move this wave: GET /api/agent-responsibilities answered 200 with a full 14-area payload for ANY business_id, while the businesses table holds exactly one row — so every other id was being told it has a fleet and no owners, a plausible answer to a question about nothing. It now answers 404 unknown_hub. That is one route of many; the channel stays near zero until real sessions and per-tenant isolation exist.</div>
         <div class="goal"><span class="glab">Goal</span> Linear — sign in and see only your workspace. Anyone runs Todero for their own business and projects, isolated from everyone else.</div>
       </div>
   </div>
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 236ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 217ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
