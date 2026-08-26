@@ -39,32 +39,30 @@ a channel cannot drift up on vibes.
 
 ## The real scoreboard
 
-`scripts/board/channels.json` — 19 channels, **0 cleared**, average **6.16**
-against a goal average of **8.9**. (It was 2.42 when this file was written; the
-table that used to sit here listed channels at 0, 1 and 2 and is now wrong in
-every row, so it is replaced rather than annotated.) This, not the destination
-list, is the measure of "shippable".
+`scripts/board/channels.json` — 19 channels, **1 cleared** (Search & Findability),
+average **6.47** against a goal average of 8.9.
 
-Regenerate the live numbers instead of trusting this paragraph:
+**The average went DOWN at wave 8, and nothing regressed.** Ten fresh critics
+with a mutation-test budget scored ten pieces at 4-8 and found 42 fabrications,
+against a board that had most of those channels at 7 or 8. One of those two
+numbers was wrong and it was mine. Every score I had raised came from a
+builder's own account rather than an adversarial one.
+
+**RULE ADOPTED 2026-08-26, not asked: no channel rises on a builder's
+self-report.** A raise needs an independent critic that has not seen the
+builder's summary. A wave whose repairs have not been re-judged does not move
+the board — it becomes the next wave's judging stage.
+
+Regenerate the live numbers rather than trusting this paragraph:
 
 ```
 node -e "const a=require('./scripts/board/channels.json').channels;a.map(x=>[x.current,x.goal,x.name]).sort((p,q)=>p[0]-q[0]).forEach(r=>console.log(r[0]+'/'+r[1],r[2]))"
 ```
 
-**Wave 6 targets — the six tied at 5, minus multi-tenancy (post-MVP, skip):**
-
-| current -> goal | channel | the ONE thing holding it |
-|---|---|---|
-| 5 -> 9 | Agent Visualization Fidelity | `GET /api/tasks` DOES NOT EXIST and two pollers hit it on 30s and 60s loops. Phantom agents (Kemuni SME, Vespera SME) for projects that do not exist. |
-| 5 -> 9 | Learning & Memory Loop | The surface is honest and empty. **Nothing populates the store.** Needs a write path in the real lifecycle + FTS5 retrieval + an overflow that errors instead of truncating. |
-| 5 -> 8 | Navigation & Deep Linking | "the palette cannot open an issue because no issue route exists" |
-| 5 -> 8 | Search & Findability | "Enter lands on Work then List rather than the issue, because no issue route exists, and the palette carries no verbs" |
-| 5 -> 8 | Commerce Operations | Inventory adjust is read-modify-write, not atomic. No `commerce:*` permission — reads borrow `projects:read`. Card wired but never watched in a browser. |
-| 5 -> 9 | Customer Conversations | No inbound webhook, no provider (needs an owner decision), card wired but never watched. |
-| 1 -> 8 | Multi-tenancy & Identity | **SKIP.** Post-MVP per HANDOFF. |
-
-Navigation and Search are held by the SAME missing thing — an issue route. One
-piece lifts two channels; that is why it went out in wave 6 as its own builder.
+Multi-tenancy & Identity sits at 1/8 and is EXEMPT pending an owner decision —
+see `scripts/board/decisions.json`, `all-channels-vs-multitenancy`. Until that is
+answered the stop rule cannot be satisfied as written, because "every channel
+clears its goal" and "multi-tenancy is post-MVP, skip it" contradict.
 
 ## OPEN DECISION — do not guess. Two deliberate rules contradict.
 
@@ -110,34 +108,20 @@ for this exact case to `scripts/no-unscoped-issues.mjs` once it is decided.
 ## Queue, in order
 
 The queue rule IS the queue: when it empties, pick the next-worst channel off
-`channels.json` and write a piece for it. Regenerate the live numbers rather
-than trusting any table in this file.
+`channels.json` and write a piece for it.
 
-**In flight (wave 7, dispatched 2026-08-26 ~14:00):**
+**In flight (wave 9, dispatched 2026-08-26 ~15:00, ten lanes):** identity-sessions,
+approval-surface, agent-visualization, pipeline-humaniser, work-ui-components,
+fleet-provenance, commerce-error-paths, run-safety-ceilings, memory-attempted,
+llm-provider-sweep.
 
-1. **conversations-transport** — inbound webhook SHAPE and an outbound adapter
-   interface with ZERO implementations. The provider is an OWNER DECISION now on
-   the board; do not pick one, do not stub one. Owns `lib/conversations.ts`,
-   `app/api/conversations/**`, migration 070.
-2. **issue-permalink (second pass)** — coverage that goes red when either
-   `issueKey` guard in `app/page.tsx` is mutated, plus four measured UI defects.
-   Delivers SEAM DIFFS; the router is orchestrator-owned.
-3. **boolean-columns** — inventory every boolean-MEANING column in both
-   dialects, then close the gap TOD-2464 could not: three columns declared
-   INTEGER that a filter would silently fail on. Owns `lib/db/**`, migration 071.
-4. **hub-connections** — `resolveHubDiscord` has zero callers, so custody is
-   write-only: a credential can be stored safely and is then never used. Owns
-   `lib/connections.ts`, `app/api/connections/**`, migration 072 if needed.
-5. **clone-and-run (second pass)** — an ACTUAL fresh-copy trial in a temp clone,
-   plus making `doctor` unable to report a fake green. This is the owner's
-   primary stated goal for the whole program. Owns `scripts/setup.mjs`,
-   `scripts/doctor.mjs`, `package.json`, `README.md`.
+Wave 9 runs **judge -> build -> verify**, not build -> critic. Wave 8's repair
+rounds were never judged, so stage 1 judges them. Stage 3 then re-judges what
+stage 2 built, looking specifically for the pattern this program keeps finding:
+a gap closed in one place and a weaker version of it introduced somewhere else.
 
-Still running from wave 6: **agent-visualization**. Integrate its work before
-dispatching anything else onto `app/api/tasks/**`, `components/office/**`,
-`hooks/useAgentStatus.ts` or `lib/agent-roster.ts`.
-
-**Next, after wave 7 is judged:** the Paperclip.ing feature study.
+**Next, after wave 9:** the Paperclip.ing feature study, and whichever channels
+are then worst.
 
 ## Fan out. Do not build serially.
 
@@ -170,6 +154,34 @@ Give every builder: its spec, its exclusive file list, the DO-NOT-TOUCH list,
 the environment traps below, and the instruction to report what it could NOT do
 honestly. A builder that reports a gap is worth more than one that reports
 success.
+
+## Fan out with a WORKFLOW, not one-off agent calls
+
+The owner caught this at wave 8: the waves had shrunk to five or six agents.
+The reason turned out to be a defect rather than caution — a wave 6 builder had
+been HUNG FOR FIVE HOURS holding four files, so every wave since had been routed
+around it. It is also the agent that ran `git stash pop`, broke webpack, took
+every route to 500, and then spent five hours failing to clean up while two other
+builders reported its damage as their own failure.
+
+**Check `ListAgents` for a stuck agent before blaming the plan.** An agent that
+has been running many times longer than its peers is hung, not thorough.
+
+Waves 8 and 9 use the `Workflow` tool: ten lanes, three stages each, thirty
+agents, `pipeline()` so no lane waits on another. Wave 8 ran 30 agents with zero
+errors in ~69 minutes. That is the shape to keep.
+
+Two patterns worth repeating:
+
+* **A test that is RED ON PURPOSE.** A lane that could not apply its own seam
+  shipped `runs-permalink-seam.test.ts`, which failed for exactly as long as
+  `app/page.tsx` lacked the seam, and whose failure message PRINTED THE ENTIRE
+  DIFF. Incompleteness moved out of prose and into the gate, where it cannot be
+  forgotten. This is now the house pattern for a seam an agent cannot apply.
+* **A standing instruction to explain, not route around.** Three of the five
+  "known failures" had been red for the ENTIRE program, and eight waves of gate
+  reports — mine included — said "5 known failures" and moved on. One lane was
+  told to find out why or prove them obsolete. They are fixed.
 
 ## An automatic checkpointer commits everything, on a timer
 
@@ -207,18 +219,16 @@ builders never choose their own.
 
 | # | Owner | What |
 |---|---|---|
-| 058 | orchestrator | `hub_settings` — per-hub key/value. LANDED. |
-| 059 | connections builder | per-hub connections (Discord credential custody). LANDED. |
-| 065 | responsibilities builder | `agent_responsibilities`. LANDED. |
-| 066 | phantom-column builder | bug report columns. LANDED. Deliberately does NOT add `test_status`. |
-| 067 | memory-loop builder (wave 6) | ALLOCATED, WENT UNUSED — the chain was already built. |
-| 068 | issue-permalink builder (wave 6) | ALLOCATED, WENT UNUSED. |
-| 069 | commerce builder (wave 6) | ALLOCATED, WENT UNUSED — no schema change was needed. |
-| 070 | conversations builder (wave 7) | threading, if the store cannot represent it |
-| 071 | boolean-columns builder (wave 7) | boolean-meaning column declarations |
-| 072 | hub-connections builder (wave 7) | only if needed |
+| 058-066 | earlier waves | LANDED |
+| 067, 068, 069 | wave 6 | allocated, WENT UNUSED — no schema change was needed |
+| 070 | conversations builder | threading + idempotency. LANDED, both dialects. |
+| 071 | boolean-columns builder | allocated, WENT UNUSED — the builder deliberately did not leave a migration on disk where an unattended `db:migrate` could pick it up before a maintenance window exists |
+| 072 | hub-connections builder | allocated, went unused |
+| 073 | — | free |
+| 074 | commerce builder (wave 8) | `order_line_items.fulfilled_quantity` — partial fulfilment. LANDED, both dialects. |
+| 075 | memory lane (wave 9) | reserved, may go unused |
 
-Next free: **073**.
+Next free: **076**.
 
 Three of wave 6's allocations went unused, and that is the registry working as
 intended rather than waste: a number is reserved BEFORE dispatch so two builders
@@ -291,6 +301,22 @@ been running toward a finish line it had already been told to make unreachable.
    the ONE artifact URL.
 
 ## Environment, non-negotiable
+
+**GATE BASELINE, and it moves — never quote an older one.** As of wave 8:
+`npx tsc --noEmit` clean; `npm test` ~1967 passing with **ONE** known failure,
+`spawn-live`, a real environment dependency; `node scripts/acceptance/run.mjs`
+45/45 at ~2200ms; `bash scripts/smoke-test-layout.sh` **nine** guards.
+
+`agents-route` and `agents-unconfigured` are NO LONGER known failures. They were
+red for the entire program and eight waves of gate reports said "5 known
+failures" and moved past them. Judge by the FAILURE SET, never the total — the
+total rises every wave as lanes land tests.
+
+**A slow acceptance run is a loaded server, not a broken product.** Normal is
+~2200ms. A run at 7000ms+ reporting 44/45 means thirty agents are hammering the
+host. Re-run on a quiet server before reporting it — this has produced a false
+alarm twice, and one lane's own doc independently recorded the same one.
+
 
 - Dev server runs at http://localhost:3000. **NEVER `npm run build`** — it
   clobbers `.next` and kills the server. Five times so far.
