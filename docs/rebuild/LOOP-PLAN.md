@@ -39,20 +39,32 @@ a channel cannot drift up on vibes.
 
 ## The real scoreboard
 
-`scripts/board/channels.json` — 19 channels, **0 cleared**, average **2.42**
-against a goal average of **8.9**. This, not the destination list, is the
-measure of "shippable". Ten hours cannot clear 19 channels; it can clear the
-closest and lift the worst off zero.
+`scripts/board/channels.json` — 19 channels, **0 cleared**, average **6.16**
+against a goal average of **8.9**. (It was 2.42 when this file was written; the
+table that used to sit here listed channels at 0, 1 and 2 and is now wrong in
+every row, so it is replaced rather than annotated.) This, not the destination
+list, is the measure of "shippable".
 
-| current -> goal | channel | route to move it |
+Regenerate the live numbers instead of trusting this paragraph:
+
+```
+node -e "const a=require('./scripts/board/channels.json').channels;a.map(x=>[x.current,x.goal,x.name]).sort((p,q)=>p[0]-q[0]).forEach(r=>console.log(r[0]+'/'+r[1],r[2]))"
+```
+
+**Wave 6 targets — the six tied at 5, minus multi-tenancy (post-MVP, skip):**
+
+| current -> goal | channel | the ONE thing holding it |
 |---|---|---|
-| 1 -> 9 | Secrets & Credential Custody | Discord as a per-hub connection (FEEDBACK item 9). A live bot token sits in 29 files on main and the scanner passes it. Highest ratio of impact to effort in this table. |
-| 0 -> 9 | Approval & Human-in-the-loop | The inbox approve path answers 404, not 5xx, but there is no approval SURFACE. Now's "Needs you" card is the seam. |
-| 1 -> 9 | Learning & Memory Loop | Memory destination. `design/Memory.dc.html` is the most specified artboard: budget bar, what-it-tried records, skills with proposed state. |
-| 2 -> 9 | Agent Fleet Operations | Fleet destination. `design/Fleet.dc.html` — roster with real liveness, office, registration. |
-| 2 -> 9 | Run Safety & Enforcement | Ceilings exist and the dispatch guard holds; Runs has no surface for either. |
-| 4 -> 9 | Agent Visualization Fidelity | Fleet office. |
-| 6 -> 8 | Identity, Auth & Access Control | Blocked on real sessions replacing three shared passwords. Bigger than a round. |
+| 5 -> 9 | Agent Visualization Fidelity | `GET /api/tasks` DOES NOT EXIST and two pollers hit it on 30s and 60s loops. Phantom agents (Kemuni SME, Vespera SME) for projects that do not exist. |
+| 5 -> 9 | Learning & Memory Loop | The surface is honest and empty. **Nothing populates the store.** Needs a write path in the real lifecycle + FTS5 retrieval + an overflow that errors instead of truncating. |
+| 5 -> 8 | Navigation & Deep Linking | "the palette cannot open an issue because no issue route exists" |
+| 5 -> 8 | Search & Findability | "Enter lands on Work then List rather than the issue, because no issue route exists, and the palette carries no verbs" |
+| 5 -> 8 | Commerce Operations | Inventory adjust is read-modify-write, not atomic. No `commerce:*` permission — reads borrow `projects:read`. Card wired but never watched in a browser. |
+| 5 -> 9 | Customer Conversations | No inbound webhook, no provider (needs an owner decision), card wired but never watched. |
+| 1 -> 8 | Multi-tenancy & Identity | **SKIP.** Post-MVP per HANDOFF. |
+
+Navigation and Search are held by the SAME missing thing — an issue route. One
+piece lifts two channels; that is why it went out in wave 6 as its own builder.
 
 ## OPEN DECISION — do not guess. Two deliberate rules contradict.
 
@@ -97,23 +109,31 @@ for this exact case to `scripts/no-unscoped-issues.mjs` once it is decided.
 
 ## Queue, in order
 
-1. **Work cards critic** — in flight at handoff time. Apply its single named gap.
-2. **Fleet destination** (`design/Fleet.dc.html`) — cards + real liveness.
-   Moves Agent Fleet Operations and Agent Visualization Fidelity.
-3. **Memory destination** (`design/Memory.dc.html`) — moves Learning & Memory Loop.
-4. **Settings/Connections + Discord per-hub** — moves Secrets & Credential
-   Custody off 1, and removes the token from source. `hub_settings` (migration
-   058) already exists for it.
-5. **Runs destination** (`design/Run.dc.html`) — moves Run Safety & Enforcement.
-   Note `RunsView` honestly refuses to render per-step cost because
-   `agent_runs` has no step table; that refusal is correct and the fix is a
-   schema addition, which is authorised.
-6. **Invented-projects sweep** — 24 source files. `app/api/issues/route.ts`
-   auto-assigns to `kemuni-sme` at :1141 and :1644; the four-project emoji
-   table at :139 has already survived two sweeps. Also `sprint-start` sets
-   `sprints.project` from the BUSINESS name, so a bolt started from the UI
-   never appears on the Limiglow-scoped card.
-7. **Paperclip.ing feature study** — only if the queue empties.
+The original seven-item queue is DONE or superseded — items 1-6 all landed
+across waves 1-5, and the scoreboard replaced it as the source of work. The
+standing order says: when the queue empties, pick the next-worst channel off
+`channels.json` and write a piece for it. That is now the whole queue rule.
+
+**In flight (wave 6, dispatched 2026-08-26 ~08:00):**
+
+1. **agent-visualization** — build or remove `/api/tasks`; stop the 404 storm;
+   phantom agents. Owns `app/api/tasks/**`, `components/office/OfficeCanvas.tsx`,
+   `hooks/useAgentStatus.ts`, `lib/agent-roster.ts`.
+2. **memory-loop** — a real write path + FTS5 retrieval + overflow that errors.
+   Owns `lib/agent-memory.ts`, `app/api/agent-memory/**`, migration 067.
+3. **issue-permalink** — an issue route, palette verbs, search modifiers. Lifts
+   TWO channels. **Has a seam it cannot cross**: the router lives in
+   `app/page.tsx`, which only the orchestrator edits — it delivers an exact diff
+   for me to apply, and the piece is INCOMPLETE until I apply it.
+4. **commerce-hardening** — atomic inventory, `commerce:*` permissions, watch
+   the card. Owns `lib/commerce.ts`, `app/api/commerce/**`, migration 069.
+
+**Next, after wave 6 is judged:**
+
+5. Customer Conversations — blocked on a provider decision the owner has not
+   made. Do the non-provider half (inbound webhook shape, watch the card) and
+   ASK about the provider rather than picking one.
+6. The **Paperclip.ing feature study**.
 
 ## Fan out. Do not build serially.
 
@@ -184,11 +204,16 @@ builders never choose their own.
 | # | Owner | What |
 |---|---|---|
 | 058 | orchestrator | `hub_settings` — per-hub key/value. LANDED. |
-| 059 | connections builder | per-hub connections (Discord credential custody) |
+| 059 | connections builder | per-hub connections (Discord credential custody). LANDED. |
 | 060 | runs builder | `run_steps` — per-step traces |
 | 061 | approvals builder | approval decisions / audit trail |
+| 065 | responsibilities builder | `agent_responsibilities`. LANDED. |
+| 066 | phantom-column builder | bug report columns (`environment`, `steps_to_reproduce`, `expected_behavior`, `actual_behavior`). LANDED. Deliberately does NOT add `test_status`. |
+| 067 | memory-loop builder (wave 6) | memory store + FTS5 retrieval |
+| 068 | issue-permalink builder (wave 6) | reserved; may go unused |
+| 069 | commerce builder (wave 6) | atomic inventory + `commerce:*` permissions |
 
-Next free: **062**.
+Next free: **070**.
 
 ## Integration is the orchestrator's job, and it is a real job
 
