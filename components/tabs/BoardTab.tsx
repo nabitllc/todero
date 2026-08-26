@@ -9,6 +9,7 @@ import { KanbanCard } from '@/components/KanbanCard'
 import { readApiError, formatApiError } from '@/hooks/useApiData'
 import { sessionOperator } from '@/lib/operator-identity'
 import { toBoundaryString } from '@/lib/bolt-time'
+import { VALID_STATUSES } from '@/lib/constants'
 
 function StartSprintBtn() {
   const [running, setRunning] = useState(false)
@@ -112,6 +113,30 @@ const OFF_BOARD_STATUSES = [
   { id:'refined', label:'Refined', color:'#6366f1', statuses:['refined'] },
   { id:'backlog', label:'Backlog', color:'#71717a', statuses:['backlog'] },
   { id:'closed',  label:'Closed',  color:'#475569', statuses:['closed'] },
+  // TOD-2445. The three columns and three chips above cover 10 of the 16
+  // statuses in VALID_STATUSES. The other six — draft, defined, underway,
+  // active, feature_review, wrapped — rendered NOWHERE, silently: a smoothing
+  // pass measured this board's header reading "19 issues" while its columns
+  // held 12, with no warning that seven cards had been dropped.
+  //
+  // That is not hypothetical. app/api/issues writes `underway` on two paths,
+  // so it happens in normal operation rather than only under fixtures.
+  //
+  // The three-column shape is a deliberate simplification and stays. What
+  // changes is that it can no longer LOSE anything: this chip is derived from
+  // VALID_STATUSES minus everything already placed, so a status added to the
+  // lifecycle tomorrow appears here rather than vanishing. lib/pipeline-stages.ts
+  // is the full 16-status model for the operator who wants every column.
+  {
+    id: 'other',
+    label: 'Other',
+    color: '#a1a1aa',
+    statuses: VALID_STATUSES.filter(
+      st =>
+        !['open', 'in_progress', 'code_review', 'product_review', 'approved', 'completed', 'released'].includes(st) &&
+        !['refined', 'backlog', 'closed'].includes(st),
+    ),
+  },
 ]
 
 const EXCLUDED_BOARD_TYPES = ['epic', 'feature']

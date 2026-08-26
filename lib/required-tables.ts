@@ -92,6 +92,10 @@ export const TABLE_PROBE_COLUMNS: Partial<Record<RequiredTable, string>> = {
   //
   // Each probes the column that carries the table's REASON to exist, so a
   // regression to a plausible-but-wrong shape is caught rather than tolerated.
+  // TOD-2445: was invisible to the generator (a constant in .from()), so health
+  // reported green on an install where migration 065 never ran. `level` is the
+  // column carrying the one-accountable-per-area rule.
+  agent_responsibilities: 'level',
   commerce_actions: 'from_value',
   connections: 'encrypted_value',
   // The approve-before-send rule lives in a CHECK over these two columns

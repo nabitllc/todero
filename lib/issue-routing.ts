@@ -62,7 +62,10 @@ export function applyExecutionStatusRouting(
     }
     fields.tester_status = 'pending'
     fields.designer_status = 'pending'
-    if (fields.test_status === undefined) fields.test_status = 'pending'
+    // TOD-2445: `test_status` is not a column on `issues`. Writing it here made
+    // every transition into code_review return HTTP 500. tester_status and
+    // designer_status above are the real columns and both are already set to
+    // 'pending' on this same path, so nothing is lost by not writing a third.
   }
 
   if (before?.status === 'in_progress' && nextStatus === 'product_review') {

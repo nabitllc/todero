@@ -15,8 +15,22 @@ describe('issue routing helpers', () => {
       assignee: 'tester',
       tester_status: 'pending',
       designer_status: 'pending',
-      test_status: 'pending',
     })
+  })
+
+  // TOD-2445. This block used to also assert `test_status: 'pending'`, and that
+  // assertion is why the defect survived: `test_status` is NOT a column on
+  // `issues`, so writing it made every PATCH into or out of code_review answer
+  // HTTP 500 `no such column: test_status` — the review lifecycle could not
+  // complete in either direction — while this test stayed green pinning the
+  // write in place.
+  //
+  // A test asserting a write the database refuses is worse than no test: it
+  // makes the defect look deliberate. The real columns are asserted above.
+  it('does NOT write test_status, which is not a column on issues', () => {
+    const fields: Record<string, unknown> = { status: 'code_review', reviewer: 'tester' }
+    applyExecutionStatusRouting({ status: 'in_progress', owner: 'builder' }, fields)
+    expect(fields).not.toHaveProperty('test_status')
   })
 
   it('routes in_progress -> product_review and backlog to po', () => {

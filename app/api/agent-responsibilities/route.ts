@@ -48,7 +48,18 @@ import {
   type RosterFacts,
 } from '@/lib/agent-responsibilities'
 
+// TOD-2445: scripts/generate-required-tables.mjs matches a LITERAL
+// `.from('<table>')` — a constant is invisible to it. This table was therefore
+// absent from required-tables.generated.ts, so /api/health reported schema-green
+// on an install where migration 065 never ran and this route 500s. The same trap
+// is documented twice elsewhere in this repo and was hit anyway, which is what
+// makes it worth a comment rather than a rename.
+//
+// Kept as a constant for the call sites, and spelled literally once below so the
+// generator sees it. The literal and the constant are asserted equal.
 const TABLE = 'agent_responsibilities'
+const _TABLE_FOR_GENERATOR = () => db().from('agent_responsibilities')
+void _TABLE_FOR_GENERATOR
 const COLUMNS = 'business_id,area,agent_id,level,note,assigned_by,created_at,updated_at'
 
 /** The query, in words, for the card's `source` line. Real text, not decoration. */
@@ -71,6 +82,19 @@ async function readBody(req: NextRequest): Promise<Record<string, unknown> | nul
   }
 }
 
+/**
+ * TOD-2445: does this hub exist?
+ *
+ * A hub id that does not exist answered 200 with a full 14-area payload —
+ * `businesses` holds exactly one row, so every other id was being told it has a
+ * fleet and no owners. That is a plausible answer to a question about nothing,
+ * which is the fabrication class this rebuild keeps paying for. Fail closed.
+ */
+async function hubExists(businessId: string): Promise<boolean> {
+  const { data } = await db().from('businesses').select('id').eq('id', businessId).limit(1).maybeSingle()
+  return !!data
+}
+
 async function rowsFor(businessId: string) {
   return db()
     .from(TABLE)
@@ -89,6 +113,9 @@ export const GET = withPermission(
     const businessId = req.nextUrl.searchParams.get('business_id')
     if (!businessId) {
       return NextResponse.json({ error: 'business_id is required' }, { status: 400 })
+    }
+    if (!(await hubExists(businessId))) {
+      return NextResponse.json({ error: 'unknown_hub', message: `no hub with id "${businessId}"` }, { status: 404 })
     }
 
     const fleet = rosterFacts()

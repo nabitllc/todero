@@ -1554,6 +1554,14 @@ export async function POST(req: NextRequest) {
 
 // ── PATCH ─────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
+  // TOD-2445: the review lifecycle's derived test verdict, held in a LOCAL
+  // rather than written to the row. `issues` has tester_status, designer_status,
+  // deployer_status and test_tier — and no `test_status`. Three sites wrote it,
+  // so every PATCH into or out of code_review answered HTTP 500 `no such column:
+  // test_status` and the review lifecycle could not complete in either
+  // direction. lib/pipeline-stages.ts and PipelineTab both documented that the
+  // column does not exist and fixed the READ side; nobody owned the write side.
+  let derivedTestStatus: string | undefined
   const dbGate = dbUnavailableResponse()
   if (dbGate) return dbGate
 
@@ -2039,13 +2047,24 @@ export async function PATCH(req: NextRequest) {
       if (before.status === 'code_review' && dual.anyFailed) {
         fields.status = 'open'
         fields.assignee = resolveReopenAssignee(before as Record<string, unknown>)
-        fields.test_status = 'failed'
+      // TOD-2445: `test_status` is NOT a column on `issues` — 57 columns, none
+      // of them this one. Writing it made every PATCH into or out of
+      // `code_review` answer HTTP 500 `no such column: test_status`, so the
+      // whole review lifecycle was uncompletable in both directions. The
+      // 42703 retry at the bottom of this handler strips 26 columns and this
+      // was not among them, so the retry failed identically.
+      //
+      // The real columns are `tester_status` and `designer_status`, which
+      // computeDualReviewState already reads and which this handler already
+      // sets. The derived value is kept in a LOCAL, so the branch logic below
+      // is unchanged and nothing is persisted that the table cannot hold.
+      derivedTestStatus = 'failed'
         fields.rejection_count = (before?.rejection_count ?? 0) + 1
         fields.last_rejected_at = new Date().toISOString()
         const notes = aggregateReviewerNotes(mergedReviewState)
         if (notes) fields.last_rejection_reason = notes
       } else {
-        fields.test_status = dual.overallTestStatus
+        derivedTestStatus = dual.overallTestStatus
 
         if (before.status === 'code_review' && dual.bothPassed && fields.status !== 'open') {
           fields.status = 'approved'
@@ -2097,7 +2116,10 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  const isNewFailure = fields.test_status === 'failed' && before?.test_status !== 'failed'
+  // TOD-2445: reads the real column. `before?.test_status` was always undefined
+  // because the column does not exist, so this comparison could never be false
+  // for a failure — the counter incremented on every failing PATCH.
+  const isNewFailure = derivedTestStatus === 'failed' && before?.tester_status !== 'failed'
   if (isNewFailure) {
     fields.fail_count = (before?.fail_count ?? 0) + 1
     if (fields.fail_count >= 3) {
@@ -2392,7 +2414,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   // TOD-766: reset consecutive failure count when a test passes
-  const isNewPass = fields.test_status === 'passed' && before?.test_status !== 'passed'
+  const isNewPass = derivedTestStatus === 'passed' && before?.tester_status !== 'passed'
   if (isNewPass && data) {
     const passingAgent = (before?.assignee ?? data.assignee) as string | undefined
     if (passingAgent) {
