@@ -150,7 +150,17 @@ export const LEGACY_TAB_MAP: Record<string, [DestinationId, string]> = {
   // A bookmarked /work/sprint must still land, so it maps like any legacy id.
   sprint: ['work', 'bolt'],
   calendar: ['work', 'bolt'],
-  memory: ['memory', 'memory'],
+  // TOD-2430: `memory` and `settings` are DestinationIds, not legacy tab ids.
+  // Mapping them here made app/page.tsx's parseURL take the legacy branch
+  // FIRST — and that branch returns a fixed (destination, view) pair without
+  // ever reading rest[1], so the view segment was discarded. Five of six
+  // Settings views became unreachable by URL and unable to survive a reload,
+  // including the Connections card that holds credential custody. Clicking a
+  // pill pushed the right URL, which then could not be reloaded.
+  //
+  // They are identity mappings the destination branch already handles
+  // correctly, so removing them loses nothing and restores deep linking.
+  // Only `settings` has multiple views, which is why only Settings showed it.
   board: ['work', 'board'],
   features: ['work', 'epics'],
   'epic-map': ['work', 'epics'],
@@ -160,7 +170,6 @@ export const LEGACY_TAB_MAP: Record<string, [DestinationId, string]> = {
   'product-board': ['work', 'epics'],
   automations: ['settings', 'automations'],
   'ai-services': ['settings', 'ai-services'],
-  settings: ['settings', 'settings'],
 }
 
 export function isDestinationId(x: string | undefined): x is DestinationId {
