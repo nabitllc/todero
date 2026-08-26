@@ -2,22 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
 import { DEFAULT_BOLT_START_HOUR, boltWindow, parseStartHour } from '@/lib/bolt-time'
+import { sendDiscordMessage } from '@/lib/discord-sender'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 const SPRINT_START_CHANNEL = '1491991662757548144'
 
-function postDiscord(channelId: string, content: string) {
-  const token = process.env.DISCORD_BOT_TOKEN ?? ''
-  if (!token) return
-  fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bot ${token}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
-    },
-    body: JSON.stringify({ content }),
-  }).catch((err) => console.error('[discord]', err))
+// pieces7/one-discord-sender: resolves THIS hub's own Discord connection
+// first (business_id is in scope here) and the process-wide env var only as
+// the fallback — see lib/discord-sender.ts.
+function postDiscord(channelId: string, content: string, businessId?: string) {
+  void sendDiscordMessage(channelId, content, businessId)
 }
 
 // ── POST /api/sprint-start ────────────────────────────────────────────────────
@@ -176,7 +170,7 @@ export async function POST(req: NextRequest) {
       `📦 Projects: ${projectList}`,
       `📋 ${assignedCount} issue${assignedCount !== 1 ? 's' : ''} assigned to sprint`,
     ].join('\n')
-    postDiscord(SPRINT_START_CHANNEL, kickoffMsg)
+    postDiscord(SPRINT_START_CHANNEL, kickoffMsg, business_id)
 
     return NextResponse.json({
       sprint: newSprint,

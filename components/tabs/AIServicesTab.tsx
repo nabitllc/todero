@@ -37,7 +37,11 @@ const STATUS_COLOR: Record<ServiceState, { dot: string; badge: string; label: st
 const PROVIDER_TILES: Array<{ key: string; name: string; icon: string }> = [
   { key: 'claude', name: 'Claude (Anthropic)', icon: '🧠' },
   { key: 'ollama', name: 'Ollama (local)', icon: '🦙' },
-  { key: 'supabase', name: 'Supabase', icon: '🗄️' },
+  // pieces7/one-discord-sender-and-honest-db-usage: was 'supabase' — this
+  // key must match /api/status's `services` map, which now reports whichever
+  // provider actually answered (see app/api/status/route.ts's checkDatabase),
+  // not a vendor name that may not match this install's TODERO_DB_PROVIDER.
+  { key: 'database', name: 'Database', icon: '🗄️' },
   { key: 'vercel', name: 'Vercel', icon: '▲' },
   { key: 'discord', name: 'Discord', icon: '💬' },
   { key: 'telegram', name: 'Telegram', icon: '✈️' },

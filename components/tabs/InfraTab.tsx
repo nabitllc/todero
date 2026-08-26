@@ -171,7 +171,10 @@ export default function InfraTab({ liveStatus, statusError, agoSec, statusCountd
               { key: 'discord',     name: 'Discord' },
               { key: 'ollama',      name: 'Ollama' },
               { key: 'vercel',      name: 'Vercel' },
-              { key: 'supabase',    name: 'Supabase' },
+              // pieces7/one-discord-sender-and-honest-db-usage: was
+              // 'supabase' — matches /api/status's services.database key now,
+              // which names whichever provider actually answered the probe.
+              { key: 'database',    name: 'Database' },
               { key: 'github',      name: 'GitHub' },
               { key: 'braveSearch', name: 'Brave Search' },
               { key: 'cloudflare',  name: 'Cloudflare' },

@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server'
 import { promisify } from 'util'
 import fs from 'fs'
 import { db, isDbConfigured } from '@/lib/db'
+import { sqlitePath } from '@/lib/db/sqlite-adapter'
 import { dbUnavailableResponse } from '@/lib/db-http'
 import { LLM_BASE_URL, fetchLiveModels } from '@/lib/llm-provider'
+import { resolveDiscordToken } from '@/lib/discord-sender'
 
 const promisifyExec = promisify
 
@@ -46,9 +48,30 @@ function reasonFrom(url: string, error: string): string {
   return error
 }
 
-/** Database size in bytes, or null when unavailable. Never throws. */
-async function dbSizeBytes(): Promise<number | null> {
+/**
+ * Database size in bytes, measured honestly for the ACTIVE provider — never a
+ * literal, never a size read for one vendor and reported for another.
+ *
+ * TOD (pieces7/one-discord-sender-and-honest-db-usage): this used to run
+ * `db().rpc('pg_database_size_bytes')` unconditionally and label whatever
+ * came back "supabase", regardless of `lib/db.ts`'s actual `DB_PROVIDER`. On
+ * this install (`TODERO_DB_PROVIDER=sqlite`, the default for a bare clone —
+ * see `lib/db/adapters.ts`'s `detectProvider()`) that stored procedure does
+ * not exist on the sqlite adapter's dialect, so the real behaviour was
+ * "error, swallowed, return null" — the UI then rendered "0% used" against an
+ * invented 500MB denominator with NOTHING measured at all. sqlite now reads
+ * the actual file's size via `fs.statSync`; postgres/supabase keep the
+ * stored-procedure path, which genuinely applies to them.
+ */
+async function dbSizeBytes(provider: string): Promise<number | null> {
   if (!isDbConfigured()) return null
+  if (provider === 'sqlite') {
+    try {
+      return fs.statSync(sqlitePath()).size
+    } catch {
+      return null
+    }
+  }
   try {
     const { data, error } = await db().rpc('pg_database_size_bytes')
     if (error) return null
@@ -100,11 +123,17 @@ export async function GET() {
     return NextResponse.json(cache.data)
   }
 
-  const [supabaseDb, localLlmProbe, cfKaos, discordBot, claudeUsage] = await Promise.allSettled([
-    // 1. Database size, through the seam's stored-procedure call.
+  const dbProvider = db().provider
+
+  // pieces7/one-discord-sender: Discord bot status resolves through the
+  // shared sender (lib/discord-sender.ts) instead of reading
+  // process.env.DISCORD_BOT_TOKEN directly, so this reflects a hub connection
+  // when one exists rather than only the process-wide fallback.
+  const [dbSize, localLlmProbe, cfKaos, discordBot, claudeUsage] = await Promise.allSettled([
+    // 1. Database size, honest for whichever provider is actually active.
     // TOD-654: an upstream failure resolves to null rather than an error body,
     // which the readers below would otherwise treat as a real number.
-    dbSizeBytes(),
+    dbSizeBytes(dbProvider),
 
     // 2. Local LLM — a live GET against ${LLM_BASE_URL}/models, made fresh for
     // this request. No vendor key, no hardcoded roster: the model ids shown
@@ -119,10 +148,15 @@ export async function GET() {
       .catch(() => ({ ok: false, status: 0 })),
 
     // 4. Discord bot status
-    fetch('https://discord.com/api/v10/users/@me', {
-      headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN || ''}` },
-      cache: 'no-store',
-    }).then(r => ({ connected: r.ok })).catch(() => ({ connected: false })),
+    (async () => {
+      const resolved = await resolveDiscordToken()
+      if (!resolved) return { connected: false }
+      const r = await fetch('https://discord.com/api/v10/users/@me', {
+        headers: { Authorization: `Bot ${resolved.token}` },
+        cache: 'no-store',
+      })
+      return { connected: r.ok }
+    })().catch(() => ({ connected: false })),
 
     // 5. Claude token/cost totals, summed from agent_runs — real, not a literal.
     claudeTotals(),
@@ -130,10 +164,26 @@ export async function GET() {
 
   const now = new Date().toISOString()
 
-  // --- Supabase ---
-  let supabase: any = { dbBytes: null, dbLimitBytes: 500 * 1024 * 1024, plan: 'Free Tier', lastChecked: now }
-  if (supabaseDb.status === 'fulfilled' && typeof supabaseDb.value === 'number') {
-    supabase.dbBytes = supabaseDb.value
+  // --- Database ---
+  // TOD (pieces7/one-discord-sender-and-honest-db-usage): this used to be
+  // `let supabase = { dbBytes: null, dbLimitBytes: 500 * 1024 * 1024, plan:
+  // 'Free Tier', lastChecked: now }` UNCONDITIONALLY — a Supabase plan number
+  // applied to whatever provider this install actually runs, including the
+  // sqlite default a bare clone gets. `dbLimitBytes`/`plan` are now null
+  // unless something in this process genuinely knows a limit; this codebase
+  // has no billing-API probe for Supabase either (same "kill-fake-infra-
+  // greens" rule already applied to Vercel's plan and Claude's plan a few
+  // lines below), so today that is every provider. `provider` is read live
+  // from lib/db.ts's `DB_PROVIDER` — never a literal.
+  const database: { provider: string; dbBytes: number | null; dbLimitBytes: number | null; plan: string | null; lastChecked: string } = {
+    provider: dbProvider,
+    dbBytes: null,
+    dbLimitBytes: null,
+    plan: null,
+    lastChecked: now,
+  }
+  if (dbSize.status === 'fulfilled' && typeof dbSize.value === 'number') {
+    database.dbBytes = dbSize.value
   }
 
   // --- Local LLM ---
@@ -184,7 +234,7 @@ export async function GET() {
   // (a real deployments-API probe) is the source of truth for Vercel status.
   const vercel = null
 
-  const data = { supabase, localLlm: localLlmResult, cloudflare, discord, claude, vercel }
+  const data = { database, localLlm: localLlmResult, cloudflare, discord, claude, vercel }
   cache = { data, ts: Date.now() }
   return NextResponse.json(data)
 }

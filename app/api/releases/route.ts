@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dbUnavailableResponse, dbQueryErrorResponse } from '@/lib/db-http'
+import { sendDiscordMessage } from '@/lib/discord-sender'
 
 const RELEASE_CHANNEL = '1492003782605930560' // #release-notes
-const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN!
 
 function supabaseAdmin() {
   return db()
@@ -28,15 +28,14 @@ function groupIssues(issues: Record<string, unknown>[]) {
   return g
 }
 
+// pieces7/one-discord-sender: was a module-load `process.env.DISCORD_BOT_TOKEN!`
+// (a non-null assertion over a value that could genuinely be undefined — this
+// route has no hub context, so there is nothing to thread as a businessId).
+// Now goes through the shared sender, which resolves the same env fallback
+// and — unlike the assertion it replaces — refuses loudly instead of posting
+// with a literal "Bot undefined" header.
 function postDiscord(content: string) {
-  fetch(`https://discord.com/api/v10/channels/${RELEASE_CHANNEL}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bot ${DISCORD_BOT_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ content: content.slice(0, 2000) }),
-  }).catch(err => console.error('[releases] discord post failed:', err))
+  void sendDiscordMessage(RELEASE_CHANNEL, content)
 }
 
 // ── POST /api/releases ────────────────────────────────────────────────────────

@@ -16,8 +16,14 @@ import { THEMES, THEME_IDS } from '@/lib/theme-constants'
 import type { ThemeId } from '@/lib/theme-constants'
 import CostBreakdownTable from '@/components/CostBreakdownTable'
 
+// TOD (pieces7/one-discord-sender-and-honest-db-usage): was `supabase:
+// { dbBytes, dbLimitBytes: number, plan: string }` — a vendor name, an
+// invented 500MB "Free Tier" denominator, and a plan tier applied
+// unconditionally, regardless of which database this install actually runs.
+// `dbLimitBytes`/`plan` are now nullable: null means genuinely unknown, not
+// "assume Supabase's free tier". `provider` is read live from lib/db.ts.
 interface UsageData {
-  supabase: { dbBytes: number | null; dbLimitBytes: number; plan: string; lastChecked: string }
+  database: { provider: string; dbBytes: number | null; dbLimitBytes: number | null; plan: string | null; lastChecked: string }
   // Owner directive: no hosted LLM gateway, no cloud LLM. This is a live read of
   // ${LLM_BASE_URL}/models made fresh for the request — baseUrl/models come
   // straight off that response, never a hardcoded roster or a fabricated plan.
@@ -32,6 +38,13 @@ interface UsageData {
   // null means "not tracked", not "inactive". See services.vercel in
   // /api/status for the real deployment-API reading.
   vercel: null
+}
+
+/** Human label for a provider key from lib/db.ts's DB_PROVIDER — never a guess about a plan. */
+const DB_PROVIDER_LABEL: Record<string, string> = {
+  sqlite: 'SQLite',
+  postgres: 'Postgres',
+  supabase: 'Supabase',
 }
 
 function formatBytes(bytes: number): string {
@@ -179,7 +192,19 @@ export default function SettingsTab() {
     setThemeSaving(false)
   }
 
-  const dbPct = data.supabase.dbBytes != null ? (data.supabase.dbBytes / data.supabase.dbLimitBytes) * 100 : null
+  // TOD (pieces7/one-discord-sender-and-honest-db-usage): a percentage
+  // requires BOTH a real byte count and a real limit — this install's
+  // provider may have no known limit at all (sqlite: a local file, no vendor
+  // ceiling), and computing a percentage against a null denominator would be
+  // a fabricated percentage the same way the old hardcoded 500MB was.
+  const dbPct = data.database.dbBytes != null && data.database.dbLimitBytes != null
+    ? (data.database.dbBytes / data.database.dbLimitBytes) * 100
+    : null
+  const dbProviderLabel = DB_PROVIDER_LABEL[data.database.provider] ?? data.database.provider
+  const dbPlanLabel = data.database.plan
+    ?? (data.database.provider === 'sqlite'
+      ? 'Local file — no vendor size limit'
+      : 'No plan/limit known for this database')
 
   return (
     <div>
@@ -228,15 +253,29 @@ export default function SettingsTab() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* Supabase */}
-        <ServiceCard emoji="🗄️" name="Supabase" plan={data.supabase.plan}
+        {/* Database — TOD (pieces7/one-discord-sender-and-honest-db-usage):
+            was hardcoded "Supabase" / "Free Tier" / 500MB regardless of which
+            database this install actually runs. Name, size and limit are now
+            all read from what /api/settings/usage actually measured; an
+            absent limit renders as "no vendor size limit" rather than a
+            fabricated percentage against an invented denominator. */}
+        <ServiceCard emoji="🗄️" name={dbProviderLabel} plan={dbPlanLabel}
           status={dbPct != null ? (dbPct >= 90 ? 'error' : dbPct >= 70 ? 'warning' : 'active') : 'idle'}
-          statusLabel={dbPct != null ? `${dbPct.toFixed(0)}% used` : 'Unknown'}
-          lastChecked={data.supabase.lastChecked}>
-          {data.supabase.dbBytes != null ? (
+          statusLabel={
+            dbPct != null ? `${dbPct.toFixed(0)}% used`
+              : data.database.dbBytes != null ? 'No size limit'
+              : 'Unknown'
+          }
+          lastChecked={data.database.lastChecked}>
+          {data.database.dbBytes != null ? (
             <>
-              <div className="text-xs text-white/60">{formatBytes(data.supabase.dbBytes)} / {formatBytes(data.supabase.dbLimitBytes)}</div>
-              <UsageBar value={data.supabase.dbBytes} max={data.supabase.dbLimitBytes} label="Database" />
+              <div className="text-xs text-white/60">
+                {formatBytes(data.database.dbBytes)}
+                {data.database.dbLimitBytes != null && <> / {formatBytes(data.database.dbLimitBytes)}</>}
+              </div>
+              {data.database.dbLimitBytes != null && (
+                <UsageBar value={data.database.dbBytes} max={data.database.dbLimitBytes} label="Database" />
+              )}
             </>
           ) : (
             <div className="text-xs text-white/30">DB size unavailable</div>

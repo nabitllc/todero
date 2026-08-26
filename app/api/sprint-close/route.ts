@@ -2,27 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getHubClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
 import { toBoundaryString } from '@/lib/bolt-time'
+import { sendDiscordMessage } from '@/lib/discord-sender'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
-// Lazy token read — see app/api/notify/route.ts for rationale.
 const SPRINT_CLOSE_CHANNEL = '1491991699986055208'  // #sprint-close (metrics)
 const RETRO_CHANNEL = '1491991717644075238'         // #retro
 
-function postDiscord(channelId: string, content: string) {
-  const token = process.env.DISCORD_BOT_TOKEN
-  if (!token) {
-    console.error('[discord] DISCORD_BOT_TOKEN missing — message dropped')
-    return
-  }
-  fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bot ${token}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
-    },
-    body: JSON.stringify({ content }),
-  }).catch((err) => console.error('[discord]', err))
+// pieces7/one-discord-sender: was `console.error('[discord] DISCORD_BOT_TOKEN
+// missing — message dropped')` — a log line nobody watching the app ever
+// sees, i.e. a silent drop from the operator's point of view. Now goes
+// through the shared sender (still logs, but via the one place every other
+// caller's drop is also logged), resolving THIS hub's own Discord connection
+// first — this route has `business_id` in scope, unlike most other callers —
+// and the process-wide env var only as the fallback for a hub with none.
+function postDiscord(channelId: string, content: string, businessId?: string) {
+  void sendDiscordMessage(channelId, content, businessId)
 }
 
 // Terminal statuses — issues in these states are "done" and not carried over
@@ -139,7 +133,7 @@ export async function POST(req: NextRequest) {
       `**By Status:**`,
       statusLines || '  (no issues)',
     ].join('\n')
-    postDiscord(SPRINT_CLOSE_CHANNEL, closeMsg)
+    postDiscord(SPRINT_CLOSE_CHANNEL, closeMsg, business_id)
 
     // Retro → #retro
     const completionRate = sprintIssues.length > 0 ? Math.round((completedCount / sprintIssues.length) * 100) : 0
@@ -156,7 +150,7 @@ export async function POST(req: NextRequest) {
       `• Review carried-over issues for re-prioritization`,
       `• Identify blockers that slowed progress`,
     ].join('\n')
-    postDiscord(RETRO_CHANNEL, retroMsg)
+    postDiscord(RETRO_CHANNEL, retroMsg, business_id)
 
     // 7. Automatically start next sprint
     let newSprint: Record<string, unknown> | null = null

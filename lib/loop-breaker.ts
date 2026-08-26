@@ -6,6 +6,7 @@
 // Resets the counter when an issue succeeds (test_status=passed).
 
 import { db } from '@/lib/db'
+import { sendDiscordMessage } from '@/lib/discord-sender'
 const DISCORD_ALERTS_CHANNEL = '1485333335868834063'
 
 /**
@@ -56,14 +57,15 @@ async function writeMemoryValue(agentId: string, key: string, value: unknown): P
   }
 }
 
+// pieces7/one-discord-sender: recordAgentFailure()/pauseAgent() carry no
+// business_id — their callers (app/api/run-agent, app/api/inbox,
+// app/api/hub-pause) are outside this piece's owned files, so this stays a
+// process-wide-only send rather than threading a hub id through a public
+// API this piece does not own the callers of. Resolution now goes through
+// the shared sender instead of reading process.env.DISCORD_BOT_TOKEN
+// directly; a missing credential is logged there instead of swallowed here.
 function postDiscordAlert(content: string): void {
-  const token = process.env.DISCORD_BOT_TOKEN ?? ''
-  if (!token) return
-  void fetch(`https://discord.com/api/v10/channels/${DISCORD_ALERTS_CHANNEL}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bot ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
-  }).catch(() => {})
+  void sendDiscordMessage(DISCORD_ALERTS_CHANNEL, content)
 }
 
 const MAX_CONSECUTIVE_FAILURES = 3

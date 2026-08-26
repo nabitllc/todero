@@ -6,12 +6,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { createAdminClient } from '@/lib/hub-client'
-import { dbStatusMessage, isDbConfigured } from '@/lib/db'
+import { db, dbStatusMessage, isDbConfigured } from '@/lib/db'
 import { firstExistingPath, isDarwin, isWindows } from '@/lib/paths'
+import { resolveDiscordToken } from '@/lib/discord-sender'
 
 const N8N_KEY = process.env.N8N_API_KEY || ''
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
-const DISCORD_TOKEN = process.env.DISCORD_BOT_TOKEN || ''
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || ''
 
 const NO_KEY_ERROR = () => `${dbStatusMessage()} — agent activity and usage unavailable`
@@ -49,9 +49,15 @@ async function checkTelegram(): Promise<ServiceReading> {
   return r.ok ? reading('ok', 'getMe succeeded') : reading('down', r.error ? `unreachable: ${r.error}` : `getMe returned HTTP ${r.status}`)
 }
 
+// pieces7/one-discord-sender: resolves through lib/discord-sender.ts (which
+// consults a hub's own connection before the process-wide env var) instead of
+// reading process.env.DISCORD_BOT_TOKEN directly. No hub context exists on
+// this route (it is a whole-host probe), so resolution falls straight to the
+// same env fallback this check already used.
 async function checkDiscord(): Promise<ServiceReading> {
-  if (!DISCORD_TOKEN) return reading('unknown', 'no DISCORD_BOT_TOKEN configured on this host')
-  const r = await probe('https://discord.com/api/v10/users/@me', { headers: { Authorization: `Bot ${DISCORD_TOKEN}` } })
+  const resolved = await resolveDiscordToken()
+  if (!resolved) return reading('unknown', 'no DISCORD_BOT_TOKEN configured on this host')
+  const r = await probe('https://discord.com/api/v10/users/@me', { headers: { Authorization: `Bot ${resolved.token}` } })
   return r.ok ? reading('ok', 'bot identity confirmed') : reading('down', r.error ? `unreachable: ${r.error}` : `users/@me returned HTTP ${r.status}`)
 }
 
@@ -63,12 +69,21 @@ async function checkGithub(): Promise<ServiceReading> {
   return r.ok ? reading('ok', 'token authenticated') : reading('down', r.error ? `unreachable: ${r.error}` : `rate_limit returned HTTP ${r.status}`)
 }
 
-async function checkSupabase(): Promise<ServiceReading> {
+// pieces7/one-discord-sender-and-honest-db-usage: this used to be named
+// checkSupabase() and its reading landed under `services.supabase`,
+// regardless of which provider TODERO_DB_PROVIDER actually names — on an
+// install running `sqlite` (the default for a bare clone) it queried the
+// SQLite adapter through the same seam and then reported the result as
+// "Supabase". The probe itself was always real (a live query against the
+// active adapter, through lib/hub-client.ts -> lib/db.ts), only the LABEL was
+// wrong. Renamed to checkDatabase(), and the note now names the provider that
+// actually answered.
+async function checkDatabase(): Promise<ServiceReading> {
   if (!isDbConfigured()) return reading('unknown', dbStatusMessage())
   try {
     const { error } = await createAdminClient().from('issues').select('id').limit(1)
     if (error) return reading('down', `query failed: ${error.message}`)
-    return reading('ok', 'reachable — issues table queried')
+    return reading('ok', `reachable — issues table queried (provider: ${db().provider})`)
   } catch (e) {
     return reading('down', e instanceof Error ? e.message : String(e))
   }
@@ -116,7 +131,7 @@ function getVercelToken(): string | null {
 
 export async function GET() {
   const vercelToken = getVercelToken()
-  const [ollama, n8n, vercel, telegramReading, discordReading, githubReading, supabaseReading] = await Promise.allSettled([
+  const [ollama, n8n, vercel, telegramReading, discordReading, githubReading, databaseReading] = await Promise.allSettled([
     // Ollama
     fetchJsonOrThrow<any>('http://localhost:11434/api/tags', { cache: 'no-store' }),
 
@@ -140,7 +155,7 @@ export async function GET() {
     checkTelegram(),
     checkDiscord(),
     checkGithub(),
-    checkSupabase(),
+    checkDatabase(),
   ])
 
   // TOD: kill-fake-infra-greens — there used to be a hardcoded
@@ -181,9 +196,12 @@ export async function GET() {
     result.vercel = null
   }
 
+  // pieces7/one-discord-sender: `discord` reflects whether a credential
+  // actually resolves (hub connection OR env fallback), not just whether the
+  // process-wide env var happens to be set.
   result.channels = {
     telegram: !!process.env.TELEGRAM_BOT_TOKEN,
-    discord: !!process.env.DISCORD_BOT_TOKEN,
+    discord: !!(await resolveDiscordToken()),
   }
   result.heartbeats = []
 
@@ -214,7 +232,7 @@ export async function GET() {
           )
         : reading('down', 'token present but the deployments fetch failed'),
 
-    supabase: supabaseReading.status === 'fulfilled' ? supabaseReading.value : reading('unknown', 'probe did not run'),
+    database: databaseReading.status === 'fulfilled' ? databaseReading.value : reading('unknown', 'probe did not run'),
     github: githubReading.status === 'fulfilled' ? githubReading.value : reading('unknown', 'probe did not run'),
 
     // Neither has an env var anywhere in this repo's config surface — there is

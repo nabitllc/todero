@@ -25,6 +25,7 @@ import {
   resolveReopenAssignee,
 } from '@/lib/issue-routing'
 import { recordAgentFailure, resetAgentFailures } from '@/lib/loop-breaker'
+import { sendDiscordMessage, resolveDiscordToken } from '@/lib/discord-sender'
 import { resolveCallerRole, checkRoutePermission } from '@/lib/permission-check'
 import { resolveSessionActor } from '@/lib/session-actor'
 import { isOwnerActor } from '@/lib/operator-identity'
@@ -178,22 +179,18 @@ const QUEUE_CHANNEL           = '1494440278524694608' // #1-queue
 // emoji is ever genuinely needed, derive it where it is rendered, from
 // PROJECT_PREFIX in lib/constants.ts — the one canonical list.
 
+// pieces7/one-discord-sender: token resolution now goes through
+// lib/discord-sender.ts (which itself goes through lib/connections.ts's
+// resolveHubDiscord()) instead of reading process.env.DISCORD_BOT_TOKEN
+// directly, so a hub credential added through Settings -> Connections is no
+// longer decorative for this file's sends. No businessId is threaded through
+// here — this file is the single highest-risk route in the repo, and this
+// change is scoped to the token-resolution swap only, not a wider
+// hub-threading refactor of every postDiscord() call site. Resolution
+// therefore falls straight to the process-wide env fallback, identical to
+// this function's behaviour before this piece.
 function postDiscord(channelId: string, content: string) {
-  const token = process.env.DISCORD_BOT_TOKEN
-  if (!token) {
-    // Say nothing was sent, rather than posting with a fallback nobody set.
-    console.warn('[discord] no credential configured — not posting to', channelId)
-    return
-  }
-  fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bot ${token}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)'
-    },
-    body: JSON.stringify({ content })
-  }).catch(err => console.error('[discord]', err))
+  void sendDiscordMessage(channelId, content)
 }
 
 const STATUS_EMOJI: Record<string, string> = {
@@ -310,61 +307,71 @@ function notifyWatchers(issue: {
   const watchers = issue.watchers
   if (!watchers || watchers.length === 0) return
 
-  const token = process.env.DISCORD_BOT_TOKEN
-  if (!token) {
-    console.warn('[discord] no credential configured — not notifying watchers')
-    return
-  }
   const key = issue.task_key ?? '?'
   const resType = RESOLUTION_LABELS[issue.resolution_type ?? ''] ?? (issue.resolution_type ?? 'Resolved')
   const notes = (issue.closing_notes ?? issue.implementation_notes ?? 'No closing notes provided.').slice(0, 400)
   const link = `https://kaos.nabit.work`
   const msg = `✅ **Resolved: [${key}]** ${issue.title ?? ''}\n**Resolution:** ${resType}\n**Notes:** ${notes}\n🔗 ${link}\n\n_To unsubscribe from this issue: <https://kaos.nabit.work/unwatch?issue=${encodeURIComponent(key)}>_`
 
-  for (const watcher of watchers) {
-    void (async () => {
-      try {
-        // Determine channel to post to.
-        // If watcher is a raw snowflake ID (user), open a DM channel first.
-        // If it already looks like a channel mention (<#id>) or channel ID, post directly.
-        let channelId: string | null = null
-        const channelMentionMatch = watcher.match(/^<#(\d+)>$/)
-        if (channelMentionMatch) {
-          channelId = channelMentionMatch[1]
-        } else if (/^\d{17,20}$/.test(watcher)) {
-          // Raw snowflake — treat as Discord user ID, open DM channel
-          const dmRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bot ${token}`,
-              'Content-Type': 'application/json',
-              'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
-            },
-            body: JSON.stringify({ recipient_id: watcher }),
-          })
-          if (dmRes.ok) {
-            const dmData = await dmRes.json() as { id?: string }
-            channelId = dmData.id ?? null
-          } else {
-            console.warn(`[notifyWatchers] DM channel open failed for ${watcher}: ${dmRes.status}`)
+  // pieces7/one-discord-sender: token resolution goes through
+  // lib/discord-sender.ts's resolveDiscordToken() (same resolveHubDiscord()
+  // order as postDiscord() above) instead of process.env.DISCORD_BOT_TOKEN
+  // directly. Resolved ONCE, before the per-watcher loop, so N watchers cost
+  // one resolution instead of N; the per-watcher async IIFEs are unchanged,
+  // so watchers are still notified concurrently, not one-at-a-time.
+  void (async () => {
+    const resolved = await resolveDiscordToken()
+    if (!resolved) {
+      console.warn('[discord] no credential configured — not notifying watchers')
+      return
+    }
+    const token = resolved.token
+
+    for (const watcher of watchers) {
+      void (async () => {
+        try {
+          // Determine channel to post to.
+          // If watcher is a raw snowflake ID (user), open a DM channel first.
+          // If it already looks like a channel mention (<#id>) or channel ID, post directly.
+          let channelId: string | null = null
+          const channelMentionMatch = watcher.match(/^<#(\d+)>$/)
+          if (channelMentionMatch) {
+            channelId = channelMentionMatch[1]
+          } else if (/^\d{17,20}$/.test(watcher)) {
+            // Raw snowflake — treat as Discord user ID, open DM channel
+            const dmRes = await fetch('https://discord.com/api/v10/users/@me/channels', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bot ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
+              },
+              body: JSON.stringify({ recipient_id: watcher }),
+            })
+            if (dmRes.ok) {
+              const dmData = await dmRes.json() as { id?: string }
+              channelId = dmData.id ?? null
+            } else {
+              console.warn(`[notifyWatchers] DM channel open failed for ${watcher}: ${dmRes.status}`)
+            }
           }
+          if (channelId) {
+            await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bot ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
+              },
+              body: JSON.stringify({ content: msg }),
+            })
+          }
+        } catch (err) {
+          console.warn(`[notifyWatchers] failed for watcher ${watcher}:`, err instanceof Error ? err.message : String(err))
         }
-        if (channelId) {
-          await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bot ${token}`,
-              'Content-Type': 'application/json',
-              'User-Agent': 'DiscordBot (https://kaos.nabit.work, 1.0)',
-            },
-            body: JSON.stringify({ content: msg }),
-          })
-        }
-      } catch (err) {
-        console.warn(`[notifyWatchers] failed for watcher ${watcher}:`, err instanceof Error ? err.message : String(err))
-      }
-    })()
-  }
+      })()
+    }
+  })()
 }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
