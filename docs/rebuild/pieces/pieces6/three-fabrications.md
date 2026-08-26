@@ -70,8 +70,9 @@ appears only when a run touches a paid provider"* while the row it described
 said `anthropic`. `run_steps.provider` was validated, stored, returned by the
 API, and read by nothing.
 
-**Choice: read `provider`.** Dropping the column needs a migration this piece
-does not own, and the column already carries real data. But the schema does
+**Choice: read `provider`. NO MIGRATION IS NEEDED — migration prefix 063 is
+not used by this piece.** Dropping the column would need a migration this
+piece does not own, and the column already carries real data. But the schema does
 not record whether a provider CHARGES, so the sentence is also corrected to
 what is actually known.
 
@@ -80,8 +81,10 @@ what is actually known.
 1. `runTouchedPaidProvider` is gone. `runTouchedProvider(steps)` is true when
    any step recorded a `provider` OR a `cost_usd` — `provider` is read.
 2. A run whose only evidence is `provider = 'anthropic'`, `cost_usd = NULL`
-   renders the dollar column, and that step's cell reads
-   `provider recorded, cost not measured`, not `—` and not a hidden column.
+   renders the dollar column; that step's cell reads
+   `anthropic · cost not measured` (the provider named beside the absence),
+   not `—` and not a hidden column, and the panel sentence carries the phrase
+   `provider recorded, cost not measured` verbatim.
 3. The panel sentence no longer claims the schema knows what is paid. It
    names the columns: the dollar column appears when a step recorded a
    `cost_usd` or named a `provider`, and a provider is not a price.
