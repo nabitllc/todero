@@ -64,46 +64,41 @@ see `scripts/board/decisions.json`, `all-channels-vs-multitenancy`. Until that i
 answered the stop rule cannot be satisfied as written, because "every channel
 clears its goal" and "multi-tenancy is post-MVP, skip it" contradict.
 
-## OPEN DECISION — do not guess. Two deliberate rules contradict.
+## DECIDED 2026-08-26 — the OPEN DECISION is closed, and four others with it
 
-Found 2026-08-26 by the Fleet builder, reproduced 5/5 with curl.
+The Fleet issues-scope contradiction sat here for two days because picking wrong
+widens a security boundary, and no agent was permitted to resolve it. **The owner
+chose Option 1:** an explicit `project=eq.<in-scope>` filter satisfies the scope
+requirement regardless of which destination the request came from — the smallest
+change, and literally what the refusal message already instructs the caller to do.
 
-`GET /api/db/issues?project=eq.Limiglow&...` returns **400 `unscoped_issues_read`**
-when the referer is a Fleet page, and 200 from a Work page. Same query, same
-`/p/limiglow/` in both referers, and the query explicitly names the in-scope
-project.
+He did NOT choose Option 2 (let Fleet reads span projects) or Option 3 (Fleet
+should not read issues at all). Implement Option 1 and nothing wider. The grant is
+an EXPLICIT, IN-SCOPE project filter — not any filter, not a filter-shaped string,
+and never the absence of one. `scripts/no-unscoped-issues.mjs` gains probes for
+this exact case in BOTH directions.
 
-Both halves are deliberate and both are documented:
+**All five board decisions are answered. Zero open.** The other four:
 
-- `middleware.ts:87-91` — `fleet/*` and `runs/*` are **cross-project
-  destinations**. Middleware refuses to stamp a project scope there on purpose:
-  *"agent-level aggregates that span every project an agent has ever touched;
-  scoping them would hide the cross-project picture they exist to show."*
-- The issues guard then refuses any issues read with no resolved scope, because
-  an unresolvable boundary must fail closed rather than widen.
+* **The stop rule.** Done is 18 of 18 SCORED channels. Multi-tenancy & Identity is
+  formally EXEMPT and rendered as exempt rather than failing. This is the one that
+  mattered most — "every channel clears its goal" and "multi-tenancy is post-MVP,
+  skip it" contradicted, so the loop had been running toward a finish line it had
+  already been told to make unreachable.
+* **Conversations.** Build the provider-agnostic half; pick no provider. Already
+  built. The channel stays capped until the owner names a transport — an outbox
+  that cannot send is a draft folder, and that is the honest cap.
+* **The dispatch window.** ACCEPTED WITH A CONDITION THAT BINDS THIS LOOP: owner
+  present, Limiglow only, short wall-clock cap. **It therefore does not happen in
+  a background wave.** Planned as wave 11, and it needs the owner to say when.
+  Until then `lib/dispatch-guard.ts` and `TODERO_DISPATCH_ENABLED` stay untouched
+  and the ceilings are proven by driving the supervisor's own functions instead.
+* **Inventory contention.** Serialize per SKU; keep the honest 409. The queue then
+  needs a depth limit and an honest refusal when full, or it is the same defect one
+  layer down.
 
-Together they mean **Fleet cannot read issues at all**, even when the caller
-resolved the boundary itself by naming the project. A user-visible loader on
-Fleet 400s.
-
-`scripts/no-unscoped-issues.mjs` passes throughout, because none of its ten
-probes send an explicit in-scope `project=` filter from a cross-project
-destination. The guard is not wrong; that case is simply outside it.
-
-Three defensible answers, and picking wrong widens a security boundary:
-
-1. An explicit `project=eq.<in-scope>` filter satisfies the requirement
-   regardless of origin — the caller resolved the boundary deliberately, which
-   is exactly what the refusal message asks for.
-2. Fleet is cross-project, so issues reads from it should be **allowed to span
-   projects** — the middleware comment's own logic, followed through.
-3. Fleet should not read `issues` at all, and the loader firing that request is
-   the actual defect.
-
-(1) is the smallest change and matches the error message's own instruction.
-(2) is what the middleware comment implies. (3) is the most conservative.
-**Ask the owner.** Do not resolve this in an unattended round, and add a probe
-for this exact case to `scripts/no-unscoped-issues.mjs` once it is decided.
+**When a new decision appears, it goes on the BOARD, not into chat** — see the
+section below. The owner reads the board from his phone.
 
 ## Queue, in order
 
