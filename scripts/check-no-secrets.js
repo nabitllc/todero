@@ -96,6 +96,72 @@ const PATTERNS = [
     fix: 'read the key from the environment, via lib/db.ts.',
   },
   {
+    // ─── Generic rule 1: credential SHAPE ──────────────────────────────────
+    //
+    // The three rules above are hand-written needles for three specific
+    // Supabase-era values. They found what they were told to look for and
+    // nothing else — which is how a live Discord bot token sat in
+    // app/api/issues/route.ts while this script printed a general "no
+    // hardcoded credentials" verdict.
+    //
+    // A Discord bot token is three base64url segments: an application id, a
+    // timestamp, and an HMAC. Nothing has to know the VALUE to recognise it,
+    // which is the whole point of a shape rule — it catches the next one too.
+    //
+    // Unanchored on purpose: this is looking for the shape embedded anywhere
+    // in a line of source (`'Bot ' + x`, a JSON value, a shell assignment).
+    // The near-identical rule in lib/connections.ts IS anchored, because it
+    // validates one candidate string rather than searching a line.
+    //
+    // Prose survives it. "the Discord bot token", "DISCORD_BOT_TOKEN", and
+    // "read it from the environment" have no three-segment base64url run, so
+    // the specifications under docs/rebuild/ that discuss this very token do
+    // not fail the build — the mistake this file's earlier rules made twice.
+    needle: '[A-Za-z0-9_-]{23,28}[.]' + '[A-Za-z0-9_-]{6,7}[.]' + '[A-Za-z0-9_-]{27,}',
+    label: 'Discord bot token',
+    regex: true,
+    why: 'a three-segment bot token — a live credential, not configuration',
+    // App tree, scripts, docs, migrations — everything except the archived
+    // companion checkout under config/, carved out for exactly the reason the
+    // OpenRouter rule below already documents: those are standalone bots
+    // tracked separately that still embed keys, and failing every build on
+    // them would mean this rule gets deleted rather than obeyed. They are a
+    // rotation job, not a build gate. Said out loud in the verdict at the
+    // bottom so the scope is visible rather than implied.
+    paths: ['.', ':(exclude)config/**', ...SECRET_EXCLUDES],
+    fix: 'read it from process.env, or from a hub connection — lib/connections.ts, POST /api/connections/hub.',
+  },
+  {
+    // ─── Generic rule 2: credential USE ────────────────────────────────────
+    //
+    // Shape rules only catch shapes somebody thought of. This one catches the
+    // act instead: a name that means "credential" being ASSIGNED a long
+    // literal. It is provider-agnostic, so a token shape nobody has written a
+    // rule for still fails the build.
+    //
+    // Scoped the same two ways the service_role rule had to be, after that one
+    // turned `npm run build` red on a clean clone by matching a changelog:
+    //   1. the literal must be QUOTED and 20+ characters;
+    //   2. the assignment must be direct — `X = process.env.Y ?? 'z'` does not
+    //      match, because what follows the `=` is an expression, not a string.
+    //
+    // WHAT IT DOES NOT CATCH, stated rather than glossed: an UNQUOTED shell
+    // assignment (`TOKEN=abc123…`). An earlier draft covered that and matched
+    // scripts/setup.mjs:85, which documents the template line
+    // `MC_PASSWORD=YOUR_MC_ADMIN_PASSWORD` in a comment — prose, not a
+    // credential. Rather than ship a rule that fails the build on its own
+    // documentation, the quoted form is the rule and the shape rules above
+    // are what cover unquoted values.
+    needle:
+      '(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)' +
+      '["\'[:space:]]*[:=][[:space:]]*["\'][A-Za-z0-9_.:/+-]{20,}["\']',
+    label: 'credential assigned a literal',
+    regex: true,
+    why: 'a name meaning "credential" set to a long quoted literal',
+    paths: ['.', ':(exclude)config/**', ...SECRET_EXCLUDES],
+    fix: 'read it from process.env, or from a hub connection — lib/connections.ts.',
+  },
+  {
     needle: 'sk-or-' + 'v1-',
     why: 'OpenRouter API key',
     // App tree only. `config/scripts/*.py` are archived standalone bots that
@@ -165,4 +231,28 @@ if (failed) {
   process.exit(1)
 }
 
-console.log('OK: no hardcoded credentials, and no code bypassing the database seam.')
+// ─── The verdict, scoped to the evidence ────────────────────────────────────
+//
+// The old line here read:
+//
+//   "OK: no hardcoded credentials, and no code bypassing the database seam."
+//
+// That is a general claim drawn from a handful of specific checks, and it was
+// printed, in green, on every build for the whole period a live Discord bot
+// token sat in app/api/issues/route.ts. Nobody looked, because the script said
+// there was nothing to look for.
+//
+// A guard that reports confidence it has not earned is worse than no guard. So
+// the success line now enumerates what was actually checked and names what is
+// out of scope. A reader can tell in one screen whether their case was covered.
+console.log(`OK: ${PATTERNS.length} rules checked, no hits.`)
+console.log('  Checked: 2 generic credential rules (three-segment bot-token shape;')
+console.log('           a credential-shaped NAME assigned a long quoted literal),')
+console.log('           4 named values (one project ref, JWTs with a payload, a')
+console.log('           full-privilege key name in a value, an OpenRouter key),')
+console.log('           and 3 database-seam rules.')
+console.log('  NOT checked: unquoted shell assignments, credential shapes with no')
+console.log('           rule above (AWS, Stripe, GitHub, SSH keys), anything under')
+console.log('           config/ (the archived companion checkout — rotate separately),')
+console.log('           and files git ignores.')
+console.log('  This is not a statement that the tree contains no credential.')

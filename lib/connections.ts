@@ -221,13 +221,14 @@ export function validateConfig(provider: string, raw: unknown): Verdict<Record<s
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, why: 'config must be a JSON object of channel ids', status: 422 }
   }
-  const known = new Set(spec.configKeys.map((c) => c.key))
+  const knownKeys = spec.configKeys.map((c) => c.key)
+  const known = new Set(knownKeys)
   const out: Record<string, string> = {}
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (!known.has(key)) {
       return {
         ok: false,
-        why: `unknown config key "${key}" for ${provider}. Accepted: ${[...known].join(', ')}`,
+        why: `unknown config key "${key}" for ${provider}. Accepted: ${knownKeys.join(', ')}`,
         status: 422,
       }
     }

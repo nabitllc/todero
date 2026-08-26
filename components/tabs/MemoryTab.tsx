@@ -109,7 +109,7 @@ export default function MemoryTab({ memFiles, error, onRetry, openMem, setOpenMe
       <Card
         id="memory-run-records"
         title="What has it tried, and what got rejected?"
-        metric={recordRows ? { value: recordRows.length, label: 'records' } : undefined}
+        metric={recordRows ? { value: recordRows.length, label: recordRows.length === 1 ? 'record' : 'records' } : undefined}
         source={
           <>
             GET {RECORDS_QUERY} · table agent_run_records (id, task_key, attempted, rejection_reason, reviewer_notes,
@@ -165,7 +165,7 @@ export default function MemoryTab({ memFiles, error, onRetry, openMem, setOpenMe
       <Card
         id="memory-skills"
         title="Which skills are loaded into every spawn?"
-        metric={skillRows ? { value: skillRows.length, label: 'skill docs' } : undefined}
+        metric={skillRows ? { value: skillRows.length, label: skillRows.length === 1 ? 'skill doc' : 'skill docs' } : undefined}
         source={<>GET /api/db/{SKILLS_QUERY} · a row here is loaded by loadIdentityContext() as &ldquo;# SKILL: &lt;slug&gt;&rdquo;</>}
         empty={{
           active: !skills.error && !skills.loading && skillRows?.length === 0,
@@ -241,7 +241,7 @@ export default function MemoryTab({ memFiles, error, onRetry, openMem, setOpenMe
       <Card
         id="memory-daily-journal"
         title="What did each day's journal say?"
-        metric={journal ? { value: journal.length, label: 'days' } : undefined}
+        metric={journal ? { value: journal.length, label: journal.length === 1 ? 'day' : 'days' } : undefined}
         source={<>GET /api/memory · agent_memory_files where agent_id=&lsquo;global&rsquo; and memory_type=&lsquo;daily&rsquo;, 30 most recent date_keys</>}
         empty={{
           active: !error && journal?.length === 0,
