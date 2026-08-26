@@ -2,8 +2,9 @@
 --
 -- This is the SQLite dialect of migrations/063_conversations.sql. Read that file
 -- for what a row means, for why the lifecycle rules are CHECK constraints while
--- the vocabularies (channel, status) are validated in lib/conversations.ts
--- instead, and for the statement that this piece integrates NO customer channel:
+-- the channel vocabulary is validated in lib/conversations.ts instead (and why
+-- `status` is validated by nothing at all yet), and for the statement that this
+-- piece integrates NO customer channel:
 -- `sent` is a state a transport reports back into, and nothing in Todero can put
 -- a row there on its own today.
 --

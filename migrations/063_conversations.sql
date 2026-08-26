@@ -12,8 +12,10 @@
 --   "Grok Bot — DRAFTS while you are away, surfaces only what needs approval."
 --        -> `conversation_messages.state = 'draft'`, the state an agent writes.
 --   "You APPROVE; Todero SENDS."
---        -> the two CHECK constraints at the bottom of this file, which make a
---           row that was sent without being approved IMPOSSIBLE TO STORE.
+--        -> `conversation_messages_approved_stamp` and
+--           `conversation_messages_sent_needs_approval`, the two CHECK
+--           constraints at the bottom of this file, which together make a row
+--           that was sent without being approved IMPOSSIBLE TO STORE.
 --
 -- WHAT THIS FILE DELIBERATELY DOES NOT BACK
 -- -----------------------------------------
@@ -34,15 +36,20 @@
 --     psql session, a future importer, a bug). "An outbound message cannot be
 --     sent unless it was approved" is exactly that kind of rule.
 --
---   * VOCABULARIES (which channels exist, which statuses a thread may hold) are
---     validated in `lib/conversations.ts` and refused at the API seam, the same
---     stance app/api/hub-settings/route.ts takes for its keys ("an unknown key
---     is a typo or an injection, never a feature"). They are NOT CHECKs here,
---     because a table that CHECKs its vocabulary grows a migration per channel —
---     the same reason migration 058 chose key/value over a column per setting.
+--   * The CHANNEL VOCABULARY is validated in `lib/conversations.ts` and refused
+--     at the API seam, the same stance app/api/hub-settings/route.ts takes for
+--     its keys ("an unknown key is a typo or an injection, never a feature").
+--     It is NOT a CHECK here, because a table that CHECKs its vocabulary grows a
+--     migration per channel — the same reason migration 058 chose key/value over
+--     a column per setting.
 --     The trade is stated rather than glossed: a direct-SQL writer can insert
 --     channel 'carrier-pigeon' and the database will accept it. It cannot,
 --     however, insert a sent-but-unapproved message.
+--
+--     `status` is validated by NOTHING, here or in the app, and that is said
+--     plainly rather than implied away: no endpoint in this piece changes a
+--     thread's status, so there is nothing yet for a vocabulary to guard. The
+--     inbound door writes 'open' and reopens a 'closed' thread; that is all.
 --
 -- COLUMN NOTES
 -- ------------

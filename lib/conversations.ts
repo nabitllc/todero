@@ -34,9 +34,14 @@
 export const CHANNELS = ['whatsapp', 'web'] as const
 export type Channel = (typeof CHANNELS)[number]
 
-/** Lifecycle of the THREAD (not of a message). */
-export const CONVERSATION_STATUSES = ['open', 'waiting', 'closed'] as const
-export type ConversationStatus = (typeof CONVERSATION_STATUSES)[number]
+// A thread's `status` deliberately has NO vocabulary constant here, and that is
+// a statement about what this piece does rather than an omission. Nothing in it
+// changes a status except the inbound door, which sets 'open' (and reopens a
+// 'closed' thread when the contact writes again). There is no status-change
+// endpoint, so a list of legal statuses would be a list nothing checks — and an
+// exported vocabulary that no call site enforces is precisely the kind of guard
+// this rebuild has twice shipped and twice been caught by. Add the constant with
+// the endpoint that needs it, not before.
 
 export const DIRECTIONS = ['inbound', 'outbound'] as const
 export type Direction = (typeof DIRECTIONS)[number]
