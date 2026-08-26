@@ -44,12 +44,15 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.7",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^14.3.1",
     "@types/better-sqlite3": "^9.6.0",
     "@types/jest": "^30.0.0",
     "@types/node": "25.5.0",
     "@types/pg": "^8.23.1",
     "@types/react": "19.2.14",
     "jest": "^30.3.0",
+    "jest-environment-jsdom": "^29.7.0",
     "jest-environment-node": "^30.3.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
