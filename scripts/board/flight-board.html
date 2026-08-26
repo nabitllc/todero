@@ -142,7 +142,7 @@ section{margin-top:42px;scroll-margin-top:16px}
   <div class="kv"><span class="k">Wave</span><span class="v">3</span></div>
   <div class="kv"><span class="k">Phase</span><span class="v"><span class="pulse"></span>Truth — 8 pieces, harness-gated</span></div>
   <div class="kv"><span class="k">Harness</span><span class="v mono">8.7 → 6.2 → 9.3 → 10</span></div>
-  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 5.7 (goal 8.9)</span></div>
+  <div class="kv"><span class="k">Channels</span><span class="v mono">0.8 → 6.1 (goal 8.9)</span></div>
   <div class="kv"><span class="k">Spent</span><span class="v mono">32.67M tok · ~$149</span></div>
   <div class="kv"><span class="k">Fleet</span><span class="v">Opus / Sonnet / Haiku — tiered</span></div>
 </div>
@@ -176,8 +176,26 @@ section{margin-top:42px;scroll-margin-top:16px}
           <div class="bar"><div class="ghost" style="width:20%"></div><div class="fill" style="width:80%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">8.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+6.0]</b> The code-review lifecycle completes, and the MC API no longer routes work to agents that do not exist. hubSmeForProject() returned todero-sme or infra-sme on EVERY call — neither declared by any AGENTS.md in this repo — so every epic owner and assignee pointed at a fabrication. Epics route to po now, which is declared and whose queue prompt already decomposes them. The sharpest instance was a COMMENT: "DO NOT REMOVE — SME epic decomposer" sat beside the alias entry, instructing the next reader acting in good faith to leave it. Held back: limit=0 still means every matching row and two callers use it to read one integer, and lib/issues.ts still declares test_status while BoardTab renders it — an always-empty column that has survived four sweeps.</div>
+        <div class="gap"><b>[+6.0]</b> The code-review lifecycle completes AND the bug lifecycle is unblocked. `environment` was required by a validator and was not a column, so a bug moving defined->open answered 400 without it and 500 with it — every bug in this installation was stuck, in both directions, and the Bug Details panel read "No bug details provided" on every bug ever opened. Now 200 with the fields stored. A body carrying the phantom column returns 422 NAMING the real columns rather than 500, which matters because lib/agent-queue.ts still instructs the Tester agent to send it — the outage was one agent run from returning. The MC API also no longer routes work to agents that do not exist. Held back: limit=0 still means every matching row and two callers use it to read one integer, and the API still returns raw CHECK constraint text for an invalid enum value.</div>
         <div class="goal"><span class="glab">Goal</span> Linear's issue list — server-side paging with an exact total, so no screen ever shows a number computed from a truncated slice.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">LLM Provider Independence</span><span class="chip moving">in progress</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:80%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">8.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+7.0]</b> This channel carried a FALSE evidence string for several waves: "66 remaining references — chat still routes to a cloud host the owner has ruled out". A builder measured it and both halves are wrong. Live code across app/lib/components/hooks contains ZERO references to the ruled-out provider, comments stripped or not. Chat routes to LLM_BASE_URL, which is http://localhost:11434/v1 — proven live rather than read: a cloud model id returns 400 naming the local endpoint it is not present in, and a local qwen2.5-coder id returns 200 with an SSE stream. The model list is proxied from that endpoint, so it is live rather than hardcoded, and a new test locks the dangerous shape — an unreachable or empty roster must error naming the URL and must NOT fall back to a constant. The provider is genuinely a base URL: selection is an env var, resolveProvider refuses to default to a cloud host, and tiers resolve against the live roster rather than a static map. A new guard derives its banned set from the "Never X" bullets in HANDOFF.md rather than carrying its own list. Held back: two migration CHECK constraints still ADMIT a ruled-out connection type on a legacy table with no callers, and two CLI runtimes map tiers to hardcoded vendor ids because their provider is a binary, not a base URL — there is no seam to move them onto.</div>
+        <div class="goal"><span class="glab">Goal</span> LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Data Layer &amp; Schema Management</span><span class="chip building">wave 4</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:80%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">8.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+7.5]</b> Migration 066 restores four columns that a live validator required and the schema did not have — environment, steps_to_reproduce, expected_behavior, actual_behavior — and DELIBERATELY does not add test_status, with both halves of that reasoning in the migration comment. The evidence for the split was measured, not argued: across 3,078 production rows in the Supabase export the stored test_status disagreed with the derived value on 372 of them, 12.1 percent, with passed sitting on rows whose tester and designer were both still pending. A stored duplicate of a derived value that was already wrong one time in eight. A new no-phantom-columns guard compares every column named in live code against the LIVE schema and is proven in both directions across writes, filters, selects and query strings — and states in its own header the case it would NOT catch, which is the interface declaration where this defect lived longest.</div>
+        <div class="goal"><span class="glab">Goal</span> builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Observability &amp; Honest Reporting</span><span class="chip moving">in progress</span></div>
@@ -185,17 +203,26 @@ section{margin-top:42px;scroll-margin-top:16px}
           <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:80%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">8.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+7.0]</b> Five guards now, and every one proven in BOTH directions. Two that claimed enforcement they did not perform are fixed: a test named "computeModelDefects() names the status when one is unmapped" never called that function — gutting the detector that renders IN PLACE OF the board left 53/53 green, and the same mutation now fails 6 of 59. RESPONSIBILITY_CONSUMERS was a typed literal whose card claimed wiring a consumer updated it automatically; the notice is a real function of the array now, the card says PLAINLY that the list is hand-maintained, and a test fails naming the file the moment a non-display module imports the decision exports. A new no-dead-modules guard removed 1,573 unreachable lines. Held back: the guard was WRONG TWICE before it was right and both bugs made LIVE code look dead — it reported lib/db/pg-sql.ts, live in the DB seam, as dead. Trusting its first green run would have deleted it.</div>
+        <div class="gap"><b>[+7.0]</b> Seven guards now — invented-projects, unscoped-issues, no-secrets, silent-empty, dead-modules, cloud-provider, phantom-columns — and every one proven in both directions. Two more landed this wave: cloud-provider derives its banned set from the "Never X" bullets in HANDOFF.md so it cannot drift from the decision record, and phantom-columns compares code against the live schema. The most valuable output was a FAKE GREEN caught in the one tool a newcomer runs first: npm run doctor printed a raw Require stack dump, then said "OK — this host can run Todero" and exited 0, while health on the same checkout reported db.reachable false. It resolved the provider NAME from env without ever touching the driver; it now opens an in-memory database and round-trips a row. Held back: each new guard names a real blind spot in its own header rather than implying coverage it does not have.</div>
         <div class="goal"><span class="glab">Goal</span> Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Data Layer &amp; Schema Management</span><span class="chip building">wave 4</span></div>
+        <div class="head"><span class="cname">Portability &amp; Host Independence</span><span class="chip moving">in progress</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
           <span class="mnum">7.0<i>/9</i></span>
         </div>
-        <div class="gap"><b>[+6.5]</b> Every one of the 41 required tables now declares a shape column the health check probes, and the guard proved itself the moment required-tables was regenerated: seven new commerce and conversations tables arrived with no probe and turned the suite red within seconds. Each now probes the column carrying its reason to exist — conversation_messages.approved_at pins the approve-before-send storage, orders.total_minor and products.price_minor pin money as an integer. /api/health reports ok with malformed:[] and missingTables:[]. Held back: migrations 063-065 apply from empty against PGlite, but the SQLite dialect of 062 is once-only rather than idempotent, documented rather than claimed otherwise.</div>
-        <div class="goal"><span class="glab">Goal</span> builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.</div>
+        <div class="gap"><b>[+6.5]</b> The recorded evidence was wrong on two of three clauses — the SQLite adapter IS registered and Supabase is NOT a hard requirement — and the third clause, "no proven clone-to-running path", was true only because nobody had run it. It has now been run for real: a throwaway copy of .git, git clone FROM the copy so the working tree was never touched, then only what a newcomer would do. Setup exits 0 in 1.7s with no prompts, 54 tables and 18 ledger rows, doctor exits 0, server ready in 1974ms, health reports db.reachable with missingTables empty, login 200, and POST /api/issues creates an issue and reads it back — with NO CLOUD ACCOUNT at any point. Held back by one step, and it is step 1: npm install from the committed lockfile runs node-gyp on better-sqlite3 and dies on a host with no C++ toolchain, because lockfile v3 has no slot for that package gypfile:false declaration. The obvious workaround was REJECTED — ignore-scripts in .npmrc would make install succeed and silently disable the prebuild guards, trading a visible failure for an invisible one.</div>
+        <div class="goal"><span class="glab">Goal</span> builderz-labs — SQLite and one start command, no Redis, Postgres or Docker. Clone it, run it, working app on any OS with no cloud account.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="cname">Work Management UI</span><span class="chip building">wave 6</span></div>
+        <div class="meter">
+          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:70%"></div><div class="pin" style="left:90%"></div></div>
+          <span class="mnum">7.0<i>/9</i></span>
+        </div>
+        <div class="gap"><b>[+6.0]</b> The goal is Linear: a board that refuses a move the server rejected, and never renders an empty state over an error. Both halves hold now. The move sheet only offers destinations it can finish: requirements are a function of (row, destination) rather than destination alone — an epic passes refined where a task needs test_tier — so the predicate takes the row and returns a verdict. Fields it can supply are collected inline and sent in the same PATCH; what the board genuinely cannot supply is shown DISABLED WITH THE REASON rather than hidden, on the argument that an operator who cannot reach code_review is worse off than one told what it needs. No raw database text reaches the operator, proven against a REAL 500 rather than a simulated one. And sending a card back to Backlog answered 403 to the workspace owner — the most common gesture on any board — because that guard was the only actor check in the route without the owner bypass the other two have. Held back: the 10-open cap and the one-at-a-time lane are deliberately not predicted, because they depend on other rows and can change between render and tap.</div>
+        <div class="goal"><span class="glab">Goal</span> Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Agent Fleet Operations</span><span class="chip building">wave 4</span></div>
@@ -261,24 +288,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         <div class="goal"><span class="glab">Goal</span> Slack search — modifiers like in:, from:, before: that narrow 2,440 records to the one you meant, and results that open in context rather than a dead list.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="cname">Portability &amp; Host Independence</span><span class="chip moving">in progress</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:5%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">5.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+4.5]</b> Zero hardcoded macOS paths remain in app/ or lib/, no /bin/bash spawn, and five core routes that used to 500 on this Windows host now return 200. Still far from goal: no SQLite adapter, so cloud Supabase remains a hard requirement, and there is no proven clone-to-running path.</div>
-        <div class="goal"><span class="glab">Goal</span> builderz-labs — SQLite and one start command, no Redis, Postgres or Docker. Clone it, run it, working app on any OS with no cloud account.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">LLM Provider Independence</span><span class="chip moving">in progress</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">5.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+4.0]</b> The base-URL seam exists and Todero now reports two available runtimes against the local Ollama, which serves three tool-capable models. Blocked from goal by 66 remaining OpenRouter references — chat still routes to a cloud host the owner has ruled out.</div>
-        <div class="goal"><span class="glab">Goal</span> LiteLLM — the provider is a base URL, not a code branch. Open WebUI — the model list is read live from that endpoint, never hardcoded.</div>
-      </div>
-      <div class="card">
         <div class="head"><span class="cname">Agent Visualization Fidelity</span><span class="chip building">wave 6</span></div>
         <div class="meter">
           <div class="bar"><div class="ghost" style="width:30%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
@@ -286,15 +295,6 @@ section{margin-top:42px;scroll-margin-top:16px}
         </div>
         <div class="gap"><b>[+2.0]</b> The Office states '0 of 30 agents report a workspace folder — the positions on the floor below are decorative', computed from the field so the wording self-corrects if agents ever report one. That is the honest version of a surface that previously implied position meant something. Held back: GET /api/tasks 404s on every poll from two independent pollers, 30s and 60s, and the roster still lists Kemuni SME and Vespera SME — agents for projects that do not exist.</div>
         <div class="goal"><span class="glab">Goal</span> pixel-agents — every character state derives from real Claude Code hook events, and a speech bubble appears when an agent is waiting on you.</div>
-      </div>
-      <div class="card">
-        <div class="head"><span class="cname">Work Management UI</span><span class="chip building">wave 6</span></div>
-        <div class="meter">
-          <div class="bar"><div class="ghost" style="width:10%"></div><div class="fill" style="width:50%"></div><div class="pin" style="left:90%"></div></div>
-          <span class="mnum">5.0<i>/9</i></span>
-        </div>
-        <div class="gap"><b>[+4.0]</b> Work now renders inside cards carrying the full contract — one question as the title, an exact count from a printed query, a collapse that survives reload, an empty state naming the project, and an error that replaces the body rather than an empty state appearing over a failure. Verified with 66 fixture rows. Held back from the goal because design/Work.dc.html specifies PER-COLUMN counts on the board (Backlog 2,904 / Ready 38 / In progress 2) and the card carries one project total instead, so the operator still cannot see where work is piling up — the destination's own question.</div>
-        <div class="goal"><span class="glab">Goal</span> Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.</div>
       </div>
       <div class="card">
         <div class="head"><span class="cname">Learning &amp; Memory Loop</span><span class="chip building">wave 4</span></div>
@@ -534,7 +534,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">agents-api</span><span class="gcount">1/1</span></summary>
-          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 219ms</span></div>
+          <div class="chk ok"><span class="cid">agents-route-ok</span><span class="cdet">200 in 202ms</span></div>
         </details>
         <details class="grp ok">
           <summary><span class="gname">llm-provider-base-url</span><span class="gcount">2/2</span></summary>
@@ -595,7 +595,7 @@ section{margin-top:42px;scroll-margin-top:16px}
         </details>
         <details class="grp ok">
           <summary><span class="gname">boot-migrations</span><span class="gcount">2/2</span></summary>
-          <div class="chk ok"><span class="cid">no-colliding-migrations</span><span class="cdet">77 unique prefixes</span></div>
+          <div class="chk ok"><span class="cid">no-colliding-migrations</span><span class="cdet">79 unique prefixes</span></div>
           <div class="chk ok"><span class="cid">migration-ledger-exists</span><span class="cdet">schema_migrations referenced</span></div>
         </details>
         <details class="grp ok">

@@ -15,16 +15,16 @@
       "baseline": 2,
       "current": 8,
       "goal": 9,
-      "evidence": "The code-review lifecycle completes, and the MC API no longer routes work to agents that do not exist. hubSmeForProject() returned todero-sme or infra-sme on EVERY call — neither declared by any AGENTS.md in this repo — so every epic owner and assignee pointed at a fabrication. Epics route to po now, which is declared and whose queue prompt already decomposes them. The sharpest instance was a COMMENT: \"DO NOT REMOVE — SME epic decomposer\" sat beside the alias entry, instructing the next reader acting in good faith to leave it. Held back: limit=0 still means every matching row and two callers use it to read one integer, and lib/issues.ts still declares test_status while BoardTab renders it — an always-empty column that has survived four sweeps.",
+      "evidence": "The code-review lifecycle completes AND the bug lifecycle is unblocked. `environment` was required by a validator and was not a column, so a bug moving defined->open answered 400 without it and 500 with it — every bug in this installation was stuck, in both directions, and the Bug Details panel read \"No bug details provided\" on every bug ever opened. Now 200 with the fields stored. A body carrying the phantom column returns 422 NAMING the real columns rather than 500, which matters because lib/agent-queue.ts still instructs the Tester agent to send it — the outage was one agent run from returning. The MC API also no longer routes work to agents that do not exist. Held back: limit=0 still means every matching row and two callers use it to read one integer, and the API still returns raw CHECK constraint text for an invalid enum value.",
       "goal_text": "Linear's issue list — server-side paging with an exact total, so no screen ever shows a number computed from a truncated slice.",
       "wave": null
     },
     {
       "name": "Portability & Host Independence",
       "baseline": 0.5,
-      "current": 5,
+      "current": 7,
       "goal": 9,
-      "evidence": "Zero hardcoded macOS paths remain in app/ or lib/, no /bin/bash spawn, and five core routes that used to 500 on this Windows host now return 200. Still far from goal: no SQLite adapter, so cloud Supabase remains a hard requirement, and there is no proven clone-to-running path.",
+      "evidence": "The recorded evidence was wrong on two of three clauses — the SQLite adapter IS registered and Supabase is NOT a hard requirement — and the third clause, \"no proven clone-to-running path\", was true only because nobody had run it. It has now been run for real: a throwaway copy of .git, git clone FROM the copy so the working tree was never touched, then only what a newcomer would do. Setup exits 0 in 1.7s with no prompts, 54 tables and 18 ledger rows, doctor exits 0, server ready in 1974ms, health reports db.reachable with missingTables empty, login 200, and POST /api/issues creates an issue and reads it back — with NO CLOUD ACCOUNT at any point. Held back by one step, and it is step 1: npm install from the committed lockfile runs node-gyp on better-sqlite3 and dies on a host with no C++ toolchain, because lockfile v3 has no slot for that package gypfile:false declaration. The obvious workaround was REJECTED — ignore-scripts in .npmrc would make install succeed and silently disable the prebuild guards, trading a visible failure for an invisible one.",
       "goal_text": "builderz-labs — SQLite and one start command, no Redis, Postgres or Docker. Clone it, run it, working app on any OS with no cloud account.",
       "wave": null
     },
@@ -49,9 +49,9 @@
     {
       "name": "Data Layer & Schema Management",
       "baseline": 0.5,
-      "current": 7,
+      "current": 8,
       "goal": 9,
-      "evidence": "Every one of the 41 required tables now declares a shape column the health check probes, and the guard proved itself the moment required-tables was regenerated: seven new commerce and conversations tables arrived with no probe and turned the suite red within seconds. Each now probes the column carrying its reason to exist — conversation_messages.approved_at pins the approve-before-send storage, orders.total_minor and products.price_minor pin money as an integer. /api/health reports ok with malformed:[] and missingTables:[]. Held back: migrations 063-065 apply from empty against PGlite, but the SQLite dialect of 062 is once-only rather than idempotent, documented rather than claimed otherwise.",
+      "evidence": "Migration 066 restores four columns that a live validator required and the schema did not have — environment, steps_to_reproduce, expected_behavior, actual_behavior — and DELIBERATELY does not add test_status, with both halves of that reasoning in the migration comment. The evidence for the split was measured, not argued: across 3,078 production rows in the Supabase export the stored test_status disagreed with the derived value on 372 of them, 12.1 percent, with passed sitting on rows whose tester and designer were both still pending. A stored duplicate of a derived value that was already wrong one time in eight. A new no-phantom-columns guard compares every column named in live code against the LIVE schema and is proven in both directions across writes, filters, selects and query strings — and states in its own header the case it would NOT catch, which is the interface declaration where this defect lived longest.",
       "goal_text": "builderz-labs — migrations run at first DB access, so starting the app creates the schema. No migrate command to know about, no colliding prefixes.",
       "wave": 4
     },
@@ -60,16 +60,16 @@
       "baseline": 1,
       "current": 8,
       "goal": 9,
-      "evidence": "Five guards now, and every one proven in BOTH directions. Two that claimed enforcement they did not perform are fixed: a test named \"computeModelDefects() names the status when one is unmapped\" never called that function — gutting the detector that renders IN PLACE OF the board left 53/53 green, and the same mutation now fails 6 of 59. RESPONSIBILITY_CONSUMERS was a typed literal whose card claimed wiring a consumer updated it automatically; the notice is a real function of the array now, the card says PLAINLY that the list is hand-maintained, and a test fails naming the file the moment a non-display module imports the decision exports. A new no-dead-modules guard removed 1,573 unreachable lines. Held back: the guard was WRONG TWICE before it was right and both bugs made LIVE code look dead — it reported lib/db/pg-sql.ts, live in the DB seam, as dead. Trusting its first green run would have deleted it.",
+      "evidence": "Seven guards now — invented-projects, unscoped-issues, no-secrets, silent-empty, dead-modules, cloud-provider, phantom-columns — and every one proven in both directions. Two more landed this wave: cloud-provider derives its banned set from the \"Never X\" bullets in HANDOFF.md so it cannot drift from the decision record, and phantom-columns compares code against the live schema. The most valuable output was a FAKE GREEN caught in the one tool a newcomer runs first: npm run doctor printed a raw Require stack dump, then said \"OK — this host can run Todero\" and exited 0, while health on the same checkout reported db.reachable false. It resolved the provider NAME from env without ever touching the driver; it now opens an in-memory database and round-trips a row. Held back: each new guard names a real blind spot in its own header rather than implying coverage it does not have.",
       "goal_text": "Paperclip — full tool-call tracing and an audit log per ticket. LangSmith — drill from a cost number to the run and step that caused it.",
       "wave": null
     },
     {
       "name": "Work Management UI",
       "baseline": 1,
-      "current": 5,
+      "current": 7,
       "goal": 9,
-      "evidence": "Work now renders inside cards carrying the full contract — one question as the title, an exact count from a printed query, a collapse that survives reload, an empty state naming the project, and an error that replaces the body rather than an empty state appearing over a failure. Verified with 66 fixture rows. Held back from the goal because design/Work.dc.html specifies PER-COLUMN counts on the board (Backlog 2,904 / Ready 38 / In progress 2) and the card carries one project total instead, so the operator still cannot see where work is piling up — the destination's own question.",
+      "evidence": "The goal is Linear: a board that refuses a move the server rejected, and never renders an empty state over an error. Both halves hold now. The move sheet only offers destinations it can finish: requirements are a function of (row, destination) rather than destination alone — an epic passes refined where a task needs test_tier — so the predicate takes the row and returns a verdict. Fields it can supply are collected inline and sent in the same PATCH; what the board genuinely cannot supply is shown DISABLED WITH THE REASON rather than hidden, on the argument that an operator who cannot reach code_review is worse off than one told what it needs. No raw database text reaches the operator, proven against a REAL 500 rather than a simulated one. And sending a card back to Backlog answered 403 to the workspace owner — the most common gesture on any board — because that guard was the only actor check in the route without the owner bypass the other two have. Held back: the 10-open cap and the one-at-a-time lane are deliberately not predicted, because they depend on other rows and can change between render and tap.",
       "goal_text": "Linear — a board that refuses a move the server rejected, and never renders an empty state over an error.",
       "wave": 6
     },
