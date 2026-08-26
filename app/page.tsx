@@ -28,6 +28,7 @@ import FeaturesTab from '@/components/tabs/FeaturesTab'
 import PipelineTab from '@/components/tabs/PipelineTab'
 import IssuesTab from '@/components/tabs/IssuesTab'
 import AutomationsTab from '@/components/tabs/AutomationsTab'
+import BoltScheduleCard from '@/components/tabs/BoltScheduleCard'
 import InfraTab from '@/components/tabs/InfraTab'
 import SettingsTab from '@/components/tabs/SettingsTab'
 import ProductBoardTab from '@/components/tabs/ProductBoardTab'
@@ -928,7 +929,13 @@ export default function Home() {
 
             {destination === 'settings' && view === 'settings' && <SettingsTab />}
             {destination === 'settings' && view === 'ai-services' && <AIServicesTab />}
-            {destination === 'settings' && view === 'automations' && <AutomationsTab displayCrons={displayCrons} cronsError={cronsError} cronsMeta={cronsMeta} />}
+            {destination === 'settings' && view === 'automations' && (
+              <div className="space-y-4">
+                {/* TOD-2415: the hour bolts open and close, per hub. */}
+                <BoltScheduleCard hubName={selectedBusiness} />
+                <AutomationsTab displayCrons={displayCrons} cronsError={cronsError} cronsMeta={cronsMeta} />
+              </div>
+            )}
             {destination === 'settings' && view === 'infra' && (
               <InfraTab liveStatus={liveStatus} statusError={statusError} agoSec={agoSec} statusCountdown={statusCountdown} onRefresh={() => { fetchStatus(); setStatusCountdown(30) }} />
             )}

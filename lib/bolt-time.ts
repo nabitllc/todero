@@ -109,6 +109,69 @@ export function toBoundaryString(date: Date = new Date()): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
+/**
+ * TOD-2415. The hour a bolt opens and closes, local time. Default 5am — the
+ * owner's: "bolts should start/finish at 5am local time by default."
+ *
+ * Configurable per hub via the `bolt_start_hour` setting (Settings ->
+ * Automations). This constant is only the fallback when no row exists.
+ */
+export const DEFAULT_BOLT_START_HOUR = 5
+
+/**
+ * Validate an hour off the settings table.
+ *
+ * The store holds TEXT, so anything can arrive: "25", "-1", "5.5", "abc", "".
+ * An unvalidated read here renders a bolt opening at 25:00, which is the class
+ * of defect this module exists to prevent. Returns null for anything that is
+ * not a whole hour in [0, 23]; callers fall back to the default rather than
+ * inventing one.
+ */
+export function parseStartHour(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+  let n: number
+  if (typeof value === 'number') {
+    n = value
+  } else {
+    // Number(' ') is 0 and Number('1e1') is 10, so a whitespace row would have
+    // silently become midnight and "1e1" a valid hour. Require plain digits
+    // before converting — a caught test failure, not a hypothetical.
+    if (!/^\d+$/.test(value.trim()) || value.trim() !== value) return null
+    n = Number(value)
+  }
+  if (!Number.isInteger(n) || n < 0 || n > 23) return null
+  return n
+}
+
+/**
+ * The 24-hour bolt window containing `now`, as local timestamps.
+ *
+ * Anchored to `startHour` local: at 5am, a bolt opened at 05:00 today runs to
+ * 05:00 tomorrow. Before 5am you are still inside YESTERDAY's bolt, which is
+ * the case a naive "today at 5am" would get wrong — it would place `now`
+ * before the window it just claimed to contain, and the landing screen would
+ * show a negative elapsed and a full countdown at 4:59am.
+ *
+ * Emits ISO-like local timestamps (no trailing Z) so `parseBoundary` reads
+ * them back at exactly this instant. `toBoundaryString` remains the date-only
+ * stamp for callers that genuinely want a whole day.
+ */
+export function boltWindow(startHour: number, now: Date = new Date()): { start: string; end: string } {
+  const anchor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, 0, 0, 0)
+  // Before the anchor hour, the live bolt is the one that opened yesterday.
+  if (now.getTime() < anchor.getTime()) anchor.setDate(anchor.getDate() - 1)
+  const end = new Date(anchor.getTime() + 86400000)
+  return { start: toLocalTimestamp(anchor), end: toLocalTimestamp(end) }
+}
+
+/** `YYYY-MM-DDTHH:mm:ss` in LOCAL time — no zone suffix, so parseBoundary's
+ *  `new Date(value)` reads it as local, matching how it was written. */
+export function toLocalTimestamp(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
 /** Render a duration as the window's own length. Hours under two days, days above. */
 function windowLabelFor(windowMs: number): string {
   if (windowMs < 48 * 3600000) {

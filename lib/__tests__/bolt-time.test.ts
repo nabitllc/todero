@@ -18,6 +18,9 @@ import {
   parseBoundary,
   pickHeadline,
   toBoundaryString,
+  DEFAULT_BOLT_START_HOUR,
+  boltWindow,
+  parseStartHour,
 } from '../bolt-time'
 
 const HOUR = 3600000
@@ -250,5 +253,74 @@ describe('formatRemaining — "0 units left" must not reappear one unit down', (
 
   it('still reports a genuinely expired window as ended', () => {
     expect(formatRemaining(0)).toBe('ended')
+  })
+})
+
+
+describe('parseStartHour — the settings table stores TEXT, so anything can arrive', () => {
+  it('accepts every whole hour 0..23', () => {
+    for (let h = 0; h <= 23; h++) expect(parseStartHour(String(h))).toBe(h)
+  })
+
+  it('REFUSES the values that would render a bolt opening at 25:00', () => {
+    for (const bad of ['24', '25', '-1', '5.5', 'abc', '', ' ', '1e1', 'NaN', null, undefined]) {
+      expect(parseStartHour(bad as string)).toBeNull()
+    }
+  })
+
+  it('defaults to 5am, which is what the owner asked for', () => {
+    expect(DEFAULT_BOLT_START_HOUR).toBe(5)
+  })
+})
+
+describe('boltWindow — anchored to the configured hour, local', () => {
+  it('a bolt opened at 5am today runs to 5am tomorrow', () => {
+    const now = new Date(2026, 7, 25, 9, 0, 0) // 9am
+    const { start, end } = boltWindow(5, now)
+    expect(start).toBe('2026-08-25T05:00:00')
+    expect(end).toBe('2026-08-26T05:00:00')
+  })
+
+  it("BEFORE the anchor hour you are inside YESTERDAY's bolt", () => {
+    // The case a naive "today at 5am" gets wrong: at 4:59am it would place
+    // `now` BEFORE the window it just claimed to contain, giving a negative
+    // elapsed and a full countdown.
+    const now = new Date(2026, 7, 25, 4, 59, 0)
+    const { start, end } = boltWindow(5, now)
+    expect(start).toBe('2026-08-24T05:00:00')
+    expect(end).toBe('2026-08-25T05:00:00')
+    expect(new Date(start).getTime()).toBeLessThanOrEqual(now.getTime())
+    expect(new Date(end).getTime()).toBeGreaterThan(now.getTime())
+  })
+
+  it('THE INVARIANT: now is always inside the window, at every hour of the day', () => {
+    for (let anchor = 0; anchor <= 23; anchor++) {
+      for (let h = 0; h <= 23; h++) {
+        const now = new Date(2026, 7, 25, h, 30, 0)
+        const { start, end } = boltWindow(anchor, now)
+        expect(new Date(start).getTime()).toBeLessThanOrEqual(now.getTime())
+        expect(new Date(end).getTime()).toBeGreaterThan(now.getTime())
+      }
+    }
+  })
+
+  it('the window is always exactly 24h, and classifies as a bolt', () => {
+    const { start, end } = boltWindow(5, new Date(2026, 7, 25, 9, 0, 0))
+    const c = classifyWindow(start, end)
+    expect(c.windowMs).toBe(86400000)
+    expect(c.kind).toBe('bolt')
+    expect(c.windowLabel).toBe('24h')
+  })
+
+  it('round-trips through the reader, so remaining never exceeds the window', () => {
+    for (let h = 0; h <= 23; h++) {
+      const now = new Date(2026, 7, 25, h, 17, 0)
+      const { start, end } = boltWindow(5, now)
+      const { windowMs } = classifyWindow(start, end)
+      const head = pickHeadline([{ start_date: start, end_date: end }], now.getTime())
+      expect(head.state).toBe('live')
+      if (head.state !== 'live') throw new Error('unreachable')
+      expect(head.remainingMs).toBeLessThanOrEqual(windowMs!)
+    }
   })
 })

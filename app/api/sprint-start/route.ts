@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getHubClient, createAdminClient } from '@/lib/hub-client'
 import { dbUnavailableResponse } from '@/lib/db-http'
-import { toBoundaryString } from '@/lib/bolt-time'
+import { DEFAULT_BOLT_START_HOUR, boltWindow, parseStartHour } from '@/lib/bolt-time'
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 const SPRINT_START_CHANNEL = '1491991662757548144'
@@ -94,10 +94,23 @@ export async function POST(req: NextRequest) {
     // that way. Precision is whatever the value carries: the Postgres baseline
     // types these DATE, the live SQLite store types them TEXT and round-trips
     // a full timestamp, so nothing here flattens an hour that was supplied.
-    const today = new Date()
-    const startDate = toBoundaryString(today)
-    const tomorrow = new Date(today.getTime() + 86400000)
-    const endDate = toBoundaryString(tomorrow)
+    // TOD-2415: the window is anchored to this hub's bolt_start_hour, local,
+    // defaulting to 5am. Read it here rather than in lib/bolt-time so the
+    // module stays free of a database dependency and stays unit-testable.
+    let startHour = DEFAULT_BOLT_START_HOUR
+    const { data: hourRow } = await db
+      .from('hub_settings')
+      .select('value')
+      .eq('business_id', hubId)
+      .eq('key', 'bolt_start_hour')
+      .limit(1)
+      .single()
+    // An invalid stored value falls back to the default rather than opening a
+    // bolt at 25:00. The write path validates too; this is the second lock,
+    // because a row can also arrive from a migration or a direct edit.
+    startHour = parseStartHour(hourRow?.value) ?? DEFAULT_BOLT_START_HOUR
+
+    const { start: startDate, end: endDate } = boltWindow(startHour)
 
     const { data: newSprint, error: sprintErr } = await db
       .from('sprints')
