@@ -1,0 +1,12 @@
+:root {
+  color-scheme: dark;
+  --bg: #0c0d10;
+  --fg: #f4f1ea;
+  --muted: #9a9488;
+  --line: #2a2c31;
+  --card: #16181d;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+a { color: inherit; }
