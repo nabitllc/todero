@@ -1,6 +1,6 @@
 # Google Workspace connections
 
-Paperclip presents Google Workspace as nine independent Apps entries, not as
+Todero presents Google Workspace as nine independent Apps entries, not as
 one combined Google connection:
 
 1. Gmail
@@ -20,7 +20,7 @@ Workspace Search.
 
 Google's hosted Workspace MCP servers are Developer Preview services. The app
 cards remain independent even when several services use the same customer-owned
-Google OAuth client or the same Paperclip ID broker deployment.
+Google OAuth client or the same Todero ID broker deployment.
 
 ## Developer Preview enrollment
 
@@ -41,7 +41,7 @@ Enrollment does not authorize every user of an OAuth client. Additional tester
 emails and Cloud projects must be added through Google's member request forms.
 Google's preview terms also prohibit making a pre-GA integration available to
 end users outside the enrolled company or domain unless Google grants explicit
-permission. Consequently, Paperclip-managed Google OAuth is limited to
+permission. Consequently, Todero-managed Google OAuth is limited to
 registered internal testers during preview. Other companies must enroll their
 own Workspace testers and Cloud project and use a customer-owned OAuth app until
 Google makes Workspace MCP generally available.
@@ -63,11 +63,11 @@ Google makes Workspace MCP generally available.
 The setup flow asks for the capability first. It then offers the authentication
 methods available for that capability:
 
-- **Connect with Paperclip** uses the Paperclip ID broker when that exact
+- **Connect with Todero** uses the Todero ID broker when that exact
   profile is advertised by `GET /api/connect/capabilities`.
 - **Use your own Google OAuth app** uses customer-supplied OAuth credentials and
   the app definition's exact reviewed scopes.
-- **Use the Paperclip robot account** remains an additional Google Sheets-only
+- **Use the Todero robot account** remains an additional Google Sheets-only
   option for explicitly shared spreadsheets.
 
 OAuth grants begin as personal connections. Existing promotion controls may
@@ -76,7 +76,7 @@ changing the underlying Google principal.
 
 ## Broker profiles
 
-The Paperclip-managed method signs every broker request with one explicit
+The Todero-managed method signs every broker request with one explicit
 profile. The broker binds that profile into sessions, one-time claims, sealed
 token envelopes, refresh, and revocation.
 
@@ -97,23 +97,23 @@ to `gmail.draft`. New clients always send a profile.
 
 ## Instance configuration
 
-All Paperclip-managed Google methods use the existing enrolled-instance keys:
+All Todero-managed Google methods use the existing enrolled-instance keys:
 
 ```dotenv
-PAPERCLIP_ID_CONNECTOR_BASE_URL=https://id.paperclip.app
+PAPERCLIP_ID_CONNECTOR_BASE_URL=https://id.todero.app
 PAPERCLIP_ID_CONNECTOR_ENVIRONMENT=production
 PAPERCLIP_ID_CONNECTOR_INSTANCE_ID=inst_example
 PAPERCLIP_ID_CONNECTOR_SIGN_PRIVATE_KEY=...
 PAPERCLIP_ID_CONNECTOR_SEAL_PRIVATE_KEY=...
 ```
 
-No per-app client secret is stored on the Paperclip instance for the managed
+No per-app client secret is stored on the Todero instance for the managed
 path. For customer-owned OAuth, the setup flow collects that customer's Google
 OAuth client ID and secret and stores them through the normal instance-vault
 path.
 
 The gallery requests the broker capability document with a short cache. A
-Paperclip-managed method is omitted unless its exact profile is enabled at the
+Todero-managed method is omitted unless its exact profile is enabled at the
 broker; the independent app card and customer-owned OAuth method remain
 available. This supports profile-by-profile rollout and rollback without
 collapsing the nine cards into one app.

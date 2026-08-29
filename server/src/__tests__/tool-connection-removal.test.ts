@@ -30,7 +30,7 @@ import {
   toolProfileEntries,
   toolProfiles,
   toolRuntimeSlots,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { and, eq } from "drizzle-orm";
 import {
   getEmbeddedPostgresTestSupport,
@@ -105,7 +105,7 @@ function installMcpFixture(requiredHeader: { name: string; value: string }) {
       if (headers[requiredHeader.name.toLowerCase()] !== requiredHeader.value) {
         return jsonResponse({ error: "unauthorized" }, 401);
       }
-      return jsonResponse({ jsonrpc: "2.0", id: "paperclip-catalog-refresh", result: { tools: FIXTURE_TOOLS } });
+      return jsonResponse({ jsonrpc: "2.0", id: "todero-catalog-refresh", result: { tools: FIXTURE_TOOLS } });
     }
     return jsonResponse({ error: "not_found" }, 404);
   });
@@ -164,7 +164,7 @@ describeEmbeddedPostgres("tool connection removal", () => {
   const HEADER = { name: "X-Api-Key", value: "fixture-secret-value" };
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-removal-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-removal-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -593,7 +593,7 @@ describeEmbeddedPostgres("tool connection removal", () => {
       ownerScopeId: connectionId,
       runtimeKind: "local_stdio",
       status: "running",
-      provider: "paperclip",
+      provider: "todero",
       healthStatus: "ok",
     }).returning();
 
@@ -648,7 +648,7 @@ describeEmbeddedPostgres("tool connection removal", () => {
     await expect(service.reconnectGalleryApp(connectionId, company.id, { credentialValues: {} }))
       .rejects.toMatchObject({ status: 409 });
     await expect(service.startOAuth(company.id, connectionId, {
-      redirectUri: "https://paperclip.fixture.test/api/tools/oauth/callback",
+      redirectUri: "https://todero.fixture.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board-user" },
     })).rejects.toMatchObject({ status: 409 });
 

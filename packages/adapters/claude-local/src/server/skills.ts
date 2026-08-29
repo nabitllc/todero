@@ -4,13 +4,13 @@ import { fileURLToPath } from "node:url";
 import type {
   AdapterSkillContext,
   AdapterSkillSnapshot,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   buildRuntimeMountedSkillSnapshot,
-  readPaperclipRuntimeSkillEntries,
+  readToderoRuntimeSkillEntries,
   readInstalledSkillTargets,
-  resolveLegacyPaperclipDesiredSkillNames,
-} from "@paperclipai/adapter-utils/server-utils";
+  resolveLegacyToderoDesiredSkillNames,
+} from "@todero/adapter-utils/server-utils";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,18 +29,18 @@ function resolveClaudeSkillsHome(config: Record<string, unknown>) {
 }
 
 async function buildClaudeSkillSnapshot(config: Record<string, unknown>): Promise<AdapterSkillSnapshot> {
-  const availableEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
-  const desiredSkills = resolveLegacyPaperclipDesiredSkillNames(config, availableEntries);
+  const availableEntries = await readToderoRuntimeSkillEntries(config, __moduleDir);
+  const desiredSkills = resolveLegacyToderoDesiredSkillNames(config, availableEntries);
   const skillsHome = resolveClaudeSkillsHome(config);
   const installed = await readInstalledSkillTargets(skillsHome);
   return buildRuntimeMountedSkillSnapshot({
     adapterType: "claude_local",
     availableEntries,
     desiredSkills,
-    configuredDetail: "Will be materialized into the stable Paperclip-managed Claude prompt bundle on the next run.",
+    configuredDetail: "Will be materialized into the stable Todero-managed Claude prompt bundle on the next run.",
     externalInstalled: installed,
     externalLocationLabel: "~/.claude/skills",
-    externalDetail: "Installed outside Paperclip management in the Claude skills home.",
+    externalDetail: "Installed outside Todero management in the Claude skills home.",
     skillsHome,
   });
 }
@@ -60,5 +60,5 @@ export function resolveClaudeDesiredSkillNames(
   config: Record<string, unknown>,
   availableEntries: Array<{ key: string; required?: boolean }>,
 ) {
-  return resolveLegacyPaperclipDesiredSkillNames(config, availableEntries);
+  return resolveLegacyToderoDesiredSkillNames(config, availableEntries);
 }

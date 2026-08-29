@@ -21,8 +21,8 @@ import {
   principalPermissionGrants,
   routines,
   routineTriggers,
-} from "@paperclipai/db";
-import { readPaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/db";
+import { readToderoSkillSyncPreference } from "@todero/adapter-utils/server-utils";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -66,7 +66,7 @@ if (!embeddedPostgresSupport.supported) {
 
 describe("built-in agent asset loading", () => {
   it("uses the first readable candidate path", () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "paperclip-built-in-agent-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "todero-built-in-agent-"));
     try {
       const first = path.join(dir, "missing.md");
       const second = path.join(dir, "asset.md");
@@ -94,7 +94,7 @@ describe("built-in agent asset loading", () => {
 
   it("warns about non-missing read errors before falling back", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const dir = mkdtempSync(path.join(tmpdir(), "paperclip-built-in-agent-"));
+    const dir = mkdtempSync(path.join(tmpdir(), "todero-built-in-agent-"));
     const label = "unreadable:" + randomUUID();
 
     try {
@@ -118,7 +118,7 @@ describeEmbeddedPostgres("built-in agents", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-built-in-agents-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-built-in-agents-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -159,7 +159,7 @@ describeEmbeddedPostgres("built-in agents", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: issuePrefix(companyId),
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: options.requireApproval ?? true,
@@ -633,13 +633,13 @@ describeEmbeddedPostgres("built-in agents", () => {
     const [skill] = await db
       .select()
       .from(companySkills)
-      .where(eq(companySkills.key, "paperclipai/bundled/paperclip-operations/reflection-coach"));
+      .where(eq(companySkills.key, "todero/bundled/todero-operations/reflection-coach"));
     expect(skill).toMatchObject({
-      key: "paperclipai/bundled/paperclip-operations/reflection-coach",
+      key: "todero/bundled/todero-operations/reflection-coach",
       slug: "reflection-coach",
     });
-    expect(readPaperclipSkillSyncPreference(state.agent!.adapterConfig as Record<string, unknown>).desiredSkills).toContain(
-      "paperclipai/bundled/paperclip-operations/reflection-coach",
+    expect(readToderoSkillSyncPreference(state.agent!.adapterConfig as Record<string, unknown>).desiredSkills).toContain(
+      "todero/bundled/todero-operations/reflection-coach",
     );
 
     const [routine] = await db.select().from(routines).where(eq(routines.companyId, companyId));
@@ -1147,12 +1147,12 @@ describeEmbeddedPostgres("built-in agents", () => {
     const [skill] = await db
       .select()
       .from(companySkills)
-      .where(eq(companySkills.key, "paperclipai/bundled/paperclip-operations/reflection-coach"));
+      .where(eq(companySkills.key, "todero/bundled/todero-operations/reflection-coach"));
     expect(skill).toMatchObject({
-      key: "paperclipai/bundled/paperclip-operations/reflection-coach",
+      key: "todero/bundled/todero-operations/reflection-coach",
       slug: "reflection-coach",
     });
-    expect(readPaperclipSkillSyncPreference(state.agent!.adapterConfig).desiredSkills).toContain(skill!.key);
+    expect(readToderoSkillSyncPreference(state.agent!.adapterConfig).desiredSkills).toContain(skill!.key);
 
     const [routine] = await db.select().from(routines).where(eq(routines.companyId, companyId));
     expect(routine).toMatchObject({
@@ -1220,12 +1220,12 @@ describeEmbeddedPostgres("built-in agents", () => {
     const [skill] = await db
       .select()
       .from(companySkills)
-      .where(eq(companySkills.key, "paperclipai/bundled/paperclip-operations/summarize-status"));
+      .where(eq(companySkills.key, "todero/bundled/todero-operations/summarize-status"));
     expect(skill).toMatchObject({
-      key: "paperclipai/bundled/paperclip-operations/summarize-status",
+      key: "todero/bundled/todero-operations/summarize-status",
       slug: "summarize-status",
     });
-    expect(readPaperclipSkillSyncPreference(state.agent!.adapterConfig).desiredSkills).toContain(skill!.key);
+    expect(readToderoSkillSyncPreference(state.agent!.adapterConfig).desiredSkills).toContain(skill!.key);
 
     const [routine] = await db
       .select()

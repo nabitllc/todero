@@ -1,14 +1,14 @@
 {
-  "name": "@paperclipai/adapter-claude-local",
-  "version": "0.3.1",
+  "name": "@todero/adapter-claude-local",
+  "version": "0.1.0",
   "license": "MIT",
-  "homepage": "https://github.com/paperclipai/paperclip",
+  "homepage": "https://github.com/nabitllc/todero",
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/nabitllc/todero/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/nabitllc/todero",
     "directory": "packages/adapters/claude-local"
   },
   "type": "module",
@@ -55,8 +55,8 @@
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.70.0",
     "@anthropic-ai/sdk": "0.121.0",
-    "@paperclipai/adapter-utils": "workspace:*",
-    "@paperclipai/shared": "workspace:*",
+    "@todero/adapter-utils": "workspace:*",
+    "@todero/shared": "workspace:*",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {

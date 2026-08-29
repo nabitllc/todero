@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "packageName": "@paperclipai/teams-catalog",
+  "packageName": "@todero/teams-catalog",
   "packageVersion": "0.1.0",
-  "generatedAt": "2026-06-04T18:03:41.262Z",
+  "generatedAt": "2026-08-29T23:11:49.539Z",
   "teams": [
     {
-      "id": "paperclipai:bundled:company-defaults:core-exec-team",
-      "key": "paperclipai/bundled/company-defaults/core-exec-team",
+      "id": "todero:bundled:company-defaults:core-exec-team",
+      "key": "todero/bundled/company-defaults/core-exec-team",
       "kind": "bundled",
       "category": "company-defaults",
       "slug": "core-exec-team",
       "name": "Core Exec Team",
-      "description": "Default leadership and engineering team for bootstrapping a Paperclip company with a CEO, CTO, QA Engineer, starter project, and a recurring CEO heartbeat review task.",
+      "description": "Default leadership and engineering team for bootstrapping a Todero company with a CEO, CTO, QA Engineer, starter project, and a recurring CEO heartbeat review task.",
       "path": "catalog/bundled/company-defaults/core-exec-team",
       "entrypoint": "TEAM.md",
       "schema": "agentcompanies/v1",
@@ -55,8 +55,8 @@
             "cto"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:software-development:github-pr-workflow",
-          "catalogSkillKey": "paperclipai/bundled/software-development/github-pr-workflow"
+          "catalogSkillId": "todero:bundled:software-development:github-pr-workflow",
+          "catalogSkillKey": "todero/bundled/software-development/github-pr-workflow"
         },
         {
           "type": "catalog",
@@ -65,8 +65,8 @@
             "ceo"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:paperclip-operations:issue-triage",
-          "catalogSkillKey": "paperclipai/bundled/paperclip-operations/issue-triage"
+          "catalogSkillId": "todero:bundled:todero-operations:issue-triage",
+          "catalogSkillKey": "todero/bundled/todero-operations/issue-triage"
         },
         {
           "type": "catalog",
@@ -75,8 +75,8 @@
             "qa"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:quality:qa-acceptance",
-          "catalogSkillKey": "paperclipai/bundled/quality/qa-acceptance"
+          "catalogSkillId": "todero:bundled:quality:qa-acceptance",
+          "catalogSkillKey": "todero/bundled/quality/qa-acceptance"
         },
         {
           "type": "catalog",
@@ -86,8 +86,8 @@
             "cto"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:paperclip-operations:task-planning",
-          "catalogSkillKey": "paperclipai/bundled/paperclip-operations/task-planning"
+          "catalogSkillId": "todero:bundled:todero-operations:task-planning",
+          "catalogSkillKey": "todero/bundled/todero-operations/task-planning"
         }
       ],
       "envInputs": [],
@@ -96,26 +96,26 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 2144,
-          "sha256": "4ab4f57f147e89a56a6753755d7ef142d91741b3c0159f2e53fb333cd2779eaf"
+          "sizeBytes": 2107,
+          "sha256": "fd4b2fbe7ff99404158a7effd9fe5755f5bad84133b722a1f12e5883d96359a1"
         },
         {
           "path": "agents/ceo/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 2492,
-          "sha256": "50f580c51807762265f09c6fe7bf32d7701d64caeb30595bfd577b2f5087c21b"
+          "sizeBytes": 2483,
+          "sha256": "64f96cbe6c19916b704bdf580614edd5cd8c420903fa5f2f7eaabdf6be9872de"
         },
         {
           "path": "agents/cto/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1449,
-          "sha256": "596e2e9fe08d7368b3b0cfe72c2635ea80444d92a2c0414157bfb0a17773fcaf"
+          "sizeBytes": 1446,
+          "sha256": "1350850e460b3da8f10dfabae330b6d4ffb6c565a158a57a0a08176d8acf3ec8"
         },
         {
           "path": "agents/qa/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1307,
-          "sha256": "2a139b88b4b98516048395c569c1bc74fd31cdc2da65db410e9779b8d92c0343"
+          "sizeBytes": 1304,
+          "sha256": "6d58a09545e05be86e53dfd05f359e1fb48ec77cf231dca0b30aae06d20c44cc"
         },
         {
           "path": "projects/first-project/PROJECT.md",
@@ -132,11 +132,11 @@
       ],
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
-      "contentHash": "sha256:0f20e9d56124c1dc90a1e4b128fabd863538bcc935117220f719d9620f7c89f1"
+      "contentHash": "sha256:8b677daa2068fa9a7e7a060d8d1a21d34ed29a5e3e5f76118c34f0c38abf0abc"
     },
     {
-      "id": "paperclipai:bundled:product:product-design",
-      "key": "paperclipai/bundled/product/product-design",
+      "id": "todero:bundled:product:product-design",
+      "key": "todero/bundled/product/product-design",
       "kind": "bundled",
       "category": "product",
       "slug": "product-design",
@@ -182,8 +182,8 @@
             "ux-designer"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:optional:product:design-critique",
-          "catalogSkillKey": "paperclipai/optional/product/design-critique"
+          "catalogSkillId": "todero:optional:product:design-critique",
+          "catalogSkillKey": "todero/optional/product/design-critique"
         },
         {
           "type": "catalog",
@@ -192,8 +192,8 @@
             "ux-designer"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:paperclip-operations:task-planning",
-          "catalogSkillKey": "paperclipai/bundled/paperclip-operations/task-planning"
+          "catalogSkillId": "todero:bundled:todero-operations:task-planning",
+          "catalogSkillKey": "todero/bundled/todero-operations/task-planning"
         },
         {
           "type": "catalog",
@@ -202,8 +202,8 @@
             "ux-designer"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:product:wireframe",
-          "catalogSkillKey": "paperclipai/bundled/product/wireframe"
+          "catalogSkillId": "todero:bundled:product:wireframe",
+          "catalogSkillKey": "todero/bundled/product/wireframe"
         }
       ],
       "envInputs": [],
@@ -212,14 +212,14 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 2074,
-          "sha256": "205be8d3ef6c1f5e73729207913c387eee4cc9379191c3ce6d943fcf9ca2545d"
+          "sizeBytes": 2048,
+          "sha256": "9d995c1613c3bf134d178dab9d9c2ba8ce536430a1aba39976b44089ab0c6280"
         },
         {
           "path": "agents/ux-designer/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 2136,
-          "sha256": "f5a4b5696d8249e9f9d808a4373c2a1e6b07faa463e72f83fd9d5bed98d2022f"
+          "sizeBytes": 2133,
+          "sha256": "91aa2ba374e8429668b1980576a6357ac219e489397e3cf8654c9c71b4ac596f"
         },
         {
           "path": "projects/product-design/PROJECT.md",
@@ -236,11 +236,11 @@
       ],
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
-      "contentHash": "sha256:15a04b36f31d4c9a391bb499c92e91fedfcc237cfa6c3d41ea3ddb441bc85c5b"
+      "contentHash": "sha256:61d4810b82613ee1cbde95df1b2d21e15a8b691dae6c7ac48532b345b9a3873d"
     },
     {
-      "id": "paperclipai:bundled:software-development:product-engineering",
-      "key": "paperclipai/bundled/software-development/product-engineering",
+      "id": "todero:bundled:software-development:product-engineering",
+      "key": "todero/bundled/software-development/product-engineering",
       "kind": "bundled",
       "category": "software-development",
       "slug": "product-engineering",
@@ -290,8 +290,8 @@
             "senior-coder"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:docs:doc-maintenance",
-          "catalogSkillKey": "paperclipai/bundled/docs/doc-maintenance"
+          "catalogSkillId": "todero:bundled:docs:doc-maintenance",
+          "catalogSkillKey": "todero/bundled/docs/doc-maintenance"
         },
         {
           "type": "catalog",
@@ -301,8 +301,8 @@
             "senior-coder"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:software-development:github-pr-workflow",
-          "catalogSkillKey": "paperclipai/bundled/software-development/github-pr-workflow"
+          "catalogSkillId": "todero:bundled:software-development:github-pr-workflow",
+          "catalogSkillKey": "todero/bundled/software-development/github-pr-workflow"
         },
         {
           "type": "catalog",
@@ -311,8 +311,8 @@
             "qa"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:quality:qa-acceptance",
-          "catalogSkillKey": "paperclipai/bundled/quality/qa-acceptance"
+          "catalogSkillId": "todero:bundled:quality:qa-acceptance",
+          "catalogSkillKey": "todero/bundled/quality/qa-acceptance"
         },
         {
           "type": "catalog",
@@ -321,8 +321,8 @@
             "cto"
           ],
           "resolved": true,
-          "catalogSkillId": "paperclipai:bundled:paperclip-operations:task-planning",
-          "catalogSkillKey": "paperclipai/bundled/paperclip-operations/task-planning"
+          "catalogSkillId": "todero:bundled:todero-operations:task-planning",
+          "catalogSkillKey": "todero/bundled/todero-operations/task-planning"
         }
       ],
       "envInputs": [],
@@ -331,11 +331,11 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 2583,
-          "sha256": "7204eeef78a48714dd3f82b82e171a4039adc6325e91a6bdf51a442105ee33b0"
+          "sizeBytes": 2552,
+          "sha256": "65531150e91d1b7920b7fece156ccb60f29264ce1657d465ac8c12a8382df8b3"
         },
         {
-          "path": ".paperclip.yaml",
+          "path": ".todero.yaml",
           "kind": "extension",
           "sizeBytes": 81,
           "sha256": "54babf05ba130ec54a143abf01581d99c0ac2936fd0d929bf0e0edd00e29d861"
@@ -343,20 +343,20 @@
         {
           "path": "agents/cto/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1499,
-          "sha256": "0a1a73ec9e5008056bca0a26325131ded2fcf4c4680a5014ba1e13400b32c173"
+          "sizeBytes": 1496,
+          "sha256": "5f50b442032b3dc28f8dae902c7b1afd134860a5b517eaa67b354c328f6b9bdd"
         },
         {
           "path": "agents/qa/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1223,
-          "sha256": "2d5738f831aa772befa3471c844a0c9e611584be668e3ec82580ca9e92dc13fc"
+          "sizeBytes": 1220,
+          "sha256": "f1ba81d464c3508432f548fd5e8d01cc56921cf20e0b5fbc9483a3ab89d2cc3a"
         },
         {
           "path": "agents/senior-coder/AGENTS.md",
           "kind": "agent",
-          "sizeBytes": 1413,
-          "sha256": "b61071518755d9e584c099ae2082c7a78448d09586093ee91393082fe10872b5"
+          "sizeBytes": 1410,
+          "sha256": "705fa363bbb3099c0f1cd892f83f65836b2fe7a2f5951a30c5df466913236be0"
         },
         {
           "path": "projects/product-engineering/PROJECT.md",
@@ -373,11 +373,11 @@
       ],
       "trustLevel": "assets",
       "compatibility": "compatible",
-      "contentHash": "sha256:74ddeaeb11805835a4a67fc4530b048ab7f8aa1dc7d2b80acea139a933d158d3"
+      "contentHash": "sha256:89a544d5cabfd6f81119663c78883c247c6558a30622f7ca98551a22f9eb81c1"
     },
     {
-      "id": "paperclipai:optional:content:content-machine",
-      "key": "paperclipai/optional/content/content-machine",
+      "id": "todero:optional:content:content-machine",
+      "key": "todero/optional/content/content-machine",
       "kind": "optional",
       "category": "content",
       "slug": "content-machine",
@@ -431,8 +431,8 @@
         {
           "path": "TEAM.md",
           "kind": "team",
-          "sizeBytes": 1032,
-          "sha256": "f7c272c8b0c183fc840d49eb4851b7cdd1a30a5aa8d6415d215110f3238f6f13"
+          "sizeBytes": 1027,
+          "sha256": "cf1b3c5bbbf543090632dbf95d28c5b320febbdc8bdd0564ac93b2120fe5ee3f"
         },
         {
           "path": "agents/content-lead/AGENTS.md",
@@ -461,7 +461,7 @@
       ],
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
-      "contentHash": "sha256:06822cec5f2b6910cb37ba0ebd5e04ed5c7e34f77225564ddddc2470779cdaa6"
+      "contentHash": "sha256:ace74488132f930cf1f44c32b57a680166a16867fe07c91689f67230a36f1715"
     }
   ]
 }

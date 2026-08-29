@@ -6,7 +6,7 @@ import type {
   EnvBinding,
   UserSecretCoverageSummary,
   UserSecretDefinition,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { MemoryRouter } from "react-router-dom";
 import { MyUserSecretsTab } from "@/pages/secrets/MyUserSecretsTab";
 import { UserSecretDefinitionsTab } from "@/pages/secrets/UserSecretDefinitionsTab";
@@ -19,7 +19,7 @@ import { queryKeys } from "@/lib/queryKeys";
 const COMPANY_ID = "company-storybook";
 
 if (typeof window !== "undefined") {
-  window.localStorage.setItem("paperclip.selectedCompanyId", COMPANY_ID);
+  window.localStorage.setItem("todero.selectedCompanyId", COMPANY_ID);
 }
 
 function makeDefinition(overrides: Partial<UserSecretDefinition>): UserSecretDefinition {

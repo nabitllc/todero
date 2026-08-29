@@ -30,24 +30,24 @@ describe("awsSecretsManagerProvider", () => {
     }
   });
 
-  it("creates Paperclip-managed AWS secrets without persisting plaintext in provider material", async () => {
+  it("creates Todero-managed AWS secrets without persisting plaintext in provider material", async () => {
     const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
     const provider = createAwsSecretsManagerProvider({
       config: {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
         async createSecret(input) {
           calls.push({ op: "createSecret", input });
           return {
-            ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+            ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
             VersionId: "aws-version-1",
           };
         },
@@ -81,13 +81,13 @@ describe("awsSecretsManagerProvider", () => {
       expect.objectContaining({
         op: "createSecret",
         input: expect.objectContaining({
-          Name: "paperclip/prod-use1/company-1/openai-api-key",
+          Name: "todero/prod-use1/company-1/openai-api-key",
           KmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         }),
       }),
     ]);
     expect(JSON.stringify(prepared)).not.toContain("super-secret-value");
-    expect(prepared.externalRef).toContain("paperclip/prod-use1/company-1/openai-api-key");
+    expect(prepared.externalRef).toContain("todero/prod-use1/company-1/openai-api-key");
     expect(prepared.providerVersionRef).toBe("aws-version-1");
   });
 
@@ -165,8 +165,8 @@ describe("awsSecretsManagerProvider", () => {
           Name: "clip/prod-us-west/company-1/openai-api-key",
           SecretString: "super-secret-value",
           Tags: expect.arrayContaining([
-            { Key: "paperclip:provider-owner", Value: "platform" },
-            { Key: "paperclip:environment", Value: "production" },
+            { Key: "todero:provider-owner", Value: "platform" },
+            { Key: "todero:environment", Value: "production" },
           ]),
         }),
       }),
@@ -189,7 +189,7 @@ describe("awsSecretsManagerProvider", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
-          ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod/company-1/openai-api-key",
+          ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod/company-1/openai-api-key",
           VersionId: "aws-version-1",
         }),
         { status: 200 },
@@ -200,10 +200,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
     });
@@ -238,10 +238,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -251,7 +251,7 @@ describe("awsSecretsManagerProvider", () => {
         async putSecretValue(input) {
           calls.push({ op: "putSecretValue", input });
           return {
-            ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+            ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
             VersionId: "aws-version-2",
           };
         },
@@ -267,7 +267,7 @@ describe("awsSecretsManagerProvider", () => {
     const prepared = await provider.createVersion({
       value: "rotated-secret-value",
       externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
       context: {
         companyId: "company-1",
         secretKey: "openai-api-key",
@@ -281,7 +281,7 @@ describe("awsSecretsManagerProvider", () => {
         op: "putSecretValue",
         input: {
           SecretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+            "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
           SecretString: "rotated-secret-value",
           VersionStages: ["PAPERCLIP_PENDING"],
         },
@@ -298,10 +298,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -343,10 +343,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
     });
@@ -363,16 +363,16 @@ describe("awsSecretsManagerProvider", () => {
     expect(prepared.valueSha256).toBeTruthy();
   });
 
-  it("rejects linked external references under the Paperclip-managed namespace", async () => {
+  it("rejects linked external references under the Todero-managed namespace", async () => {
     const provider = createAwsSecretsManagerProvider({
       config: {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
     });
@@ -380,10 +380,10 @@ describe("awsSecretsManagerProvider", () => {
     await expect(
       provider.linkExternalSecret({
         externalRef:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/openai-api-key",
+          "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-2/openai-api-key",
         providerVersionRef: "linked-version-7",
       }),
-    ).rejects.toThrow(/Paperclip-managed namespace/i);
+    ).rejects.toThrow(/Todero-managed namespace/i);
   });
 
   it("writes new values through to externally referenced AWS secrets as AWSCURRENT", async () => {
@@ -393,10 +393,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -426,7 +426,7 @@ describe("awsSecretsManagerProvider", () => {
       context: {
         companyId: "company-1",
         secretKey: "neon-admin-api-key",
-        secretName: "paperclip-cloud/prod/provider/neon/admin-api-key",
+        secretName: "todero-cloud/prod/provider/neon/admin-api-key",
         version: 2,
       },
     });
@@ -460,16 +460,16 @@ describe("awsSecretsManagerProvider", () => {
     expect(prepared.material.source).toBe("external_reference");
   });
 
-  it("rejects external value writes under the Paperclip-managed namespace", async () => {
+  it("rejects external value writes under the Todero-managed namespace", async () => {
     const provider = createAwsSecretsManagerProvider({
       config: {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: null,
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
     });
@@ -477,10 +477,10 @@ describe("awsSecretsManagerProvider", () => {
     await expect(
       provider.updateExternalSecretValue!({
         externalRef:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/openai-api-key",
+          "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-2/openai-api-key",
         value: "new-value",
       }),
-    ).rejects.toThrow(/Paperclip-managed namespace/i);
+    ).rejects.toThrow(/Todero-managed namespace/i);
   });
 
   it("restores the previous AWSCURRENT version when an external value write is rolled back", async () => {
@@ -490,10 +490,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: null,
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -540,10 +540,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -636,23 +636,23 @@ describe("awsSecretsManagerProvider", () => {
             NextToken: "next-page",
             SecretList: [
               {
-                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai",
-                Name: "paperclip/prod-use1/company-1/openai",
+                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai",
+                Name: "todero/prod-use1/company-1/openai",
                 KmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/prod",
                 Tags: [
-                  { Key: "paperclip:managed-by", Value: "paperclip" },
-                  { Key: "paperclip:deployment-id", Value: "prod-use1" },
-                  { Key: "paperclip:company-id", Value: "company-1" },
-                  { Key: "paperclip:environment", Value: "production" },
-                  { Key: "paperclip:provider-owner", Value: "platform" },
+                  { Key: "todero:managed-by", Value: "todero" },
+                  { Key: "todero:deployment-id", Value: "prod-use1" },
+                  { Key: "todero:company-id", Value: "company-1" },
+                  { Key: "todero:environment", Value: "production" },
+                  { Key: "todero:provider-owner", Value: "platform" },
                 ],
               },
               {
-                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/stripe",
-                Name: "paperclip/prod-use1/company-2/stripe",
+                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-2/stripe",
+                Name: "todero/prod-use1/company-2/stripe",
                 Tags: [
-                  { Key: "paperclip:managed-by", Value: "paperclip" },
-                  { Key: "paperclip:company-id", Value: "company-2" },
+                  { Key: "todero:managed-by", Value: "todero" },
+                  { Key: "todero:company-id", Value: "company-2" },
                 ],
               },
             ],
@@ -669,7 +669,7 @@ describe("awsSecretsManagerProvider", () => {
         status: "ready",
         config: { region: "us-east-1" },
       },
-      query: "paperclip",
+      query: "todero",
       pageSize: 25,
     });
 
@@ -680,7 +680,7 @@ describe("awsSecretsManagerProvider", () => {
           MaxResults: 25,
           NextToken: undefined,
           IncludePlannedDeletion: false,
-          Filters: [{ Key: "all", Values: ["paperclip"] }],
+          Filters: [{ Key: "all", Values: ["todero"] }],
         },
       },
     ]);
@@ -688,21 +688,21 @@ describe("awsSecretsManagerProvider", () => {
       provider: "aws_secrets_manager",
       nextToken: "next-page",
       sampledSecretCount: 1,
-      skippedForeignPaperclipSampleCount: 1,
+      skippedForeignToderoSampleCount: 1,
       candidates: [
         expect.objectContaining({
           displayName: "AWS production",
           config: expect.objectContaining({
             region: "us-east-1",
             namespace: "prod-use1",
-            secretNamePrefix: "paperclip",
+            secretNamePrefix: "todero",
             kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/prod",
             ownerTag: "platform",
             environmentTag: "production",
           }),
           signals: expect.objectContaining({
-            paperclipManagedSampleCount: 1,
-            skippedForeignPaperclipSampleCount: 1,
+            toderoManagedSampleCount: 1,
+            skippedForeignToderoSampleCount: 1,
           }),
         }),
       ],
@@ -713,16 +713,16 @@ describe("awsSecretsManagerProvider", () => {
 
   it("redacts AWS provider exception text when remote listing fails", async () => {
     const rawProviderMessage =
-      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Paperclip is not authorized to perform secretsmanager:ListSecrets on arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai";
+      "AccessDeniedException: User: arn:aws:sts::123456789012:assumed-role/prod/Todero is not authorized to perform secretsmanager:ListSecrets on arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai";
     const provider = createAwsSecretsManagerProvider({
       config: {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -769,10 +769,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -795,12 +795,12 @@ describe("awsSecretsManagerProvider", () => {
     const resolved = await provider.resolveVersion({
       material: {
         scheme: "aws_secrets_manager_v1",
-        secretId: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+        secretId: "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
         versionId: "aws-version-2",
         source: "managed",
       },
       externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
       providerVersionRef: "aws-version-2",
       context: {
         companyId: "company-1",
@@ -816,7 +816,7 @@ describe("awsSecretsManagerProvider", () => {
         op: "getSecretValue",
         input: {
           SecretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+            "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
           VersionId: "aws-version-2",
           VersionStage: undefined,
         },
@@ -830,10 +830,10 @@ describe("awsSecretsManagerProvider", () => {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -857,12 +857,12 @@ describe("awsSecretsManagerProvider", () => {
         material: {
           scheme: "aws_secrets_manager_v1",
           secretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/openai-api-key",
+            "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-2/openai-api-key",
           versionId: "aws-version-2",
           source: "managed",
         },
         externalRef:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-2/openai-api-key",
+          "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-2/openai-api-key",
         providerVersionRef: "aws-version-2",
         context: {
           companyId: "company-1",
@@ -914,17 +914,17 @@ describe("awsSecretsManagerProvider", () => {
     ).rejects.toThrow(/PAPERCLIP_SECRETS_AWS_REGION|AWS_REGION/i);
   });
 
-  it("deletes only Paperclip-managed AWS secrets", async () => {
+  it("deletes only Todero-managed AWS secrets", async () => {
     const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
     const provider = createAwsSecretsManagerProvider({
       config: {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -947,11 +947,11 @@ describe("awsSecretsManagerProvider", () => {
     await provider.deleteOrArchive({
       mode: "delete",
       externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
       material: {
         scheme: "aws_secrets_manager_v1",
         secretId:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+          "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
         versionId: null,
         source: "managed",
       },
@@ -1002,24 +1002,24 @@ describe("awsSecretsManagerProvider", () => {
         op: "deleteSecret",
         input: {
           SecretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+            "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
           RecoveryWindowInDays: 30,
         },
       },
     ]);
   });
 
-  it("archives pending Paperclip-managed AWS versions without deleting the secret", async () => {
+  it("archives pending Todero-managed AWS versions without deleting the secret", async () => {
     const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
     const provider = createAwsSecretsManagerProvider({
       config: {
         region: "us-east-1",
         endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
         deploymentId: "prod-use1",
-        prefix: "paperclip",
+        prefix: "todero",
         kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
         environmentTag: "production",
-        providerOwnerTag: "paperclip",
+        providerOwnerTag: "todero",
         deleteRecoveryWindowDays: 30,
       },
       gateway: {
@@ -1046,11 +1046,11 @@ describe("awsSecretsManagerProvider", () => {
     await provider.deleteOrArchive({
       mode: "archive",
       externalRef:
-        "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
       material: {
         scheme: "aws_secrets_manager_v1",
         secretId:
-          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+          "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
         versionId: "aws-version-2",
         source: "managed",
       },
@@ -1067,7 +1067,7 @@ describe("awsSecretsManagerProvider", () => {
         op: "updateSecretVersionStage",
         input: {
           SecretId:
-            "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/company-1/openai-api-key",
+            "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/company-1/openai-api-key",
           VersionStage: "PAPERCLIP_PENDING",
           RemoveFromVersionId: "aws-version-2",
         },

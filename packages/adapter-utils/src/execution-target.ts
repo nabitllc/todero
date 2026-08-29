@@ -238,13 +238,13 @@ export interface AdapterExecutionTargetProcessOptions {
   onSpawn?: (meta: { pid: number; processGroupId: number | null; startedAt: string }) => Promise<void>;
   terminalResultCleanup?: TerminalResultCleanupOptions;
   /**
-   * Sandbox-only: factory from the Paperclip bridge handle that streams the
+   * Sandbox-only: factory from the Todero bridge handle that streams the
    * CLI's stdout/stderr during the run. When provided, the batched provider
    * onLog is suppressed and incremental chunks flow through `onLog` instead.
    */
   runLogTail?: SandboxRunLogTailFactory | null;
   /**
-   * Sandbox-only: the atomic run-disposition settle from the Paperclip bridge
+   * Sandbox-only: the atomic run-disposition settle from the Todero bridge
    * handle. When provided, `runAdapterExecutionTargetProcess` calls it once at
    * the clean-completion boundary of the process, synchronously and before the
    * run-log tail finishes. The call reads the disposition and marks the
@@ -266,7 +266,7 @@ export interface AdapterExecutionTargetShellOptions {
   onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
 }
 
-export interface AdapterExecutionTargetPaperclipBridgeHandle {
+export interface AdapterExecutionTargetToderoBridgeHandle {
   env: Record<string, string>;
   /**
    * Present when the sandbox target opted into run-log streaming
@@ -365,11 +365,11 @@ function resolveHostForUrl(rawHost: string): string {
   return host;
 }
 
-function resolveDefaultPaperclipApiUrl(): string {
+function resolveDefaultToderoApiUrl(): string {
   const runtimeHost = resolveHostForUrl(
     process.env.PAPERCLIP_LISTEN_HOST ?? process.env.HOST ?? "localhost",
   );
-  // 3100 matches the default Paperclip dev server port when the runtime does not provide one.
+  // 3100 matches the default Todero dev server port when the runtime does not provide one.
   const runtimePort = process.env.PAPERCLIP_LISTEN_PORT ?? process.env.PORT ?? "3100";
   return `http://${runtimeHost}:${runtimePort}`;
 }
@@ -481,7 +481,7 @@ export function resolveAdapterExecutionTargetCwd(
   return adapterExecutionTargetRemoteCwd(target, localFallbackCwd);
 }
 
-export function adapterExecutionTargetUsesPaperclipBridge(
+export function adapterExecutionTargetUsesToderoBridge(
   target: AdapterExecutionTarget | null | undefined,
 ): boolean {
   return target?.kind === "remote";
@@ -577,7 +577,7 @@ export function formatAdapterExecutionTimeoutErrorMessage(
 
 /**
  * One-line start-of-run statement of the effective wall-clock timeout and its
- * source. Callers prefix with `[paperclip] ` and append a newline.
+ * source. Callers prefix with `[todero] ` and append a newline.
  */
 export function formatAdapterExecutionTimeoutStartLogLine(
   resolution: AdapterExecutionTargetTimeoutResolution,
@@ -769,7 +769,7 @@ function applyRunDispositionSeam(
   const disposition = settleRunDisposition();
   if (!disposition.failed) return result;
   const lossReason = disposition.lossReason ?? "other";
-  const note = `[paperclip] The sandbox duplex control channel was lost (${lossReason}) before the run completed.\n`;
+  const note = `[todero] The sandbox duplex control channel was lost (${lossReason}) before the run completed.\n`;
   const separator = result.stderr.length > 0 && !result.stderr.endsWith("\n") ? "\n" : "";
   return {
     ...result,
@@ -1141,7 +1141,7 @@ export async function ensureAdapterExecutionTargetRuntimeCommandInstalled(input:
         const reason = result.timedOut ? "timed out" : `exited ${result.exitCode ?? "?"}`;
         await input.onLog(
           "stderr",
-          `[paperclip] Install command ${reason} (${installCommand}) but ${detectCommand} is on PATH; continuing.\n`,
+          `[todero] Install command ${reason} (${installCommand}) but ${detectCommand} is on PATH; continuing.\n`,
         );
       }
       return;
@@ -1174,7 +1174,7 @@ export async function ensureAdapterExecutionTargetFile(
  * For local targets this delegates to the local `ensureAbsoluteDirectory` helper
  * (Node fs). For remote (SSH/sandbox) targets it shells out and runs
  * `mkdir -p` (when allowed) followed by a `[ -d ]` check so the result reflects
- * the directory state inside the environment, not on the Paperclip host.
+ * the directory state inside the environment, not on the Todero host.
  *
  * Throws an Error with a human-readable message on failure.
  */
@@ -1448,17 +1448,17 @@ export function runtimeAssetDir(
   key: string,
   fallbackRemoteCwd: string,
 ): string {
-  return prepared.assetDirs[key] ?? path.posix.join(fallbackRemoteCwd, ".paperclip-runtime", key);
+  return prepared.assetDirs[key] ?? path.posix.join(fallbackRemoteCwd, ".todero-runtime", key);
 }
 
 function buildBridgeResponseHeaders(response: Response): Record<string, string> {
   const out: Record<string, string> = {};
-  // Keep `x-paperclip-bridge-outcome` in this list. The host marks a
+  // Keep `x-todero-bridge-outcome` in this list. The host marks a
   // possibly-committed mutation with the `indeterminate` outcome. The in-sandbox
   // server reads that header to map the 504 to a terminal 409. If the forward
   // drops the header, the server keeps the retryable 504 and a caller that
   // retries 5xx can repeat a mutation that already committed.
-  for (const key of ["content-type", "etag", "last-modified", "x-paperclip-bridge-outcome"]) {
+  for (const key of ["content-type", "etag", "last-modified", "x-todero-bridge-outcome"]) {
     const value = response.headers.get(key);
     if (value && value.trim().length > 0) out[key] = value.trim();
   }
@@ -1516,12 +1516,12 @@ async function readBridgeForwardResponseBody(response: Response, maxBodyBytes: n
   return Buffer.concat(chunks, totalBytes).toString("utf8");
 }
 
-const PROCESS_SESSION_PROXY_SCRIPT = "paperclip-process-session-proxy.mjs";
-const PROCESS_SESSION_REMOTE_SCRIPT = "paperclip-process-session-remote.mjs";
+const PROCESS_SESSION_PROXY_SCRIPT = "todero-process-session-proxy.mjs";
+const PROCESS_SESSION_REMOTE_SCRIPT = "todero-process-session-remote.mjs";
 // The streamed variant writes its output frames to stdout, so it rides a
 // separate remote path. A sandbox can hold both scripts without the content
 // hash-skip gate thrashing when a run switches output mode.
-const PROCESS_SESSION_REMOTE_STREAM_SCRIPT = "paperclip-process-session-remote-stream.mjs";
+const PROCESS_SESSION_REMOTE_STREAM_SCRIPT = "todero-process-session-remote-stream.mjs";
 const PROCESS_SESSION_AUTH_TIMEOUT_MS = 5_000;
 // The bounded budget `stop()` waits for the wrapper's `shutdownAck` event
 // before it removes `sessionDir` unconditionally. The wrapper writes the
@@ -1548,7 +1548,7 @@ async function writeProcessSessionProxyScript(dir: string, port: number, token: 
 
 // Content-hash-skip the process-session remote script write, mirroring the
 // sandbox callback bridge entrypoint sha256 gate. The script is a static
-// Paperclip-authored `.mjs` that only changes when the build changes, so on a
+// Todero-authored `.mjs` that only changes when the build changes, so on a
 // warm start (same sandbox, script already present) the single sha-gate exec
 // skips the ~3-exec base64 upload entirely. `syncRemoteTextFileWithHashSkip`
 // fails loud on a check error rather than silently re-uploading.
@@ -1569,7 +1569,7 @@ async function syncProcessSessionRemoteScript(input: {
     body: getProcessSessionRemoteSource({ outputToStdout: input.outputToStdout === true }),
     label: "Process session remote script",
     action: "sync process session remote script",
-    lockDir: path.posix.join(input.remoteScriptDir, ".paperclip-process-session-script.lock"),
+    lockDir: path.posix.join(input.remoteScriptDir, ".todero-process-session-script.lock"),
     timeoutMs: input.timeoutMs,
     shellCommand: input.shellCommand,
   });
@@ -1625,7 +1625,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   // The launch env is consumed ONLY when building the base64 `commandPayload`
   // below — never during the env-INDEPENDENT dir/script setup. Accepting a
   // resolver (in addition to a plain object) lets a caller overlap that setup
-  // with other work — e.g. starting the paperclip callback bridge — and hand the
+  // with other work — e.g. starting the todero callback bridge — and hand the
   // merged env in right before the launch.
   env: Record<string, string> | (() => Promise<Record<string, string>>);
   timeoutSec?: number | null;
@@ -1669,7 +1669,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
       ? Math.trunc(input.timeoutSec * 1000)
       : target.timeoutMs ?? undefined;
   const bridgeRuntimeDir = path.posix.join(
-    input.runtimeRootDir?.trim() || path.posix.join(target.remoteCwd, ".paperclip-runtime", input.adapterKey),
+    input.runtimeRootDir?.trim() || path.posix.join(target.remoteCwd, ".todero-runtime", input.adapterKey),
     "process-sessions",
   );
   const sessionId = randomUUID();
@@ -1705,7 +1705,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   });
 
   // Resolve the launch env AFTER the env-independent setup above, so a caller
-  // can defer it until an upstream dependency (e.g. the paperclip bridge's env)
+  // can defer it until an upstream dependency (e.g. the todero bridge's env)
   // is ready without blocking the dir/script setup.
   const launchEnv = typeof input.env === "function" ? await input.env() : input.env;
   const commandPayload = Buffer.from(JSON.stringify({
@@ -1719,7 +1719,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   // event files with the host poll below. The streamed path launches the wrapper
   // as one foreground session command further down instead, so skip this.
   if (!streamOutput) {
-    await onLog("stdout", `[paperclip] Starting ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`);
+    await onLog("stdout", `[todero] Starting ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`);
     const startResult = await runner.execute({
       command: shellCommand,
       args: shellCommandArgs(
@@ -1774,7 +1774,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
     message?: string;
   }> = [];
   const token = createSandboxCallbackBridgeToken(18);
-  const proxyDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-proxy-"));
+  const proxyDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-process-session-proxy-"));
   // `stop()` waits on this promise, bounded, for the wrapper's `shutdownAck`
   // event. `deliverRemoteEvent` resolves it below and never forwards the
   // event further: it is a host-internal control ack, not part of the ACP
@@ -1935,7 +1935,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await onLog("stderr", `[paperclip] ACP process session bridge poll failed: ${message}\n`);
+      await onLog("stderr", `[todero] ACP process session bridge poll failed: ${message}\n`);
       deliverRemoteEvent({ type: "error", message });
       return;
     } finally {
@@ -2017,7 +2017,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
     }), "utf8").toString("base64");
     await onLog(
       "stdout",
-      `[paperclip] Starting streamed ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`,
+      `[todero] Starting streamed ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`,
     );
     // Fire the long-lived command; do NOT await it here. `useSession` forces the
     // persistent session so the provider streams the wrapper stdout back through
@@ -2185,7 +2185,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
       if (!acknowledgedInTime) {
         await onLog(
           "stderr",
-          `[paperclip] ACP process session wrapper did not acknowledge shutdown within ${DEFAULT_PROCESS_SESSION_SHUTDOWN_WAIT_MS}ms; removing the session directory anyway.\n`,
+          `[todero] ACP process session wrapper did not acknowledge shutdown within ${DEFAULT_PROCESS_SESSION_SHUTDOWN_WAIT_MS}ms; removing the session directory anyway.\n`,
         ).catch(() => undefined);
       }
       // Unconditional: this removal runs whether or not the wrapper
@@ -2395,7 +2395,7 @@ let probeSeq = 0;
 // a poll cycle ever lists the directory during the probe's short window.
 function nextProbeFileName() {
   probeSeq += 1;
-  return ".paperclip-birthtime-probe-" + process.pid + "-" + probeSeq;
+  return ".todero-birthtime-probe-" + process.pid + "-" + probeSeq;
 }
 
 // Proves a directory's reported birthtimeMs is a real creation time, not a
@@ -3821,7 +3821,7 @@ async function closeDuplexChannelWithinBudget(
   }
 }
 
-export async function startAdapterExecutionTargetPaperclipBridge(input: {
+export async function startAdapterExecutionTargetToderoBridge(input: {
   runId: string;
   target: AdapterExecutionTarget | null | undefined;
   runtimeRootDir: string | null | undefined;
@@ -3863,8 +3863,8 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // default is a no-op recorder, so the surface stays inert until the host injects
   // a real recorder.
   duplexObservabilityRecorder?: DuplexObservabilityRecorder | null;
-}): Promise<AdapterExecutionTargetPaperclipBridgeHandle | null> {
-  if (!adapterExecutionTargetUsesPaperclipBridge(input.target)) {
+}): Promise<AdapterExecutionTargetToderoBridgeHandle | null> {
+  if (!adapterExecutionTargetUsesToderoBridge(input.target)) {
     return null;
   }
   if (!input.target || input.target.kind !== "remote") {
@@ -3875,7 +3875,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   const onLog = input.onLog ?? (async () => {});
   const hostApiToken = input.hostApiToken?.trim() ?? "";
   if (hostApiToken.length === 0) {
-    throw new Error("Sandbox bridge mode requires a host-side Paperclip API token.");
+    throw new Error("Sandbox bridge mode requires a host-side Todero API token.");
   }
   // The forward budget for one relayed request. It stays at the broker's default
   // forward budget (30 s) when the caller sets no option, so current behavior
@@ -3885,8 +3885,8 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   const runtimeRootDir =
     input.runtimeRootDir?.trim().length
       ? input.runtimeRootDir.trim()
-      : path.posix.join(target.remoteCwd, ".paperclip-runtime", input.adapterKey);
-  const bridgeRuntimeDir = path.posix.join(runtimeRootDir, "paperclip-bridge");
+      : path.posix.join(target.remoteCwd, ".todero-runtime", input.adapterKey);
+  const bridgeRuntimeDir = path.posix.join(runtimeRootDir, "todero-bridge");
   const queueDir = path.posix.join(bridgeRuntimeDir, "queue");
   const assetRemoteDir = path.posix.join(bridgeRuntimeDir, "server");
   const bridgeToken = createSandboxCallbackBridgeToken();
@@ -3894,7 +3894,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
     typeof input.maxBodyBytes === "number" && Number.isFinite(input.maxBodyBytes) && input.maxBodyBytes > 0
       ? Math.trunc(input.maxBodyBytes)
       : DEFAULT_SANDBOX_CALLBACK_BRIDGE_MAX_BODY_BYTES;
-  // The bridge worker runs inside the same process that serves the Paperclip
+  // The bridge worker runs inside the same process that serves the Todero
   // API, so forwarded sandbox calls must target the LOCAL listen origin. The
   // PAPERCLIP_RUNTIME_API_URL / PAPERCLIP_API_URL exports now prefer a
   // configured public base URL, which is the origin browsers and external
@@ -3902,11 +3902,11 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // breaks deployments whose public origin sits behind a session-gated proxy
   // (every forwarded agent API call is rejected at the edge). Server boot
   // exports PAPERCLIP_LISTEN_HOST / PAPERCLIP_LISTEN_PORT before any run
-  // executes, and resolveDefaultPaperclipApiUrl() maps wildcard listen hosts
+  // executes, and resolveDefaultToderoApiUrl() maps wildcard listen hosts
   // to the loopback address of the same family (0.0.0.0 -> 127.0.0.1,
   // :: -> [::1]), so the fallback is always loopback-reachable.
   // input.hostApiUrl stays available as an explicit override seam.
-  const hostApiUrl = input.hostApiUrl?.trim() || resolveDefaultPaperclipApiUrl();
+  const hostApiUrl = input.hostApiUrl?.trim() || resolveDefaultToderoApiUrl();
   const shellCommand = adapterExecutionTargetShellCommand(target);
   const runner = adapterExecutionTargetCommandRunner(target);
   const bridgeTimeoutMs =
@@ -3916,7 +3916,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
 
   await onLog(
     "stdout",
-    `[paperclip] Starting sandbox callback bridge for ${input.adapterKey} in ${bridgeRuntimeDir}.\n`,
+    `[todero] Starting sandbox callback bridge for ${input.adapterKey} in ${bridgeRuntimeDir}.\n`,
   );
 
   const bridgeAsset = await createSandboxCallbackBridgeAsset();
@@ -3942,7 +3942,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
   // Only intended for active debugging in trusted environments.
   const bridgeDebugEnabled = isBridgeDebugEnabled(process.env);
 
-  // One forward of a relayed sandbox request onto the existing Paperclip API
+  // One forward of a relayed sandbox request onto the existing Todero API
   // path. The forward applies the real host token and the signed run id, so the
   // token replacement and the run attribution stay in one place for both the
   // file bridge and the duplex broker. The sandbox request carries only the
@@ -3969,7 +3969,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
     if (emitDebugLog) {
       await onLog(
         "stdout",
-        `[paperclip] Bridge proxy ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
+        `[todero] Bridge proxy ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
       );
     }
     const headers = new Headers();
@@ -3978,7 +3978,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
       headers.set(key, value);
     }
     headers.set("authorization", `Bearer ${hostApiToken}`);
-    headers.set("x-paperclip-run-id", input.runId);
+    headers.set("x-todero-run-id", input.runId);
     // Abort the forward when the caller aborts the request (its per-iteration
     // timeout or watchdog fired, or the broker's forward budget ended), or after
     // the forward budget here, whichever comes first.
@@ -3998,7 +3998,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
     if (emitDebugLog) {
       await onLog(
         "stdout",
-        `[paperclip] Bridge proxy response ${response.status} for ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
+        `[todero] Bridge proxy response ${response.status} for ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
       );
     }
     // The host delivered response headers, so the response-body read starts after
@@ -4033,7 +4033,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
         status: 504,
         headers: {
           "content-type": "application/json",
-          "x-paperclip-bridge-outcome": "indeterminate",
+          "x-todero-bridge-outcome": "indeterminate",
         },
         body: JSON.stringify({
           error: error instanceof Error ? error.message : String(error),
@@ -4147,7 +4147,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
       duplexChannelOpen.fallback(reason);
       await onLog(
         "stderr",
-        `[paperclip] Could not open the sandbox duplex channel (${reason}). Using the file bridge.\n`,
+        `[todero] Could not open the sandbox duplex channel (${reason}). Using the file bridge.\n`,
       );
       channel = null;
     }
@@ -4169,7 +4169,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
         duplexChannelOpen.fallback(duplexReadinessFallbackReason(readiness.reason));
         await onLog(
           "stderr",
-          `[paperclip] Sandbox duplex readiness failed (${readiness.reason}). Using the file bridge.\n`,
+          `[todero] Sandbox duplex readiness failed (${readiness.reason}). Using the file bridge.\n`,
         );
       } else {
         // Readiness passed. The gate retained every byte that followed the
@@ -4195,7 +4195,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
           duplexChannelOpen.fallback("preface_missing");
           await onLog(
             "stderr",
-            "[paperclip] Sandbox HTTP/2 client preface did not appear inside the bounded readiness buffer (preface_missing). Using the file bridge.\n",
+            "[todero] Sandbox HTTP/2 client preface did not appear inside the bounded readiness buffer (preface_missing). Using the file bridge.\n",
           );
         } else {
           // The run disposition latch for the http2_v1 path, in the same
@@ -4219,7 +4219,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
             }
             const lossClass = anyStreamDispatched ? "post_dispatch" : "pre_dispatch";
             duplexObservability.recordLoss(lossClass, reason);
-            void onLog("stderr", `[paperclip] Sandbox HTTP/2 channel lost (${reason}). The run fails.\n`);
+            void onLog("stderr", `[todero] Sandbox HTTP/2 channel lost (${reason}). The run fails.\n`);
           };
 
           // The forward handler applies the real host token and the run id
@@ -4294,7 +4294,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
           duplexChannelOpen.ready();
           await onLog(
             "stdout",
-            "[paperclip] Sandbox HTTP/2 transport ready; serving the host-assigned origin.\n",
+            "[todero] Sandbox HTTP/2 transport ready; serving the host-assigned origin.\n",
           );
           // Stream run logs on the http2 path with the same gate and the same
           // log line as the file path. The http2 path starts no file-bridge
@@ -4315,7 +4315,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
               logsDir: duplexLogsDir,
               shellCommand,
             });
-            await onLog("stdout", "[paperclip] Sandbox run log streaming enabled for this run.\n");
+            await onLog("stdout", "[todero] Sandbox run log streaming enabled for this run.\n");
           }
           return {
             env: {
@@ -4354,7 +4354,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
       shellCommand,
     });
     // `startSandboxCallbackBridgeWorker` keeps its awaited queue-directory
-    // setup on the active `bridge.paperclip` step, and runs each request under
+    // setup on the active `bridge.todero` step, and runs each request under
     // the run parent context (see `runWithRuntimeParent` inside that function).
     // So the startup `mkdir` execs stay parented to the step, and every later
     // request `sandbox.exec` span parents to the live run span.
@@ -4394,7 +4394,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
       logsDir: sandboxCallbackBridgeDirectories(queueDir).logsDir,
       shellCommand,
     });
-    await onLog("stdout", "[paperclip] Sandbox run log streaming enabled for this run.\n");
+    await onLog("stdout", "[todero] Sandbox run log streaming enabled for this run.\n");
   }
 
   return {

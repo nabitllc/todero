@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RunProcessResult } from "@paperclipai/adapter-utils/server-utils";
+import type { RunProcessResult } from "@todero/adapter-utils/server-utils";
 
 const {
   runChildProcess,
@@ -11,7 +11,7 @@ const {
   prepareWorkspaceForSshExecution,
   restoreWorkspaceFromSshExecution,
   syncDirectoryToSsh,
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
 } = vi.hoisted(() => ({
   runChildProcess: vi.fn(async (): Promise<RunProcessResult> => ({
     exitCode: 0,
@@ -31,7 +31,7 @@ const {
   prepareWorkspaceForSshExecution: vi.fn(async () => ({ gitBacked: false })),
   restoreWorkspaceFromSshExecution: vi.fn(async () => undefined),
   syncDirectoryToSsh: vi.fn(async () => undefined),
-  startAdapterExecutionTargetPaperclipBridge: vi.fn(async () => ({
+  startAdapterExecutionTargetToderoBridge: vi.fn(async () => ({
     env: {
       PAPERCLIP_API_URL: "http://127.0.0.1:4310",
       PAPERCLIP_API_KEY: "bridge-token",
@@ -41,9 +41,9 @@ const {
   })),
 }));
 
-vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/server-utils")>(
-    "@paperclipai/adapter-utils/server-utils",
+vi.mock("@todero/adapter-utils/server-utils", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/server-utils")>(
+    "@todero/adapter-utils/server-utils",
   );
   return {
     ...actual,
@@ -53,9 +53,9 @@ vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/ssh", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/ssh")>(
-    "@paperclipai/adapter-utils/ssh",
+vi.mock("@todero/adapter-utils/ssh", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/ssh")>(
+    "@todero/adapter-utils/ssh",
   );
   return {
     ...actual,
@@ -65,13 +65,13 @@ vi.mock("@paperclipai/adapter-utils/ssh", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@todero/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/execution-target")>(
+    "@todero/adapter-utils/execution-target",
   );
   return {
     ...actual,
-    startAdapterExecutionTargetPaperclipBridge,
+    startAdapterExecutionTargetToderoBridge,
   };
 });
 
@@ -90,12 +90,12 @@ describe("claude remote execution", () => {
   });
 
   it("prepares the workspace, syncs Claude runtime assets, and restores workspace changes for remote SSH execution", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-claude-remote-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-claude-remote-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     const alternateWorkspaceDir = path.join(rootDir, "workspace-other");
     const instructionsPath = path.join(rootDir, "instructions.md");
-    const managedRemoteWorkspace = "/remote/workspace/.paperclip-runtime/runs/run-1/workspace";
+    const managedRemoteWorkspace = "/remote/workspace/.todero-runtime/runs/run-1/workspace";
     await mkdir(workspaceDir, { recursive: true });
     await mkdir(alternateWorkspaceDir, { recursive: true });
     await writeFile(instructionsPath, "Use the remote workspace.\n", "utf8");
@@ -125,27 +125,27 @@ describe("claude remote execution", () => {
         },
       },
       context: {
-        paperclipWorkspace: {
+        toderoWorkspace: {
           cwd: workspaceDir,
           source: "project_primary",
           strategy: "git_worktree",
           workspaceId: "workspace-1",
-          repoUrl: "https://github.com/paperclipai/paperclip.git",
+          repoUrl: "https://github.com/nabitllc/todero.git",
           repoRef: "main",
           branchName: "feature/remote-claude",
           worktreePath: workspaceDir,
         },
-        paperclipWorkspaces: [
+        toderoWorkspaces: [
           {
             workspaceId: "workspace-1",
             cwd: workspaceDir,
-            repoUrl: "https://github.com/paperclipai/paperclip.git",
+            repoUrl: "https://github.com/nabitllc/todero.git",
             repoRef: "main",
           },
           {
             workspaceId: "workspace-2",
             cwd: alternateWorkspaceDir,
-            repoUrl: "https://github.com/paperclipai/paperclip.git",
+            repoUrl: "https://github.com/nabitllc/todero.git",
             repoRef: "feature/other",
           },
         ],
@@ -173,11 +173,11 @@ describe("claude remote execution", () => {
     // One sync per registered runtime asset: skills and mcp-config.
     expect(syncDirectoryToSsh).toHaveBeenCalledTimes(2);
     expect(syncDirectoryToSsh).toHaveBeenCalledWith(expect.objectContaining({
-      remoteDir: `${managedRemoteWorkspace}/.paperclip-runtime/claude/skills`,
+      remoteDir: `${managedRemoteWorkspace}/.todero-runtime/claude/skills`,
       followSymlinks: true,
     }));
     expect(syncDirectoryToSsh).toHaveBeenCalledWith(expect.objectContaining({
-      remoteDir: `${managedRemoteWorkspace}/.paperclip-runtime/claude/mcp-config`,
+      remoteDir: `${managedRemoteWorkspace}/.todero-runtime/claude/mcp-config`,
       followSymlinks: true,
     }));
     expect(runChildProcess).toHaveBeenCalledTimes(1);
@@ -191,22 +191,22 @@ describe("claude remote execution", () => {
     expect(call?.[2]).not.toContain("--dangerously-skip-permissions");
     expect(call?.[2]).toContain("--append-system-prompt-file");
     expect(call?.[2]).toContain(
-      `${managedRemoteWorkspace}/.paperclip-runtime/claude/skills/agent-instructions.md`,
+      `${managedRemoteWorkspace}/.todero-runtime/claude/skills/agent-instructions.md`,
     );
     expect(call?.[2]).toContain("--add-dir");
-    expect(call?.[2]).toContain(`${managedRemoteWorkspace}/.paperclip-runtime/claude/skills`);
+    expect(call?.[2]).toContain(`${managedRemoteWorkspace}/.todero-runtime/claude/skills`);
     expect(call?.[3].env.PAPERCLIP_WORKSPACE_CWD).toBe(managedRemoteWorkspace);
     expect(call?.[3].env.PAPERCLIP_WORKSPACE_WORKTREE_PATH).toBeUndefined();
     expect(JSON.parse(call?.[3].env.PAPERCLIP_WORKSPACES_JSON ?? "[]")).toEqual([
       {
         workspaceId: "workspace-1",
         cwd: managedRemoteWorkspace,
-        repoUrl: "https://github.com/paperclipai/paperclip.git",
+        repoUrl: "https://github.com/nabitllc/todero.git",
         repoRef: "main",
       },
       {
         workspaceId: "workspace-2",
-        repoUrl: "https://github.com/paperclipai/paperclip.git",
+        repoUrl: "https://github.com/nabitllc/todero.git",
         repoRef: "feature/other",
       },
     ]);
@@ -216,7 +216,7 @@ describe("claude remote execution", () => {
     expect(call?.[3].env.RANDOM_WORKSPACE_CWD).toBe(managedRemoteWorkspace);
     expect(call?.[3].env.OTHER_ENV).toBe(workspaceDir);
     expect(call?.[3].remoteExecution?.remoteCwd).toBe(managedRemoteWorkspace);
-    expect(startAdapterExecutionTargetPaperclipBridge).toHaveBeenCalledTimes(1);
+    expect(startAdapterExecutionTargetToderoBridge).toHaveBeenCalledTimes(1);
     expect(restoreWorkspaceFromSshExecution).toHaveBeenCalledTimes(1);
     expect(restoreWorkspaceFromSshExecution).toHaveBeenCalledWith(expect.objectContaining({
       localDir: workspaceDir,
@@ -225,7 +225,7 @@ describe("claude remote execution", () => {
   });
 
   it("does not resume saved Claude sessions for remote SSH execution without a matching remote identity", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-claude-remote-resume-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-claude-remote-resume-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     await mkdir(workspaceDir, { recursive: true });
@@ -252,7 +252,7 @@ describe("claude remote execution", () => {
         command: "claude",
       },
       context: {
-        paperclipWorkspace: {
+        toderoWorkspace: {
           cwd: workspaceDir,
           source: "project_primary",
         },
@@ -278,10 +278,10 @@ describe("claude remote execution", () => {
   });
 
   it("resumes saved Claude sessions for remote SSH execution when the remote identity matches", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-claude-remote-resume-match-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-claude-remote-resume-match-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
-    const managedRemoteWorkspace = "/remote/workspace/.paperclip-runtime/runs/run-ssh-resume/workspace";
+    const managedRemoteWorkspace = "/remote/workspace/.todero-runtime/runs/run-ssh-resume/workspace";
     await mkdir(workspaceDir, { recursive: true });
 
     await execute({
@@ -313,7 +313,7 @@ describe("claude remote execution", () => {
         command: "claude",
       },
       context: {
-        paperclipWorkspace: {
+        toderoWorkspace: {
           cwd: workspaceDir,
           source: "project_primary",
         },
@@ -340,7 +340,7 @@ describe("claude remote execution", () => {
   });
 
   it("forwards the duplex_channel_lost transport code on the unparsed Claude result path", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-claude-remote-duplex-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-claude-remote-duplex-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     await mkdir(workspaceDir, { recursive: true });
@@ -355,7 +355,7 @@ describe("claude remote execution", () => {
       timedOut: false,
       stdout: "not a Claude JSON result\n",
       stderr:
-        "[paperclip] The sandbox duplex control channel was lost (provider_exit) before the run completed.\n",
+        "[todero] The sandbox duplex control channel was lost (provider_exit) before the run completed.\n",
       pid: 123,
       startedAt: new Date().toISOString(),
       errorCode: "duplex_channel_lost",
@@ -380,7 +380,7 @@ describe("claude remote execution", () => {
         command: "claude",
       },
       context: {
-        paperclipWorkspace: {
+        toderoWorkspace: {
           cwd: workspaceDir,
           source: "project_primary",
         },

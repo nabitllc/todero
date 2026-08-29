@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import type { agents } from "@paperclipai/db";
-import { sessionCodec as codexSessionCodec } from "@paperclipai/adapter-codex-local/server";
+import type { agents } from "@todero/db";
+import { sessionCodec as codexSessionCodec } from "@todero/adapter-codex-local/server";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import {
   applyPersistedExecutionWorkspaceConfig,
@@ -41,7 +41,7 @@ import {
   stripWorkspaceRuntimeFromExecutionRunConfig,
   shouldResetTaskSessionForModelChange,
   stripConfiguredModelFromSessionParams,
-  stripPaperclipSessionMetadataFromSessionParams,
+  stripToderoSessionMetadataFromSessionParams,
   normalizeSessionParams,
   shouldResetTaskSessionForWake,
   scrubGitCredentialText,
@@ -135,7 +135,7 @@ async function runGit(cwd: string, args: string[]) {
 }
 
 async function createGitCheckout(options: { withRemote: boolean }) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-push-preflight-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-push-preflight-"));
   await runGit(root, ["init"]);
   if (options.withRemote) {
     await runGit(root, ["remote", "add", "origin", "https://github.com/example/repo.git"]);
@@ -378,13 +378,13 @@ describe("assertGitSensitiveAdapterWorkspaceValid", () => {
 
   it("rejects a git worktree persisted workspace when the checked-out branch differs from the recorded branch", async () => {
     const repoRoot = await createGitCheckout({ withRemote: false });
-    const worktreeParent = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-branch-worktree-"));
+    const worktreeParent = await fs.mkdtemp(path.join(os.tmpdir(), "todero-branch-worktree-"));
     const worktreePath = path.join(worktreeParent, "workspace");
     const recordedBranch = "PAP-1-recorded-branch";
     const actualBranch = "PAP-1-push-pr-head";
     try {
       await runGit(repoRoot, ["config", "user.email", "test@example.com"]);
-      await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+      await runGit(repoRoot, ["config", "user.name", "Todero Test"]);
       await fs.writeFile(path.join(repoRoot, "README.md"), "initial\n", "utf8");
       await runGit(repoRoot, ["add", "README.md"]);
       await runGit(repoRoot, ["commit", "-m", "Initial commit"]);
@@ -423,7 +423,7 @@ describe("assertGitSensitiveAdapterWorkspaceValid", () => {
 
   it("rejects a workspace-linked issue when adapter cwd has no git metadata", async () => {
     const input = buildWorkspaceValidationInput();
-    const cwd = "/tmp/paperclip-workspace-without-git-metadata";
+    const cwd = "/tmp/todero-workspace-without-git-metadata";
 
     await expectWorkspaceValidationFailure(
       buildWorkspaceValidationInput({
@@ -530,7 +530,7 @@ describe("assertGitWorktreeBaseWorkspaceReady", () => {
   });
 
   it("rejects isolated git worktrees when the resolved base is not a git checkout", async () => {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-non-git-workspace-"));
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "todero-non-git-workspace-"));
     try {
       await expect(assertGitWorktreeBaseWorkspaceReady({
         requestedExecutionWorkspaceMode: "isolated_workspace",
@@ -619,7 +619,7 @@ describe("assertGitWorktreeBaseWorkspaceReady", () => {
   it("keeps the not-a-git-checkout reason for a fallback with no failed materialization attempt", async () => {
     // A configured path that is simply unavailable is not a clone failure; the message must
     // not steer the operator toward repairing clone access.
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-unavailable-path-fallback-"));
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "todero-unavailable-path-fallback-"));
     try {
       await expect(assertGitWorktreeBaseWorkspaceReady({
         requestedExecutionWorkspaceMode: "isolated_workspace",
@@ -744,7 +744,7 @@ describe("assertGitWorktreeBaseWorkspaceReady", () => {
   });
 
   it("does not require git for shared project-primary workspaces", async () => {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-shared-workspace-"));
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "todero-shared-workspace-"));
     try {
       await expect(assertGitWorktreeBaseWorkspaceReady({
         requestedExecutionWorkspaceMode: "shared_workspace",
@@ -858,7 +858,7 @@ describe("scrubGitCredentialText", () => {
 describe("buildAnchorFallbackWorkspaceNotes", () => {
   it("reports materialization failures ahead of the generic no-cwd note", () => {
     expect(buildAnchorFallbackWorkspaceNotes({
-      fallbackCwd: "/paperclip/workspaces/agent-1",
+      fallbackCwd: "/todero/workspaces/agent-1",
       preferredWorkspaceWarning: null,
       materializationFailures: [{
         projectWorkspaceId: "workspace-1",
@@ -868,7 +868,7 @@ describe("buildAnchorFallbackWorkspaceNotes", () => {
       missingProjectCwds: [],
       hasConfiguredProjectCwd: false,
     })).toEqual([
-      'Failed to prepare the project workspace checkout: fatal: could not read Username. Using fallback workspace "/paperclip/workspaces/agent-1" for this run.',
+      'Failed to prepare the project workspace checkout: fatal: could not read Username. Using fallback workspace "/todero/workspaces/agent-1" for this run.',
     ]);
   });
 
@@ -978,7 +978,7 @@ describe("requiresPushCapabilityPreflight", () => {
     expect(requiresPushCapabilityPreflight({
       adapterType: "codex_local",
       issueId: "issue-1",
-      explicitRunScopedSkillKeys: ["paperclipai/bundled/software-development/github-pr-workflow"],
+      explicitRunScopedSkillKeys: ["todero/bundled/software-development/github-pr-workflow"],
     })).toBe(true);
 
     expect(requiresPushCapabilityPreflight({
@@ -990,7 +990,7 @@ describe("requiresPushCapabilityPreflight", () => {
     expect(requiresPushCapabilityPreflight({
       adapterType: "cursor-cloud",
       issueId: "issue-1",
-      explicitRunScopedSkillKeys: ["paperclipai/bundled/software-development/github-pr-workflow"],
+      explicitRunScopedSkillKeys: ["todero/bundled/software-development/github-pr-workflow"],
     })).toBe(false);
   });
 });
@@ -1402,7 +1402,7 @@ function buildWorkspaceConfigMetadata(
       type: "git_worktree",
       baseRef: "origin/main",
       branchTemplate: "{{issue.identifier}}-{{slug}}",
-      worktreeParentDir: ".paperclip/worktrees",
+      worktreeParentDir: ".todero/worktrees",
     },
     repoUrl: "https://github.com/example/repo.git",
     repoRef: "origin/main",
@@ -1538,7 +1538,7 @@ describe("effective run execution workspace config freshness", () => {
           type: "git_worktree",
           baseRef: "origin/main",
           branchTemplate: "custom-{{issue.identifier}}",
-          worktreeParentDir: ".paperclip/worktrees",
+          worktreeParentDir: ".todero/worktrees",
         },
       }),
     },
@@ -1556,7 +1556,7 @@ describe("effective run execution workspace config freshness", () => {
           type: "git_worktree",
           baseRef: "origin/release",
           branchTemplate: "{{issue.identifier}}-{{slug}}",
-          worktreeParentDir: ".paperclip/worktrees",
+          worktreeParentDir: ".todero/worktrees",
         },
       }),
     },
@@ -1597,7 +1597,7 @@ describe("effective run execution workspace config freshness", () => {
         type: "git_worktree",
         baseRef: "origin/release",
         branchTemplate: "{{issue.identifier}}-{{slug}}",
-        worktreeParentDir: ".paperclip/worktrees",
+        worktreeParentDir: ".todero/worktrees",
       },
       configSnapshot: {
         provisionCommand: "pnpm install --frozen-lockfile",
@@ -1661,7 +1661,7 @@ describe("effective run execution workspace config freshness", () => {
         type: "git_worktree",
         baseRef: "origin/release",
         branchTemplate: "{{issue.identifier}}-{{slug}}",
-        worktreeParentDir: ".paperclip/worktrees",
+        worktreeParentDir: ".todero/worktrees",
       },
     });
     const decision = resolveExecutionWorkspaceConfigFreshness({
@@ -2142,9 +2142,9 @@ async function buildSessionConfigMetadata(
     ],
     runtimeSkills: [
       {
-        key: "paperclip",
-        runtimeName: "paperclip",
-        source: "/tmp/paperclip/runtime-skills/paperclip",
+        key: "todero",
+        runtimeName: "todero",
+        source: "/tmp/todero/runtime-skills/todero",
         versionId: null,
         currentVersionId: "skill-version-1",
         sourceStatus: "available",
@@ -2381,9 +2381,9 @@ describe("effective run session config freshness", () => {
         metadata: await buildSessionConfigMetadata({
           runtimeSkills: [
             {
-              key: "paperclip",
-              runtimeName: "paperclip",
-              source: "/tmp/paperclip/runtime-skills/paperclip",
+              key: "todero",
+              runtimeName: "todero",
+              source: "/tmp/todero/runtime-skills/todero",
               versionId: null,
               currentVersionId: "skill-version-2",
               sourceStatus: "available",
@@ -2408,7 +2408,7 @@ describe("effective run session config freshness", () => {
   });
 
   it("detects instructions content drift without storing the contents", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-session-fingerprint-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-session-fingerprint-"));
     const instructionsPath = path.join(root, "AGENTS.md");
     await fs.writeFile(instructionsPath, "Version one instructions.\n", "utf8");
     const base = await buildSessionConfigMetadata({
@@ -2446,7 +2446,7 @@ describe("effective run session config freshness", () => {
   });
 
   it("does not read unbounded legacy instructions paths for config fingerprints", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-session-fingerprint-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-session-fingerprint-"));
     const instructionsPath = path.join(root, "AGENTS.md");
     await fs.writeFile(instructionsPath, "Legacy direct-path instructions.\n", "utf8");
     const metadata = await buildSessionConfigMetadata({
@@ -2510,10 +2510,10 @@ describe("stripConfiguredModelFromSessionParams", () => {
   });
 });
 
-describe("stripPaperclipSessionMetadataFromSessionParams", () => {
-  it("removes all internal Paperclip session metadata before adapter invocation", () => {
+describe("stripToderoSessionMetadataFromSessionParams", () => {
+  it("removes all internal Todero session metadata before adapter invocation", () => {
     expect(
-      stripPaperclipSessionMetadataFromSessionParams({
+      stripToderoSessionMetadataFromSessionParams({
         sessionId: "thread-1",
         cwd: "/tmp/project",
         __paperclipConfiguredModel: "gpt-5.4-mini",
@@ -2581,7 +2581,7 @@ describe("comment wake batching", () => {
         wakeReason: "issue_commented",
         wakeCommentId: "comment-1",
         wakeCommentIds: ["comment-1"],
-        paperclipWake: {
+        toderoWake: {
           latestCommentId: "comment-1",
         },
       },
@@ -2595,7 +2595,7 @@ describe("comment wake batching", () => {
     expect(extractWakeCommentIds(merged)).toEqual(["comment-1", "comment-2"]);
     expect(merged.commentId).toBe("comment-2");
     expect(merged.wakeCommentId).toBe("comment-2");
-    expect(merged.paperclipWake).toBeUndefined();
+    expect(merged.toderoWake).toBeUndefined();
   });
 
   it("keeps forceFreshSession sticky once any coalesced wake requests it", () => {
@@ -2927,7 +2927,7 @@ describe("formatRuntimeWorkspaceWarningLog", () => {
   it("emits informational workspace warnings on stdout", () => {
     expect(formatRuntimeWorkspaceWarningLog("Using fallback workspace")).toEqual({
       stream: "stdout",
-      chunk: "[paperclip] Using fallback workspace\n",
+      chunk: "[todero] Using fallback workspace\n",
     });
   });
 });
@@ -2969,7 +2969,7 @@ describe("prioritizeProjectWorkspaceCandidatesForRun", () => {
 });
 
 describe("parseSessionCompactionPolicy", () => {
-  it("disables Paperclip-managed rotation by default for codex and claude local", () => {
+  it("disables Todero-managed rotation by default for codex and claude local", () => {
     expect(parseSessionCompactionPolicy(buildAgent("codex_local"))).toEqual({
       enabled: true,
       maxSessionRuns: 0,

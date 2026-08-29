@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   assets,
@@ -11,7 +11,7 @@ import {
   issueWorkProducts,
   issues,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   COMPANY_SEARCH_MAX_LIMIT,
   COMPANY_SEARCH_MAX_OFFSET,
@@ -35,7 +35,7 @@ import {
   type CompanySearchSnippet,
   type CompanySearchSort,
   type CompanySearchUpdatedWithinOption,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { companyArtifactsService } from "./company-artifacts.js";
 import { companySearchExtractService } from "./company-search-extract.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
@@ -1139,7 +1139,7 @@ export function companySearchService(db: Db) {
         const workProductConditions = [
           eq(issueWorkProducts.companyId, companyId),
           eq(issueWorkProducts.type, "artifact"),
-          eq(issueWorkProducts.provider, "paperclip"),
+          eq(issueWorkProducts.provider, "todero"),
           sql<boolean>`(
             ${issueWorkProducts.title} ILIKE ${containsPattern} ESCAPE '\\'
             OR coalesce(${issueWorkProducts.summary}, '') ILIKE ${containsPattern} ESCAPE '\\'

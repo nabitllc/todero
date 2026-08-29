@@ -16,7 +16,7 @@ let originalHome: string | undefined;
 
 beforeAll(async () => {
   originalHome = process.env.PAPERCLIP_HOME;
-  tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-managed-clone-"));
+  tempHome = await fs.mkdtemp(path.join(os.tmpdir(), "todero-managed-clone-"));
   process.env.PAPERCLIP_HOME = tempHome;
 });
 
@@ -27,10 +27,10 @@ afterAll(async () => {
 });
 
 async function createLocalSourceRepo() {
-  const sourceRepo = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-clone-source-"));
+  const sourceRepo = await fs.mkdtemp(path.join(os.tmpdir(), "todero-clone-source-"));
   await execFile("git", ["init"], { cwd: sourceRepo });
-  await execFile("git", ["config", "user.email", "paperclip@example.com"], { cwd: sourceRepo });
-  await execFile("git", ["config", "user.name", "Paperclip Test"], { cwd: sourceRepo });
+  await execFile("git", ["config", "user.email", "todero@example.com"], { cwd: sourceRepo });
+  await execFile("git", ["config", "user.name", "Todero Test"], { cwd: sourceRepo });
   await fs.writeFile(path.join(sourceRepo, "README.md"), "hello\n", "utf8");
   await execFile("git", ["add", "README.md"], { cwd: sourceRepo });
   await execFile("git", ["commit", "-m", "init"], { cwd: sourceRepo });
@@ -76,7 +76,7 @@ describe("ensureManagedProjectWorkspace clone credentials", () => {
     // The failure here is a missing local path, not an auth rejection — the error must not
     // claim the credential "was rejected". Attribution for genuinely auth-shaped failures is
     // covered by the describeGitAuthFailure unit tests in git-credentials.test.ts.
-    const missingRepo = path.join(os.tmpdir(), "paperclip-definitely-missing", "repo.git");
+    const missingRepo = path.join(os.tmpdir(), "todero-definitely-missing", "repo.git");
     const resolveGitAuth = vi.fn(async () => ({
       configArgs: [],
       env: { [GIT_CREDENTIAL_TOKEN_ENV_KEY]: "token", GIT_TERMINAL_PROMPT: "0" },
@@ -127,7 +127,7 @@ describe("ensureManagedProjectWorkspace clone credentials", () => {
   it("does not mention credentials when an unauthenticated clone fails for non-auth reasons", async () => {
     // The Settings → Secrets hint is reserved for auth-shaped failures (covered in
     // git-credentials.test.ts); a plain missing-repo failure must not suggest credentials.
-    const missingRepo = path.join(os.tmpdir(), "paperclip-definitely-missing", "repo.git");
+    const missingRepo = path.join(os.tmpdir(), "todero-definitely-missing", "repo.git");
     const error = await ensureManagedProjectWorkspace({
       companyId: "company-noauthfail",
       projectId: "project-1",
@@ -141,7 +141,7 @@ describe("ensureManagedProjectWorkspace clone credentials", () => {
   });
 
   it("leaves neither the target nor temp directories behind when the clone fails", async () => {
-    const missingRepo = path.join(os.tmpdir(), "paperclip-definitely-missing", "repo.git");
+    const missingRepo = path.join(os.tmpdir(), "todero-definitely-missing", "repo.git");
     const companyId = "company-cleanup";
     const projectId = "project-1";
     await expect(ensureManagedProjectWorkspace({

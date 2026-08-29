@@ -8,7 +8,7 @@ import {
   RotateCcw,
   XCircle,
 } from "lucide-react";
-import type { ConnectionIntentInteraction } from "@paperclipai/shared";
+import type { ConnectionIntentInteraction } from "@todero/shared";
 import { connectionIntentsApi } from "@/api/connection-intents";
 import { AppLogo } from "@/pages/apps/AppLogo";
 import { Button } from "@/components/ui/button";

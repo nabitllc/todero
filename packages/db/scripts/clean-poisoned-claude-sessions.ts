@@ -14,12 +14,12 @@
  *
  * Usage:
  *   tsx packages/db/scripts/clean-poisoned-claude-sessions.ts \
- *     --config /path/to/paperclip/config.json \
+ *     --config /path/to/todero/config.json \
  *     [--claude-config-dir ~/.claude] \
  *     [--dry-run] [--json]
  *
- * Or in a Paperclip checkout shell:
- *   pnpm --filter @paperclipai/db exec tsx scripts/clean-poisoned-claude-sessions.ts --dry-run
+ * Or in a Todero checkout shell:
+ *   pnpm --filter @todero/db exec tsx scripts/clean-poisoned-claude-sessions.ts --dry-run
  *
  * Exits 0 on success even when nothing was healed. Idempotent.
  */
@@ -193,7 +193,7 @@ const USAGE = `Usage:
   tsx packages/db/scripts/clean-poisoned-claude-sessions.ts [flags]
 
 Flags:
-  --config <path>            Path to paperclip config.json (defaults to
+  --config <path>            Path to todero config.json (defaults to
                              $PAPERCLIP_HOME/instances/default/config.json or
                              the standard locations).
   --database-url <url>       Override DB connection string entirely.
@@ -220,7 +220,7 @@ function readDatabaseUrlFromConfig(configPath: string): string {
     return parsed.database.connectionString;
   }
   const port = parsed.database?.embeddedPostgresPort ?? 54329;
-  return `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+  return `postgres://todero:todero@127.0.0.1:${port}/todero`;
 }
 
 function defaultConfigPath(): string | null {
@@ -229,7 +229,7 @@ function defaultConfigPath(): string | null {
   if (process.env.PAPERCLIP_HOME) {
     candidates.push(path.join(process.env.PAPERCLIP_HOME, "config.json"));
   }
-  candidates.push(path.join(home, ".paperclip", "instances", "default", "config.json"));
+  candidates.push(path.join(home, ".todero", "instances", "default", "config.json"));
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
@@ -289,7 +289,7 @@ async function main(argv: string[]): Promise<void> {
     (configPath ? readDatabaseUrlFromConfig(configPath) : null);
   if (!databaseUrl) {
     throw new Error(
-      "Unable to resolve database URL. Pass --database-url or --config <paperclip config.json>.",
+      "Unable to resolve database URL. Pass --database-url or --config <todero config.json>.",
     );
   }
   const claudeConfigDir = resolveClaudeConfigDir(process.env, args.claudeConfigDir ?? undefined);

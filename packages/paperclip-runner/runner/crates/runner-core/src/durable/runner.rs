@@ -494,7 +494,7 @@ mod tests {
 
     fn command(command_type: &str) -> Command {
         Command {
-            schema: "paperclip.prp.command.v1".to_owned(),
+            schema: "todero.prp.command.v1".to_owned(),
             command_id: "command_1".to_owned(),
             controller_seq: 1,
             command_type: command_type.to_owned(),

@@ -23,11 +23,11 @@
 
 import type {
   AdapterExecutionTarget,
-  AdapterExecutionTargetPaperclipBridgeHandle,
+  AdapterExecutionTargetToderoBridgeHandle,
   AdapterExecutionTargetProcessSessionBridgeHandle,
   AdapterManagedRuntimeAsset,
   PreparedAdapterExecutionTargetRuntime,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 import type {
   AcpRunContext,
   AcquiredRunResources,
@@ -130,28 +130,28 @@ export interface SandboxRunSiteOptions {
   readonly publishStagedProjectHints: (stagedProjectDirs: Record<string, string>) => void;
   readonly onReuseLog: () => Promise<void>;
 
-  /** Start the host-side paperclip callback bridge. */
-  readonly startPaperclipBridge: (
+  /** Start the host-side todero callback bridge. */
+  readonly startToderoBridge: (
     runtimeRootDir: string | null,
-  ) => Promise<AdapterExecutionTargetPaperclipBridgeHandle | null>;
+  ) => Promise<AdapterExecutionTargetToderoBridgeHandle | null>;
   /** Start the host-side process-session bridge with a deferred launch env. */
   readonly startProcessSessionBridge: (input: {
     runtimeRootDir: string | null;
     launchEnv: () => Promise<Record<string, string>>;
   }) => Promise<AdapterExecutionTargetProcessSessionBridgeHandle | null>;
   /** Wrap each concurrent bridge start in the run's startup step timer. */
-  readonly measureBridgeStep: <T>(step: "bridge.paperclip" | "bridge.process-session", run: () => Promise<T>) => Promise<T>;
+  readonly measureBridgeStep: <T>(step: "bridge.todero" | "bridge.process-session", run: () => Promise<T>) => Promise<T>;
   /**
    * Finalize the run's branded launch environment from the bridge contribution.
    * The engine owns `finalizeLaunchEnvironment`, so it stays the sole consumer of
    * a contribution; the site calls this capability at the sequencing point.
    */
   readonly finalizeLaunchEnv: (contributions: readonly LaunchEnvironmentContribution[]) => Record<string, string>;
-  readonly onPaperclipBridgeLog: () => Promise<void>;
+  readonly onToderoBridgeLog: () => Promise<void>;
 
   /** Stop both bridges and run the managed-home copy-back on teardown. */
   readonly stopBridges: (input: {
-    controlBridge: AdapterExecutionTargetPaperclipBridgeHandle | null;
+    controlBridge: AdapterExecutionTargetToderoBridgeHandle | null;
     agentBridge: AdapterExecutionTargetProcessSessionBridgeHandle | null;
   }) => Promise<void>;
 }
@@ -174,12 +174,12 @@ export interface SandboxRunSite {
   /** The staged workspace the run installed or reused, or null before `placeWorkspace`. */
   readonly staged: StagedWorkspace | null;
   /**
-   * The paperclip callback bridge the run started, or null before
+   * The todero callback bridge the run started, or null before
    * `startTransport` or on the host lane. `startTransport` sets it before it
    * rethrows a partial-bring-up failure, so an abandon path can stop the bridge
    * that started when its sibling threw.
    */
-  readonly controlBridge: AdapterExecutionTargetPaperclipBridgeHandle | null;
+  readonly controlBridge: AdapterExecutionTargetToderoBridgeHandle | null;
   /** The process-session bridge the run started, or null before `startTransport`. */
   readonly agentBridge: AdapterExecutionTargetProcessSessionBridgeHandle | null;
   /**
@@ -213,7 +213,7 @@ export function createSandboxRunSite(options: SandboxRunSiteOptions): SandboxRun
   // a run keeps its lease across its whole lifetime.
   let leaseRelease: (() => void) | null = null;
   let staged: StagedWorkspace | null = null;
-  let controlBridge: AdapterExecutionTargetPaperclipBridgeHandle | null = null;
+  let controlBridge: AdapterExecutionTargetToderoBridgeHandle | null = null;
   let agentBridge: AdapterExecutionTargetProcessSessionBridgeHandle | null = null;
 
   return {
@@ -329,29 +329,29 @@ export function createSandboxRunSite(options: SandboxRunSiteOptions): SandboxRun
     async startTransport(): Promise<SandboxRunSiteTransport> {
       // Bring up both host-side bridges concurrently. Their remote subtrees are
       // disjoint, so their env-independent setup overlaps. The one real
-      // dependency — the paperclip bridge's returned env must reach the
+      // dependency — the todero bridge's returned env must reach the
       // process-session launch — is sequenced by `launchEnv`, a memoized thunk the
       // process-session bridge awaits right before its launch.
       const stagedRootDir = staged?.stagedRuntime.runtimeRootDir ?? null;
-      const paperclipStart = options.measureBridgeStep("bridge.paperclip", () =>
-        options.startPaperclipBridge(stagedRootDir),
+      const toderoStart = options.measureBridgeStep("bridge.todero", () =>
+        options.startToderoBridge(stagedRootDir),
       );
-      // The single sequencing point (paperclip env → process-session launch),
+      // The single sequencing point (todero env → process-session launch),
       // memoized so the merge runs exactly once whether the process-session bridge
       // consumes it at launch or `startTransport` finalizes it below.
       let launchEnvPromise: Promise<Record<string, string>> | null = null;
       let launchEnv: Record<string, string> = {};
       const finalizeLaunchEnv = (): Promise<Record<string, string>> =>
         (launchEnvPromise ??= (async () => {
-          const paperclip = await paperclipStart;
-          // The paperclip bridge token is run-scoped: it lives for this run only and
+          const todero = await toderoStart;
+          // The todero bridge token is run-scoped: it lives for this run only and
           // never enters a reuse payload (Amendment B). The site hands it to the
           // engine's `finalizeLaunchEnv`, the sole consumer of a contribution, and
           // retains nothing.
           const contributions: LaunchEnvironmentContribution[] = [];
-          if (paperclip) {
-            contributions.push({ scope: "run", env: paperclip.env } as unknown as RunScopedContribution);
-            await options.onPaperclipBridgeLog();
+          if (todero) {
+            contributions.push({ scope: "run", env: todero.env } as unknown as RunScopedContribution);
+            await options.onToderoBridgeLog();
           }
           launchEnv = options.finalizeLaunchEnv(contributions);
           return launchEnv;
@@ -360,12 +360,12 @@ export function createSandboxRunSite(options: SandboxRunSiteOptions): SandboxRun
         options.startProcessSessionBridge({ runtimeRootDir: stagedRootDir, launchEnv: finalizeLaunchEnv }),
       );
       // Settle BOTH starts, so a partial failure can stop whichever bridge started.
-      const [paperclip, processSession] = await Promise.allSettled([paperclipStart, processSessionStart]);
-      controlBridge = paperclip.status === "fulfilled" ? paperclip.value : null;
+      const [todero, processSession] = await Promise.allSettled([toderoStart, processSessionStart]);
+      controlBridge = todero.status === "fulfilled" ? todero.value : null;
       agentBridge = processSession.status === "fulfilled" ? processSession.value : null;
       const failure =
-        paperclip.status === "rejected"
-          ? paperclip.reason
+        todero.status === "rejected"
+          ? todero.reason
           : processSession.status === "rejected"
             ? processSession.reason
             : null;
@@ -412,7 +412,7 @@ export function createSandboxRunSite(options: SandboxRunSiteOptions): SandboxRun
       return staged;
     },
 
-    get controlBridge(): AdapterExecutionTargetPaperclipBridgeHandle | null {
+    get controlBridge(): AdapterExecutionTargetToderoBridgeHandle | null {
       return controlBridge;
     },
 

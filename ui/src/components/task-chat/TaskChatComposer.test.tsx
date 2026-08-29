@@ -4,7 +4,7 @@ import { StrictMode, type ReactElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildAgentMentionHref, buildSkillMentionHref } from "@paperclipai/shared";
+import { buildAgentMentionHref, buildSkillMentionHref } from "@todero/shared";
 import { TaskChatComposer } from "./TaskChatComposer";
 import { DRAFT_DEBOUNCE_MS } from "../../lib/composer-draft";
 
@@ -261,7 +261,7 @@ describe("TaskChatComposer", () => {
   it("scopes the wrapping placeholder override to the task-chat composer", () => {
     render(<TaskChatComposer onAdd={vi.fn()} workMode="standard" />);
 
-    expect(container.firstElementChild?.classList).toContain("paperclip-task-chat-composer");
+    expect(container.firstElementChild?.classList).toContain("todero-task-chat-composer");
   });
 
   it("reserves enough mobile editor height for a wrapped two-line placeholder", () => {

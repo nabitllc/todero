@@ -41,7 +41,7 @@ const apiBase = apiUrl.replace(/\/$/, "").replace(/\/api$/, "");
 const headers = {
   Authorization: `Bearer ${apiKey}`,
   "Content-Type": "application/json",
-  ...(process.env.PAPERCLIP_RUN_ID ? { "X-Paperclip-Run-Id": process.env.PAPERCLIP_RUN_ID } : {}),
+  ...(process.env.PAPERCLIP_RUN_ID ? { "X-Todero-Run-Id": process.env.PAPERCLIP_RUN_ID } : {}),
 };
 
 let failed = false;

@@ -84,7 +84,7 @@ describe("docker-entrypoint.sh", () => {
     expect(calls).not.toContain("chown");
   });
 
-  it("remaps the node user and chowns /paperclip before gosu when root requests a different UID/GID", async () => {
+  it("remaps the node user and chowns /todero before gosu when root requests a different UID/GID", async () => {
     // The stubbed node uid stays 1000 while the stat probe reports the old
     // ownership, modelling the post-remap mismatch that must trigger chown.
     installStubs({ uid: 0, gid: 0, homeMismatch: true });

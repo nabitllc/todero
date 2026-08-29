@@ -1,17 +1,17 @@
 import { Router, type Request, type Response } from "express";
 import { and, desc, eq, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agents, toolApplications, toolCallEvents, toolConnections, toolInvocations } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { agents, toolApplications, toolCallEvents, toolConnections, toolInvocations } from "@todero/db";
 import {
   humanizeConnectionDisplayName,
   type PermissionKey,
   type ToolConnectionLifecycleEventType,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   createToolMcpGatewaySchema,
   createToolMcpGatewayTokenSchema,
   updateToolMcpGatewaySchema,
-} from "@paperclipai/shared/validators/tool-access";
+} from "@todero/shared/validators/tool-access";
 import { assertBoard, assertBoardOrAgent, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { ToolGatewayHttpError, type ToolGatewayService } from "../services/tool-gateway.js";
 import { forbidden, HttpError } from "../errors.js";
@@ -37,7 +37,7 @@ const TOOL_GATEWAY_WINDOWS: Record<string, number | null> = {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function gatewayToken(req: { header(name: string): string | undefined }) {
-  return req.header("x-paperclip-tool-gateway-token")?.trim() || null;
+  return req.header("x-todero-tool-gateway-token")?.trim() || null;
 }
 
 function bearerToken(req: { header(name: string): string | undefined }) {
@@ -82,7 +82,7 @@ async function handleMcpGatewayProtocol(
         result: {
           protocolVersion: "2025-03-26",
           capabilities: { tools: {} },
-          serverInfo: { name: "Paperclip MCP Gateway", version: "1.0.0" },
+          serverInfo: { name: "Todero MCP Gateway", version: "1.0.0" },
         },
       });
       return;

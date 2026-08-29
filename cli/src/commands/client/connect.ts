@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import type { Agent, Company } from "@paperclipai/shared";
-import { createAgentKeySchema, createBoardApiKeySchema } from "@paperclipai/shared";
+import type { Agent, Company } from "@todero/shared";
+import { createAgentKeySchema, createBoardApiKeySchema } from "@todero/shared";
 import { loginBoardCli } from "../../client/board-auth.js";
-import { PaperclipApiClient } from "../../client/http.js";
+import { ToderoApiClient } from "../../client/http.js";
 import { resolveProfile, readContext, setCurrentProfile, upsertProfile } from "../../client/context.js";
 import {
   addCommonClientOptions,
@@ -55,16 +55,16 @@ export function registerConnectCommand(program: Command): void {
 
 async function connectWizard(opts: ConnectOptions) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("`paperclipai connect` is interactive. For scripts, pass --api-base/--api-key or use context set/token commands.");
+    throw new Error("`todero connect` is interactive. For scripts, pass --api-base/--api-key or use context set/token commands.");
   }
 
-  p.intro(pc.bgCyan(pc.black(" paperclipai connect ")));
+  p.intro(pc.bgCyan(pc.black(" todero connect ")));
 
   const context = readContext(opts.context);
   const resolvedProfile = resolveProfile(context, opts.profile);
   const initialApiBase = resolveApiBase(opts, resolvedProfile.profile);
   const apiBaseInput = await p.text({
-    message: "Paperclip API base",
+    message: "Todero API base",
     initialValue: initialApiBase,
     placeholder: "http://localhost:3100",
   });
@@ -77,9 +77,9 @@ async function connectWizard(opts: ConnectOptions) {
     apiBase,
     requestedAccess: "board",
     requestedCompanyId: opts.companyId ?? resolvedProfile.profile.companyId ?? null,
-    command: "paperclipai connect",
+    command: "todero connect",
   });
-  const boardApi = new PaperclipApiClient({ apiBase, apiKey: boardLogin.token });
+  const boardApi = new ToderoApiClient({ apiBase, apiKey: boardLogin.token });
   const companies = (await boardApi.get<Company[]>("/api/companies")) ?? [];
 
   const persona = await choosePersona(opts.persona);
@@ -157,7 +157,7 @@ async function connectWizard(opts: ConnectOptions) {
 }
 
 async function verifyHealth(apiBase: string): Promise<void> {
-  const api = new PaperclipApiClient({ apiBase });
+  const api = new ToderoApiClient({ apiBase });
   await api.get("/api/health");
 }
 

@@ -5,7 +5,7 @@ import {
   appSupportsCatalogSetup,
   getAppDefinitionForUrl,
   getAppStoreDefinition,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { useNavigate } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { useCompany } from "@/context/CompanyContext";

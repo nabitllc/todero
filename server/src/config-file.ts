@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import {
-  findPaperclipConfigKeyWarnings,
-  paperclipConfigSchema,
-  type PaperclipConfig,
-} from "@paperclipai/shared";
+  findToderoConfigKeyWarnings,
+  toderoConfigSchema,
+  type ToderoConfig,
+} from "@todero/shared";
 import { ZodError } from "zod";
-import { resolvePaperclipConfigPath } from "./paths.js";
+import { resolveToderoConfigPath } from "./paths.js";
 
 function formatConfigValidationError(error: ZodError): string {
   return error.issues
@@ -16,8 +16,8 @@ function formatConfigValidationError(error: ZodError): string {
     .join("; ");
 }
 
-export function readConfigFile(): PaperclipConfig | null {
-  const configPath = resolvePaperclipConfigPath();
+export function readConfigFile(): ToderoConfig | null {
+  const configPath = resolveToderoConfigPath();
 
   if (!fs.existsSync(configPath)) return null;
 
@@ -26,12 +26,12 @@ export function readConfigFile(): PaperclipConfig | null {
     raw = JSON.parse(fs.readFileSync(configPath, "utf-8"));
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`Invalid Paperclip config at ${configPath}: failed to read or parse JSON: ${reason}`);
+    throw new Error(`Invalid Todero config at ${configPath}: failed to read or parse JSON: ${reason}`);
   }
 
   try {
-    const config = paperclipConfigSchema.parse(raw);
-    for (const warning of findPaperclipConfigKeyWarnings(config)) {
+    const config = toderoConfigSchema.parse(raw);
+    for (const warning of findToderoConfigKeyWarnings(config)) {
       console.warn(
         `Unknown config key ${warning.path}; did you mean ${warning.suggestion}? It will be preserved.`,
       );
@@ -39,7 +39,7 @@ export function readConfigFile(): PaperclipConfig | null {
     return config;
   } catch (error) {
     if (error instanceof ZodError) {
-      throw new Error(`Invalid Paperclip config at ${configPath}: ${formatConfigValidationError(error)}`);
+      throw new Error(`Invalid Todero config at ${configPath}: ${formatConfigValidationError(error)}`);
     }
 
     throw error;

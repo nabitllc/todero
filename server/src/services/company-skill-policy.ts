@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agents, companySkillPolicies, principalPermissionGrants } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { agents, companySkillPolicies, principalPermissionGrants } from "@todero/db";
 import {
   normalizeSkillPolicySourceLocator,
   skillPolicyDocumentSchema,
@@ -11,7 +11,7 @@ import {
   type SkillPolicyEvaluationResource,
   type SkillPolicyRule,
   type SkillPolicySourceType,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { conflict, forbidden, notFound } from "../errors.js";
 import { logActivity, type LogActivityInput } from "./activity-log.js";
 

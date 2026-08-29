@@ -8,7 +8,7 @@ import {
   UserRound,
   UserRoundPen,
 } from "lucide-react";
-import type { DeploymentMode, ServerGitInfo } from "@paperclipai/shared";
+import type { DeploymentMode, ServerGitInfo } from "@todero/shared";
 import { Link } from "@/lib/router";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
@@ -24,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 const PROFILE_SETTINGS_PATH = "/company/settings/instance/profile";
 const DOCS_URL = "/";
 const FEEDBACK_URL = "/progress";
-const SOURCE_REPOSITORY_URL = "https://github.com/paperclipai/paperclip";
+const SOURCE_REPOSITORY_URL = "https://github.com/nabitllc/todero";
 const SOURCE_VERSION_RE = /\+\d+\.git\.([0-9a-f]{7,40})(?:\.dirty)?$/i;
 
 interface SidebarAccountMenuProps {
@@ -204,7 +204,7 @@ export function SidebarAccountMenu({
                       </a>
                     ) : null}
                     <p>
-                      Paperclip{" "}
+                      Todero{" "}
                       <a
                         href={`${SOURCE_REPOSITORY_URL}/commit/${sourceFullSha}`}
                         target="_blank"
@@ -216,7 +216,7 @@ export function SidebarAccountMenu({
                     </p>
                   </div>
                 ) : version ? (
-                  <p className="mt-1 text-xs text-muted-foreground">Paperclip v{version}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Todero v{version}</p>
                 ) : null}
               </div>
             </div>
@@ -238,7 +238,7 @@ export function SidebarAccountMenu({
               />
               <MenuAction
                 label="Documentation"
-                description="Open Paperclip docs in a new tab."
+                description="Open Todero docs in a new tab."
                 icon={BookOpen}
                 href={DOCS_URL}
                 external

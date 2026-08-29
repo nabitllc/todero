@@ -1,4 +1,4 @@
-export type PaperclipSemanticActionId =
+export type ToderoSemanticActionId =
   | "get_task_context"
   | "get_task_history"
   | "list_documents"
@@ -27,31 +27,31 @@ export type PaperclipSemanticActionId =
   | "comment_on_approval"
   | "schedule_wake";
 
-export type PaperclipSemanticActionPlacement = "always" | "optional";
-export type PaperclipSemanticActionMode =
+export type ToderoSemanticActionPlacement = "always" | "optional";
+export type ToderoSemanticActionMode =
   "standard" | "ask" | "planning" | "skill_test";
-export type PaperclipSemanticActionEffect = "read" | "write" | "governance";
+export type ToderoSemanticActionEffect = "read" | "write" | "governance";
 
-export type PaperclipJsonValue =
+export type ToderoJsonValue =
   | null
   | boolean
   | number
   | string
-  | readonly PaperclipJsonValue[]
-  | { readonly [key: string]: PaperclipJsonValue };
+  | readonly ToderoJsonValue[]
+  | { readonly [key: string]: ToderoJsonValue };
 
 /** The JSON Schema subset used by the v1 semantic action catalog. */
-export interface PaperclipJsonSchema {
+export interface ToderoJsonSchema {
   readonly type?: string | readonly string[];
   readonly title?: string;
   readonly description?: string;
-  readonly properties?: Readonly<Record<string, PaperclipJsonSchema>>;
+  readonly properties?: Readonly<Record<string, ToderoJsonSchema>>;
   readonly required?: readonly string[];
-  readonly additionalProperties?: boolean | PaperclipJsonSchema;
-  readonly items?: PaperclipJsonSchema;
-  readonly enum?: readonly PaperclipJsonValue[];
-  readonly oneOf?: readonly PaperclipJsonSchema[];
-  readonly anyOf?: readonly PaperclipJsonSchema[];
+  readonly additionalProperties?: boolean | ToderoJsonSchema;
+  readonly items?: ToderoJsonSchema;
+  readonly enum?: readonly ToderoJsonValue[];
+  readonly oneOf?: readonly ToderoJsonSchema[];
+  readonly anyOf?: readonly ToderoJsonSchema[];
   readonly minimum?: number;
   readonly maximum?: number;
   readonly minLength?: number;
@@ -61,24 +61,24 @@ export interface PaperclipJsonSchema {
   readonly uniqueItems?: boolean;
   readonly pattern?: string;
   readonly format?: string;
-  readonly default?: PaperclipJsonValue;
+  readonly default?: ToderoJsonValue;
 }
 
 /**
  * A transport-neutral declaration. Catalog membership never grants discovery
  * or invocation authority; a run-scoped authorization layer must do that.
  */
-export interface PaperclipSemanticActionDescriptor {
-  readonly schema: "paperclip.semantic-action.v1";
-  readonly operationId: PaperclipSemanticActionId;
+export interface ToderoSemanticActionDescriptor {
+  readonly schema: "todero.semantic-action.v1";
+  readonly operationId: ToderoSemanticActionId;
   readonly version: 1;
   readonly title: string;
   readonly description: string;
-  readonly placement: PaperclipSemanticActionPlacement;
-  readonly effect: PaperclipSemanticActionEffect;
+  readonly placement: ToderoSemanticActionPlacement;
+  readonly effect: ToderoSemanticActionEffect;
   readonly requiredClaims: readonly string[];
-  readonly allowedModes: readonly PaperclipSemanticActionMode[];
+  readonly allowedModes: readonly ToderoSemanticActionMode[];
   readonly allowedRoles?: readonly string[];
-  readonly inputSchema: PaperclipJsonSchema;
-  readonly outputSchema: PaperclipJsonSchema;
+  readonly inputSchema: ToderoJsonSchema;
+  readonly outputSchema: ToderoJsonSchema;
 }

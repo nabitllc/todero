@@ -2,7 +2,7 @@
 
 export const identitySchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/identity.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/identity.schema.json",
   "title": "PRP identity graph",
   "type": "object",
   "required": [
@@ -17,7 +17,7 @@ export const identitySchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.identity.v1"
+      "const": "todero.prp.identity.v1"
     },
     "companyId": {
       "$ref": "#/$defs/stableId"
@@ -57,7 +57,7 @@ export const identitySchema = {
 
 export const capabilitiesSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/capabilities.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/capabilities.schema.json",
   "title": "PRP negotiated capabilities",
   "type": "object",
   "required": [
@@ -73,7 +73,7 @@ export const capabilitiesSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.capabilities.v1"
+      "const": "todero.prp.capabilities.v1"
     },
     "sessionReusePolicy": {
       "enum": [
@@ -167,7 +167,7 @@ export const capabilitiesSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.prp.semantic_tools.v1"
+          "const": "todero.prp.semantic_tools.v1"
         },
         "schemaVersion": {
           "const": 1
@@ -238,7 +238,7 @@ export const capabilitiesSchema = {
 
 export const commandSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/command.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/command.schema.json",
   "title": "PRP runner command",
   "type": "object",
   "required": [
@@ -251,7 +251,7 @@ export const commandSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.command.v1"
+      "const": "todero.prp.command.v1"
     },
     "commandId": {
       "type": "string",
@@ -332,7 +332,7 @@ export const commandSchema = {
 
 export const providerDescriptorSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/provider-descriptor.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/provider-descriptor.schema.json",
   "title": "PRP provider runtime descriptor",
   "type": "object",
   "required": [
@@ -384,7 +384,7 @@ export const providerDescriptorSchema = {
 
 export const providerEventSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/provider-event.schema.json",
   "title": "Provider-neutral runner activity payload",
   "oneOf": [
     {
@@ -482,7 +482,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.plan.updated.v1"
+          "const": "todero.plan.updated.v1"
         },
         "planId": {
           "$ref": "#/$defs/id"
@@ -560,7 +560,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.tool.execution.v1"
+          "const": "todero.tool.execution.v1"
         },
         "executionId": {
           "$ref": "#/$defs/id"
@@ -662,7 +662,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.research.v1"
+          "const": "todero.research.v1"
         },
         "researchId": {
           "$ref": "#/$defs/id"
@@ -734,7 +734,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.delegation.v1"
+          "const": "todero.delegation.v1"
         },
         "delegationId": {
           "$ref": "#/$defs/id"
@@ -825,7 +825,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.model.route_changed.v1"
+          "const": "todero.model.route_changed.v1"
         },
         "routeId": {
           "$ref": "#/$defs/id"
@@ -870,7 +870,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.model.verification.v1"
+          "const": "todero.model.verification.v1"
         },
         "verificationId": {
           "$ref": "#/$defs/id"
@@ -911,7 +911,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.context.compacted.v1"
+          "const": "todero.context.compacted.v1"
         },
         "compactionId": {
           "$ref": "#/$defs/id"
@@ -955,7 +955,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.artifact.viewed.v1"
+          "const": "todero.artifact.viewed.v1"
         },
         "artifactId": {
           "$ref": "#/$defs/id"
@@ -989,7 +989,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.artifact.generated.v1"
+          "const": "todero.artifact.generated.v1"
         },
         "artifactId": {
           "$ref": "#/$defs/id"
@@ -1036,7 +1036,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.review.mode_changed.v1"
+          "const": "todero.review.mode_changed.v1"
         },
         "reviewId": {
           "$ref": "#/$defs/id"
@@ -1067,7 +1067,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.hook.v1"
+          "const": "todero.hook.v1"
         },
         "hookId": {
           "$ref": "#/$defs/id"
@@ -1118,7 +1118,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.memory.citation.v1"
+          "const": "todero.memory.citation.v1"
         },
         "citationId": {
           "$ref": "#/$defs/id"
@@ -1154,7 +1154,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.safety.review.v1"
+          "const": "todero.safety.review.v1"
         },
         "reviewId": {
           "$ref": "#/$defs/id"
@@ -1202,7 +1202,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.terminal.input_sent.v1"
+          "const": "todero.terminal.input_sent.v1"
         },
         "executionId": {
           "$ref": "#/$defs/id"
@@ -1240,7 +1240,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.wait.v1"
+          "const": "todero.wait.v1"
         },
         "waitId": {
           "$ref": "#/$defs/id"
@@ -1292,7 +1292,7 @@ export const providerEventSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.provider.notice.v1"
+          "const": "todero.provider.notice.v1"
         },
         "noticeId": {
           "$ref": "#/$defs/id"
@@ -1334,8 +1334,8 @@ export const providerEventSchema = {
 
 export const workspaceDiffSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/workspace-diff.schema.json",
-  "title": "Paperclip workspace diff",
+  "$id": "https://todero.dev/schemas/prp/v1/workspace-diff.schema.json",
+  "title": "Todero workspace diff",
   "type": "object",
   "required": [
     "schema",
@@ -1349,7 +1349,7 @@ export const workspaceDiffSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.workspace.diff.v1"
+      "const": "todero.workspace.diff.v1"
     },
     "changeSetId": {
       "type": "string",
@@ -1482,8 +1482,8 @@ export const workspaceDiffSchema = {
 
 export const workspaceFileReferenceSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/workspace-file-reference.schema.json",
-  "title": "Paperclip workspace file reference",
+  "$id": "https://todero.dev/schemas/prp/v1/workspace-file-reference.schema.json",
+  "title": "Todero workspace file reference",
   "type": "object",
   "required": [
     "schema",
@@ -1500,7 +1500,7 @@ export const workspaceFileReferenceSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.workspace.file_reference.v1"
+      "const": "todero.workspace.file_reference.v1"
     },
     "referenceId": {
       "type": "string",
@@ -1573,7 +1573,7 @@ export const workspaceFileReferenceSchema = {
 
 export const semanticToolSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/semantic-tool.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/semantic-tool.schema.json",
   "title": "PRP provider-neutral semantic tool envelope",
   "type": "object",
   "required": [
@@ -1588,7 +1588,7 @@ export const semanticToolSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.semantic_tool.v1"
+      "const": "todero.prp.semantic_tool.v1"
     },
     "schemaVersion": {
       "const": 1
@@ -1854,7 +1854,7 @@ export const semanticToolSchema = {
 
 export const usageSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/usage.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/usage.schema.json",
   "title": "PRP provider usage receipt",
   "type": "object",
   "required": [
@@ -1947,7 +1947,7 @@ export const usageSchema = {
 
 export const stopReasonSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/stop-reason.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/stop-reason.schema.json",
   "title": "PRP terminal stop reason receipt",
   "type": "object",
   "required": [
@@ -1963,7 +1963,7 @@ export const stopReasonSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.stop_reason.v1"
+      "const": "todero.prp.stop_reason.v1"
     },
     "schemaVersion": {
       "const": 1
@@ -2053,7 +2053,7 @@ export const stopReasonSchema = {
 
 export const terminalSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/terminal.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/terminal.schema.json",
   "title": "PRP run terminal state",
   "type": "object",
   "required": [
@@ -2064,7 +2064,7 @@ export const terminalSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.terminal.v1"
+      "const": "todero.prp.terminal.v1"
     },
     "turnTerminalState": {
       "enum": [
@@ -2098,7 +2098,7 @@ export const terminalSchema = {
       "minLength": 1
     },
     "stopReason": {
-      "$ref": "https://paperclip.dev/schemas/prp/v1/stop-reason.schema.json"
+      "$ref": "https://todero.dev/schemas/prp/v1/stop-reason.schema.json"
     }
   },
   "additionalProperties": true
@@ -2106,8 +2106,8 @@ export const terminalSchema = {
 
 export const questionSetSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/question-set.schema.json",
-  "title": "Paperclip question set",
+  "$id": "https://todero.dev/schemas/prp/v1/question-set.schema.json",
+  "title": "Todero question set",
   "type": "object",
   "required": [
     "schema",
@@ -2115,7 +2115,7 @@ export const questionSetSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.question_set.v1"
+      "const": "todero.question_set.v1"
     },
     "title": {
       "type": "string",
@@ -2328,8 +2328,8 @@ export const questionSetSchema = {
 
 export const questionResponseSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/question-response.schema.json",
-  "title": "Paperclip question response",
+  "$id": "https://todero.dev/schemas/prp/v1/question-response.schema.json",
+  "title": "Todero question response",
   "type": "object",
   "required": [
     "schema",
@@ -2337,7 +2337,7 @@ export const questionResponseSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.question_response.v1"
+      "const": "todero.question_response.v1"
     },
     "answers": {
       "type": "object",
@@ -2375,7 +2375,7 @@ export const questionResponseSchema = {
 
 export const questionAdapterFixtureSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/question-adapter-fixture.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/question-adapter-fixture.schema.json",
   "title": "Harness question adapter conformance fixture",
   "type": "object",
   "required": [
@@ -2388,7 +2388,7 @@ export const questionAdapterFixtureSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.question_adapter_fixture.v1"
+      "const": "todero.question_adapter_fixture.v1"
     },
     "adapter": {
       "type": "string",
@@ -2397,10 +2397,10 @@ export const questionAdapterFixtureSchema = {
     },
     "nativeRequest": {},
     "canonicalQuestionSet": {
-      "$ref": "https://paperclip.dev/schemas/prp/v1/question-set.schema.json"
+      "$ref": "https://todero.dev/schemas/prp/v1/question-set.schema.json"
     },
     "canonicalResponse": {
-      "$ref": "https://paperclip.dev/schemas/prp/v1/question-response.schema.json"
+      "$ref": "https://todero.dev/schemas/prp/v1/question-response.schema.json"
     },
     "nativeResponse": {}
   },
@@ -2409,7 +2409,7 @@ export const questionAdapterFixtureSchema = {
 
 export const requestSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/request.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/request.schema.json",
   "title": "PRP request",
   "oneOf": [
     {
@@ -2425,7 +2425,7 @@ export const requestSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.runtime_request.v2"
+          "const": "todero.runtime_request.v2"
         },
         "requestKind": {
           "const": "runtime"
@@ -2452,7 +2452,7 @@ export const requestSchema = {
           "maxLength": 4000
         },
         "input": {
-          "$ref": "https://paperclip.dev/schemas/prp/v1/question-set.schema.json"
+          "$ref": "https://todero.dev/schemas/prp/v1/question-set.schema.json"
         },
         "origin": {
           "type": "object",
@@ -2503,7 +2503,7 @@ export const requestSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.runtime_request.v1"
+          "const": "todero.runtime_request.v1"
         },
         "requestKind": {
           "const": "runtime"
@@ -2568,7 +2568,7 @@ export const requestSchema = {
       ],
       "properties": {
         "schema": {
-          "const": "paperclip.interaction_request.v1"
+          "const": "todero.interaction_request.v1"
         },
         "requestKind": {
           "const": "issue_thread"
@@ -2602,7 +2602,7 @@ export const requestSchema = {
 
 export const resultSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/result.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/result.schema.json",
   "title": "PRP structured run result",
   "type": "object",
   "required": [
@@ -2617,7 +2617,7 @@ export const resultSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.run_result.v1"
+      "const": "todero.run_result.v1"
     },
     "reportedWorkDisposition": {
       "enum": [
@@ -2903,7 +2903,7 @@ export const resultSchema = {
 
 export const eventSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/event.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/event.schema.json",
   "title": "PRP native event",
   "type": "object",
   "required": [
@@ -2921,7 +2921,7 @@ export const eventSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.event.v1"
+      "const": "todero.prp.event.v1"
     },
     "sourceEventId": {
       "type": "string",
@@ -3127,7 +3127,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/plan"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/plan"
           }
         }
       }
@@ -3147,7 +3147,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/toolExecution"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/toolExecution"
           }
         }
       }
@@ -3167,7 +3167,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/research"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/research"
           }
         }
       }
@@ -3187,7 +3187,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/delegation"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/delegation"
           }
         }
       }
@@ -3203,7 +3203,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/modelRoute"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/modelRoute"
           }
         }
       }
@@ -3219,7 +3219,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/modelVerification"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/modelVerification"
           }
         }
       }
@@ -3235,7 +3235,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/contextCompacted"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/contextCompacted"
           }
         }
       }
@@ -3251,7 +3251,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/artifactViewed"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/artifactViewed"
           }
         }
       }
@@ -3267,7 +3267,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/artifactGenerated"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/artifactGenerated"
           }
         }
       }
@@ -3283,7 +3283,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/reviewMode"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/reviewMode"
           }
         }
       }
@@ -3302,7 +3302,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/hook"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/hook"
           }
         }
       }
@@ -3318,7 +3318,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/memoryCitation"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/memoryCitation"
           }
         }
       }
@@ -3337,7 +3337,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/safetyReview"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/safetyReview"
           }
         }
       }
@@ -3353,7 +3353,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/terminalInput"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/terminalInput"
           }
         }
       }
@@ -3372,7 +3372,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/wait"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/wait"
           }
         }
       }
@@ -3388,7 +3388,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/provider-event.schema.json#/$defs/providerNotice"
+            "$ref": "https://todero.dev/schemas/prp/v1/provider-event.schema.json#/$defs/providerNotice"
           }
         }
       }
@@ -3404,7 +3404,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/workspace-file-reference.schema.json"
+            "$ref": "https://todero.dev/schemas/prp/v1/workspace-file-reference.schema.json"
           }
         }
       }
@@ -3423,7 +3423,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/workspace-diff.schema.json"
+            "$ref": "https://todero.dev/schemas/prp/v1/workspace-diff.schema.json"
           }
         }
       }
@@ -3441,7 +3441,7 @@ export const eventSchema = {
           "payload": {
             "allOf": [
               {
-                "$ref": "https://paperclip.dev/schemas/prp/v1/workspace-diff.schema.json"
+                "$ref": "https://todero.dev/schemas/prp/v1/workspace-diff.schema.json"
               },
               {
                 "type": "object",
@@ -3475,7 +3475,7 @@ export const eventSchema = {
               "semantic_tool": {
                 "allOf": [
                   {
-                    "$ref": "https://paperclip.dev/schemas/prp/v1/semantic-tool.schema.json"
+                    "$ref": "https://todero.dev/schemas/prp/v1/semantic-tool.schema.json"
                   },
                   {
                     "type": "object",
@@ -3512,7 +3512,7 @@ export const eventSchema = {
               "semantic_tool": {
                 "allOf": [
                   {
-                    "$ref": "https://paperclip.dev/schemas/prp/v1/semantic-tool.schema.json"
+                    "$ref": "https://todero.dev/schemas/prp/v1/semantic-tool.schema.json"
                   },
                   {
                     "type": "object",
@@ -3541,7 +3541,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/terminal.schema.json"
+            "$ref": "https://todero.dev/schemas/prp/v1/terminal.schema.json"
           }
         }
       }
@@ -3557,7 +3557,7 @@ export const eventSchema = {
       "then": {
         "properties": {
           "payload": {
-            "$ref": "https://paperclip.dev/schemas/prp/v1/result.schema.json"
+            "$ref": "https://todero.dev/schemas/prp/v1/result.schema.json"
           }
         }
       }
@@ -3568,7 +3568,7 @@ export const eventSchema = {
 
 export const fixtureSchema = {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://paperclip.dev/schemas/prp/v1/fixture.schema.json",
+  "$id": "https://todero.dev/schemas/prp/v1/fixture.schema.json",
   "title": "PRP scripted replay fixture",
   "type": "object",
   "required": [
@@ -3585,7 +3585,7 @@ export const fixtureSchema = {
   ],
   "properties": {
     "schema": {
-      "const": "paperclip.prp.fixture.v1"
+      "const": "todero.prp.fixture.v1"
     },
     "fixtureVersion": {
       "const": 1
@@ -3604,32 +3604,32 @@ export const fixtureSchema = {
       "maxLength": 1000
     },
     "identity": {
-      "$ref": "https://paperclip.dev/schemas/prp/v1/identity.schema.json"
+      "$ref": "https://todero.dev/schemas/prp/v1/identity.schema.json"
     },
     "capabilities": {
-      "$ref": "https://paperclip.dev/schemas/prp/v1/capabilities.schema.json"
+      "$ref": "https://todero.dev/schemas/prp/v1/capabilities.schema.json"
     },
     "commands": {
       "type": "array",
       "items": {
-        "$ref": "https://paperclip.dev/schemas/prp/v1/command.schema.json"
+        "$ref": "https://todero.dev/schemas/prp/v1/command.schema.json"
       }
     },
     "events": {
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "https://paperclip.dev/schemas/prp/v1/event.schema.json"
+        "$ref": "https://todero.dev/schemas/prp/v1/event.schema.json"
       }
     },
     "requests": {
       "type": "array",
       "items": {
-        "$ref": "https://paperclip.dev/schemas/prp/v1/request.schema.json"
+        "$ref": "https://todero.dev/schemas/prp/v1/request.schema.json"
       }
     },
     "result": {
-      "$ref": "https://paperclip.dev/schemas/prp/v1/result.schema.json"
+      "$ref": "https://todero.dev/schemas/prp/v1/result.schema.json"
     }
   },
   "additionalProperties": true

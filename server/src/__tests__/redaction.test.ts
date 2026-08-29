@@ -121,9 +121,9 @@ describe("redaction", () => {
     const input = [
       "Authorization: Bearer live-bearer-token-value",
       `payload {"apiKey":"json-secret-value"}`,
-      `paperclip {"PAPERCLIP_API_KEY":"paperclip-json-secret"}`,
+      `todero {"PAPERCLIP_API_KEY":"todero-json-secret"}`,
       `escaped {\\"apiKey\\":\\"escaped-json-secret\\"}`,
-      `export PAPERCLIP_API_KEY='paperclip-shell-secret'`,
+      `export PAPERCLIP_API_KEY='todero-shell-secret'`,
       `GITHUB_TOKEN=${githubToken}`,
       `session=${jwt}`,
     ].join("\n");
@@ -133,9 +133,9 @@ describe("redaction", () => {
     expect(result).toContain(REDACTED_EVENT_VALUE);
     expect(result).not.toContain("live-bearer-token-value");
     expect(result).not.toContain("json-secret-value");
-    expect(result).not.toContain("paperclip-json-secret");
+    expect(result).not.toContain("todero-json-secret");
     expect(result).not.toContain("escaped-json-secret");
-    expect(result).not.toContain("paperclip-shell-secret");
+    expect(result).not.toContain("todero-shell-secret");
     expect(result).not.toContain(githubToken);
     expect(result).not.toContain(jwt);
   });

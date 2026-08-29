@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { companies, createDb, projects } from "@paperclipai/db";
+import { companies, createDb, projects } from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -49,7 +49,7 @@ describeEmbeddedPostgres("project list archived route defaults", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-projects-list-archived-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-projects-list-archived-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -69,7 +69,7 @@ describeEmbeddedPostgres("project list archived route defaults", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

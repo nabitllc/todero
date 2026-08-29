@@ -1,11 +1,11 @@
 import { Router, urlencoded, type Request } from "express";
-import type { Db } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import type { Db } from "@todero/db";
+import type { DeploymentExposure, DeploymentMode } from "@todero/shared";
 import {
   createSmokeRunSchema,
   recordSmokeRunStepSchema,
   updateSmokeRunSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { validate } from "../middleware/validate.js";
 import { assertBoard, assertBoardOrAgent, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { logActivity, smokeLabService } from "../services/index.js";

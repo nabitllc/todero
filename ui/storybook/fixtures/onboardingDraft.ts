@@ -21,7 +21,7 @@ export function seedOnboardingDraft(step: 3 | 4 | 5): void {
     ONBOARDING_STORAGE_KEY,
     JSON.stringify({
       step,
-      companyName: "Paperclip Storybook",
+      companyName: "Todero Storybook",
       agentName: "Darnold",
       agentRole: "general",
       adapterType: "claude_code",

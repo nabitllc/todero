@@ -9,21 +9,21 @@ import {
   type SDKAgent,
   type SDKMessage,
 } from "@cursor/sdk";
-import type { AdapterExecutionContext, AdapterExecutionResult, AdapterInvocationMeta } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult, AdapterInvocationMeta } from "@todero/adapter-utils";
 import {
   DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
   asBoolean,
   asString,
-  buildPaperclipEnv,
+  buildToderoEnv,
   buildRuntimeToolsEnv,
   joinPromptSections,
   parseObject,
-  readPaperclipIssueWorkModeFromContext,
-  renderPaperclipWakePrompt,
-  isPaperclipRecoveryWakePayload,
+  readToderoIssueWorkModeFromContext,
+  renderToderoWakePrompt,
+  isToderoRecoveryWakePayload,
   renderTemplate,
-  stringifyPaperclipWakePayload,
-} from "@paperclipai/adapter-utils/server-utils";
+  stringifyToderoWakePayload,
+} from "@todero/adapter-utils/server-utils";
 
 type CursorCloudSession = {
   cursorAgentId: string;
@@ -106,12 +106,12 @@ function buildWakeEnv(ctx: AdapterExecutionContext, configEnv: Record<string, st
   const { runId, agent, context, authToken } = ctx;
   const env: Record<string, string> = {
     ...configEnv,
-    ...buildPaperclipEnv(agent),
+    ...buildToderoEnv(agent),
     ...buildRuntimeToolsEnv(ctx.runtimeTools),
     PAPERCLIP_RUN_ID: runId,
   };
   // PAPERCLIP_API_KEY is never accepted from config — the harness-minted run
-  // token is the only source of Paperclip API identity.
+  // token is the only source of Todero API identity.
   delete env.PAPERCLIP_API_KEY;
 
   const wakeTaskId = trimNullable(context.taskId) ?? trimNullable(context.issueId);
@@ -122,8 +122,8 @@ function buildWakeEnv(ctx: AdapterExecutionContext, configEnv: Record<string, st
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
-  const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
-  const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
+  const wakePayloadJson = stringifyToderoWakePayload(context.toderoWake);
+  const issueWorkMode = readToderoIssueWorkModeFromContext(context);
 
   if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
   if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
@@ -138,12 +138,12 @@ function buildWakeEnv(ctx: AdapterExecutionContext, configEnv: Record<string, st
   }
 
   // cursor_cloud runs remotely in Cursor's cloud and is intentionally not
-  // issued a Paperclip run JWT (registry: supportsLocalAgentJwt=false).
-  // buildPaperclipEnv always sets PAPERCLIP_API_URL, defaulting to the local
+  // issued a Todero run JWT (registry: supportsLocalAgentJwt=false).
+  // buildToderoEnv always sets PAPERCLIP_API_URL, defaulting to the local
   // runtime host — which a remote worker can neither reach nor authenticate
-  // against, so any agent-initiated Paperclip API call would fail with a 401
+  // against, so any agent-initiated Todero API call would fail with a 401
   // (or be unreachable) and add noise. When there is no usable key, drop the
-  // callback wiring so cloud-side Paperclip tools degrade to a clean no-op.
+  // callback wiring so cloud-side Todero tools degrade to a clean no-op.
   // Run results are delivered server-side via the Cursor Agent SDK (getRun /
   // wait), not through this callback, so nothing is lost.
   if (!trimNullable(env.PAPERCLIP_API_KEY)) {
@@ -151,7 +151,7 @@ function buildWakeEnv(ctx: AdapterExecutionContext, configEnv: Record<string, st
     delete env.PAPERCLIP_API_BRIDGE_MODE;
   }
 
-  const workspace = parseObject(context.paperclipWorkspace);
+  const workspace = parseObject(context.toderoWorkspace);
   const workspaceMappings: Array<[string, unknown]> = [
     ["PAPERCLIP_WORKSPACE_CWD", workspace.cwd],
     ["PAPERCLIP_WORKSPACE_SOURCE", workspace.source],
@@ -196,7 +196,7 @@ async function buildInstructionsPrefix(
     const reason = err instanceof Error ? err.message : String(err);
     await onLog(
       "stderr",
-      `[paperclip] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
+      `[todero] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
     );
     return {
       prefix: "",
@@ -208,13 +208,13 @@ async function buildInstructionsPrefix(
   }
 }
 
-function renderPaperclipEnvNote(env: Record<string, string>): string {
+function renderToderoEnvNote(env: Record<string, string>): string {
   const keys = Object.keys(env)
     .filter((key) => key.startsWith("PAPERCLIP_"))
     .sort();
   if (keys.length === 0) return "";
   return [
-    "Paperclip runtime note:",
+    "Todero runtime note:",
     `The following PAPERCLIP_* environment variables are available in the cloud agent shell: ${keys.join(", ")}`,
     "Use them directly instead of assuming they are absent.",
   ].join("\n");
@@ -355,7 +355,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   }
 
-  const workspace = parseObject(context.paperclipWorkspace);
+  const workspace = parseObject(context.toderoWorkspace);
   const repoUrl =
     asString(config.repoUrl, "").trim() ||
     asString(workspace.repoUrl, "").trim();
@@ -409,29 +409,29 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     context,
   };
   const instructions = await buildInstructionsPrefix(config, onLog);
-  const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: canReuseSession });
+  const wakePrompt = renderToderoWakePrompt(context.toderoWake, { resumedSession: canReuseSession });
   const renderedBootstrapPrompt =
     !canReuseSession && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const renderedPrompt =
-    (canReuseSession && wakePrompt.length > 0) || isPaperclipRecoveryWakePayload(context.paperclipWake)
+    (canReuseSession && wakePrompt.length > 0) || isToderoRecoveryWakePayload(context.toderoWake)
       ? ""
       : renderTemplate(promptTemplate, templateData).trim();
-  const paperclipEnvNote = renderPaperclipEnvNote(remoteEnv);
+  const toderoEnvNote = renderToderoEnvNote(remoteEnv);
   const prompt = joinPromptSections([
     instructions.prefix,
     renderedBootstrapPrompt,
     wakePrompt,
-    paperclipEnvNote,
+    toderoEnvNote,
     renderedPrompt,
   ]);
-  const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+  const sessionHandoffNote = asString(context.toderoSessionHandoffMarkdown, "").trim();
   const finalPrompt = joinPromptSections([prompt, sessionHandoffNote]);
 
   const agentOptions = buildAgentOptions({
     apiKey,
-    name: `Paperclip ${agent.name}`,
+    name: `Todero ${agent.name}`,
     model,
     envType,
     envName,

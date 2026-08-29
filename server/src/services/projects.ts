@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   projects,
   projectGoals,
@@ -10,7 +10,7 @@ import {
   plugins,
   projectWorkspaces,
   workspaceRuntimeServices,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   deriveProjectUrlKey,
   hasNonAsciiContent,
@@ -27,7 +27,7 @@ import {
   type WorkspaceRuntimeService,
   type PluginManagedProjectDeclaration,
   type PluginManagedProjectResolution,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { listCurrentRuntimeServicesForProjectWorkspaces } from "./workspace-runtime-read-model.js";
 import { parseProjectExecutionWorkspacePolicy } from "./execution-workspace-policy.js";
 import { mergeProjectWorkspaceRuntimeConfig, readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
@@ -702,7 +702,7 @@ export function projectService(db: Db) {
             resourceKey: input.projectKey,
             companyId: input.companyId,
             projectId: project?.id ?? existingBinding.resourceId,
-            project: project as import("@paperclipai/shared").Project | null,
+            project: project as import("@todero/shared").Project | null,
             status: input.reset ? "reset" : "resolved",
           };
         }
@@ -736,7 +736,7 @@ export function projectService(db: Db) {
           resourceKey: input.projectKey,
           companyId: input.companyId,
           projectId: hydrated?.id ?? project.id,
-          project: hydrated as import("@paperclipai/shared").Project | null,
+          project: hydrated as import("@todero/shared").Project | null,
           status: "relinked",
         };
       }
@@ -775,7 +775,7 @@ export function projectService(db: Db) {
         resourceKey: input.projectKey,
         companyId: input.companyId,
         projectId: hydrated?.id ?? project.id,
-        project: hydrated as import("@paperclipai/shared").Project | null,
+        project: hydrated as import("@todero/shared").Project | null,
         status: "created",
       };
     },

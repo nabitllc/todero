@@ -13,13 +13,13 @@ import {
   decideStaleExposureReclaim,
 } from "./workspace-runtime.js";
 
-/** A persisted, running, pre-feature Paperclip App dev runtime. */
+/** A persisted, running, pre-feature Todero App dev runtime. */
 function httpOnlyRunningRow(overrides: Partial<Parameters<typeof decideManagedRuntimeExposureBackfill>[0]> = {}) {
   return {
     mode: "auto" as const,
     brokerAvailable: true,
     provider: "local_process",
-    serviceName: "paperclip-dev",
+    serviceName: "todero-dev",
     command: "pnpm dev --bind lan",
     status: "running",
     hasExposure: false,

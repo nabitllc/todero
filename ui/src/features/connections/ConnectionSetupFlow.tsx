@@ -31,7 +31,7 @@ import type {
   ToolConnectionAuthKind,
   ToolConnectionCredentialSource,
   ToolConnectionCreateCapabilities,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   connectionMethodAcceptsCustomerOAuthClient,
   connectionMethodRequiresConfiguration,
@@ -42,7 +42,7 @@ import {
   getAvailableConnectionMethod,
   getAvailableConnectionMethods,
   getRecommendedConnectionMethod,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -347,7 +347,7 @@ export function readConnectionIntentOAuthOutcome(
     outcome?: unknown;
   };
   if (
-    message.type !== "paperclip.connection-intent.oauth"
+    message.type !== "todero.connection-intent.oauth"
     || message.interactionId !== interactionId
   ) return null;
   return message.outcome === "connected"
@@ -450,7 +450,7 @@ export function ConnectionSetupFlow({
   const [linkNeedsKey, setLinkNeedsKey] = useState(false);
   const [linkKey, setLinkKey] = useState("");
   // Generic ("connect your own MCP server") flow state. `authMode: auto` is the
-  // simple path: Paperclip probes the endpoint and branches on what it finds.
+  // simple path: Todero probes the endpoint and branches on what it finds.
   const [linkAuthMode, setLinkAuthMode] = useState<GenericMcpAuthMode>("auto");
   const [linkHeaders, setLinkHeaders] = useState<CustomHeaderRow[]>(() => [newCustomHeaderRow()]);
   const [linkOAuthClientId, setLinkOAuthClientId] = useState("");
@@ -515,7 +515,7 @@ export function ConnectionSetupFlow({
     if (host !== "dialog" || oauthPopupRef.current?.closed === false) return;
     oauthPopupRef.current = window.open(
       "about:blank",
-      "paperclip-connection-oauth",
+      "todero-connection-oauth",
       "popup,width=720,height=760,resizable=yes,scrollbars=yes",
     );
   }, [host]);
@@ -528,7 +528,7 @@ export function ConnectionSetupFlow({
     const popup = oauthPopupRef.current;
     if (!popup || popup.closed) {
       setOAuthPhase("error");
-      setOAuthError("Paperclip couldn’t open the sign-in window. Allow popups for this site and try again.");
+      setOAuthError("Todero couldn’t open the sign-in window. Allow popups for this site and try again.");
       onPhaseChange?.("needs_retry");
       return;
     }
@@ -791,7 +791,7 @@ export function ConnectionSetupFlow({
           ? "Your authorization expired or was revoked. Reconnect to continue."
           : error instanceof Error
             ? error.message
-            : "Paperclip couldn’t start secure sign-in. Try again.",
+            : "Todero couldn’t start secure sign-in. Try again.",
       );
     },
   });
@@ -891,7 +891,7 @@ export function ConnectionSetupFlow({
       // A resumable draft already owns its identity and install reach. Replacing
       // those choices with this page's defaults would turn "finish setup" into a
       // silent access change. Fresh connections still persist the Access step
-      // before the browser leaves Paperclip.
+      // before the browser leaves Todero.
       if (result.auth?.kind === "oauth" && !resumeConnectionId && !reconnectConnectionId) {
         await applyAccessInstalls(result.connectionId);
       }
@@ -959,7 +959,7 @@ export function ConnectionSetupFlow({
             ? "Your authorization expired or was revoked. Reconnect to continue."
             : error instanceof Error
               ? error.message
-              : "Paperclip couldn’t start secure sign-in. Try again.",
+              : "Todero couldn’t start secure sign-in. Try again.",
         );
         return;
       }
@@ -1081,7 +1081,7 @@ export function ConnectionSetupFlow({
     if (automaticOAuth && directOAuthRetryingRef.current) return;
     if (automaticOAuth && (applicationsQuery.isError || connectionsQuery.isError)) {
       setOAuthPhase("error");
-      setOAuthError("Paperclip couldn’t check for an existing connection. Try again.");
+      setOAuthError("Todero couldn’t check for an existing connection. Try again.");
       setStep("key");
       return;
     }
@@ -1252,7 +1252,7 @@ export function ConnectionSetupFlow({
       <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">Couldn’t load connection setup</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Paperclip couldn’t check the retained connection. The retained connection was not changed.
+          Todero couldn’t check the retained connection. The retained connection was not changed.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           <Button
@@ -1318,7 +1318,7 @@ export function ConnectionSetupFlow({
       <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">Couldn’t load connection setup</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Paperclip couldn’t load the provider details needed to restore this connection. The retained connection was not changed.
+          Todero couldn’t load the provider details needed to restore this connection. The retained connection was not changed.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           <Button type="button" onClick={() => void galleryQuery.refetch()}>
@@ -1337,7 +1337,7 @@ export function ConnectionSetupFlow({
       <div className="mx-auto max-w-xl rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">This connection can’t be reconnected</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Paperclip no longer has a supported setup method for this retained connection. The retained connection was not changed.
+          Todero no longer has a supported setup method for this retained connection. The retained connection was not changed.
         </p>
         <Button type="button" variant="outline" className="mt-5" onClick={() => navigate("/apps")}>
           Back to apps
@@ -1465,7 +1465,7 @@ export function ConnectionSetupFlow({
             ]);
             if (applicationsResult.isError || connectionsResult.isError) {
               setOAuthPhase("error");
-              setOAuthError("Paperclip couldn’t check for an existing connection. Try again.");
+              setOAuthError("Todero couldn’t check for an existing connection. Try again.");
               return;
             }
             const refreshedResumeConnection = resumeConnectionId
@@ -1941,15 +1941,15 @@ export function OAuthConnectStateScreen({
     ? {
         title: resuming
           ? `Finish connecting ${serverName}`
-          : `Connect ${serverName} to Paperclip`,
+          : `Connect ${serverName} to Todero`,
         body: resuming
           ? `Your connection is saved. Continue in ${serverName} to approve access; its identity and agent access will stay the same.`
-          : `Paperclip will open ${serverName} so you can choose a workspace and approve access.`,
+          : `Todero will open ${serverName} so you can choose a workspace and approve access.`,
       }
     : phase === "starting"
       ? {
           title: "Preparing secure sign-in",
-          body: `Paperclip is creating a secure ${serverName} connection.`,
+          body: `Todero is creating a secure ${serverName} connection.`,
         }
       : phase === "redirecting"
         ? {
@@ -1960,7 +1960,7 @@ export function OAuthConnectStateScreen({
           }
         : {
             title: `${serverName} couldn’t connect`,
-            body: error ?? "Paperclip couldn’t start secure sign-in. Try again.",
+            body: error ?? "Todero couldn’t start secure sign-in. Try again.",
           };
 
   return (
@@ -2008,7 +2008,7 @@ export function OAuthConnectStateScreen({
         </div>
         <p className="mt-5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Lock className="h-3.5 w-3.5" />
-          Your authorization stays in Paperclip’s encrypted secret store.
+          Your authorization stays in Todero’s encrypted secret store.
         </p>
       </div>
     </div>
@@ -2062,7 +2062,7 @@ function ZapierConnectStep({
           autoFocus
         />
         <p className="mt-2 text-xs text-muted-foreground">
-          The token is part of the URL. Paperclip stores it securely and checks the connection before enabling actions.
+          The token is part of the URL. Todero stores it securely and checks the connection before enabling actions.
         </p>
         {link.trim() && !isZapierLink && (
           <p className="mt-2 text-xs text-destructive">Paste a valid Zapier URL to continue.</p>
@@ -2167,7 +2167,7 @@ function GalleryStep({
             <div>
               <h2 className="text-lg font-bold tracking-tight">Connect through Vercel</h2>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                Create and manage the provider connector in Vercel. Paperclip stores its reference and applies agent access, policy, approval, and audit controls here.
+                Create and manage the provider connector in Vercel. Todero stores its reference and applies agent access, policy, approval, and audit controls here.
               </p>
             </div>
             {vercelConnectAvailability ? (
@@ -2341,7 +2341,7 @@ function GalleryStep({
           <ConnectMethodRow
             icon={TerminalSquare}
             title="Run your own"
-            description="Register a command Paperclip runs in your workspace for a tool that isn’t listed."
+            description="Register a command Todero runs in your workspace for a tool that isn’t listed."
             onClick={onRunYourOwn}
           />
           <ConnectMethodRow
@@ -2402,7 +2402,7 @@ function normalizeAppLink(value: string): string | null {
  * key?" — because that is all most servers need. Everything protocol-shaped lives
  * behind "Advanced authentication", and no OAuth/DCR/CIMD jargon appears on the
  * consumer path: the operator picks how the server authenticates, not which RFC
- * Paperclip will use to satisfy it.
+ * Todero will use to satisfy it.
  *
  * The endpoint host and the "Unverified server" label stay visible the whole way
  * through, so the operator can always see whose server they are about to let
@@ -2500,7 +2500,7 @@ function LinkConnectStep({
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <AppLogo name={matchedEntry.name} logoUrl={matchedEntry.branding.logoUrl} darkLogoUrl={matchedEntry.branding.darkLogoUrl} size={24} />
-            <span className="truncate">Paperclip has a guided setup for {matchedEntry.name}.</span>
+            <span className="truncate">Todero has a guided setup for {matchedEntry.name}.</span>
           </div>
           <Button type="button" size="sm" variant="outline" onClick={onUseMatchedEntry}>
             Use {matchedEntry.name}
@@ -2644,8 +2644,8 @@ function LinkConnectStep({
             {authMode === "oauth" ? (
               <div className="space-y-4">
                 <p className="text-xs text-muted-foreground">
-                  Paperclip sets sign-in up on its own whenever the server allows it. Only fill these in when the
-                  server's docs tell you to register Paperclip yourself first.
+                  Todero sets sign-in up on its own whenever the server allows it. Only fill these in when the
+                  server's docs tell you to register Todero yourself first.
                 </p>
                 <div>
                   <label className="text-sm font-medium text-foreground" htmlFor="generic-mcp-client-id">
@@ -2701,15 +2701,15 @@ function LinkConnectStep({
 
 /**
  * What the operator is choosing is how the *server* authenticates, in its own
- * terms. Paperclip decides internally whether that means a preconfigured client,
+ * terms. Todero decides internally whether that means a preconfigured client,
  * a client ID metadata document, dynamic registration, or the credentials pasted
  * below — none of which belongs on this screen.
  */
 const GENERIC_AUTH_MODE_OPTIONS: Array<{ mode: GenericMcpAuthMode; label: string; hint: string }> = [
   {
     mode: "auto",
-    label: "Let Paperclip check",
-    hint: "Paperclip asks the server what it needs and walks you through it. Start here.",
+    label: "Let Todero check",
+    hint: "Todero asks the server what it needs and walks you through it. Start here.",
   },
   {
     mode: "none",
@@ -2719,17 +2719,17 @@ const GENERIC_AUTH_MODE_OPTIONS: Array<{ mode: GenericMcpAuthMode; label: string
   {
     mode: "bearer",
     label: "Key or token",
-    hint: "Paperclip sends your key as an Authorization header.",
+    hint: "Todero sends your key as an Authorization header.",
   },
   {
     mode: "custom_headers",
     label: "Custom headers",
-    hint: "For servers that name their own headers. Values are stored as Paperclip secrets and can\u2019t be read back.",
+    hint: "For servers that name their own headers. Values are stored as Todero secrets and can\u2019t be read back.",
   },
   {
     mode: "oauth",
     label: "Browser sign-in",
-    hint: "You\u2019ll sign in at the provider. Add a client ID and secret only if the provider requires you to register Paperclip first.",
+    hint: "You\u2019ll sign in at the provider. Add a client ID and secret only if the provider requires you to register Todero first.",
   },
 ];
 
@@ -2740,7 +2740,7 @@ function StoredSecurelyNote() {
       <div>
         <div className="text-sm font-medium text-foreground">Stored securely.</div>
         <div className="text-xs text-muted-foreground">
-          Paperclip keeps this in its encrypted secret store. You can replace it anytime from this app's page,
+          Todero keeps this in its encrypted secret store. You can replace it anytime from this app's page,
           but it can't be read back.
         </div>
       </div>
@@ -2958,7 +2958,7 @@ function KeyStep({
   const hasAdvancedSettings = advancedConfigFields.length > 0 || optionalCustomerOAuthClient;
   const capabilitySelection = capabilityGroups.length > 1 ? (
     <div>
-      <label className="text-sm font-medium text-foreground">What should Paperclip be able to do?</label>
+      <label className="text-sm font-medium text-foreground">What should Todero be able to do?</label>
       <RadioCardGroup
         ariaLabel={`Access level for ${entry.name}`}
         className="mt-2"
@@ -3118,7 +3118,7 @@ function KeyStep({
             <div>
               <div className="text-sm font-medium text-foreground">Create or attach the connector in Vercel</div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Paperclip does not copy Vercel’s setup forms. Finish connector setup there, then paste its UID below.
+                Todero does not copy Vercel’s setup forms. Finish connector setup there, then paste its UID below.
               </p>
               <a
                 href={vercelConnectAvailability.manageUrl}
@@ -3143,7 +3143,7 @@ function KeyStep({
                 className="mt-2 h-11 font-mono"
               />
               <p className="mt-2 text-xs text-muted-foreground">
-                Paperclip validates the connector and stores only its reference and redacted verification metadata.
+                Todero validates the connector and stores only its reference and redacted verification metadata.
               </p>
             </div>
           </div>
@@ -3304,7 +3304,7 @@ function OAuthClientFields({
           {required ? "Your OAuth app" : "Use your own OAuth app"}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          Register Paperclip's callback URI in {entry.name}, then enter the customer-owned client details.
+          Register Todero's callback URI in {entry.name}, then enter the customer-owned client details.
         </p>
         {method.consoleLinks?.register ? (
           <a
@@ -3320,7 +3320,7 @@ function OAuthClientFields({
       </div>
       {callbackUrl ? (
         <div>
-          <label className="text-sm font-medium text-foreground">Paperclip callback URL</label>
+          <label className="text-sm font-medium text-foreground">Todero callback URL</label>
           <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
             <div
               title={callbackUrl}

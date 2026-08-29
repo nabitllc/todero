@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue } from "@todero/shared";
 import {
   applyLocalQueuedIssueCommentState,
   applyOptimisticIssueFieldUpdate,
@@ -610,8 +610,8 @@ describe("optimistic issue comments", () => {
             defaultRef: null,
             repoName: null,
             localFolder: null,
-            managedFolder: "/tmp/paperclip",
-            effectiveLocalFolder: "/tmp/paperclip",
+            managedFolder: "/tmp/todero",
+            effectiveLocalFolder: "/tmp/todero",
             origin: "local_folder",
           },
           workspaces: [],
@@ -632,7 +632,7 @@ describe("optimistic issue comments", () => {
           status: "active",
           deliveryState: "unknown",
           name: "Execution workspace",
-          cwd: "/tmp/paperclip",
+          cwd: "/tmp/todero",
           repoUrl: null,
           baseRef: null,
           providerType: "local_fs",

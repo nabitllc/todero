@@ -9,7 +9,7 @@ import {
   environmentCustomImageTemplates,
   environments,
   plugins,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import {
   environmentCustomImageService,
@@ -38,7 +38,7 @@ if (!embeddedPostgresSupport.supported) {
 
 function pluginManifest() {
   return {
-    id: "paperclip.fake-sandbox-provider",
+    id: "todero.fake-sandbox-provider",
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Fake Sandbox Provider",
@@ -188,8 +188,8 @@ describeEmbeddedPostgres("environmentCustomImageService", () => {
       envVars: {},
     });
     await db.insert(plugins).values({
-      pluginKey: "paperclip.fake-sandbox-provider",
-      packageName: "paperclip-plugin-fake-sandbox",
+      pluginKey: "todero.fake-sandbox-provider",
+      packageName: "todero-plugin-fake-sandbox",
       version: "0.1.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -847,8 +847,8 @@ describeEmbeddedPostgres("environmentCustomImageService reconciliation", () => {
       envVars: {},
     });
     await db.insert(plugins).values({
-      pluginKey: "paperclip.fake-sandbox-provider",
-      packageName: "paperclip-plugin-fake-sandbox",
+      pluginKey: "todero.fake-sandbox-provider",
+      packageName: "todero-plugin-fake-sandbox",
       version: "0.1.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -1019,7 +1019,7 @@ describeEmbeddedPostgres("environmentCustomImageService reconciliation", () => {
 
 function secretPluginManifest() {
   return {
-    id: "paperclip.fake-secret-sandbox-provider",
+    id: "todero.fake-secret-sandbox-provider",
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Fake Secret Sandbox Provider",
@@ -1058,7 +1058,7 @@ function secretPluginManifest() {
 
 function invalidIdentityPluginManifest() {
   return {
-    id: "paperclip.fake-invalid-sandbox-provider",
+    id: "todero.fake-invalid-sandbox-provider",
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Fake Invalid Identity Sandbox Provider",
@@ -1086,7 +1086,7 @@ function invalidIdentityPluginManifest() {
 
 function prototypeKeyIdentityPluginManifest() {
   return {
-    id: "paperclip.fake-prototype-key-sandbox-provider",
+    id: "todero.fake-prototype-key-sandbox-provider",
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Fake Prototype Key Sandbox Provider",
@@ -1157,7 +1157,7 @@ describeEmbeddedPostgres("environmentCustomImageService relink", () => {
     });
     await db.insert(plugins).values({
       pluginKey: manifest.id,
-      packageName: `paperclip-plugin-${provider}`,
+      packageName: `todero-plugin-${provider}`,
       version: "0.1.0",
       apiVersion: 1,
       categories: ["automation"],

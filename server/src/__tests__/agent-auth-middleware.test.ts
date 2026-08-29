@@ -8,7 +8,7 @@ import {
   agents,
   boardApiKeys,
   heartbeatRuns,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { actorMiddleware } from "../middleware/auth.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
@@ -138,8 +138,8 @@ function craftAgentJwtWithoutResponsibleClaim(input: {
     run_id: input.runId,
     iat: now,
     exp: now + (input.expiresInSeconds ?? 3600),
-    iss: "paperclip",
-    aud: "paperclip-api",
+    iss: "todero",
+    aud: "todero-api",
   };
   const headerB64 = Buffer.from(JSON.stringify(header), "utf8").toString("base64url");
   const claimsB64 = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
@@ -181,7 +181,7 @@ describe("agent auth middleware", () => {
 
     const res = await request(createApp(db, "local_trusted"))
       .get("/actor")
-      .set("X-Paperclip-Run-Id", runId);
+      .set("X-Todero-Run-Id", runId);
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ type: "board", userId: "local-board", runId });
@@ -299,7 +299,7 @@ describe("agent auth middleware", () => {
     const res = await request(createApp(db))
       .get("/actor")
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", runId);
+      .set("X-Todero-Run-Id", runId);
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -329,7 +329,7 @@ describe("agent auth middleware", () => {
     const res = await request(createApp(db))
       .get("/actor")
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", runId);
+      .set("X-Todero-Run-Id", runId);
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -355,7 +355,7 @@ describe("agent auth middleware", () => {
     const res = await request(createApp(db))
       .get("/actor")
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", spoofedRunId);
+      .set("X-Todero-Run-Id", spoofedRunId);
 
     expect(res.status).toBe(422);
     expect(res.body.code).toBe("agent_jwt_run_id_mismatch");
@@ -420,11 +420,11 @@ describe("agent auth middleware", () => {
     const readRes = await request(app)
       .get(`/companies/${companyId}/issues/${issueId}`)
       .set("Authorization", `Bearer ${forkToken}`)
-      .set("X-Paperclip-Run-Id", runId);
+      .set("X-Todero-Run-Id", runId);
     const writeRes = await request(app)
       .patch(`/companies/${companyId}/issues/${issueId}`)
       .set("Authorization", `Bearer ${forkToken}`)
-      .set("X-Paperclip-Run-Id", runId)
+      .set("X-Todero-Run-Id", runId)
       .send({ title: "should not write" });
 
     expect(readRes.status).toBe(401);

@@ -7,7 +7,7 @@ import type {
   McpJsonImportDraft,
   McpJsonImportPreview,
   ToolAppConnectionActionSummary,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,7 +51,7 @@ function draftSummary(draft: McpJsonImportDraft): string {
  * A draft is connectable when it's a remote server with a real http(s) URL — that
  * is exactly what the "Connect with a link" wizard step needs to land an active
  * `tool_connection`. Imported stdio commands stay draft-only (they require an
- * approved Paperclip template), so they get no hand-off here.
+ * approved Todero template), so they get no hand-off here.
  */
 function draftConnectUrl(draft: McpJsonImportDraft): string | null {
   if (draft.transport !== "mcp_remote") return null;
@@ -142,7 +142,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
       setOAuthError(
         error instanceof Error
           ? error.message
-          : "Paperclip couldn’t start secure sign-in. Try again.",
+          : "Todero couldn’t start secure sign-in. Try again.",
       );
     },
   });
@@ -330,7 +330,7 @@ export function PasteConfigTab({ companyId }: { companyId: string }) {
             })}
             {drafts.some((d) => draftConnectUrl(d)) ? (
               <p className="text-xs text-muted-foreground">
-                Checking a remote app creates a draft connection, stores any header replacements as Paperclip secrets,
+                Checking a remote app creates a draft connection, stores any header replacements as Todero secrets,
                 and runs health/catalog discovery before activation.
               </p>
             ) : (

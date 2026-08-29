@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent, CompanySecret } from "@paperclipai/shared";
-import type { PaperclipConfig } from "../config/schema.js";
+import type { Agent, CompanySecret } from "@todero/shared";
+import type { ToderoConfig } from "../config/schema.js";
 import { secretsCheck } from "../checks/secrets-check.js";
 import {
   buildInlineMigrationSecretName,
@@ -70,7 +70,7 @@ function secret(partial: Partial<CompanySecret>): CompanySecret {
   };
 }
 
-function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provider"]): PaperclipConfig {
+function configWithSecretsProvider(provider: ToderoConfig["secrets"]["provider"]): ToderoConfig {
   return {
     $meta: {
       version: 1,
@@ -79,18 +79,18 @@ function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provide
     },
     database: {
       mode: "embedded-postgres",
-      embeddedPostgresDataDir: "/tmp/paperclip/db",
+      embeddedPostgresDataDir: "/tmp/todero/db",
       embeddedPostgresPort: 55432,
       backup: {
         enabled: true,
         intervalMinutes: 60,
         retentionDays: 30,
-        dir: "/tmp/paperclip/backups",
+        dir: "/tmp/todero/backups",
       },
     },
     logging: {
       mode: "file",
-      logDir: "/tmp/paperclip/logs",
+      logDir: "/tmp/todero/logs",
     },
     server: {
       deploymentMode: "local_trusted",
@@ -110,10 +110,10 @@ function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provide
     storage: {
       provider: "local_disk",
       localDisk: {
-        baseDir: "/tmp/paperclip/storage",
+        baseDir: "/tmp/todero/storage",
       },
       s3: {
-        bucket: "paperclip",
+        bucket: "todero",
         region: "us-east-1",
         prefix: "",
         forcePathStyle: false,
@@ -123,7 +123,7 @@ function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provide
       provider,
       strictMode: true,
       localEncrypted: {
-        keyFilePath: "/tmp/paperclip/secrets/master.key",
+        keyFilePath: "/tmp/todero/secrets/master.key",
       },
     },
   };
@@ -254,7 +254,7 @@ describe("secrets CLI helpers", () => {
     process.env.PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID = "prod-us-1";
     process.env.PAPERCLIP_SECRETS_AWS_KMS_KEY_ID =
       "arn:aws:kms:us-east-1:123456789012:key/test";
-    process.env.AWS_PROFILE = "paperclip-prod";
+    process.env.AWS_PROFILE = "todero-prod";
 
     const result = secretsCheck(configWithSecretsProvider("aws_secrets_manager"));
 

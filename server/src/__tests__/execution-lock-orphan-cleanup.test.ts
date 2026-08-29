@@ -10,7 +10,7 @@ import {
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -31,7 +31,7 @@ describeEmbeddedPostgres("execution lock orphan cleanup", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-exec-lock-orphan-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-exec-lock-orphan-");
     db = createDb(tempDb.connectionString);
   }, 30_000);
 
@@ -53,7 +53,7 @@ describeEmbeddedPostgres("execution lock orphan cleanup", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

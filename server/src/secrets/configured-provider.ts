@@ -1,4 +1,4 @@
-import { SECRET_PROVIDERS, type SecretProvider } from "@paperclipai/shared";
+import { SECRET_PROVIDERS, type SecretProvider } from "@todero/shared";
 
 export function getConfiguredSecretProvider(): SecretProvider {
   const configuredProvider = process.env.PAPERCLIP_SECRETS_PROVIDER;

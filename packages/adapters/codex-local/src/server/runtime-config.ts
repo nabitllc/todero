@@ -11,15 +11,15 @@ type ParsedCodexProvidersConfig = {
   modelProvider: string | null;
 };
 
-// Marker comments delimiting the Paperclip-managed regions of config.toml.
+// Marker comments delimiting the Todero-managed regions of config.toml.
 // TOML requires root-level keys (model_provider) to appear before the first
 // table header, while [model_providers.*] tables must not swallow the user's
 // root keys, so the managed content is split into a root block prepended to
 // the file and a tables block appended to it.
-const MANAGED_ROOT_BEGIN = "# >>> paperclip codex providers (root) -- managed, do not edit >>>";
-const MANAGED_ROOT_END = "# <<< paperclip codex providers (root) <<<";
-const MANAGED_TABLES_BEGIN = "# >>> paperclip codex providers (tables) -- managed, do not edit >>>";
-const MANAGED_TABLES_END = "# <<< paperclip codex providers (tables) <<<";
+const MANAGED_ROOT_BEGIN = "# >>> todero codex providers (root) -- managed, do not edit >>>";
+const MANAGED_ROOT_END = "# <<< todero codex providers (root) <<<";
+const MANAGED_TABLES_BEGIN = "# >>> todero codex providers (tables) -- managed, do not edit >>>";
+const MANAGED_TABLES_END = "# <<< todero codex providers (tables) <<<";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -310,7 +310,7 @@ async function readFileOrNull(filePath: string): Promise<string | null> {
 // backup with full fidelity -- including user [model_providers.*] sections the
 // merge excised, which block-stripping alone cannot bring back.
 function configTomlBackupPath(configTomlPath: string): string {
-  return `${configTomlPath}.paperclip-backup`;
+  return `${configTomlPath}.todero-backup`;
 }
 
 // Merge custom Codex model providers supplied via PAPERCLIP_CODEX_PROVIDERS
@@ -360,7 +360,7 @@ export async function prepareCodexRuntimeConfig(input: {
         return {
           notes: [
             ...notes,
-            `Restored "${configTomlPath}" from its pre-run backup, removing stale Paperclip-managed model providers left by an interrupted run${reason}.`,
+            `Restored "${configTomlPath}" from its pre-run backup, removing stale Todero-managed model providers left by an interrupted run${reason}.`,
           ],
           cleanup: async () => {},
         };
@@ -374,7 +374,7 @@ export async function prepareCodexRuntimeConfig(input: {
           return {
             notes: [
               ...notes,
-              `Removed stale Paperclip-managed model provider blocks from "${configTomlPath}"${reason}.`,
+              `Removed stale Todero-managed model provider blocks from "${configTomlPath}"${reason}.`,
             ],
             cleanup: async () => {},
           };

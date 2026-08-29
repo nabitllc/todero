@@ -18,7 +18,7 @@ import {
   issues,
   nativeRunFinalizations,
   nativeRunResults,
-} from "@paperclipai/db";
+} from "@todero/db";
 
 import {
   getEmbeddedPostgresTestSupport,
@@ -225,7 +225,7 @@ describeEmbeddedPostgres("native Codex server vertical slice", () => {
       resultJson: {
         nativeRunner: {
           result: {
-            schema: "paperclip.run_result.v1",
+            schema: "todero.run_result.v1",
             completionClaim: {
               contractRevision: "1",
               objectiveSatisfied: true,
@@ -233,7 +233,7 @@ describeEmbeddedPostgres("native Codex server vertical slice", () => {
             },
           },
           terminal: {
-            schema: "paperclip.prp.terminal.v1",
+            schema: "todero.prp.terminal.v1",
             runTerminalState: "succeeded",
           },
         },

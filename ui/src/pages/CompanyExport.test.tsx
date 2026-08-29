@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ExportFidelityReport } from "@paperclipai/shared/portability-fidelity";
+import type { ExportFidelityReport } from "@todero/shared/portability-fidelity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompanyExport, resolveExportPreviewImageSrc } from "./CompanyExport";
 
@@ -45,7 +45,7 @@ vi.mock("../context/BreadcrumbContext", () => ({
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Paperclip" },
+    selectedCompany: { id: "company-1", name: "Todero" },
   }),
   useOptionalCompany: () => null,
 }));
@@ -81,7 +81,7 @@ async function flushReact() {
 
 function buildExportPreviewResult() {
   return {
-    rootPath: "paperclip",
+    rootPath: "todero",
     manifest: {
       agents: [],
       skills: [],
@@ -89,16 +89,16 @@ function buildExportPreviewResult() {
       issues: [],
       envInputs: [],
       includes: { company: true, agents: true, projects: true, issues: true, skills: false },
-      company: { name: "Paperclip", description: null },
+      company: { name: "Todero", description: null },
       schemaVersion: 1,
       generatedAt: "2026-01-01T00:00:00.000Z",
       source: null,
     },
-    files: { "README.md": "# Paperclip\n" },
+    files: { "README.md": "# Todero\n" },
     fileInventory: [],
     counts: { files: 1, agents: 0, skills: 0, projects: 0, issues: 0 },
     warnings: [],
-    paperclipExtensionPath: ".paperclip.yaml",
+    toderoExtensionPath: ".todero.yaml",
   };
 }
 
@@ -117,8 +117,8 @@ function buildRichExportPreviewResult() {
   return {
     ...base,
     files: {
-      "README.md": "# Paperclip\n",
-      ".paperclip.yaml": "schema: paperclip/v1\n",
+      "README.md": "# Todero\n",
+      ".todero.yaml": "schema: paperclip/v1\n",
       "agents/ceo/AGENT.md": "# CEO\n",
       "tasks/one-off/TASK.md": "# One-off\n",
       "tasks/weekly-report/TASK.md": "# Weekly report\n",
@@ -149,7 +149,7 @@ function buildRichExportPreviewResult() {
 
 function buildFidelityReport(warnings: ExportFidelityReport["warnings"]): ExportFidelityReport {
   return {
-    schema: "paperclip-export-fidelity-v1",
+    schema: "todero-export-fidelity-v1",
     companyId: "company-1",
     counts: {
       labelDefinitions: 0,
@@ -179,7 +179,7 @@ describe("CompanyExport", () => {
     mockAgentsApi.list.mockResolvedValue([]);
     mockProjectsApi.list.mockResolvedValue([]);
     mockCompaniesApi.exportPreview.mockResolvedValue(buildExportPreviewResult());
-    mockCompaniesApi.exportBundle.mockResolvedValue({ rootPath: "paperclip", files: {} });
+    mockCompaniesApi.exportBundle.mockResolvedValue({ rootPath: "todero", files: {} });
     mockCompaniesApi.exportFidelity.mockResolvedValue(buildFidelityReport([]));
     Object.assign(URL, {
       createObjectURL: vi.fn(() => "blob:mock"),
@@ -270,7 +270,7 @@ describe("CompanyExport", () => {
     await clickElement(retry!);
 
     expect(mockCompaniesApi.exportPreview).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("Paperclip export");
+    expect(container.textContent).toContain("Todero export");
   });
 
   it("starts the preview without waiting for sidebar-order dependencies", async () => {
@@ -284,7 +284,7 @@ describe("CompanyExport", () => {
     await renderPage();
 
     expect(mockCompaniesApi.exportPreview).toHaveBeenCalledTimes(1);
-    expect(container.textContent).toContain("Paperclip export");
+    expect(container.textContent).toContain("Todero export");
 
     await act(async () => {
       resolveSession({ user: { id: "user-1" } });
@@ -326,7 +326,7 @@ describe("CompanyExport", () => {
     expect(mockCompaniesApi.exportBundle).toHaveBeenCalledTimes(1);
     const request = mockCompaniesApi.exportBundle.mock.calls[0]![1];
     expect(request.selectedFiles).toEqual([
-      ".paperclip.yaml",
+      ".todero.yaml",
       "README.md",
       "agents/ceo/AGENT.md",
       "blobs/aaa111",
@@ -434,7 +434,7 @@ describe("CompanyExport", () => {
     expect(mockCompaniesApi.exportBundle).toHaveBeenCalledTimes(1);
     const request = mockCompaniesApi.exportBundle.mock.calls[0]![1];
     expect(request.selectedFiles).toEqual([
-      ".paperclip.yaml",
+      ".todero.yaml",
       "README.md",
       "agents/ceo/AGENT.md",
       "tasks/weekly-report/TASK.md",

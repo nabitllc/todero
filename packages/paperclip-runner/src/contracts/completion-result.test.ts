@@ -6,7 +6,7 @@ import {
 } from "./completion-result.js";
 
 const baseResult = {
-  schema: "paperclip.run_result.v1",
+  schema: "todero.run_result.v1",
   reportedWorkDisposition: "done",
   summary: "Completed the requested work.",
   completionClaim: {

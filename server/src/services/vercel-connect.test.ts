@@ -7,12 +7,12 @@ import {
   vercelGrantReference,
   vercelTokenRequest,
 } from "./vercel-connect.js";
-import type { VercelConnectCredentialReference } from "@paperclipai/shared";
+import type { VercelConnectCredentialReference } from "@todero/shared";
 
 const credential: VercelConnectCredentialReference = {
   provider: "vercel_connect",
   connectorId: "scl_posthog",
-  connectorUid: "posthog-paperclip",
+  connectorUid: "posthog-todero",
   service: "posthog",
   connectorType: "api-key",
   principalMode: "user",
@@ -24,15 +24,15 @@ const credential: VercelConnectCredentialReference = {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Vercel Connect credential adapter", () => {
-  it("canonicalizes Paperclip's loopback callback to Vercel's accepted localhost form", () => {
+  it("canonicalizes Todero's loopback callback to Vercel's accepted localhost form", () => {
     expect(vercelConnectCallbackUrl(
       "http://127.0.0.1:3200/api/tools/oauth/callback?stale=1#fragment",
       "one-time-state",
     )).toBe("http://localhost:3200/api/tools/vercel-connect/callback?state=one-time-state");
     expect(vercelConnectCallbackUrl(
-      "https://paperclip.example/api/tools/oauth/callback",
+      "https://todero.example/api/tools/oauth/callback",
       "one-time-state",
-    )).toBe("https://paperclip.example/api/tools/vercel-connect/callback?state=one-time-state");
+    )).toBe("https://todero.example/api/tools/vercel-connect/callback?state=one-time-state");
   });
 
   it("gates new setup separately from runtime credential availability", () => {
@@ -99,7 +99,7 @@ describe("Vercel Connect credential adapter", () => {
       resources: ["https://mcp.posthog.com/mcp"],
       grant: { kind: "organization", subjectUserId: null, externalCredential: null },
     })).toMatchObject({
-      connector: "posthog-paperclip",
+      connector: "posthog-todero",
       subject: { type: "app" },
       resources: ["https://mcp.posthog.com/mcp"],
     });
@@ -114,7 +114,7 @@ describe("Vercel Connect credential adapter", () => {
         token: "provider-bearer-must-not-persist",
         tokenId: "stk_123",
         expiresAt: Date.parse("2026-08-26T13:00:00.000Z"),
-        connector: { id: "scl_posthog", uid: "posthog-paperclip", type: "api-key" },
+        connector: { id: "scl_posthog", uid: "posthog-todero", type: "api-key" },
         installationId: "installation-1",
         tenantId: "project-1",
         claims: { email: "private@example.com" },

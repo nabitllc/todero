@@ -40,7 +40,7 @@ describe("admin, asset, and skill parity commands", () => {
     delete process.env.PAPERCLIP_API_URL;
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    tempDir = await mkdtemp(path.join(tmpdir(), "paperclip-cli-parity-"));
+    tempDir = await mkdtemp(path.join(tmpdir(), "todero-cli-parity-"));
   });
 
   afterEach(async () => {

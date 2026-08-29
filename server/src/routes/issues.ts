@@ -3,7 +3,7 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNull, notInArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   activityLog,
   agents,
@@ -25,7 +25,7 @@ import {
   pipelineStages,
   pipelines,
   projectWorkspaces,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   addIssueCommentSchema,
   acceptIssueThreadInteractionSchema,
@@ -104,8 +104,8 @@ import {
   issueWriteDenialResponse,
   type IssueWriteDenialCode,
   type IssueWriteDenialContext,
-} from "@paperclipai/shared";
-import { trackAgentTaskCompleted } from "@paperclipai/shared/telemetry";
+} from "@todero/shared";
+import { trackAgentTaskCompleted } from "@todero/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
 import { isUniqueViolation } from "../db-errors.js";
 import type { StorageService } from "../storage/types.js";
@@ -449,7 +449,7 @@ function resolveAttachmentResponseContentType(input: {
   return inferVideoContentTypeFromFilename(input.originalFilename) ?? storedContentType;
 }
 
-function requiresPaperclipAttachmentMetadata(input: {
+function requiresToderoAttachmentMetadata(input: {
   type?: unknown;
   provider?: unknown;
 }, fallback?: {
@@ -458,7 +458,7 @@ function requiresPaperclipAttachmentMetadata(input: {
 }) {
   const type = typeof input.type === "string" ? input.type : fallback?.type ?? null;
   const provider = typeof input.provider === "string" ? input.provider : fallback?.provider ?? null;
-  return type === "artifact" && provider === "paperclip";
+  return type === "artifact" && provider === "todero";
 }
 
 const attachmentArtifactMetadataInputSchema = z.object({
@@ -2685,7 +2685,7 @@ async function coordinateIssueListGet(input: {
         identicalInFlightCount,
         windowMs: now - existing.startedAt,
         referer: safeRefererPath(input.req),
-        visibilityHint: input.req.header("x-paperclip-tab-visible") ?? null,
+        visibilityHint: input.req.header("x-todero-tab-visible") ?? null,
       };
       logger.warn(event, "request_storm_detected");
       input.diagnostics?.onStormDetected?.(event);
@@ -2774,7 +2774,7 @@ function logIssueListRequest(input: {
       cacheStatus: input.cacheStatus,
       etagOutcome: input.etagOutcome,
       referer: safeRefererPath(input.req),
-      visibilityHint: input.req.header("x-paperclip-tab-visible") ?? null,
+      visibilityHint: input.req.header("x-todero-tab-visible") ?? null,
     }, "safe authenticated GET observed");
   });
 }
@@ -2986,10 +2986,10 @@ export function issueRoutes(
       ? run.contextSnapshot as Record<string, unknown>
       : null;
     if (!context || !readNonEmptyString(context.executionWorkspaceId)) return null;
-    const paperclipIssue = context.paperclipIssue && typeof context.paperclipIssue === "object"
-      ? context.paperclipIssue as Record<string, unknown>
+    const toderoIssue = context.toderoIssue && typeof context.toderoIssue === "object"
+      ? context.toderoIssue as Record<string, unknown>
       : null;
-    return readNonEmptyString(context.issueId) ?? readNonEmptyString(paperclipIssue?.id);
+    return readNonEmptyString(context.issueId) ?? readNonEmptyString(toderoIssue?.id);
   }
 
   async function resolveAgentTrustForIssue(
@@ -3468,7 +3468,7 @@ export function issueRoutes(
     };
   }
 
-  async function canonicalizePaperclipArtifactMetadata(input: {
+  async function canonicalizeToderoArtifactMetadata(input: {
     issue: { id: string; companyId: string };
     metadata: Record<string, unknown> | null | undefined;
   }) {
@@ -4891,12 +4891,12 @@ export function issueRoutes(
     if (!run) return null;
 
     const context = readObject(run.contextSnapshot);
-    const paperclipWake = readObject(context.paperclipWake);
-    const recovery = readObject(paperclipWake.recovery);
+    const toderoWake = readObject(context.toderoWake);
+    const recovery = readObject(toderoWake.recovery);
     const wakeReason = typeof context.wakeReason === "string"
       ? context.wakeReason
-      : typeof paperclipWake.reason === "string"
-        ? paperclipWake.reason
+      : typeof toderoWake.reason === "string"
+        ? toderoWake.reason
         : null;
     if (wakeReason !== "source_scoped_recovery_action") return null;
 
@@ -6176,7 +6176,7 @@ export function issueRoutes(
       },
     });
 
-    res.setHeader("X-Paperclip-Request-Cache", coordinated.cacheStatus);
+    res.setHeader("X-Todero-Request-Cache", coordinated.cacheStatus);
     if (!coordinated.response) {
       const body = {
         error: "Too many concurrent issue-list requests for this actor/client",
@@ -7881,8 +7881,8 @@ export function issueRoutes(
     const createdByRunId = await resolveWorkProductCreatedByRunId(req, res, issue.companyId, req.body, "create");
     if (createdByRunId === undefined) return;
     createInput.createdByRunId = createdByRunId;
-    if (requiresPaperclipAttachmentMetadata(createInput)) {
-      createInput.metadata = await canonicalizePaperclipArtifactMetadata({
+    if (requiresToderoAttachmentMetadata(createInput)) {
+      createInput.metadata = await canonicalizeToderoArtifactMetadata({
         issue,
         metadata: req.body.metadata ?? null,
       });
@@ -8102,7 +8102,7 @@ export function issueRoutes(
           issueId: issue.id,
           projectId: issue.projectId ?? null,
           type: "artifact",
-          provider: "paperclip",
+          provider: "todero",
           externalId: req.body.sourceArtifactId,
           title: req.body.title,
           status: "approved",
@@ -8172,13 +8172,13 @@ export function issueRoutes(
     const createdByRunId = await resolveWorkProductCreatedByRunId(req, res, existing.companyId, req.body, "update");
     if (createdByRunId === undefined && Object.prototype.hasOwnProperty.call(req.body, "createdByRunId")) return;
     if (createdByRunId !== undefined) patch.createdByRunId = createdByRunId;
-    if (requiresPaperclipAttachmentMetadata(patch, existing)) {
+    if (requiresToderoAttachmentMetadata(patch, existing)) {
       if (patch.metadata !== undefined) {
-        patch.metadata = await canonicalizePaperclipArtifactMetadata({
+        patch.metadata = await canonicalizeToderoArtifactMetadata({
           issue,
           metadata: patch.metadata ?? null,
         });
-      } else if (!requiresPaperclipAttachmentMetadata(existing)) {
+      } else if (!requiresToderoAttachmentMetadata(existing)) {
         res.status(422).json({ error: "Attachment-backed artifact metadata is required" });
         return;
       }

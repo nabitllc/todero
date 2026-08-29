@@ -8,7 +8,7 @@ import {
   buildRuntimeExposureHealthUrl,
   buildRuntimeExposureUrl,
   deriveViteHmrPort,
-  derivePaperclipViteHmrPort,
+  deriveToderoViteHmrPort,
   isAllowedRuntimeExposurePort,
   isRuntimeExposureAppPort,
   isRuntimeExposureHmrPort,
@@ -50,19 +50,19 @@ describe("runtime exposure port policy", () => {
     expect(() => deriveViteHmrPort(52000)).toThrow(RangeError);
   });
 
-  it("shares the generic Paperclip HMR derivation with high-port overflow fallback", () => {
-    expect(derivePaperclipViteHmrPort(3_100)).toBe(13_100);
-    expect(derivePaperclipViteHmrPort(55_535)).toBe(65_535);
-    expect(derivePaperclipViteHmrPort(55_536)).toBe(45_536);
-    expect(() => derivePaperclipViteHmrPort(0)).toThrow(/valid TCP port/);
+  it("shares the generic Todero HMR derivation with high-port overflow fallback", () => {
+    expect(deriveToderoViteHmrPort(3_100)).toBe(13_100);
+    expect(deriveToderoViteHmrPort(55_535)).toBe(65_535);
+    expect(deriveToderoViteHmrPort(55_536)).toBe(45_536);
+    expect(() => deriveToderoViteHmrPort(0)).toThrow(/valid TCP port/);
   });
 
   it("builds https URLs on the non-standard port", () => {
-    expect(buildRuntimeExposureUrl("paperclip-dev.tail29c1aa.ts.net", 42010)).toBe(
-      "https://paperclip-dev.tail29c1aa.ts.net:42010",
+    expect(buildRuntimeExposureUrl("todero-dev.tail29c1aa.ts.net", 42010)).toBe(
+      "https://todero-dev.tail29c1aa.ts.net:42010",
     );
-    expect(buildRuntimeExposureHealthUrl("paperclip-dev.tail29c1aa.ts.net", 42010)).toBe(
-      "https://paperclip-dev.tail29c1aa.ts.net:42010/api/health",
+    expect(buildRuntimeExposureHealthUrl("todero-dev.tail29c1aa.ts.net", 42010)).toBe(
+      "https://todero-dev.tail29c1aa.ts.net:42010/api/health",
     );
   });
 

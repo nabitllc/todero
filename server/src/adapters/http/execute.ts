@@ -15,7 +15,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     agentId: agent.id,
     runId,
     context,
-    ...(ctx.runtimeTools ? { paperclipRuntimeTools: ctx.runtimeTools } : {}),
+    ...(ctx.runtimeTools ? { toderoRuntimeTools: ctx.runtimeTools } : {}),
   };
 
   const controller = new AbortController();

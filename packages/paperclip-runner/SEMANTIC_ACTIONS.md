@@ -11,7 +11,7 @@ project only actions that have current actor, task, company, claim, mode, and
 application-binding authority. It rechecks that authority before each call.
 The package still adds no application binding, credential, server route, or
 Codex tool installation. Until a later server integration supplies those
-bindings, Codex receives no dynamic Paperclip tools.
+bindings, Codex receives no dynamic Todero tools.
 
 The initial catalog excludes scenario-only and lab operations, other-provider
 extensions, and a generic API escape hatch. Those additions need their own
@@ -23,7 +23,7 @@ reviewed schemas and authority boundaries.
 import {
   PAPERCLIP_SEMANTIC_ACTION_CATALOG,
   paperclipSemanticAction,
-} from "@paperclipai/paperclip-runner";
+} from "@todero/paperclip-runner";
 
 const writeDocument = paperclipSemanticAction("write_document");
 ```
@@ -33,7 +33,7 @@ const writeDocument = paperclipSemanticAction("write_document");
 
 ## Run-scoped authority
 
-`PaperclipSemanticDispatcher` accepts a current-context provider and an
+`ToderoSemanticDispatcher` accepts a current-context provider and an
 explicit list of application bindings. Unbound actions are absent. Actor claims
 and run-delegated claims are intersected. Optional discovery returns only bound
 actions that pass the same authorization check. Mutation actions also require
@@ -48,7 +48,7 @@ allowlisted references only.
 runtime declarations. Change the TypeScript source, then run:
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner generate:semantic-action-catalog
+pnpm --filter @todero/paperclip-runner generate:semantic-action-catalog
 ```
 
 The package build and catalog tests compare the checked-in inventory byte for

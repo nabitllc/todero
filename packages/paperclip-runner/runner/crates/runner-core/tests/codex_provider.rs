@@ -53,7 +53,7 @@ fn provider_config(directory: &Path, switches: &[&str]) -> CodexProviderConfig {
 
 fn command(id: &str, sequence: u64, command_type: &str, payload: Value) -> Command {
     Command {
-        schema: "paperclip.prp.command.v1".to_owned(),
+        schema: "todero.prp.command.v1".to_owned(),
         command_id: id.to_owned(),
         controller_seq: sequence,
         command_type: command_type.to_owned(),
@@ -339,7 +339,7 @@ fn structured_question_round_trips_through_the_normalized_backend() {
             if event.event_type == "runtime_request.created" {
                 assert_eq!(
                     event.payload["request"]["schema"],
-                    "paperclip.runtime_request.v2"
+                    "todero.runtime_request.v2"
                 );
                 question_set = event.payload.pointer("/request/input").cloned();
             }
@@ -350,7 +350,7 @@ fn structured_question_round_trips_through_the_normalized_backend() {
     }
     let question_set = question_set.expect("normalized question set is emitted");
     assert_eq!(provider_started_events, 1);
-    assert_eq!(question_set["schema"], "paperclip.question_set.v1");
+    assert_eq!(question_set["schema"], "todero.question_set.v1");
     assert_eq!(
         question_set["questions"][0]["options"][0]["label"],
         "Staging"
@@ -364,7 +364,7 @@ fn structured_question_round_trips_through_the_normalized_backend() {
             json!({
                 "requestId": "runtime-request-1",
                 "response": {
-                    "schema": "paperclip.question_response.v1",
+                    "schema": "todero.question_response.v1",
                     "answers": {"environment": {"selectedOptionIds": ["option-1"]}}
                 }
             }),

@@ -29,11 +29,11 @@ COMPANY_ID="${COMPANY_ID:-${PAPERCLIP_COMPANY_ID:-}}"
 COMPANY_SELECTOR="${COMPANY_SELECTOR:-}"
 
 RUN_SUFFIX="${HERMES_SMOKE_RUN_SUFFIX:-$(date +%Y%m%d-%H%M%S)-$$}"
-HERMES_IMAGE="${HERMES_IMAGE:-paperclip-hermes-gateway-smoke:local}"
+HERMES_IMAGE="${HERMES_IMAGE:-todero-hermes-gateway-smoke:local}"
 HERMES_VERSION="${HERMES_VERSION:-0.17.0}"
 HERMES_BUILD="${HERMES_BUILD:-1}"
 HERMES_DOCKER_CONTEXT="${HERMES_DOCKER_CONTEXT:-docker/hermes-gateway-smoke}"
-HERMES_CONTAINER_NAME="${HERMES_CONTAINER_NAME:-paperclip-hermes-gateway-smoke-${RUN_SUFFIX}}"
+HERMES_CONTAINER_NAME="${HERMES_CONTAINER_NAME:-todero-hermes-gateway-smoke-${RUN_SUFFIX}}"
 HERMES_GATEWAY_PORT="${HERMES_GATEWAY_PORT:-8642}"
 HERMES_GATEWAY_API_BASE_URL="${HERMES_GATEWAY_API_BASE_URL:-http://127.0.0.1:${HERMES_GATEWAY_PORT}}"
 HERMES_GATEWAY_PROBE_URL="${HERMES_GATEWAY_PROBE_URL:-http://127.0.0.1:${HERMES_GATEWAY_PORT}}"
@@ -47,8 +47,8 @@ HERMES_STOP_ASSERT="${HERMES_STOP_ASSERT:-auto}"
 HERMES_SMOKE_KEEP="${HERMES_SMOKE_KEEP:-0}"
 HERMES_SMOKE_NETWORK="${HERMES_SMOKE_NETWORK:-}"
 HERMES_DOCKER_ADD_HOST="${HERMES_DOCKER_ADD_HOST:-1}"
-HERMES_SMOKE_STATE_DIR="${HERMES_SMOKE_STATE_DIR:-${TMPDIR:-/tmp}/paperclip-hermes-gateway-smoke-${RUN_SUFFIX}}"
-HERMES_SMOKE_DIAG_DIR="${HERMES_SMOKE_DIAG_DIR:-${TMPDIR:-/tmp}/paperclip-hermes-gateway-e2e-diag-${RUN_SUFFIX}}"
+HERMES_SMOKE_STATE_DIR="${HERMES_SMOKE_STATE_DIR:-${TMPDIR:-/tmp}/todero-hermes-gateway-smoke-${RUN_SUFFIX}}"
+HERMES_SMOKE_DIAG_DIR="${HERMES_SMOKE_DIAG_DIR:-${TMPDIR:-/tmp}/todero-hermes-gateway-e2e-diag-${RUN_SUFFIX}}"
 HERMES_SMOKE_MODEL_PROVIDER="${HERMES_SMOKE_MODEL_PROVIDER:-}"
 HERMES_SMOKE_MODEL_DEFAULT="${HERMES_SMOKE_MODEL_DEFAULT:-}"
 HERMES_SMOKE_MODEL_BASE_URL="${HERMES_SMOKE_MODEL_BASE_URL:-}"
@@ -72,9 +72,9 @@ print_usage() {
 Hermes gateway Docker E2E smoke
 
 Builds a fresh Hermes gateway container, verifies the gateway API directly,
-joins it to Paperclip as a hermes_gateway agent, wakes that agent on a smoke
+joins it to Todero as a hermes_gateway agent, wakes that agent on a smoke
 issue, verifies the issue result, captures redacted diagnostics, and cleans up
-Paperclip and Docker state unless HERMES_SMOKE_KEEP=1.
+Todero and Docker state unless HERMES_SMOKE_KEEP=1.
 
 Required:
   PAPERCLIP_API_URL=http://127.0.0.1:3100
@@ -83,7 +83,7 @@ Required:
 Common flags:
   COMPANY_ID=<uuid> or COMPANY_SELECTOR=<prefix|name|uuid>
   HERMES_VERSION=0.17.0
-  HERMES_IMAGE=paperclip-hermes-gateway-smoke:local
+  HERMES_IMAGE=todero-hermes-gateway-smoke:local
   HERMES_GATEWAY_PORT=8642
   HERMES_GATEWAY_API_BASE_URL=http://127.0.0.1:8642
   HERMES_GATEWAY_PROBE_URL=http://127.0.0.1:8642
@@ -98,12 +98,12 @@ Common flags:
   HERMES_SMOKE_MODEL_BASE_URL=https://openrouter.ai/api/v1
 
 Mode notes:
-  HERMES_GATEWAY_API_BASE_URL is the URL stored on the Paperclip adapter and
-  must be reachable by the Paperclip server. HERMES_GATEWAY_PROBE_URL is the URL
+  HERMES_GATEWAY_API_BASE_URL is the URL stored on the Todero adapter and
+  must be reachable by the Todero server. HERMES_GATEWAY_PROBE_URL is the URL
   this operator shell uses for direct gateway checks. They can differ for Docker
   network and reverse-proxy smoke runs.
 
-  Raw Hermes and Paperclip API keys are redacted from logs and diagnostic files.
+  Raw Hermes and Todero API keys are redacted from logs and diagnostic files.
   The E2E helper seeds a minimal non-secret Hermes config in the fresh container
   state, including command_allowlist: execute_code so gateway/API runs do not
   pause on an interactive approval prompt.
@@ -406,8 +406,8 @@ capture_diagnostics() {
   gateway_request "GET" "/health" "" "${HERMES_SMOKE_DIAG_DIR}/gateway-health.json" || true
   gateway_request "GET" "/v1/capabilities" "" "${HERMES_SMOKE_DIAG_DIR}/gateway-capabilities.json" || true
   capture_container_logs
-  capture_issue_diagnostics "$SMOKE_ISSUE_ID" "paperclip-smoke"
-  capture_run_diagnostics "$RUN_ID" "paperclip-smoke"
+  capture_issue_diagnostics "$SMOKE_ISSUE_ID" "todero-smoke"
+  capture_run_diagnostics "$RUN_ID" "todero-smoke"
 }
 
 cleanup_paperclip_state() {
@@ -590,16 +590,16 @@ assert_fresh_container_state() {
 }
 
 probe_container_to_paperclip() {
-  log "probing container-to-Paperclip connectivity at ${PAPERCLIP_API_URL_FOR_HERMES}/api/health"
-  if ! docker exec "$HERMES_CONTAINER_NAME" curl -fsS --max-time 8 "${PAPERCLIP_API_URL_FOR_HERMES%/}/api/health" > "${HERMES_SMOKE_DIAG_DIR}/container-paperclip-health.json"; then
-    fail "Hermes container cannot reach Paperclip. Set PAPERCLIP_API_URL_FOR_HERMES to a URL reachable from inside Docker, or keep HERMES_DOCKER_ADD_HOST=1 for Linux host.docker.internal."
+  log "probing container-to-Todero connectivity at ${PAPERCLIP_API_URL_FOR_HERMES}/api/health"
+  if ! docker exec "$HERMES_CONTAINER_NAME" curl -fsS --max-time 8 "${PAPERCLIP_API_URL_FOR_HERMES%/}/api/health" > "${HERMES_SMOKE_DIAG_DIR}/container-todero-health.json"; then
+    fail "Hermes container cannot reach Todero. Set PAPERCLIP_API_URL_FOR_HERMES to a URL reachable from inside Docker, or keep HERMES_DOCKER_ADD_HOST=1 for Linux host.docker.internal."
   fi
 }
 
 probe_gateway_readiness() {
   log "waiting for Hermes gateway health at ${HERMES_GATEWAY_PROBE_URL%/}/health"
   if [[ "$HERMES_GATEWAY_PROBE_URL" != "$HERMES_GATEWAY_API_BASE_URL" ]]; then
-    log "Paperclip will store Hermes gateway URL ${HERMES_GATEWAY_API_BASE_URL}"
+    log "Todero will store Hermes gateway URL ${HERMES_GATEWAY_API_BASE_URL}"
   fi
   wait_http_ready "${HERMES_GATEWAY_PROBE_URL%/}/health" "$GATEWAY_READY_TIMEOUT_SEC" || fail "Hermes gateway health did not become ready"
 
@@ -653,8 +653,8 @@ assert_direct_gateway_run() {
   local payload
   payload="$(jq -nc \
     --arg marker "$marker" \
-    --arg session "paperclip-smoke-direct-${RUN_SUFFIX}" \
-    '{input: ("Reply with exactly " + $marker + " and no other text."), instructions: "You are running a Paperclip Hermes gateway smoke direct API assertion.", session_id: $session}')"
+    --arg session "todero-smoke-direct-${RUN_SUFFIX}" \
+    '{input: ("Reply with exactly " + $marker + " and no other text."), instructions: "You are running a Todero Hermes gateway smoke direct API assertion.", session_id: $session}')"
 
   log "asserting POST /v1/runs and SSE events"
   gateway_request "POST" "/v1/runs" "$payload" "${HERMES_SMOKE_DIAG_DIR}/direct-run-create.json"
@@ -697,7 +697,7 @@ assert_stop_behavior_if_deterministic() {
 
   local payload
   payload="$(jq -nc \
-    --arg session "paperclip-smoke-stop-${RUN_SUFFIX}" \
+    --arg session "todero-smoke-stop-${RUN_SUFFIX}" \
     '{input: "Wait until stopped. If you cannot wait, emit a short acknowledgement.", instructions: "This run exists only to verify the Hermes gateway stop endpoint.", session_id: $session}')"
 
   log "probing /stop behavior (mode=${HERMES_STOP_ASSERT})"
@@ -779,23 +779,23 @@ join_hermes_agent() {
 }
 
 install_claimed_key_in_container() {
-  log "placing newly claimed Paperclip key in container workspace"
-  local key_file="${HERMES_SMOKE_STATE_DIR}/workspace/paperclip-claimed-api-key.json"
+  log "placing newly claimed Todero key in container workspace"
+  local key_file="${HERMES_SMOKE_STATE_DIR}/workspace/todero-claimed-api-key.json"
   jq -nc --arg token "$AGENT_API_KEY" '{token:$token,apiKey:$token}' > "$key_file"
   # The host-created bind-mounted file must be readable by the non-root hermes
   # user inside the container. The state dir is still per-run and deleted on
   # success unless HERMES_SMOKE_KEEP=1.
   chmod 644 "$key_file"
-  docker exec "$HERMES_CONTAINER_NAME" sh -lc 'test -f /home/hermes/workspace/paperclip-claimed-api-key.json && test ! -e "$HERMES_HOME/host-sentinel.txt"'
+  docker exec "$HERMES_CONTAINER_NAME" sh -lc 'test -f /home/hermes/workspace/todero-claimed-api-key.json && test ! -e "$HERMES_HOME/host-sentinel.txt"'
 }
 
 patch_agent_instructions_with_claimed_key() {
-  log "patching Hermes agent instructions with claimed Paperclip API context"
+  log "patching Hermes agent instructions with claimed Todero API context"
   api_request "GET" "/agents/${AGENT_ID}"
   assert_status "200"
 
   local instructions patch_payload
-  instructions="For this smoke run only, call Paperclip at ${PAPERCLIP_API_URL_FOR_HERMES}. Read /home/hermes/workspace/paperclip-claimed-api-key.json and use its token as PAPERCLIP_API_KEY for Paperclip API requests. Do not reveal this key. When mutating Paperclip, include X-Paperclip-Run-Id with the current Paperclip run id when available."
+  instructions="For this smoke run only, call Todero at ${PAPERCLIP_API_URL_FOR_HERMES}. Read /home/hermes/workspace/todero-claimed-api-key.json and use its token as PAPERCLIP_API_KEY for Todero API requests. Do not reveal this key. When mutating Todero, include X-Todero-Run-Id with the current Todero run id when available."
   patch_payload="$(jq -c --arg instructions "$instructions" '
     {adapterConfig: ((.adapterConfig // {}) + {instructions: $instructions})}
   ' <<<"$RESPONSE_BODY")"
@@ -807,7 +807,7 @@ create_smoke_issue() {
   local marker="HERMES_PAPERCLIP_E2E_OK_${RUN_SUFFIX}"
   local title="[Hermes Gateway Smoke] ${RUN_SUFFIX}"
   local description
-  description="Hermes gateway full Docker e2e smoke.\n\n1. Read this issue.\n2. Post a Paperclip issue comment containing exactly: ${marker}\n3. Mark this issue done.\n\nUse the Paperclip API URL and key provided in your run instructions. Do not reveal secrets."
+  description="Hermes gateway full Docker e2e smoke.\n\n1. Read this issue.\n2. Post a Todero issue comment containing exactly: ${marker}\n3. Mark this issue done.\n\nUse the Todero API URL and key provided in your run instructions. Do not reveal secrets."
 
   local payload
   payload="$(jq -nc \
@@ -821,7 +821,7 @@ create_smoke_issue() {
   SMOKE_ISSUE_IDENTIFIER="$(jq -r '.identifier // empty' <<<"$RESPONSE_BODY")"
   [[ -n "$SMOKE_ISSUE_ID" ]] || fail "smoke issue create missing id"
   log "created smoke issue ${SMOKE_ISSUE_ID} (${SMOKE_ISSUE_IDENTIFIER})"
-  echo "$marker" > "${HERMES_SMOKE_DIAG_DIR}/paperclip-marker.txt"
+  echo "$marker" > "${HERMES_SMOKE_DIAG_DIR}/todero-marker.txt"
 }
 
 trigger_wakeup() {
@@ -835,7 +835,7 @@ trigger_wakeup() {
   fi
   RUN_ID="$(jq -r '.id // empty' <<<"$RESPONSE_BODY")"
   [[ -n "$RUN_ID" ]] || fail "wakeup response missing run id"
-  log "triggered Paperclip run ${RUN_ID}"
+  log "triggered Todero run ${RUN_ID}"
 }
 
 get_run_status() {
@@ -911,12 +911,12 @@ issue_comments_contain() {
 
 assert_paperclip_wake_success() {
   local marker
-  marker="$(cat "${HERMES_SMOKE_DIAG_DIR}/paperclip-marker.txt")"
+  marker="$(cat "${HERMES_SMOKE_DIAG_DIR}/todero-marker.txt")"
 
   trigger_wakeup
   local run_status issue_status marker_found
   run_status="$(wait_for_run_terminal "$RUN_ID" "$RUN_TIMEOUT_SEC")"
-  log "Paperclip run ${RUN_ID} status=${run_status}"
+  log "Todero run ${RUN_ID} status=${run_status}"
   issue_status="$(wait_for_issue_terminal "$SMOKE_ISSUE_ID" "$CASE_TIMEOUT_SEC")"
   marker_found="$(issue_comments_contain "$SMOKE_ISSUE_ID" "$marker")"
   log "smoke issue status=${issue_status} marker_found=${marker_found}"
@@ -925,7 +925,7 @@ assert_paperclip_wake_success() {
     capture_diagnostics
   fi
   if [[ "$STRICT_CASES" == "1" ]]; then
-    [[ "$run_status" == "succeeded" ]] || fail "Paperclip Hermes gateway run did not succeed"
+    [[ "$run_status" == "succeeded" ]] || fail "Todero Hermes gateway run did not succeed"
     [[ "$issue_status" == "done" ]] || fail "smoke issue did not reach done"
     [[ "$marker_found" == "true" ]] || fail "smoke marker was not found in issue comments"
   fi
@@ -970,7 +970,7 @@ main() {
 
   api_request "GET" "/health"
   assert_status "200"
-  log "Paperclip health deploymentMode=$(jq -r '.deploymentMode // "unknown"' <<<"$RESPONSE_BODY") exposure=$(jq -r '.deploymentExposure // "unknown"' <<<"$RESPONSE_BODY")"
+  log "Todero health deploymentMode=$(jq -r '.deploymentMode // "unknown"' <<<"$RESPONSE_BODY") exposure=$(jq -r '.deploymentExposure // "unknown"' <<<"$RESPONSE_BODY")"
   require_board_auth
   resolve_company_id
 

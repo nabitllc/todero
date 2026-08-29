@@ -1,7 +1,7 @@
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { withDirectoryMergeLock } from "@paperclipai/adapter-utils/workspace-restore-merge";
+import { withDirectoryMergeLock } from "@todero/adapter-utils/workspace-restore-merge";
 import {
   isCodexAuthCacheEnabled,
   readSubscriptionAccountId,
@@ -87,7 +87,7 @@ export async function copyBackCodexAuth(input: CopyBackCodexAuthInput): Promise<
   } catch (error) {
     if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") {
       await log(
-        "[paperclip] Codex auth copy-back: no sandbox credential to copy back (absent auth.json); host credential kept.",
+        "[todero] Codex auth copy-back: no sandbox credential to copy back (absent auth.json); host credential kept.",
       );
       return "kept-host";
     }
@@ -117,13 +117,13 @@ export async function copyBackCodexAuth(input: CopyBackCodexAuthInput): Promise<
           // Atomic same-directory swap; rename preserves the temp's 0600 mode.
           await rename(stagedTempPath, hostAuthPath);
           await log(
-            "[paperclip] Codex auth copy-back: sandbox credential is strictly newer for the same subscription identity; installed to the host at mode 0600.",
+            "[todero] Codex auth copy-back: sandbox credential is strictly newer for the same subscription identity; installed to the host at mode 0600.",
           );
           return "copied";
         }
 
         await log(
-          "[paperclip] Codex auth copy-back: host credential kept (sandbox copy is not a strictly-newer same-identity subscription credential).",
+          "[todero] Codex auth copy-back: host credential kept (sandbox copy is not a strictly-newer same-identity subscription credential).",
         );
         return "kept-host";
       } finally {
@@ -169,7 +169,7 @@ export async function copyBackCodexAuth(input: CopyBackCodexAuthInput): Promise<
       // `hostOutcome` below.
       await Promise.resolve(
         log(
-          `[paperclip] Codex auth cache: additive cache write failed (${code}); host copy-back result kept.`,
+          `[todero] Codex auth cache: additive cache write failed (${code}); host copy-back result kept.`,
         ),
       ).catch(() => undefined);
     }

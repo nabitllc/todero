@@ -6,9 +6,9 @@ import os from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import type { AdapterRuntimeServiceReport } from "@paperclipai/adapter-utils";
-import type { Db } from "@paperclipai/db";
-import { executionWorkspaces, issueComments, issues, projectWorkspaces, workspaceRuntimeServices } from "@paperclipai/db";
+import type { AdapterRuntimeServiceReport } from "@todero/adapter-utils";
+import type { Db } from "@todero/db";
+import { executionWorkspaces, issueComments, issues, projectWorkspaces, workspaceRuntimeServices } from "@todero/db";
 import {
   DEFAULT_TAILSCALE_HTTPS_EXPOSURE,
   deriveViteHmrPort,
@@ -31,7 +31,7 @@ import {
   type WorkspaceOperationPhase,
   type WorkspaceRuntimeDesiredState,
   type WorkspaceRuntimeServiceStateMap,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { and, desc, eq, gte, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { asNumber, asString, parseObject, renderTemplate } from "../adapters/utils.js";
 import { conflict } from "../errors.js";
@@ -271,7 +271,7 @@ const OPEN_EXECUTION_WORKSPACE_LEASE_STATUSES = ["active", "idle", "in_review"] 
 const DEFAULT_EXECUTE_PROCESS_OUTPUT_BYTES = 256 * 1024;
 export const WORKSPACE_RUNTIME_PORT_ALLOCATION_ATTEMPTS = 32;
 const ACTIVE_RUNTIME_PORT_RESERVATION_STATUSES = ["provisioning", "starting", "running"] as const;
-const DEFAULT_TAILSCALE_BROKER_SOCKET = "/run/paperclip-tailscale-broker/broker.sock";
+const DEFAULT_TAILSCALE_BROKER_SOCKET = "/run/todero-tailscale-broker/broker.sock";
 
 class RuntimeServicePortBindCollision extends Error {
   readonly port: number;
@@ -305,7 +305,7 @@ export type WorkspaceRuntimeExposureDeps = ExposureManagerDeps & {
   isPortAvailable: (port: number) => Promise<boolean>;
   /**
    * Whether this host can actually broker HTTPS exposures right now. Gating the
-   * automatic default on broker availability is what keeps a Paperclip install
+   * automatic default on broker availability is what keeps a Todero install
    * without the host broker from failing every managed runtime start closed.
    * An explicit opt-in still bypasses this and fails loudly.
    */
@@ -371,7 +371,7 @@ export function setWorkspaceRuntimeExposureDepsForTests(deps: WorkspaceRuntimeEx
 /**
  * Deployment-level switch for the automatic default (PAP-17158).
  *
- *  - `auto` (default): eligible Paperclip-managed worktree runtimes get
+ *  - `auto` (default): eligible Todero-managed worktree runtimes get
  *    `tailscale_https` without any project template or UI caller supplying an
  *    exposure block, provided the host broker is available.
  *  - `off`: no automatic default. Explicit opt-ins still work.
@@ -391,12 +391,12 @@ export function resolveManagedRuntimeHttpsMode(): ManagedRuntimeHttpsMode {
 /**
  * Whether a service would be defaulted to HTTPS if it declared nothing.
  *
- * Intentionally narrow: only the Paperclip-managed dev runtime. Unmanaged and
+ * Intentionally narrow: only the Todero-managed dev runtime. Unmanaged and
  * custom external services are left exactly as they are, because the broker
- * only publishes allowlisted loopback ports it can prove Paperclip owns and we
+ * only publishes allowlisted loopback ports it can prove Todero owns and we
  * do not want to relocate a service somebody else addresses by port.
  *
- * A *pinned* port is still a candidate. The pre-feature Paperclip App template
+ * A *pinned* port is still a candidate. The pre-feature Todero App template
  * hard-codes `port: 45439`, which the broker's dedicated allowlist can never
  * publish, so defaulting it to HTTPS necessarily relocates it into the
  * dedicated range. "Keep existing runtime ports when safe" is honored one layer
@@ -407,7 +407,7 @@ function isManagedHttpsDefaultCandidate(input: {
   serviceName: string;
   command: string | null;
 }): boolean {
-  return isPaperclipDevRuntimeService(input);
+  return isToderoDevRuntimeService(input);
 }
 
 export type ResolvedRuntimeServiceExposure = {
@@ -460,7 +460,7 @@ async function resolveRuntimeServiceExposure(input: {
  *
  * Reads the service name and command straight off the raw config entry rather
  * than resolving the full reuse identity: templates never rewrite a service
- * name, and the substrings `isPaperclipDevRuntimeService` matches survive
+ * name, and the substrings `isToderoDevRuntimeService` matches survive
  * rendering, so this agrees with the per-service decision made during spawn.
  */
 async function anyRuntimeServiceUsesHttpsExposure(
@@ -492,7 +492,7 @@ type ProcessOutputAccumulator = {
  * Drops in-memory runtime state between tests.
  *
  * By default the spawned backend processes are deliberately left running: the
- * startup-reconciliation suites use this to simulate a Paperclip restart, where
+ * startup-reconciliation suites use this to simulate a Todero restart, where
  * the point is that a live backend survives and has to be adopted.
  *
  * Suites that spawn real backends and do *not* need that must pass
@@ -514,7 +514,7 @@ export async function resetRuntimeServicesForTests(
     if (opts.simulateSupervisorExit) {
       // A real supervisor exit closes its side of every inherited pipe. Tests
       // use this to prove surviving request-logging services do not depend on
-      // Paperclip keeping an anonymous stdio peer alive.
+      // Todero keeping an anonymous stdio peer alive.
       record.child?.stdout?.destroy();
       record.child?.stderr?.destroy();
     }
@@ -575,7 +575,7 @@ function isLinkedGitWorktreeCheckout(rootDir: string) {
 
 function discoverWorkspacePackagePaths(rootDir: string): Map<string, string> {
   const packagePaths = new Map<string, string>();
-  const ignoredDirNames = new Set([".git", ".paperclip", "dist", "node_modules"]);
+  const ignoredDirNames = new Set([".git", ".todero", "dist", "node_modules"]);
 
   function visit(dirPath: string) {
     if (!existsSync(dirPath)) return;
@@ -683,7 +683,7 @@ export function sanitizeRuntimeServiceBaseEnv(baseEnv: NodeJS.ProcessEnv): NodeJ
   }
   // These origin settings belong to the parent instance. Letting them leak into a
   // managed worktree runtime can send auth cookies and OAuth callbacks to the wrong
-  // Paperclip instance. Runtime/service overrides are merged back after sanitizing.
+  // Todero instance. Runtime/service overrides are merged back after sanitizing.
   delete env.BETTER_AUTH_URL;
   delete env.BETTER_AUTH_BASE_URL;
   delete env.DATABASE_URL;
@@ -796,7 +796,7 @@ function sanitizeBranchName(value: string): string {
     .replace(/[^A-Za-z0-9._/-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^[-/.]+|[-/.]+$/g, "")
-    .slice(0, 120) || "paperclip-work";
+    .slice(0, 120) || "todero-work";
 }
 
 function isAbsolutePath(value: string) {
@@ -1169,7 +1169,7 @@ function formatUtcBranchTimestamp(date = new Date()) {
 
 function buildDirtyQuarantineRescueBranch(sourceIssue: ExecutionWorkspaceIssueRef | null) {
   const issueComponent = sanitizeBranchName(sourceIssue?.identifier ?? sourceIssue?.id ?? "issue");
-  return sanitizeBranchName(`paperclip/rescue/${issueComponent}/${formatUtcBranchTimestamp()}`);
+  return sanitizeBranchName(`todero/rescue/${issueComponent}/${formatUtcBranchTimestamp()}`);
 }
 
 function formatIssueReference(issueId: string | null | undefined, identifier: string | null | undefined) {
@@ -1341,7 +1341,7 @@ function explainGitWorktreeBranchIncoherence(input: {
 }) {
   const actualBranch = formatBranchForMessage(input.actualBranchName);
   if (!input.expectedHeadSha || !input.actualHeadSha) {
-    return `Paperclip could not determine branch ancestry because the recorded branch "${input.expectedBranchName}" or checked-out branch "${actualBranch}" is missing a resolvable HEAD commit.`;
+    return `Todero could not determine branch ancestry because the recorded branch "${input.expectedBranchName}" or checked-out branch "${actualBranch}" is missing a resolvable HEAD commit.`;
   }
   if (input.sameHead) {
     return `The recorded branch "${input.expectedBranchName}" and checked-out branch "${actualBranch}" resolve to the same commit, so the mismatch is branch metadata rather than commit divergence.`;
@@ -1350,9 +1350,9 @@ function explainGitWorktreeBranchIncoherence(input: {
     return `The recorded branch "${input.expectedBranchName}" is an ancestor of the checked-out branch "${actualBranch}", so the checked-out branch is forward of the recorded branch.`;
   }
   if (input.ancestryVerdict === "diverged") {
-    return `The recorded branch "${input.expectedBranchName}" is not an ancestor of the checked-out branch "${actualBranch}", so Paperclip cannot prove a forward-only reconciliation.`;
+    return `The recorded branch "${input.expectedBranchName}" is not an ancestor of the checked-out branch "${actualBranch}", so Todero cannot prove a forward-only reconciliation.`;
   }
-  return `Paperclip could not determine whether the checked-out branch "${actualBranch}" is forward of the recorded branch "${input.expectedBranchName}".`;
+  return `Todero could not determine whether the checked-out branch "${actualBranch}" is forward of the recorded branch "${input.expectedBranchName}".`;
 }
 
 async function inspectGitWorktreeBranchIncoherence(input: {
@@ -1788,7 +1788,7 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
       args: [
         "commit",
         "-m",
-        "Paperclip dirty workspace rescue",
+        "Todero dirty workspace rescue",
         "-m",
         [
           `Source-Issue: ${input.evidence.sourceIdentifier ?? input.evidence.sourceIssueId ?? "unknown"}`,
@@ -2180,7 +2180,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   ) {
     const reason = evidence.provenance.expectedBranchExists
       ? "Automatic forward reconciliation: recorded branch is an ancestor of the checked-out branch."
-      : "Automatic forward reconciliation: the recorded branch no longer exists, so Paperclip adopted the clean checked-out branch.";
+      : "Automatic forward reconciliation: the recorded branch no longer exists, so Todero adopted the clean checked-out branch.";
     if (input.executionWorkspaceId && input.persistForwardReconcile !== false) {
       if (!input.db) {
         evidence.safeRepair.reason = "forward reconciliation requires database access to update the execution workspace record";
@@ -2279,7 +2279,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
       branchName: currentBranch,
       reconciledForward: false,
       warnings: [
-        `${warningPrefix} The checked-out branch contains the recorded branch plus newer commits, so Paperclip adopted it for subsequent runs.`,
+        `${warningPrefix} The checked-out branch contains the recorded branch plus newer commits, so Todero adopted it for subsequent runs.`,
       ],
     };
   }
@@ -2329,7 +2329,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
       branchName: expectedBranchName,
       reconciledForward: false,
       warnings: [
-        `${warningPrefix} The detached HEAD contained the recorded branch plus newer commits, so Paperclip moved the recorded branch to that HEAD.`,
+        `${warningPrefix} The detached HEAD contained the recorded branch plus newer commits, so Todero moved the recorded branch to that HEAD.`,
       ],
     };
   }
@@ -3277,7 +3277,7 @@ export async function realizeExecutionWorkspace(input: {
   const configuredParentDir = asString(rawStrategy.worktreeParentDir, "");
   const worktreeParentDir = configuredParentDir
     ? resolveConfiguredPath(configuredParentDir, repoRoot)
-    : path.join(repoRoot, ".paperclip", "worktrees");
+    : path.join(repoRoot, ".todero", "worktrees");
   const worktreePath = path.join(worktreeParentDir, branchName);
   if (path.relative(worktreeParentDir, worktreePath).startsWith("..")) {
     throw new WorkspaceRuntimeValidationFailure(
@@ -3976,7 +3976,7 @@ async function deleteGitBranchAtVerifiedTip(input: {
   const commonDir = path.isAbsolute(commonDirRaw)
     ? commonDirRaw
     : path.resolve(input.repoRoot, commonDirRaw);
-  const detachedGitDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-branch-delete-"));
+  const detachedGitDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-branch-delete-"));
   const detachedWorktree = `${detachedGitDir}-worktree`;
 
   try {
@@ -4376,7 +4376,7 @@ async function buildCompanyExposureReservationLedger(input: {
 }
 
 /**
- * Rows Paperclip reports stopped/removed whose reserved pair is still live on
+ * Rows Todero reports stopped/removed whose reserved pair is still live on
  * the host or still mapped to someone else (PAP-17419 regression #3).
  *
  * The point is visibility. A false `stopped`/`removed` row used to be
@@ -4435,7 +4435,7 @@ async function detectPersistedExposureReservationDrift(input: {
   });
 }
 
-/** Paperclip-owned Serve mappings, or null when the broker cannot be read. */
+/** Todero-owned Serve mappings, or null when the broker cannot be read. */
 async function readBrokerExposureMappings(): Promise<BrokerMappingSnapshot[] | null> {
   try {
     const owned = await workspaceRuntimeExposureDeps.broker.list();
@@ -5179,12 +5179,12 @@ async function waitForAllocatedPortBind(input: {
   throw new Error(`Runtime service did not bind allocated port ${input.port} before timeout`);
 }
 
-function isPaperclipDevRuntimeService(input: { serviceName?: string | null; command?: string | null }) {
+function isToderoDevRuntimeService(input: { serviceName?: string | null; command?: string | null }) {
   const serviceName = (input.serviceName ?? "").trim().toLowerCase();
   const command = (input.command ?? "").trim().toLowerCase();
   return (
-    serviceName === "paperclip-dev"
-    || serviceName === "paperclip-dev-once"
+    serviceName === "todero-dev"
+    || serviceName === "todero-dev-once"
     || (command.includes("dev:once") && command.includes("tailscale-auth"))
   );
 }
@@ -5223,7 +5223,7 @@ function trustedRuntimeHostnameBoundary(
 ): TrustedRuntimeHostnameBoundary | null {
   if (!urlTemplate?.trim()) return null;
   let markerIndex = 0;
-  const markerPrefix = "paperclip-runtime-template-";
+  const markerPrefix = "todero-runtime-template-";
   const safeTemplate = urlTemplate.replace(
     /{{\s*([a-zA-Z0-9_.-]+)\s*}}/g,
     (_match, path: string) => path === "port" ? "443" : `${markerPrefix}${markerIndex++}`,
@@ -5238,7 +5238,7 @@ function trustedRuntimeHostnameBoundary(
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
 
   const hostname = parsed.hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  const markers = [...hostname.matchAll(/paperclip-runtime-template-\d+/g)];
+  const markers = [...hostname.matchAll(/todero-runtime-template-\d+/g)];
   const lastMarker = markers.at(-1);
   if (!lastMarker || lastMarker.index === undefined) {
     return hostname ? { exactHostname: hostname } : null;
@@ -5253,17 +5253,17 @@ function trustedRuntimeHostnameBoundary(
 }
 
 /**
- * Resolve the low-priority public URL hint injected into a managed Paperclip dev
+ * Resolve the low-priority public URL hint injected into a managed Todero dev
  * service. Explicit operator origin settings are deliberately left untouched.
  */
-export function resolveManagedPaperclipRuntimePublicOrigin(input: {
+export function resolveManagedToderoRuntimePublicOrigin(input: {
   serviceName: string;
   command: string;
   environment: Record<string, string>;
   exposedUrl: string | null;
   exposedUrlTemplate?: string | null;
 }) {
-  if (!isPaperclipDevRuntimeService(input)) return null;
+  if (!isToderoDevRuntimeService(input)) return null;
   if (EXPLICIT_RUNTIME_ORIGIN_ENV_KEYS.some((key) => input.environment[key]?.trim())) return null;
   if (!input.exposedUrl) {
     throw managedRuntimeOriginError(input.serviceName, "the managed service does not report an exposed URL");
@@ -5338,7 +5338,7 @@ function resolveRuntimeServiceHealthUrl(
   url: string | null,
   input?: { serviceName?: string | null; command?: string | null },
 ) {
-  if (!url || !isPaperclipDevRuntimeService(input ?? {})) return url;
+  if (!url || !isToderoDevRuntimeService(input ?? {})) return url;
   try {
     const parsed = new URL(url);
     if (parsed.pathname === "/" || parsed.pathname === "") {
@@ -5388,7 +5388,7 @@ async function probeManagedWorkspaceRuntimeReadiness(
   healthUrl: string,
   input: RuntimeServiceHealthProbeInput,
 ): Promise<boolean | null> {
-  if (!isPaperclipDevRuntimeService(input)) return null;
+  if (!isToderoDevRuntimeService(input)) return null;
   const identity = resolveManagedWorkspaceIdentity({
     workspaceCwd: input.cwd ?? null,
     executionWorkspaceId: input.executionWorkspaceId ?? null,
@@ -5422,7 +5422,7 @@ async function isRuntimeServiceUrlHealthy(
   url: string | null,
   input?: RuntimeServiceHealthProbeInput,
 ) {
-  const localProbeUrl = input?.provider === "local_process" && input.port && isPaperclipDevRuntimeService(input)
+  const localProbeUrl = input?.provider === "local_process" && input.port && isToderoDevRuntimeService(input)
     ? `http://127.0.0.1:${input.port}`
     : null;
   const probeUrl = localProbeUrl ?? url;
@@ -5436,7 +5436,7 @@ async function isRuntimeServiceUrlHealthy(
   try {
     const response = await fetch(healthUrl, { signal: AbortSignal.timeout(2_000) });
     if (!response.ok) return false;
-    if (!isPaperclipDevRuntimeService(input ?? {})) return true;
+    if (!isToderoDevRuntimeService(input ?? {})) return true;
     const payload = await response.json().catch(() => null) as { status?: unknown } | null;
     return payload?.status === "ok";
   } catch {
@@ -5704,7 +5704,7 @@ function readWorkspaceSeedOperationEvidence(worktreePath: string): {
   error: string | null;
   metadata: Record<string, unknown>;
 } {
-  const manifestPath = path.join(worktreePath, ".paperclip", "seed-manifest.json");
+  const manifestPath = path.join(worktreePath, ".todero", "seed-manifest.json");
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
     const state = typeof manifest.state === "string" ? manifest.state : "unknown";
@@ -5747,7 +5747,7 @@ export function resolveRuntimeProvisionCommand(input: {
 
   if (input.workspace.strategy !== "git_worktree") return "";
 
-  const stateDir = path.join(input.workspace.cwd, ".paperclip");
+  const stateDir = path.join(input.workspace.cwd, ".todero");
   const manifestPath = path.join(stateDir, "seed-manifest.json");
   const provisionScript = path.join(
     input.workspace.baseCwd,
@@ -6000,7 +6000,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
   // is honored when it is already an allowlisted app port whose HMR companion is
   // free — that keeps a restart on the same port and keeps a backfilled service
   // stable across deploys — and quietly relocated when it is not, which is the
-  // only way a legacy pinned port (the Paperclip App template's 45439) can be
+  // only way a legacy pinned port (the Todero App template's 45439) can be
   // published at all. If the backend then fails to listen where we allocated,
   // the broker's /proc ownership proof refuses the mapping and the start fails
   // closed; it never falls back to HTTP.
@@ -6122,10 +6122,10 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
   }
 
   // Per-workspace handoff key, readiness token, and workspace id. Injected for
-  // the Paperclip dev runtime whether or not it is HTTPS-exposed, because the
+  // the Todero dev runtime whether or not it is HTTPS-exposed, because the
   // password-independent login handoff and the protected readiness probe are
   // both needed for a plain-HTTP loopback workspace too (PAP-17572).
-  const managedWorkspaceIdentity = isPaperclipDevRuntimeService({ serviceName, command })
+  const managedWorkspaceIdentity = isToderoDevRuntimeService({ serviceName, command })
     ? resolveManagedWorkspaceIdentity({
         workspaceCwd: input.workspace.cwd,
         executionWorkspaceId: input.executionWorkspaceId ?? null,
@@ -6137,7 +6137,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
   }
 
   if (exposureConfig) {
-    // Paperclip dev-runtime-specific hardening. Other managed processes are
+    // Todero dev-runtime-specific hardening. Other managed processes are
     // still rejected by the broker unless /proc proves loopback-only listeners.
     //
     // Three independent layers force the loopback bind, because a guest checkout
@@ -6164,7 +6164,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
   let url = exposureConfig ? null : backendUrl;
   const readinessUrlTemplate = asString(readiness.urlTemplate, "");
   const readinessUrl = readinessUrlTemplate ? renderTemplate(readinessUrlTemplate, templateData) : null;
-  const managedRuntimePublicOrigin = resolveManagedPaperclipRuntimePublicOrigin({
+  const managedRuntimePublicOrigin = resolveManagedToderoRuntimePublicOrigin({
     serviceName,
     command,
     // Includes the trusted public origin injected above for managed HTTPS
@@ -6376,7 +6376,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
       env,
       detached: process.platform !== "win32",
       // The service receives duplicate append-only file descriptors. Closing
-      // Paperclip (or this parent handle below) cannot strand a request logger
+      // Todero (or this parent handle below) cannot strand a request logger
       // on an orphaned socketpair during startup reconciliation.
       stdio: ["ignore", serviceLog.handle.fd, serviceLog.handle.fd],
     });
@@ -6443,7 +6443,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
     ? exposureConfig
       ? [
           port,
-          ...(exposureConfig.includePaperclipViteHmr ? [deriveViteHmrPort(port)] : []),
+          ...(exposureConfig.includeToderoViteHmr ? [deriveViteHmrPort(port)] : []),
         ]
       : canAllocateFixedPort
         ? [port]
@@ -6564,7 +6564,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
     // bounded retries.
     const exposureAssignedPorts: number[] =
       exposureConfig && port
-        ? [port, ...(exposureConfig.includePaperclipViteHmr ? [deriveViteHmrPort(port)] : [])]
+        ? [port, ...(exposureConfig.includeToderoViteHmr ? [deriveViteHmrPort(port)] : [])]
         : [];
     const collisionText = `${failureMessage}\n${serviceOutputExcerpt}`;
     const exposureNamedPorts = exposureAssignedPorts.filter((candidate) =>
@@ -8353,7 +8353,7 @@ export async function reconcilePersistedRuntimeServicesOnStartup(db: Db) {
     );
     // Pre-feature rows carry no exposure state at all. An eligible one that is
     // still serving plain HTTP must not be adopted as-is, or the deploy would
-    // leave `http://paperclip-dev:<port>` as the canonical URL forever. Stopping
+    // leave `http://todero-dev:<port>` as the canonical URL forever. Stopping
     // it here hands it to the desired-state restart below, which brings it back
     // through the normal fail-closed exposure lifecycle.
     const backfillDecision = decideManagedRuntimeExposureBackfill({
@@ -8584,7 +8584,7 @@ export async function restartDesiredRuntimeServicesOnStartup(db: Db) {
     try {
       const refs = await startRuntimeServicesForWorkspaceControl({
         db,
-        actor: { id: null, name: "Paperclip", companyId: row.companyId },
+        actor: { id: null, name: "Todero", companyId: row.companyId },
         issue: null,
         workspace: {
           baseCwd: row.cwd,
@@ -8633,7 +8633,7 @@ export async function restartDesiredRuntimeServicesOnStartup(db: Db) {
     try {
       const refs = await startRuntimeServicesForWorkspaceControl({
         db,
-        actor: { id: null, name: "Paperclip", companyId: row.companyId },
+        actor: { id: null, name: "Todero", companyId: row.companyId },
         issue: row.sourceIssueId
           ? {
               id: row.sourceIssueId,

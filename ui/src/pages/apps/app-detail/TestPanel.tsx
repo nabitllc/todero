@@ -18,7 +18,7 @@ import type {
   ToolConnectionTestCallResult,
   ToolConnectionTestCallStatus,
   ToolConnectionTestDecision,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { Link } from "@/lib/router";
 import { toolsApi } from "@/api/tools";
 import { queryKeys } from "@/lib/queryKeys";
@@ -595,7 +595,7 @@ type RunOutcome = {
 };
 
 function testOutcomeStorageKey(connectionId: string, entry: ToolCatalogEntry, agentId: string): string {
-  return `paperclip:test-call:${connectionId}:${agentId}:${entry.id}:${entry.toolName}`;
+  return `todero:test-call:${connectionId}:${agentId}:${entry.id}:${entry.toolName}`;
 }
 
 function loadStoredAskFirstOutcome(connectionId: string, entry: ToolCatalogEntry, agent: ToolConnectionTestAgent): RunOutcome | null {
@@ -644,14 +644,14 @@ function splitRequiredOptional(schema: JsonSchemaNode): JsonSchemaNode {
   const props = schema.properties ?? {};
   const next: Record<string, JsonSchemaNode> = {};
   for (const [key, prop] of Object.entries(props)) {
-    next[key] = required.has(key) ? prop : { ...prop, "x-paperclip-advanced": true };
+    next[key] = required.has(key) ? prop : { ...prop, "x-todero-advanced": true };
   }
   return { ...schema, properties: next };
 }
 
 const GUT_CHECK: Record<ToolConnectionTestDecision, (app: string, agent: string) => string> = {
   allowed: (app, agent) => `This runs a real call against ${app} as ${agent}.`,
-  ask_first: () => `Waiting for your OK before this call leaves Paperclip.`,
+  ask_first: () => `Waiting for your OK before this call leaves Todero.`,
   off: (_app, agent) => `No call will be made — this action is off for ${agent}.`,
 };
 

@@ -3,9 +3,9 @@ import path from "node:path";
 import {
   expandHomePrefix,
   resolveDefaultEmbeddedPostgresDir,
-  resolvePaperclipConfigPathForInstance,
-  resolvePaperclipEnvPathForConfig,
-} from "@paperclipai/shared/home-paths";
+  resolveToderoConfigPathForInstance,
+  resolveToderoEnvPathForConfig,
+} from "@todero/shared/home-paths";
 
 const CONFIG_BASENAME = "config.json";
 
@@ -24,7 +24,7 @@ export type ResolvedDatabaseTarget =
   | {
       mode: "postgres";
       connectionString: string;
-      source: "DATABASE_URL" | "paperclip-env" | "config.database.connectionString";
+      source: "DATABASE_URL" | "todero-env" | "config.database.connectionString";
       configPath: string;
       envPath: string;
     }
@@ -45,7 +45,7 @@ function findConfigFileFromAncestors(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
 
   while (true) {
-    const candidate = path.resolve(currentDir, ".paperclip", CONFIG_BASENAME);
+    const candidate = path.resolve(currentDir, ".todero", CONFIG_BASENAME);
     if (existsSync(candidate)) return candidate;
 
     const nextDir = path.resolve(currentDir, "..");
@@ -54,15 +54,15 @@ function findConfigFileFromAncestors(startDir: string): string | null {
   }
 }
 
-function resolvePaperclipConfigPath(): string {
+function resolveToderoConfigPath(): string {
   if (process.env.PAPERCLIP_CONFIG?.trim()) {
     return path.resolve(process.env.PAPERCLIP_CONFIG.trim());
   }
-  return findConfigFileFromAncestors(process.cwd()) ?? resolvePaperclipConfigPathForInstance();
+  return findConfigFileFromAncestors(process.cwd()) ?? resolveToderoConfigPathForInstance();
 }
 
-function resolvePaperclipEnvPath(configPath: string): string {
-  return resolvePaperclipEnvPathForConfig(configPath);
+function resolveToderoEnvPath(configPath: string): string {
+  return resolveToderoEnvPathForConfig(configPath);
 }
 
 function parseEnvFile(contents: string): Record<string, string> {
@@ -182,8 +182,8 @@ function readConfig(configPath: string): PartialConfig | null {
 }
 
 export function resolveDatabaseTarget(): ResolvedDatabaseTarget {
-  const configPath = resolvePaperclipConfigPath();
-  const envPath = resolvePaperclipEnvPath(configPath);
+  const configPath = resolveToderoConfigPath();
+  const envPath = resolveToderoEnvPath(configPath);
   const envEntries = readEnvEntries(envPath);
 
   const envUrl = process.env.DATABASE_URL?.trim();
@@ -202,7 +202,7 @@ export function resolveDatabaseTarget(): ResolvedDatabaseTarget {
     return {
       mode: "postgres",
       connectionString: fileEnvUrl,
-      source: "paperclip-env",
+      source: "todero-env",
       configPath,
       envPath,
     };

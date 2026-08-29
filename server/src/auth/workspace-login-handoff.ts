@@ -52,9 +52,9 @@ export const WORKSPACE_HANDOFF_KEY_ENV_KEY = HANDOFF_KEY_ENV;
 export const WORKSPACE_READINESS_TOKEN_ENV_KEY = READINESS_TOKEN_ENV;
 export const WORKSPACE_EXECUTION_WORKSPACE_ID_ENV_KEY = EXECUTION_WORKSPACE_ID_ENV;
 export const WORKSPACE_EXECUTION_WORKSPACE_COMPANY_ID_ENV_KEY = EXECUTION_WORKSPACE_COMPANY_ID_ENV;
-export const WORKSPACE_READINESS_TOKEN_HEADER = "x-paperclip-workspace-readiness-token";
-export const WORKSPACE_READINESS_USER_ID_HEADER = "x-paperclip-workspace-readiness-user-id";
-export const WORKSPACE_READINESS_USER_EMAIL_HEADER = "x-paperclip-workspace-readiness-user-email";
+export const WORKSPACE_READINESS_TOKEN_HEADER = "x-todero-workspace-readiness-token";
+export const WORKSPACE_READINESS_USER_ID_HEADER = "x-todero-workspace-readiness-user-id";
+export const WORKSPACE_READINESS_USER_EMAIL_HEADER = "x-todero-workspace-readiness-user-email";
 
 export type WorkspaceHandoffTicketPayload = {
   /** Envelope version. */
@@ -175,7 +175,7 @@ export function deriveWorkspaceHandoffKey(input: {
   executionWorkspaceId: string;
 }): string {
   return createHmac("sha256", input.rootSecret)
-    .update(`paperclip.workspace-login-handoff.${WORKSPACE_HANDOFF_TICKET_VERSION}\n`)
+    .update(`todero.workspace-login-handoff.${WORKSPACE_HANDOFF_TICKET_VERSION}\n`)
     .update(`${input.instanceId}\n`)
     .update(`${input.executionWorkspaceId}`)
     .digest("hex");
@@ -192,7 +192,7 @@ export function deriveWorkspaceReadinessToken(input: {
   executionWorkspaceId: string;
 }): string {
   return createHmac("sha256", input.rootSecret)
-    .update(`paperclip.workspace-readiness-probe.${WORKSPACE_HANDOFF_TICKET_VERSION}\n`)
+    .update(`todero.workspace-readiness-probe.${WORKSPACE_HANDOFF_TICKET_VERSION}\n`)
     .update(`${input.instanceId}\n`)
     .update(`${input.executionWorkspaceId}`)
     .digest("hex");
@@ -219,7 +219,7 @@ export function resolveWorkspaceHandoffRootSecret(
   if (!fallback) return null;
   return {
     secret: createHmac("sha256", fallback)
-      .update(`paperclip.workspace-login-handoff.root.${WORKSPACE_HANDOFF_TICKET_VERSION}`)
+      .update(`todero.workspace-login-handoff.root.${WORKSPACE_HANDOFF_TICKET_VERSION}`)
       .digest("hex"),
     source: "derived",
   };
@@ -390,7 +390,7 @@ export function verifyWorkspaceHandoffTicket(input: {
 
 /** Verification-key identifier safe to log: proves which key, reveals no key bytes. */
 export function workspaceHandoffKeyFingerprint(key: string): string {
-  return createHmac("sha256", "paperclip.workspace-login-handoff.fingerprint").update(key).digest("hex").slice(0, 12);
+  return createHmac("sha256", "todero.workspace-login-handoff.fingerprint").update(key).digest("hex").slice(0, 12);
 }
 
 /**

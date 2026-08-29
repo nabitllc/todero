@@ -9,18 +9,18 @@ import type {
   RoutineEnvConfig,
   RoutineRevision,
   RoutineRevisionSnapshotV1,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
 import { RoutineHistoryTab } from "@/components/RoutineHistoryTab";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { storybookCompanies, storybookSecrets } from "../fixtures/paperclipData";
+import { storybookCompanies, storybookSecrets } from "../fixtures/toderoData";
 
 const COMPANY_ID = "company-storybook";
 
 if (typeof window !== "undefined") {
-  window.localStorage.setItem("paperclip.selectedCompanyId", COMPANY_ID);
+  window.localStorage.setItem("todero.selectedCompanyId", COMPANY_ID);
 }
 
 function StorybookRoutineFixtures({

@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpRuntimeOptions } from "acpx/runtime";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@todero/adapter-utils";
 import {
   prepareAdapterExecutionTargetRuntime,
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 
 // This file is a characterization test. It pins the engine boundary's CURRENT
 // behavior; it never changes production code. Each test states the observed
@@ -35,12 +35,12 @@ import {
 // exercises them end-to-end against a local runner). This lets the staging
 // tests assert the exact `runtimeRootDir`/`workspaceLocalDir`/`assets` the
 // engine threads without changing any real behavior for the other tests.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@todero/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@todero/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),
-    startAdapterExecutionTargetPaperclipBridge: vi.fn(actual.startAdapterExecutionTargetPaperclipBridge),
+    startAdapterExecutionTargetToderoBridge: vi.fn(actual.startAdapterExecutionTargetToderoBridge),
     startAdapterExecutionTargetProcessSessionBridge: vi.fn(actual.startAdapterExecutionTargetProcessSessionBridge),
   };
 });
@@ -53,7 +53,7 @@ import { runChildProcess } from "../server-utils.js";
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-acpx-skills-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-acpx-skills-"));
   tempRoots.push(root);
   return root;
 }
@@ -247,7 +247,7 @@ function throwingTurn() {
 // fails after the session handshake succeeds and before the turn starts.
 function throwingHandoffContext(): Record<string, unknown> {
   const context: Record<string, unknown> = {};
-  Object.defineProperty(context, "paperclipSessionHandoffMarkdown", {
+  Object.defineProperty(context, "toderoSessionHandoffMarkdown", {
     enumerable: false,
     get() {
       throw new Error("prompt build boom");
@@ -259,11 +259,11 @@ function throwingHandoffContext(): Record<string, unknown> {
 // Stub both sandbox bridges with stop spies collected per start, so a test can
 // assert the bridges stopped without running the real bridge transport.
 function stubBridges() {
-  const paperclipStops: Array<ReturnType<typeof vi.fn>> = [];
+  const toderoStops: Array<ReturnType<typeof vi.fn>> = [];
   const processStops: Array<ReturnType<typeof vi.fn>> = [];
-  vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementation(async () => {
+  vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementation(async () => {
     const stop = vi.fn(async () => {});
-    paperclipStops.push(stop);
+    toderoStops.push(stop);
     return { env: {}, stop } as never;
   });
   vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementation(async () => {
@@ -275,7 +275,7 @@ function stubBridges() {
     stops.some((stop) => stop.mock.calls.length > 0);
   const stoppedCount = (stops: Array<ReturnType<typeof vi.fn>>) =>
     stops.filter((stop) => stop.mock.calls.length > 0).length;
-  return { paperclipStops, processStops, anyStopped, stoppedCount };
+  return { toderoStops, processStops, anyStopped, stoppedCount };
 }
 
 function remoteArgs(
@@ -531,12 +531,12 @@ describe("composed ACPX run: engine-boundary result form per exit path", () => {
 
   it("THROWS (does not return) on a partial bridge failure and stops the started sibling bridge once", async () => {
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    // The paperclip bridge fails while the concurrently-started process-session
+    // The todero bridge fails while the concurrently-started process-session
     // bridge resolves a live handle. This is the second engine-boundary throw path;
     // the abandon path must stop the started sibling so no bridge leaks.
     const stop = vi.fn(async () => {});
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(async () => {
-      throw new Error("paperclip bridge boom");
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(async () => {
+      throw new Error("todero bridge boom");
     });
     vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementationOnce(
       async () => ({ agentCommand: null, stop }) as never,
@@ -553,7 +553,7 @@ describe("composed ACPX run: engine-boundary result form per exit path", () => {
         runId: "boundary-bridge-throw",
         ...remoteArgs(stateDir, localCwd, executionTarget),
       } as never),
-    ).rejects.toThrow("paperclip bridge boom");
+    ).rejects.toThrow("todero bridge boom");
     expect(stop).toHaveBeenCalledTimes(1);
   });
 });
@@ -632,7 +632,7 @@ describe("composed ACPX run: finalization set fires exactly once per exit path",
 
     for (const scenario of scenarios) {
       const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-      const { paperclipStops, processStops, stoppedCount } = stubBridges();
+      const { toderoStops, processStops, stoppedCount } = stubBridges();
       const stagingLocks = new Map<string, Promise<unknown>>();
       const execute = createAcpxEngineExecutor({
         stagingLocks,
@@ -661,7 +661,7 @@ describe("composed ACPX run: finalization set fires exactly once per exit path",
       // The finalization set fires exactly once: each bridge stops once and the
       // per-session staging lease releases, so the lock map never strands the next
       // same-session run.
-      expect(stoppedCount(paperclipStops), `paperclip bridge must stop once on ${scenario.name}`).toBe(1);
+      expect(stoppedCount(toderoStops), `todero bridge must stop once on ${scenario.name}`).toBe(1);
       expect(stoppedCount(processStops), `process-session bridge must stop once on ${scenario.name}`).toBe(1);
       expect(stagingLocks.size, `lease must release on ${scenario.name}`).toBe(0);
     }
@@ -669,7 +669,7 @@ describe("composed ACPX run: finalization set fires exactly once per exit path",
 
   it("does not re-run the turn teardown when the result mapping throws after the close", async () => {
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    const { paperclipStops, processStops, stoppedCount } = stubBridges();
+    const { toderoStops, processStops, stoppedCount } = stubBridges();
     let closeCount = 0;
     const execute = createAcpxEngineExecutor({
       warmHandles: new Map(),
@@ -705,7 +705,7 @@ describe("composed ACPX run: finalization set fires exactly once per exit path",
     // The completed turn closed the runtime once; the mapping throw did not re-run
     // the teardown through the turn catch.
     expect(closeCount).toBe(1);
-    expect(stoppedCount(paperclipStops)).toBe(1);
+    expect(stoppedCount(toderoStops)).toBe(1);
     expect(stoppedCount(processStops)).toBe(1);
   });
 });

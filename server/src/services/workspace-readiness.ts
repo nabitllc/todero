@@ -18,19 +18,19 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { and, eq, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { authUsers, companies, companyMemberships, issues } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { authUsers, companies, companyMemberships, issues } from "@todero/db";
 import type {
   WorkspaceReadiness,
   WorkspaceReadinessState,
   WorkspaceSeedReadinessState,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   resolveWorkspaceHandoffLocalCompanyId,
   resolveWorkspaceHandoffLocalKey,
   resolveWorkspaceHandoffLocalWorkspaceId,
 } from "../auth/workspace-login-handoff.js";
-import { resolvePaperclipInstanceId } from "../home-paths.js";
+import { resolveToderoInstanceId } from "../home-paths.js";
 import { logger } from "../middleware/logger.js";
 
 const WORKSPACE_SEED_MANIFEST_BASENAME = "seed-manifest.json";
@@ -53,7 +53,7 @@ type SeedManifestSummary = {
 export function resolveWorkspaceSeedMarkerDir(env: NodeJS.ProcessEnv = process.env): string {
   const configPath = env.PAPERCLIP_CONFIG?.trim();
   if (configPath) return path.dirname(path.resolve(configPath));
-  return path.resolve(process.cwd(), ".paperclip");
+  return path.resolve(process.cwd(), ".todero");
 }
 
 function readSeedManifestSummary(markerDir: string): SeedManifestSummary {
@@ -183,7 +183,7 @@ export type WorkspaceReadinessDeps = {
 export async function resolveWorkspaceReadiness(deps: WorkspaceReadinessDeps): Promise<WorkspaceReadiness> {
   const env = deps.env ?? process.env;
   const seed = readSeedManifestSummary(resolveWorkspaceSeedMarkerDir(env));
-  const instanceId = resolvePaperclipInstanceId();
+  const instanceId = resolveToderoInstanceId();
   const executionWorkspaceId = resolveWorkspaceHandoffLocalWorkspaceId(env);
   // The company this workspace's board represents. Both product probes below are
   // scoped to it: "some company in the clone has issues" and "some user has some

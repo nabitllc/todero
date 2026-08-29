@@ -1,12 +1,12 @@
-import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
+import type { PaperclipPluginManifestV1 } from "@todero/plugin-sdk";
 
 const manifest: PaperclipPluginManifestV1 = {
-  id: "paperclipai.plugin-orchestration-smoke-example",
+  id: "todero.plugin-orchestration-smoke-example",
   apiVersion: 1,
   version: "0.1.0",
   displayName: "Plugin Orchestration Smoke Example",
-  description: "First-party smoke plugin that exercises Paperclip orchestration-grade plugin APIs.",
-  author: "Paperclip",
+  description: "First-party smoke plugin that exercises Todero orchestration-grade plugin APIs.",
+  author: "Todero",
   categories: ["automation", "ui"],
   capabilities: [
     "api.routes.register",

@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import { healthRoutes } from "../routes/health.js";
 import * as devServerStatus from "../dev-server-status.js";
 import { serverVersion } from "../version.js";
@@ -101,8 +101,8 @@ describe("GET /health", () => {
       PAPERCLIP_CLOUD_STACK_ID: "stack-1",
       PAPERCLIP_STACK_SLUG: "acme",
       PAPERCLIP_CLOUD_ACCOUNT_GROUP_ID: "account-group-1",
-      PAPERCLIP_PRIMARY_HOST: "acme.paperclip.app",
-      PAPERCLIP_CLOUD_API_ORIGIN: "https://app.paperclip.app",
+      PAPERCLIP_PRIMARY_HOST: "acme.todero.app",
+      PAPERCLIP_CLOUD_API_ORIGIN: "https://app.todero.app",
     });
 
     const res = await request(app).get("/health");
@@ -110,9 +110,9 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     expect(res.body.cloud).toEqual({
       managed: true,
-      managedBy: "paperclip-cloud",
+      managedBy: "todero-cloud",
       stackSlug: "acme",
-      cloudBaseUrl: "https://app.paperclip.app",
+      cloudBaseUrl: "https://app.todero.app",
     });
   });
 
@@ -196,8 +196,8 @@ describe("GET /health", () => {
   });
 
   it("surfaces a stale database backup warning in full health details", async () => {
-    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
-    const backupFile = path.join(backupDir, "paperclip-20260705-031702.sql.gz");
+    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "todero-health-backups-"));
+    const backupFile = path.join(backupDir, "todero-20260705-031702.sql.gz");
     fs.writeFileSync(backupFile, "backup");
     fs.utimesSync(
       backupFile,
@@ -219,7 +219,7 @@ describe("GET /health", () => {
       backupDir,
       maxAgeHours: 26,
       latestBackup: {
-        name: "paperclip-20260705-031702.sql.gz",
+        name: "todero-20260705-031702.sql.gz",
         ageHours: 33.7,
       },
       warnings: [
@@ -232,8 +232,8 @@ describe("GET /health", () => {
   });
 
   it("surfaces database backup failure markers in full health details", async () => {
-    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-"));
-    const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
+    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "todero-health-backups-"));
+    const backupFile = path.join(backupDir, "todero-20260706-031702.sql.gz");
     const alertFile = path.join(backupDir, "db-backup-to-s3.failure");
     fs.writeFileSync(backupFile, "backup");
     fs.writeFileSync(alertFile, "db-backup-to-s3 failed at 2026-07-06T03:17:00.000Z exit=1\n");
@@ -264,10 +264,10 @@ describe("GET /health", () => {
   });
 
   it("finds conventional database backup failure markers without an explicit alert file", async () => {
-    const backupRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-backups-root-"));
+    const backupRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-health-backups-root-"));
     const backupDir = path.join(backupRoot, "backups");
     fs.mkdirSync(backupDir);
-    const backupFile = path.join(backupDir, "paperclip-20260706-031702.sql.gz");
+    const backupFile = path.join(backupDir, "todero-20260706-031702.sql.gz");
     const alertFile = path.join(backupRoot, "db-backup-to-s3.failure");
     fs.writeFileSync(backupFile, "backup");
     fs.writeFileSync(alertFile, "db-backup-to-s3 failed beside backups\n");
@@ -297,8 +297,8 @@ describe("GET /health", () => {
   });
 
   it("surfaces redacted database backup warnings for anonymous authenticated probes", async () => {
-    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-health-redacted-backups-"));
-    const backupFile = path.join(backupDir, "paperclip-20260705-031702.sql.gz");
+    const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "todero-health-redacted-backups-"));
+    const backupFile = path.join(backupDir, "todero-20260705-031702.sql.gz");
     fs.writeFileSync(backupFile, "backup");
     fs.utimesSync(
       backupFile,

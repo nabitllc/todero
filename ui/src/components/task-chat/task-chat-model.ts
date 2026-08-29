@@ -12,7 +12,7 @@
  * inventory for the mapping. No timing/motion values live here — those are
  * CSS motion tokens in ui/src/index.css.
  */
-import type { IssueCommentMetadata, IssueCommentPresentation } from "@paperclipai/shared";
+import type { IssueCommentMetadata, IssueCommentPresentation } from "@todero/shared";
 import type { IssueThreadInteraction } from "@/lib/issue-thread-interactions";
 
 /** Who authored a thread row — the primary legibility signal. */

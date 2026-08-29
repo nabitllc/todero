@@ -276,7 +276,7 @@ export interface CompanyPortabilityExportResult {
   manifest: CompanyPortabilityManifest;
   files: Record<string, CompanyPortabilityFileEntry>;
   warnings: string[];
-  paperclipExtensionPath: string;
+  toderoExtensionPath: string;
 }
 
 export interface CompanyPortabilityExportPreviewFile {
@@ -297,7 +297,7 @@ export interface CompanyPortabilityExportPreviewResult {
     issues: number;
   };
   warnings: string[];
-  paperclipExtensionPath: string;
+  toderoExtensionPath: string;
 }
 
 export type CompanyPortabilitySource =

@@ -95,7 +95,7 @@ let tracerApiLoadFailed = false;
  * accessor never throws: a load or lookup failure logs once and returns the
  * local no-op tracer (fail open).
  */
-export function getStartupTracer(name = "paperclip.startup"): StartupTracerHandle {
+export function getStartupTracer(name = "todero.startup"): StartupTracerHandle {
   try {
     const require = createRequire(import.meta.url);
     const api = require("@opentelemetry/api") as {
@@ -108,7 +108,7 @@ export function getStartupTracer(name = "paperclip.startup"): StartupTracerHandl
       tracerApiLoadFailed = true;
       // eslint-disable-next-line no-console
       console.warn(
-        "[paperclip] @opentelemetry/api is not available; startup tracing uses a no-op tracer.",
+        "[todero] @opentelemetry/api is not available; startup tracing uses a no-op tracer.",
         err,
       );
     }
@@ -150,7 +150,7 @@ let traceContextApiLoadFailed = false;
  * accessor never throws: a load or lookup failure logs once and returns the
  * local no-op trace context (fail open).
  */
-export function getStartupTraceContext(name = "paperclip.startup"): StartupTraceContextHandle {
+export function getStartupTraceContext(name = "todero.startup"): StartupTraceContextHandle {
   try {
     const require = createRequire(import.meta.url);
     const api = require("@opentelemetry/api") as {
@@ -177,7 +177,7 @@ export function getStartupTraceContext(name = "paperclip.startup"): StartupTrace
       traceContextApiLoadFailed = true;
       // eslint-disable-next-line no-console
       console.warn(
-        "[paperclip] @opentelemetry/api is not available; startup tracing uses a no-op trace context.",
+        "[todero] @opentelemetry/api is not available; startup tracing uses a no-op trace context.",
         err,
       );
     }
@@ -262,7 +262,7 @@ export function recordProviderPluginSpan(input: {
       isRemote: true,
     };
     const parentContext = trace.setSpanContext(context.active(), remoteSpanContext);
-    const tracer = trace.getTracer("paperclip.startup");
+    const tracer = trace.getTracer("todero.startup");
     // Pass the true start time as the OpenTelemetry `startTime` option, so the
     // span opens at its real wall-clock start. An epoch-millisecond number is a
     // valid OpenTelemetry `TimeInput`.
@@ -319,7 +319,7 @@ export function shutdownInstrumentation(): Promise<void> {
       await sdkShutdown();
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[paperclip] OpenTelemetry shutdown failed", err);
+      console.error("[todero] OpenTelemetry shutdown failed", err);
     }
   })();
   return shutdownPromise;
@@ -353,7 +353,7 @@ export function resolveProtocol(): {
     default:
       // eslint-disable-next-line no-console
       console.warn(
-        `[paperclip] Unknown OTEL_EXPORTER_OTLP_PROTOCOL=${raw}; falling back to grpc. ` +
+        `[todero] Unknown OTEL_EXPORTER_OTLP_PROTOCOL=${raw}; falling back to grpc. ` +
           `Valid values: grpc, http/protobuf, http/json.`,
       );
       return {
@@ -408,7 +408,7 @@ export function readBuildStamp(): string | null {
  *
  * The lookup runs in the directory of this module, not the directory the
  * server process started in. `import.meta.url` points at `src` in dev mode and
- * `dist` in a built server; both sit inside the Paperclip checkout. A server
+ * `dist` in a built server; both sit inside the Todero checkout. A server
  * launched from an unrelated directory, or from inside another repository,
  * would otherwise report a wrong commit or fall back.
  */
@@ -434,8 +434,8 @@ export function readGitCommit(): string | null {
  *   4. "unknown".
  * The build stamp wins over the environment variable, so a stale
  * `OTEL_SERVICE_VERSION` cannot mask the true built commit. `OTEL_SERVICE_VERSION`
- * is a Paperclip-specific variable, not an OpenTelemetry SDK variable, so
- * Paperclip controls this precedence.
+ * is a Todero-specific variable, not an OpenTelemetry SDK variable, so
+ * Todero controls this precedence.
  */
 export function resolveServiceVersion(
   buildStamp: string | null,
@@ -488,11 +488,11 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
     );
     // Log the resolved value once so an operator can confirm the built commit.
     // eslint-disable-next-line no-console
-    console.log(`[paperclip] OpenTelemetry service.version=${serviceVersion}`);
+    console.log(`[todero] OpenTelemetry service.version=${serviceVersion}`);
 
     const sdk = new NodeSDK({
       resource: resourceFromAttributes({
-        [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || "paperclip",
+        [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME || "todero",
         [ATTR_SERVICE_VERSION]: serviceVersion,
       }),
       // For the HTTP protocols OTEL_EXPORTER_OTLP_ENDPOINT is a *base* URL
@@ -525,7 +525,7 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
       // rejects the SDK's handshake should not take down the server.
       // eslint-disable-next-line no-console
       console.error(
-        "[paperclip] OpenTelemetry SDK failed to start; continuing without tracing",
+        "[todero] OpenTelemetry SDK failed to start; continuing without tracing",
         err,
       );
       return;
@@ -558,7 +558,7 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
     // single diagnostic so the opt-in path is self-documenting.
     // eslint-disable-next-line no-console
     console.warn(
-      "[paperclip] OTEL_EXPORTER_OTLP_ENDPOINT is set and the @opentelemetry/* " +
+      "[todero] OTEL_EXPORTER_OTLP_ENDPOINT is set and the @opentelemetry/* " +
         "packages passed the version check, but one of them failed to load. " +
         "Continuing without tracing.",
       err,

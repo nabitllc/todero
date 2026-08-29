@@ -15,9 +15,9 @@ import {
   toolProfileBindings,
   toolProfileEntries,
   toolProfiles,
-} from "@paperclipai/db";
-import type { AdapterRuntimeMcpServer } from "@paperclipai/adapter-utils";
-import type { PaperclipSkillEntry } from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/db";
+import type { AdapterRuntimeMcpServer } from "@todero/adapter-utils";
+import type { ToderoSkillEntry } from "@todero/adapter-utils/server-utils";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -54,12 +54,12 @@ async function waitForRunToFinish(
 describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  let oldPaperclipHome: string | undefined;
-  let oldPaperclipApiUrl: string | undefined;
-  let paperclipHome: string | null = null;
+  let oldToderoHome: string | undefined;
+  let oldToderoApiUrl: string | undefined;
+  let toderoHome: string | null = null;
   const capturedRuns: Array<{
     agentId: string;
-    skills: PaperclipSkillEntry[];
+    skills: ToderoSkillEntry[];
     mcpServers: AdapterRuntimeMcpServer[];
     config: Record<string, unknown>;
     serializedRuntimeInput: string;
@@ -69,13 +69,13 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-runtime-skills-");
     db = createDb(tempDb.connectionString);
-    oldPaperclipHome = process.env.PAPERCLIP_HOME;
-    paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-skills-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
+    oldToderoHome = process.env.PAPERCLIP_HOME;
+    toderoHome = await fs.mkdtemp(path.join(os.tmpdir(), "todero-runtime-skills-home-"));
+    process.env.PAPERCLIP_HOME = toderoHome;
     // The server normalizes PAPERCLIP_API_URL into its own env at boot
     // (server/src/index.ts); heartbeat gateway delivery requires it, so pin
     // a deterministic value for tests that never boot the full server.
-    oldPaperclipApiUrl = process.env.PAPERCLIP_API_URL;
+    oldToderoApiUrl = process.env.PAPERCLIP_API_URL;
     process.env.PAPERCLIP_API_URL = "http://127.0.0.1:3100/api";
     registerServerAdapter({
       type: TEST_ADAPTER_TYPE,
@@ -88,7 +88,7 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
         await ctx.onLog("stdout", `${serializedRuntimeInput}\n`);
         capturedRuns.push({
           agentId: ctx.agent.id,
-          skills: (ctx.config.paperclipRuntimeSkills ?? []) as PaperclipSkillEntry[],
+          skills: (ctx.config.toderoRuntimeSkills ?? []) as ToderoSkillEntry[],
           mcpServers: ctx.runtimeMcp?.getServers() ?? [],
           config: ctx.config,
           serializedRuntimeInput,
@@ -134,12 +134,12 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
 
   afterAll(async () => {
     unregisterServerAdapter(TEST_ADAPTER_TYPE);
-    if (oldPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-    else process.env.PAPERCLIP_HOME = oldPaperclipHome;
-    if (oldPaperclipApiUrl === undefined) delete process.env.PAPERCLIP_API_URL;
-    else process.env.PAPERCLIP_API_URL = oldPaperclipApiUrl;
-    if (paperclipHome) {
-      await fs.rm(paperclipHome, { recursive: true, force: true });
+    if (oldToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+    else process.env.PAPERCLIP_HOME = oldToderoHome;
+    if (oldToderoApiUrl === undefined) delete process.env.PAPERCLIP_API_URL;
+    else process.env.PAPERCLIP_API_URL = oldToderoApiUrl;
+    if (toderoHome) {
+      await fs.rm(toderoHome, { recursive: true, force: true });
     }
     await tempDb?.cleanup();
   });
@@ -151,12 +151,12 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
     const secondAgentId = randomUUID();
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     const skillKey = `company/${companyId}/runtime-coach`;
-    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-versioned-runtime-skill-"));
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-versioned-runtime-skill-"));
     cleanupDirs.add(skillDir);
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
       defaultResponsibleUserId: "responsible-user",
@@ -206,7 +206,7 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
         status: "idle",
         adapterType: TEST_ADAPTER_TYPE,
         adapterConfig: {
-          paperclipSkillSync: {
+          toderoSkillSync: {
             desiredSkills: [{ key: skillKey, versionId: versionOne.id }],
           },
         },
@@ -221,7 +221,7 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
         status: "idle",
         adapterType: TEST_ADAPTER_TYPE,
         adapterConfig: {
-          paperclipSkillSync: {
+          toderoSkillSync: {
             desiredSkills: [{ key: skillKey, versionId: versionTwo.id }],
           },
         },
@@ -304,7 +304,7 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
       .where(eq(agents.id, firstAgentId))
       .then((rows) => rows[0]?.adapterConfig);
     expect(storedPreference).toMatchObject({
-      paperclipSkillSync: {
+      toderoSkillSync: {
         desiredSkills: [{ key: skillKey, versionId: versionOne.id }],
       },
     });
@@ -420,7 +420,7 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
     const bearer = captured?.mcpServers[0]?.token;
     expect(bearer).toMatch(/^pcgw_/);
     if (!bearer) throw new Error("Expected runtime MCP bearer");
-    expect(captured?.config).not.toHaveProperty("paperclipRuntimeMcpServers");
+    expect(captured?.config).not.toHaveProperty("toderoRuntimeMcpServers");
     expect(JSON.stringify(captured?.config)).not.toContain(bearer);
     expect(captured?.serializedRuntimeInput).not.toContain(bearer);
     const log = await heartbeat.readLog(run!.id);

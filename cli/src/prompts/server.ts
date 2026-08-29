@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { isLoopbackHost, type BindMode } from "@paperclipai/shared";
+import { isLoopbackHost, type BindMode } from "@todero/shared";
 import type { AuthConfig, ServerConfig } from "../config/schema.js";
 import { parseHostnameCsv } from "../config/hostnames.js";
 import { buildCustomServerConfig, buildPresetServerConfig, inferConfiguredBind } from "../config/server-bind.js";
@@ -190,7 +190,7 @@ export async function promptServer(opts?: {
     const urlInput = await p.text({
       message: "Public base URL",
       defaultValue: currentAuth?.publicBaseUrl ?? "",
-      placeholder: "https://paperclip.example.com",
+      placeholder: "https://todero.example.com",
       validate: (val) => {
         const candidate = val?.trim() ?? "";
         if (!candidate) return "Public base URL is required for public exposure";

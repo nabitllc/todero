@@ -17,12 +17,12 @@ import {
   issues,
   nativeRunFinalizations,
   nativeRunResults,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type {
   PrpEvent,
   PrpStructuredRunResult,
   PrpTerminalState,
-} from "@paperclipai/paperclip-runner";
+} from "@todero/paperclip-runner";
 
 import {
   getEmbeddedPostgresTestSupport,
@@ -34,7 +34,7 @@ import {
 } from "../../realtime/runner-prp-ws.js";
 import { NativeRunCoordinatorStore } from "./native-run-coordinator-store.js";
 import { runnerPrpCoordinator } from "./runner-prp-coordinator.js";
-import { PaperclipRunnerSemanticAuthority } from "./runner-semantic-authority.js";
+import { ToderoRunnerSemanticAuthority } from "./runner-semantic-authority.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported
@@ -59,7 +59,7 @@ interface SeededNativeRun {
 }
 
 const result: PrpStructuredRunResult = {
-  schema: "paperclip.run_result.v1",
+  schema: "todero.run_result.v1",
   reportedWorkDisposition: "done",
   summary: "The hidden runner completed the bounded task.",
   completionClaim: {
@@ -75,7 +75,7 @@ const result: PrpStructuredRunResult = {
 };
 
 const terminal: PrpTerminalState = {
-  schema: "paperclip.prp.terminal.v1",
+  schema: "todero.prp.terminal.v1",
   turnTerminalState: "completed",
   runTerminalState: "succeeded",
   reportedWorkDisposition: "done",
@@ -83,7 +83,7 @@ const terminal: PrpTerminalState = {
 
 function runnerEvent(seed: SeededNativeRun, sourceSeq = 1): PrpEvent {
   return {
-    schema: "paperclip.prp.event.v1",
+    schema: "todero.prp.event.v1",
     sourceEventId: `event-${sourceSeq}`,
     sourceSeq,
     sourceInstanceId: seed.runnerInstanceId,
@@ -175,7 +175,7 @@ describeEmbeddedPostgres("hidden runner PRP coordinator", () => {
       companyId,
       issueId,
       revision: 1,
-      schemaVersion: "paperclip.completion-contract.v1",
+      schemaVersion: "todero.completion-contract.v1",
       policyVersion: "policy-v1",
       risk: "low",
       completionAuthority: "runner",
@@ -300,7 +300,7 @@ describeEmbeddedPostgres("hidden runner PRP coordinator", () => {
 
   it("rechecks task ownership and returns semantic receipts", async () => {
     const seed = await seedNativeRun();
-    const authority = new PaperclipRunnerSemanticAuthority(db, {
+    const authority = new ToderoRunnerSemanticAuthority(db, {
       companyId: seed.companyId,
       issueId: seed.issueId,
       runId: seed.runId,

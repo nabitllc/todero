@@ -159,8 +159,8 @@ function createRegisteredRepairFixture(
 ) {
   const workspaceCwd = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const baseCwd = fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}base-`));
-  const configDir = path.join(workspaceCwd, ".paperclip");
-  const sourceConfigPath = path.join(baseCwd, ".paperclip", "config.json");
+  const configDir = path.join(workspaceCwd, ".todero");
+  const sourceConfigPath = path.join(baseCwd, ".todero", "config.json");
   const targetInstanceId = options.targetInstanceId ?? "repair-target";
   const cliRunner = path.join(baseCwd, "cli", "node_modules", "tsx", "dist", "cli.mjs");
   const cliEntry = path.join(baseCwd, "cli", "src", "index.ts");
@@ -355,9 +355,9 @@ describe.sequential("execution workspace runtime control conflict and failure re
   });
 
   it("returns 422 with a stable reason when the repair seed manifest is malformed", async () => {
-    const workspaceCwd = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-route-repair-malformed-"));
+    const workspaceCwd = fs.mkdtempSync(path.join(os.tmpdir(), "todero-route-repair-malformed-"));
     try {
-      const configDir = path.join(workspaceCwd, ".paperclip");
+      const configDir = path.join(workspaceCwd, ".todero");
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(path.join(configDir, "config.json"), "{}\n");
       fs.writeFileSync(path.join(configDir, "seed-manifest.json"), "{ definitely-not-json\n");
@@ -382,7 +382,7 @@ describe.sequential("execution workspace runtime control conflict and failure re
   it.each(["sibling", "foreign_instance", "symlink", "instance_mismatch"] as const)(
     "rejects a %s repair manifest source before spawn or runtime mutation",
     async (variant) => {
-      const fixture = createRegisteredRepairFixture(`paperclip-route-repair-${variant}-`);
+      const fixture = createRegisteredRepairFixture(`todero-route-repair-${variant}-`);
       const attackerDir = path.join(path.dirname(fixture.workspaceCwd), `${path.basename(fixture.workspaceCwd)}-attacker`);
       try {
         fs.mkdirSync(attackerDir, { recursive: true });
@@ -433,9 +433,9 @@ describe.sequential("execution workspace runtime control conflict and failure re
   );
 
   it("rejects repair when the execution workspace has no registered base workspace", async () => {
-    const workspaceCwd = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-route-repair-no-source-"));
+    const workspaceCwd = fs.mkdtempSync(path.join(os.tmpdir(), "todero-route-repair-no-source-"));
     try {
-      const configDir = path.join(workspaceCwd, ".paperclip");
+      const configDir = path.join(workspaceCwd, ".todero");
       fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(path.join(configDir, "config.json"), "{}\n");
       fs.writeFileSync(path.join(configDir, "seed-manifest.json"), JSON.stringify({
@@ -464,8 +464,8 @@ describe.sequential("execution workspace runtime control conflict and failure re
     }
   });
 
-  it("rejects repair when the registered base workspace has no runnable Paperclip CLI", async () => {
-    const fixture = createRegisteredRepairFixture("paperclip-route-repair-no-cli-", { withCli: false });
+  it("rejects repair when the registered base workspace has no runnable Todero CLI", async () => {
+    const fixture = createRegisteredRepairFixture("todero-route-repair-no-cli-", { withCli: false });
     try {
       const res = await request(await createApp())
         .post(`/api/execution-workspaces/${executionWorkspaceId}/runtime-commands/repair`)
@@ -485,7 +485,7 @@ describe.sequential("execution workspace runtime control conflict and failure re
   });
 
   it("returns 422 with a stable reason when the verified manifest names another instance", async () => {
-    const fixture = createRegisteredRepairFixture("paperclip-route-repair-wrong-instance-");
+    const fixture = createRegisteredRepairFixture("todero-route-repair-wrong-instance-");
     try {
       mockVerifiedReseed(fixture, "another-workspace-instance");
 
@@ -507,7 +507,7 @@ describe.sequential("execution workspace runtime control conflict and failure re
 
   it("uses the recorded instance pointer consistently for readiness, handoff, and repair", async () => {
     const recordedInstanceId = "recorded-repair-instance";
-    const fixture = createRegisteredRepairFixture("paperclip-route-repair-success-", {
+    const fixture = createRegisteredRepairFixture("todero-route-repair-success-", {
       targetInstanceId: recordedInstanceId,
     });
     try {
@@ -588,7 +588,7 @@ describe.sequential("execution workspace runtime control conflict and failure re
   });
 
   it("completes database-only repair when no managed runtime service is configured", async () => {
-    const fixture = createRegisteredRepairFixture("paperclip-route-repair-db-only-");
+    const fixture = createRegisteredRepairFixture("todero-route-repair-db-only-");
     try {
       mockExecutionWorkspaceService.getById.mockResolvedValue(buildExecutionWorkspace({
         cwd: fixture.workspaceCwd,
@@ -616,7 +616,7 @@ describe.sequential("execution workspace runtime control conflict and failure re
   });
 
   it("fails repair at the exact seed phase and leaves managed services stopped", async () => {
-    const fixture = createRegisteredRepairFixture("paperclip-route-repair-failure-");
+    const fixture = createRegisteredRepairFixture("todero-route-repair-failure-");
     try {
       mockEnsurePersistedExecutionWorkspaceAvailable.mockResolvedValue({ cwd: fixture.workspaceCwd });
       mockSpawn.mockImplementation(() => {

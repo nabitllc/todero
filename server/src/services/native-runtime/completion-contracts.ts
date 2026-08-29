@@ -1,11 +1,11 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 
-import type { Db } from "@paperclipai/db";
-import { completionContracts } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { completionContracts } from "@todero/db";
 
 import { nativeSha256 } from "./canonical.js";
 
-export const NATIVE_COMPLETION_CONTRACT_SCHEMA = "paperclip.completion-contract.v1";
+export const NATIVE_COMPLETION_CONTRACT_SCHEMA = "todero.completion-contract.v1";
 export const NATIVE_COMPLETION_POLICY_VERSION = "paperclip-runner-v1";
 
 interface NativeCompletionContractInput {
@@ -41,7 +41,7 @@ export async function ensureNativeCompletionContract(input: {
 }) {
   return input.db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${[
-      "paperclip:native-completion-contract",
+      "todero:native-completion-contract",
       input.companyId,
       input.issue.id,
     ].join(":")}, 0))`);

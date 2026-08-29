@@ -5,7 +5,7 @@ type ReadTextFile = (path: string) => string;
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 const DEFAULT_BUILD_COMMIT_PATH = fileURLToPath(
-  new URL("../../.paperclip-build-commit", import.meta.url),
+  new URL("../../.todero-build-commit", import.meta.url),
 );
 
 export function parseBuildCommit(value: string | null | undefined): string | null {

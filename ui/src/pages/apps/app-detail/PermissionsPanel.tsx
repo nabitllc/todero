@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
-import type { Agent, ToolCatalogEntry, ToolConnectionCapabilities } from "@paperclipai/shared";
+import type { Agent, ToolCatalogEntry, ToolConnectionCapabilities } from "@todero/shared";
 import { useSearchParams } from "@/lib/router";
 import { AgentIcon } from "@/components/AgentIconPicker";
 import { Button } from "@/components/ui/button";

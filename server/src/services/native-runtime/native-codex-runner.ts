@@ -4,10 +4,10 @@ import { accessSync, chmodSync, constants, mkdirSync, readFileSync } from "node:
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import type { Db } from "@paperclipai/db";
+import type { AdapterExecutionResult } from "@todero/adapter-utils";
+import type { Db } from "@todero/db";
 
-import { resolvePaperclipInstanceRoot } from "../../home-paths.js";
+import { resolveToderoInstanceRoot } from "../../home-paths.js";
 import { runnerPrpCoordinator } from "./runner-prp-coordinator.js";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -17,7 +17,7 @@ function executableName(): string {
   return process.platform === "win32" ? "paperclip-runnerd.exe" : "paperclip-runnerd";
 }
 
-export function resolvePaperclipRunnerBinary(
+export function resolveToderoRunnerBinary(
   configuredPath = process.env.PAPERCLIP_RUNNER_BINARY,
 ): string {
   const candidates = [
@@ -42,7 +42,7 @@ export function resolvePaperclipRunnerBinary(
     }
   }
   throw new Error(
-    "paperclip_runner_binary_missing: build @paperclipai/paperclip-runner or set PAPERCLIP_RUNNER_BINARY",
+    "paperclip_runner_binary_missing: build @todero/paperclip-runner or set PAPERCLIP_RUNNER_BINARY",
   );
 }
 
@@ -164,11 +164,11 @@ export async function executeNativeCodexRunner(input: {
     startedAt: string;
   }) => Promise<void>;
 }): Promise<AdapterExecutionResult> {
-  const binary = input.runnerBinary ?? resolvePaperclipRunnerBinary();
+  const binary = input.runnerBinary ?? resolveToderoRunnerBinary();
   const runnerDigest = `sha256:${createHash("sha256").update(readFileSync(binary)).digest("hex")}`;
   const runtimeRoot = input.runtimeRoot
     ? resolve(input.runtimeRoot)
-    : resolve(resolvePaperclipInstanceRoot(), "runtime", "paperclip-runner");
+    : resolve(resolveToderoInstanceRoot(), "runtime", "paperclip-runner");
   const runnerStateDirectory = resolve(runtimeRoot, "runner", input.runId);
   privateDirectory(runtimeRoot);
   privateDirectory(resolve(runtimeRoot, "control-plane"));

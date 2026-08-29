@@ -12,8 +12,8 @@ import {
   pluginDatabaseNamespaces,
   pluginMigrations,
   plugins,
-} from "@paperclipai/db";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+} from "@todero/db";
+import type { PaperclipPluginManifestV1 } from "@todero/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -29,8 +29,8 @@ import { buildPluginWorkerEnv, pluginLoader } from "../services/plugin-loader.js
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
-const multiMigrationPluginKey = "paperclip.dbfixture";
-const llmWikiPluginKey = "paperclipai.plugin-llm-wiki";
+const multiMigrationPluginKey = "todero.dbfixture";
+const llmWikiPluginKey = "todero.plugin-llm-wiki";
 
 if (!embeddedPostgresSupport.supported) {
   console.warn(
@@ -209,7 +209,7 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "daytona" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
+      packageName: "@todero/plugin-daytona",
       packagePath: null,
       instanceInfo,
       processEnv: {
@@ -232,7 +232,7 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "daytona" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
+      packageName: "@todero/plugin-daytona",
       packagePath: "/app/packages/plugins/sandbox-providers/daytona",
       trustedLocalPluginRoots: ["/app/packages/plugins"],
       instanceInfo,
@@ -254,8 +254,8 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "daytona" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
-      packagePath: "/home/operator/.paperclip/plugins/fake-daytona",
+      packageName: "@todero/plugin-daytona",
+      packagePath: "/home/operator/.todero/plugins/fake-daytona",
       trustedLocalPluginRoots: ["/app/packages/plugins"],
       instanceInfo,
       processEnv: {
@@ -294,7 +294,7 @@ describe("buildPluginWorkerEnv", () => {
         capabilities: ["environment.drivers.register"],
         environmentDrivers: [{ driverKey: "kubernetes" }],
       },
-      packageName: "@paperclipai/plugin-daytona",
+      packageName: "@todero/plugin-daytona",
       instanceInfo,
       processEnv: {
         DAYTONA_API_KEY: "daytona-token",
@@ -314,12 +314,12 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
   let packageRoots: string[] = [];
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-db-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-plugin-db-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
   afterEach(async () => {
-    for (const pluginKey of ["paperclip.dbtest", "paperclip.escape", "paperclip.refresh", multiMigrationPluginKey, llmWikiPluginKey]) {
+    for (const pluginKey of ["todero.dbtest", "todero.escape", "todero.refresh", multiMigrationPluginKey, llmWikiPluginKey]) {
       const namespace = derivePluginDatabaseNamespace(pluginKey);
       await db.execute(sql.raw(`DROP SCHEMA IF EXISTS "${namespace}" CASCADE`));
     }
@@ -339,7 +339,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
   });
 
   async function createPluginPackage(manifest: PaperclipPluginManifestV1, migrationSql: string) {
-    const packageRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-package-"));
+    const packageRoot = await mkdtemp(path.join(os.tmpdir(), "todero-plugin-package-"));
     packageRoots.push(packageRoot);
     const migrationsDir = path.join(packageRoot, manifest.database!.migrationsDir);
     await mkdir(migrationsDir, { recursive: true });
@@ -354,7 +354,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
       version: "0.1.0",
       displayName: "LLM Wiki",
       description: "Local-file LLM Wiki plugin.",
-      author: "Paperclip",
+      author: "Todero",
       categories: ["automation", "ui"],
       capabilities: [
         "database.namespace.migrate",
@@ -381,7 +381,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
         name: pluginManifest.id,
         version: pluginManifest.version,
         type: "module",
-        paperclipPlugin: { manifest: "./manifest.js" },
+        toderoPlugin: { manifest: "./manifest.js" },
       }),
       "utf8",
     );
@@ -411,14 +411,14 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
     return pluginId;
   }
 
-  function manifest(pluginKey = "paperclip.dbtest"): PaperclipPluginManifestV1 {
+  function manifest(pluginKey = "todero.dbtest"): PaperclipPluginManifestV1 {
     return {
       id: pluginKey,
       apiVersion: 1,
       version: "1.0.0",
       displayName: "DB Test",
       description: "Exercises restricted plugin database access.",
-      author: "Paperclip",
+      author: "Todero",
       categories: ["automation"],
       capabilities: [
         "database.namespace.migrate",
@@ -531,7 +531,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
     const issueId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "TST",
       requireBoardApprovalForNewAgents: false,
     });
@@ -583,7 +583,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
   });
 
   it("records a failed migration when SQL escapes the plugin namespace", async () => {
-    const pluginManifest = manifest("paperclip.escape");
+    const pluginManifest = manifest("todero.escape");
     const packageRoot = await createPluginPackage(
       pluginManifest,
       "CREATE TABLE public.plugin_escape (id uuid PRIMARY KEY);",
@@ -602,7 +602,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
   });
 
   it("rolls back plugin install when migration validation fails", async () => {
-    const pluginManifest = manifest("paperclip.escape");
+    const pluginManifest = manifest("todero.escape");
     const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
     const packageRoot = await createInstallablePluginPackage(
       pluginManifest,
@@ -641,7 +641,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
   });
 
   it("refreshes persisted manifests from disk before activation", async () => {
-    const staleManifest = manifest("paperclip.refresh");
+    const staleManifest = manifest("todero.refresh");
     const refreshedManifest: PaperclipPluginManifestV1 = {
       ...staleManifest,
       capabilities: [...staleManifest.capabilities, "agent.tools.register"],

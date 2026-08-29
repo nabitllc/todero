@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, gte, inArray, isNull, notInArray, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { clampIssueRequestDepth } from "@paperclipai/shared";
+import type { Db } from "@todero/db";
+import { clampIssueRequestDepth } from "@todero/shared";
 import {
   activityLog,
   agents,
@@ -10,7 +10,7 @@ import {
   issueComments,
   issues,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { budgetService } from "./budgets.js";
@@ -642,7 +642,7 @@ export function productivityReviewService(db: Db, deps?: { enqueueWakeup?: Enque
       ? evidence.usageSamples.map((sample) => `- \`${sample.runId}\`: \`${JSON.stringify(sample.usageJson).slice(0, 500)}\``).join("\n")
       : "- no usage payloads on sampled runs";
     return [
-      "Paperclip detected an unusual productivity/progression pattern on an assigned issue.",
+      "Todero detected an unusual productivity/progression pattern on an assigned issue.",
       "",
       "## Source",
       "",

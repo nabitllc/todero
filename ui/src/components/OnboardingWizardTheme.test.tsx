@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // The onboarding wizard's decorative right-hand panel (which renders the
-// ASCII paperclip illustration) must follow the active shadcn theme instead of
+// ASCII todero illustration) must follow the active shadcn theme instead of
 // hardcoding a dark surface. Otherwise a light/cream deployer theme (set via
 // the PAPERCLIP_DEFAULT_THEME bootstrap) renders a jarring cream form next to a
 // solid dark panel. The illustration glyphs already use `text-muted-foreground`,

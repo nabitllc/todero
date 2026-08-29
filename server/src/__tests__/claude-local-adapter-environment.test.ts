@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
-import { resetClaudeCliCapabilitiesCacheForTests, testEnvironment } from "@paperclipai/adapter-claude-local/server";
+import { runChildProcess } from "@todero/adapter-utils/server-utils";
+import { resetClaudeCliCapabilitiesCacheForTests, testEnvironment } from "@todero/adapter-claude-local/server";
 
 const ORIGINAL_ANTHROPIC = process.env.ANTHROPIC_API_KEY;
 const ORIGINAL_BEDROCK = process.env.CLAUDE_CODE_USE_BEDROCK;
@@ -236,7 +236,7 @@ describe("claude_local environment diagnostics", () => {
   it("creates a missing working directory when cwd is absolute", async () => {
     const cwd = path.join(
       os.tmpdir(),
-      `paperclip-claude-local-cwd-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      `todero-claude-local-cwd-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       "workspace",
     );
 
@@ -271,7 +271,7 @@ describe("claude_local environment diagnostics", () => {
         kind: "remote",
         transport: "sandbox",
         providerKey: "test-provider",
-        remoteCwd: "/srv/paperclip/workspace",
+        remoteCwd: "/srv/todero/workspace",
         runner: {
           execute: async () => ({
             exitCode: 0,
@@ -292,7 +292,7 @@ describe("claude_local environment diagnostics", () => {
       result.checks.some(
         (check) =>
           check.code === "claude_cwd_valid" &&
-          check.message === "Working directory is valid: /srv/paperclip/workspace",
+          check.message === "Working directory is valid: /srv/todero/workspace",
       ),
     ).toBe(true);
     expect(result.checks.some((check) => check.code === "claude_cwd_invalid")).toBe(false);
@@ -312,7 +312,7 @@ describe("claude_local environment diagnostics", () => {
         kind: "remote",
         transport: "sandbox",
         providerKey: "cloudflare",
-        remoteCwd: "/workspace/paperclip",
+        remoteCwd: "/workspace/todero",
         runner: {
           execute: async (input) => {
             executeCalls.push({ command: input.command, args: input.args });
@@ -360,7 +360,7 @@ describe("claude_local environment diagnostics", () => {
   });
 
   it("uses the managed Claude config seed for sandbox hello probes", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-claude-envtest-managed-config-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-claude-envtest-managed-config-"));
     const sourceConfigDir = path.join(root, "host-claude");
     const remoteHome = path.join(root, "remote-home");
     const remoteWorkspace = path.join(root, "remote-workspace");
@@ -388,7 +388,7 @@ function fail(message) {
   process.stderr.write(message + "\\n");
   process.exit(2);
 }
-if (!configDir.includes(".paperclip-runtime/claude/config")) {
+if (!configDir.includes(".todero-runtime/claude/config")) {
   fail("missing managed CLAUDE_CONFIG_DIR: " + configDir);
 }
 const settings = JSON.parse(fs.readFileSync(path.join(configDir, "settings.json"), "utf8"));
@@ -408,7 +408,7 @@ console.log(JSON.stringify({ type: "result", result: "hello", usage: { input_tok
     await fs.chmod(commandPath, 0o755);
 
     process.env.CLAUDE_CONFIG_DIR = sourceConfigDir;
-    process.env.PAPERCLIP_HOME = path.join(root, "paperclip-home");
+    process.env.PAPERCLIP_HOME = path.join(root, "todero-home");
     process.env.PAPERCLIP_INSTANCE_ID = "test-instance";
 
     try {
@@ -439,7 +439,7 @@ console.log(JSON.stringify({ type: "result", result: "hello", usage: { input_tok
   });
 
   it("warns and omits --effort for sandbox probes when the installed Claude CLI does not advertise it", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-claude-envtest-sandbox-effort-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-claude-envtest-sandbox-effort-"));
     const workspace = path.join(root, "workspace");
     const remoteWorkspace = path.join(root, "remote-workspace");
     const commandPath = path.join(root, "claude");

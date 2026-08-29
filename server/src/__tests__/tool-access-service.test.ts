@@ -38,9 +38,9 @@ import {
   toolRuntimeMetricCounters,
   toolRuntimeSlots,
   toolStdioCommandTemplates,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { APP_STORE_HIDDEN_SLUGS, getConnectableAppDefinition } from "@paperclipai/shared";
+import { APP_STORE_HIDDEN_SLUGS, getConnectableAppDefinition } from "@todero/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -63,7 +63,7 @@ import type { ComposioClient } from "../services/composio.js";
 import type { VercelConnectClient } from "../services/vercel-connect.js";
 import {
   GMAIL_CONNECTOR_SCOPES,
-  type PaperclipIdGmailConnector,
+  type ToderoIdGmailConnector,
 } from "../services/paperclip-id-gmail-connector.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -85,7 +85,7 @@ function createTestToolAccessService(
   });
 }
 
-function fakeGmailConnector(companyId: string, userId: string): PaperclipIdGmailConnector {
+function fakeGmailConnector(companyId: string, userId: string): ToderoIdGmailConnector {
   const credentials = {
     v: 1 as const,
     accessToken: "gmail-access-token",
@@ -207,7 +207,7 @@ function fakeComposioClient(accountStatus: () => string): ComposioClient {
     createConnectLink: vi.fn(async () => ({ link_token: "link", redirect_url: "https://composio.test/link", expires_at: new Date().toISOString() })),
     listConnectedAccounts: vi.fn(async () => ({ items: [{
       id: "account-github",
-      user_id: "paperclip:test",
+      user_id: "todero:test",
       status: accountStatus(),
       toolkit: { slug: "github" },
       auth_config: { id: "auth-github", auth_scheme: "OAUTH2", is_composio_managed: true },
@@ -249,7 +249,7 @@ function mcpSseResponse(payload: unknown): Response {
 
 function mockToolsList(tools: unknown[]) {
   return vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    mcpHttpResponse({ jsonrpc: "2.0", id: "paperclip-catalog-refresh", result: { tools } }),
+    mcpHttpResponse({ jsonrpc: "2.0", id: "todero-catalog-refresh", result: { tools } }),
   );
 }
 
@@ -464,8 +464,8 @@ async function createBrokerConnection(
   });
   const [application] = await db.insert(toolApplications).values({
     companyId,
-    applicationKey: "paperclip-pages",
-    name: `Paperclip Pages ${randomUUID()}`,
+    applicationKey: "todero-pages",
+    name: `Todero Pages ${randomUUID()}`,
     type: "mcp_http",
     status: "active",
   }).returning();
@@ -635,7 +635,7 @@ describeEmbeddedPostgres("tool access service", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tool-access-service-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-tool-access-service-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -727,7 +727,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     const res = await request(app)
       .post(`/api/agents/me/connections/${encodeURIComponent(connection.uid)}/token`)
-      .set("X-Paperclip-Run-Id", run.id)
+      .set("X-Todero-Run-Id", run.id)
       .send({ scope: "pages:publish:ns/dotta", requestedTtlSeconds: 5000 });
 
     expect(res.status).toBe(200);
@@ -752,7 +752,7 @@ describeEmbeddedPostgres("tool access service", () => {
     ));
     const revoked = await request(app)
       .post(`/api/agents/me/connections/${encodeURIComponent(connection.uid)}/token`)
-      .set("X-Paperclip-Run-Id", run.id)
+      .set("X-Todero-Run-Id", run.id)
       .send({ scope: "pages:publish:ns/dotta" });
     expect(revoked.status).toBe(403);
     expect(revoked.body.error).toContain("no longer authorized");
@@ -887,7 +887,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     const res = await request(app)
       .post(`/api/agents/me/connections/${encodeURIComponent(connection.uid)}/token`)
-      .set("X-Paperclip-Run-Id", run.id)
+      .set("X-Todero-Run-Id", run.id)
       .send({ scope: "pages:publish:ns/dotta" });
 
     expect(res.status).toBe(403);
@@ -918,7 +918,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     const res = await request(app)
       .post(`/api/agents/me/connections/${encodeURIComponent(connection.uid)}/token`)
-      .set("X-Paperclip-Run-Id", run.id)
+      .set("X-Todero-Run-Id", run.id)
       .send({ scope: "pages:publish:ns/dotta" });
 
     expect(res.status).toBe(409);
@@ -1581,7 +1581,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     const res = await request(app)
       .post(`/api/agents/me/connections/${connection.id}/token`)
-      .set("X-Paperclip-Run-Id", run.id)
+      .set("X-Todero-Run-Id", run.id)
       .send({ scope: "pages:publish:ns/dotta" });
 
     expect(res.status).toBe(403);
@@ -1810,7 +1810,7 @@ describeEmbeddedPostgres("tool access service", () => {
       .where(eq(toolCatalogEntries.toolName, "send_email"));
     fetchMock.mockResolvedValueOnce(mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-catalog-refresh",
+      id: "todero-catalog-refresh",
       result: {
         tools: [
           {
@@ -1915,7 +1915,7 @@ describeEmbeddedPostgres("tool access service", () => {
       }
       return mcpSseResponse({
         jsonrpc: "2.0",
-        id: "paperclip-catalog-refresh",
+        id: "todero-catalog-refresh",
         result: { tools: [{ name: "kv_get", description: "Read a value.", annotations: { readOnlyHint: true } }] },
       });
     });
@@ -1954,7 +1954,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const connection = await service.createConnection(company.id, {
       name: "Local echo fixture",
       transport: "local_stdio",
-      config: { templateId: "paperclip.echo-calculator-time" },
+      config: { templateId: "todero.echo-calculator-time" },
       enabled: true,
       status: "active",
     });
@@ -1966,13 +1966,13 @@ describeEmbeddedPostgres("tool access service", () => {
       connectionId: connection.id,
       runtimeKind: "local_stdio",
       status: "stopped",
-      commandTemplateKey: "paperclip.echo-calculator-time",
+      commandTemplateKey: "todero.echo-calculator-time",
     });
     expect(refresh.catalog.map((entry) => entry.toolName).sort()).toEqual(["add", "echo", "fail_with_code", "now"]);
     expect(runtimeSlots).toEqual([
       expect.objectContaining({
         connectionId: connection.id,
-        providerRef: "template:paperclip.echo-calculator-time",
+        providerRef: "template:todero.echo-calculator-time",
         healthStatus: "ok",
       }),
     ]);
@@ -2036,7 +2036,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const listed = await request(app).get(`/api/companies/${company.id}/tools/stdio-templates`).expect(200);
     expect(listed.body.templates).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ templateId: "paperclip.echo-calculator-time", source: "built_in" }),
+        expect.objectContaining({ templateId: "todero.echo-calculator-time", source: "built_in" }),
         expect.objectContaining({ templateId: "local.echo-admin", source: "admin", status: "active" }),
       ]),
     );
@@ -2416,7 +2416,7 @@ describeEmbeddedPostgres("tool access service", () => {
     });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-tool-test",
+      id: "todero-tool-test",
       result: { content: [{ type: "text", text: "sent" }] },
     }));
     const app = createRouteApp(
@@ -2597,7 +2597,7 @@ describeEmbeddedPostgres("tool access service", () => {
     // 3. Approving from the review queue is what runs the parked test call.
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-tool-test",
+      id: "todero-tool-test",
       result: { content: [{ type: "text", text: "sent" }] },
     }));
     await gateway.approveActionRequest({ companyId: company.id, actionRequestId, actor: { userId } });
@@ -2640,7 +2640,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     vi.spyOn(globalThis, "fetch").mockResolvedValue(mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-tool-test",
+      id: "todero-tool-test",
       result: { content: [{ type: "text", text: "sent" }] },
     }));
     await gateway.approveActionRequest({
@@ -3452,7 +3452,7 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(install.created).toBe(true);
     expect(secondInstall.created).toBe(false);
     expect(install.application).toMatchObject({
-      applicationKey: "paperclip.examples.safe-read-only-todo-kv",
+      applicationKey: "todero.examples.safe-read-only-todo-kv",
       type: "mcp_stdio",
       status: "active",
     });
@@ -3460,10 +3460,10 @@ describeEmbeddedPostgres("tool access service", () => {
       transport: "local_stdio",
       status: "active",
       enabled: true,
-      config: expect.objectContaining({ templateId: "paperclip.synthetic-todo-kv" }),
+      config: expect.objectContaining({ templateId: "todero.synthetic-todo-kv" }),
     });
     expect(install.profile).toMatchObject({
-      profileKey: "paperclip.examples.safe-read-only-todo-kv.profile",
+      profileKey: "todero.examples.safe-read-only-todo-kv.profile",
       defaultAction: "deny",
       status: "active",
     });
@@ -3847,7 +3847,7 @@ describeEmbeddedPostgres("tool access service", () => {
       expect(headers.Authorization).toBe("Bearer imported-token");
       return mcpHttpResponse({
         jsonrpc: "2.0",
-        id: "paperclip-catalog-refresh",
+        id: "todero-catalog-refresh",
         result: {
           tools: [
             {
@@ -3955,7 +3955,7 @@ describeEmbeddedPostgres("tool access service", () => {
     ];
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-catalog-refresh",
+      id: "todero-catalog-refresh",
       result: { tools },
     }));
     const service = createTestToolAccessService(db, {
@@ -4061,7 +4061,7 @@ describeEmbeddedPostgres("tool access service", () => {
       token: "posthog-provider-bearer",
       tokenId: "stk_posthog",
       expiresAt: Date.now() + 60_000,
-      connector: { id: "scl_posthog", uid: "posthog-paperclip", type: "api-key" },
+      connector: { id: "scl_posthog", uid: "posthog-todero", type: "api-key" },
       tenantId: "project-12345",
       claims: { email: "must-not-persist@example.com" },
       metadata: { providerSecret: "must-not-persist" },
@@ -4070,8 +4070,8 @@ describeEmbeddedPostgres("tool access service", () => {
     const vercelConnectClient: VercelConnectClient = {
       getConnectorMetadata: vi.fn(async () => ({
         id: "scl_posthog",
-        uid: "posthog-paperclip",
-        name: "Paperclip PostHog",
+        uid: "posthog-todero",
+        name: "Todero PostHog",
         type: "api-key",
         service: "mcp.posthog.com/mcp",
         createdAt: Date.now(),
@@ -4090,7 +4090,7 @@ describeEmbeddedPostgres("tool access service", () => {
         observedAuthorization.push(new Headers(init.headers).get("authorization") ?? "");
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "query_insight", annotations: { readOnlyHint: true } }] },
         });
       },
@@ -4100,7 +4100,7 @@ describeEmbeddedPostgres("tool access service", () => {
       galleryKey: "posthog",
       connectionMethodKey: "mcp-api-key",
       credentialSource: "vercel_connect",
-      vercelConnect: { connector: "posthog-paperclip" },
+      vercelConnect: { connector: "posthog-todero" },
       configValues: { projectId: "12345", mode: "tools" },
       grantKind: "organization",
     }, { actorType: "user", actorId: "board" });
@@ -4117,7 +4117,7 @@ describeEmbeddedPostgres("tool access service", () => {
       externalCredential: {
         provider: "vercel_connect",
         connectorId: "scl_posthog",
-        connectorUid: "posthog-paperclip",
+        connectorUid: "posthog-todero",
         service: "mcp.posthog.com/mcp",
         principalMode: "app",
       },
@@ -4135,7 +4135,7 @@ describeEmbeddedPostgres("tool access service", () => {
       galleryKey: "posthog",
       connectionMethodKey: "mcp-api-key",
       credentialSource: "vercel_connect",
-      vercelConnect: { connector: "posthog-paperclip" },
+      vercelConnect: { connector: "posthog-todero" },
       configValues: { projectId: "67890", mode: "tools" },
     }, { actorType: "user", actorId: "other-board" })).rejects.toMatchObject({
       status: 409,
@@ -4164,7 +4164,7 @@ describeEmbeddedPostgres("tool access service", () => {
       vercelConnectClient: {
         getConnectorMetadata: vi.fn(async () => ({
           id: "scl_linear",
-          uid: "linear-paperclip",
+          uid: "linear-todero",
           name: "Linear",
           type: "api-key",
           service: "linear",
@@ -4183,7 +4183,7 @@ describeEmbeddedPostgres("tool access service", () => {
       galleryKey: "posthog",
       connectionMethodKey: "mcp-api-key",
       credentialSource: "vercel_connect",
-      vercelConnect: { connector: "linear-paperclip" },
+      vercelConnect: { connector: "linear-todero" },
       configValues: { projectId: "12345", mode: "tools" },
     }, { actorType: "user", actorId: "board" })).rejects.toMatchObject({
       status: 400,
@@ -4200,7 +4200,7 @@ describeEmbeddedPostgres("tool access service", () => {
       token: "notion-provider-bearer",
       tokenId: "stk_notion",
       expiresAt: Date.now() + 60_000,
-      connector: { id: "scl_notion", uid: "notion-paperclip", type: "oauth" },
+      connector: { id: "scl_notion", uid: "notion-todero", type: "oauth" },
       tenantId: "notion-workspace",
     }));
     const startAuthorization = vi.fn<VercelConnectClient["startAuthorization"]>(async () => ({
@@ -4214,8 +4214,8 @@ describeEmbeddedPostgres("tool access service", () => {
       vercelConnectClient: {
         getConnectorMetadata: vi.fn(async () => ({
           id: "scl_notion",
-          uid: "notion-paperclip",
-          name: "Paperclip Notion",
+          uid: "notion-todero",
+          name: "Todero Notion",
           type: "oauth",
           service: "notion",
           createdAt: Date.now(),
@@ -4229,14 +4229,14 @@ describeEmbeddedPostgres("tool access service", () => {
       },
       remoteHttpRequest: async () => mcpHttpResponse({
         jsonrpc: "2.0",
-        id: "paperclip-catalog-refresh",
+        id: "todero-catalog-refresh",
         result: { tools: [{ name: "search_pages", annotations: { readOnlyHint: true } }] },
       }),
     });
     const connected = await service.connectGalleryApp(company.id, {
       galleryKey: "notion",
       credentialSource: "vercel_connect",
-      vercelConnect: { connector: "notion-paperclip" },
+      vercelConnect: { connector: "notion-todero" },
       grantKind: "user",
     }, { actorType: "user", actorId: "board-user", sessionId: "board-session" });
     const actor = { actorType: "user" as const, actorId: "board-user", sessionId: "board-session" };
@@ -4249,7 +4249,7 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(started.authorizationUrl).toBe("https://vercel.com/connect/authorize/request-1");
     expect(startAuthorization).toHaveBeenCalledWith(
       expect.objectContaining({
-        connector: "notion-paperclip",
+        connector: "notion-todero",
         subject: expect.objectContaining({ type: "user" }),
         resources: ["https://mcp.notion.com/mcp"],
       }),
@@ -4713,7 +4713,7 @@ describeEmbeddedPostgres("tool access service", () => {
       .patch(`/api/tool-connections/${companyAConnection.connectionId}`)
       .send({
         config: {
-          templateId: "paperclip.google-sheets",
+          templateId: "todero.google-sheets",
           sourceTemplateKey: "google-sheets",
           allowedSpreadsheetIds: ["company-b-sheet"],
           env: { GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS: "company-b-sheet" },
@@ -4798,7 +4798,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     const updated = await service.updateConnection(second.connectionId, {
       config: {
-        templateId: "paperclip.google-sheets",
+        templateId: "todero.google-sheets",
         sourceTemplateKey: "google-sheets",
         allowedSpreadsheetIds: ["same-company-sheet", "new-company-sheet", "same-company-sheet"],
         env: {
@@ -4823,7 +4823,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await grantBoardUser(db, company.id, userId, []);
     const callbackDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
     const service = createTestToolAccessService(callbackDb, {
-      paperclipIdGmailConnector: fakeGmailConnector(company.id, userId),
+      toderoIdGmailConnector: fakeGmailConnector(company.id, userId),
     });
     const actor = { actorType: "user" as const, actorId: userId };
     const gmailDefinition = getConnectableAppDefinition("gmail")!;
@@ -4836,18 +4836,18 @@ describeEmbeddedPostgres("tool access service", () => {
       await callbackDb.execute(sql`select pg_backend_pid()`);
       const connected = await service.connectGalleryApp(company.id, {
         galleryKey: "gmail",
-        connectionMethodKey: "paperclip-draft",
+        connectionMethodKey: "todero-draft",
         grantKind: "user",
         name: "Gmail single-pool callback",
       }, actor);
       const started = await service.startOAuth(company.id, connected.connectionId, {
-        redirectUri: "https://paperclip.example/api/tools/oauth/paperclip-id/callback",
+        redirectUri: "https://todero.example/api/tools/oauth/todero-id/callback",
         actor,
       });
       const state = new URL(started.authorizationUrl).searchParams.get("state")!;
 
       const completed = await Promise.race([
-        service.completePaperclipIdGmailCallback({ state, claimId: "gmail-claim", actor }),
+        service.completeToderoIdGmailCallback({ state, claimId: "gmail-claim", actor }),
         new Promise<never>((_resolve, reject) => {
           deadline = setTimeout(() => {
             void callbackDb.$client.end({ timeout: 0 })
@@ -4881,7 +4881,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const callbackDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
     const removalDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
     const service = createTestToolAccessService(callbackDb, {
-      paperclipIdGmailConnector: fakeGmailConnector(company.id, userId),
+      toderoIdGmailConnector: fakeGmailConnector(company.id, userId),
     });
     const actor = { actorType: "user" as const, actorId: userId };
     const gmailDefinition = getConnectableAppDefinition("gmail")!;
@@ -4901,12 +4901,12 @@ describeEmbeddedPostgres("tool access service", () => {
     try {
       const connected = await service.connectGalleryApp(company.id, {
         galleryKey: "gmail",
-        connectionMethodKey: "paperclip-draft",
+        connectionMethodKey: "todero-draft",
         grantKind: "user",
         name: "Gmail concurrent revocation callback",
       }, actor);
       const started = await service.startOAuth(company.id, connected.connectionId, {
-        redirectUri: "https://paperclip.example/api/tools/oauth/paperclip-id/callback",
+        redirectUri: "https://todero.example/api/tools/oauth/todero-id/callback",
         actor,
       });
       const state = new URL(started.authorizationUrl).searchParams.get("state")!;
@@ -4935,7 +4935,7 @@ describeEmbeddedPostgres("tool access service", () => {
       });
 
       await membershipIsLocked;
-      const completion = service.completePaperclipIdGmailCallback({
+      const completion = service.completeToderoIdGmailCallback({
         state,
         claimId: "gmail-claim",
         actor,
@@ -4985,7 +4985,7 @@ describeEmbeddedPostgres("tool access service", () => {
       name: "Shared OAuth grant",
     }, { actorType: "user", actorId: userId });
     const started = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
     });
 
@@ -5043,7 +5043,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await service.completeOAuthCallback({
       state: new URL(started.authorizationUrl).searchParams.get("state")!,
       code: "shared-authorization-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
     });
 
@@ -5093,7 +5093,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const connected = await service.connectGalleryApp(company.id, { galleryKey: "slack", name: "Slack user auth" });
 
     const workspaceStarted = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "workspace-owner" },
     });
     const workspaceState = new URL(workspaceStarted.authorizationUrl).searchParams.get("state")!;
@@ -5113,14 +5113,14 @@ describeEmbeddedPostgres("tool access service", () => {
         } as Response;
       }
       if (href === "https://mcp.slack.com/mcp") {
-        return mcpHttpResponse({ jsonrpc: "2.0", id: "paperclip-catalog-refresh", result: { tools: [] } });
+        return mcpHttpResponse({ jsonrpc: "2.0", id: "todero-catalog-refresh", result: { tools: [] } });
       }
       throw new Error(`unexpected fetch ${href}`);
     });
     await service.completeOAuthCallback({
       state: workspaceState,
       code: "workspace-authorization-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "workspace-owner" },
     });
     const [workspaceConnection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
@@ -5133,7 +5133,7 @@ describeEmbeddedPostgres("tool access service", () => {
       runId: run.id,
       subjectUserId: "user-for-run",
       scopes: ["channels:read"],
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
     });
     const authorizationUrl = new URL(started.authorizationUrl);
     expect(authorizationUrl.searchParams.get("scope")).toBe("channels:read");
@@ -5152,7 +5152,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await service.completeOAuthCallback({
       state: state.state,
       code: "user-authorization-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "user-for-run" },
     });
 
@@ -5190,7 +5190,7 @@ describeEmbeddedPostgres("tool access service", () => {
       runId: run.id,
       subjectUserId: "user-for-run",
       scopes: ["channels:read"],
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
     })).rejects.toMatchObject({ status: 403 });
     await db.update(companyMemberships).set({ membershipRole: "member" }).where(and(
       eq(companyMemberships.companyId, company.id),
@@ -5203,7 +5203,7 @@ describeEmbeddedPostgres("tool access service", () => {
       runId: run.id,
       subjectUserId: "user-for-run",
       scopes: ["channels:read"],
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
     });
     await db.update(companyMemberships).set({ membershipRole: "viewer" }).where(and(
       eq(companyMemberships.companyId, company.id),
@@ -5212,7 +5212,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await expect(service.completeOAuthCallback({
       state: new URL(retry.authorizationUrl).searchParams.get("state")!,
       code: "user-authorization-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "user-for-run" },
     })).rejects.toMatchObject({ status: 403 });
     expect((await db.select().from(companySecretVersions).where(
@@ -5230,7 +5230,7 @@ describeEmbeddedPostgres("tool access service", () => {
       runId: run.id,
       subjectUserId: "user-for-run",
       scopes: ["channels:read"],
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
     });
     await db.update(companyMemberships).set({ status: "suspended" }).where(and(
       eq(companyMemberships.companyId, company.id),
@@ -5239,7 +5239,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await expect(service.completeOAuthCallback({
       state: new URL(suspendedRetry.authorizationUrl).searchParams.get("state")!,
       code: "user-authorization-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "user-for-run" },
     })).rejects.toMatchObject({ status: 403 });
     expect((await db.select().from(companySecretVersions).where(
@@ -5261,7 +5261,7 @@ describeEmbeddedPostgres("tool access service", () => {
       grantKind: "user",
     }, { actorType: "user", actorId: userId });
     const started = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
       subjectUserId: userId,
     });
@@ -5285,7 +5285,7 @@ describeEmbeddedPostgres("tool access service", () => {
         }));
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: {
             tools: [
               { name: "search_messages", annotations: { readOnlyHint: true } },
@@ -5300,7 +5300,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const completed = await service.completeOAuthCallback({
       state: new URL(started.authorizationUrl).searchParams.get("state")!,
       code: "personal-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
     });
 
@@ -5372,7 +5372,7 @@ describeEmbeddedPostgres("tool access service", () => {
       eq(toolConnectionInstalls.targetType, "company"),
     ))).resolves.toHaveLength(1);
     await expect(service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: `different-user-${randomUUID()}` },
     })).rejects.toMatchObject({ status: 403 });
 
@@ -5390,7 +5390,7 @@ describeEmbeddedPostgres("tool access service", () => {
       updatedAt: new Date(),
     }).where(eq(toolConnections.id, connected.connectionId));
     const reconnect = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
     });
     await expect(service.peekOAuthState(new URL(reconnect.authorizationUrl).searchParams.get("state")!))
@@ -5399,7 +5399,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await expect(service.completeOAuthCallback({
       state: new URL(reconnect.authorizationUrl).searchParams.get("state")!,
       code: "personal-reconnect-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
     })).resolves.toMatchObject({
       connection: { status: "active", enabled: true },
@@ -5431,7 +5431,7 @@ describeEmbeddedPostgres("tool access service", () => {
       grantKind: "user",
     }, { actorType: "user", actorId: userId });
     const started = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
       subjectUserId: userId,
     });
@@ -5449,7 +5449,7 @@ describeEmbeddedPostgres("tool access service", () => {
       if (href === "https://mcp.slack.com/mcp") {
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "search_messages", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -5458,7 +5458,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await service.completeOAuthCallback({
       state: new URL(started.authorizationUrl).searchParams.get("state")!,
       code: "share-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
     });
     const [beforeGrant] = await db.select().from(connectionGrants).where(and(
@@ -5511,7 +5511,7 @@ describeEmbeddedPostgres("tool access service", () => {
       grantKind: "user",
     }, { actorType: "user", actorId: userId });
     const started = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
       subjectUserId: userId,
     });
@@ -5540,7 +5540,7 @@ describeEmbeddedPostgres("tool access service", () => {
       if (href === "https://mcp.slack.com/mcp") {
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "search_messages", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -5549,7 +5549,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await service.completeOAuthCallback({
       state: new URL(started.authorizationUrl).searchParams.get("state")!,
       code: "personal-code",
-      redirectUri: "https://paperclip.example/api/tools/oauth/callback",
+      redirectUri: "https://todero.example/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: userId },
     });
     const [grant] = await db.select().from(connectionGrants).where(and(
@@ -5595,7 +5595,7 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("returns a pre-scoped personal Notion callback directly to Test", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://paperclip.example");
+    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://todero.example");
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_ID", "");
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_NOTION_CLIENT_SECRET", "");
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_CLIENT_ID", "");
@@ -5626,7 +5626,7 @@ describeEmbeddedPostgres("tool access service", () => {
         return mcpHttpResponse({
           client_id: "notion-choice-client",
           client_secret: "notion-choice-secret",
-          redirect_uris: ["https://paperclip.example/api/tools/oauth/callback"],
+          redirect_uris: ["https://todero.example/api/tools/oauth/callback"],
           grant_types: ["authorization_code", "refresh_token"],
           response_types: ["code"],
           token_endpoint_auth_method: "none",
@@ -5645,7 +5645,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(init?.headers).toEqual(expect.objectContaining({ Authorization: "Bearer notion-choice-access" }));
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "notion-search", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -5687,7 +5687,7 @@ describeEmbeddedPostgres("tool access service", () => {
   });
 
   it("returns a declined curated OAuth draft to its exact resumable setup route", async () => {
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://paperclip.example");
+    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://todero.example");
     const company = await createCompany(db);
     const userId = `notion-resume-${randomUUID()}`;
     await grantBoardUser(db, company.id, userId, [], "owner");
@@ -5710,7 +5710,7 @@ describeEmbeddedPostgres("tool access service", () => {
       if (href === "https://mcp.notion.com/register") {
         return mcpHttpResponse({
           client_id: "notion-resume-client",
-          redirect_uris: ["https://paperclip.example/api/tools/oauth/callback"],
+          redirect_uris: ["https://todero.example/api/tools/oauth/callback"],
           grant_types: ["authorization_code", "refresh_token"],
           response_types: ["code"],
           token_endpoint_auth_method: "none",
@@ -5732,7 +5732,7 @@ describeEmbeddedPostgres("tool access service", () => {
       .query({ state, error: "access_denied" });
 
     expect(callbackRes.status).toBe(303);
-    const location = new URL(callbackRes.headers.location, "https://paperclip.example");
+    const location = new URL(callbackRes.headers.location, "https://todero.example");
     expect(location.pathname).toBe(`/${company.issuePrefix}/apps/connect`);
     expect(location.searchParams.get("source")).toBe("notion");
     expect(location.searchParams.get("resume")).toBe(connectRes.body.connectionId);
@@ -5743,7 +5743,7 @@ describeEmbeddedPostgres("tool access service", () => {
   it("starts and completes OAuth app sign-in with PKCE state and secret-backed tokens", async () => {
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET", "slack-client-secret");
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://paperclip-public.example");
+    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "https://todero-public.example");
     const company = await createCompany(db);
     await grantBoardUser(db, company.id, "board-user", []);
     const app = createRouteApp(db);
@@ -5764,7 +5764,7 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(startUrl.searchParams.get("client_id")).toBe("slack-client-id");
     expect(startUrl.searchParams.get("code_challenge_method")).toBe("S256");
     expect(startUrl.searchParams.get("code_challenge")).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(startUrl.searchParams.get("redirect_uri")).toBe("https://paperclip-public.example/api/tools/oauth/callback");
+    expect(startUrl.searchParams.get("redirect_uri")).toBe("https://todero-public.example/api/tools/oauth/callback");
     const state = startUrl.searchParams.get("state");
     expect(state).toBeTruthy();
     await expect(db.select().from(toolOauthStates)).resolves.toEqual([
@@ -5786,7 +5786,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(body.get("code")).toBe("oauth-code");
         expect(body.get("client_secret")).toBe("slack-client-secret");
         expect(body.get("code_verifier")).toBeTruthy();
-        expect(body.get("redirect_uri")).toBe("https://paperclip-public.example/api/tools/oauth/callback");
+        expect(body.get("redirect_uri")).toBe("https://todero-public.example/api/tools/oauth/callback");
         return {
           ok: true,
           json: async () => ({
@@ -5803,7 +5803,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(init?.headers).toEqual(expect.objectContaining({ Authorization: "Bearer access-token" }));
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: {
             tools: [
               { name: "search_messages", description: "Search messages.", annotations: { readOnlyHint: true } },
@@ -5886,20 +5886,20 @@ describeEmbeddedPostgres("tool access service", () => {
 
     const connectRes = await request(app)
       .post(`/api/companies/${company.id}/tools/apps/connect`)
-      .set("Host", "paperclip.example.test")
+      .set("Host", "todero.example.test")
       .set("X-Forwarded-Host", "127.0.0.1:3200")
       .send({ galleryKey: "slack", name: "Unconfigured public Slack workspace" });
 
     expect(connectRes.status).toBe(422);
     expect(connectRes.body).toMatchObject({
       code: "oauth_redirect_origin_unsupported",
-      error: "This Paperclip needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
+      error: "This Todero needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
     });
   });
 
   it("requires non-viewer board access to start OAuth for active app connections", async () => {
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://todero.test");
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     const connect = await service.connectGalleryApp(
@@ -5945,7 +5945,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
   it("lets the retained personal identity owner reconnect without manager configuration access", async () => {
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://todero.test");
     const company = await createCompany(db);
     const userId = `personal-oauth-member-${randomUUID()}`;
     const service = createTestToolAccessService(db);
@@ -6033,7 +6033,7 @@ describeEmbeddedPostgres("tool access service", () => {
   it("binds OAuth callback completion to the initiating board session", async () => {
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET", "slack-client-secret");
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://todero.test");
     const company = await createCompany(db);
     await grantBoardUser(db, company.id, "oauth-operator", []);
     const service = createTestToolAccessService(db);
@@ -6105,7 +6105,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(init?.headers).toEqual(expect.objectContaining({ Authorization: "Bearer bound-access-token" }));
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "search_messages", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -6130,7 +6130,7 @@ describeEmbeddedPostgres("tool access service", () => {
       galleryKey: "notion",
       name: "Notion DCR",
     });
-    const redirectUri = "https://paperclip-dev.tail29c1aa.ts.net/api/tools/oauth/callback";
+    const redirectUri = "https://todero-dev.tail29c1aa.ts.net/api/tools/oauth/callback";
     const registrationBodies: Array<Record<string, unknown>> = [];
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
@@ -6180,12 +6180,12 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(new URL(first.authorizationUrl).searchParams.get("scope")).toBeNull();
     expect(new URL(concurrent.authorizationUrl).searchParams.get("client_id")).toBe("notion-dcr-client");
     expect(registrationBodies).toEqual([{
-      client_name: "Paperclip (paperclip-dev.tail29c1aa.ts.net)",
+      client_name: "Todero (todero-dev.tail29c1aa.ts.net)",
       redirect_uris: [redirectUri],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
-      // PAP-17087: Paperclip's callback is a server-side HTTPS endpoint, so
+      // PAP-17087: Todero's callback is a server-side HTTPS endpoint, so
       // registration must declare a `web` client rather than let the
       // authorization server apply native-client redirect rules.
       application_type: "web",
@@ -6272,7 +6272,7 @@ describeEmbeddedPostgres("tool access service", () => {
         features: "database",
       },
     });
-    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    const redirectUri = "https://todero.example/api/tools/oauth/callback";
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
       if (href === "https://mcp.supabase.com/.well-known/oauth-protected-resource/mcp") {
@@ -6323,7 +6323,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(init?.headers).toEqual(expect.objectContaining({ Authorization: "Bearer supabase-access-token" }));
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [
             { name: "list_tables", annotations: { readOnlyHint: true } },
             { name: "execute_sql", annotations: { readOnlyHint: false } },
@@ -6393,7 +6393,7 @@ describeEmbeddedPostgres("tool access service", () => {
       connectionMethodKey: "mcp-oauth",
       name: "Miro DCR",
     });
-    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    const redirectUri = "https://todero.example/api/tools/oauth/callback";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
       if (href === "https://mcp.miro.com/.well-known/oauth-protected-resource") {
@@ -6443,7 +6443,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(new Headers(init?.headers).get("authorization")).toBe("Bearer miro-access-token");
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "whoami", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -6489,7 +6489,7 @@ describeEmbeddedPostgres("tool access service", () => {
       connectionMethodKey: "mcp-oauth",
       name: "Hugging Face DCR",
     });
-    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    const redirectUri = "https://todero.example/api/tools/oauth/callback";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
       if (href === "https://huggingface.co/.well-known/oauth-protected-resource/mcp?login&gradio=none") {
@@ -6563,7 +6563,7 @@ describeEmbeddedPostgres("tool access service", () => {
       connectionMethodKey: "mcp-oauth",
       name: "Coda DCR",
     });
-    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    const redirectUri = "https://todero.example/api/tools/oauth/callback";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
       if (href === "https://coda.io/.well-known/oauth-protected-resource/apis/mcp") {
@@ -6619,7 +6619,7 @@ describeEmbeddedPostgres("tool access service", () => {
       connectionMethodKey: "mcp-oauth",
       name: "Mixpanel public DCR",
     });
-    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    const redirectUri = "https://todero.example/api/tools/oauth/callback";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
       const href = String(url);
       if (href === "https://mcp.mixpanel.com/.well-known/oauth-protected-resource/mcp") {
@@ -6817,7 +6817,7 @@ describeEmbeddedPostgres("tool access service", () => {
       galleryKey: "notion",
       name: `Notion invalid DCR ${field}`,
     });
-    const redirectUri = "https://paperclip-dev.tail29c1aa.ts.net/api/tools/oauth/callback";
+    const redirectUri = "https://todero-dev.tail29c1aa.ts.net/api/tools/oauth/callback";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
       const href = String(url);
       if (href === "https://mcp.notion.com/.well-known/oauth-protected-resource/mcp") {
@@ -6876,7 +6876,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
 
     await expect(service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "http://paperclip-dev:3100/api/tools/oauth/callback",
+      redirectUri: "http://todero-dev:3100/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     })).rejects.toMatchObject({
       status: 422,
@@ -6899,7 +6899,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     const connect = await service.connectGalleryApp(company.id, { galleryKey: "slack", name: "Slack refresh" });
     const start = await service.startOAuth(company.id, connect.connectionId, {
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const state = new URL(start.authorizationUrl).searchParams.get("state")!;
@@ -6938,7 +6938,7 @@ describeEmbeddedPostgres("tool access service", () => {
       if (href === "https://mcp.slack.com/mcp") {
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "search_messages", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -6948,7 +6948,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await service.completeOAuthCallback({
       state,
       code: "oauth-code",
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const [connected] = await db.select().from(toolConnections).where(eq(toolConnections.id, connect.connectionId));
@@ -7003,7 +7003,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const service = createTestToolAccessService(db);
     const connect = await service.connectGalleryApp(company.id, { galleryKey: "slack", name: "Slack invalid grant" });
     const start = await service.startOAuth(company.id, connect.connectionId, {
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const state = new URL(start.authorizationUrl).searchParams.get("state")!;
@@ -7019,14 +7019,14 @@ describeEmbeddedPostgres("tool access service", () => {
         });
       }
       if (href === "https://mcp.slack.com/mcp") {
-        return mcpHttpResponse({ jsonrpc: "2.0", id: "paperclip-catalog-refresh", result: { tools: [] } });
+        return mcpHttpResponse({ jsonrpc: "2.0", id: "todero-catalog-refresh", result: { tools: [] } });
       }
       throw new Error(`unexpected fetch ${href}`);
     });
     await service.completeOAuthCallback({
       state,
       code: "oauth-code",
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const [connected] = await db.select().from(toolConnections).where(eq(toolConnections.id, connect.connectionId));
@@ -7097,7 +7097,7 @@ describeEmbeddedPostgres("tool access service", () => {
       name: "Slack stale invalid grant",
     });
     const start = await service.startOAuth(company.id, connect.connectionId, {
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const state = new URL(start.authorizationUrl).searchParams.get("state")!;
@@ -7113,14 +7113,14 @@ describeEmbeddedPostgres("tool access service", () => {
         });
       }
       if (href === "https://mcp.slack.com/mcp") {
-        return mcpHttpResponse({ jsonrpc: "2.0", id: "paperclip-catalog-refresh", result: { tools: [] } });
+        return mcpHttpResponse({ jsonrpc: "2.0", id: "todero-catalog-refresh", result: { tools: [] } });
       }
       throw new Error(`unexpected fetch ${href}`);
     });
     await service.completeOAuthCallback({
       state,
       code: "oauth-code",
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const [connected] = await db
@@ -7262,7 +7262,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(init?.headers).toEqual(expect.objectContaining({ Authorization: "Bearer m2m-access-token" }));
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "machine_read", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -7290,7 +7290,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const service = createTestToolAccessService(db);
     const connect = await service.connectGalleryApp(company.id, { galleryKey: "slack", name: "Slack no refresh" });
     const start = await service.startOAuth(company.id, connect.connectionId, {
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const state = new URL(start.authorizationUrl).searchParams.get("state")!;
@@ -7310,7 +7310,7 @@ describeEmbeddedPostgres("tool access service", () => {
       if (href === "https://mcp.slack.com/mcp") {
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "search_messages", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -7320,7 +7320,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await service.completeOAuthCallback({
       state,
       code: "oauth-code",
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
     const [connected] = await db.select().from(toolConnections).where(eq(toolConnections.id, connect.connectionId));
@@ -8156,7 +8156,7 @@ describeEmbeddedPostgres("tool access service", () => {
   it("discovers OAuth for pasted MCP links and completes sign-in without a gallery entry", async () => {
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_GENERIC_EXAMPLE_TEST_CLIENT_ID", "generic-client-id");
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_GENERIC_EXAMPLE_TEST_CLIENT_SECRET", "generic-client-secret");
-    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://paperclip.test");
+    vi.stubEnv("PAPERCLIP_PUBLIC_URL", "http://todero.test");
     const company = await createCompany(db);
     await grantBoardUser(db, company.id, "board-user", []);
     const app = createRouteApp(db);
@@ -8241,7 +8241,7 @@ describeEmbeddedPostgres("tool access service", () => {
         expect(init?.headers).toEqual(expect.objectContaining({ Authorization: "Bearer generic-access-token" }));
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "read_generic", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -8302,7 +8302,7 @@ describeEmbeddedPostgres("tool access service", () => {
     }).returning();
 
     await expect(service.startOAuth(company.id, connection!.id, {
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     })).rejects.toMatchObject({
       status: 422,
@@ -8325,7 +8325,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await expect(service.completeOAuthCallback({
       state: "legacy-smoke-state",
       code: "smoke-code",
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     })).rejects.toMatchObject({
       status: 422,
@@ -8345,7 +8345,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const service = createTestToolAccessService(db);
     const [application] = await db.insert(toolApplications).values({
       companyId: company.id,
-      applicationKey: "paperclip.smoke-lab.http-fixture",
+      applicationKey: "todero.smoke-lab.http-fixture",
       name: "Smoke Lab HTTP MCP fixture",
       type: "mcp_http",
       status: "active",
@@ -8374,15 +8374,15 @@ describeEmbeddedPostgres("tool access service", () => {
     }).returning();
 
     const result = await service.startOAuth(company.id, connection!.id, {
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
 
     const authorizationUrl = new URL(result.authorizationUrl);
     expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
-      `http://paperclip.test/api/companies/${company.id}/smoke-lab/oauth/authorize`,
+      `http://todero.test/api/companies/${company.id}/smoke-lab/oauth/authorize`,
     );
-    expect(authorizationUrl.searchParams.get("client_id")).toBe("paperclip-smoke-lab");
+    expect(authorizationUrl.searchParams.get("client_id")).toBe("todero-smoke-lab");
     expect(authorizationUrl.searchParams.get("scope")).toBe("smoke:openid smoke:profile smoke:email");
     await expect(db.select().from(toolOauthStates)).resolves.toHaveLength(1);
 
@@ -8403,7 +8403,7 @@ describeEmbeddedPostgres("tool access service", () => {
       if (String(url) === "http://smoke-fixture.test/mcp") {
         return mcpHttpResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "todo.list", annotations: { readOnlyHint: true } }] },
         });
       }
@@ -8413,12 +8413,12 @@ describeEmbeddedPostgres("tool access service", () => {
     await service.completeOAuthCallback({
       state: state!,
       code: "smoke-code",
-      redirectUri: "http://paperclip.test/api/tools/oauth/callback",
+      redirectUri: "http://todero.test/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board" },
     });
 
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain(
-      `http://paperclip.test/api/companies/${company.id}/smoke-lab/oauth/token`,
+      `http://todero.test/api/companies/${company.id}/smoke-lab/oauth/token`,
     );
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain("http://smoke-fixture.test/mcp");
     const [updatedConnection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connection!.id));
@@ -8557,7 +8557,7 @@ describeEmbeddedPostgres("tool access service", () => {
 
     fetchMock.mockResolvedValueOnce(mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-catalog-refresh",
+      id: "todero-catalog-refresh",
       result: {
         tools: [
           {
@@ -8680,7 +8680,7 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(defaultProfile).toBeTruthy();
     fetchMock.mockResolvedValueOnce(mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-catalog-refresh",
+      id: "todero-catalog-refresh",
       result: {
         tools: [
           { name: "list_zaps", annotations: { readOnlyHint: true } },
@@ -9041,7 +9041,7 @@ describeEmbeddedPostgres("tool access service", () => {
     }).where(eq(toolConnections.id, connect.connectionId));
     fetchMock.mockResolvedValue(mcpHttpResponse({
       jsonrpc: "2.0",
-      id: "paperclip-catalog-refresh",
+      id: "todero-catalog-refresh",
       result: {
         tools: [
           { name: "list_zaps", description: "List", inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true } },
@@ -9175,7 +9175,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const connection = await service.createConnection(company.id, {
       name: "Restartable local fixture",
       transport: "local_stdio",
-      config: { templateId: "paperclip.echo-calculator-time" },
+      config: { templateId: "todero.echo-calculator-time" },
       enabled: true,
       status: "active",
     });
@@ -9234,7 +9234,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const connection = await service.createConnection(company.id, {
       name: "Route local fixture",
       transport: "local_stdio",
-      config: { templateId: "paperclip.echo-calculator-time" },
+      config: { templateId: "todero.echo-calculator-time" },
       enabled: true,
       status: "active",
     });
@@ -9282,7 +9282,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const connection = await service.createConnection(company.id, {
       name: "Permissioned local fixture",
       transport: "local_stdio",
-      config: { templateId: "paperclip.echo-calculator-time" },
+      config: { templateId: "todero.echo-calculator-time" },
       enabled: true,
       status: "active",
     });
@@ -10303,7 +10303,7 @@ describeEmbeddedPostgres("tool access service", () => {
       runtimeKind: "mcp_remote",
       status: "running",
       reuseKey: connection.id,
-      provider: "paperclip",
+      provider: "todero",
       providerRef: "remote:https://fixture.example/mcp",
       healthStatus: "ok",
     }).returning();
@@ -10341,8 +10341,8 @@ describeEmbeddedPostgres("tool access service", () => {
       transport: "local_stdio",
       status: "active",
       enabled: true,
-      config: { templateId: "paperclip.echo-calculator-time" },
-      transportConfig: { templateId: "paperclip.echo-calculator-time" },
+      config: { templateId: "todero.echo-calculator-time" },
+      transportConfig: { templateId: "todero.echo-calculator-time" },
       healthStatus: "missing_secret",
       healthMessage: "A configured credential secret could not be resolved.",
     }).returning();
@@ -10351,15 +10351,15 @@ describeEmbeddedPostgres("tool access service", () => {
       companyId: company.id,
       applicationId: application.id,
       connectionId: connection.id,
-      slotKey: `${connection.id}:paperclip.echo-calculator-time`,
+      slotKey: `${connection.id}:todero.echo-calculator-time`,
       ownerScopeType: "connection",
       ownerScopeId: connection.id,
       runtimeKind: "local_stdio",
       status: "running",
       reuseKey: connection.id,
-      provider: "paperclip",
+      provider: "todero",
       providerRef: "local-stdio:test-host:slot",
-      commandTemplateKey: "paperclip.echo-calculator-time",
+      commandTemplateKey: "todero.echo-calculator-time",
       healthStatus: "ok",
       startedAt: staleAt,
       lastUsedAt: staleAt,
@@ -10518,7 +10518,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await expect(hostedService.createConnection(company.id, {
       name: "Hosted local stdio",
       transport: "local_stdio",
-      config: { templateId: "paperclip.echo-calculator-time" },
+      config: { templateId: "todero.echo-calculator-time" },
       enabled: true,
       status: "active",
     })).rejects.toMatchObject({
@@ -10534,7 +10534,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await expect(trustedService.createConnection(company.id, {
       name: "Trusted hosted local stdio",
       transport: "local_stdio",
-      config: { templateId: "paperclip.echo-calculator-time" },
+      config: { templateId: "todero.echo-calculator-time" },
       enabled: true,
       status: "active",
     })).resolves.toMatchObject({
@@ -10569,14 +10569,14 @@ describeEmbeddedPostgres("tool access service", () => {
           transport: "mcp_remote",
           status: "draft",
           config: { url: "https://mcp.example/github" },
-          warnings: [expect.stringContaining("Paperclip secret")],
+          warnings: [expect.stringContaining("Todero secret")],
         }),
         expect.objectContaining({
           name: "local",
           transport: "local_stdio",
           status: "draft",
           config: { importedCommand: "npx", importedArgs: ["-y", "@example/local-mcp"] },
-          warnings: [expect.stringContaining("approved Paperclip template")],
+          warnings: [expect.stringContaining("approved Todero template")],
         }),
       ]),
     );
@@ -10997,10 +10997,10 @@ describe("normalizeConnectionMethodConfig", () => {
 
   it("builds a concrete Shopify endpoint from the validated store domain", () => {
     expect(normalizeConnectionMethodConfig(shopifyMethod, {
-      storeDomain: "paperclip-demo.myshopify.com",
+      storeDomain: "todero-demo.myshopify.com",
     })).toEqual({
-      values: { storeDomain: "paperclip-demo.myshopify.com" },
-      url: "https://paperclip-demo.myshopify.com/api/mcp",
+      values: { storeDomain: "todero-demo.myshopify.com" },
+      url: "https://todero-demo.myshopify.com/api/mcp",
     });
   });
 

@@ -3,55 +3,55 @@ import type { ValidateFunction } from "ajv/dist/2020.js";
 
 import {
   PAPERCLIP_SEMANTIC_ACTION_CATALOG,
-  paperclipSemanticAction,
+  toderoSemanticAction,
 } from "../catalog/semantic-action-catalog.js";
 import type {
-  PaperclipJsonValue,
-  PaperclipSemanticActionDescriptor,
-  PaperclipSemanticActionId,
+  ToderoJsonValue,
+  ToderoSemanticActionDescriptor,
+  ToderoSemanticActionId,
 } from "../catalog/semantic-action-types.js";
-import { decidePaperclipSemanticAuthorization } from "./authorization.js";
+import { decideToderoSemanticAuthorization } from "./authorization.js";
 import {
-  discoverPaperclipSemanticTools,
-  projectPaperclipSemanticTools,
+  discoverToderoSemanticTools,
+  projectToderoSemanticTools,
 } from "./discovery.js";
 import {
-  createPaperclipSemanticInputReceipt,
-  createPaperclipSemanticResultReceipt,
+  createToderoSemanticInputReceipt,
+  createToderoSemanticResultReceipt,
   denialRetryable,
-  digestPaperclipSemanticContent,
-  isPaperclipSemanticStableId,
-  normalizePaperclipSemanticReferences,
-  paperclipSemanticAuthorizationBoundary,
-  paperclipSemanticOutcome,
+  digestToderoSemanticContent,
+  isToderoSemanticStableId,
+  normalizeToderoSemanticReferences,
+  toderoSemanticAuthorizationBoundary,
+  toderoSemanticOutcome,
 } from "./receipts.js";
 import {
-  inspectPaperclipSemanticValue,
-  redactPaperclipSemanticValue,
+  inspectToderoSemanticValue,
+  redactToderoSemanticValue,
 } from "./redaction.js";
 import type {
-  PaperclipSemanticActionBinding,
-  PaperclipSemanticAuthorizationDecision,
-  PaperclipSemanticAuthorizationRecord,
-  PaperclipSemanticBindingResult,
-  PaperclipSemanticContextProvider,
-  PaperclipSemanticDenialCode,
-  PaperclipSemanticDiscoveryResult,
-  PaperclipSemanticIdempotencyClaim,
-  PaperclipSemanticIdempotencyStore,
-  PaperclipSemanticRunContext,
-  PaperclipSemanticStoredOutcome,
-  PaperclipSemanticToolCall,
-  PaperclipSemanticToolDefinition,
-  PaperclipSemanticToolDenial,
-  PaperclipSemanticToolResult,
-  PaperclipSemanticToolSuccess,
+  ToderoSemanticActionBinding,
+  ToderoSemanticAuthorizationDecision,
+  ToderoSemanticAuthorizationRecord,
+  ToderoSemanticBindingResult,
+  ToderoSemanticContextProvider,
+  ToderoSemanticDenialCode,
+  ToderoSemanticDiscoveryResult,
+  ToderoSemanticIdempotencyClaim,
+  ToderoSemanticIdempotencyStore,
+  ToderoSemanticRunContext,
+  ToderoSemanticStoredOutcome,
+  ToderoSemanticToolCall,
+  ToderoSemanticToolDefinition,
+  ToderoSemanticToolDenial,
+  ToderoSemanticToolResult,
+  ToderoSemanticToolSuccess,
 } from "./types.js";
 
-export interface PaperclipSemanticDispatcherOptions {
-  readonly contextProvider: PaperclipSemanticContextProvider;
-  readonly bindings: readonly PaperclipSemanticActionBinding[];
-  readonly idempotencyStore?: PaperclipSemanticIdempotencyStore;
+export interface ToderoSemanticDispatcherOptions {
+  readonly contextProvider: ToderoSemanticContextProvider;
+  readonly bindings: readonly ToderoSemanticActionBinding[];
+  readonly idempotencyStore?: ToderoSemanticIdempotencyStore;
   readonly maxAuthorizationRecords?: number;
 }
 
@@ -61,27 +61,27 @@ interface ClaimedMutation {
   readonly idempotencyKey: string;
 }
 
-export class PaperclipSemanticDispatcher {
-  readonly #contextProvider: PaperclipSemanticContextProvider;
+export class ToderoSemanticDispatcher {
+  readonly #contextProvider: ToderoSemanticContextProvider;
   readonly #bindings = new Map<
-    PaperclipSemanticActionId,
-    PaperclipSemanticActionBinding
+    ToderoSemanticActionId,
+    ToderoSemanticActionBinding
   >();
-  readonly #boundOperationIds: ReadonlySet<PaperclipSemanticActionId>;
+  readonly #boundOperationIds: ReadonlySet<ToderoSemanticActionId>;
   readonly #inputValidators = new Map<
-    PaperclipSemanticActionId,
+    ToderoSemanticActionId,
     ValidateFunction
   >();
   readonly #outputValidators = new Map<
-    PaperclipSemanticActionId,
+    ToderoSemanticActionId,
     ValidateFunction
   >();
-  readonly #idempotencyStore: PaperclipSemanticIdempotencyStore | undefined;
+  readonly #idempotencyStore: ToderoSemanticIdempotencyStore | undefined;
   readonly #maxAuthorizationRecords: number;
-  readonly #authorizationRecords: PaperclipSemanticAuthorizationRecord[] = [];
+  readonly #authorizationRecords: ToderoSemanticAuthorizationRecord[] = [];
   #recordSequence = 0;
 
-  constructor(options: PaperclipSemanticDispatcherOptions) {
+  constructor(options: ToderoSemanticDispatcherOptions) {
     this.#contextProvider = options.contextProvider;
     this.#idempotencyStore = options.idempotencyStore;
     this.#maxAuthorizationRecords = Math.max(
@@ -94,7 +94,7 @@ export class PaperclipSemanticDispatcher {
           `duplicate semantic action binding: ${binding.operationId}`,
         );
       }
-      if (paperclipSemanticAction(binding.operationId) === undefined) {
+      if (toderoSemanticAction(binding.operationId) === undefined) {
         throw new Error(
           `unknown semantic action binding: ${binding.operationId}`,
         );
@@ -122,10 +122,10 @@ export class PaperclipSemanticDispatcher {
 
   async listAlwaysAvailableTools(
     runId: string,
-  ): Promise<readonly PaperclipSemanticToolDefinition[]> {
+  ): Promise<readonly ToderoSemanticToolDefinition[]> {
     const context = await this.#contextProvider(runId);
     this.#recordExposureDecisions(runId, context, "always");
-    return projectPaperclipSemanticTools({
+    return projectToderoSemanticTools({
       runId,
       context,
       boundOperationIds: this.#boundOperationIds,
@@ -138,39 +138,39 @@ export class PaperclipSemanticDispatcher {
     readonly query: string;
     readonly namespace?: string;
     readonly limit?: number;
-  }): Promise<PaperclipSemanticDiscoveryResult> {
+  }): Promise<ToderoSemanticDiscoveryResult> {
     const context = await this.#contextProvider(input.runId);
     this.#recordExposureDecisions(input.runId, context, "optional");
-    return discoverPaperclipSemanticTools({
+    return discoverToderoSemanticTools({
       ...input,
       context,
       boundOperationIds: this.#boundOperationIds,
     });
   }
 
-  authorizationRecords(): readonly PaperclipSemanticAuthorizationRecord[] {
+  authorizationRecords(): readonly ToderoSemanticAuthorizationRecord[] {
     return deepFreeze(structuredClone(this.#authorizationRecords));
   }
 
   async dispatch(
-    call: PaperclipSemanticToolCall,
-  ): Promise<PaperclipSemanticToolResult> {
+    call: ToderoSemanticToolCall,
+  ): Promise<ToderoSemanticToolResult> {
     if (!validCallIdentity(call)) {
       return this.#identityDenial(call);
     }
-    const descriptor = paperclipSemanticAction(call.operationId);
+    const descriptor = toderoSemanticAction(call.operationId);
     const binding = descriptor && this.#bindings.get(descriptor.operationId);
     if (descriptor === undefined || binding === undefined) {
       return this.#denial(call, "operation_absent", null, null);
     }
 
-    let context: PaperclipSemanticRunContext;
+    let context: ToderoSemanticRunContext;
     try {
       context = await this.#contextProvider(call.runId);
     } catch {
       return this.#denial(call, "binding_failed", descriptor, null);
     }
-    let decision = decidePaperclipSemanticAuthorization(
+    let decision = decideToderoSemanticAuthorization(
       descriptor,
       context,
       "invocation",
@@ -187,7 +187,7 @@ export class PaperclipSemanticDispatcher {
       );
     }
 
-    const inputSafety = inspectPaperclipSemanticValue(call.input);
+    const inputSafety = inspectToderoSemanticValue(call.input);
     if (!inputSafety.withinBounds) {
       decision = deniedDecision(
         decision,
@@ -236,14 +236,14 @@ export class PaperclipSemanticDispatcher {
       return this.#denial(call, "input_invalid", descriptor, context, decision);
     }
 
-    const inputReceipt = createPaperclipSemanticInputReceipt({
+    const inputReceipt = createToderoSemanticInputReceipt({
       operationId: descriptor.operationId,
       callId: call.callId,
       correlation: call.correlation,
       idempotencyKey: idempotencyKey ?? null,
       content: call.input,
     });
-    const inputDigest = digestPaperclipSemanticContent(call.input);
+    const inputDigest = digestToderoSemanticContent(call.input);
     let claim: ClaimedMutation | undefined;
     if (descriptor.effect !== "read") {
       if (this.#idempotencyStore === undefined) {
@@ -260,13 +260,13 @@ export class PaperclipSemanticDispatcher {
           decision,
         );
       }
-      const scope = digestPaperclipSemanticContent([
+      const scope = digestToderoSemanticContent([
         context.companyId,
         call.runId,
         descriptor.operationId,
         idempotencyKey,
       ]);
-      let claimed: PaperclipSemanticIdempotencyClaim;
+      let claimed: ToderoSemanticIdempotencyClaim;
       try {
         claimed = await this.#idempotencyStore.claim({
           scope,
@@ -335,7 +335,7 @@ export class PaperclipSemanticDispatcher {
 
     // Re-read authority after any durable claim and immediately before the
     // application binding. A stale projection can never authorize execution.
-    let currentContext: PaperclipSemanticRunContext;
+    let currentContext: ToderoSemanticRunContext;
     try {
       currentContext = await this.#contextProvider(call.runId);
     } catch {
@@ -349,7 +349,7 @@ export class PaperclipSemanticDispatcher {
       }
       return this.#denial(call, "binding_failed", descriptor, context);
     }
-    decision = decidePaperclipSemanticAuthorization(
+    decision = decideToderoSemanticAuthorization(
       descriptor,
       currentContext,
       "invocation",
@@ -379,7 +379,7 @@ export class PaperclipSemanticDispatcher {
       );
     }
 
-    let executed: PaperclipSemanticBindingResult;
+    let executed: ToderoSemanticBindingResult;
     try {
       executed = await binding.execute({
         runId: call.runId,
@@ -388,7 +388,7 @@ export class PaperclipSemanticDispatcher {
         taskId: currentContext.activeTask.id,
         callId: call.callId,
         operationId: descriptor.operationId,
-        input: call.input as Readonly<Record<string, PaperclipJsonValue>>,
+        input: call.input as Readonly<Record<string, ToderoJsonValue>>,
       });
     } catch {
       // A mutation may have crossed the application boundary. Keep its claim
@@ -421,8 +421,8 @@ export class PaperclipSemanticDispatcher {
         decision,
       );
     }
-    const outputSafety = inspectPaperclipSemanticValue(executed.value);
-    const safeValue = redactPaperclipSemanticValue(executed.value);
+    const outputSafety = inspectToderoSemanticValue(executed.value);
+    const safeValue = redactToderoSemanticValue(executed.value);
     const outputValidator = this.#outputValidators.get(descriptor.operationId);
     if (
       !outputSafety.withinBounds ||
@@ -448,10 +448,10 @@ export class PaperclipSemanticDispatcher {
     }
 
     const code = executed.code ?? "ok";
-    const references = normalizePaperclipSemanticReferences(
+    const references = normalizeToderoSemanticReferences(
       executed.references,
     );
-    const resultReceipt = createPaperclipSemanticResultReceipt({
+    const resultReceipt = createToderoSemanticResultReceipt({
       operationId: descriptor.operationId,
       callId: call.callId,
       correlation: call.correlation,
@@ -459,10 +459,10 @@ export class PaperclipSemanticDispatcher {
       content: safeValue,
       references,
       redacted: outputSafety.containsProtectedData,
-      outcome: paperclipSemanticOutcome({ ok: true, code }),
+      outcome: toderoSemanticOutcome({ ok: true, code }),
       code,
       retryable: false,
-      authorizationBoundary: paperclipSemanticAuthorizationBoundary(code),
+      authorizationBoundary: toderoSemanticAuthorizationBoundary(code),
       ...(validRevision(executed.stateRevision)
         ? { currentRevision: executed.stateRevision }
         : {}),
@@ -473,7 +473,7 @@ export class PaperclipSemanticDispatcher {
     const operationReceiptId = String(resultReceipt.operationReceiptId);
 
     if (claim !== undefined) {
-      const stored: PaperclipSemanticStoredOutcome = {
+      const stored: ToderoSemanticStoredOutcome = {
         operationId: descriptor.operationId,
         inputDigest,
         operationReceiptId,
@@ -531,13 +531,13 @@ export class PaperclipSemanticDispatcher {
         : {}),
       inputReceipt,
       resultReceipt,
-    } satisfies PaperclipSemanticToolSuccess);
+    } satisfies ToderoSemanticToolSuccess);
   }
 
   #recordExposureDecisions(
     runId: string,
-    context: PaperclipSemanticRunContext,
-    placement: PaperclipSemanticActionDescriptor["placement"],
+    context: ToderoSemanticRunContext,
+    placement: ToderoSemanticActionDescriptor["placement"],
   ): void {
     for (const descriptor of PAPERCLIP_SEMANTIC_ACTION_CATALOG) {
       if (
@@ -546,7 +546,7 @@ export class PaperclipSemanticDispatcher {
       ) {
         continue;
       }
-      const decision = decidePaperclipSemanticAuthorization(
+      const decision = decideToderoSemanticAuthorization(
         descriptor,
         context,
         "exposure",
@@ -557,14 +557,14 @@ export class PaperclipSemanticDispatcher {
   }
 
   #duplicate(
-    call: PaperclipSemanticToolCall,
-    descriptor: PaperclipSemanticActionDescriptor,
-    context: PaperclipSemanticRunContext,
-    decision: PaperclipSemanticAuthorizationDecision,
-    inputReceipt: PaperclipSemanticToolSuccess["inputReceipt"],
+    call: ToderoSemanticToolCall,
+    descriptor: ToderoSemanticActionDescriptor,
+    context: ToderoSemanticRunContext,
+    decision: ToderoSemanticAuthorizationDecision,
+    inputReceipt: ToderoSemanticToolSuccess["inputReceipt"],
     inputDigest: string,
-    stored: PaperclipSemanticStoredOutcome,
-  ): PaperclipSemanticToolResult {
+    stored: ToderoSemanticStoredOutcome,
+  ): ToderoSemanticToolResult {
     if (!isStoredOutcome(stored)) {
       const denied = deniedDecision(
         decision,
@@ -580,12 +580,12 @@ export class PaperclipSemanticDispatcher {
       );
     }
     const outputValidator = this.#outputValidators.get(descriptor.operationId);
-    const outputSafety = inspectPaperclipSemanticValue(stored.value);
-    const safeValue = redactPaperclipSemanticValue(stored.value);
+    const outputSafety = inspectToderoSemanticValue(stored.value);
+    const safeValue = redactToderoSemanticValue(stored.value);
     if (
       stored.operationId !== descriptor.operationId ||
       stored.inputDigest !== inputDigest ||
-      !isPaperclipSemanticStableId(stored.operationReceiptId) ||
+      !isToderoSemanticStableId(stored.operationReceiptId) ||
       !validCode(stored.code) ||
       !validOptionalRevision(stored.stateRevision) ||
       !validOptionalStableId(stored.auditReceiptId) ||
@@ -606,8 +606,8 @@ export class PaperclipSemanticDispatcher {
         denied,
       );
     }
-    const references = normalizePaperclipSemanticReferences(stored.references);
-    const resultReceipt = createPaperclipSemanticResultReceipt({
+    const references = normalizeToderoSemanticReferences(stored.references);
+    const resultReceipt = createToderoSemanticResultReceipt({
       operationId: descriptor.operationId,
       callId: call.callId,
       correlation: call.correlation,
@@ -618,7 +618,7 @@ export class PaperclipSemanticDispatcher {
       outcome: "duplicate",
       code: stored.code,
       retryable: false,
-      authorizationBoundary: paperclipSemanticAuthorizationBoundary(
+      authorizationBoundary: toderoSemanticAuthorizationBoundary(
         stored.code,
       ),
       operationReceiptId: stored.operationReceiptId,
@@ -649,7 +649,7 @@ export class PaperclipSemanticDispatcher {
         : {}),
       inputReceipt,
       resultReceipt,
-    } satisfies PaperclipSemanticToolSuccess);
+    } satisfies ToderoSemanticToolSuccess);
   }
 
   async #releaseClaim(token: string): Promise<boolean> {
@@ -662,8 +662,8 @@ export class PaperclipSemanticDispatcher {
   }
 
   #identityDenial(
-    call: PaperclipSemanticToolCall,
-  ): PaperclipSemanticToolDenial {
+    call: ToderoSemanticToolCall,
+  ): ToderoSemanticToolDenial {
     return deepFreeze({
       ok: false,
       operationId: safeIdentity(call.operationId),
@@ -679,15 +679,15 @@ export class PaperclipSemanticDispatcher {
   }
 
   #denial(
-    call: PaperclipSemanticToolCall,
-    code: PaperclipSemanticDenialCode,
-    descriptor: PaperclipSemanticActionDescriptor | null,
-    context: PaperclipSemanticRunContext | null,
-    decision?: PaperclipSemanticAuthorizationDecision,
+    call: ToderoSemanticToolCall,
+    code: ToderoSemanticDenialCode,
+    descriptor: ToderoSemanticActionDescriptor | null,
+    context: ToderoSemanticRunContext | null,
+    decision?: ToderoSemanticAuthorizationDecision,
     redacted = false,
-  ): PaperclipSemanticToolDenial {
+  ): ToderoSemanticToolDenial {
     const idempotencyKey = stringProperty(call.input, "idempotencyKey") ?? null;
-    const inputReceipt = createPaperclipSemanticInputReceipt({
+    const inputReceipt = createToderoSemanticInputReceipt({
       operationId: call.operationId,
       callId: call.callId,
       correlation: call.correlation,
@@ -695,23 +695,23 @@ export class PaperclipSemanticDispatcher {
       content: call.input,
       redacted,
     });
-    const resultReceipt = createPaperclipSemanticResultReceipt({
+    const resultReceipt = createToderoSemanticResultReceipt({
       operationId: call.operationId,
       callId: call.callId,
       correlation: call.correlation,
       idempotencyKey,
       content: { code },
       redacted,
-      outcome: paperclipSemanticOutcome({ ok: false, code }),
+      outcome: toderoSemanticOutcome({ ok: false, code }),
       code,
       retryable: denialRetryable(code),
-      authorizationBoundary: paperclipSemanticAuthorizationBoundary(code),
+      authorizationBoundary: toderoSemanticAuthorizationBoundary(code),
     });
     if (descriptor !== null && context !== null) {
       const finalDecision =
         decision ??
         deniedDecision(
-          decidePaperclipSemanticAuthorization(
+          decideToderoSemanticAuthorization(
             descriptor,
             context,
             "invocation",
@@ -725,7 +725,7 @@ export class PaperclipSemanticDispatcher {
         context,
         finalDecision,
         call.callId,
-        digestPaperclipSemanticContent(call.input),
+        digestToderoSemanticContent(call.input),
         String(resultReceipt.operationReceiptId),
       );
     }
@@ -744,8 +744,8 @@ export class PaperclipSemanticDispatcher {
   }
 
   #record(
-    context: PaperclipSemanticRunContext,
-    decision: PaperclipSemanticAuthorizationDecision,
+    context: ToderoSemanticRunContext,
+    decision: ToderoSemanticAuthorizationDecision,
     callId: string | null,
     inputDigest: string | null,
     operationReceiptId: string | null,
@@ -754,7 +754,7 @@ export class PaperclipSemanticDispatcher {
     this.#recordSequence += 1;
     this.#authorizationRecords.push(
       deepFreeze({
-        schema: "paperclip.semantic-authorization-record.v1",
+        schema: "todero.semantic-authorization-record.v1",
         id: `semantic_auth:${String(this.#recordSequence).padStart(8, "0")}`,
         runId: context.runId,
         companyId: context.companyId,
@@ -775,7 +775,7 @@ export class PaperclipSemanticDispatcher {
   }
 }
 
-function validCallIdentity(call: PaperclipSemanticToolCall): boolean {
+function validCallIdentity(call: ToderoSemanticToolCall): boolean {
   return (
     call.correlation.runId === call.runId &&
     [
@@ -788,19 +788,19 @@ function validCallIdentity(call: PaperclipSemanticToolCall): boolean {
       ...(call.correlation.requestId === undefined
         ? []
         : [call.correlation.requestId]),
-    ].every(isPaperclipSemanticStableId)
+    ].every(isToderoSemanticStableId)
   );
 }
 
 function isBindingResult(
   value: unknown,
-): value is PaperclipSemanticBindingResult {
+): value is ToderoSemanticBindingResult {
   return typeof value === "object" && value !== null && "value" in value;
 }
 
 function isStoredOutcome(
   value: unknown,
-): value is PaperclipSemanticStoredOutcome {
+): value is ToderoSemanticStoredOutcome {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -814,23 +814,23 @@ function isStoredOutcome(
 }
 
 function deniedDecision(
-  decision: PaperclipSemanticAuthorizationDecision,
-  code: PaperclipSemanticDenialCode,
+  decision: ToderoSemanticAuthorizationDecision,
+  code: ToderoSemanticDenialCode,
   reason: string,
-): PaperclipSemanticAuthorizationDecision {
+): ToderoSemanticAuthorizationDecision {
   return { ...decision, allowed: false, code, reason };
 }
 
 function denialCode(
-  decision: PaperclipSemanticAuthorizationDecision,
-): PaperclipSemanticDenialCode {
+  decision: ToderoSemanticAuthorizationDecision,
+): ToderoSemanticDenialCode {
   if (decision.code === "allowed") {
     throw new Error("allowed authorization decision cannot create a denial");
   }
   return decision.code;
 }
 
-function denialMessage(code: PaperclipSemanticDenialCode): string {
+function denialMessage(code: ToderoSemanticDenialCode): string {
   switch (code) {
     case "operation_absent":
       return "The requested semantic action is not available.";
@@ -879,12 +879,12 @@ function validOptionalRevision(value: unknown): value is number | undefined {
 function validOptionalStableId(value: unknown): value is string | undefined {
   return (
     value === undefined ||
-    (typeof value === "string" && isPaperclipSemanticStableId(value))
+    (typeof value === "string" && isToderoSemanticStableId(value))
   );
 }
 
 function safeIdentity(value: string): string {
-  return isPaperclipSemanticStableId(value) ? value : "invalid";
+  return isToderoSemanticStableId(value) ? value : "invalid";
 }
 
 function deepFreeze<T>(value: T): T {

@@ -15,10 +15,10 @@ use crate::process_supervisor::{
     SupervisedProcess,
 };
 
-const RUNNER_STREAM_SCHEMA: &str = "paperclip.runner.stream.v1";
-const RUNNER_COMMAND_SCHEMA: &str = "paperclip.prp.command.v1";
-const HARNESS_COMMAND_SCHEMA: &str = "paperclip.fake_harness.command.v1";
-const HARNESS_MESSAGE_SCHEMA: &str = "paperclip.fake_harness.message.v1";
+const RUNNER_STREAM_SCHEMA: &str = "todero.runner.stream.v1";
+const RUNNER_COMMAND_SCHEMA: &str = "todero.prp.command.v1";
+const HARNESS_COMMAND_SCHEMA: &str = "todero.fake_harness.command.v1";
+const HARNESS_MESSAGE_SCHEMA: &str = "todero.fake_harness.message.v1";
 const CONTROLLER_COMMAND_QUEUE_CAPACITY: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,7 +127,7 @@ fn enum_field<'a>(value: &'a Value, key: &str, allowed: &[&str]) -> Option<&'a s
 }
 
 fn valid_terminal_proposal(value: &Value) -> bool {
-    value.get("schema").and_then(Value::as_str) == Some("paperclip.prp.terminal.v1")
+    value.get("schema").and_then(Value::as_str) == Some("todero.prp.terminal.v1")
         && enum_field(
             value,
             "turnTerminalState",
@@ -202,7 +202,7 @@ fn reconcile_terminal(
     let harness_terminal_proposal = proposal.unwrap_or(Value::Null);
 
     json!({
-        "schema": "paperclip.prp.terminal.v1",
+        "schema": "todero.prp.terminal.v1",
         "turnTerminalState": turn_terminal_state,
         "runTerminalState": run_terminal_state,
         "reportedWorkDisposition": reported_work_disposition,
@@ -296,7 +296,7 @@ impl RunnerState {
         }
         self.source_seq += 1;
         let mut event = json!({
-            "schema": "paperclip.prp.event.v1",
+            "schema": "todero.prp.event.v1",
             "sourceEventId": format!("event_{}_{:03}", self.config.run_id, self.source_seq),
             "sourceSeq": self.source_seq,
             "sourceInstanceId": self.config.runner_instance_id,
@@ -827,7 +827,7 @@ mod tests {
     fn nonzero_exit_overrides_a_success_terminal_proposal() {
         let terminal = reconcile_terminal(
             Some(json!({
-                "schema": "paperclip.prp.terminal.v1",
+                "schema": "todero.prp.terminal.v1",
                 "turnTerminalState": "completed",
                 "runTerminalState": "succeeded",
                 "reportedWorkDisposition": "done"
@@ -857,7 +857,7 @@ mod tests {
     fn successful_process_and_result_override_a_failed_terminal_proposal() {
         let terminal = reconcile_terminal(
             Some(json!({
-                "schema": "paperclip.prp.terminal.v1",
+                "schema": "todero.prp.terminal.v1",
                 "turnTerminalState": "failed",
                 "runTerminalState": "failed",
                 "reportedWorkDisposition": "yielded"

@@ -1115,24 +1115,24 @@ export interface AskUserQuestionsQuestion {
 /**
  * Provider-neutral presentation retained when a live harness question has to
  * fall back to the durable issue interaction lifecycle. This intentionally
- * mirrors `paperclip.question_set.v1` without making the shared package depend
+ * mirrors `todero.question_set.v1` without making the shared package depend
  * on a particular runner implementation.
  */
-export interface PaperclipQuestionSetOption {
+export interface ToderoQuestionSetOption {
   id: string;
   label: string;
   description?: string;
   recommended?: boolean;
 }
 
-export interface PaperclipQuestionSetQuestion {
+export interface ToderoQuestionSetQuestion {
   id: string;
   header?: string;
   prompt: string;
   helpText?: string;
   required: boolean;
   answerMode: "single_select" | "multi_select" | "text";
-  options?: PaperclipQuestionSetOption[];
+  options?: ToderoQuestionSetOption[];
   customAnswer?: {
     enabled: true;
     label?: string;
@@ -1148,12 +1148,12 @@ export interface PaperclipQuestionSetQuestion {
   };
 }
 
-export interface PaperclipQuestionSetPayload {
-  schema: "paperclip.question_set.v1";
+export interface ToderoQuestionSetPayload {
+  schema: "todero.question_set.v1";
   title?: string;
   description?: string;
   submitLabel?: string;
-  questions: PaperclipQuestionSetQuestion[];
+  questions: ToderoQuestionSetQuestion[];
 }
 
 export interface AskUserQuestionsPayload {
@@ -1163,7 +1163,7 @@ export interface AskUserQuestionsPayload {
   supersedeOnUserComment?: boolean;
   questions: AskUserQuestionsQuestion[];
   /** Exact presentation for a recovered harness request. */
-  questionSet?: PaperclipQuestionSetPayload;
+  questionSet?: ToderoQuestionSetPayload;
   /** Correlates a recovered interaction with the live runtime request it replaces. */
   runtimeRequestId?: string | null;
 }

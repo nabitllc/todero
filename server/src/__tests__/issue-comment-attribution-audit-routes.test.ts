@@ -13,16 +13,16 @@ import {
   heartbeatRuns,
   issueComments,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 
 vi.hoisted(() => {
-  process.env.PAPERCLIP_HOME = "/tmp/paperclip-test-home";
+  process.env.PAPERCLIP_HOME = "/tmp/todero-test-home";
   process.env.PAPERCLIP_INSTANCE_ID = "vitest";
-  process.env.PAPERCLIP_LOG_DIR = "/tmp/paperclip-test-home/logs";
+  process.env.PAPERCLIP_LOG_DIR = "/tmp/todero-test-home/logs";
   process.env.PAPERCLIP_IN_WORKTREE = "false";
 });
 
@@ -58,7 +58,7 @@ describeEmbeddedPostgres("issue comment attribution and patch audit routes", () 
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-comment-attribution-audit-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-comment-attribution-audit-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 

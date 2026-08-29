@@ -4,13 +4,13 @@ import path from "node:path";
 import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import { healthRoutes } from "../routes/health.js";
 
 const tempDirs: string[] = [];
 
 function createDevServerStatusFile(payload: unknown) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "paperclip-health-dev-server-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "todero-health-dev-server-"));
   tempDirs.push(dir);
   const filePath = path.join(dir, "dev-server-status.json");
   writeFileSync(filePath, `${JSON.stringify(payload)}\n`, "utf8");
@@ -96,7 +96,7 @@ describe("GET /health dev-server supervisor access", () => {
 
       const res = await request(app)
         .get("/health")
-        .set("X-Paperclip-Dev-Server-Status-Token", "dev-runner-token");
+        .set("X-Todero-Dev-Server-Status-Token", "dev-runner-token");
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({

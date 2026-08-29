@@ -12,11 +12,11 @@ import {
   type Agent,
   type AgentWakeupResponse,
   type Issue,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   removeMaintainerOnlySkillSymlinks,
-  resolvePaperclipSkillsDir,
-} from "@paperclipai/adapter-utils/server-utils";
+  resolveToderoSkillsDir,
+} from "@todero/adapter-utils/server-utils";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -770,14 +770,14 @@ export function registerAgentCommands(program: Command): void {
     agent
       .command("local-cli")
       .description(
-        "Create an agent API key, install local Paperclip skills for Codex/Claude, and print shell exports",
+        "Create an agent API key, install local Todero skills for Codex/Claude, and print shell exports",
       )
       .argument("<agentRef>", "Agent ID or shortname/url-key")
       .requiredOption("-C, --company-id <id>", "Company ID")
       .option("--key-name <name>", "API key label", "local-cli")
       .option(
         "--no-install-skills",
-        "Skip installing Paperclip skills into ~/.codex/skills, ~/.claude/skills, and ~/.kimi-code/skills",
+        "Skip installing Todero skills into ~/.codex/skills, ~/.claude/skills, and ~/.kimi-code/skills",
       )
       .action(async (agentRef: string, opts: AgentLocalCliOptions) => {
         try {
@@ -799,10 +799,10 @@ export function registerAgentCommands(program: Command): void {
 
           const installSummaries: SkillsInstallSummary[] = [];
           if (opts.installSkills !== false) {
-            const skillsDir = await resolvePaperclipSkillsDir(__moduleDir, [path.resolve(process.cwd(), "skills")]);
+            const skillsDir = await resolveToderoSkillsDir(__moduleDir, [path.resolve(process.cwd(), "skills")]);
             if (!skillsDir) {
               throw new Error(
-                "Could not locate local Paperclip skills directory. Expected ./skills in the repo checkout.",
+                "Could not locate local Todero skills directory. Expected ./skills in the repo checkout.",
               );
             }
 

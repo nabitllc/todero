@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, like, ne, notInArray, notLike, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   companies,
@@ -17,7 +17,7 @@ import {
   secretAccessEvents,
   userSecretDeclarations,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type {
   AgentApiKeyScope,
   AgentEnvConfig,
@@ -34,7 +34,7 @@ import type {
   SecretProviderConfigHealthStatus,
   SecretProviderConfigStatus,
   SecretVersionSelector,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   CLASS3_STATIC_LEASE_ALLOWLIST,
   createSecretProviderConfigSchema,
@@ -45,7 +45,7 @@ import {
   secretProviderConfigPayloadSchema,
   secretProviderConfigDiscoveryPreviewSchema,
   updateSecretProviderConfigSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import {
@@ -356,7 +356,7 @@ async function throwProviderWriteOrReservedRowRollbackError(input: {
       },
       "remote secret provider write failed and reserved secret rollback failed",
     );
-    throw new HttpError(500, "Secret create failed and Paperclip could not roll back the local secret reservation.", {
+    throw new HttpError(500, "Secret create failed and Todero could not roll back the local secret reservation.", {
       code: "secret_create_rollback_failed",
       provider: input.provider,
       operation: input.operation,
@@ -402,7 +402,7 @@ async function deleteLocalSecretCreateReservationOrThrow(input: {
       },
       "secret create failed and local reserved secret rollback failed",
     );
-    throw new HttpError(500, "Secret create failed and Paperclip could not roll back the local secret reservation.", {
+    throw new HttpError(500, "Secret create failed and Todero could not roll back the local secret reservation.", {
       code: "secret_create_rollback_failed",
       provider: input.provider,
       operation: input.operation,
@@ -419,7 +419,7 @@ function throwProviderCleanupFailedAfterCreateRollback(input: {
   operation: string;
 }): never {
   const providerConfigId = providerConfigIdentifier(input);
-  throw new HttpError(500, "Secret create failed and Paperclip could not clean up the remote provider secret.", {
+  throw new HttpError(500, "Secret create failed and Todero could not clean up the remote provider secret.", {
     code: "secret_create_provider_cleanup_failed",
     provider: input.provider,
     operation: input.operation,
@@ -452,14 +452,14 @@ function safeRemoteProviderErrorDetails(
     };
     const region = safeString(context.providerConfig?.region);
     if (region) details.region = region;
-    details.credentialPath = "Paperclip server runtime/provider credential path";
+    details.credentialPath = "Todero server runtime/provider credential path";
     if (error?.code === "access_denied") {
       if (context.operation === "secret.create") {
         details.requiredCapability = "secretsmanager:CreateSecret";
         details.actionableMessage =
           "AWS managed secret creation needs secretsmanager:CreateSecret in the selected region for this provider vault. If the vault config uses a KMS key, the runtime credentials also need KMS write permissions for that key.";
         details.safeAlternative =
-          "If the secret already exists in AWS, link it as an external reference instead of creating a Paperclip-managed value.";
+          "If the secret already exists in AWS, link it as an external reference instead of creating a Todero-managed value.";
       } else if (context.operation === "secret.rotate") {
         details.requiredCapability = "secretsmanager:PutSecretValue";
         details.actionableMessage =
@@ -477,11 +477,11 @@ function safeRemoteProviderErrorDetails(
   const region = safeString(context.providerConfig?.region);
   if (region) details.region = region;
   details.providerVaultContext = context.providerConfigId === "discovery-preview" ? "draft_config" : "provider_config";
-  details.credentialPath = "Paperclip server runtime/provider credential path";
+  details.credentialPath = "Todero server runtime/provider credential path";
   if (error?.code === "access_denied") {
     details.requiredCapability = "secretsmanager:ListSecrets";
     details.actionableMessage =
-      "AWS discovery preview needs secretsmanager:ListSecrets in the selected region for the Paperclip server runtime/provider credential path.";
+      "AWS discovery preview needs secretsmanager:ListSecrets in the selected region for the Todero server runtime/provider credential path.";
     details.safeAlternative =
       "If the operator already knows the exact AWS Secrets Manager ARN, paste/link that ARN instead of using discovery. Exact-resource DescribeSecret and runtime read permissions are still required.";
   }
@@ -1581,7 +1581,7 @@ export function secretService(db: Db | DbTransaction) {
       if (!binding) throw forbidden("Secret access is not granted for this agent");
 
       const runContext = asRecord(run.contextSnapshot) ?? {};
-      const manifest = (asRecord(runContext.paperclipSecrets) ?? {}).manifest;
+      const manifest = (asRecord(runContext.toderoSecrets) ?? {}).manifest;
       const manifestBindingIds = new Set(
         Array.isArray(manifest)
           ? manifest.flatMap((entry) => {
@@ -1605,8 +1605,8 @@ export function secretService(db: Db | DbTransaction) {
     const effectiveIssueId = context.issueId ?? (
       typeof runContext.issueId === "string"
         ? runContext.issueId
-        : typeof (asRecord(runContext.paperclipIssue) ?? {}).id === "string"
-          ? String((asRecord(runContext.paperclipIssue) ?? {}).id)
+        : typeof (asRecord(runContext.toderoIssue) ?? {}).id === "string"
+          ? String((asRecord(runContext.toderoIssue) ?? {}).id)
           : null
     );
     bindingContext.issueId = effectiveIssueId;
@@ -1709,7 +1709,7 @@ export function secretService(db: Db | DbTransaction) {
     if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
 
     const runContext = asRecord(run.contextSnapshot) ?? {};
-    const manifest = (asRecord(runContext.paperclipSecrets) ?? {}).manifest;
+    const manifest = (asRecord(runContext.toderoSecrets) ?? {}).manifest;
     const manifestBindingIds = Array.isArray(manifest)
       ? manifest.flatMap((entry) => {
           const bindingId = (asRecord(entry) ?? {}).bindingId;

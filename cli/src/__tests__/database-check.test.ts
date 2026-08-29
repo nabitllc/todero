@@ -3,25 +3,25 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { databaseCheck } from "../checks/database-check.js";
-import type { PaperclipConfig } from "../config/schema.js";
+import type { ToderoConfig } from "../config/schema.js";
 
 const created: string[] = [];
 const ORIGINAL_IN_WORKTREE = process.env.PAPERCLIP_IN_WORKTREE;
 
 function makeBase(): string {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-dbcheck-"));
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "todero-dbcheck-"));
   created.push(base);
   return base;
 }
 
-function embeddedConfig(dataDir: string): PaperclipConfig {
+function embeddedConfig(dataDir: string): ToderoConfig {
   return {
     database: {
       mode: "embedded-postgres",
       embeddedPostgresDataDir: dataDir,
       embeddedPostgresPort: 54321,
     },
-  } as unknown as PaperclipConfig;
+  } as unknown as ToderoConfig;
 }
 
 afterEach(() => {

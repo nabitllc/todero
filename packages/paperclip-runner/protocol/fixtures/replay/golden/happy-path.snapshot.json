@@ -1,8 +1,8 @@
 {
-  "schema": "paperclip.prp.session-snapshot.v1",
+  "schema": "todero.prp.session-snapshot.v1",
   "fixtureName": "Happy path",
   "identity": {
-    "schema": "paperclip.prp.identity.v1",
+    "schema": "todero.prp.identity.v1",
     "companyId": "company_replay",
     "issueId": "issue_replay_happy",
     "runId": "run_replay_happy",
@@ -13,7 +13,7 @@
     "providerSessionId": "provider_replay_happy"
   },
   "capabilities": {
-    "schema": "paperclip.prp.capabilities.v1",
+    "schema": "todero.prp.capabilities.v1",
     "sessionReusePolicy": "new_per_run",
     "driver": {
       "kind": "fake",
@@ -41,7 +41,7 @@
   ],
   "requests": [],
   "proposedResult": {
-    "schema": "paperclip.run_result.v1",
+    "schema": "todero.run_result.v1",
     "reportedWorkDisposition": "done",
     "summary": "The scripted run completed successfully.",
     "completionClaim": {
@@ -61,7 +61,7 @@
     "artifacts": []
   },
   "terminal": {
-    "schema": "paperclip.prp.terminal.v1",
+    "schema": "todero.prp.terminal.v1",
     "turnTerminalState": "completed",
     "runTerminalState": "succeeded",
     "reportedWorkDisposition": "done",

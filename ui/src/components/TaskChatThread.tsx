@@ -35,7 +35,7 @@ import {
 } from "@/components/task-chat/interaction-thread-order";
 import { shouldHideInteractionCard } from "@/lib/issue-thread-interactions";
 import { TaskChatBubbleActions } from "@/components/task-chat/TaskChatBubbleActions";
-import type { FeedbackVoteValue } from "@paperclipai/shared";
+import type { FeedbackVoteValue } from "@todero/shared";
 import { TaskChatThreadView, taskChatContentKey } from "@/components/task-chat/TaskChatThreadView";
 import { TaskChatComposer } from "@/components/task-chat/TaskChatComposer";
 import { useWindowAutoFollow } from "@/components/task-chat/useWindowAutoFollow";

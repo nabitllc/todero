@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { renderPaperclipWakePrompt } from "@paperclipai/adapter-utils/server-utils";
-import { buildPaperclipWakePayload } from "../services/heartbeat.js";
+import { renderToderoWakePrompt } from "@todero/adapter-utils/server-utils";
+import { buildToderoWakePayload } from "../services/heartbeat.js";
 
 describe("agent session wake messages", () => {
   it("includes the issue brief and requires fallback fetch when a long description is truncated", async () => {
@@ -9,7 +9,7 @@ describe("agent session wake messages", () => {
       "x".repeat(13_000),
     ].join("\n");
 
-    const wakePayload = await buildPaperclipWakePayload({
+    const wakePayload = await buildToderoWakePayload({
       db: {
         select: () => ({
           from: () => ({
@@ -46,15 +46,15 @@ describe("agent session wake messages", () => {
   });
 
   it("turns the canonical session-message context into adapter prompt input", async () => {
-    const wakePayload = await buildPaperclipWakePayload({
+    const wakePayload = await buildToderoWakePayload({
       db: {} as never,
       companyId: "company-1",
       contextSnapshot: {
         wakeReason: "gateway_chat_message",
-        paperclipAgentMessage: {
+        toderoAgentMessage: {
           text: "hello",
           source: "plugin_session",
-          pluginKey: "paperclip.gateway",
+          pluginKey: "todero.gateway",
           sessionId: "session-1",
         },
       },
@@ -66,16 +66,16 @@ describe("agent session wake messages", () => {
       agentMessage: {
         text: "hello",
         source: "plugin_session",
-        pluginKey: "paperclip.gateway",
+        pluginKey: "todero.gateway",
         sessionId: "session-1",
       },
     });
-    expect(renderPaperclipWakePrompt(wakePayload)).toContain("hello");
+    expect(renderToderoWakePrompt(wakePayload)).toContain("hello");
   });
 
   it("leaves a normal context-only wake without a renderable payload", async () => {
     await expect(
-      buildPaperclipWakePayload({
+      buildToderoWakePayload({
         db: {} as never,
         companyId: "company-1",
         contextSnapshot: {
@@ -87,15 +87,15 @@ describe("agent session wake messages", () => {
 
   it("redacts and bounds session messages before materializing the wake payload", async () => {
     const secret = "do-not-render-this-value";
-    const wakePayload = await buildPaperclipWakePayload({
+    const wakePayload = await buildToderoWakePayload({
       db: {} as never,
       companyId: "company-1",
       contextSnapshot: {
         wakeReason: "gateway_chat_message",
-        paperclipAgentMessage: {
+        toderoAgentMessage: {
           text: `OPENAI_API_KEY=${secret}\n${"x".repeat(13_000)}`,
           source: "plugin_session",
-          pluginKey: "paperclip.gateway",
+          pluginKey: "todero.gateway",
           sessionId: "session-1",
         },
       },

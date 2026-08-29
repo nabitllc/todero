@@ -3,7 +3,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { CONNECTABLE_APP_DEFINITIONS } from "@paperclipai/shared";
+import { CONNECTABLE_APP_DEFINITIONS } from "@todero/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import { queryKeys } from "@/lib/queryKeys";
@@ -65,7 +65,7 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Paperclip" },
+    selectedCompany: { id: "company-1", name: "Todero" },
   }),
 }));
 
@@ -446,7 +446,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
   });
 
   it("shows Gmail's instance configuration notice instead of a dead connect path", async () => {
-    const reason = "Configure Paperclip ID before connecting Gmail.";
+    const reason = "Configure Todero ID before connecting Gmail.";
     listGalleryMock.mockResolvedValue({
       apps: [{ ...GMAIL, availability: { available: false, reason } }],
     });
@@ -467,7 +467,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     expect(container.textContent).toContain("Your OAuth app");
     expect(container.textContent).toContain("Open Asana app settings");
     expect(container.textContent).toContain("Create an Asana MCP OAuth app");
-    expect(container.textContent).toContain("Paperclip callback URL");
+    expect(container.textContent).toContain("Todero callback URL");
     expect(container.textContent).toContain(
       "http://localhost:3000/api/tools/oauth/callback",
     );
@@ -576,7 +576,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     await render();
 
     expect(container.textContent).toContain("Google Developer Preview access required");
-    expect(container.textContent).toContain("does not enable unrelated Paperclip customers");
+    expect(container.textContent).toContain("does not enable unrelated Todero customers");
     expect(container.textContent).toContain("final project-registration email");
     expect(
       Array.from(container.querySelectorAll<HTMLAnchorElement>("a")).find((link) =>
@@ -760,7 +760,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     const connectorInput = container.querySelector<HTMLInputElement>('#vercel-connect-connector');
     expect(connectorInput).toBeTruthy();
     await act(async () => {
-      setInputValue(connectorInput!, "posthog/paperclip");
+      setInputValue(connectorInput!, "posthog/todero");
     });
     await flushReact();
     const vercelSubmit = buttonByText("Validate and connect");
@@ -776,7 +776,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
       connectionMethodKey: "mcp-api-key",
       name: "PostHog for the company",
       credentialSource: "vercel_connect",
-      vercelConnect: { connector: "posthog/paperclip" },
+      vercelConnect: { connector: "posthog/todero" },
       configValues: { readOnly: false, mode: "tools" },
       applicationId: undefined,
     });
@@ -807,7 +807,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
 
     expect(container.textContent).toContain("Use your own OAuth app");
     expect(container.querySelector("#curated-oauth-client-id")).toBeTruthy();
-    expect(container.textContent).toContain("Paperclip callback URL");
+    expect(container.textContent).toContain("Todero callback URL");
   });
 
   it("shows unavailable Vercel configuration only inside the isolated Vercel entry point", async () => {
@@ -895,7 +895,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     expect(connectAppMock).toHaveBeenCalledTimes(1);
     expect(openSpy).toHaveBeenCalledWith(
       "about:blank",
-      "paperclip-connection-oauth",
+      "todero-connection-oauth",
       "popup,width=720,height=760,resizable=yes,scrollbars=yes",
     );
     expect(openSpy.mock.invocationCallOrder[0]).toBeLessThan(connectAppMock.mock.invocationCallOrder[0]!);
@@ -1001,7 +1001,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     );
   });
 
-  it("shows an in-flight state while Paperclip prepares Notion sign-in", async () => {
+  it("shows an in-flight state while Todero prepares Notion sign-in", async () => {
     mockSearch.value = "source=notion";
     listGalleryMock.mockResolvedValueOnce({ apps: [NOTION] });
     connectAppMock.mockReturnValueOnce(new Promise(() => {}));
@@ -1345,7 +1345,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
       expect(listConnectionsMock).toHaveBeenCalledTimes(2);
       expect(listApplicationsMock).toHaveBeenCalledTimes(2);
       expect(container.textContent).not.toContain("Couldn’t load connection setup");
-      expect(container.textContent).toContain("Connect Notion to Paperclip");
+      expect(container.textContent).toContain("Connect Notion to Todero");
     },
   );
 
@@ -1891,7 +1891,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
   it("shows the Google Sheets robot email and keeps empty sheet links from continuing", async () => {
     listGalleryMock.mockResolvedValueOnce({
       apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
+        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@todero.iam.gserviceaccount.com" } },
       ],
     });
     await render();
@@ -1907,7 +1907,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Share each sheet with this email");
-    expect(container.textContent).toContain("robot@paperclip.iam.gserviceaccount.com");
+    expect(container.textContent).toContain("robot@todero.iam.gserviceaccount.com");
     expect(container.textContent).toContain(
       "In Google Sheets, click Share and add this email as an Editor. Then paste the sheet links below.",
     );
@@ -1917,7 +1917,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
   it("shows inline validation for invalid Google Sheets links", async () => {
     listGalleryMock.mockResolvedValueOnce({
       apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
+        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@todero.iam.gserviceaccount.com" } },
       ],
     });
     await render();
@@ -2099,7 +2099,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
   it("a custom name on the Google Sheets step is sent to the connect mutation", async () => {
     listGalleryMock.mockResolvedValueOnce({
       apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
+        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@todero.iam.gserviceaccount.com" } },
       ],
     });
     await render();
@@ -2139,7 +2139,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
   it("passes parsed Google Sheets IDs as connection config values", async () => {
     listGalleryMock.mockResolvedValueOnce({
       apps: [
-        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@paperclip.iam.gserviceaccount.com" } },
+        { ...GOOGLE_SHEETS, availability: { available: true, robotEmail: "robot@todero.iam.gserviceaccount.com" } },
       ],
     });
     await render();
@@ -2326,7 +2326,7 @@ describe("AppsConnect — guided generic MCP flow (PAP-17087)", () => {
     await gotoLinkFrame(container, "https://mcp.zapier.com/api/v1/connect?token=t");
 
     // Both routes are present: the branded shortcut and the generic form itself.
-    expect(container.textContent).toContain("Paperclip has a guided setup for Zapier.");
+    expect(container.textContent).toContain("Todero has a guided setup for Zapier.");
     expect(container.textContent).toContain("Connect your own MCP server");
     expect(buttonByText("Check link")).toBeTruthy();
   });
@@ -2375,7 +2375,7 @@ describe("AppsConnect — guided generic MCP flow (PAP-17087)", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain("This Paperclip needs a public HTTPS address first");
+    expect(container.textContent).toContain("This Todero needs a public HTTPS address first");
     expect(container.textContent).not.toContain("PAPERCLIP_PUBLIC_URL");
   });
 
@@ -2566,7 +2566,7 @@ describe("AppsConnect — guided generic MCP flow (PAP-17087)", () => {
     });
   });
 
-  it("blocks a header Paperclip refuses to send before making a request", async () => {
+  it("blocks a header Todero refuses to send before making a request", async () => {
     await render();
     await gotoLinkFrame(container, "https://mcp.example.test/mcp");
     await openAdvanced();
@@ -2584,7 +2584,7 @@ describe("AppsConnect — guided generic MCP flow (PAP-17087)", () => {
     await act(async () => setInputValue(valueInput, "evil.example"));
     await flushReact();
 
-    expect(container.textContent).toContain('Paperclip manages the "Host" header');
+    expect(container.textContent).toContain('Todero manages the "Host" header');
     expect(buttonByText("Check link")?.disabled).toBe(true);
     expect(connectAppMock).not.toHaveBeenCalled();
   });

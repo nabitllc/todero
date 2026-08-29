@@ -4,7 +4,7 @@ import {
   RUNTIME_EXPOSURE_BIND_HOST,
   commandSelectsBindMode,
   forceLoopbackBindInCommand,
-  isPaperclipDevRunnerCommand,
+  isToderoDevRunnerCommand,
   rewriteUrlHostToLoopback,
 } from "./loopback-bind.js";
 
@@ -46,7 +46,7 @@ describe("forceLoopbackBindInCommand", () => {
   });
 
   it("keeps the legacy lan aliases so dev-service detection still matches", () => {
-    // `isPaperclipDevRuntimeService` matches `--tailscale-auth` as a substring;
+    // `isToderoDevRuntimeService` matches `--tailscale-auth` as a substring;
     // an explicit `--bind` already beats the alias in every dev-runner version.
     expect(forceLoopbackBindInCommand("pnpm dev:once --tailscale-auth")).toBe(
       "pnpm dev:once --tailscale-auth --bind loopback",
@@ -95,33 +95,33 @@ describe("commandSelectsBindMode", () => {
   });
 });
 
-describe("isPaperclipDevRunnerCommand", () => {
+describe("isToderoDevRunnerCommand", () => {
   it("matches the real managed dev commands", () => {
-    expect(isPaperclipDevRunnerCommand("pnpm dev --bind lan")).toBe(true);
-    expect(isPaperclipDevRunnerCommand("pnpm dev")).toBe(true);
-    expect(isPaperclipDevRunnerCommand("pnpm dev:once --tailscale-auth")).toBe(true);
-    expect(isPaperclipDevRunnerCommand("pnpm dev:watch")).toBe(true);
-    expect(isPaperclipDevRunnerCommand("npm run dev --bind lan")).toBe(true);
-    expect(isPaperclipDevRunnerCommand("yarn dev")).toBe(true);
-    expect(isPaperclipDevRunnerCommand("node /tmp/x/dev-runner.mjs --bind lan")).toBe(true);
-    expect(isPaperclipDevRunnerCommand("tsx ../scripts/dev-runner.ts watch")).toBe(true);
+    expect(isToderoDevRunnerCommand("pnpm dev --bind lan")).toBe(true);
+    expect(isToderoDevRunnerCommand("pnpm dev")).toBe(true);
+    expect(isToderoDevRunnerCommand("pnpm dev:once --tailscale-auth")).toBe(true);
+    expect(isToderoDevRunnerCommand("pnpm dev:watch")).toBe(true);
+    expect(isToderoDevRunnerCommand("npm run dev --bind lan")).toBe(true);
+    expect(isToderoDevRunnerCommand("yarn dev")).toBe(true);
+    expect(isToderoDevRunnerCommand("node /tmp/x/dev-runner.mjs --bind lan")).toBe(true);
+    expect(isToderoDevRunnerCommand("tsx ../scripts/dev-runner.ts watch")).toBe(true);
   });
 
   it("does not match unrelated commands that merely use --bind", () => {
-    expect(isPaperclipDevRunnerCommand('python3 -m http.server "$PORT" --bind 127.0.0.1')).toBe(false);
-    expect(isPaperclipDevRunnerCommand("node -e 'listen()'")).toBe(false);
-    expect(isPaperclipDevRunnerCommand("pnpm build")).toBe(false);
-    expect(isPaperclipDevRunnerCommand("pnpm develop")).toBe(false);
-    expect(isPaperclipDevRunnerCommand("./my-dev-runnerish --bind lan")).toBe(false);
+    expect(isToderoDevRunnerCommand('python3 -m http.server "$PORT" --bind 127.0.0.1')).toBe(false);
+    expect(isToderoDevRunnerCommand("node -e 'listen()'")).toBe(false);
+    expect(isToderoDevRunnerCommand("pnpm build")).toBe(false);
+    expect(isToderoDevRunnerCommand("pnpm develop")).toBe(false);
+    expect(isToderoDevRunnerCommand("./my-dev-runnerish --bind lan")).toBe(false);
   });
 });
 
 describe("rewriteUrlHostToLoopback", () => {
   it("redirects a MagicDNS probe target to loopback, keeping port and path", () => {
-    expect(rewriteUrlHostToLoopback("http://paperclip-dev:42003/api/health")).toBe(
+    expect(rewriteUrlHostToLoopback("http://todero-dev:42003/api/health")).toBe(
       "http://127.0.0.1:42003/api/health",
     );
-    expect(rewriteUrlHostToLoopback("http://paperclip-dev:42003")).toBe("http://127.0.0.1:42003/");
+    expect(rewriteUrlHostToLoopback("http://todero-dev:42003")).toBe("http://127.0.0.1:42003/");
   });
 
   it("leaves an already-loopback target alone", () => {

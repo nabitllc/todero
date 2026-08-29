@@ -1,4 +1,4 @@
-import type { IssueCommentMetadata, IssueCommentPresentation } from "@paperclipai/shared";
+import type { IssueCommentMetadata, IssueCommentPresentation } from "@todero/shared";
 import {
   agentLinkRow,
   keyValueRow,
@@ -24,7 +24,7 @@ export type StrandedRecoveryEscalationNotice = {
 };
 
 export const DEFAULT_STRANDED_RECOVERY_NOTICE_BODY =
-  "Paperclip could not restore a live execution path for this issue automatically. " +
+  "Todero could not restore a live execution path for this issue automatically. " +
   "Moving it to `blocked` so it is visible for intervention.";
 
 const DEFAULT_STRANDED_RECOVERY_NOTICE_TITLE = "Automatic recovery blocked";
@@ -39,8 +39,8 @@ export function buildImmediateExecutionPathRecoveryNoticeSeed(input: {
   status: "todo" | "in_progress";
 }): StrandedRecoveryNoticeSeed {
   const retryDescription = input.status === "todo"
-    ? "Paperclip automatically retried dispatch for this assigned `todo` issue during terminal run recovery"
-    : "Paperclip automatically retried continuation for this assigned `in_progress` issue during terminal run recovery";
+    ? "Todero automatically retried dispatch for this assigned `todo` issue during terminal run recovery"
+    : "Todero automatically retried continuation for this assigned `in_progress` issue during terminal run recovery";
   return {
     body:
       `${retryDescription}, but it still has no live execution path. ` +
@@ -53,7 +53,7 @@ export function buildImmediateExecutionPathRecoveryNoticeSeed(input: {
 export function buildWorkspaceValidationRecoveryNoticeSeed(): StrandedRecoveryNoticeSeed {
   return {
     body:
-      "Paperclip stopped before launching the local adapter because the issue workspace failed validation. " +
+      "Todero stopped before launching the local adapter because the issue workspace failed validation. " +
       "Moving it to `blocked` so the workspace link, cwd, or git checkout can be repaired before resuming.",
     title: "Workspace validation failed",
     tone: "danger",
@@ -63,7 +63,7 @@ export function buildWorkspaceValidationRecoveryNoticeSeed(): StrandedRecoveryNo
 export function buildConfigurationIncompleteRecoveryNoticeSeed(): StrandedRecoveryNoticeSeed {
   return {
     body:
-      "Paperclip stopped before dispatching the adapter because required secret/env bindings are missing. " +
+      "Todero stopped before dispatching the adapter because required secret/env bindings are missing. " +
       "Moving it to `blocked` so an operator can bind the missing secret(s) before resuming.",
     title: "Configuration incomplete",
     tone: "danger",
@@ -73,7 +73,7 @@ export function buildConfigurationIncompleteRecoveryNoticeSeed(): StrandedRecove
 export function buildExecutionReviewParticipantRecoveryNoticeSeed(): StrandedRecoveryNoticeSeed {
   return {
     body:
-      "Paperclip retried the pending execution-review participant once, but the review stage still has no " +
+      "Todero retried the pending execution-review participant once, but the review stage still has no " +
       "completed decision or live reviewer run. Moving it to `blocked` so the board can inspect the evidence, repair the " +
       "reviewer runtime, restore the review stage, or record an intentional manual resolution.",
     title: "Review recovery stalled",
@@ -84,7 +84,7 @@ export function buildExecutionReviewParticipantRecoveryNoticeSeed(): StrandedRec
 export function buildExecutionReviewParticipantUnavailableNoticeSeed(): StrandedRecoveryNoticeSeed {
   return {
     body:
-      "Paperclip cannot continue the pending execution-review participant because the participant is not " +
+      "Todero cannot continue the pending execution-review participant because the participant is not " +
       "invokable and the review stage has no completed decision or live reviewer run. Moving it to `blocked` " +
       "so the board can inspect the evidence, repair the reviewer runtime, restore the review stage, or record an " +
       "intentional manual resolution.",

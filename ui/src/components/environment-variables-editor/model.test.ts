@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CompanySecret, UserSecretDefinition } from "@paperclipai/shared";
+import type { CompanySecret, UserSecretDefinition } from "@todero/shared";
 import {
   computeDuplicateNames,
   computeRowHealth,
@@ -177,7 +177,7 @@ describe("validateName", () => {
   });
 
   it("charset error takes precedence over reserved prefix", () => {
-    expect(validateName("PAPERCLIP-X", new Set(), reserved)?.level).toBe("error");
+    expect(validateName("TODERO-X", new Set(), reserved)?.level).toBe("error");
   });
 });
 

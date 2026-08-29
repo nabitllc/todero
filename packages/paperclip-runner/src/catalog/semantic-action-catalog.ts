@@ -1,8 +1,8 @@
 import type {
-  PaperclipJsonSchema,
-  PaperclipSemanticActionDescriptor,
-  PaperclipSemanticActionId,
-  PaperclipSemanticActionMode,
+  ToderoJsonSchema,
+  ToderoSemanticActionDescriptor,
+  ToderoSemanticActionId,
+  ToderoSemanticActionMode,
 } from "./semantic-action-types.js";
 
 const ALL_MODES = ["standard", "ask", "planning", "skill_test"] as const;
@@ -12,7 +12,7 @@ const STANDARD_MODE = ["standard", "skill_test"] as const;
 const text = (
   description: string,
   maxLength = 20_000,
-): PaperclipJsonSchema => ({
+): ToderoJsonSchema => ({
   type: "string",
   description,
   minLength: 1,
@@ -22,13 +22,13 @@ const text = (
 const nullableText = (
   description: string,
   maxLength = 20_000,
-): PaperclipJsonSchema => ({
+): ToderoJsonSchema => ({
   type: ["string", "null"],
   description,
   maxLength,
 });
 
-const stringArray = (description: string): PaperclipJsonSchema => ({
+const stringArray = (description: string): ToderoJsonSchema => ({
   type: "array",
   description,
   items: { type: "string", minLength: 1 },
@@ -37,16 +37,16 @@ const stringArray = (description: string): PaperclipJsonSchema => ({
 });
 
 const object = (
-  properties: Readonly<Record<string, PaperclipJsonSchema>> = {},
+  properties: Readonly<Record<string, ToderoJsonSchema>> = {},
   required: readonly string[] = [],
-): PaperclipJsonSchema => ({
+): ToderoJsonSchema => ({
   type: "object",
   properties,
   required,
   additionalProperties: false,
 });
 
-const openObject: PaperclipJsonSchema = {
+const openObject: ToderoJsonSchema = {
   type: "object",
   additionalProperties: true,
 };
@@ -73,21 +73,21 @@ const operationReceipt = object(
 );
 
 interface DescriptorInput {
-  readonly operationId: PaperclipSemanticActionId;
+  readonly operationId: ToderoSemanticActionId;
   readonly title: string;
   readonly description: string;
   readonly placement?: "always" | "optional";
   readonly effect?: "read" | "write" | "governance";
   readonly requiredClaims?: readonly string[];
-  readonly allowedModes?: readonly PaperclipSemanticActionMode[];
+  readonly allowedModes?: readonly ToderoSemanticActionMode[];
   readonly allowedRoles?: readonly string[];
-  readonly inputSchema?: PaperclipJsonSchema;
-  readonly outputSchema?: PaperclipJsonSchema;
+  readonly inputSchema?: ToderoJsonSchema;
+  readonly outputSchema?: ToderoJsonSchema;
 }
 
-function descriptor(input: DescriptorInput): PaperclipSemanticActionDescriptor {
+function descriptor(input: DescriptorInput): ToderoSemanticActionDescriptor {
   return {
-    schema: "paperclip.semantic-action.v1",
+    schema: "todero.semantic-action.v1",
     operationId: input.operationId,
     version: 1,
     title: input.title,
@@ -104,7 +104,7 @@ function descriptor(input: DescriptorInput): PaperclipSemanticActionDescriptor {
   };
 }
 
-const descriptors: readonly PaperclipSemanticActionDescriptor[] = [
+const descriptors: readonly ToderoSemanticActionDescriptor[] = [
   descriptor({
     operationId: "get_task_context",
     title: "Get active task context",
@@ -536,13 +536,13 @@ export const PAPERCLIP_SEMANTIC_ACTION_CATALOG = Object.freeze([
   ...byId.values(),
 ]);
 
-export function paperclipSemanticAction(
+export function toderoSemanticAction(
   operationId: string,
-): PaperclipSemanticActionDescriptor | undefined {
-  return byId.get(operationId as PaperclipSemanticActionId);
+): ToderoSemanticActionDescriptor | undefined {
+  return byId.get(operationId as ToderoSemanticActionId);
 }
 
-export function canonicalPaperclipSemanticActionCatalog(): string {
+export function canonicalToderoSemanticActionCatalog(): string {
   return `${JSON.stringify(sortKeys(PAPERCLIP_SEMANTIC_ACTION_CATALOG), null, 2)}\n`;
 }
 

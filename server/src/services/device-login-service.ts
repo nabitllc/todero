@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { adapterAuthSessions } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { adapterAuthSessions } from "@todero/db";
 import type {
   AdapterAuthSessionFailure,
   AdapterAuthSessionInternalStatus,
@@ -11,8 +11,8 @@ import type {
   AgentAdapterType,
   Environment,
   EnvironmentLease,
-} from "@paperclipai/shared";
-import { toPublicAdapterAuthSessionStatus } from "@paperclipai/shared";
+} from "@todero/shared";
+import { toPublicAdapterAuthSessionStatus } from "@todero/shared";
 import {
   CODEX_DEVICE_LOGIN_COMMAND as DEFAULT_CODEX_LOGIN_COMMAND,
   parseDeviceLoginPrompt,
@@ -20,16 +20,16 @@ import {
   type DeviceLoginOutcome as RunnerDeviceLoginOutcome,
   type DeviceLoginPrompt,
   type SandboxLoginDriver,
-} from "@paperclipai/adapter-codex-local/server";
+} from "@todero/adapter-codex-local/server";
 import {
   GROK_DEVICE_LOGIN_COMMAND as DEFAULT_GROK_LOGIN_COMMAND,
   parseGrokDeviceLoginPrompt,
-} from "@paperclipai/adapter-grok-local/server";
-import type { AdapterLoginPrompt } from "@paperclipai/adapter-utils";
+} from "@todero/adapter-grok-local/server";
+import type { AdapterLoginPrompt } from "@todero/adapter-utils";
 import {
   createLoginPtyTransport,
   type LoginPtySessionOpener,
-} from "@paperclipai/adapter-utils/login-pty-transport";
+} from "@todero/adapter-utils/login-pty-transport";
 import type { EnvironmentRuntimeService } from "./environment-runtime.js";
 import { buildLoginLeaseAcquireArgs } from "./adapter-login-lease.js";
 import { environmentService } from "./environments.js";
@@ -353,7 +353,7 @@ export function adapterLoginPromotionLockKey(
   startedByUserId: string,
   adapterType: AgentAdapterType,
 ): string {
-  return `paperclip:adapter-login-promotion:${companyId}:${startedByUserId}:${adapterType}`;
+  return `todero:adapter-login-promotion:${companyId}:${startedByUserId}:${adapterType}`;
 }
 
 /**
@@ -1296,7 +1296,7 @@ function buildFailure(
 /** The fixed, session-specific Codex home template. The session identifier is
  *  server-generated, so no caller controls this path. */
 export function sessionLoginHomePath(sessionId: string): string {
-  return `/tmp/paperclip-adapter-login/${sessionId}`;
+  return `/tmp/todero-adapter-login/${sessionId}`;
 }
 
 /** The fixed, session-specific credential path. No caller controls it. */
@@ -1438,7 +1438,7 @@ export function createWorkerBoundLoginPtyOpener(
     const driverKey =
       readLeaseMetaString(metadata.provider) ?? readLeaseMetaString(metadata.driver);
     if (!binding.providerLeaseId || !pluginId || !driverKey) {
-      log("[paperclip] Device login: the lease carries no sandbox worker binding.");
+      log("[todero] Device login: the lease carries no sandbox worker binding.");
       throw new Error(CODEX_LOGIN_PTY_BIND_FAILED);
     }
     // Resolve the closed command key from the trusted adapter type. An unmapped
@@ -1447,7 +1447,7 @@ export function createWorkerBoundLoginPtyOpener(
     try {
       loginCommandKey = resolveLoginCommandKey(binding.adapterType);
     } catch {
-      log("[paperclip] Device login: the adapter type has no login command key.");
+      log("[todero] Device login: the adapter type has no login command key.");
       throw new Error(CODEX_LOGIN_PTY_BIND_FAILED);
     }
     // Validate the server-controlled session home shape before the worker RPC.

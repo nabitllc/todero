@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { toolAccessAuditEvents, toolRuntimeSlots } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode, ToolRuntimeSlotStatus } from "@paperclipai/shared";
+import type { Db } from "@todero/db";
+import { toolAccessAuditEvents, toolRuntimeSlots } from "@todero/db";
+import type { DeploymentExposure, DeploymentMode, ToolRuntimeSlotStatus } from "@todero/shared";
 import { logActivity } from "./activity-log.js";
 
 const ACTIVE_SLOT_STATUSES: ToolRuntimeSlotStatus[] = ["starting", "running", "idle"];
@@ -407,7 +407,7 @@ export function createToolRuntimeSupervisor(db: Db, options: ToolRuntimeSupervis
       .update(toolRuntimeSlots)
       .set({
         status: "running",
-        provider: "paperclip",
+        provider: "todero",
         providerRef,
         processId: null,
         healthStatus: "ok",
@@ -497,9 +497,9 @@ export function createToolRuntimeSupervisor(db: Db, options: ToolRuntimeSupervis
         runtimeKind: "local_stdio",
         status: "stopped",
         reuseKey: input.connectionKey,
-        provider: "paperclip",
+        provider: "todero",
         providerRef: null,
-        commandTemplateKey: input.commandTemplateKey ?? "paperclip.local-stdio-fixture",
+        commandTemplateKey: input.commandTemplateKey ?? "todero.local-stdio-fixture",
         healthStatus: "unchecked",
         metadata: {
           fixture: "slow-stateful-stdio",
@@ -707,7 +707,7 @@ export function createToolRuntimeSupervisor(db: Db, options: ToolRuntimeSupervis
     ): Promise<T> {
       const row = await ensureRunningSlot({
         ...input,
-        commandTemplateKey: "paperclip.slow-stateful-stdio",
+        commandTemplateKey: "todero.slow-stateful-stdio",
       });
       const metadata = asRecord(row.metadata);
       const handle: RuntimeSlotHandle = {

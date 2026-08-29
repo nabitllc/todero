@@ -4,7 +4,7 @@ import path from "node:path";
 import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import { healthRoutes } from "../routes/health.js";
 import {
   WORKSPACE_EXECUTION_WORKSPACE_COMPANY_ID_ENV_KEY,
@@ -34,7 +34,7 @@ function setEnv(values: Record<string, string>) {
 }
 
 function createSeededWorkspace() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "paperclip-health-workspace-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "todero-health-workspace-"));
   tempDirs.push(dir);
   writeFileSync(path.join(dir, "config.json"), "{}\n", "utf8");
   writeFileSync(
@@ -166,7 +166,7 @@ describe("GET /api/health workspace readiness", () => {
   });
 
   it("omits readiness entirely on an instance that is not a cloned workspace", async () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), "paperclip-health-primary-"));
+    const dir = mkdtempSync(path.join(os.tmpdir(), "todero-health-primary-"));
     tempDirs.push(dir);
     writeFileSync(path.join(dir, "config.json"), "{}\n", "utf8");
     setEnv({ PAPERCLIP_CONFIG: path.join(dir, "config.json") });

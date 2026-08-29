@@ -16,12 +16,12 @@ import {
   toolProfileBindings,
   toolProfileEntries,
   toolProfiles,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { buildPaperclipRuntimeMcpServers, createManagedMcpRunConfig } from "../services/heartbeat.js";
+import { buildToderoRuntimeMcpServers, createManagedMcpRunConfig } from "../services/heartbeat.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -32,7 +32,7 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   const originalApiUrl = process.env.PAPERCLIP_API_URL;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-runtime-mcp-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-heartbeat-runtime-mcp-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -59,7 +59,7 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
   });
 
   it("provisions one gateway per installed connection and mints short-lived run tokens", async () => {
-    process.env.PAPERCLIP_API_URL = "https://paperclip.example.test";
+    process.env.PAPERCLIP_API_URL = "https://todero.example.test";
     const [company] = await db.insert(companies).values({
       name: `Runtime MCP ${randomUUID()}`,
       issuePrefix: `RM${randomUUID().slice(0, 5).toUpperCase()}`,
@@ -128,14 +128,14 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
     });
 
     const before = Date.now();
-    const first = await buildPaperclipRuntimeMcpServers({ db, agent: agent!, runId: randomUUID() });
-    const second = await buildPaperclipRuntimeMcpServers({ db, agent: agent!, runId: randomUUID() });
+    const first = await buildToderoRuntimeMcpServers({ db, agent: agent!, runId: randomUUID() });
+    const second = await buildToderoRuntimeMcpServers({ db, agent: agent!, runId: randomUUID() });
 
     expect(first).toHaveLength(1);
     expect(first[0]).toMatchObject({
       name: "Installed MCP",
       connectionId: installedConnection!.id,
-      url: expect.stringMatching(/^https:\/\/paperclip\.example\.test\/mcp\/gateways\/gw_[a-f0-9]{32}$/),
+      url: expect.stringMatching(/^https:\/\/todero\.example\.test\/mcp\/gateways\/gw_[a-f0-9]{32}$/),
       token: expect.stringMatching(/^pcgw_/),
     });
     expect(first.some((server) => server.connectionId === uninstalledConnection!.id)).toBe(false);
@@ -213,7 +213,7 @@ describeEmbeddedPostgres("heartbeat runtime MCP servers", () => {
       contextSnapshot: {},
     });
 
-    const servers = await buildPaperclipRuntimeMcpServers({ db, agent: agent!, runId });
+    const servers = await buildToderoRuntimeMcpServers({ db, agent: agent!, runId });
 
     expect(servers).toEqual([]);
     const [activity] = await db

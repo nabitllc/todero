@@ -87,7 +87,7 @@ test("release smoke workflow extends the container readiness budget for CI", () 
   const smokeWorkflow = readWorkflow("release-smoke.yml");
   const harness = readFileSync(path.join(repoRoot, "scripts/docker-onboard-smoke.sh"), "utf8");
 
-  // CI containers cold-install paperclipai and embedded postgres, so the
+  // CI containers cold-install todero and embedded postgres, so the
   // workflow must extend the harness's local-default readiness budget.
   assert.match(smokeWorkflow, /SMOKE_READY_TIMEOUT_SECONDS=\d+/);
   const ciBudget = Number(smokeWorkflow.match(/SMOKE_READY_TIMEOUT_SECONDS=(\d+)/)[1]);
@@ -104,7 +104,7 @@ test("release verify workflow covers the same split test surface as stable PR ve
   assert.match(verifyWorkflow, /node \.\/scripts\/release-package-map\.mjs check/);
   assert.match(verifyWorkflow, /pnpm -r typecheck/);
   assert.match(verifyWorkflow, /pnpm build/);
-  assert.match(verifyWorkflow, /pnpm --filter @paperclipai\/paperclip-runner check:all/);
+  assert.match(verifyWorkflow, /pnpm --filter @todero\/paperclip-runner check:all/);
 
   for (const group of ["general-server", "general-workspaces-a", "general-workspaces-b"]) {
     assert.match(verifyWorkflow, new RegExp(`group: ${group}`));

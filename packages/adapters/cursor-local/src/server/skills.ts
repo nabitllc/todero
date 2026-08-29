@@ -5,14 +5,14 @@ import { fileURLToPath } from "node:url";
 import type {
   AdapterSkillContext,
   AdapterSkillSnapshot,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   buildPersistentSkillSnapshot,
-  ensurePaperclipSkillSymlink,
-  readPaperclipRuntimeSkillEntries,
+  ensureToderoSkillSymlink,
+  readToderoRuntimeSkillEntries,
   readInstalledSkillTargets,
-  resolveLegacyPaperclipDesiredSkillNames,
-} from "@paperclipai/adapter-utils/server-utils";
+  resolveLegacyToderoDesiredSkillNames,
+} from "@todero/adapter-utils/server-utils";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -31,8 +31,8 @@ export function resolveCursorSkillsHome(config: Record<string, unknown>) {
 }
 
 async function buildCursorSkillSnapshot(config: Record<string, unknown>): Promise<AdapterSkillSnapshot> {
-  const availableEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
-  const desiredSkills = resolveLegacyPaperclipDesiredSkillNames(config, availableEntries);
+  const availableEntries = await readToderoRuntimeSkillEntries(config, __moduleDir);
+  const desiredSkills = resolveLegacyToderoDesiredSkillNames(config, availableEntries);
   const skillsHome = resolveCursorSkillsHome(config);
   const installed = await readInstalledSkillTargets(skillsHome);
   return buildPersistentSkillSnapshot({
@@ -44,7 +44,7 @@ async function buildCursorSkillSnapshot(config: Record<string, unknown>): Promis
     locationLabel: "~/.cursor/skills",
     missingDetail: "Configured but not currently linked into the Cursor skills home.",
     externalConflictDetail: "Skill name is occupied by an external installation.",
-    externalDetail: "Installed outside Paperclip management.",
+    externalDetail: "Installed outside Todero management.",
   });
 }
 
@@ -56,9 +56,9 @@ export async function syncCursorSkills(
   ctx: AdapterSkillContext,
   desiredSkills: string[],
 ): Promise<AdapterSkillSnapshot> {
-  const availableEntries = await readPaperclipRuntimeSkillEntries(ctx.config, __moduleDir);
+  const availableEntries = await readToderoRuntimeSkillEntries(ctx.config, __moduleDir);
   const desiredSet = new Set([
-    ...resolveLegacyPaperclipDesiredSkillNames({}, availableEntries),
+    ...resolveLegacyToderoDesiredSkillNames({}, availableEntries),
     ...desiredSkills,
   ]);
   const skillsHome = resolveCursorSkillsHome(ctx.config);
@@ -69,7 +69,7 @@ export async function syncCursorSkills(
   for (const available of availableEntries) {
     if (!desiredSet.has(available.key)) continue;
     const target = path.join(skillsHome, available.runtimeName);
-    await ensurePaperclipSkillSymlink(available.source, target);
+    await ensureToderoSkillSymlink(available.source, target);
   }
 
   for (const [name, installedEntry] of installed.entries()) {
@@ -87,5 +87,5 @@ export function resolveCursorDesiredSkillNames(
   config: Record<string, unknown>,
   availableEntries: Array<{ key: string }>,
 ) {
-  return resolveLegacyPaperclipDesiredSkillNames(config, availableEntries);
+  return resolveLegacyToderoDesiredSkillNames(config, availableEntries);
 }

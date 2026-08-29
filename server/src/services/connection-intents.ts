@@ -1,12 +1,12 @@
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   companyMemberships,
   heartbeatRuns,
   issueThreadInteractions,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   APP_STORE_DEFINITIONS,
   CONNECTABLE_APP_DEFINITIONS,
@@ -20,7 +20,7 @@ import {
   type ConnectionsSearchResult,
   type ToolApplication,
   type ToolConnection,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import type { RuntimeToolsTokenClaims } from "../runtime-tools-token.js";
 import { issueThreadInteractionService } from "./issue-thread-interactions.js";

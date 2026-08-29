@@ -87,7 +87,7 @@ async function expectHitTarget(locator: Locator, visibleTop: number, visibleBott
 for (const viewport of VIEWPORT_CASES) {
   test(`keeps the new-task dialog inside the constrained visual viewport at ${viewport.name} width`, async ({ page }) => {
     const dialog = await renderDialog(page, viewport);
-    const descriptionEditor = dialog.locator('.paperclip-mdxeditor-content[contenteditable="true"]');
+    const descriptionEditor = dialog.locator('.todero-mdxeditor-content[contenteditable="true"]');
     await expect(descriptionEditor).toBeVisible();
     await descriptionEditor.focus();
 

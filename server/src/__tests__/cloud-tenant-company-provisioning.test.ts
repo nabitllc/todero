@@ -11,7 +11,7 @@ import {
   instanceUserRoles,
   issues,
   principalPermissionGrants,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -31,13 +31,13 @@ const SERVER_TOKEN = "test-server-token";
 
 function tenantHeaders(input: { stackId: string; userId: string; companyName?: string }) {
   const headers: Record<string, string> = {
-    "x-paperclip-cloud-tenant-token": SERVER_TOKEN,
-    "x-paperclip-cloud-user-id": input.userId,
-    "x-paperclip-cloud-user-email": `${input.userId}@example.com`,
-    "x-paperclip-cloud-stack-id": input.stackId,
-    "x-paperclip-cloud-stack-role": "owner",
+    "x-todero-cloud-tenant-token": SERVER_TOKEN,
+    "x-todero-cloud-user-id": input.userId,
+    "x-todero-cloud-user-email": `${input.userId}@example.com`,
+    "x-todero-cloud-stack-id": input.stackId,
+    "x-todero-cloud-stack-role": "owner",
   };
-  if (input.companyName) headers["x-paperclip-cloud-paperclip-company-name"] = input.companyName;
+  if (input.companyName) headers["x-todero-cloud-todero-company-name"] = input.companyName;
   return cloudActorHeaderSourceFromHeaders(headers);
 }
 
@@ -51,7 +51,7 @@ function legacyProvisionedPrefix(stackId: string) {
 }
 
 function legacyProvisionedDescription(stackId: string) {
-  return `Provisioned by Paperclip Cloud for stack ${stackId}.`;
+  return `Provisioned by Todero Cloud for stack ${stackId}.`;
 }
 
 describeEmbeddedPostgres("cloud tenant company provisioning", () => {
@@ -59,7 +59,7 @@ describeEmbeddedPostgres("cloud tenant company provisioning", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tenant-provisioning-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-tenant-provisioning-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -128,7 +128,7 @@ describeEmbeddedPostgres("cloud tenant company provisioning", () => {
     it("derives the prefix from the humanized stack slug when no company name header is sent", async () => {
       const actor = await resolveCloudTenantActor(
         db,
-        tenantHeaders({ stackId: "paperclip-stack-borealis", userId: "user-claim-2" }),
+        tenantHeaders({ stackId: "todero-stack-borealis", userId: "user-claim-2" }),
       );
 
       const companyId = actor!.companyIds![0]!;

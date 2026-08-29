@@ -60,7 +60,7 @@ const BACKSTOP_WRITE_RETRY_MS = 50;
 // call every poll interval.
 const MAX_TRANSIENT_ITERATION_BACKOFF_MS = 5_000;
 const REMOTE_WRITE_BASE64_CHUNK_SIZE = 32 * 1024;
-export const SANDBOX_CALLBACK_BRIDGE_ENTRYPOINT = "paperclip-bridge-server.mjs";
+export const SANDBOX_CALLBACK_BRIDGE_ENTRYPOINT = "todero-bridge-server.mjs";
 const SANDBOX_EXEC_CHANNEL_ENV = "PAPERCLIP_SANDBOX_EXEC_CHANNEL";
 const SANDBOX_EXEC_CHANNEL_BRIDGE = "bridge";
 
@@ -75,7 +75,7 @@ const SANDBOX_CALLBACK_BRIDGE_FILE_MODE = "queue_v1";
 /** The active non-file transport mode. */
 export const SANDBOX_CALLBACK_BRIDGE_HTTP2_MODE = "http2_v1";
 
-/** Span name that wraps one Paperclip-API callback request — read the request,
+/** Span name that wraps one Todero-API callback request — read the request,
  * write the response, and remove the request file. */
 const CALLBACK_BRIDGE_RELAY_REQUEST_SPAN = "sandbox.callbackBridge.relayRequest";
 
@@ -95,8 +95,8 @@ export interface SandboxCallbackBridgeRouteRule {
 // Routes the in-sandbox heartbeat skill is documented to call. The server
 // still enforces actor-level permissions on top of this allowlist; the list
 // exists to bound the surface area a compromised CLI could reach via the
-// reverse bridge. Keep this in sync with the Paperclip skill in
-// `skills/paperclip/SKILL.md` and `references/api-reference.md`.
+// reverse bridge. Keep this in sync with the Todero skill in
+// `skills/todero/SKILL.md` and `references/api-reference.md`.
 export const DEFAULT_SANDBOX_CALLBACK_BRIDGE_ROUTE_ALLOWLIST: readonly SandboxCallbackBridgeRouteRule[] = [
   // Identity, inbox, agent self-management
   { method: "GET", path: /^\/api\/agents\/me$/ },
@@ -147,7 +147,7 @@ export const DEFAULT_SANDBOX_CALLBACK_BRIDGE_ROUTE_ALLOWLIST: readonly SandboxCa
   // Subtasks / delegation
   { method: "POST", path: /^\/api\/companies\/[^/]+\/issues$/ },
 
-  // Hiring (paperclip-create-agent skill): adapter/icon discovery, comparing
+  // Hiring (todero-create-agent skill): adapter/icon discovery, comparing
   // existing agent configs, submitting the hire request, and linking the
   // resulting approval to its source issue. Direct agent creation
   // (POST /api/companies/:id/agents) stays denied — hires must go through the
@@ -454,7 +454,7 @@ export function buildSandboxCallbackBridgeEnv(input: {
 }
 
 export async function createSandboxCallbackBridgeAsset(): Promise<SandboxCallbackBridgeAsset> {
-  const localDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-asset-"));
+  const localDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-bridge-asset-"));
   const entrypoint = path.join(localDir, SANDBOX_CALLBACK_BRIDGE_ENTRYPOINT);
   await fs.writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
   return {
@@ -490,14 +490,14 @@ export function createFileSystemSandboxCallbackBridgeQueueClient(): SandboxCallb
       // onto the final `.json` path. A direct `writeFile` truncates the final
       // path first, so a `.json`-only reader (the stdin poller) can see an
       // empty or partial file. The atomic rename never exposes partial content.
-      const tempPath = `${remotePath}.paperclip-upload.decoded`;
+      const tempPath = `${remotePath}.todero-upload.decoded`;
       await fs.writeFile(tempPath, body, "utf8");
       await fs.rename(tempPath, remotePath);
     },
     writeResponseFile: async (responsePath, body, options = {}) => {
       const responseDir = path.posix.dirname(responsePath);
       const tempPath = `${responsePath}.tmp`;
-      const lockDir = `${responsePath}.paperclip-write.lock`;
+      const lockDir = `${responsePath}.todero-write.lock`;
       const lockPidFile = `${lockDir}/pid`;
       if (options.requestPath) {
         const requestExists = await pathExists(options.requestPath);
@@ -634,8 +634,8 @@ export function createCommandManagedSandboxCallbackBridgeQueueClient(input: {
       // then moves the complete decoded content onto the final `.json` path.
       // A direct `> remotePath` redirect truncates the final path before the
       // decode writes it, so a reader can see an empty or partial file.
-      const tempPath = `${remotePath}.paperclip-upload.b64`;
-      const decodedPath = `${remotePath}.paperclip-upload.decoded`;
+      const tempPath = `${remotePath}.todero-upload.b64`;
+      const decodedPath = `${remotePath}.todero-upload.decoded`;
       await runChecked(
         `prepare upload ${remotePath}`,
         `mkdir -p ${shellQuote(remoteDir)} && rm -f ${shellQuote(tempPath)} ${shellQuote(decodedPath)} && : > ${shellQuote(tempPath)}`,
@@ -655,7 +655,7 @@ export function createCommandManagedSandboxCallbackBridgeQueueClient(input: {
     writeResponseFile: async (responsePath, body, options = {}) => {
       const responseDir = path.posix.dirname(responsePath);
       const tempPath = `${responsePath}.tmp`;
-      const lockDir = `${responsePath}.paperclip-write.lock`;
+      const lockDir = `${responsePath}.todero-write.lock`;
       const requestPath = options.requestPath?.trim() || "";
       const result = await runShell(
         input.runner,
@@ -767,7 +767,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
   // otherwise). When it is absent, the request work runs with an empty store,
   // exactly like the earlier `runWithoutActiveStep` behavior.
   getRuntimeParentContext?: () => StartupSpanContext | undefined;
-  // Wrap each Paperclip-API callback request in a
+  // Wrap each Todero-API callback request in a
   // `sandbox.callbackBridge.relayRequest` span, so the request's read, write, and
   // remove execs group under one named span. When it is absent, the request work
   // runs under the run parent with no wrapper span, exactly like the earlier
@@ -936,7 +936,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
         } catch (error) {
           lastWriteError = error instanceof Error ? error.message : String(error);
           console.warn(
-            `[paperclip] sandbox callback bridge failed to write response for ${response.id} (attempt ${attempt}/${MAX_BACKSTOP_WRITE_ATTEMPTS}): ${lastWriteError}`,
+            `[todero] sandbox callback bridge failed to write response for ${response.id} (attempt ${attempt}/${MAX_BACKSTOP_WRITE_ATTEMPTS}): ${lastWriteError}`,
           );
           if (attempt < MAX_BACKSTOP_WRITE_ATTEMPTS) {
             await new Promise((resolve) => setTimeout(resolve, BACKSTOP_WRITE_RETRY_MS));
@@ -1024,7 +1024,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
         };
       } catch (error) {
         console.warn(
-          `[paperclip] sandbox callback bridge handler failed for ${request.id}: ${error instanceof Error ? error.message : String(error)}`,
+          `[todero] sandbox callback bridge handler failed for ${request.id}: ${error instanceof Error ? error.message : String(error)}`,
         );
         // Tell a worker abort apart from a normal handler failure. The recovery
         // path aborts `guard.controller` when the per-iteration timeout or the
@@ -1042,7 +1042,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
             status: 504,
             headers: {
               "content-type": "application/json",
-              "x-paperclip-bridge-outcome": "indeterminate",
+              "x-todero-bridge-outcome": "indeterminate",
             },
             body: JSON.stringify({
               error: error instanceof Error ? error.message : String(error),
@@ -1104,7 +1104,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
             status: 504,
             headers: {
               "content-type": "application/json",
-              "x-paperclip-bridge-outcome": "indeterminate",
+              "x-todero-bridge-outcome": "indeterminate",
             },
             body: JSON.stringify({ error: message, outcome: "indeterminate", retryable: false }),
             completedAt: new Date().toISOString(),
@@ -1120,7 +1120,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
         return;
       } catch (error) {
         console.warn(
-          `[paperclip] sandbox callback bridge failed to write 504 backstop for ${requestId} (attempt ${attempt}/${MAX_BACKSTOP_WRITE_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`,
+          `[todero] sandbox callback bridge failed to write 504 backstop for ${requestId} (attempt ${attempt}/${MAX_BACKSTOP_WRITE_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`,
         );
         if (attempt < MAX_BACKSTOP_WRITE_ATTEMPTS) {
           await new Promise((resolve) => setTimeout(resolve, BACKSTOP_WRITE_RETRY_MS));
@@ -1248,7 +1248,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
         // can still read it and deliver a terminal 503. A remove here drops the
         // request and strands the caller until its own deadline.
         console.warn(
-          `[paperclip] sandbox callback bridge could not read pending request ${requestId}: ${error instanceof Error ? error.message : String(error)}`,
+          `[todero] sandbox callback bridge could not read pending request ${requestId}: ${error instanceof Error ? error.message : String(error)}`,
         );
         continue;
       }
@@ -1282,7 +1282,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
         } catch (error) {
           lastWriteError = error instanceof Error ? error.message : String(error);
           console.warn(
-            `[paperclip] sandbox callback bridge failed to write recovery 503 for ${requestId} (attempt ${attempt}/${MAX_BACKSTOP_WRITE_ATTEMPTS}): ${lastWriteError}`,
+            `[todero] sandbox callback bridge failed to write recovery 503 for ${requestId} (attempt ${attempt}/${MAX_BACKSTOP_WRITE_ATTEMPTS}): ${lastWriteError}`,
           );
           if (attempt < MAX_BACKSTOP_WRITE_ATTEMPTS) {
             await new Promise((resolve) => setTimeout(resolve, BACKSTOP_WRITE_RETRY_MS));
@@ -1296,7 +1296,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
       } else {
         // Every 503 write failed. Keep the request file for a later recovery pass.
         console.warn(
-          `[paperclip] sandbox callback bridge kept queued request ${requestId} after every recovery 503 write failed: ${lastWriteError}`,
+          `[todero] sandbox callback bridge kept queued request ${requestId} after every recovery 503 write failed: ${lastWriteError}`,
         );
       }
     }
@@ -1318,7 +1318,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
         // now on the trace; swallow it here so the worker recovery continues.
       }
     }
-    console.warn(`[paperclip] ${error.message}`);
+    console.warn(`[todero] ${error.message}`);
   };
 
   // The timestamp of the last successful loop iteration. The watchdog compares
@@ -1338,14 +1338,14 @@ export async function startSandboxCallbackBridgeWorker(input: {
       await failPendingRequests(message, { abandonInFlight: true });
     } catch (error) {
       console.warn(
-        `[paperclip] sandbox callback bridge watchdog failed to abort queued requests: ${error instanceof Error ? error.message : String(error)}`,
+        `[todero] sandbox callback bridge watchdog failed to abort queued requests: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   };
 
   // Start the long-lived poll loop outside the measured startup-step store.
   // The `makeDir` calls above are startup work and must keep the active
-  // `bridge.paperclip` step. The loop runs run-time execs for the whole run,
+  // `bridge.todero` step. The loop runs run-time execs for the whole run,
   // so each loop `sandbox.exec` span must not parent to the ended step or copy
   // its `criticalPath` flag. `runWithoutActiveStep` empties the store for the
   // loop only; Node keeps the empty store on every later poll continuation.
@@ -1403,7 +1403,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
             // only warn, so a flapping channel does not spam failed spans.
             await surfaceRunError(new Error(message));
           } else {
-            console.warn(`[paperclip] ${message}`);
+            console.warn(`[todero] ${message}`);
           }
           const backoffMs = Math.min(
             pollIntervalMs * 2 ** consecutivePollFailures,
@@ -1467,7 +1467,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
               await failPendingRequests(message, { abandonInFlight: true });
             } catch (failPendingError) {
               console.warn(
-                `[paperclip] sandbox callback bridge failed to abort queued requests after a request failure: ${failPendingError instanceof Error ? failPendingError.message : String(failPendingError)}`,
+                `[todero] sandbox callback bridge failed to abort queued requests after a request failure: ${failPendingError instanceof Error ? failPendingError.message : String(failPendingError)}`,
               );
             }
           } finally {
@@ -1486,7 +1486,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
         await failPendingRequests(message, { abandonInFlight: true });
       } catch (failPendingError) {
         console.warn(
-          `[paperclip] sandbox callback bridge failed to abort queued requests after worker failure: ${failPendingError instanceof Error ? failPendingError.message : String(failPendingError)}`,
+          `[todero] sandbox callback bridge failed to abort queued requests after worker failure: ${failPendingError instanceof Error ? failPendingError.message : String(failPendingError)}`,
         );
       }
     } finally {
@@ -1517,7 +1517,7 @@ export async function startSandboxCallbackBridgeWorker(input: {
 }
 
 /**
- * Content-hash-skip write of a Paperclip-authored text file into the sandbox, in
+ * Content-hash-skip write of a Todero-authored text file into the sandbox, in
  * a SINGLE remote exec. The body's sha256 is computed on the host; the one shell
  * round-trip skips the write entirely when the remote file already hashes to the
  * same value (warm start — 0 write execs), otherwise it uploads (base64 over
@@ -1550,7 +1550,7 @@ export async function syncRemoteTextFileWithHashSkip(input: {
   const timeoutMs = normalizeTimeoutMs(input.timeoutMs, DEFAULT_BRIDGE_RESPONSE_TIMEOUT_MS);
   const shellCommand = preferredShellForSandbox(input.shellCommand);
   const remotePartial = `${input.remotePath}.partial`;
-  const remoteUploadPath = `${input.remotePath}.paperclip-upload.b64`;
+  const remoteUploadPath = `${input.remotePath}.todero-upload.b64`;
   const base64Body = toBuffer(Buffer.from(input.body, "utf8")).toString("base64");
   const sha256 = createHash("sha256").update(input.body, "utf8").digest("hex");
 
@@ -1643,7 +1643,7 @@ export async function syncSandboxCallbackBridgeEntrypoint(input: {
     body: entrypointSource,
     label: "Sandbox callback bridge entrypoint",
     action: "sync sandbox callback bridge entrypoint",
-    lockDir: path.posix.join(input.assetRemoteDir, ".paperclip-bridge-upload.lock"),
+    lockDir: path.posix.join(input.assetRemoteDir, ".todero-bridge-upload.lock"),
     timeoutMs: input.timeoutMs,
     shellCommand: input.shellCommand,
   });
@@ -2098,7 +2098,7 @@ if (bridgeMode !== "${SANDBOX_CALLBACK_BRIDGE_HTTP2_MODE}" && !queueDir) {
 let gatewayReady = false;
 process.on("uncaughtException", (error) => {
   process.stderr.write(
-    "[paperclip-bridge] uncaught exception: " + (error && error.stack ? error.stack : String(error)) + "\\n",
+    "[todero-bridge] uncaught exception: " + (error && error.stack ? error.stack : String(error)) + "\\n",
   );
   if (!gatewayReady) {
     process.exit(1);
@@ -2106,7 +2106,7 @@ process.on("uncaughtException", (error) => {
 });
 process.on("unhandledRejection", (reason) => {
   const detail = reason && typeof reason === "object" && "stack" in reason ? reason.stack : String(reason);
-  process.stderr.write("[paperclip-bridge] unhandled rejection: " + detail + "\\n");
+  process.stderr.write("[todero-bridge] unhandled rejection: " + detail + "\\n");
   if (!gatewayReady) {
     process.exit(1);
   }
@@ -2269,7 +2269,7 @@ async function runFileGateway() {
       // mutation twice. Map the indeterminate outcome to a non-retryable 409, so a
       // standard retry policy does not repeat the request. The outcome header and
       // body stay, so a caller that reads them still sees the indeterminate result.
-      const bridgeOutcome = responseHeaders["x-paperclip-bridge-outcome"];
+      const bridgeOutcome = responseHeaders["x-todero-bridge-outcome"];
       if (bridgeOutcome === "indeterminate") {
         res.statusCode = 409;
       } else {
@@ -2308,7 +2308,7 @@ async function runFileGateway() {
   server.once("error", (error) => {
     clearInterval(bindKeepalive);
     process.stderr.write(
-      "[paperclip-bridge] server error: " + (error && error.stack ? error.stack : String(error)) + "\\n",
+      "[todero-bridge] server error: " + (error && error.stack ? error.stack : String(error)) + "\\n",
     );
     if (!gatewayReady) {
       process.exit(1);
@@ -2378,7 +2378,7 @@ function createStdioDuplex() {
 function runHttp2Gateway() {
   function diag(message) {
     // Diagnostics go to stderr only, the same as every other mode.
-    process.stderr.write("[paperclip-bridge] " + message + "\\n");
+    process.stderr.write("[todero-bridge] " + message + "\\n");
   }
   function writeFrame(frame) {
     process.stdout.write(encodeDuplexFrame(frame));

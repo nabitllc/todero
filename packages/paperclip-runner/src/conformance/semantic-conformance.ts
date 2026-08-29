@@ -38,7 +38,7 @@ export interface SemanticConformanceReportRow {
 }
 
 export interface SemanticConformanceReport {
-  readonly schema: "paperclip.semantic-conformance-report.v1";
+  readonly schema: "todero.semantic-conformance-report.v1";
   readonly rows: readonly SemanticConformanceReportRow[];
 }
 
@@ -106,7 +106,7 @@ export async function runSemanticConformanceKit(input: {
   }
 
   return Object.freeze({
-    schema: "paperclip.semantic-conformance-report.v1",
+    schema: "todero.semantic-conformance-report.v1",
     rows: Object.freeze(rows),
   });
 }

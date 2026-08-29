@@ -8,7 +8,7 @@ import type {
   RoutineDetail as RoutineDetailType,
   RoutineTrigger,
   RoutineVariable,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { Badge } from "@/components/ui/badge";
 import { RunButton } from "@/components/AgentActionButtons";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -33,7 +33,7 @@ import {
   ActivitySection,
 } from "@/components/routine-sections/operate-sections";
 import { queryKeys } from "@/lib/queryKeys";
-import { storybookAgents, storybookProjects } from "../fixtures/paperclipData";
+import { storybookAgents, storybookProjects } from "../fixtures/toderoData";
 
 const COMPANY_ID = "company-storybook";
 const ROUTINE_ID = "routine-storybook";
@@ -198,7 +198,7 @@ function stubSecret(id: string, name: string, latestVersion: number, referenceCo
     companyId: COMPANY_ID,
     key: name.toLowerCase(),
     name,
-    provider: "paperclip",
+    provider: "todero",
     status: "active",
     managedMode: "managed",
     externalRef: null,

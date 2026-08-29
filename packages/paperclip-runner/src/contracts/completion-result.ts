@@ -156,7 +156,7 @@ const artifactsSchema = {
 } as const;
 
 const commonResultProperties = {
-  schema: { type: "string", const: "paperclip.run_result.v1" },
+  schema: { type: "string", const: "todero.run_result.v1" },
   summary: { type: "string", minLength: 1 },
   completionClaim: completionClaimSchema,
   evidence: evidenceSchema,
@@ -317,7 +317,7 @@ const providerCommonResultProperties = {
   ...commonResultProperties,
   schema: {
     enum: [
-      "paperclip.run_result.v1",
+      "todero.run_result.v1",
       "paperclip_finish",
       "paperclip_paperclip_finish",
       "paperclip_finish.v1",

@@ -7,7 +7,7 @@ import {
   DUPLEX_SPAN_CHANNEL_OPEN,
   DUPLEX_SPAN_REQUEST,
   DUPLEX_TRANSPORT_EVENT,
-} from "@paperclipai/adapter-utils/duplex-observability";
+} from "@todero/adapter-utils/duplex-observability";
 import {
   createHostDuplexObservabilityRecorder,
   foldDuplexCounterMetric,

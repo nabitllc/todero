@@ -36,7 +36,7 @@ describe("readConfigFile", () => {
   let configPath: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-config-file-test-"));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "todero-config-file-test-"));
     configPath = path.join(tempDir, "config.json");
     process.env.PAPERCLIP_CONFIG = configPath;
   });
@@ -60,7 +60,7 @@ describe("readConfigFile", () => {
     fs.writeFileSync(configPath, "{");
 
     expect(() => readConfigFile()).toThrow(
-      new RegExp(`Invalid Paperclip config at ${escapeRegExp(configPath)}: failed to read or parse JSON`),
+      new RegExp(`Invalid Todero config at ${escapeRegExp(configPath)}: failed to read or parse JSON`),
     );
   });
 
@@ -72,7 +72,7 @@ describe("readConfigFile", () => {
 
     writeConfig(configPath, config);
 
-    expect(() => readConfigFile()).toThrow(/Invalid Paperclip config .* \$meta\.source:/);
+    expect(() => readConfigFile()).toThrow(/Invalid Todero config .* \$meta\.source:/);
   });
 
   it("parses a valid config file", () => {

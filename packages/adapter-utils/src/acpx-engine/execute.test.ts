@@ -3,25 +3,25 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpRuntimeOptions } from "acpx/runtime";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@todero/adapter-utils";
 import {
   DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC,
   prepareAdapterExecutionTargetRuntime,
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 
 // Wrap the staging seam + both sandbox bridges in call-recording spies that
 // still delegate to the real implementations (a runner-backed sandbox test
 // exercises them end-to-end against a local runner). This lets the staging
 // tests assert the exact `runtimeRootDir`/`workspaceLocalDir`/`assets` the
 // engine threads without changing any real behavior for the other tests.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@todero/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@todero/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),
-    startAdapterExecutionTargetPaperclipBridge: vi.fn(actual.startAdapterExecutionTargetPaperclipBridge),
+    startAdapterExecutionTargetToderoBridge: vi.fn(actual.startAdapterExecutionTargetToderoBridge),
     startAdapterExecutionTargetProcessSessionBridge: vi.fn(actual.startAdapterExecutionTargetProcessSessionBridge),
   };
 });
@@ -50,7 +50,7 @@ import {
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-acpx-skills-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-acpx-skills-"));
   tempRoots.push(root);
   return root;
 }
@@ -85,7 +85,7 @@ async function createSkill(root: string, name: string, body = `---\nrequired: fa
   await fs.mkdir(skillDir, { recursive: true });
   await fs.writeFile(path.join(skillDir, "SKILL.md"), body, "utf8");
   return {
-    key: `paperclipai/test/${name}`,
+    key: `todero/test/${name}`,
     runtimeName: name,
     source: skillDir,
     required: false,
@@ -330,7 +330,7 @@ function issueSandboxExecFromStore(
 // The closed span-attribute allowlist for a sandbox-start span. A test asserts
 // every recorded attribute key is in this set, so a command, path, id, or
 // error-text key can never ride a span. Every key uses the closed
-// `paperclip.sandbox.startup.` prefix from the attribute contract.
+// `todero.sandbox.startup.` prefix from the attribute contract.
 const A = SANDBOX_STARTUP_SPAN_ATTRS;
 const ALLOWED_STARTUP_SPAN_ATTRIBUTE_KEYS = new Set<string>([
   // Step-span keys.
@@ -356,15 +356,15 @@ const ALLOWED_STARTUP_SPAN_ATTRIBUTE_KEYS = new Set<string>([
 // non-reversible run-id hash and its own wall time, so no command, path, id, or
 // error text can ride the `task.run` span.
 const ALLOWED_RUN_SPAN_ATTRIBUTE_KEYS = new Set<string>([
-  "paperclip.task.run.run_id",
-  "paperclip.task.run.wall_ms",
+  "todero.task.run.run_id",
+  "todero.task.run.wall_ms",
 ]);
 
 // The closed attribute allowlist for the agent turn span. It carries only its
 // own wall time, so no command, path, id, prompt, or error text can ride the
 // `agent.turn` span.
 const ALLOWED_TURN_SPAN_ATTRIBUTE_KEYS = new Set<string>([
-  "paperclip.agent.turn.wall_ms",
+  "todero.agent.turn.wall_ms",
 ]);
 
 describe("shared ACPX engine runtime behavior", () => {
@@ -412,7 +412,7 @@ describe("shared ACPX engine runtime behavior", () => {
     };
     const context = {
       taskId: "issue-1",
-      paperclipWorkspace: { cwd: root },
+      toderoWorkspace: { cwd: root },
     };
     const firstOnSpawn = vi.fn(async (meta: unknown) => {
       expect(meta).toEqual({ pid: processPid, processGroupId: null, startedAt });
@@ -529,7 +529,7 @@ describe("shared ACPX engine runtime behavior", () => {
     });
     expect(logs).toContainEqual({
       stream: "stderr",
-      text: "[paperclip] Ignoring invalid user CODEX_CONFIG while applying runtime Codex settings; expected a JSON object.\n",
+      text: "[todero] Ignoring invalid user CODEX_CONFIG while applying runtime Codex settings; expected a JSON object.\n",
     });
   });
 
@@ -558,7 +558,7 @@ describe("shared ACPX engine runtime behavior", () => {
     expect(configOptions).toEqual([]);
   });
 
-  it("includes Paperclip env and API access notes in the ACPX prompt without leaking the token", async () => {
+  it("includes Todero env and API access notes in the ACPX prompt without leaking the token", async () => {
     const { meta } = await runExecutor(
       { agent: "custom", agentCommand: "node ./fake-acp.js" },
       {
@@ -566,7 +566,7 @@ describe("shared ACPX engine runtime behavior", () => {
         context: {
           taskId: "issue-1",
           wakeReason: "issue_assigned",
-          paperclipWake: {
+          toderoWake: {
             reason: "issue_assigned",
             issue: { id: "issue-1", identifier: "TEST-1" },
           },
@@ -576,15 +576,15 @@ describe("shared ACPX engine runtime behavior", () => {
 
     const prompt = String(meta[0]?.prompt ?? "");
     const promptMetrics = meta[0]?.promptMetrics as Record<string, number> | undefined;
-    expect(prompt).toContain("Paperclip runtime note:");
+    expect(prompt).toContain("Todero runtime note:");
     expect(prompt).toContain("PAPERCLIP_AGENT_ID");
     expect(prompt).toContain("PAPERCLIP_API_KEY");
     expect(prompt).toContain("PAPERCLIP_WAKE_PAYLOAD_JSON");
-    expect(prompt).toContain("Paperclip API access note:");
+    expect(prompt).toContain("Todero API access note:");
     expect(prompt).toContain('PAPERCLIP_API_BASE="${PAPERCLIP_API_URL%/}"; PAPERCLIP_API_BASE="${PAPERCLIP_API_BASE%/api}"');
     expect(prompt).toContain("$PAPERCLIP_API_BASE/api/agents/me");
     expect(prompt).toContain("$PAPERCLIP_API_BASE/api/issues/$PAPERCLIP_TASK_ID");
-    expect(prompt).toContain("X-Paperclip-Run-Id");
+    expect(prompt).toContain("X-Todero-Run-Id");
     expect(prompt).not.toContain("$PAPERCLIP_API_URL/api/");
     expect(prompt).not.toContain("/api/issues/{id}");
     expect(prompt).not.toContain("-d '{...}'");
@@ -599,7 +599,7 @@ describe("shared ACPX engine runtime behavior", () => {
     );
 
     const prompt = String(meta[0]?.prompt ?? "");
-    expect(prompt).toContain("Paperclip API access note:");
+    expect(prompt).toContain("Todero API access note:");
     expect(prompt).toContain("Use a real issue id from the current context before making issue write requests.");
     expect(prompt).not.toContain("$PAPERCLIP_API_BASE/api/issues/$PAPERCLIP_TASK_ID");
   });
@@ -1162,8 +1162,8 @@ describe("shared ACPX engine runtime behavior", () => {
     const { meta } = await runExecutor({
       agent: "claude",
       stateDir,
-      paperclipRuntimeSkills: [skill],
-      paperclipSkillSync: { desiredSkills: [skill.key] },
+      toderoRuntimeSkills: [skill],
+      toderoSkillSync: { desiredSkills: [skill.key] },
     });
 
     const mountedRoot = await onlyChildDir(path.join(stateDir, "runtime-skills", "claude"));
@@ -1191,18 +1191,18 @@ describe("shared ACPX engine runtime behavior", () => {
       agent: "codex",
       stateDir: path.join(root, "state"),
       env: { CODEX_HOME: codexHome },
-      paperclipRuntimeSkills: [keep, remove],
+      toderoRuntimeSkills: [keep, remove],
     };
 
     await runExecutor({
       ...baseConfig,
-      paperclipSkillSync: { desiredSkills: [keep.key, remove.key] },
+      toderoSkillSync: { desiredSkills: [keep.key, remove.key] },
     });
     expect(await pathExists(path.join(codexHome, "skills", remove.runtimeName, "SKILL.md"))).toBe(true);
 
     await runExecutor({
       ...baseConfig,
-      paperclipSkillSync: { desiredSkills: [keep.key] },
+      toderoSkillSync: { desiredSkills: [keep.key] },
     });
 
     expect(await pathExists(path.join(codexHome, "skills", keep.runtimeName, "SKILL.md"))).toBe(true);
@@ -1216,16 +1216,16 @@ describe("shared ACPX engine runtime behavior", () => {
     const skillRoot = path.join(root, "skills");
     const codexHome = path.join(root, "codex-home");
     const operational = {
-      ...await createSkill(skillRoot, "paperclip"),
-      key: "paperclipai/paperclip/paperclip",
+      ...await createSkill(skillRoot, "todero"),
+      key: "nabitllc/todero/todero",
     };
 
     await runExecutor({
       agent: "codex",
       stateDir: path.join(root, "state"),
       env: { CODEX_HOME: codexHome },
-      paperclipRuntimeSkills: [operational],
-      paperclipSkillSync: { desiredSkills: [] },
+      toderoRuntimeSkills: [operational],
+      toderoSkillSync: { desiredSkills: [] },
     });
 
     expect(await pathExists(path.join(codexHome, "skills", operational.runtimeName, "SKILL.md"))).toBe(true);
@@ -1244,8 +1244,8 @@ describe("shared ACPX engine runtime behavior", () => {
       agent: "codex",
       stateDir: path.join(root, "state"),
       env: { CODEX_HOME: codexHome },
-      paperclipRuntimeSkills: [legacy],
-      paperclipSkillSync: { desiredSkills: [] },
+      toderoRuntimeSkills: [legacy],
+      toderoSkillSync: { desiredSkills: [] },
     });
 
     expect(await pathExists(path.join(skillsHome, legacy.runtimeName))).toBe(false);
@@ -1254,12 +1254,12 @@ describe("shared ACPX engine runtime behavior", () => {
   it.skipIf(process.platform === "win32")("replaces stale managed Codex auth files with source symlinks", async () => {
     const root = await makeTempRoot();
     const sourceCodexHome = path.join(root, "source-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
-    const paperclipInstanceId = "test-instance";
+    const toderoHome = path.join(root, "todero-home");
+    const toderoInstanceId = "test-instance";
     const managedCodexHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
-      paperclipInstanceId,
+      toderoInstanceId,
       "companies",
       "company-1",
       "codex-home",
@@ -1272,25 +1272,25 @@ describe("shared ACPX engine runtime behavior", () => {
     await fs.writeFile(managedAuth, "{\"stale\":true}", "utf8");
 
     const previousCodexHome = process.env.CODEX_HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+    const previousToderoHome = process.env.PAPERCLIP_HOME;
+    const previousToderoInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
     try {
       process.env.CODEX_HOME = sourceCodexHome;
-      process.env.PAPERCLIP_HOME = paperclipHome;
-      process.env.PAPERCLIP_INSTANCE_ID = paperclipInstanceId;
+      process.env.PAPERCLIP_HOME = toderoHome;
+      process.env.PAPERCLIP_INSTANCE_ID = toderoInstanceId;
       await runExecutor({
         agent: "codex",
         stateDir: path.join(root, "state"),
-        paperclipRuntimeSkills: [],
-        paperclipSkillSync: { desiredSkills: [] },
+        toderoRuntimeSkills: [],
+        toderoSkillSync: { desiredSkills: [] },
       });
     } finally {
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousToderoHome;
+      if (previousToderoInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+      else process.env.PAPERCLIP_INSTANCE_ID = previousToderoInstanceId;
     }
 
     const authStat = await fs.lstat(managedAuth);
@@ -1300,11 +1300,11 @@ describe("shared ACPX engine runtime behavior", () => {
 
   it("sets GROK_HOME for a Grok run from the company Grok home, and leaves CODEX_HOME unchanged for a Codex run", async () => {
     const root = await makeTempRoot();
-    const paperclipHome = path.join(root, "paperclip-home");
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+    const toderoHome = path.join(root, "todero-home");
+    const previousToderoHome = process.env.PAPERCLIP_HOME;
+    const previousToderoInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
     try {
-      process.env.PAPERCLIP_HOME = paperclipHome;
+      process.env.PAPERCLIP_HOME = toderoHome;
       process.env.PAPERCLIP_INSTANCE_ID = "default";
 
       const grokRun = await runExecutor({
@@ -1315,7 +1315,7 @@ describe("shared ACPX engine runtime behavior", () => {
       expect(grokRun.sessionInputs[0]?.sessionOptions).toMatchObject({
         env: expect.objectContaining({
           GROK_HOME: path.join(
-            paperclipHome,
+            toderoHome,
             "instances",
             "default",
             "companies",
@@ -1330,18 +1330,18 @@ describe("shared ACPX engine runtime behavior", () => {
         agent: "codex",
         stateDir: path.join(root, "state-codex"),
         env: { CODEX_HOME: codexHome },
-        paperclipRuntimeSkills: [],
-        paperclipSkillSync: { desiredSkills: [] },
+        toderoRuntimeSkills: [],
+        toderoSkillSync: { desiredSkills: [] },
       });
       const codexEnv = (codexRun.sessionInputs[0]?.sessionOptions as { env: Record<string, string> })
         .env;
       expect(codexEnv.CODEX_HOME).toBe(codexHome);
       expect(codexEnv.GROK_HOME).toBeUndefined();
     } finally {
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
+      if (previousToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousToderoHome;
+      if (previousToderoInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+      else process.env.PAPERCLIP_INSTANCE_ID = previousToderoInstanceId;
     }
   });
 
@@ -1475,7 +1475,7 @@ describe("shared ACPX engine runtime behavior", () => {
       context: {
         taskId: "issue-1",
         wakeReason: "issue_assigned",
-        paperclipWorkspace: { cwd, realization: { additional } },
+        toderoWorkspace: { cwd, realization: { additional } },
       },
     });
     const projectA = {
@@ -1536,7 +1536,7 @@ describe("shared ACPX engine runtime behavior", () => {
         context: {
           taskId: "issue-1",
           wakeReason: "issue_assigned",
-          paperclipWorkspace: {
+          toderoWorkspace: {
             cwd,
             realization: {
               additional: projectPaths.map((localPath, index) => ({
@@ -1583,7 +1583,7 @@ describe("shared ACPX engine runtime behavior", () => {
       context: {
         taskId: "issue-1",
         wakeReason: "issue_assigned",
-        paperclipWorkspace: { cwd, realization: { additional: [referencedProject] } },
+        toderoWorkspace: { cwd, realization: { additional: [referencedProject] } },
       },
     });
     const fp = (r: { result: { sessionParams?: unknown } }) =>
@@ -1635,7 +1635,7 @@ describe("shared ACPX engine runtime behavior", () => {
       context: {
         taskId: "issue-1",
         wakeReason: "issue_assigned",
-        paperclipWorkspace: { cwd, realization: { additional: [referencedProject] } },
+        toderoWorkspace: { cwd, realization: { additional: [referencedProject] } },
       },
     });
     const fp = (r: { result: { sessionParams?: unknown } }) =>
@@ -1739,7 +1739,7 @@ describe("shared ACPX engine runtime behavior", () => {
     const remoteCwd = "/workspace/remote";
     const { sessionInputs, runtimeOptions } = await runExecutor(
       { agent: "custom", agentCommand: "node ./fake-acp.js", cwd: localCwd, stateDir: path.join(root, "state") },
-      { context: { paperclipWorkspace: { cwd: localCwd, workspaceWorktreePath: localCwd } }, executionTarget: { kind: "remote", transport: "ssh", remoteCwd } },
+      { context: { toderoWorkspace: { cwd: localCwd, workspaceWorktreePath: localCwd } }, executionTarget: { kind: "remote", transport: "ssh", remoteCwd } },
     );
     const env = (sessionInputs[0]!.sessionOptions as { env: Record<string, string> }).env;
     expect(env.PAPERCLIP_WORKSPACE_CWD).toBe(localCwd);
@@ -2047,7 +2047,7 @@ describe("shared ACPX engine runtime behavior", () => {
     await expect(fs.readFile(path.join(stateDir, "run-stderr", "run-warm-2.log"), "utf8")).resolves.toContain("current-run-stderr");
   });
 
-  it("passes Paperclip env through ACPX session options instead of process.env", async () => {
+  it("passes Todero env through ACPX session options instead of process.env", async () => {
     let observedSessionEnv: Record<string, string> | undefined;
     const execute = createAcpxEngineExecutor({
       createRuntime: () => ({
@@ -2085,7 +2085,7 @@ describe("shared ACPX engine runtime behavior", () => {
     }
   });
 
-  it("writes a Paperclip-managed .claude/settings.local.json for the claude agent so it can reach the Paperclip API", async () => {
+  it("writes a Todero-managed .claude/settings.local.json for the claude agent so it can reach the Todero API", async () => {
     const root = await makeTempRoot();
     const stateDir = path.join(root, "state");
     const cwd = path.join(root, "worktree");
@@ -2093,7 +2093,7 @@ describe("shared ACPX engine runtime behavior", () => {
 
     const { meta } = await runExecutor(
       { agent: "claude", stateDir, cwd },
-      { context: { paperclipWorkspace: { cwd, agentHome: path.join(root, "agent-home") } } },
+      { context: { toderoWorkspace: { cwd, agentHome: path.join(root, "agent-home") } } },
     );
 
     const settingsPath = path.join(cwd, ".claude", "settings.local.json");
@@ -2108,19 +2108,19 @@ describe("shared ACPX engine runtime behavior", () => {
     const allow = written.permissions?.allow;
     expect(Array.isArray(allow)).toBe(true);
     expect(allow).toContain("Bash(curl:*)");
-    expect(allow).toContain(`Bash(${cwd}/scripts/paperclip-issue-update.sh:*)`);
+    expect(allow).toContain(`Bash(${cwd}/scripts/todero-issue-update.sh:*)`);
     const additionalDirectories = written.permissions?.additionalDirectories as string[] | undefined;
     expect(Array.isArray(additionalDirectories)).toBe(true);
     expect(additionalDirectories).toContain(stateDir);
     expect(additionalDirectories).toContain(path.join(root, "agent-home"));
 
     const note = (meta[0]?.commandNotes as string[] | undefined)?.find((entry) =>
-      entry.includes("Paperclip-managed Claude settings"),
+      entry.includes("Todero-managed Claude settings"),
     );
     expect(note).toBeTruthy();
   });
 
-  it("merges Paperclip allowlist into an existing .claude/settings.local.json without losing user entries", async () => {
+  it("merges Todero allowlist into an existing .claude/settings.local.json without losing user entries", async () => {
     const root = await makeTempRoot();
     const stateDir = path.join(root, "state");
     const cwd = path.join(root, "worktree");
@@ -2144,7 +2144,7 @@ describe("shared ACPX engine runtime behavior", () => {
 
     await runExecutor(
       { agent: "claude", stateDir, cwd },
-      { context: { paperclipWorkspace: { cwd } } },
+      { context: { toderoWorkspace: { cwd } } },
     );
 
     const written = JSON.parse(
@@ -2178,7 +2178,7 @@ describe("shared ACPX engine runtime behavior", () => {
 
     const { meta } = await runExecutor(
       { agent: "claude", stateDir, cwd },
-      { context: { paperclipWorkspace: { cwd } } },
+      { context: { toderoWorkspace: { cwd } } },
     );
 
     const written = JSON.parse(
@@ -2214,7 +2214,7 @@ describe("shared ACPX engine runtime behavior", () => {
           agent === "custom"
             ? { agent, agentCommand: "node ./fake-acp.js", stateDir: path.join(root, `state-${agent}`), cwd }
             : { agent, stateDir: path.join(root, `state-${agent}`), cwd },
-        context: { paperclipWorkspace: { cwd } },
+        context: { toderoWorkspace: { cwd } },
         onLog: async () => {},
         onMeta: async () => {},
       } as never);
@@ -2235,7 +2235,7 @@ describe("shared ACPX engine runtime behavior", () => {
 
     await runExecutor(
       { agent: "codex", stateDir, cwd },
-      { context: { paperclipWorkspace: { cwd } } },
+      { context: { toderoWorkspace: { cwd } } },
     );
 
     expect(await pathExists(path.join(cwd, ".claude", "settings.local.json"))).toBe(false);
@@ -2251,7 +2251,7 @@ describe("shared ACPX engine runtime behavior", () => {
 
     const first = await runExecutor(baseConfig, {
       context: {
-        paperclipSecrets: {
+        toderoSecrets: {
           manifest: [
             {
               configPath: "env.API_TOKEN",
@@ -2268,7 +2268,7 @@ describe("shared ACPX engine runtime behavior", () => {
     });
     const second = await runExecutor(baseConfig, {
       context: {
-        paperclipSecrets: {
+        toderoSecrets: {
           manifest: [
             {
               configPath: "env.API_TOKEN",
@@ -2298,7 +2298,7 @@ describe("shared ACPX engine runtime behavior", () => {
     };
     const server = {
       name: "github",
-      url: "https://paperclip.example/api/tool-gateway/gateways/github/mcp",
+      url: "https://todero.example/api/tool-gateway/gateways/github/mcp",
       connectionId: "connection-1",
     };
     const first = await runExecutor(baseConfig, {
@@ -2341,7 +2341,7 @@ describe("findAncestorBin", () => {
 
   it("finds the binary in the start directory's own node_modules/.bin", async () => {
     const root = await makeTempRoot();
-    const packageDir = path.join(root, "node_modules", "@paperclipai", "adapter-utils");
+    const packageDir = path.join(root, "node_modules", "@todero", "adapter-utils");
     await fs.mkdir(packageDir, { recursive: true });
     const expectedBin = await writeFakeBin(packageDir, "claude-agent-acp");
 
@@ -2352,7 +2352,7 @@ describe("findAncestorBin", () => {
 
   it("finds the binary hoisted to an ancestor node_modules/.bin", async () => {
     const root = await makeTempRoot();
-    const packageDir = path.join(root, "node_modules", "@paperclipai", "adapter-utils");
+    const packageDir = path.join(root, "node_modules", "@todero", "adapter-utils");
     await fs.mkdir(packageDir, { recursive: true });
     const expectedBin = await writeFakeBin(root, "claude-agent-acp");
 
@@ -2363,7 +2363,7 @@ describe("findAncestorBin", () => {
 
   it("returns null when the binary is not present in any ancestor", async () => {
     const root = await makeTempRoot();
-    const packageDir = path.join(root, "node_modules", "@paperclipai", "adapter-utils");
+    const packageDir = path.join(root, "node_modules", "@todero", "adapter-utils");
     await fs.mkdir(packageDir, { recursive: true });
 
     const resolved = await findAncestorBin(packageDir, "claude-agent-acp");
@@ -2457,7 +2457,7 @@ describe("gemini ACP flag selection", () => {
     );
     expect(startLine).toBeTruthy();
     expect(startLine!.text).toContain(
-      `[paperclip] Adapter execution timeout: timeoutSec=${DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC} ` +
+      `[todero] Adapter execution timeout: timeoutSec=${DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC} ` +
         "(sandbox default; set adapterConfig.timeoutSec to override).",
     );
   });
@@ -2568,7 +2568,7 @@ describe("gemini ACP flag selection", () => {
           runtimeSessionName: "runtime-session",
         }),
         startTurn: () => ({
-          // Never yields on its own: only the Paperclip wall-clock timer's
+          // Never yields on its own: only the Todero wall-clock timer's
           // cancel unblocks the turn, simulating a hung run.
           events: (async function* () {
             await turnCancelled;
@@ -2773,12 +2773,12 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
     expect(stageArgs.installCommand ?? null).toBeNull();
 
     // Both bridges receive the real (non-null) runtimeRootDir from staging.
-    const paperclipArgs = vi.mocked(startAdapterExecutionTargetPaperclipBridge).mock.calls[0]![0];
+    const toderoArgs = vi.mocked(startAdapterExecutionTargetToderoBridge).mock.calls[0]![0];
     const processArgs = vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mock.calls[0]![0];
-    expect(paperclipArgs.runtimeRootDir).toBeTruthy();
+    expect(toderoArgs.runtimeRootDir).toBeTruthy();
     expect(processArgs.runtimeRootDir).toBeTruthy();
-    expect(String(paperclipArgs.runtimeRootDir)).toContain(".paperclip-runtime");
-    expect(processArgs.runtimeRootDir).toBe(paperclipArgs.runtimeRootDir);
+    expect(String(toderoArgs.runtimeRootDir)).toContain(".todero-runtime");
+    expect(processArgs.runtimeRootDir).toBe(toderoArgs.runtimeRootDir);
 
     // The workspace really landed in the sandbox workspace dir.
     await expect(fs.readFile(path.join(remoteCwd, "hello.txt"), "utf8")).resolves.toBe("hi");
@@ -2786,7 +2786,7 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
     expect(sessionInputs[0]?.cwd).toBe(remoteCwd);
   });
 
-  it("hands the merged paperclip env to the process-session launch when the setups overlap", async () => {
+  it("hands the merged todero env to the process-session launch when the setups overlap", async () => {
     const { stateDir, localCwd, remoteCwd, executionTarget } = await setupRemoteSandbox();
     // Decode the process-session LAUNCH payload (the base64 command blob) — the
     // in-sandbox process env is carried there, NOT in the exec's own `env`.
@@ -2810,13 +2810,13 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
     );
 
     // The process-session bridge receives its launch env as a DEFERRED thunk —
-    // the seam that lets its env-independent setup overlap the paperclip bridge
+    // the seam that lets its env-independent setup overlap the todero bridge
     // start instead of running strictly after it.
     const processArgs = vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mock.calls[0]![0];
     expect(typeof processArgs.env).toBe("function");
 
-    // ...and despite the overlap the launch still observes the MERGED paperclip
-    // env: the paperclip-`env` → process-session-launch hand-off stays sequenced
+    // ...and despite the overlap the launch still observes the MERGED todero
+    // env: the todero-`env` → process-session-launch hand-off stays sequenced
     // under concurrency (bridge base URL + minted bridge token both present, and
     // the token is NOT the host run JWT).
     const payloadEnv = ((launchPayload as Record<string, unknown> | null)?.env ?? {}) as Record<
@@ -2860,7 +2860,7 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
         context: {
           taskId: "issue-1",
           wakeReason: "issue_assigned",
-          paperclipWorkspace: {
+          toderoWorkspace: {
             cwd: localCwd,
             realization: {
               additional: [
@@ -2876,7 +2876,7 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
           },
           // The plural workspace-hints channel the agent reads. The referenced hint points at the
           // host path today; on a remote target the run must repoint it at the staged directory.
-          paperclipWorkspaces: [
+          toderoWorkspaces: [
             {
               workspaceId: "ws-a",
               cwd: referencedProjectDir,
@@ -2903,14 +2903,14 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
     expect(referencedHint!.cwd).not.toBe(referencedProjectDir);
   });
 
-  it("stops the process-session bridge when the paperclip bridge fails under concurrency", async () => {
+  it("stops the process-session bridge when the todero bridge fails under concurrency", async () => {
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    // The paperclip bridge fails; the process-session bridge — started CONCURRENTLY
+    // The todero bridge fails; the process-session bridge — started CONCURRENTLY
     // with it — still resolves a live handle. The abandon path must stop that
     // handle so no started bridge leaks on partial failure.
     const stop = vi.fn(async () => {});
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(async () => {
-      throw new Error("paperclip bridge boom");
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(async () => {
+      throw new Error("todero bridge boom");
     });
     vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementationOnce(
       async () => ({ agentCommand: null, stop }) as never,
@@ -2933,7 +2933,7 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
         onMeta: async () => {},
         onEvent: async () => {},
       } as never),
-    ).rejects.toThrow("paperclip bridge boom");
+    ).rejects.toThrow("todero bridge boom");
 
     // The concurrently-started process-session bridge was stopped exactly once.
     expect(stop).toHaveBeenCalledTimes(1);
@@ -3009,7 +3009,7 @@ describe("ACPX engine remote sandbox staging seam (PR 1: workspace + cwd)", () =
     // A local (non-remote) run never crosses the staging seam or starts a
     // bridge, and session/new stays on the HOST cwd — byte-identical to today.
     expect(vi.mocked(prepareAdapterExecutionTargetRuntime)).not.toHaveBeenCalled();
-    expect(vi.mocked(startAdapterExecutionTargetPaperclipBridge)).not.toHaveBeenCalled();
+    expect(vi.mocked(startAdapterExecutionTargetToderoBridge)).not.toHaveBeenCalled();
     expect(vi.mocked(startAdapterExecutionTargetProcessSessionBridge)).not.toHaveBeenCalled();
     expect(sessionInputs[0]?.cwd).toBe(localCwd);
     expect(runtimeOptions[0]?.cwd).toBe(localCwd);
@@ -3127,7 +3127,7 @@ describe("ACPX engine remote managed-home seam (PR 2: per-adapter home seed)", (
     await expect(fs.readFile(path.join(remoteAssetDir, "config.json"), "utf8")).resolves.toBe("{}");
     // ...the staged asset dir resolves under the run's managed runtime root (an
     // in-sandbox path), not the host managed-home dir.
-    expect(remoteAssetDir).toContain(".paperclip-runtime");
+    expect(remoteAssetDir).toContain(".todero-runtime");
     expect(remoteAssetDir).not.toBe(managedHomeDir);
     expect(path.isAbsolute(remoteAssetDir)).toBe(true);
   });
@@ -3205,7 +3205,7 @@ describe("ACPX engine remote managed-home seam (PR 2: per-adapter home seed)", (
       (entry) => entry.stream === "stderr" && entry.text.includes("proj-x"),
     );
     expect(failureLine?.text).toBe(
-      "[paperclip] Referenced project proj-x failed to stage; the run continues without it: extract failed: boom\n",
+      "[todero] Referenced project proj-x failed to stage; the run continues without it: extract failed: boom\n",
     );
   });
 });
@@ -3732,12 +3732,12 @@ describe("ACPX engine remote session-lifecycle re-staging (PR 3: stage once / re
 
     // Run B resumes the same session and borrows the cached staged runtime, but a
     // bridge fails during bring-up.
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(async () => {
-      throw new Error("paperclip bridge boom");
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(async () => {
+      throw new Error("todero bridge boom");
     });
     await expect(
       execute({ runId: "run-b", runtime: { sessionParams: first.sessionParams }, ...base } as never),
-    ).rejects.toThrow("paperclip bridge boom");
+    ).rejects.toThrow("todero bridge boom");
 
     // The rollback removed the borrowed cache entry through the identity guard, so a
     // later resume can never reuse an entry whose host staged-temp was disposed...
@@ -3991,7 +3991,7 @@ describe("ACPX engine sandbox-start spans (opt-in root + child parenting)", () =
     expect(childNames).toEqual(
       [
         "acp.handshake",
-        "bridge.paperclip",
+        "bridge.todero",
         "bridge.process-session",
         "codex-home.seed",
         "pack",
@@ -4078,8 +4078,8 @@ describe("ACPX engine sandbox-start spans (opt-in root + child parenting)", () =
     expect(runSpan.status).toBeNull();
     // The run id rides only as a non-reversible hash; the raw run id never rides
     // the span.
-    expect(runSpan.attributes["paperclip.task.run.run_id"]).toMatch(/^[0-9a-f]{12}$/);
-    expect(String(runSpan.attributes["paperclip.task.run.run_id"])).not.toContain("run-");
+    expect(runSpan.attributes["todero.task.run.run_id"]).toMatch(/^[0-9a-f]{12}$/);
+    expect(String(runSpan.attributes["todero.task.run.run_id"])).not.toContain("run-");
   });
 
   it("test_sandbox_startup_parents_to_task_run", async () => {
@@ -4468,15 +4468,15 @@ describe("ACPX engine sandbox-start spans (opt-in root + child parenting)", () =
 
     const rootSpan = spans.find((span) => span.name === "sandbox.startup");
     expect(rootSpan).toBeTruthy();
-    const paperclip = spans.find((span) => span.name === "bridge.paperclip");
+    const todero = spans.find((span) => span.name === "bridge.todero");
     const processSession = spans.find((span) => span.name === "bridge.process-session");
-    expect(paperclip?.parent).toBe(rootSpan);
+    expect(todero?.parent).toBe(rootSpan);
     expect(processSession?.parent).toBe(rootSpan);
     // Both bridge spans carry the same batch tag, so the trace marks them as one
     // parallel batch.
-    expect(paperclip?.attributes[A.batch]).toBe("bridge");
+    expect(todero?.attributes[A.batch]).toBe("bridge");
     expect(processSession?.attributes[A.batch]).toBe("bridge");
-    expect(paperclip?.attributes[A.batch]).toBe(processSession?.attributes[A.batch]);
+    expect(todero?.attributes[A.batch]).toBe(processSession?.attributes[A.batch]);
   });
 
   it("records the handshake create-runtime and ensure-session sub-times on the acp.handshake span", async () => {
@@ -5014,7 +5014,7 @@ describe("ACPX engine per-step startup timing (run.startup.step events)", () => 
       "codex-home.seed",
       "skills.reconcile",
       "stage.sync",
-      "bridge.paperclip",
+      "bridge.todero",
       "bridge.process-session",
       "acp.handshake",
     ]) {
@@ -5053,7 +5053,7 @@ describe("ACPX engine per-step startup timing (run.startup.step events)", () => 
     for (const step of [
       "workspace.resolve",
       "stage.sync",
-      "bridge.paperclip",
+      "bridge.todero",
       "bridge.process-session",
       "acp.handshake",
     ]) {
@@ -5165,7 +5165,7 @@ describe("ACPX engine per-step startup timing (run.startup.step events)", () => 
     expect(emitted.has("workspace.resolve")).toBe(true);
     expect(emitted.has("acp.handshake")).toBe(true);
     expect(emitted.has("stage.sync")).toBe(false);
-    expect(emitted.has("bridge.paperclip")).toBe(false);
+    expect(emitted.has("bridge.todero")).toBe(false);
     expect(emitted.has("bridge.process-session")).toBe(false);
   });
 });
@@ -5222,10 +5222,10 @@ describe("ACPX engine run lifecycle corrections (F1: settle every failure after 
 
   it("test_runtime_create_failure_stops_bridges_and_releases_staging_lease", async () => {
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    const paperclipStop = vi.fn(async () => {});
+    const toderoStop = vi.fn(async () => {});
     const processStop = vi.fn(async () => {});
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(
-      async () => ({ env: {}, stop: paperclipStop }) as never,
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(
+      async () => ({ env: {}, stop: toderoStop }) as never,
     );
     vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementationOnce(
       async () => ({ agentCommand: null, stop: processStop }) as never,
@@ -5256,7 +5256,7 @@ describe("ACPX engine run lifecycle corrections (F1: settle every failure after 
     expect(result.exitCode).toBe(1);
     expect(result.resultJson?.phase).toBe("create_runtime");
     // Both live bridges stop exactly once.
-    expect(paperclipStop).toHaveBeenCalledTimes(1);
+    expect(toderoStop).toHaveBeenCalledTimes(1);
     expect(processStop).toHaveBeenCalledTimes(1);
     // The per-session staging lease released, so the lock map does not strand the
     // next same-session run.
@@ -5286,7 +5286,7 @@ describe("ACPX engine run lifecycle corrections (F1: settle every failure after 
     // A throwing accessor on a field only `buildPrompt` reads makes the prompt
     // build fail after the session handshake succeeds.
     const context: Record<string, unknown> = {};
-    Object.defineProperty(context, "paperclipSessionHandoffMarkdown", {
+    Object.defineProperty(context, "toderoSessionHandoffMarkdown", {
       enumerable: false,
       get() {
         throw new Error("prompt build boom");
@@ -5606,11 +5606,11 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
   // Stub both sandbox bridges with stop spies collected per start, so a test can
   // assert the bridges stopped without running the real bridge transport.
   function stubBridges() {
-    const paperclipStops: Array<ReturnType<typeof vi.fn>> = [];
+    const toderoStops: Array<ReturnType<typeof vi.fn>> = [];
     const processStops: Array<ReturnType<typeof vi.fn>> = [];
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementation(async () => {
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementation(async () => {
       const stop = vi.fn(async () => {});
-      paperclipStops.push(stop);
+      toderoStops.push(stop);
       return { env: {}, stop } as never;
     });
     vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementation(async () => {
@@ -5622,12 +5622,12 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
       stops.some((stop) => stop.mock.calls.length > 0);
     const stoppedCount = (stops: Array<ReturnType<typeof vi.fn>>) =>
       stops.filter((stop) => stop.mock.calls.length > 0).length;
-    return { paperclipStops, processStops, anyStopped, stoppedCount };
+    return { toderoStops, processStops, anyStopped, stoppedCount };
   }
 
   function throwingHandoffContext(): Record<string, unknown> {
     const context: Record<string, unknown> = {};
-    Object.defineProperty(context, "paperclipSessionHandoffMarkdown", {
+    Object.defineProperty(context, "toderoSessionHandoffMarkdown", {
       enumerable: false,
       get() {
         throw new Error("prompt build boom");
@@ -5676,7 +5676,7 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
 
   it("test_teardown_continues_after_one_teardown_step_fails", async () => {
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    const { paperclipStops, processStops, anyStopped } = stubBridges();
+    const { toderoStops, processStops, anyStopped } = stubBridges();
     const stagingLocks = new Map<string, Promise<unknown>>();
     const logs: Array<{ stream: string; text: string }> = [];
     const execute = createAcpxEngineExecutor({
@@ -5705,7 +5705,7 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
 
     expect(result.exitCode).toBe(1);
     // The close failure did not stop the bridge stops or the lease release.
-    expect(anyStopped(paperclipStops)).toBe(true);
+    expect(anyStopped(toderoStops)).toBe(true);
     expect(anyStopped(processStops)).toBe(true);
     expect(stagingLocks.size).toBe(0);
     // The close failure was recorded, not silently dropped.
@@ -5795,7 +5795,7 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
 
   it("test_result_emission_failure_does_not_skip_teardown", async () => {
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    const { paperclipStops, processStops, anyStopped } = stubBridges();
+    const { toderoStops, processStops, anyStopped } = stubBridges();
     const stagingLocks = new Map<string, Promise<unknown>>();
     const execute = createAcpxEngineExecutor({
       stagingLocks,
@@ -5819,14 +5819,14 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
       }),
     } as never).catch(() => {});
 
-    expect(anyStopped(paperclipStops)).toBe(true);
+    expect(anyStopped(toderoStops)).toBe(true);
     expect(anyStopped(processStops)).toBe(true);
     expect(stagingLocks.size).toBe(0);
   });
 
   it("test_result_mapping_throw_after_close_does_not_rerun_teardown", async () => {
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    const { paperclipStops, processStops, stoppedCount } = stubBridges();
+    const { toderoStops, processStops, stoppedCount } = stubBridges();
     let closeCount = 0;
     const execute = createAcpxEngineExecutor({
       warmHandles: new Map(),
@@ -5862,7 +5862,7 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
     // The completed turn closed the runtime once; the mapping throw did not re-run
     // the teardown through the turn catch.
     expect(closeCount).toBe(1);
-    expect(stoppedCount(paperclipStops)).toBe(1);
+    expect(stoppedCount(toderoStops)).toBe(1);
     expect(stoppedCount(processStops)).toBe(1);
   });
 
@@ -5913,7 +5913,7 @@ describe("ACPX engine run lifecycle corrections (F3: one teardown error policy)"
 
       for (const scenario of scenarios) {
         const root = await makeTempRoot();
-        const marker = `paperclip-flush-probe-${scenario.name}`;
+        const marker = `todero-flush-probe-${scenario.name}`;
         const execute = createAcpxEngineExecutor({
           createRuntime: (options) => {
             const opts = options as {
@@ -6081,7 +6081,7 @@ describe("ACPX engine sandbox bridge run-disposition seam (fail-closed)", () => 
     runtime: unknown,
     sandbox: Awaited<ReturnType<typeof setupRemoteSandbox>>,
   ) {
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(
       async () => handle as never,
     );
     vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementationOnce(
@@ -6708,7 +6708,7 @@ describe("ACPX startup handshake guard and late-completion fence", () => {
       markOrderlyCompletion: () => {},
       stop: async () => {},
     };
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(
       async () => bridgeHandle as never,
     );
     vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementationOnce(

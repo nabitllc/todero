@@ -17,13 +17,13 @@ import {
   issues,
   statusCards,
   statusCardUpdates,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   defaultStatusCardRefreshPolicy,
   LOW_TRUST_REVIEW_PRESET,
   STATUS_CARD_AGENT_MAX_CARDS,
   STATUS_CARD_AGENT_MAX_INTEREST_PROMPT_LENGTH,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { errorHandler } from "../middleware/index.js";
 import { statusCardRoutes } from "../routes/status-cards.js";
 import { withBuiltInAgentMarker } from "../services/built-in-agent-metadata.js";
@@ -77,7 +77,7 @@ describeEmbeddedPostgres("status card routes", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-status-cards-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-status-cards-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 

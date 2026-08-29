@@ -16,7 +16,7 @@
  *
  * Run it on a broker-provisioned host with:
  *
- *   PAPERCLIP_LIVE_BROKER_EXERCISE=1 pnpm --filter @paperclipai/server exec \
+ *   PAPERCLIP_LIVE_BROKER_EXERCISE=1 pnpm --filter @todero/server exec \
  *     vitest run src/__tests__/workspace-runtime-https-live-exercise.test.ts
  *
  * The caller must be the broker's configured service UID/GID and its listeners
@@ -35,7 +35,7 @@ import {
   projects,
   workspaceRuntimeServices,
   type Db,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -48,7 +48,7 @@ import {
   type RealizedExecutionWorkspace,
 } from "../services/workspace-runtime.ts";
 
-const DEFAULT_BROKER_SOCKET = "/run/paperclip-tailscale-broker/broker.sock";
+const DEFAULT_BROKER_SOCKET = "/run/todero-tailscale-broker/broker.sock";
 const brokerSocketPath = process.env.PAPERCLIP_TAILSCALE_BROKER_SOCKET ?? DEFAULT_BROKER_SOCKET;
 
 async function brokerSocketPresent() {
@@ -86,11 +86,11 @@ if (optedIn && !live) {
 
   it("upgrades a pre-existing HTTP workspace in place to a browser-trusted HTTPS URL", async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "pap17158-live-"));
-    const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "pap17158-live-home-"));
+    const toderoHome = await fs.mkdtemp(path.join(os.tmpdir(), "pap17158-live-home-"));
     const previousHome = process.env.PAPERCLIP_HOME;
     const previousInstance = process.env.PAPERCLIP_INSTANCE_ID;
     const previousMode = process.env.PAPERCLIP_MANAGED_RUNTIME_HTTPS;
-    process.env.PAPERCLIP_HOME = paperclipHome;
+    process.env.PAPERCLIP_HOME = toderoHome;
     process.env.PAPERCLIP_INSTANCE_ID = `pap17158-live-${randomUUID()}`;
 
     // An ephemeral legacy port rather than the real template's 45439, so this
@@ -120,7 +120,7 @@ if (optedIn && !live) {
     const workspaceRuntime = {
       services: [
         {
-          name: "paperclip-dev",
+          name: "todero-dev",
           command,
           port: legacyPort,
           // Pre-feature block: backend URL only, no exposure declaration.
@@ -140,7 +140,7 @@ if (optedIn && !live) {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `L${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -169,7 +169,7 @@ if (optedIn && !live) {
       process.env.PAPERCLIP_MANAGED_RUNTIME_HTTPS = "off";
       const before = await startRuntimeServicesForWorkspaceControl({
         db,
-        actor: { id: null, name: "Paperclip", companyId },
+        actor: { id: null, name: "Todero", companyId },
         issue: null,
         workspace: {
           baseCwd: workspaceRoot,
@@ -246,7 +246,7 @@ if (optedIn && !live) {
         workspaceCwd: workspaceRoot,
       }).catch((error) => console.error("[PAP-17158] teardown failed", error));
       await resetRuntimeServicesForTests();
-      await fs.rm(paperclipHome, { recursive: true, force: true });
+      await fs.rm(toderoHome, { recursive: true, force: true });
       await fs.rm(workspaceRoot, { recursive: true, force: true });
       if (previousHome === undefined) delete process.env.PAPERCLIP_HOME;
       else process.env.PAPERCLIP_HOME = previousHome;

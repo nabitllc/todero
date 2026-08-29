@@ -19,12 +19,12 @@ import {
   issueComments,
   issueRelations,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { attentionService } from "../services/attention.js";
 import { decisionService } from "../services/decisions.js";
 import { hashAttentionArchiveManifest } from "../services/decision-retention.js";
-import type { AttentionArchiveManifestEntry, AttentionArchiveTargetSnapshot } from "@paperclipai/shared";
+import type { AttentionArchiveManifestEntry, AttentionArchiveTargetSnapshot } from "@todero/shared";
 
 const support = await getEmbeddedPostgresTestSupport();
 const describePg = support.supported ? describe : describe.skip;
@@ -42,7 +42,7 @@ describePg("decisionService", () => {
   let wakes: Array<Record<string, unknown>>;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-decisions-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-decisions-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -356,7 +356,7 @@ describePg("decisionService", () => {
   it("fails closed when the configured signing secret is removed after proposal", async () => {
     const created = await createCommentDecision();
     const originalHome = process.env.PAPERCLIP_HOME;
-    const tempHome = mkdtempSync(path.join(tmpdir(), "paperclip-decision-rotate-"));
+    const tempHome = mkdtempSync(path.join(tmpdir(), "todero-decision-rotate-"));
     process.env.PAPERCLIP_HOME = tempHome;
     delete process.env.PAPERCLIP_DECISION_SIGNING_SECRET;
     process.env.PAPERCLIP_AGENT_JWT_SECRET = "agent-jwt-secret-must-not-sign-decisions";
@@ -373,7 +373,7 @@ describePg("decisionService", () => {
 
   it("signs and verifies with an auto-generated key when no secret is configured", async () => {
     const originalHome = process.env.PAPERCLIP_HOME;
-    const tempHome = mkdtempSync(path.join(tmpdir(), "paperclip-decision-generated-"));
+    const tempHome = mkdtempSync(path.join(tmpdir(), "todero-decision-generated-"));
     process.env.PAPERCLIP_HOME = tempHome;
     delete process.env.PAPERCLIP_DECISION_SIGNING_SECRET;
     try {

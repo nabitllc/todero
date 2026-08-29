@@ -134,10 +134,10 @@ export function TaskChatBubble({ item, queuedAction, attachedTurn, actions }: Ta
             // The human bubble sits on the solid --liveness-blue accent, so the
             // prose body text must follow the bubble's `text-white` rather than
             // the default light-mode prose color (which reads as black on blue).
-            // `paperclip-markdown-on-accent` flips prose tokens to currentColor
+            // `todero-markdown-on-accent` flips prose tokens to currentColor
             // (== inherited white) in both themes; dark mode was already correct
             // only because `prose-invert` happened to lighten the text.
-            className={isHuman ? "paperclip-markdown-on-accent" : undefined}
+            className={isHuman ? "todero-markdown-on-accent" : undefined}
             softBreaks
             linkIssueReferences
             onImageClick={setLightboxSrc}

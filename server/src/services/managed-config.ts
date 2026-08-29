@@ -1,7 +1,7 @@
 /**
  * Cloud managed-config bootstrap (harness → app contract).
  *
- * Instances managed by the Paperclip Cloud harness receive one environment
+ * Instances managed by the Todero Cloud harness receive one environment
  * variable, `PAPERCLIP_MANAGED_CONFIG`, holding a single JSON document:
  *
  *   {
@@ -36,7 +36,7 @@ import {
   INSTANCE_FEATURE_CATALOG,
   instanceExperimentalSettingsSchema,
   type ManagedExperimentalFeatureKey,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 
 export type ManagedConfigEnv = Record<string, string | undefined>;
 
@@ -257,12 +257,12 @@ export function parseManagedConfigEnv(env: ManagedConfigEnv): ManagedInstanceCon
     if (!Array.isArray(doc.environments)) {
       fail(`"environments" must be an array of environment objects (got ${describeJsonValue(doc.environments)})`);
     }
-    // The DB enforces at most ONE Paperclip-managed sandbox row per instance
+    // The DB enforces at most ONE Todero-managed sandbox row per instance
     // (partial unique index `environments_managed_sandbox_idx`); every entry
     // here provisions that row, so a longer list can never be satisfied.
     if (doc.environments.length > 1) {
       fail(
-        `"environments" supports at most one entry: each entry provisions the single Paperclip-managed sandbox environment (DB invariant environments_managed_sandbox_idx)`,
+        `"environments" supports at most one entry: each entry provisions the single Todero-managed sandbox environment (DB invariant environments_managed_sandbox_idx)`,
       );
     }
     for (const [index, entry] of doc.environments.entries()) {

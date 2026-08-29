@@ -7,26 +7,26 @@
  * tree so published server packages have no workspace runtime dependency.
  * Keep server imports pointed at this relative boundary.
  */
-type RunnerModule = typeof import("@paperclipai/paperclip-runner");
+type RunnerModule = typeof import("@todero/paperclip-runner");
 
 export type {
-  PaperclipJsonValue,
-  PaperclipQuestionResponse,
-  PaperclipSemanticActionBinding,
-  PaperclipSemanticActionId,
-  PaperclipSemanticAuthorizationRecord,
-  PaperclipSemanticRunContext,
-  PaperclipSemanticToolCall,
-  PaperclipSemanticToolDefinition,
-  PaperclipSemanticToolResult,
+  ToderoJsonValue,
+  ToderoQuestionResponse,
+  ToderoSemanticActionBinding,
+  ToderoSemanticActionId,
+  ToderoSemanticAuthorizationRecord,
+  ToderoSemanticRunContext,
+  ToderoSemanticToolCall,
+  ToderoSemanticToolDefinition,
+  ToderoSemanticToolResult,
   PrpEvent,
   PrpStructuredRunResult,
   PrpTerminalState,
-} from "@paperclipai/paperclip-runner";
+} from "@todero/paperclip-runner";
 export type DurablePrpControlPlane =
-  import("@paperclipai/paperclip-runner").DurablePrpControlPlane;
-export type PaperclipSemanticDispatcher =
-  import("@paperclipai/paperclip-runner").PaperclipSemanticDispatcher;
+  import("@todero/paperclip-runner").DurablePrpControlPlane;
+export type ToderoSemanticDispatcher =
+  import("@todero/paperclip-runner").ToderoSemanticDispatcher;
 
 const sourceUrl = new URL(
   "../../../../packages/paperclip-runner/src/index.ts",
@@ -35,7 +35,7 @@ const sourceUrl = new URL(
 const runner = await import(sourceUrl.href) as RunnerModule;
 
 export const DurablePrpControlPlane = runner.DurablePrpControlPlane;
-export const PaperclipSemanticDispatcher = runner.PaperclipSemanticDispatcher;
+export const ToderoSemanticDispatcher = runner.ToderoSemanticDispatcher;
 export const validatePrpEvent = runner.validatePrpEvent;
 export const validatePrpStructuredRunResult =
   runner.validatePrpStructuredRunResult;

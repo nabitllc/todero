@@ -146,14 +146,14 @@ const sessionResponse = await fetch(\`\${process.env.PAPERCLIP_API_URL}/api/tool
 if (!sessionResponse.ok) throw new Error(await sessionResponse.text());
 const session = await sessionResponse.json();
 const toolsResponse = await fetch(\`\${process.env.PAPERCLIP_API_URL}/api/tool-gateway/tools\`, {
-  headers: { "x-paperclip-tool-gateway-token": session.token }
+  headers: { "x-todero-tool-gateway-token": session.token }
 });
 const tools = await toolsResponse.json();
 const tool = tools.find((entry) => entry.connectionId === ${JSON.stringify(connectionId)} && entry.upstreamToolName === "notion:list_pages");
 if (!tool) throw new Error("Continuation did not receive the installed Notion tool");
 const call = await fetch(\`\${process.env.PAPERCLIP_API_URL}/api/tool-gateway/tools/call\`, {
   method: "POST",
-  headers: { "x-paperclip-tool-gateway-token": session.token, "content-type": "application/json" },
+  headers: { "x-todero-tool-gateway-token": session.token, "content-type": "application/json" },
   body: JSON.stringify({ tool: tool.name, parameters: {} })
 });
 if (!call.ok) throw new Error(await call.text());

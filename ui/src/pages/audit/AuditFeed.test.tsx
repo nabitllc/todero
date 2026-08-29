@@ -195,7 +195,7 @@ describe("AuditFeed", () => {
     expect(container.textContent).toContain("Looks good to me");
     expect(container.textContent).toContain("on behalf of Dotta");
     expect(container.querySelector('a[href="/agents/agent-1/runs/run-1"]')).toBeTruthy();
-    expect(container.textContent).toContain("Recorded by Paperclip");
+    expect(container.textContent).toContain("Recorded by Todero");
   });
 
   it("shows the permission-denied upsell when the feed 403s", async () => {
@@ -204,10 +204,10 @@ describe("AuditFeed", () => {
     );
     await render();
 
-    expect(container.textContent).toContain("Paperclip Enterprise view");
+    expect(container.textContent).toContain("Todero Enterprise view");
     expect(container.textContent).toContain("audit:view_agent_actions");
     // The feed chrome (filters, footer) is not rendered in the denied state.
-    expect(container.textContent).not.toContain("Recorded by Paperclip");
+    expect(container.textContent).not.toContain("Recorded by Todero");
   });
 
   it("hides attribution filters and export for a basic all-actors reader", async () => {
@@ -267,7 +267,7 @@ describe("AuditFeed", () => {
         expect.objectContaining({ actorScope: "all", from: undefined }),
       );
       expect(container.textContent).toContain("commented on");
-      expect(container.textContent).not.toContain("Paperclip Enterprise view");
+      expect(container.textContent).not.toContain("Todero Enterprise view");
       expect(container.textContent).not.toContain("All agents");
       expect(container.textContent).not.toContain("Export CSV");
     });
@@ -493,7 +493,7 @@ describe("AuditFeed", () => {
     await render({ mode: "agents", onModeChange });
 
     expect(onModeChange).toHaveBeenCalledWith("all");
-    expect(container.textContent).not.toContain("Paperclip Enterprise view");
+    expect(container.textContent).not.toContain("Todero Enterprise view");
     expect(container.textContent).toContain("Refreshing audit access…");
   });
 
@@ -503,7 +503,7 @@ describe("AuditFeed", () => {
     );
     await render({ mode: "agents" });
 
-    expect(container.textContent).toContain("Paperclip Enterprise view");
+    expect(container.textContent).toContain("Todero Enterprise view");
   });
 
   it("only offers action domains present in the agent-action feed", async () => {

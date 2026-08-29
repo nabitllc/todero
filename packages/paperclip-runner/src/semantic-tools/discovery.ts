@@ -1,16 +1,16 @@
 import { PAPERCLIP_SEMANTIC_ACTION_CATALOG } from "../catalog/semantic-action-catalog.js";
 import type {
-  PaperclipSemanticActionDescriptor,
-  PaperclipSemanticActionId,
+  ToderoSemanticActionDescriptor,
+  ToderoSemanticActionId,
 } from "../catalog/semantic-action-types.js";
-import { decidePaperclipSemanticAuthorization } from "./authorization.js";
+import { decideToderoSemanticAuthorization } from "./authorization.js";
 import type {
-  PaperclipSemanticDiscoveryResult,
-  PaperclipSemanticRunContext,
-  PaperclipSemanticToolDefinition,
+  ToderoSemanticDiscoveryResult,
+  ToderoSemanticRunContext,
+  ToderoSemanticToolDefinition,
 } from "./types.js";
 
-const NAMESPACE: Readonly<Record<PaperclipSemanticActionId, string>> =
+const NAMESPACE: Readonly<Record<ToderoSemanticActionId, string>> =
   Object.freeze({
     get_task_context: "active_task",
     get_task_history: "active_task",
@@ -41,29 +41,29 @@ const NAMESPACE: Readonly<Record<PaperclipSemanticActionId, string>> =
     schedule_wake: "continuation",
   });
 
-export function paperclipSemanticActionNamespace(
-  operationId: PaperclipSemanticActionId,
+export function toderoSemanticActionNamespace(
+  operationId: ToderoSemanticActionId,
 ): string {
   return NAMESPACE[operationId];
 }
 
-export function projectPaperclipSemanticTools(input: {
+export function projectToderoSemanticTools(input: {
   readonly runId: string;
-  readonly context: PaperclipSemanticRunContext;
-  readonly boundOperationIds: ReadonlySet<PaperclipSemanticActionId>;
-  readonly placement?: PaperclipSemanticActionDescriptor["placement"];
-}): readonly PaperclipSemanticToolDefinition[] {
+  readonly context: ToderoSemanticRunContext;
+  readonly boundOperationIds: ReadonlySet<ToderoSemanticActionId>;
+  readonly placement?: ToderoSemanticActionDescriptor["placement"];
+}): readonly ToderoSemanticToolDefinition[] {
   return deepFreeze(authorizedBoundDescriptors(input).map(toToolDefinition));
 }
 
-export function discoverPaperclipSemanticTools(input: {
+export function discoverToderoSemanticTools(input: {
   readonly runId: string;
-  readonly context: PaperclipSemanticRunContext;
-  readonly boundOperationIds: ReadonlySet<PaperclipSemanticActionId>;
+  readonly context: ToderoSemanticRunContext;
+  readonly boundOperationIds: ReadonlySet<ToderoSemanticActionId>;
   readonly query: string;
   readonly namespace?: string;
   readonly limit?: number;
-}): PaperclipSemanticDiscoveryResult {
+}): ToderoSemanticDiscoveryResult {
   const normalized = input.query.trim().toLowerCase();
   if (normalized.length === 0 || normalized.length > 500) {
     throw new Error("semantic_discovery_query_invalid");
@@ -83,7 +83,7 @@ export function discoverPaperclipSemanticTools(input: {
     .filter(
       (descriptor) =>
         namespace === undefined ||
-        paperclipSemanticActionNamespace(descriptor.operationId) === namespace,
+        toderoSemanticActionNamespace(descriptor.operationId) === namespace,
     )
     .map((descriptor) => ({
       descriptor,
@@ -97,7 +97,7 @@ export function discoverPaperclipSemanticTools(input: {
     );
 
   return deepFreeze({
-    schema: "paperclip.semantic-discovery.v1",
+    schema: "todero.semantic-discovery.v1",
     query: input.query,
     namespace: namespace ?? null,
     operations: candidates
@@ -107,24 +107,24 @@ export function discoverPaperclipSemanticTools(input: {
   });
 }
 
-export function toPaperclipSemanticToolDefinition(
-  descriptor: PaperclipSemanticActionDescriptor,
-): PaperclipSemanticToolDefinition {
+export function toToderoSemanticToolDefinition(
+  descriptor: ToderoSemanticActionDescriptor,
+): ToderoSemanticToolDefinition {
   return deepFreeze(toToolDefinition(descriptor));
 }
 
 function authorizedBoundDescriptors(input: {
   readonly runId: string;
-  readonly context: PaperclipSemanticRunContext;
-  readonly boundOperationIds: ReadonlySet<PaperclipSemanticActionId>;
-  readonly placement?: PaperclipSemanticActionDescriptor["placement"];
-}): PaperclipSemanticActionDescriptor[] {
+  readonly context: ToderoSemanticRunContext;
+  readonly boundOperationIds: ReadonlySet<ToderoSemanticActionId>;
+  readonly placement?: ToderoSemanticActionDescriptor["placement"];
+}): ToderoSemanticActionDescriptor[] {
   return PAPERCLIP_SEMANTIC_ACTION_CATALOG.filter(
     (descriptor) =>
       input.boundOperationIds.has(descriptor.operationId) &&
       (input.placement === undefined ||
         descriptor.placement === input.placement) &&
-      decidePaperclipSemanticAuthorization(
+      decideToderoSemanticAuthorization(
         descriptor,
         input.context,
         "exposure",
@@ -134,12 +134,12 @@ function authorizedBoundDescriptors(input: {
 }
 
 function scoreDescriptor(
-  descriptor: PaperclipSemanticActionDescriptor,
+  descriptor: ToderoSemanticActionDescriptor,
   query: string,
   tokens: readonly string[],
 ): number {
   const operationId = descriptor.operationId.toLowerCase();
-  const namespace = paperclipSemanticActionNamespace(descriptor.operationId);
+  const namespace = toderoSemanticActionNamespace(descriptor.operationId);
   const haystack =
     `${operationId} ${descriptor.title} ${descriptor.description} ${namespace}`.toLowerCase();
   let score = operationId === query ? 100 : namespace === query ? 50 : 0;
@@ -152,8 +152,8 @@ function scoreDescriptor(
 }
 
 function toToolDefinition(
-  descriptor: PaperclipSemanticActionDescriptor,
-): PaperclipSemanticToolDefinition {
+  descriptor: ToderoSemanticActionDescriptor,
+): ToderoSemanticToolDefinition {
   return {
     name: descriptor.operationId,
     description: descriptor.description,

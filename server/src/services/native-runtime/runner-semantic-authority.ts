@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   documentRevisions,
@@ -9,20 +9,20 @@ import {
   issueComments,
   issueDocuments,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
-  PaperclipSemanticDispatcher,
-  type PaperclipJsonValue,
-  type PaperclipSemanticActionBinding,
-  type PaperclipSemanticActionId,
-  type PaperclipSemanticAuthorizationRecord,
-  type PaperclipSemanticRunContext,
-  type PaperclipSemanticToolCall,
-  type PaperclipSemanticToolDefinition,
-  type PaperclipSemanticToolResult,
+  ToderoSemanticDispatcher,
+  type ToderoJsonValue,
+  type ToderoSemanticActionBinding,
+  type ToderoSemanticActionId,
+  type ToderoSemanticAuthorizationRecord,
+  type ToderoSemanticRunContext,
+  type ToderoSemanticToolCall,
+  type ToderoSemanticToolDefinition,
+  type ToderoSemanticToolResult,
 } from "../../vendor/paperclip-runner/index.js";
 
-export interface PaperclipRunnerSemanticBinding {
+export interface ToderoRunnerSemanticBinding {
   readonly companyId: string;
   readonly issueId: string;
   readonly runId: string;
@@ -35,7 +35,7 @@ const READ_OPERATION_IDS = [
   "list_documents",
   "read_document",
   "list_document_revisions",
-] as const satisfies readonly PaperclipSemanticActionId[];
+] as const satisfies readonly ToderoSemanticActionId[];
 
 type BoundContext = {
   readonly run: typeof heartbeatRuns.$inferSelect;
@@ -56,8 +56,8 @@ function requiredString(value: unknown): string {
   return value;
 }
 
-function jsonValue(value: unknown): PaperclipJsonValue {
-  return JSON.parse(JSON.stringify(value)) as PaperclipJsonValue;
+function jsonValue(value: unknown): ToderoJsonValue {
+  return JSON.parse(JSON.stringify(value)) as ToderoJsonValue;
 }
 
 function activeAgentStatus(status: string): "active" | "inactive" {
@@ -71,15 +71,15 @@ function activeAgentStatus(status: string): "active" | "inactive" {
  * This first server slice binds only same-task read operations. A catalog
  * entry remains undiscoverable until a later PR adds its guarded binding.
  */
-export class PaperclipRunnerSemanticAuthority {
+export class ToderoRunnerSemanticAuthority {
   readonly #db: Db;
-  readonly #binding: PaperclipRunnerSemanticBinding;
-  readonly #dispatcher: PaperclipSemanticDispatcher;
+  readonly #binding: ToderoRunnerSemanticBinding;
+  readonly #dispatcher: ToderoSemanticDispatcher;
 
-  constructor(db: Db, binding: PaperclipRunnerSemanticBinding) {
+  constructor(db: Db, binding: ToderoRunnerSemanticBinding) {
     this.#db = db;
     this.#binding = structuredClone(binding);
-    this.#dispatcher = new PaperclipSemanticDispatcher({
+    this.#dispatcher = new ToderoSemanticDispatcher({
       contextProvider: (runId) => this.#context(runId),
       bindings: READ_OPERATION_IDS.map((operationId) =>
         this.#readBinding(operationId),
@@ -88,24 +88,24 @@ export class PaperclipRunnerSemanticAuthority {
   }
 
   listAlwaysAvailableTools(): Promise<
-    readonly PaperclipSemanticToolDefinition[]
+    readonly ToderoSemanticToolDefinition[]
   > {
     return this.#dispatcher.listAlwaysAvailableTools(this.#binding.runId);
   }
 
   dispatch(
-    call: Omit<PaperclipSemanticToolCall, "runId">,
-  ): Promise<PaperclipSemanticToolResult> {
+    call: Omit<ToderoSemanticToolCall, "runId">,
+  ): Promise<ToderoSemanticToolResult> {
     return this.#dispatcher.dispatch({ ...call, runId: this.#binding.runId });
   }
 
-  authorizationRecords(): readonly PaperclipSemanticAuthorizationRecord[] {
+  authorizationRecords(): readonly ToderoSemanticAuthorizationRecord[] {
     return this.#dispatcher.authorizationRecords();
   }
 
   #readBinding(
     operationId: (typeof READ_OPERATION_IDS)[number],
-  ): PaperclipSemanticActionBinding {
+  ): ToderoSemanticActionBinding {
     return {
       operationId,
       execute: async (invocation) => {
@@ -276,7 +276,7 @@ export class PaperclipRunnerSemanticAuthority {
     };
   }
 
-  async #context(requestedRunId: string): Promise<PaperclipSemanticRunContext> {
+  async #context(requestedRunId: string): Promise<ToderoSemanticRunContext> {
     if (requestedRunId !== this.#binding.runId) {
       throw new Error("paperclip_runner_semantic_run_mismatch");
     }
@@ -299,7 +299,7 @@ export class PaperclipRunnerSemanticAuthority {
         executionRunId: context.issue.executionRunId,
         status: context.issue.status,
         workMode: context.issue
-          .workMode as PaperclipSemanticRunContext["activeTask"]["workMode"],
+          .workMode as ToderoSemanticRunContext["activeTask"]["workMode"],
       },
       delegatedClaims: [],
     };

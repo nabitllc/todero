@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { companySecretBindings, toolConnections } from "@paperclipai/db";
-import type { ToolCredentialSecretRef } from "@paperclipai/shared";
+import type { Db } from "@todero/db";
+import { companySecretBindings, toolConnections } from "@todero/db";
+import type { ToolCredentialSecretRef } from "@todero/shared";
 import { unprocessable } from "../errors.js";
 import { createComposioClient, type ComposioClient } from "./composio.js";
 import { secretService } from "./secrets.js";
@@ -171,7 +171,7 @@ export function createComposioSessionManager(db: Db, options: ComposioSessionMan
     }
 
     const client = options.composioClientFactory?.(apiKey) ?? createComposioClient({ apiKey });
-    const session = await client.createSession(`paperclip:${child.companyId}`, {
+    const session = await client.createSession(`todero:${child.companyId}`, {
       mcp: true,
       toolkits: [config.toolkitSlug],
       ...(tools.length > 0 ? { tools: { [config.toolkitSlug]: { enable: tools } } } : {}),

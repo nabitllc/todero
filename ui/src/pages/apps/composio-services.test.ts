@@ -23,7 +23,7 @@ function toolkit(slug: string, over: Record<string, unknown> = {}) {
 function listResponse(
   services: ComposioServicesResponse["services"],
 ): ComposioServicesResponse {
-  return { parentConnectionId: "parent-1", userId: "paperclip:company-1", services };
+  return { parentConnectionId: "parent-1", userId: "todero:company-1", services };
 }
 
 describe("composioServiceStateFor", () => {

@@ -238,10 +238,10 @@ export function preflightFailureMessage(error) {
     return `PostHog live smoke preflight failed: /api/health returned HTTP ${error.details.status}.`;
   }
   if (error.code === "missing_base_url") {
-    return "PostHog live smoke preflight failed: pass the target Paperclip URL or run inside a Paperclip heartbeat.";
+    return "PostHog live smoke preflight failed: pass the target Todero URL or run inside a Todero heartbeat.";
   }
   if (error.code === "invalid_arguments") {
-    return "PostHog live smoke preflight failed: expected an optional Paperclip URL or --base-url <url>.";
+    return "PostHog live smoke preflight failed: expected an optional Todero URL or --base-url <url>.";
   }
   return `PostHog live smoke preflight failed: ${error.code}.`;
 }

@@ -21,8 +21,8 @@ afterEach(() => {
 
 describe("Better Auth cookie scoping", () => {
   it("derives an instance-scoped cookie prefix", () => {
-    expect(deriveAuthCookiePrefix("default")).toBe("paperclip-default");
-    expect(deriveAuthCookiePrefix("PAP-1601-worktree")).toBe("paperclip-PAP-1601-worktree");
+    expect(deriveAuthCookiePrefix("default")).toBe("todero-default");
+    expect(deriveAuthCookiePrefix("PAP-1601-worktree")).toBe("todero-PAP-1601-worktree");
   });
 
   it("uses PAPERCLIP_INSTANCE_ID for the Better Auth cookie prefix", () => {
@@ -31,10 +31,10 @@ describe("Better Auth cookie scoping", () => {
     const advanced = buildBetterAuthAdvancedOptions({ disableSecureCookies: false });
 
     expect(advanced).toEqual({
-      cookiePrefix: "paperclip-sat-worktree",
+      cookiePrefix: "todero-sat-worktree",
     });
     expect(getCookies({ advanced } as BetterAuthOptions).sessionToken.name).toMatch(
-      /paperclip-sat-worktree\.session_token$/,
+      /todero-sat-worktree\.session_token$/,
     );
   });
 
@@ -42,12 +42,12 @@ describe("Better Auth cookie scoping", () => {
     process.env.PAPERCLIP_INSTANCE_ID = "pap-worktree";
 
     expect(buildBetterAuthAdvancedOptions({ disableSecureCookies: true })).toEqual({
-      cookiePrefix: "paperclip-pap-worktree",
+      cookiePrefix: "todero-pap-worktree",
       useSecureCookies: false,
     });
     expect(getCookies({
       advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies: true }),
-    } as BetterAuthOptions).sessionToken.name).toBe("paperclip-pap-worktree.session_token");
+    } as BetterAuthOptions).sessionToken.name).toBe("todero-pap-worktree.session_token");
   });
 
   it("enables Better Auth rate limiting for authenticated private instances by default", () => {
@@ -104,14 +104,14 @@ describe("Better Auth cookie scoping", () => {
       deploymentExposure: "private",
       authBaseUrlMode: "auto",
       authPublicBaseUrl: undefined,
-      publicUrl: "https://paperclip.example.test",
+      publicUrl: "https://todero.example.test",
     })).toBe(false);
 
     expect(shouldDisableSecureAuthCookies({
       deploymentMode: "authenticated",
       deploymentExposure: "public",
       authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "http://paperclip.local.test:3100",
+      authPublicBaseUrl: "http://todero.local.test:3100",
       publicUrl: undefined,
     })).toBe(true);
   });
@@ -132,12 +132,12 @@ describe("Better Auth cookie scoping", () => {
     expect(shouldDisableSecureAuthCookies({
       deploymentMode: "authenticated",
       authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "http://paperclip-dev:46259",
+      authPublicBaseUrl: "http://todero-dev:46259",
     } as Parameters<typeof shouldDisableSecureAuthCookies>[0])).toBe(true);
     expect(shouldDisableSecureAuthCookies({
       deploymentMode: "authenticated",
       authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "https://paperclip.example.test",
+      authPublicBaseUrl: "https://todero.example.test",
     } as Parameters<typeof shouldDisableSecureAuthCookies>[0])).toBe(false);
   });
 
@@ -147,8 +147,8 @@ describe("Better Auth cookie scoping", () => {
     expect(shouldDisableSecureAuthCookies({
       deploymentMode: "authenticated",
       authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "https://paperclip.example.test",
-      publicUrl: "http://paperclip-dev:46259",
+      authPublicBaseUrl: "https://todero.example.test",
+      publicUrl: "http://todero-dev:46259",
     } as Parameters<typeof shouldDisableSecureAuthCookies>[0])).toBe(true);
   });
 

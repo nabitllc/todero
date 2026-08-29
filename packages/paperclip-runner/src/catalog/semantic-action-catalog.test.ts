@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   PAPERCLIP_SEMANTIC_ACTION_CATALOG,
-  canonicalPaperclipSemanticActionCatalog,
-  paperclipSemanticAction,
+  canonicalToderoSemanticActionCatalog,
+  toderoSemanticAction,
 } from "./semantic-action-catalog.js";
 
 const packageRoot = resolve(
@@ -28,7 +28,7 @@ describe("semantic action catalog", () => {
     expect(operationIds).not.toContain("generic_api_request");
     expect(Object.isFrozen(PAPERCLIP_SEMANTIC_ACTION_CATALOG)).toBe(true);
     expect(
-      Object.isFrozen(paperclipSemanticAction("write_document")?.inputSchema),
+      Object.isFrozen(toderoSemanticAction("write_document")?.inputSchema),
     ).toBe(true);
   });
 
@@ -57,8 +57,8 @@ describe("semantic action catalog", () => {
       allowUnionTypes: true,
       strict: true,
     });
-    const writeDocument = paperclipSemanticAction("write_document");
-    const taskContext = paperclipSemanticAction("get_task_context");
+    const writeDocument = toderoSemanticAction("write_document");
+    const taskContext = toderoSemanticAction("get_task_context");
     expect(writeDocument).toBeDefined();
     expect(taskContext).toBeDefined();
 
@@ -92,7 +92,7 @@ describe("semantic action catalog", () => {
       "utf8",
     );
 
-    expect(generated).toBe(canonicalPaperclipSemanticActionCatalog());
+    expect(generated).toBe(canonicalToderoSemanticActionCatalog());
   });
 
   it("does not carry executable authorization or binding hooks", () => {

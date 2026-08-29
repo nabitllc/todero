@@ -1,4 +1,4 @@
-import type { ServerInfoSnapshot } from "@paperclipai/shared";
+import type { ServerInfoSnapshot } from "@todero/shared";
 
 export type DevServerHealthStatus = {
   enabled: true;
@@ -16,7 +16,7 @@ export type DevServerHealthStatus = {
 
 export type CloudInstanceHealthStatus = {
   managed: true;
-  managedBy: "paperclip-cloud";
+  managedBy: "todero-cloud";
   stackSlug: string | null;
   stackDisplayName?: string;
   cloudBaseUrl: string | null;

@@ -25,7 +25,7 @@ const companyState = vi.hoisted(() => ({
   companies: [
     {
       id: "company-1",
-      name: "Paperclip",
+      name: "Todero",
       status: "active",
       issuePrefix: "PAP",
     },
@@ -33,7 +33,7 @@ const companyState = vi.hoisted(() => ({
   selectedCompanyId: "company-1",
   selectedCompany: {
     id: "company-1",
-    name: "Paperclip",
+    name: "Todero",
     status: "active",
     issuePrefix: "PAP",
   },
@@ -1262,7 +1262,7 @@ describe("NewIssueDialog", () => {
     await flush();
 
     const menu = document.createElement("div");
-    menu.setAttribute("data-paperclip-floating-ui", "");
+    menu.setAttribute("data-todero-floating-ui", "");
     const option = document.createElement("button");
     menu.appendChild(option);
     document.body.appendChild(menu);
@@ -1381,7 +1381,7 @@ describe("NewIssueDialog", () => {
       enableTaskWatchdogs: true,
     });
     localStorage.setItem(
-      "paperclip:issue-draft",
+      "todero:issue-draft",
       JSON.stringify({
         title: "Watched task",
         description: "",

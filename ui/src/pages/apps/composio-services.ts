@@ -1,4 +1,4 @@
-import type { ToolConnection } from "@paperclipai/shared";
+import type { ToolConnection } from "@todero/shared";
 
 /**
  * Reading Composio's service endpoints for the Services tab (PAP-17865).
@@ -35,7 +35,7 @@ export interface ComposioToolkitPayload {
 /** `GET /tool-connections/:id/services` */
 export interface ComposioServicesResponse {
   parentConnectionId: string;
-  /** Composio `user_id` these accounts belong to (`paperclip:{companyId}`). Not a secret. */
+  /** Composio `user_id` these accounts belong to (`todero:{companyId}`). Not a secret. */
   userId: string;
   services: Array<{
     toolkit: ComposioToolkitPayload;
@@ -87,7 +87,7 @@ export interface ComposioServiceRow {
   state: ComposioServiceState;
   /** Raw Composio account status (`ACTIVE`, `INITIALIZING`, `EXPIRED`, …), for the detail line. */
   connectedAccountStatus: string | null;
-  /** The Paperclip child connection for this toolkit, once one exists. */
+  /** The Todero child connection for this toolkit, once one exists. */
   childConnectionId: string | null;
   /** Number of tools the toolkit exposes, when Composio reports it. */
   toolCount: number | null;

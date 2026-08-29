@@ -44,7 +44,7 @@ export interface SequenceGap {
 export const MAX_RECORDED_MISSING_SEQUENCES = 256;
 
 export interface SessionSnapshot {
-  schema: "paperclip.prp.session-snapshot.v1";
+  schema: "todero.prp.session-snapshot.v1";
   fixtureName: string;
   identity: PrpIdentity;
   capabilities: PrpCapabilities;
@@ -325,7 +325,7 @@ export function createSessionSnapshotFromMetadata(input: {
   capabilities: PrpCapabilities;
 }): SessionSnapshot {
   return {
-    schema: "paperclip.prp.session-snapshot.v1",
+    schema: "todero.prp.session-snapshot.v1",
     fixtureName: input.fixtureName,
     identity: structuredClone(input.identity),
     capabilities: structuredClone(input.capabilities),

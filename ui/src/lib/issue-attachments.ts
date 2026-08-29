@@ -1,5 +1,5 @@
-import type { IssueAttachment } from "@paperclipai/shared";
-import { isMarkdownAttachmentContent } from "@paperclipai/shared";
+import type { IssueAttachment } from "@todero/shared";
+import { isMarkdownAttachmentContent } from "@todero/shared";
 import { isVideoLikeOutput } from "./issue-output";
 
 type AttachmentPathLike = {

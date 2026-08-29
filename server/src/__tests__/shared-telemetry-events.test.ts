@@ -6,8 +6,8 @@ import {
   trackInteractionCreated,
   trackInteractionResolved,
   trackInstallCompleted,
-} from "@paperclipai/shared/telemetry";
-import type { EventDimensionsMap, TelemetryClient } from "@paperclipai/shared/telemetry";
+} from "@todero/shared/telemetry";
+import type { EventDimensionsMap, TelemetryClient } from "@todero/shared/telemetry";
 
 function createClient(): TelemetryClient {
   return {

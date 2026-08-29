@@ -51,9 +51,9 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableNativeRunner: {
-    title: "Paperclip Runner",
+    title: "Todero Runner",
     description:
-      "Allow new Codex agents to use the experimental Rust Paperclip Runner transport.",
+      "Allow new Codex agents to use the experimental Rust Todero Runner transport.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -170,14 +170,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableBuiltInAgents: {
     title: "Built-in Agents",
     description:
-      "Show Paperclip-managed built-in agent surfaces, including roster badges, the Built-in agents tab, and setup controls.",
+      "Show Todero-managed built-in agent surfaces, including roster badges, the Built-in agents tab, and setup controls.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
   },
   enableBetaSkills: {
     title: "Beta skills",
-    description: "Allow agents to pin beta releases of the Paperclip core skill.",
+    description: "Allow agents to pin beta releases of the Todero core skill.",
     tier: "preference",
     cloudDefault: false,
     selfHostedDefault: false,

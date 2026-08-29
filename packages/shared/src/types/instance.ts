@@ -47,7 +47,7 @@ export interface InstanceGeneralSettings {
 export interface InstanceExperimentalSettings {
   enableEnvironments: boolean;
   /**
-   * Exposes the experimental Paperclip Runner adapter for new selections.
+   * Exposes the experimental Todero Runner adapter for new selections.
    * Existing native runs ignore later flag changes so they remain recoverable.
    */
   enableNativeRunner: boolean;
@@ -132,7 +132,7 @@ export type ManagedExperimentalFeatureKey = {
     : never;
 }[keyof InstanceExperimentalSettings];
 
-export const PAPERCLIP_CLOUD_MANAGED_BY = "paperclip-cloud" as const;
+export const PAPERCLIP_CLOUD_MANAGED_BY = "todero-cloud" as const;
 
 /** Per-key metadata attached to settings responses for cloud-overlaid keys. */
 export interface ManagedSettingMetadata {

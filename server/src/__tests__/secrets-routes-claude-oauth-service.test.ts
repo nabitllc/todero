@@ -21,7 +21,7 @@ import {
   secretAccessEvents,
   userSecretDeclarations,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { and, eq } from "drizzle-orm";
 import { HttpError } from "../errors.js";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
@@ -44,7 +44,7 @@ describeEmbeddedPostgres("secretService Claude Code OAuth helper and compare-and
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-claude-oauth-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-claude-oauth-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });

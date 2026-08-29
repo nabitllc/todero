@@ -1,4 +1,4 @@
-import { definePlugin } from "@paperclipai/plugin-sdk";
+import { definePlugin } from "@todero/plugin-sdk";
 import type {
   PluginLogger,
   PluginEnvironmentAcquireLeaseParams,
@@ -14,7 +14,7 @@ import type {
   PluginEnvironmentResumeLeaseParams,
   PluginEnvironmentValidateConfigParams,
   PluginEnvironmentValidationResult,
-} from "@paperclipai/plugin-sdk";
+} from "@todero/plugin-sdk";
 import { CloudflareBridgeError, createCloudflareBridgeClient } from "./bridge-client.js";
 import {
   parseCloudflareDriverConfig,
@@ -91,7 +91,7 @@ function resolveExecuteSession(
     } as const;
   }
 
-  const baseSessionId = config.sessionId.trim().length > 0 ? config.sessionId : "paperclip";
+  const baseSessionId = config.sessionId.trim().length > 0 ? config.sessionId : "todero";
   return {
     sessionStrategy: "named" as const,
     sessionId: `${baseSessionId}-bridge`,

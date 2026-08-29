@@ -1,4 +1,4 @@
-export interface PaperclipMcpConfig {
+export interface ToderoMcpConfig {
   apiUrl: string;
   apiKey: string;
   companyId: string | null;
@@ -19,7 +19,7 @@ export function normalizeApiUrl(apiUrl: string): string {
   return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
 }
 
-export function readConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PaperclipMcpConfig {
+export function readConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ToderoMcpConfig {
   const apiUrl = nonEmpty(env.PAPERCLIP_API_URL);
   if (!apiUrl) {
     throw new Error("Missing PAPERCLIP_API_URL");

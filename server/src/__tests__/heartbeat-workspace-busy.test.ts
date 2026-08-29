@@ -23,7 +23,7 @@ import {
   issues,
   projects,
   projectWorkspaces,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -84,10 +84,10 @@ describeEmbeddedPostgres("shared-workspace run serialization", () => {
   const executedInputs = new Map<string, AdapterExecutionContext>();
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-workspace-busy-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-heartbeat-workspace-busy-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-    workspaceCwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-workspace-busy-"));
+    workspaceCwd = await fs.mkdtemp(path.join(os.tmpdir(), "todero-workspace-busy-"));
     registerServerAdapter({
       type: WORKSPACE_BUSY_TEST_ADAPTER,
       execute: async (input) => {
@@ -234,7 +234,7 @@ describeEmbeddedPostgres("shared-workspace run serialization", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
       defaultResponsibleUserId: "responsible-user",
@@ -388,10 +388,10 @@ describeEmbeddedPostgres("shared-workspace run serialization", () => {
     const finishedRun = await waitForRunToLeaveActiveStates(run!.id);
     expect(finishedRun?.status).toBe("succeeded");
     expect(executedRunIds).toContain(run!.id);
-    expect(executedInputs.get(run!.id)?.context.paperclipTaskMarkdown).toContain(
+    expect(executedInputs.get(run!.id)?.context.toderoTaskMarkdown).toContain(
       `shared workspace is concurrently held by run ${fixture.holderRunId}`,
     );
-    expect(executedInputs.get(run!.id)?.context.paperclipTaskMarkdown).toContain(
+    expect(executedInputs.get(run!.id)?.context.toderoTaskMarkdown).toContain(
       "expect concurrent mutations, coordinate via commits",
     );
   });
@@ -478,7 +478,7 @@ describeEmbeddedPostgres("shared-workspace run serialization", () => {
     const finishedRun = await waitForRunToLeaveActiveStates(run!.id);
     expect(finishedRun?.errorCode).not.toBe(WORKSPACE_BUSY_ERROR_CODE);
     expect(executedRunIds).toContain(run!.id);
-    expect((finishedRun?.contextSnapshot as Record<string, unknown>)?.paperclipTaskMarkdown).toContain(
+    expect((finishedRun?.contextSnapshot as Record<string, unknown>)?.toderoTaskMarkdown).toContain(
       `shared workspace is concurrently held by run ${fixture.holderRunId}`,
     );
     const retryRuns = await db

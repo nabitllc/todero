@@ -3,11 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 const ADMIN_EMAIL =
   process.env.PAPERCLIP_RELEASE_SMOKE_EMAIL ??
   process.env.SMOKE_ADMIN_EMAIL ??
-  "smoke-admin@paperclip.local";
+  "smoke-admin@todero.local";
 const ADMIN_PASSWORD =
   process.env.PAPERCLIP_RELEASE_SMOKE_PASSWORD ??
   process.env.SMOKE_ADMIN_PASSWORD ??
-  "paperclip-smoke-password";
+  "todero-smoke-password";
 
 const COMPANY_NAME = `Release-Smoke-${Date.now()}`;
 const AGENT_NAME = "Release Smoke Lead";
@@ -16,7 +16,7 @@ const AGENT_NAME = "Release Smoke Lead";
 const AGENT_ROLE = "general";
 // Seeded by the wizard's launch step (DEFAULT_TASK_TITLE in
 // ui/src/components/OnboardingWizard.tsx).
-const FIRST_TASK_TITLE = "Paperclip onboarding";
+const FIRST_TASK_TITLE = "Todero onboarding";
 
 async function signIn(page: Page) {
   await page.goto("/");
@@ -36,7 +36,7 @@ async function getJson<T>(page: Page, url: string): Promise<T> {
 }
 
 // ONBOARDING_STORAGE_KEY in ui/src/components/OnboardingWizard.tsx.
-const ONBOARDING_DRAFT_STORAGE_KEY = "paperclip-onboarding-state";
+const ONBOARDING_DRAFT_STORAGE_KEY = "todero-onboarding-state";
 
 /**
  * Open the wizard on its first step and hand back the organization-name field.

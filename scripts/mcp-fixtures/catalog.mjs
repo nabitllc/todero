@@ -1,6 +1,6 @@
 export const FIXED_TIME_ISO = "2026-06-05T12:00:00.000Z";
 
-export const MCP_FIXTURE_PROTOCOL_VERSION = "paperclip-mcp-fixture/v1";
+export const MCP_FIXTURE_PROTOCOL_VERSION = "todero-mcp-fixture/v1";
 
 export const toolCatalog = [
   {
@@ -343,9 +343,9 @@ export const fixtureProfiles = [
 
 export const demoProfiles = [
   {
-    id: "paperclip-self-read",
+    id: "todero-self-read",
     profileId: "read-only",
-    title: "Paperclip self-read",
+    title: "Todero self-read",
     steps: ["time.now", "echo.echo"],
   },
   {
@@ -423,7 +423,7 @@ export function findTool(name, options) {
 export function createFixtureState() {
   return {
     todos: [{ id: "todo-1", title: "Review MCP fixture catalog", completed: false }],
-    kv: new Map([["project", "paperclip"]]),
+    kv: new Map([["project", "todero"]]),
     outbox: [],
     published: [],
     schemaVariant: "baseline",

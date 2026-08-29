@@ -82,7 +82,7 @@ async function readPreflightActiveRunIds() {
   const config = loadConfig();
   const dbUrl = process.env.DATABASE_URL?.trim()
     || config.databaseUrl
-    || `postgres://paperclip:paperclip@127.0.0.1:${config.embeddedPostgresPort}/paperclip`;
+    || `postgres://todero:todero@127.0.0.1:${config.embeddedPostgresPort}/todero`;
   const db = createDb(dbUrl);
   try {
     const rows = await db.$client<{ id: string }[]>`

@@ -1094,7 +1094,7 @@ export interface ToolAppConnectionActionSummary {
 }
 
 /**
- * How Paperclip obtained the OAuth client it will use for a connection
+ * How Todero obtained the OAuth client it will use for a connection
  * (PAP-17087). Ordered by preference: a client the deployment preconfigured for
  * that issuer, then a Client ID Metadata Document, then dynamic registration,
  * then client credentials the operator preregistered and pasted in.
@@ -1102,7 +1102,7 @@ export interface ToolAppConnectionActionSummary {
 export type ToolOAuthClientRegistrationSource = "preconfigured" | "cimd" | "dcr" | "manual";
 
 /**
- * What an unknown remote MCP endpoint told Paperclip it needs, so the wizard can
+ * What an unknown remote MCP endpoint told Todero it needs, so the wizard can
  * branch without re-probing. `manualClientRequired` means discovery succeeded but
  * the authorization server supports neither CIMD nor DCR, so the operator has to
  * supply a preregistered client under Advanced authentication.
@@ -1429,7 +1429,7 @@ export interface ToolPolicyConditions {
     applicationKey?: string;
     applicationKeys?: string[];
     remoteHttpOnly?: boolean;
-    paperclipSelfOnly?: boolean;
+    toderoSelfOnly?: boolean;
   };
   timeWindow?: {
     startAt?: string;

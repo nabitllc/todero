@@ -5,7 +5,7 @@ import { relative, resolve, sep } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 export const JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
-export const PRP_SCHEMA_ID_PREFIX = "https://paperclip.dev/schemas/prp/v1/";
+export const PRP_SCHEMA_ID_PREFIX = "https://todero.dev/schemas/prp/v1/";
 export const SUPPORTED_FIXTURE_VERSION = 1;
 export const SUPPORTED_PROTOCOL_VERSION = 1;
 export const SUPPORTED_EVENT_SCHEMA_VERSION = 1;
@@ -152,34 +152,34 @@ function requireVersion(value, expected, name) {
 }
 
 export function assertReplayFixtureCompatibility(fixture) {
-  requireSchema(fixture, "paperclip.prp.fixture.v1", "fixture");
+  requireSchema(fixture, "todero.prp.fixture.v1", "fixture");
   requireVersion(fixture.fixtureVersion, SUPPORTED_FIXTURE_VERSION, "fixtureVersion");
   requireVersion(fixture.protocolVersion, SUPPORTED_PROTOCOL_VERSION, "protocolVersion");
-  requireSchema(fixture.identity, "paperclip.prp.identity.v1", "identity");
-  requireSchema(fixture.capabilities, "paperclip.prp.capabilities.v1", "capabilities");
+  requireSchema(fixture.identity, "todero.prp.identity.v1", "identity");
+  requireSchema(fixture.capabilities, "todero.prp.capabilities.v1", "capabilities");
 
   if (!Array.isArray(fixture.commands)) throw contractError("invalid_fixture", "commands must be an array");
   for (const [index, command] of fixture.commands.entries()) {
-    requireSchema(command, "paperclip.prp.command.v1", `commands[${index}]`);
+    requireSchema(command, "todero.prp.command.v1", `commands[${index}]`);
   }
 
   if (!Array.isArray(fixture.events) || fixture.events.length === 0) {
     throw contractError("invalid_fixture", "events must be a non-empty array");
   }
   for (const [index, event] of fixture.events.entries()) {
-    requireSchema(event, "paperclip.prp.event.v1", `events[${index}]`);
+    requireSchema(event, "todero.prp.event.v1", `events[${index}]`);
     requireVersion(event.schemaVersion, SUPPORTED_EVENT_SCHEMA_VERSION, `events[${index}].schemaVersion`);
   }
 
-  requireSchema(fixture.result, "paperclip.run_result.v1", "result");
+  requireSchema(fixture.result, "todero.run_result.v1", "result");
   return fixture;
 }
 
 export function assertCodexQuestionFixture(fixture) {
-  requireSchema(fixture, "paperclip.question_adapter_fixture.v1", "question fixture");
+  requireSchema(fixture, "todero.question_adapter_fixture.v1", "question fixture");
   if (fixture.adapter !== "codex") throw contractError("unsupported_provider", String(fixture.adapter));
-  requireSchema(fixture.canonicalQuestionSet, "paperclip.question_set.v1", "canonicalQuestionSet");
-  requireSchema(fixture.canonicalResponse, "paperclip.question_response.v1", "canonicalResponse");
+  requireSchema(fixture.canonicalQuestionSet, "todero.question_set.v1", "canonicalQuestionSet");
+  requireSchema(fixture.canonicalResponse, "todero.question_response.v1", "canonicalResponse");
   if (fixture.nativeRequest?.method !== "item/tool/requestUserInput") {
     throw contractError("invalid_codex_question_fixture", "native request method");
   }
@@ -218,10 +218,10 @@ export function assertCodexQuestionFixture(fixture) {
 }
 
 export function assertConformanceFixturePair(fixture, output) {
-  if (fixture?.schemaVersion !== "paperclip.runner.conformance.fixture.v1") {
+  if (fixture?.schemaVersion !== "todero.runner.conformance.fixture.v1") {
     throw contractError("unsupported_required_schema", `conformance fixture requires ${String(fixture?.schemaVersion)}`);
   }
-  if (output?.schemaVersion !== "paperclip.runner.conformance.output.v1") {
+  if (output?.schemaVersion !== "todero.runner.conformance.output.v1") {
     throw contractError("unsupported_required_schema", `conformance output requires ${String(output?.schemaVersion)}`);
   }
   if (fixture.run?.runId !== output.runIdentity?.runId || fixture.run?.sessionId !== output.runIdentity?.sessionId) {

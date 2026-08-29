@@ -463,7 +463,7 @@ describe("environment routes", () => {
           apiKey: "config-credential-must-never-echo",
         },
         envVars: { MY_AGENT_TOOL_SETTING: "tenant-env-value" },
-        metadata: { managedByPaperclip: true, managedSandboxProvider: "daytona" },
+        metadata: { managedByTodero: true, managedSandboxProvider: "daytona" },
         createdAt: now,
         updatedAt: now,
       };
@@ -511,7 +511,7 @@ describe("environment routes", () => {
         image: "custom-image:latest",
         target: "us",
       });
-      expect(res.body.metadata).toMatchObject({ managedByPaperclip: true });
+      expect(res.body.metadata).toMatchObject({ managedByTodero: true });
       expect(JSON.stringify(res.body)).not.toContain("config-credential-must-never-echo");
     });
 
@@ -521,7 +521,7 @@ describe("environment routes", () => {
       mockEnvironmentService.getById.mockResolvedValue({
         ...createPlatformSandboxEnvironment(),
         metadata: {
-          managedByPaperclip: true,
+          managedByTodero: true,
           managedSandboxProvider: "kubernetes",
           managedKubernetesSandbox: true,
         },
@@ -556,7 +556,7 @@ describe("environment routes", () => {
       // Tenant env vars can carry pasted credentials, so restricted readers
       // get the same blank envVars posture as on every other environment.
       expect(res.body[0].envVars).toEqual({});
-      expect(res.body[0].metadata).toMatchObject({ managedByPaperclip: true });
+      expect(res.body[0].metadata).toMatchObject({ managedByTodero: true });
     });
 
     it("rejects updates to platform-provisioned rows, including for instance admins", async () => {
@@ -686,7 +686,7 @@ describe("environment routes", () => {
       mockEnvironmentService.getById.mockResolvedValue({
         ...createPlatformSandboxEnvironment(),
         metadata: {
-          managedByPaperclip: true,
+          managedByTodero: true,
           managedSandboxProvider: "kubernetes",
           managedKubernetesSandbox: true,
         },
@@ -721,7 +721,7 @@ describe("environment routes", () => {
         driver: "local",
         config: {},
         envVars: {},
-        metadata: { managedByPaperclip: true, defaultForInstance: true },
+        metadata: { managedByTodero: true, defaultForInstance: true },
       };
       mockEnvironmentService.list.mockResolvedValue([localRow, createPlatformSandboxEnvironment()]);
       const app = createApp(ownerAdminActor);
@@ -743,7 +743,7 @@ describe("environment routes", () => {
         driver: "local",
         config: {},
         envVars: {},
-        metadata: { managedByPaperclip: true },
+        metadata: { managedByTodero: true },
       };
       mockEnvironmentService.list.mockResolvedValue([localRow]);
       const app = createApp(ownerAdminActor);
@@ -756,7 +756,7 @@ describe("environment routes", () => {
     it("allows a marker-clear-only patch to unblock a row with a stale legacy kubernetes marker", async () => {
       // A sandbox row carrying only the legacy wrapper marker does not hold
       // the managed sandbox slot (`environments_managed_sandbox_idx` keys on
-      // `managedByPaperclip`), and with the persisted execution mode not
+      // `managedByTodero`), and with the persisted execution mode not
       // forcing kubernetes nothing selects rows by that marker either — so
       // the marker is a stale leftover, not live platform state.
       const staleRow = {
@@ -781,7 +781,7 @@ describe("environment routes", () => {
         ...createPlatformSandboxEnvironment(),
         id: "env-stale-ssh-1",
         driver: "ssh",
-        metadata: { managedByPaperclip: true },
+        metadata: { managedByTodero: true },
       };
       mockEnvironmentService.getById.mockResolvedValue(staleRow);
       mockEnvironmentService.update.mockResolvedValue({ ...staleRow, metadata: {} });
@@ -789,7 +789,7 @@ describe("environment routes", () => {
 
       const res = await request(app)
         .patch("/api/environments/env-stale-ssh-1")
-        .send({ metadata: { managedByPaperclip: false, managedKubernetesSandbox: false } });
+        .send({ metadata: { managedByTodero: false, managedKubernetesSandbox: false } });
 
       expect(res.status).toBe(200);
       expect(mockEnvironmentService.update).toHaveBeenCalled();
@@ -797,7 +797,7 @@ describe("environment routes", () => {
 
     it("refuses the marker-clear patch on the sandbox slot row while managed provisioning is configured", async () => {
       // With a managed-config `environments` entry, driver=sandbox +
-      // managedByPaperclip is THE provisioner-owned slot row, adopted and
+      // managedByTodero is THE provisioner-owned slot row, adopted and
       // refreshed on every boot — clearing its markers would reclassify it
       // tenant-managed and let the next PATCH/DELETE bypass the write floor.
       process.env.PAPERCLIP_MANAGED_CONFIG = MANAGED_CONFIG_WITH_SANDBOX_ENTRY;
@@ -807,7 +807,7 @@ describe("environment routes", () => {
 
         const res = await request(app)
           .patch("/api/environments/env-managed-1")
-          .send({ metadata: { managedByPaperclip: false, managedKubernetesSandbox: false } });
+          .send({ metadata: { managedByTodero: false, managedKubernetesSandbox: false } });
 
         expect(res.status).toBe(403);
         expect(res.body.details).toMatchObject({ code: "environment_platform_managed" });
@@ -827,7 +827,7 @@ describe("environment routes", () => {
 
         const res = await request(app)
           .patch("/api/environments/env-managed-1")
-          .send({ metadata: { managedByPaperclip: false, managedKubernetesSandbox: false } });
+          .send({ metadata: { managedByTodero: false, managedKubernetesSandbox: false } });
 
         expect(res.status).toBe(403);
         expect(res.body.details).toMatchObject({ code: "environment_platform_managed" });
@@ -868,7 +868,7 @@ describe("environment routes", () => {
       mockEnvironmentService.getById.mockResolvedValue({
         ...createPlatformSandboxEnvironment(),
         metadata: {
-          managedByPaperclip: true,
+          managedByTodero: true,
           managedSandboxProvider: "kubernetes",
           managedKubernetesSandbox: true,
         },
@@ -877,7 +877,7 @@ describe("environment routes", () => {
 
       const res = await request(app)
         .patch("/api/environments/env-managed-1")
-        .send({ metadata: { managedByPaperclip: false, managedKubernetesSandbox: false } });
+        .send({ metadata: { managedByTodero: false, managedKubernetesSandbox: false } });
 
       expect(res.status).toBe(403);
       expect(res.body.details).toMatchObject({ code: "environment_platform_managed" });
@@ -897,7 +897,7 @@ describe("environment routes", () => {
 
       const res = await request(app)
         .patch("/api/environments/env-managed-1")
-        .send({ metadata: { managedByPaperclip: false, managedKubernetesSandbox: false } });
+        .send({ metadata: { managedByTodero: false, managedKubernetesSandbox: false } });
 
       expect(res.status).toBe(200);
       expect(mockEnvironmentService.update).toHaveBeenCalled();
@@ -911,13 +911,13 @@ describe("environment routes", () => {
         ...createPlatformSandboxEnvironment(),
         id: "env-local-1",
         driver: "local",
-        metadata: { managedByPaperclip: true, defaultForInstance: true },
+        metadata: { managedByTodero: true, defaultForInstance: true },
       });
       const app = createApp(ownerAdminActor);
 
       const res = await request(app)
         .patch("/api/environments/env-local-1")
-        .send({ metadata: { managedByPaperclip: false } });
+        .send({ metadata: { managedByTodero: false } });
 
       expect(res.status).toBe(403);
       expect(res.body.details).toMatchObject({ code: "environment_platform_managed" });
@@ -930,7 +930,7 @@ describe("environment routes", () => {
 
       const res = await request(app)
         .patch("/api/environments/env-managed-1")
-        .send({ name: "Renamed", metadata: { managedByPaperclip: false } });
+        .send({ name: "Renamed", metadata: { managedByTodero: false } });
 
       expect(res.status).toBe(403);
       expect(res.body.details).toMatchObject({ code: "environment_platform_managed" });
@@ -958,7 +958,7 @@ describe("environment routes", () => {
           name: "Fake managed",
           driver: "sandbox",
           config: { provider: "daytona" },
-          metadata: { managedByPaperclip: true },
+          metadata: { managedByTodero: true },
         });
 
       expect(res.status).toBe(422);
@@ -994,7 +994,7 @@ describe("environment routes", () => {
       mockEnvironmentService.getById.mockResolvedValue(existing);
       mockEnvironmentService.update.mockResolvedValue({
         ...existing,
-        metadata: { source: "manual", managedByPaperclip: true },
+        metadata: { source: "manual", managedByTodero: true },
       });
       const app = createApp({
         type: "board",
@@ -1005,7 +1005,7 @@ describe("environment routes", () => {
 
       const res = await request(app)
         .patch("/api/environments/env-tenant-1")
-        .send({ metadata: { source: "manual", managedByPaperclip: true } });
+        .send({ metadata: { source: "manual", managedByTodero: true } });
 
       expect(res.status).toBe(200);
       expect(mockEnvironmentService.update).toHaveBeenCalled();
@@ -1537,7 +1537,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: null,
         knownHosts: null,
@@ -1573,7 +1573,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: null,
         knownHosts: null,
@@ -1626,7 +1626,7 @@ describe("environment routes", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe(
-      "Cannot delete this environment while it has a reusable sandbox lease. Remove the associated execution workspace or issue so Paperclip can destroy the sandbox, then retry.",
+      "Cannot delete this environment while it has a reusable sandbox lease. Remove the associated execution workspace or issue so Todero can destroy the sandbox, then retry.",
     );
     expect(res.body.details).toEqual({ deleteBlockedReasons: ["reusable_sandbox_lease"] });
     expect(mockEnvironmentService.removeIfDeletable).not.toHaveBeenCalled();
@@ -1725,7 +1725,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: null,
         knownHosts: null,
@@ -1747,7 +1747,7 @@ describe("environment routes", () => {
           host: "changed.example.test",
           port: 22,
           username: "ssh-user",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
+          remoteWorkspacePath: "/srv/todero/workspace",
         },
       });
 
@@ -1769,7 +1769,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: null,
         knownHosts: null,
@@ -1874,7 +1874,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: {
           type: "secret_ref",
@@ -1963,7 +1963,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: {
           type: "secret_ref",
@@ -1990,7 +1990,7 @@ describe("environment routes", () => {
         config: {
           host: "ssh.example.test",
           username: "ssh-user",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
+          remoteWorkspacePath: "/srv/todero/workspace",
           privateKey: "  super-secret-key  ",
         },
       });
@@ -2029,7 +2029,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: {
           type: "secret_ref",
@@ -2055,7 +2055,7 @@ describe("environment routes", () => {
         config: {
           host: "ssh.example.test",
           username: "ssh-user",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
+          remoteWorkspacePath: "/srv/todero/workspace",
           privateKey: "super-secret-key",
         },
       });
@@ -2686,7 +2686,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: "super-secret-key",
         knownHosts: "known-host",
         strictHostKeyChecking: true,
@@ -2904,7 +2904,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         knownHosts: null,
         strictHostKeyChecking: true,
@@ -2963,7 +2963,7 @@ describe("environment routes", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: {
           type: "secret_ref",

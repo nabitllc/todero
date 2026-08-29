@@ -9,7 +9,7 @@ import {
   costEvents,
   createDb,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { budgetService } from "../services/budgets.ts";
 import {
   getEmbeddedPostgresTestSupport,
@@ -190,7 +190,7 @@ describe("budgetService", () => {
       }],
       [{
         status: "active",
-        name: "Paperclip",
+        name: "Todero",
       }],
       [],
       [agentPolicy],
@@ -219,7 +219,7 @@ describe("budgetService", () => {
       [{
         status: "paused",
         pauseReason: "budget",
-        name: "Paperclip",
+        name: "Todero",
       }],
     ]);
 
@@ -229,7 +229,7 @@ describe("budgetService", () => {
     expect(block).toEqual({
       scopeType: "company",
       scopeId: "company-1",
-      scopeName: "Paperclip",
+      scopeName: "Todero",
       reason: "Company is paused because its budget hard-stop was reached.",
     });
   });
@@ -301,7 +301,7 @@ describe("budgetService", () => {
       [{ id: "approval-1", status: "approved" }],
       [{
         companyId: "company-1",
-        name: "Paperclip",
+        name: "Todero",
         status: "paused",
         pauseReason: "budget",
         pausedAt: now,
@@ -333,7 +333,7 @@ describeEmbeddedPostgres("budgetService release gate enforcement", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-budgets-service-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-budgets-service-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -359,7 +359,7 @@ describeEmbeddedPostgres("budgetService release gate enforcement", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `B${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

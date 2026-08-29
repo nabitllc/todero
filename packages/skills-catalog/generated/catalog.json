@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "packageName": "@paperclipai/skills-catalog",
-  "packageVersion": "0.3.1",
-  "generatedAt": "2026-08-11T15:05:34.526Z",
+  "packageName": "@todero/skills-catalog",
+  "packageVersion": "0.1.0",
+  "generatedAt": "2026-08-29T23:14:45.699Z",
   "skills": [
     {
-      "id": "paperclipai:bundled:docs:doc-maintenance",
-      "key": "paperclipai/bundled/docs/doc-maintenance",
+      "id": "todero:bundled:docs:doc-maintenance",
+      "key": "todero/bundled/docs/doc-maintenance",
       "kind": "bundled",
       "category": "docs",
       "slug": "doc-maintenance",
@@ -32,196 +32,21 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 4478,
-          "sha256": "fb0353386c5e5e5e13bcbb3233f044e3dccecf371f429d6328f26c26d7cb6169"
+          "sizeBytes": 4473,
+          "sha256": "9e2a1e7b1c2005f55811b65e3a3e976f41a1c2e546f5505fbb46b2de9b8ee728"
         }
       ],
-      "contentHash": "sha256:2e02299210fd17c1fe1867b4ee8c144a11b6fe1fe481f83b8268cfbaaf10f9aa"
+      "contentHash": "sha256:f87a3d9b570eaacdf80f61212f99b72d30a22bc0c6f0f9c9e3029b60da12030d"
     },
     {
-      "id": "paperclipai:bundled:paperclip-operations:issue-triage",
-      "key": "paperclipai/bundled/paperclip-operations/issue-triage",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "issue-triage",
-      "name": "issue-triage",
-      "description": "Triage Paperclip inbox issues that are stale, blocked, in-review, or assigned-but-not-progressing, and decide a single next action per issue (resume, reassign, unblock, escalate, or close).",
-      "path": "catalog/bundled/paperclip-operations/issue-triage",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "manager",
-        "ceo",
-        "engineer"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "triage",
-        "inbox",
-        "workflow"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 4042,
-          "sha256": "df5bdc8bf5e017b7ba5f70a4b5323fad51d0c323278f386580f26cf43ad09160"
-        }
-      ],
-      "contentHash": "sha256:88dc13560371fb364963782cb4f6eeb4090fcde92ee3774479428ed6b90e11c1"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:reflection-coach",
-      "key": "paperclipai/bundled/paperclip-operations/reflection-coach",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "reflection-coach",
-      "name": "reflection-coach",
-      "description": "Reflect on another agent's recent execution record and propose the smallest durable instruction, skill, or tool-description change. Use for evidence-backed coaching proposals, never hot-swaps.",
-      "path": "catalog/bundled/paperclip-operations/reflection-coach",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "manager",
-        "general"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "reflection",
-        "coaching",
-        "agents",
-        "skills"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 12028,
-          "sha256": "083d5fa8dc43c3ce7747e89c1afb6f6f42d0603a31808bffc5f8e56735f2d865"
-        }
-      ],
-      "contentHash": "sha256:f2592d81f616628a3eba92636616424f2eed82ec22bb504240a58f6be115e407"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:status-card-query",
-      "key": "paperclipai/bundled/paperclip-operations/status-card-query",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "status-card-query",
-      "name": "status-card-query",
-      "description": "Create and maintain agent-authored Paperclip status cards, or compile a prose interest prompt into bounded CompanySearchQuery objects and write the first summary from the assigned Summarizer run.",
-      "path": "catalog/bundled/paperclip-operations/status-card-query",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "general",
-        "manager"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "status",
-        "search",
-        "reporting",
-        "operations"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 6368,
-          "sha256": "0c6140f51d503cbadc98723ce54c0def48e7e31ea159b0935b8ad6369291498a"
-        }
-      ],
-      "contentHash": "sha256:2b6e53bf8491f027afdbd6961ad84f677cfd385a0a6a73616ea84111ca8886ed"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:summarize-status",
-      "key": "paperclipai/bundled/paperclip-operations/summarize-status",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "summarize-status",
-      "name": "summarize-status",
-      "description": "Write a short, colloquial summary for a Paperclip summary slot: open with the 1–3 specific, concrete actions the reader needs to take right now to unblock the work, then a brief plain-language status, streaming progress as it works.",
-      "path": "catalog/bundled/paperclip-operations/summarize-status",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "general",
-        "manager"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "summary",
-        "status",
-        "reporting",
-        "operations"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 8877,
-          "sha256": "4cb3d177f5d16e3cc2052d2f80e7fb245ab95e79c1e947abdc84cd4ee3d8c61e"
-        }
-      ],
-      "contentHash": "sha256:3e49ee2b8d83d1371fb0f59197bb96c46b64f722540405f46d4a5a756fbe1b89"
-    },
-    {
-      "id": "paperclipai:bundled:paperclip-operations:task-planning",
-      "key": "paperclipai/bundled/paperclip-operations/task-planning",
-      "kind": "bundled",
-      "category": "paperclip-operations",
-      "slug": "task-planning",
-      "name": "task-planning",
-      "description": "Turn a Paperclip issue or request into a structured implementation plan with child task graph, blockers, owners, and acceptance criteria, then save it as the issue `plan` document.",
-      "path": "catalog/bundled/paperclip-operations/task-planning",
-      "entrypoint": "SKILL.md",
-      "trustLevel": "markdown_only",
-      "compatibility": "compatible",
-      "defaultInstall": false,
-      "recommendedForRoles": [
-        "manager",
-        "engineer",
-        "product"
-      ],
-      "requires": [],
-      "tags": [
-        "paperclip",
-        "planning",
-        "issues",
-        "delegation"
-      ],
-      "files": [
-        {
-          "path": "SKILL.md",
-          "kind": "skill",
-          "sizeBytes": 4938,
-          "sha256": "9c52a44a30ec8d306119da51bf298e9e3e6c382a9a9559ffd3054bf5e0c75f36"
-        }
-      ],
-      "contentHash": "sha256:487c3116eead89fef4f71c984329c41836bd69951b7ef9ed8736c69435e02438"
-    },
-    {
-      "id": "paperclipai:bundled:product:paperclip-capsules",
-      "key": "paperclipai/bundled/product/paperclip-capsules",
+      "id": "todero:bundled:product:todero-capsules",
+      "key": "todero/bundled/product/todero-capsules",
       "kind": "bundled",
       "category": "product",
-      "slug": "paperclip-capsules",
-      "name": "paperclip-capsules",
-      "description": "Generate, implement, or review Paperclip capsule visuals. Use for capsule art, agent capsules, heartbeat status capsules, identicons, capsule banks, or brand-usage validation.",
-      "path": "catalog/bundled/product/paperclip-capsules",
+      "slug": "todero-capsules",
+      "name": "todero-capsules",
+      "description": "Generate, implement, or review Todero capsule visuals. Use for capsule art, agent capsules, heartbeat status capsules, identicons, capsule banks, or brand-usage validation.",
+      "path": "catalog/bundled/product/todero-capsules",
       "entrypoint": "SKILL.md",
       "trustLevel": "markdown_only",
       "compatibility": "compatible",
@@ -234,7 +59,7 @@
       ],
       "requires": [],
       "tags": [
-        "paperclip",
+        "todero",
         "brand",
         "capsules",
         "agents",
@@ -245,39 +70,39 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 5831,
-          "sha256": "dd659ccb46e105336eb00fbe689b1d5531347fc69493c3156390d40ee413c93e"
+          "sizeBytes": 5793,
+          "sha256": "820cdc34a3539580ebf4183a822e1d07a385af91ebb5c1f11799fc5a29b156d8"
         },
         {
           "path": "references/generator-workflows.md",
           "kind": "reference",
-          "sizeBytes": 4356,
-          "sha256": "b5f72e5b6683e8f93f2d852e84c2cc19e6ab438b250bf777dfb2480dd4f6e1b6"
+          "sizeBytes": 4323,
+          "sha256": "57e9ac2c8d152c45f2ec46c1bdebaeb9c19c08e17321bf868861b6f033d2c99b"
         },
         {
           "path": "references/hero-capsule-bank.md",
           "kind": "reference",
-          "sizeBytes": 5981,
-          "sha256": "ec3d34113aa7bb527560d1eb4d8ab7667c73e18284c85a2019122743a767525a"
+          "sizeBytes": 5969,
+          "sha256": "dbffec8c51c8694deff6397ce92a6c1995a9858c3e4fdfc6f9615597bd6c9cf6"
         },
         {
           "path": "references/identicon-prototyper.md",
           "kind": "reference",
-          "sizeBytes": 6669,
-          "sha256": "0b19419efa1396a402097decabe24ea9ae649678569449c8ce855e0678df6bfe"
+          "sizeBytes": 6642,
+          "sha256": "11d54fbd7768f2260faffc38f3117e3522e87dd2b173475b53b6c80d36db2c41"
         },
         {
           "path": "references/individual-status-capsules.md",
           "kind": "reference",
-          "sizeBytes": 5031,
-          "sha256": "be1f2eccf96b4d2deefe45b3bc1dd0a3597278472c2ffedadc43c57161e9103d"
+          "sizeBytes": 5025,
+          "sha256": "648d5ff96bc23f82189e8dcbeba5137327c70faab6ab8ef2e6e43218df7052e7"
         }
       ],
-      "contentHash": "sha256:a2b26cf6895affeeb70c85567a061094450a59bd3c4fdcf28ee65858599ac12c"
+      "contentHash": "sha256:f1a3a6ecaee3d2dbba4d6532e60dd142311add3260d81316572a51dd9021b6b4"
     },
     {
-      "id": "paperclipai:bundled:product:wireframe",
-      "key": "paperclipai/bundled/product/wireframe",
+      "id": "todero:bundled:product:wireframe",
+      "key": "todero/bundled/product/wireframe",
       "kind": "bundled",
       "category": "product",
       "slug": "wireframe",
@@ -305,8 +130,8 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 11509,
-          "sha256": "6992047cc97b67211cc8c1183718ab9aa26b8afc34c70d54d20558c215daaf48"
+          "sizeBytes": 11504,
+          "sha256": "8b1fb6f146f7bb0243f5a1a35fbc5e33b9868c29b890f910f4ab4083033e87a5"
         },
         {
           "path": "assets/site-template.html",
@@ -345,11 +170,11 @@
           "sha256": "017260d2216859d57e5fa869e0efc6b88c7ed4d8a8a4f5af04fe89a3ef2445bd"
         }
       ],
-      "contentHash": "sha256:7106d84fc9db2053090f692706e41cfc586e7dd85a44f568e3319c4eefbdde46"
+      "contentHash": "sha256:78007f9fd051e97b1fb520d38adffe7faef20d53c3ca8a3202196a46a063c4d0"
     },
     {
-      "id": "paperclipai:bundled:quality:qa-acceptance",
-      "key": "paperclipai/bundled/quality/qa-acceptance",
+      "id": "todero:bundled:quality:qa-acceptance",
+      "key": "todero/bundled/quality/qa-acceptance",
       "kind": "bundled",
       "category": "quality",
       "slug": "qa-acceptance",
@@ -376,15 +201,15 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 3861,
-          "sha256": "c631b437ab26d104af6cdb963d8f679a9341439041b3cb3ec8835f4ff551b378"
+          "sizeBytes": 3856,
+          "sha256": "570e65c82047647bb71272e5355da31535aa2669b364872e9f6c58e7c6a51aff"
         }
       ],
-      "contentHash": "sha256:32372dacaf62e93454b9855968c4eec96456ba78b509f450b3dfaa48e31ef356"
+      "contentHash": "sha256:2a734650071b689155e9feac7767cb5a1dc0c7004a1f34def5a23b4fc63f9c7f"
     },
     {
-      "id": "paperclipai:bundled:software-development:github-pr-workflow",
-      "key": "paperclipai/bundled/software-development/github-pr-workflow",
+      "id": "todero:bundled:software-development:github-pr-workflow",
+      "key": "todero/bundled/software-development/github-pr-workflow",
       "kind": "bundled",
       "category": "software-development",
       "slug": "github-pr-workflow",
@@ -409,15 +234,190 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 3970,
-          "sha256": "f498ec4ebb1779dea37adeb1db8a8b22316282798e35ee02e2fc5ff627d7e261"
+          "sizeBytes": 3965,
+          "sha256": "b3da4fab67181c24108fdd934c9170685026eb26ec0339d9410d89fad47cb7e0"
         }
       ],
-      "contentHash": "sha256:90f278c89aa0711be150c1cd2456ca25620d02f36995b113ca9837d756a37f6c"
+      "contentHash": "sha256:c68d18ffdbc9d1d2017901d9f8222860e20a6a6aa053a0e8bd63c8338cb2262b"
     },
     {
-      "id": "paperclipai:optional:browser:agent-browser",
-      "key": "paperclipai/optional/browser/agent-browser",
+      "id": "todero:bundled:todero-operations:issue-triage",
+      "key": "todero/bundled/todero-operations/issue-triage",
+      "kind": "bundled",
+      "category": "todero-operations",
+      "slug": "issue-triage",
+      "name": "issue-triage",
+      "description": "Triage Todero inbox issues that are stale, blocked, in-review, or assigned-but-not-progressing, and decide a single next action per issue (resume, reassign, unblock, escalate, or close).",
+      "path": "catalog/bundled/todero-operations/issue-triage",
+      "entrypoint": "SKILL.md",
+      "trustLevel": "markdown_only",
+      "compatibility": "compatible",
+      "defaultInstall": false,
+      "recommendedForRoles": [
+        "manager",
+        "ceo",
+        "engineer"
+      ],
+      "requires": [],
+      "tags": [
+        "todero",
+        "triage",
+        "inbox",
+        "workflow"
+      ],
+      "files": [
+        {
+          "path": "SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 4028,
+          "sha256": "a355651b16f07825245ebc2664a47b606d3bc6251700598bcedbda5fd49813e7"
+        }
+      ],
+      "contentHash": "sha256:ad4894cc605219bc2a29213a5f84cfb18f69fc1166cfa5fe6e58b2972eb8dede"
+    },
+    {
+      "id": "todero:bundled:todero-operations:reflection-coach",
+      "key": "todero/bundled/todero-operations/reflection-coach",
+      "kind": "bundled",
+      "category": "todero-operations",
+      "slug": "reflection-coach",
+      "name": "reflection-coach",
+      "description": "Reflect on another agent's recent execution record and propose the smallest durable instruction, skill, or tool-description change. Use for evidence-backed coaching proposals, never hot-swaps.",
+      "path": "catalog/bundled/todero-operations/reflection-coach",
+      "entrypoint": "SKILL.md",
+      "trustLevel": "markdown_only",
+      "compatibility": "compatible",
+      "defaultInstall": false,
+      "recommendedForRoles": [
+        "manager",
+        "general"
+      ],
+      "requires": [],
+      "tags": [
+        "todero",
+        "reflection",
+        "coaching",
+        "agents",
+        "skills"
+      ],
+      "files": [
+        {
+          "path": "SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 12014,
+          "sha256": "7ef877fc385de7256225a8ccdda2b495f23bb3918af1a9db17c32e7eb73e1e6e"
+        }
+      ],
+      "contentHash": "sha256:ef4407d0f21ac2b4cadc43e2932e57c1da20e57e37d5f8718302db17bbeb2443"
+    },
+    {
+      "id": "todero:bundled:todero-operations:status-card-query",
+      "key": "todero/bundled/todero-operations/status-card-query",
+      "kind": "bundled",
+      "category": "todero-operations",
+      "slug": "status-card-query",
+      "name": "status-card-query",
+      "description": "Create and maintain agent-authored Todero status cards, or compile a prose interest prompt into bounded CompanySearchQuery objects and write the first summary from the assigned Summarizer run.",
+      "path": "catalog/bundled/todero-operations/status-card-query",
+      "entrypoint": "SKILL.md",
+      "trustLevel": "markdown_only",
+      "compatibility": "compatible",
+      "defaultInstall": false,
+      "recommendedForRoles": [
+        "general",
+        "manager"
+      ],
+      "requires": [],
+      "tags": [
+        "todero",
+        "status",
+        "search",
+        "reporting",
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 6351,
+          "sha256": "b4386b5c34ba80f869bec1cc3a82262e8093513ca1c181dfcc2b81f4c4b021d2"
+        }
+      ],
+      "contentHash": "sha256:4128478f6f72bb7904e935d30a9d6dfded4ea34e9bc3164ca5ae1357fdb114ad"
+    },
+    {
+      "id": "todero:bundled:todero-operations:summarize-status",
+      "key": "todero/bundled/todero-operations/summarize-status",
+      "kind": "bundled",
+      "category": "todero-operations",
+      "slug": "summarize-status",
+      "name": "summarize-status",
+      "description": "Write a short, colloquial summary for a Todero summary slot: open with the 1–3 specific, concrete actions the reader needs to take right now to unblock the work, then a brief plain-language status, streaming progress as it works.",
+      "path": "catalog/bundled/todero-operations/summarize-status",
+      "entrypoint": "SKILL.md",
+      "trustLevel": "markdown_only",
+      "compatibility": "compatible",
+      "defaultInstall": false,
+      "recommendedForRoles": [
+        "general",
+        "manager"
+      ],
+      "requires": [],
+      "tags": [
+        "todero",
+        "summary",
+        "status",
+        "reporting",
+        "operations"
+      ],
+      "files": [
+        {
+          "path": "SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 8854,
+          "sha256": "75206a366885702ed91b1802c39bb9d6468f5df16f9df0fdae565d111862a969"
+        }
+      ],
+      "contentHash": "sha256:1653f95bfa24a9d945d33e4c9b7c2ff79c8ac8423724e2710dc697a2d74a748b"
+    },
+    {
+      "id": "todero:bundled:todero-operations:task-planning",
+      "key": "todero/bundled/todero-operations/task-planning",
+      "kind": "bundled",
+      "category": "todero-operations",
+      "slug": "task-planning",
+      "name": "task-planning",
+      "description": "Turn a Todero issue or request into a structured implementation plan with child task graph, blockers, owners, and acceptance criteria, then save it as the issue `plan` document.",
+      "path": "catalog/bundled/todero-operations/task-planning",
+      "entrypoint": "SKILL.md",
+      "trustLevel": "markdown_only",
+      "compatibility": "compatible",
+      "defaultInstall": false,
+      "recommendedForRoles": [
+        "manager",
+        "engineer",
+        "product"
+      ],
+      "requires": [],
+      "tags": [
+        "todero",
+        "planning",
+        "issues",
+        "delegation"
+      ],
+      "files": [
+        {
+          "path": "SKILL.md",
+          "kind": "skill",
+          "sizeBytes": 4915,
+          "sha256": "cea489d56952fc6fa05b4c5d85793f28196651e25637e4ec7de8423451c2f372"
+        }
+      ],
+      "contentHash": "sha256:39b1f68a01d43b7c6ce6500c71b653014515e15592dc6b564445f064eb003132"
+    },
+    {
+      "id": "todero:optional:browser:agent-browser",
+      "key": "todero/optional/browser/agent-browser",
       "kind": "optional",
       "category": "browser",
       "slug": "agent-browser",
@@ -444,15 +444,15 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 5133,
-          "sha256": "362f7b9d02297782bc6f0c093f495b8a0304a75bcf4b42e5c280a42b1f757b7d"
+          "sizeBytes": 5128,
+          "sha256": "5dd96d81bf1114fc174f335de7946d616e6a7e23ca7dd541d2823aa60764b82e"
         }
       ],
-      "contentHash": "sha256:eabb2c9f7b5e1a27ebb1e05a711d61433a266478154cd671a685e99e67aadea2"
+      "contentHash": "sha256:c2e0d187731d0f2947a353445105c5c8e37312be169ee4100a73124ea185f1cc"
     },
     {
-      "id": "paperclipai:optional:content:release-announcement",
-      "key": "paperclipai/optional/content/release-announcement",
+      "id": "todero:optional:content:release-announcement",
+      "key": "todero/optional/content/release-announcement",
       "kind": "optional",
       "category": "content",
       "slug": "release-announcement",
@@ -479,15 +479,15 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 6945,
-          "sha256": "d745cca96350518fabae14f5c407d779e1df2c5d091b5b4a5c55bb888b569e5f"
+          "sizeBytes": 6907,
+          "sha256": "df908c52629fdec7ea174c7c2b6b2b72ee68b960679be69b91b667cd8b42b8ac"
         }
       ],
-      "contentHash": "sha256:efe8ea89b552df95222609867c9c75f1b40e16f457d34e7e4a124f54daa33efa"
+      "contentHash": "sha256:887d2b3d0c7435bbac14147c5e1fd2522402c7e69dffe5b2c48936a0e2d4d30a"
     },
     {
-      "id": "paperclipai:optional:content:simplified-english",
-      "key": "paperclipai/optional/content/simplified-english",
+      "id": "todero:optional:content:simplified-english",
+      "key": "todero/optional/content/simplified-english",
       "kind": "optional",
       "category": "content",
       "slug": "simplified-english",
@@ -515,20 +515,20 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 1578,
-          "sha256": "a0f7385599873910e2fabf400346016a07dacbc7ece27c0e3616ae8fd94ebfbb"
+          "sizeBytes": 1573,
+          "sha256": "978ebfb7038fd9578832ee3b5a3727d19f36f542316e2031ac40dd750cfbf3c7"
         }
       ],
-      "contentHash": "sha256:642321f40d51e0125df05c6fbace49aeb07ec30392058756909c259c9c5eac6a"
+      "contentHash": "sha256:9b6b763a8ee808718b113b4885f187489106f458b9fa241357ce7f7c9726e5b7"
     },
     {
-      "id": "paperclipai:optional:finance:ramp",
-      "key": "paperclipai/optional/finance/ramp",
+      "id": "todero:optional:finance:ramp",
+      "key": "todero/optional/finance/ramp",
       "kind": "optional",
       "category": "finance",
       "slug": "ramp",
       "name": "ramp",
-      "description": "Fetch and follow Ramp's published agent playbooks inside Paperclip, with mandatory approval gates for spend, incorporation, cards, account setup, and other financial actions.",
+      "description": "Fetch and follow Ramp's published agent playbooks inside Todero, with mandatory approval gates for spend, incorporation, cards, account setup, and other financial actions.",
       "path": "catalog/optional/finance/ramp",
       "entrypoint": "SKILL.md",
       "trustLevel": "markdown_only",
@@ -552,15 +552,15 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 7016,
-          "sha256": "698cd69ebf2f2481ed83c8e9477b56ae78288cc4c751d7d35f649ff2483802a3"
+          "sizeBytes": 6960,
+          "sha256": "25f4827eda77e03f4d911b44a02cefeba5783174787cd8826f079acbb259eef2"
         }
       ],
-      "contentHash": "sha256:276d85e98a4732f278204e26438aa95fde158dd2d15c1e427c4c7c7d492e769d"
+      "contentHash": "sha256:49e96ef40e8fce88792f54ca715fb91e3e4e00b6895274ad149ed00a26341308"
     },
     {
-      "id": "paperclipai:optional:product:design-critique",
-      "key": "paperclipai/optional/product/design-critique",
+      "id": "todero:optional:product:design-critique",
+      "key": "todero/optional/product/design-critique",
       "kind": "optional",
       "category": "product",
       "slug": "design-critique",
@@ -587,15 +587,15 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 4851,
-          "sha256": "022e619baf6cc25725946279cb8052d22af090dd6cd6dc8c20f17867f71a5d8e"
+          "sizeBytes": 4846,
+          "sha256": "1815a8e45a2c44572bc530be0a361cfee210e0fd6afab2886e9562e9e7c64297"
         }
       ],
-      "contentHash": "sha256:429f94df398a0697042b5bbe4755b1ff1a230aa5f41d99118ad37493ac65d21c"
+      "contentHash": "sha256:2afabf0cb0a2fbe933b899f05075e1d2c172b2952a922b25d3922049d5cd2c3f"
     },
     {
-      "id": "paperclipai:optional:research:last30days",
-      "key": "paperclipai/optional/research/last30days",
+      "id": "todero:optional:research:last30days",
+      "key": "todero/optional/research/last30days",
       "kind": "optional",
       "category": "research",
       "slug": "last30days",
@@ -1115,13 +1115,13 @@
       }
     },
     {
-      "id": "paperclipai:optional:software-development:prepare-mcp-integration",
-      "key": "paperclipai/optional/software-development/prepare-mcp-integration",
+      "id": "todero:optional:software-development:prepare-mcp-integration",
+      "key": "todero/optional/software-development/prepare-mcp-integration",
       "kind": "optional",
       "category": "software-development",
       "slug": "prepare-mcp-integration",
       "name": "prepare-mcp-integration",
-      "description": "Prepare MCP/vendor integrations through cited research, a content PR, exact-revision human approval, and one governed Paperclip connector PR per approved connection. Use for new integration research and delivery; not for ad hoc connector coding that bypasses the playbooks.",
+      "description": "Prepare MCP/vendor integrations through cited research, a content PR, exact-revision human approval, and one governed Todero connector PR per approved connection. Use for new integration research and delivery; not for ad hoc connector coding that bypasses the playbooks.",
       "path": "catalog/optional/software-development/prepare-mcp-integration",
       "entrypoint": "SKILL.md",
       "trustLevel": "markdown_only",
@@ -1149,17 +1149,17 @@
         {
           "path": "SKILL.md",
           "kind": "skill",
-          "sizeBytes": 12409,
-          "sha256": "5278d288a0cbfe10fdda4ef3d99cf61e6ed068f4b6c1282406b0e001c9f45253"
+          "sizeBytes": 12338,
+          "sha256": "2f3be086295c4a566a7b6d6a281fa592e45f153067db923538f71fdcb7b881d8"
         },
         {
           "path": "examples/notion-mcp-research-gate.md",
           "kind": "markdown",
-          "sizeBytes": 1900,
-          "sha256": "944b13ac67c06c65643eb236e856f1479106749861535648d29334f84cf1b50b"
+          "sizeBytes": 1879,
+          "sha256": "76095d29b6153c69aaa9791aff7fb6583a42763adea0443004bf99f883419a31"
         }
       ],
-      "contentHash": "sha256:84f2a28d7d004393719684f2b435e5ee01ddc58591e0dfeb73d72c7605db7f49"
+      "contentHash": "sha256:17ad00bcac873eab00696664ca5278f541f975c357db716a119575bec9da2171"
     }
   ]
 }

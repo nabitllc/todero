@@ -14,7 +14,7 @@ import {
   secretAccessEvents,
   userSecretDeclarations,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { secretService } from "../services/secrets.js";
 
@@ -36,7 +36,7 @@ describeEmbeddedPostgres("secretService dangling user_secret_ref resolution", ()
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-dangling-secret-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-dangling-secret-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });

@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent } from "@paperclipai/shared";
+import type { Agent } from "@todero/shared";
 import { ApiError } from "../api/client";
 import { IssueThreadInteractionCard } from "./IssueThreadInteractionCard";
 import { ThemeProvider } from "../context/ThemeContext";
@@ -823,7 +823,7 @@ describe("IssueThreadInteractionCard", () => {
     expect((resumeFailed.firstElementChild as HTMLElement).className).toContain("border-amber-500/70");
     expect(resumeFailed.textContent).toContain("Approved — agent resume failed");
     expect(resumeFailed.textContent).toContain("Agent resume failed");
-    expect(resumeFailed.textContent).toContain("Paperclip needs attention before the agent can resume this approved work.");
+    expect(resumeFailed.textContent).toContain("Todero needs attention before the agent can resume this approved work.");
     expect(resumeFailed.textContent).toContain("adapter_failed");
 
     act(() => root?.unmount());
@@ -1323,7 +1323,7 @@ describe("IssueThreadInteractionCard connection-authorization card", () => {
       anchor.textContent?.includes("Connect Gmail"),
     );
     expect(connect?.getAttribute("href")).toBe(
-      "https://accounts.google.com/o/oauth2/v2/auth?client_id=paperclip",
+      "https://accounts.google.com/o/oauth2/v2/auth?client_id=todero",
     );
     expect(connect?.getAttribute("target")).toBe("_blank");
 

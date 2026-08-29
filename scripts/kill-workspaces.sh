@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Kill all local Paperclip workspace runtime service processes.
+# Kill all local Todero workspace runtime service processes.
 #
 # This targets managed workspace services such as preview/dev commands started
-# from project or execution workspaces. Use scripts/kill-dev.sh for Paperclip
+# from project or execution workspaces. Use scripts/kill-dev.sh for Todero
 # server processes.
 #
 # Usage:
@@ -62,25 +62,25 @@ append_runtime_dir() {
   fi
 }
 
-paperclip_home="$(expand_home "${PAPERCLIP_HOME:-$HOME/.paperclip}")"
+paperclip_home="$(expand_home "${PAPERCLIP_HOME:-$HOME/.todero}")"
 paperclip_instance_id="${PAPERCLIP_INSTANCE_ID:-default}"
 append_runtime_dir "$paperclip_home/instances/$paperclip_instance_id/runtime-services"
 
 if [[ "${PAPERCLIP_KILL_WORKSPACES_ONLY_CURRENT:-}" != "1" ]]; then
   for dir in \
-    "$HOME"/.paperclip/instances/*/runtime-services \
-    "$HOME"/.paperclip-worktrees/instances/*/runtime-services \
-    "$REPO_ROOT"/.paperclip/instances/*/runtime-services \
-    "$REPO_ROOT"/.paperclip/runtime-services/instances/*/runtime-services
+    "$HOME"/.todero/instances/*/runtime-services \
+    "$HOME"/.todero-worktrees/instances/*/runtime-services \
+    "$REPO_ROOT"/.todero/instances/*/runtime-services \
+    "$REPO_ROOT"/.todero/runtime-services/instances/*/runtime-services
   do
     append_runtime_dir "$dir"
   done
 
-  for sibling_root in "$REPO_PARENT"/paperclip*; do
+  for sibling_root in "$REPO_PARENT"/todero*; do
     [[ -d "$sibling_root" ]] || continue
     for dir in \
-      "$sibling_root"/.paperclip/instances/*/runtime-services \
-      "$sibling_root"/.paperclip/runtime-services/instances/*/runtime-services
+      "$sibling_root"/.todero/instances/*/runtime-services \
+      "$sibling_root"/.todero/runtime-services/instances/*/runtime-services
     do
       append_runtime_dir "$dir"
     done
@@ -219,12 +219,12 @@ for line in "${record_lines[@]}"; do
 done
 
 if [[ ${#active_files[@]} -eq 0 && ${#stale_files[@]} -eq 0 ]]; then
-  echo "No Paperclip workspace runtime services found."
+  echo "No Todero workspace runtime services found."
   exit 0
 fi
 
 if [[ ${#active_files[@]} -gt 0 ]]; then
-  echo "Found ${#active_files[@]} Paperclip workspace runtime service record(s):"
+  echo "Found ${#active_files[@]} Todero workspace runtime service record(s):"
   echo ""
   printf '%s\n' "${display_lines[@]}"
   echo ""

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { PaperclipConfig } from "../config/schema.js";
+import type { ToderoConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 import { resolveRuntimeLikePath } from "./path-resolver.js";
 
@@ -11,7 +11,7 @@ function isInsideOsTmpDir(targetPath: string): boolean {
   return resolved === tmpRoot || resolved.startsWith(`${tmpRoot}${path.sep}`);
 }
 
-export async function databaseCheck(config: PaperclipConfig, configPath?: string): Promise<CheckResult> {
+export async function databaseCheck(config: ToderoConfig, configPath?: string): Promise<CheckResult> {
   if (config.database.mode === "postgres") {
     if (!config.database.connectionString) {
       return {
@@ -19,12 +19,12 @@ export async function databaseCheck(config: PaperclipConfig, configPath?: string
         status: "fail",
         message: "PostgreSQL mode selected but no connection string configured",
         canRepair: false,
-        repairHint: "Run `paperclipai configure --section database`",
+        repairHint: "Run `todero configure --section database`",
       };
     }
 
     try {
-      const { createDb } = await import("@paperclipai/db");
+      const { createDb } = await import("@todero/db");
       const db = createDb(config.database.connectionString);
       await db.execute("SELECT 1");
       return {
@@ -86,6 +86,6 @@ export async function databaseCheck(config: PaperclipConfig, configPath?: string
     status: "fail",
     message: `Unknown database mode: ${String(config.database.mode)}`,
     canRepair: false,
-    repairHint: "Run `paperclipai configure --section database`",
+    repairHint: "Run `todero configure --section database`",
   };
 }

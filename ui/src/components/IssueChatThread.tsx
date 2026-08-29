@@ -42,12 +42,12 @@ import type {
   IssueScheduledRetry,
   SuccessfulRunHandoffState,
   IssueWorkMode,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
 import { findUIAdapter } from "../adapters/registry";
 import { useLiveRunTranscripts } from "./transcript/useLiveRunTranscripts";
 import { useSecondTick } from "../hooks/useSecondTick";
-import { usePaperclipIssueRuntime, type PaperclipIssueRuntimeReassignment } from "../hooks/usePaperclipIssueRuntime";
+import { useToderoIssueRuntime, type ToderoIssueRuntimeReassignment } from "../hooks/useToderoIssueRuntime";
 import { useOptionalToastActions } from "../context/ToastContext";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
@@ -162,7 +162,7 @@ import type {
   IssueCommentMetadata,
   IssueCommentPresentation,
   SourceTrustMetadata,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   describeToolInput,
   displayToolName,
@@ -172,7 +172,7 @@ import {
   summarizeToolInput,
   summarizeToolResult,
 } from "../lib/transcriptPresentation";
-import { buildAgentMentionHref } from "@paperclipai/shared";
+import { buildAgentMentionHref } from "@todero/shared";
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { liveBlueBadge } from "../lib/status-colors";
 import { nextWorkMode, titleForPendingWorkMode, workModeMetaFor, workModeMetaList } from "../lib/work-mode-meta";
@@ -844,7 +844,7 @@ function clearDraft(draftKey: string) {
   }
 }
 
-function parseReassignment(target: string): PaperclipIssueRuntimeReassignment | null {
+function parseReassignment(target: string): ToderoIssueRuntimeReassignment | null {
   if (!target || target === "__none__") {
     return { assigneeAgentId: null, assigneeUserId: null };
   }
@@ -884,7 +884,7 @@ const IssueChatTextPart = memo(function IssueChatTextPart({ text, recessed, onAc
   }
   return (
     <WorkspaceFileMarkdownBody
-      className={cn("text-sm leading-6", onAccent && "paperclip-markdown-on-accent")}
+      className={cn("text-sm leading-6", onAccent && "todero-markdown-on-accent")}
       style={recessed ? { opacity: 0.55 } : undefined}
       softBreaks
       onImageClick={onImageClick}
@@ -2313,7 +2313,7 @@ function IssueChatFeedbackButtons({
           <DialogHeader>
             <DialogTitle>Save your feedback sharing preference</DialogTitle>
             <DialogDescription>
-              Choose whether voted AI outputs can be shared with Paperclip Labs. This
+              Choose whether voted AI outputs can be shared with Todero Labs. This
               answer becomes the default for future thumbs up and thumbs down votes.
             </DialogDescription>
           </DialogHeader>
@@ -2833,12 +2833,12 @@ function SystemNoticeCommentRow({
   const source = (() => {
     const runAgentName = runAgentId ? agentMap?.get(runAgentId)?.name ?? null : null;
     if (authorType === "system") {
-      const label = runAgentName ?? "Paperclip";
+      const label = runAgentName ?? "Todero";
       if (runAgentId && runId) return { label, href: `/agents/${runAgentId}/runs/${runId}` };
       return { label };
     }
     if (runAgentId && runId) {
-      return { label: authorName ?? runAgentName ?? "Paperclip", href: `/agents/${runAgentId}/runs/${runId}` };
+      return { label: authorName ?? runAgentName ?? "Todero", href: `/agents/${runAgentId}/runs/${runId}` };
     }
     if (authorName) return { label: authorName };
     return undefined;
@@ -4741,7 +4741,7 @@ export function IssueChatThread({
     return true;
   }
 
-  const runtime = usePaperclipIssueRuntime({
+  const runtime = useToderoIssueRuntime({
     messages,
     isRunning,
     onSend: ({ body, reopen, reassignment }) => {

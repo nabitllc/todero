@@ -24,11 +24,11 @@ describe("local service supervision", () => {
   });
 
   it("keeps request-logging runtime stdio usable after the supervisor side closes", async () => {
-    const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-service-stdio-"));
-    const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-service-home-"));
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
+    const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "todero-service-stdio-"));
+    const toderoHome = await fs.mkdtemp(path.join(os.tmpdir(), "todero-service-home-"));
+    const previousToderoHome = process.env.PAPERCLIP_HOME;
     const previousInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    process.env.PAPERCLIP_HOME = paperclipHome;
+    process.env.PAPERCLIP_HOME = toderoHome;
     process.env.PAPERCLIP_INSTANCE_ID = `service-stdio-${randomUUID()}`;
 
     let registryRecord: Awaited<ReturnType<typeof listLocalServiceRegistryRecords>>[number] | null = null;
@@ -89,11 +89,11 @@ describe("local service supervision", () => {
       registryRecord = null;
     } finally {
       if (registryRecord) await terminateLocalService(registryRecord).catch(() => undefined);
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
+      if (previousToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousToderoHome;
       if (previousInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
       else process.env.PAPERCLIP_INSTANCE_ID = previousInstanceId;
-      await fs.rm(paperclipHome, { recursive: true, force: true });
+      await fs.rm(toderoHome, { recursive: true, force: true });
       await fs.rm(workspaceRoot, { recursive: true, force: true });
     }
   }, 15_000);
@@ -134,7 +134,7 @@ describe("local service supervision", () => {
     expect(doesLocalServiceCommandLineMatch({
       commandLine: "/usr/bin/node /opt/pnpm/pnpm.cjs dev -- --bind custom --bind-host 127.0.0.1",
       recordedCommand: "pnpm dev -- --bind custom --bind-host 127.0.0.1",
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
     })).toBe(true);
   });
 
@@ -151,7 +151,7 @@ describe("local service supervision", () => {
     expect(doesLocalServiceCommandLineMatch({
       commandLine: "/usr/bin/node /workspace/server/dist/index.js",
       recordedCommand: "pnpm dev -- --bind custom --bind-host 127.0.0.1",
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
     })).toBe(false);
   });
 

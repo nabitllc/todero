@@ -28,7 +28,7 @@ function runShard(args) {
 function readPinnedTrustedPrWorkflow() {
   const caller = readFileSync(prCallerWorkflow, "utf8");
   const pin = caller.match(
-    /uses: paperclipai\/paperclip\/\.github\/workflows\/pr-trusted\.yml@([0-9a-f]{40})/,
+    /uses: todero\/todero\/\.github\/workflows\/pr-trusted\.yml@([0-9a-f]{40})/,
   );
   assert.ok(pin, "pr.yml must call the trusted workflow at a full commit SHA");
 
@@ -67,7 +67,7 @@ function runStackScope(stack, prBaseRef) {
     .split("\n")
     .map((line) => line.replace(/^ {10}/, ""))
     .join("\n");
-  const scratch = mkdtempSync(path.join(tmpdir(), "paperclip-stack-scope-"));
+  const scratch = mkdtempSync(path.join(tmpdir(), "todero-stack-scope-"));
   const output = path.join(scratch, "github-output");
 
   try {

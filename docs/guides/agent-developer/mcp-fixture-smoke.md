@@ -1,6 +1,6 @@
 # MCP Fixture Smoke Harness
 
-Paperclip's MCP permission work uses deterministic fixture servers so policy
+Todero's MCP permission work uses deterministic fixture servers so policy
 logic can be tested without real customer credentials or live integrations.
 
 Run the local smoke:
@@ -10,7 +10,7 @@ pnpm smoke:mcp-fixtures
 ```
 
 The runner starts one local stdio fixture and one remote-style HTTP fixture,
-checks the local Paperclip `/api/health` endpoint when available, then exercises:
+checks the local Todero `/api/health` endpoint when available, then exercises:
 
 - allow and deny decisions
 - approval-gated writes
@@ -24,13 +24,13 @@ checks the local Paperclip `/api/health` endpoint when available, then exercises
 Use a specific dev instance URL:
 
 ```sh
-pnpm smoke:mcp-fixtures -- --paperclip-url http://127.0.0.1:3100
+pnpm smoke:mcp-fixtures -- --todero-url http://127.0.0.1:3100
 ```
 
 Require the dev instance health check:
 
 ```sh
-pnpm smoke:mcp-fixtures -- --require-paperclip
+pnpm smoke:mcp-fixtures -- --require-todero
 ```
 
 JSON output for CI or release-smoke ingestion:
@@ -60,7 +60,7 @@ The catalog also defines the first profile set:
 
 The first-install demo definitions are:
 
-- `paperclip-self-read`
+- `todero-self-read`
 - `child-issue-proposal`
 - `github-triage`
 - `update-sender`

@@ -3,7 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue } from "@todero/shared";
 import { InboxIssueMetaLeading, InboxIssueTrailingColumns } from "./IssueColumns";
 import { TooltipProvider } from "@/components/ui/tooltip";
 

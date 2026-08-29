@@ -65,32 +65,32 @@ export function resolveHeartbeatRuntimeMode(input: {
   if (!input.enabled) {
     throw new NativeRunnerSelectionError(
       "paperclip_runner_rollout_disabled",
-      "Paperclip Runner is experimental and disabled on this instance.",
+      "Todero Runner is experimental and disabled on this instance.",
     );
   }
   const provider = record(input.adapterConfig).provider ?? "codex";
   if (provider !== "codex") {
     throw new NativeRunnerSelectionError(
       "paperclip_runner_provider_unsupported",
-      "Paperclip Runner currently supports only the Codex provider.",
+      "Todero Runner currently supports only the Codex provider.",
     );
   }
   if (!input.issue || !["standard", "planning", "ask"].includes(input.issue.workMode)) {
     throw new NativeRunnerSelectionError(
       "paperclip_runner_issue_ineligible",
-      "Paperclip Runner requires a standard, planning, or ask task.",
+      "Todero Runner requires a standard, planning, or ask task.",
     );
   }
   if (!input.executionTarget || input.executionTarget.kind !== "local") {
     throw new NativeRunnerSelectionError(
       "paperclip_runner_environment_unsupported",
-      "Paperclip Runner currently requires a local execution environment.",
+      "Todero Runner currently requires a local execution environment.",
     );
   }
   if (!["active", "running"].includes(input.agentStatus)) {
     throw new NativeRunnerSelectionError(
       "paperclip_runner_agent_ineligible",
-      "Paperclip Runner requires an active agent.",
+      "Todero Runner requires an active agent.",
     );
   }
   return {

@@ -12,7 +12,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { pathToFileURL } from "node:url";
 import type { Request as ExpressRequest, RequestHandler } from "express";
-import { warnIfUnsupportedNodeVersion } from "@paperclipai/shared/node-version";
+import { warnIfUnsupportedNodeVersion } from "@todero/shared/node-version";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
@@ -30,7 +30,7 @@ import {
   companies,
   companyMemberships,
   instanceUserRoles,
-} from "@paperclipai/db";
+} from "@todero/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -278,7 +278,7 @@ export async function startServer(): Promise<StartedServer> {
   }
 
   const LOCAL_BOARD_USER_ID = "local-board";
-  const LOCAL_BOARD_USER_EMAIL = "local@paperclip.local";
+  const LOCAL_BOARD_USER_EMAIL = "local@todero.local";
   const LOCAL_BOARD_USER_NAME = "Board";
   
   async function ensureLocalTrustedBoardPrincipal(db: any): Promise<void> {
@@ -364,7 +364,7 @@ export async function startServer(): Promise<StartedServer> {
     try {
       // embedded-postgres registers async-exit-hook handlers as an import side
       // effect. Those handlers stop PostgreSQL immediately on SIGINT/SIGTERM,
-      // racing Paperclip's later heartbeat snapshot query. Paperclip explicitly
+      // racing Todero's later heartbeat snapshot query. Todero explicitly
       // stops the managed cluster in its own ordered shutdown path instead.
       const mod = await loadWithoutCoordinatedShutdownSignalHooks(
         () => import(moduleName),
@@ -445,7 +445,7 @@ export async function startServer(): Promise<StartedServer> {
     if (runningPid) {
       logger.warn(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
     } else {
-      const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
+      const configuredAdminConnectionString = `postgres://todero:todero@127.0.0.1:${configuredPort}/postgres`;
       try {
         const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
         if (
@@ -454,7 +454,7 @@ export async function startServer(): Promise<StartedServer> {
         ) {
           throw new Error("reachable postgres does not use the expected embedded data directory");
         }
-        await ensurePostgresDatabase(configuredAdminConnectionString, "paperclip");
+        await ensurePostgresDatabase(configuredAdminConnectionString, "todero");
         logger.warn(
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
@@ -467,8 +467,8 @@ export async function startServer(): Promise<StartedServer> {
         logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
         const createEmbeddedPostgres = () => new EmbeddedPostgres({
           databaseDir: dataDir,
-          user: "paperclip",
-          password: "paperclip",
+          user: "todero",
+          password: "todero",
           port,
           persistent: true,
           initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -538,13 +538,13 @@ export async function startServer(): Promise<StartedServer> {
       }
     }
   
-    const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
+    const embeddedAdminConnectionString = `postgres://todero:todero@127.0.0.1:${port}/postgres`;
+    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "todero");
     if (dbStatus === "created") {
-      logger.info("Created embedded PostgreSQL database: paperclip");
+      logger.info("Created embedded PostgreSQL database: todero");
     }
   
-    const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+    const embeddedConnectionString = `postgres://todero:todero@127.0.0.1:${port}/todero`;
     const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
@@ -748,7 +748,7 @@ export async function startServer(): Promise<StartedServer> {
         connectionString: activeDatabaseConnectionString,
         backupDir: config.databaseBackupDir,
         retention,
-        filenamePrefix: "paperclip",
+        filenamePrefix: "todero",
       });
       const finishedAt = new Date();
       const response: InstanceDatabaseBackupRunResult = {
@@ -868,7 +868,7 @@ export async function startServer(): Promise<StartedServer> {
   setupLiveEventsWebSocketServer(server, db as any, {
     deploymentMode: config.deploymentMode,
     resolveSessionFromHeaders,
-    // Cloud-proxied browsers carry trusted x-paperclip-cloud-* headers instead
+    // Cloud-proxied browsers carry trusted x-todero-cloud-* headers instead
     // of a local Better Auth session; without this lane every live-events
     // upgrade behind the Cloud front door 403s forever. The resolver is
     // self-gating: it returns null unless PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN
@@ -1650,7 +1650,7 @@ export async function startServer(): Promise<StartedServer> {
       server.off("error", onError);
       logger.info(`Server listening on ${config.host}:${listenPort}`);
       void systemdNotify(["--ready", `--status=Listening on ${config.host}:${listenPort}`]).then((notified) => {
-        if (notified) logger.info("Notified systemd that Paperclip is ready");
+        if (notified) logger.info("Notified systemd that Todero is ready");
       });
       if (process.env.PAPERCLIP_OPEN_ON_LISTEN === "true") {
         const openHost = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
@@ -1756,8 +1756,8 @@ export async function startServer(): Promise<StartedServer> {
         logger.error({ err, signal }, "run-log in-flight mirror flush failed");
       }
 
-      const appShutdown = (app as { locals?: { paperclipShutdown?: () => Promise<void> } }).locals
-        ?.paperclipShutdown;
+      const appShutdown = (app as { locals?: { toderoShutdown?: () => Promise<void> } }).locals
+        ?.toderoShutdown;
       const stopEmbeddedPostgres = embeddedPostgres && embeddedPostgresStartedByThisProcess
         ? () => embeddedPostgresSupervisor?.shutdown() ?? embeddedPostgres!.stop()
         : null;
@@ -1807,7 +1807,7 @@ function isMainModule(metaUrl: string): boolean {
 
 if (isMainModule(import.meta.url)) {
   void startServer().catch(async (err) => {
-    logger.error({ err }, "Paperclip server failed to start");
+    logger.error({ err }, "Todero server failed to start");
     captureException(err);
     await shutdownSentry();
     process.exit(1);

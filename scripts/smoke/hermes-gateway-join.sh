@@ -42,8 +42,8 @@ print_usage() {
   cat <<'EOF'
 Hermes gateway join smoke
 
-Creates a Hermes gateway agent from an agent-only Paperclip invite, approves the
-join request, claims the one-time Paperclip API key, and verifies the stored
+Creates a Hermes gateway agent from an agent-only Todero invite, approves the
+join request, claims the one-time Todero API key, and verifies the stored
 adapter config without printing raw secrets.
 
 Required:
@@ -61,13 +61,13 @@ Common flags:
   HERMES_JOIN_OUTPUT_FILE=/secure/path/join-output.json
 
 Notes:
-  HERMES_GATEWAY_API_BASE_URL is stored on the Paperclip adapter and must be
-  reachable by the Paperclip server. HERMES_GATEWAY_PROBE_URL is only used by
-  this operator shell to preflight /health, which is useful when Paperclip talks
+  HERMES_GATEWAY_API_BASE_URL is stored on the Todero adapter and must be
+  reachable by the Todero server. HERMES_GATEWAY_PROBE_URL is only used by
+  this operator shell to preflight /health, which is useful when Todero talks
   to the gateway over a Docker network name but the operator probes localhost.
 
   Raw API keys are redacted from logs. HERMES_JOIN_OUTPUT_FILE contains the
-  claimed Paperclip agent API key and is written chmod 600.
+  claimed Todero agent API key and is written chmod 600.
 
 See doc/HERMES_GATEWAY_SMOKE.md for Docker Desktop, Linux, same-network,
 LAN/private-network, and reverse-proxy/TLS examples.
@@ -259,7 +259,7 @@ assert_onboarding_contains() {
 probe_hermes_gateway() {
   [[ -n "$HERMES_GATEWAY_API_BASE_URL" ]] || fail "HERMES_GATEWAY_API_BASE_URL is required"
   [[ -n "$HERMES_GATEWAY_PROBE_URL" ]] || fail "HERMES_GATEWAY_PROBE_URL is required"
-  [[ -n "$HERMES_GATEWAY_API_KEY" ]] || fail "HERMES_GATEWAY_API_KEY or API_SERVER_KEY is required before any Paperclip state is mutated"
+  [[ -n "$HERMES_GATEWAY_API_KEY" ]] || fail "HERMES_GATEWAY_API_KEY or API_SERVER_KEY is required before any Todero state is mutated"
 
   if is_remote_plain_http "$HERMES_GATEWAY_API_BASE_URL" && [[ "$HERMES_GATEWAY_ALLOW_INSECURE_HTTP" != "1" ]]; then
     fail "HERMES_GATEWAY_API_BASE_URL uses non-loopback http. Set HERMES_GATEWAY_ALLOW_INSECURE_HTTP=1 for local-only unsafe HTTP, or use HTTPS."
@@ -268,16 +268,16 @@ probe_hermes_gateway() {
   local health_url="${HERMES_GATEWAY_PROBE_URL%/}/health"
   log "probing Hermes gateway health at ${health_url} with apiKey sha256=$(hash_prefix "$HERMES_GATEWAY_API_KEY") len=${#HERMES_GATEWAY_API_KEY}"
   if [[ "$HERMES_GATEWAY_PROBE_URL" != "$HERMES_GATEWAY_API_BASE_URL" ]]; then
-    log "Paperclip will store Hermes gateway URL ${HERMES_GATEWAY_API_BASE_URL}"
+    log "Todero will store Hermes gateway URL ${HERMES_GATEWAY_API_BASE_URL}"
   fi
   local code
   code="$(curl -sS -o /dev/null -w "%{http_code}" --max-time "$GATEWAY_PROBE_TIMEOUT_SEC" -H "Authorization: Bearer ${HERMES_GATEWAY_API_KEY}" "$health_url" || true)"
   if [[ "$code" != "200" ]]; then
-    fail "Hermes gateway health probe failed before mutating Paperclip state: ${health_url} returned HTTP ${code}. Start Hermes with API_SERVER_ENABLED=true API_SERVER_KEY=<key> hermes gateway run --replace --accept-hooks, or set HERMES_GATEWAY_API_BASE_URL/HERMES_GATEWAY_API_KEY."
+    fail "Hermes gateway health probe failed before mutating Todero state: ${health_url} returned HTTP ${code}. Start Hermes with API_SERVER_ENABLED=true API_SERVER_KEY=<key> hermes gateway run --replace --accept-hooks, or set HERMES_GATEWAY_API_BASE_URL/HERMES_GATEWAY_API_KEY."
   fi
 }
 
-log "checking Paperclip health"
+log "checking Todero health"
 api_request "GET" "/health"
 assert_status "200"
 log "deployment mode=$(jq -r '.deploymentMode // "unknown"' <<<"$RESPONSE_BODY") exposure=$(jq -r '.deploymentExposure // "unknown"' <<<"$RESPONSE_BODY")"
@@ -336,7 +336,7 @@ JOIN_PAYLOAD="$(jq -nc \
       timeoutSec: $timeoutSec
     }
   }
-  | if $paperclipApiUrl != "" then .agentDefaultsPayload.paperclipApiUrl = $paperclipApiUrl else . end
+  | if $paperclipApiUrl != "" then .agentDefaultsPayload.toderoApiUrl = $paperclipApiUrl else . end
   | if $allowInsecure then .agentDefaultsPayload.dangerouslyAllowInsecureRemoteHttp = true else . end')"
 
 log "submitting Hermes gateway agent join request"
@@ -410,7 +410,7 @@ STORED_SESSION_STRATEGY="$(jq -r '.adapterConfig.sessionKeyStrategy // empty' <<
 [[ "$STORED_SESSION_STRATEGY" == "$HERMES_GATEWAY_SESSION_KEY_STRATEGY" ]] || fail "stored sessionKeyStrategy mismatch: expected ${HERMES_GATEWAY_SESSION_KEY_STRATEGY}, got ${STORED_SESSION_STRATEGY:-<empty>}"
 
 if [[ -n "$PAPERCLIP_API_URL_FOR_HERMES" ]]; then
-  STORED_PAPERCLIP_API_URL="$(jq -r '.adapterConfig.paperclipApiUrl // empty' <<<"$RESPONSE_BODY")"
+  STORED_PAPERCLIP_API_URL="$(jq -r '.adapterConfig.toderoApiUrl // empty' <<<"$RESPONSE_BODY")"
   [[ "$STORED_PAPERCLIP_API_URL" == "$PAPERCLIP_API_URL_FOR_HERMES" || "$(strip_trailing_slash "$STORED_PAPERCLIP_API_URL")" == "$(strip_trailing_slash "$PAPERCLIP_API_URL_FOR_HERMES")" ]] \
     || fail "stored paperclipApiUrl mismatch"
 fi

@@ -1,50 +1,50 @@
 // GENERATED — DO NOT EDIT.
 
-export interface PaperclipAgentCreatedDimensions {
+export interface ToderoAgentCreatedDimensions {
 agent_id: string
 agent_role: ("ceo" | "cto" | "cmo" | "cfo" | "security" | "engineer" | "designer" | "pm" | "qa" | "devops" | "researcher" | "general" | "other")
 }
 
-export interface PaperclipAgentFirstHeartbeatDimensions {
+export interface ToderoAgentFirstHeartbeatDimensions {
 agent_id: string
 agent_role: ("ceo" | "cto" | "cmo" | "cfo" | "security" | "engineer" | "designer" | "pm" | "qa" | "devops" | "researcher" | "general" | "other")
 }
 
-export interface PaperclipAgentTaskCompletedDimensions {
+export interface ToderoAgentTaskCompletedDimensions {
 adapter_type: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "hermes_gateway" | "hermes_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
 agent_id: string
 agent_role: ("ceo" | "cto" | "cmo" | "cfo" | "security" | "engineer" | "designer" | "pm" | "qa" | "devops" | "researcher" | "general" | "other")
 model?: string
 }
 
-export interface PaperclipCompanyImportedDimensions {
+export interface ToderoCompanyImportedDimensions {
 source_type: ("local_path" | "github" | "url" | "catalog" | "skills_sh" | "unknown")
 source_ref?: string
 source_ref_hashed?: boolean
 }
 
-export interface PaperclipErrorHandlerCrashDimensions {
+export interface ToderoErrorHandlerCrashDimensions {
 error_code: string
 }
 
-export interface PaperclipGoalCreatedDimensions {
+export interface ToderoGoalCreatedDimensions {
 goal_level: ("company" | "team" | "agent" | "task" | "other")
 }
 
-export interface PaperclipInstallCompletedDimensions {
+export interface ToderoInstallCompletedDimensions {
 adapter_type: ("process" | "http" | "acpx_local" | "claude_local" | "codex_local" | "cursor_cloud" | "gemini_local" | "hermes_gateway" | "hermes_local" | "opencode_local" | "pi_local" | "cursor" | "openclaw_gateway" | "grok_local" | "kimi_local" | "other")
 }
 
-export interface PaperclipInstallStartedDimensions {
+export interface ToderoInstallStartedDimensions {
 
 }
 
-export interface PaperclipInteractionCreatedDimensions {
+export interface ToderoInteractionCreatedDimensions {
 interaction_kind: ("suggest_tasks" | "ask_user_questions" | "request_confirmation" | "request_checkbox_confirmation" | "request_item_verdicts" | "other")
 used_deprecated_resolver_policy_alias: boolean
 }
 
-export interface PaperclipInteractionResolvedDimensions {
+export interface ToderoInteractionResolvedDimensions {
 interaction_kind: ("suggest_tasks" | "ask_user_questions" | "request_confirmation" | "request_checkbox_confirmation" | "request_item_verdicts" | "other")
 status: ("accepted" | "rejected" | "answered" | "cancelled" | "expired" | "failed" | "other")
 resolution_reason?: ("accepted" | "rejected" | "stale_target" | "superseded_by_comment" | "superseded_by_newer_request" | "expired" | "cancelled" | "other")
@@ -67,25 +67,25 @@ source_run_id?: string
 legacy_inherited_restriction: boolean
 }
 
-export interface PaperclipProjectCreatedDimensions {
+export interface ToderoProjectCreatedDimensions {
 
 }
 
-export interface PaperclipRoutineCreatedDimensions {
+export interface ToderoRoutineCreatedDimensions {
 
 }
 
-export interface PaperclipRoutineRunDimensions {
+export interface ToderoRoutineRunDimensions {
 source: ("schedule" | "manual" | "api" | "webhook" | "other")
 status: ("received" | "coalesced" | "skipped" | "issue_created" | "completed" | "failed" | "other")
 }
 
-export interface PaperclipSkillImportedDimensions {
+export interface ToderoSkillImportedDimensions {
 source_type: ("local_path" | "github" | "url" | "catalog" | "skills_sh" | "unknown")
 skill_ref?: string
 }
 
-export type PaperclipEventName =
+export type ToderoEventName =
   | "agent.created"
   | "agent.first_heartbeat"
   | "agent.task_completed"
@@ -102,20 +102,20 @@ export type PaperclipEventName =
   | "skill.imported";
 
 export interface EventDimensionsMap {
-  "agent.created": PaperclipAgentCreatedDimensions;
-  "agent.first_heartbeat": PaperclipAgentFirstHeartbeatDimensions;
-  "agent.task_completed": PaperclipAgentTaskCompletedDimensions;
-  "company.imported": PaperclipCompanyImportedDimensions;
-  "error.handler_crash": PaperclipErrorHandlerCrashDimensions;
-  "goal.created": PaperclipGoalCreatedDimensions;
-  "install.completed": PaperclipInstallCompletedDimensions;
-  "install.started": PaperclipInstallStartedDimensions;
-  "interaction.created": PaperclipInteractionCreatedDimensions;
-  "interaction.resolved": PaperclipInteractionResolvedDimensions;
-  "project.created": PaperclipProjectCreatedDimensions;
-  "routine.created": PaperclipRoutineCreatedDimensions;
-  "routine.run": PaperclipRoutineRunDimensions;
-  "skill.imported": PaperclipSkillImportedDimensions;
+  "agent.created": ToderoAgentCreatedDimensions;
+  "agent.first_heartbeat": ToderoAgentFirstHeartbeatDimensions;
+  "agent.task_completed": ToderoAgentTaskCompletedDimensions;
+  "company.imported": ToderoCompanyImportedDimensions;
+  "error.handler_crash": ToderoErrorHandlerCrashDimensions;
+  "goal.created": ToderoGoalCreatedDimensions;
+  "install.completed": ToderoInstallCompletedDimensions;
+  "install.started": ToderoInstallStartedDimensions;
+  "interaction.created": ToderoInteractionCreatedDimensions;
+  "interaction.resolved": ToderoInteractionResolvedDimensions;
+  "project.created": ToderoProjectCreatedDimensions;
+  "routine.created": ToderoRoutineCreatedDimensions;
+  "routine.run": ToderoRoutineRunDimensions;
+  "skill.imported": ToderoSkillImportedDimensions;
 }
 
 export const PAPERCLIP_EVENTS = {
@@ -210,7 +210,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "local_path": "Import source came from a filesystem path on the operator's machine.",
       "github": "Import source came from a GitHub repository or GitHub-backed reference.",
       "url": "Import source came from a direct URL.",
-      "catalog": "Import source came from a Paperclip catalog entry.",
+      "catalog": "Import source came from a Todero catalog entry.",
       "skills_sh": "Import source came from a Skills.sh-compatible source.",
       "unknown": "Source type could not be classified."
     }
@@ -285,7 +285,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
     "resolved_by_kind": {
       "user": "A board or human user resolved the interaction.",
       "agent": "An agent resolved the interaction.",
-      "system": "Paperclip resolved the interaction automatically.",
+      "system": "Todero resolved the interaction automatically.",
       "other": "Fallback when the resolver kind is unknown or not represented by the tracked enum."
     },
     "created_by_kind": {
@@ -344,7 +344,7 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
       "local_path": "Import source came from a filesystem path on the operator's machine.",
       "github": "Import source came from a GitHub repository or GitHub-backed reference.",
       "url": "Import source came from a direct URL.",
-      "catalog": "Import source came from a Paperclip catalog entry.",
+      "catalog": "Import source came from a Todero catalog entry.",
       "skills_sh": "Import source came from a Skills.sh-compatible source.",
       "unknown": "Source type could not be classified."
     }
@@ -353,39 +353,39 @@ export const PAPERCLIP_ENUM_DESCRIPTIONS = {
 
 export const SCHEMA_VERSION = "1" as const;
 
-export interface PaperclipTelemetryEvent<K extends PaperclipEventName = PaperclipEventName> {
+export interface ToderoTelemetryEvent<K extends ToderoEventName = ToderoEventName> {
 name: K
 occurredAt: string
 dimensions: EventDimensionsMap[K]
 }
 
-export type AnyPaperclipTelemetryEvent = {
-  [K in PaperclipEventName]: PaperclipTelemetryEvent<K>
-}[PaperclipEventName];
+export type AnyToderoTelemetryEvent = {
+  [K in ToderoEventName]: ToderoTelemetryEvent<K>
+}[ToderoEventName];
 
-export interface PaperclipTelemetryBatch {
-app: "paperclip"
+export interface ToderoTelemetryBatch {
+app: "todero"
 schemaVersion: typeof SCHEMA_VERSION
 installId: string
 version?: string
-events: AnyPaperclipTelemetryEvent[]
+events: AnyToderoTelemetryEvent[]
 }
 
-export function makeEvent<K extends PaperclipEventName>(
+export function makeEvent<K extends ToderoEventName>(
   name: K,
   dimensions: EventDimensionsMap[K],
   occurredAt: string
-): PaperclipTelemetryEvent<K> {
+): ToderoTelemetryEvent<K> {
   return { name, occurredAt, dimensions };
 }
 
 export function makeBatch(
   installId: string,
-  events: readonly AnyPaperclipTelemetryEvent[],
+  events: readonly AnyToderoTelemetryEvent[],
   version?: string
-): PaperclipTelemetryBatch {
+): ToderoTelemetryBatch {
   return {
-    app: "paperclip",
+    app: "todero",
     schemaVersion: SCHEMA_VERSION,
     installId,
     ...(version === undefined ? {} : { version }),

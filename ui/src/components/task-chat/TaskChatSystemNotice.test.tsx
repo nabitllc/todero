@@ -24,7 +24,7 @@ describe("TaskChatSystemNotice (PAP-443)", () => {
   });
 
   const recoveryBody =
-    "Paperclip stopped before dispatching the adapter because required secret/env bindings are missing. " +
+    "Todero stopped before dispatching the adapter because required secret/env bindings are missing. " +
     "Latest retry failure: `configuration_incomplete`. Moving it to `blocked` with a source-scoped recovery action.";
 
   function renderNotice(overrides: Partial<TaskChatMessageItem> = {}) {

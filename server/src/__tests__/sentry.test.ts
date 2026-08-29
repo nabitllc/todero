@@ -563,7 +563,7 @@ describe.skipIf(!sentryPackage)("captured event shape against the real @sentry/n
 
   /**
    * `skipOpenTelemetrySetup: true` (set above) keeps this module out of
-   * Paperclip's separate, independently opt-in OpenTelemetry feature. It
+   * Todero's separate, independently opt-in OpenTelemetry feature. It
    * also turns off Sentry's own per-request async-context tracking. The
    * `RequestData` integration reads the inbound URL, method, headers,
    * cookies, and query string from that per-request context. With the

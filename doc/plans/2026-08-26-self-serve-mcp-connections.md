@@ -4,7 +4,7 @@ Date: 2026-08-26
 
 ## Outcome
 
-Paperclip treats a connection method as the capability boundary. A curated MCP method may declare automatic OAuth registration (`dcr`, including CIMD), a customer-owned OAuth client (`customer`), an API key, or a provider-generated MCP URL. Provider tokens and client secrets remain in the instance's encrypted vault. Paperclip ID remains the future broker for `platform_shared` registrations; the self-serve catalog does not depend on it.
+Todero treats a connection method as the capability boundary. A curated MCP method may declare automatic OAuth registration (`dcr`, including CIMD), a customer-owned OAuth client (`customer`), an API key, or a provider-generated MCP URL. Provider tokens and client secrets remain in the instance's encrypted vault. Todero ID remains the future broker for `platform_shared` registrations; the self-serve catalog does not depend on it.
 
 The machine-readable evidence ledger is [`packages/shared/src/self-serve-mcp-research.json`](../../packages/shared/src/self-serve-mcp-research.json). It is the source for the generated app definitions and records the documentation URL, current endpoint, authentication mode, prerequisite, risk tier, and verification date for all 46 researched providers.
 
@@ -19,7 +19,7 @@ Store visibility is a separate release gate from having an implemented definitio
 - [x] Support DCR/CIMD browser sign-in for curated remote MCP methods.
 - [x] Accept customer-owned OAuth client IDs and secrets only when a method declares `customer` ownership.
 - [x] Store customer OAuth secrets and provider tokens as encrypted secret references, never inline in connection configuration or API responses.
-- [x] Keep Paperclip ID limited to explicitly brokered `platform_shared` methods such as Gmail.
+- [x] Keep Todero ID limited to explicitly brokered `platform_shared` methods such as Gmail.
 - [x] Contain curated OAuth scopes to the method's reviewed `scopesHint`; omit scope when the method has no hint and reject caller widening.
 - [x] Reuse the existing connection setup flow for browser sign-in, customer OAuth apps, API keys, tenant fields, and generated URLs.
 - [x] Correct the Jira, Cloudinary, Kernel, Resend, ClickHouse, Postman, PagerDuty, Supabase, PlanetScale, and Zapier connection shapes.
@@ -47,7 +47,7 @@ Store visibility is a separate release gate from having an implemented definitio
 | Provider | Wave | Definition | Live proof | Notes |
 |---|---:|:---:|:---:|---|
 | Jira | 1 | [x] | [ ] | Reference DCR/CIMD flow; `https://mcp.atlassian.com/v1/mcp/authv2`. On 2026-08-27, browser authorization, 26-tool discovery, tenant lookup, a safe project read, JQL search, and reconnect passed against `paperclipteam.atlassian.net`; revocation remains pending because the working connection was retained. Atlassian's `/authv2` rollout requires the reviewed protected-resource scope set to be sent explicitly before consent. |
-| Airtable | 1 | [x] | [ ] | Enterprise client allowlisting may apply. On 2026-08-27, browser authorization was limited to the single `Untitled Base`, tool discovery succeeded, and `List Airtable bases` returned that base through Paperclip; reconnect/revoke and the final log audit remain pending. |
+| Airtable | 1 | [x] | [ ] | Enterprise client allowlisting may apply. On 2026-08-27, browser authorization was limited to the single `Untitled Base`, tool discovery succeeded, and `List Airtable bases` returned that base through Todero; reconnect/revoke and the final log audit remain pending. |
 | beehiiv | 1 | [x] | [ ] | Plan controls write capabilities. |
 | Bitly | 1 | [x] | [ ] | Browser sign-in and API-token methods. |
 | Candid | 1 | [x] | [ ] | DCR. |
@@ -59,14 +59,14 @@ Store visibility is a separate release gate from having an implemented definitio
 | Local Falcon | 1 | [x] | [ ] | DCR. |
 | Make | 1 | [x] | [ ] | DCR. |
 | Manufact | 1 | [x] | [ ] | DCR. |
-| Miro | 1 | [x] | [ ] | Enterprise client restrictions may apply. On 2026-08-27, the first live exchange found that Paperclip overrode Miro's advertised DCR client-auth order and selected `client_secret_basic`; preserving the provider's `client_secret_post` preference fixed the exchange. Reauthorization, 60-tool discovery, and `Who Am I` then succeeded; reconnect/revoke and the final log audit remain pending. |
+| Miro | 1 | [x] | [ ] | Enterprise client restrictions may apply. On 2026-08-27, the first live exchange found that Todero overrode Miro's advertised DCR client-auth order and selected `client_secret_basic`; preserving the provider's `client_secret_post` preference fixed the exchange. Reauthorization, 60-tool discovery, and `Who Am I` then succeeded; reconnect/revoke and the final log audit remain pending. |
 | Netlify | 1 | [x] | [ ] | DCR. On 2026-08-27, the saved draft resumed through Netlify consent, nine tools were discovered, and the safe `get-user` read succeeded. The public connection response exposed only a vault secret reference, not the access token; reconnect/refresh, revoke, and the final log audit remain pending. |
 | Notion | 1 | [x] | [ ] | Existing DCR definition hardened by scope containment. |
 | O'Reilly | 1 | [x] | [ ] | Browser sign-in and token methods. |
 | PlanetScale | 1 | [x] | [ ] | Database and insights-only methods; optional intended project/branch metadata. |
 | PostHog | 1 | [x] | [ ] | OAuth and API-key methods support optional advanced project pinning; the recommended OAuth path requires no project ID. |
 | Resend | 1 | [x] | [ ] | Current `/mcp` endpoint. |
-| Sentry | 1 | [x] | [ ] | Existing DCR/CIMD definition enabled. On 2026-08-27, browser authorization, seven-tool discovery, and the safe `find_organizations` read succeeded against `paperclip-5s`. Sentry intentionally disables its upstream `Approve` control until one second after the first pointer or keyboard interaction; live-test automation must satisfy that guard before treating the provider as blocked. The public connection response exposed only a vault secret reference, not the access token; reconnect/refresh, revoke, and the final log audit remain pending. |
+| Sentry | 1 | [x] | [ ] | Existing DCR/CIMD definition enabled. On 2026-08-27, browser authorization, seven-tool discovery, and the safe `find_organizations` read succeeded against `todero-5s`. Sentry intentionally disables its upstream `Approve` control until one second after the first pointer or keyboard interaction; live-test automation must satisfy that guard before treating the provider as blocked. The public connection response exposed only a vault secret reference, not the access token; reconnect/refresh, revoke, and the final log audit remain pending. |
 | TickTick | 1 | [x] | [ ] | DCR. |
 | Todoist | 1 | [x] | [ ] | DCR. |
 | Webflow | 1 | [x] | [ ] | Tenant roles constrain site access. |
@@ -90,7 +90,7 @@ Store visibility is a separate release gate from having an implemented definitio
 | Xero | 3 | [x] | Withheld | Browser OAuth and refresh tokens succeeded on 2026-08-27, but `mcp.xero.com/mcp` rejected the valid third-party access token with HTTP 401. Withheld from Browse pending Xero support for customer-created OAuth clients on the hosted endpoint; this matches the unresolved report in [Xero's MCP repository](https://github.com/xeroapi/xero-mcp-server/issues/212). |
 | Zapier | 3 | [x] | [ ] | Existing generated-URL flow; never substitutes a static shared endpoint. |
 | G2 | Blocked | [x] | n/a | Reconsider after a customer-created client works without G2 coordination. |
-| Vercel | Blocked | [x] | n/a | Reconsider when reviewed-client approval is removed or Paperclip is approved. |
+| Vercel | Blocked | [x] | n/a | Reconsider when reviewed-client approval is removed or Todero is approved. |
 | Zomato | Blocked | [x] | n/a | Reconsider when third-party clients and unallowlisted redirect URIs are supported. |
 
 ## Browser authorization redirect audit
@@ -100,7 +100,7 @@ This is a local, credential-free handoff check performed through the real BOB ca
 - [x] Jira, Airtable, beehiiv, Bitly, Candid, Cloudflare, Cloudinary, Coda, Hugging Face, Kernel, Local Falcon, Make, Manufact, Miro, Netlify, Notion, O'Reilly, PlanetScale, PostHog, Resend, Sentry, TickTick, Todoist, Webflow, and Wix.
 - [x] ClickHouse, Egnyte, Embat, Mixpanel, Postman, Razorpay, Sanity, Stripe, Supabase, and Ticket Tailor.
 - [ ] Brex — the documented `https://api.brex.com/mcp` endpoint did not return discovery or challenge data from this development environment before the guarded network timeout. Brex also requires Developer API access plus its admin/early-access setup. Re-run after those account prerequisites are enabled; do not treat the current timeout as an OAuth compatibility result.
-- [ ] Gmail — intentionally unavailable on this instance because its Paperclip ID connector is not configured; Browse shows the instance-provided configuration notice instead of starting OAuth.
+- [ ] Gmail — intentionally unavailable on this instance because its Todero ID connector is not configured; Browse shows the instance-provided configuration notice instead of starting OAuth.
 
 The audit found and fixed shared interoperability faults rather than adding provider exceptions: bounded provider-added DCR grants, RFC 7591 zero secret-expiry sentinels for public clients, authorization servers that explicitly omit refresh-token support, guarded HTTP requests that require a stable User-Agent, and numeric-loopback callbacks rejected by DCR servers. Hugging Face now explicitly requests only `read-mcp` instead of allowing the provider's omitted-scope default to request its complete scope set.
 
@@ -131,7 +131,7 @@ The code paths and catalog definitions are complete. The unchecked work is delib
 
 ## Operating rules
 
-- “Self-serve” allows normal accounts, subscriptions, tenant-admin policies, and OAuth consent, but excludes a Paperclip/provider partnership.
+- “Self-serve” allows normal accounts, subscriptions, tenant-admin policies, and OAuth consent, but excludes a Todero/provider partnership.
 - Provider documentation and working live OAuth metadata are both required for production verification.
 - Preview and early-access providers retain warnings until their live proof passes.
-- This program covers hosted remote MCP connections and credential custody. Generic REST execution and Paperclip-ID-managed shared OAuth registrations remain separate follow-up programs.
+- This program covers hosted remote MCP connections and credential custody. Generic REST execution and Todero-ID-managed shared OAuth registrations remain separate follow-up programs.

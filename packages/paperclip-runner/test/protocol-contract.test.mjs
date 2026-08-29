@@ -64,7 +64,7 @@ test("unknown required versions and schemas fail closed", async () => {
   assert.throws(() => assertReplayFixtureCompatibility(eventVersion), /unsupported_required_version/);
 
   const commandSchema = structuredClone(await fixture("replay/happy-path.json"));
-  commandSchema.commands[0].schema = "paperclip.prp.command.v2";
+  commandSchema.commands[0].schema = "todero.prp.command.v2";
   assert.throws(() => assertReplayFixtureCompatibility(commandSchema), /unsupported_required_schema/);
 });
 

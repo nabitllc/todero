@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@paperclipai/shared";
+import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@todero/shared";
 import { execute } from "./execute.js";
 
 afterEach(() => {
@@ -12,13 +12,13 @@ describe("http adapter execute", () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       expect(onDispatch).toHaveBeenCalledOnce();
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      expect(body.paperclipRuntimeTools).toEqual({
+      expect(body.toderoRuntimeTools).toEqual({
         version: 1,
         guidance: CONNECTION_INTENT_AGENT_GUIDANCE,
-        mcpEndpoint: "https://paperclip.test/mcp/runtime-tools",
+        mcpEndpoint: "https://todero.test/mcp/runtime-tools",
         rest: {
-          connectionsSearch: "https://paperclip.test/runtime-tools/connections/search",
-          connectionRequest: "https://paperclip.test/runtime-tools/connections/request",
+          connectionsSearch: "https://todero.test/runtime-tools/connections/search",
+          connectionRequest: "https://todero.test/runtime-tools/connections/request",
         },
         bearerToken: "run-token",
         expiresAt: "2026-08-26T15:00:00.000Z",
@@ -48,10 +48,10 @@ describe("http adapter execute", () => {
       runtimeTools: {
         version: 1,
         guidance: CONNECTION_INTENT_AGENT_GUIDANCE,
-        mcpEndpoint: "https://paperclip.test/mcp/runtime-tools",
+        mcpEndpoint: "https://todero.test/mcp/runtime-tools",
         rest: {
-          connectionsSearch: "https://paperclip.test/runtime-tools/connections/search",
-          connectionRequest: "https://paperclip.test/runtime-tools/connections/request",
+          connectionsSearch: "https://todero.test/runtime-tools/connections/search",
+          connectionRequest: "https://todero.test/runtime-tools/connections/request",
         },
         bearerToken: "run-token",
         expiresAt: "2026-08-26T15:00:00.000Z",

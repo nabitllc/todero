@@ -190,7 +190,7 @@ export const REFERENCED_SOURCE_IGNORE_FAILURE_REASONS = {
  * subdirectory (`project-<projectId>` under the runtime root) the tree lands in.
  *
  * Additional sources are plain trees only. They never carry the anchor
- * workspace's git-history, overlay, or `.paperclip-runtime` preservation
+ * workspace's git-history, overlay, or `.todero-runtime` preservation
  * semantics — those stay anchor-only.
  *
  * `ignoreResolution` is required so every construction site must supply it
@@ -425,7 +425,7 @@ export interface SandboxSyncFileMapping {
  * order, fail-fast (first non-zero exit or timeout aborts the operation).
  *
  * SECURITY — command origin (Stage-1 design review, condition C1). `command` is
- * a **Paperclip/adapter-authored control operation**: it may be supplied ONLY by
+ * a **Todero/adapter-authored control operation**: it may be supplied ONLY by
  * core/adapter code. No server route, issue/comment content, project/workspace
  * file content, provider-plugin callback, or arbitrary adapter config may supply
  * a raw `command` string; any path embedded in it MUST be built by adapter/core
@@ -603,7 +603,7 @@ function buildWorkspaceTarExtractCommand(input: {
 }): string {
   // The wipe must also preserve any in-flight sync scratch tarball at the
   // workspace root. A concurrent referenced-project upload stages a scratch
-  // tarball named `.paperclip-upload-<uuid>.tar` there. Without this preserve
+  // tarball named `.todero-upload-<uuid>.tar` there. Without this preserve
   // term the wipe unlinks the in-flight tarball and the later extract fails.
   // The static pattern must agree with the daytona scratch prefix
   // `SCRATCH_PREFIX` in
@@ -612,7 +612,7 @@ function buildWorkspaceTarExtractCommand(input: {
   // shell passes it to `find -name` as a pattern (Security Conditions C1/C3).
   const wipe = input.wipeExceptNames
     ? ` && find ${shellQuote(input.workspaceRemoteDir)} -mindepth 1 -maxdepth 1 ` +
-      `${preserveFindArgs([...input.wipeExceptNames, ".paperclip-upload-*"])} -exec rm -rf -- {} +`
+      `${preserveFindArgs([...input.wipeExceptNames, ".todero-upload-*"])} -exec rm -rf -- {} +`
     : "";
   return (
     `mkdir -p ${shellQuote(input.workspaceRemoteDir)}${wipe} && ` +
@@ -812,7 +812,7 @@ async function copyWorkspaceEntry(sourceRoot: string, targetRoot: string, relati
     return;
   }
 
-  const stagedTargetPath = buildUniqueStagingPath({ targetPath, suffix: ".paperclip-copy" });
+  const stagedTargetPath = buildUniqueStagingPath({ targetPath, suffix: ".todero-copy" });
   await fs.rm(stagedTargetPath, { recursive: true, force: true }).catch(() => undefined);
   try {
     await fs.copyFile(sourcePath, stagedTargetPath, fsConstants.COPYFILE_FICLONE).catch(async () => {
@@ -948,7 +948,7 @@ function makeTransferProgress(
         await emitRuntimeStatus(
           runtimeStatus.sink,
           runtimeStatus.phase,
-          line.replace(/^\[paperclip\]\s*/, "").trim(),
+          line.replace(/^\[todero\]\s*/, "").trim(),
         );
       }
     },
@@ -997,7 +997,7 @@ export async function prepareSandboxManagedRuntime(input: {
   runtimeSpan?: RuntimeSpanRunner;
 }): Promise<PreparedSandboxManagedRuntime> {
   const workspaceRemoteDir = input.workspaceRemoteDir ?? input.spec.remoteCwd;
-  const runtimeRootDir = path.posix.join(workspaceRemoteDir, ".paperclip-runtime", input.adapterKey);
+  const runtimeRootDir = path.posix.join(workspaceRemoteDir, ".todero-runtime", input.adapterKey);
   const syncWorkspace = input.syncWorkspace !== false;
 
   // Reject any unsafe asset key before an archive path or an asset directory is
@@ -1037,7 +1037,7 @@ export async function prepareSandboxManagedRuntime(input: {
   const restoreExclude = mergeExcludes(
     SANDBOX_WORKSPACE_HEAVY_DIR_EXCLUDES,
     [...GIT_ARCHIVE_EXCLUDES],
-    [".paperclip-runtime"],
+    [".todero-runtime"],
     input.preserveAbsentOnRestore,
     input.workspaceExclude,
     gitIgnoredExcludes,
@@ -1104,9 +1104,9 @@ export async function prepareSandboxManagedRuntime(input: {
       timeoutMs: command.timeoutMs ?? input.spec.timeoutMs,
     }));
 
-  await withTempDir("paperclip-sandbox-sync-", async (tempDir) => {
+  await withTempDir("todero-sandbox-sync-", async (tempDir) => {
     const preservedNames = new Set([
-      ".paperclip-runtime",
+      ".todero-runtime",
       ...(gitSnapshot ? [".git"] : []),
       ...(input.preserveAbsentOnRestore ?? []),
     ]);
@@ -1197,9 +1197,9 @@ export async function prepareSandboxManagedRuntime(input: {
           // current behavior and control flow.
           await runStepSpan("pack", async () => {
             // 1. git-history tar (git-backed workspace only). Both tar targets live under
-            //    `runtimeRootDir` (`.paperclip-runtime/<adapterKey>`). The git extract
-            //    wipes the target tree EXCEPT `.paperclip-runtime`, so the overlay tar,
-            //    which sits under `.paperclip-runtime`, survives to run its own extract.
+            //    `runtimeRootDir` (`.todero-runtime/<adapterKey>`). The git extract
+            //    wipes the target tree EXCEPT `.todero-runtime`, so the overlay tar,
+            //    which sits under `.todero-runtime`, survives to run its own extract.
             if (gitSnapshot) {
               await emitRuntimeStatus(input.onRuntimeProgress, "git_sync", "Syncing git history to environment");
               const gitTarPath = path.join(tempDir, "git-workspace.tar");
@@ -1211,7 +1211,7 @@ export async function prepareSandboxManagedRuntime(input: {
                 await createTarballFromDirectory({
                   localDir: cloneDir,
                   archivePath: gitTarPath,
-                  exclude: [".paperclip-runtime"],
+                  exclude: [".todero-runtime"],
                 });
               });
               workspaceFiles.push({ sourcePath: gitTarPath, targetPath: remoteGitTar, kind: "file", access: "rw", writablePath: workspaceRemoteDir });
@@ -1219,7 +1219,7 @@ export async function prepareSandboxManagedRuntime(input: {
                 command: buildWorkspaceTarExtractCommand({
                   workspaceRemoteDir,
                   remoteTar: remoteGitTar,
-                  wipeExceptNames: [".paperclip-runtime"],
+                  wipeExceptNames: [".todero-runtime"],
                 }),
               });
               workspaceUploadBytes += (await fs.stat(gitTarPath)).size;
@@ -1349,7 +1349,7 @@ export async function prepareSandboxManagedRuntime(input: {
     // its OWN isolated remote directory (`project-<projectId>`). An additional
     // project rides one confined `syncIn` directory mapping — a native directory
     // transfer, or the base64-tar fallback — with source and target confined to
-    // their own roots. No workspace, git-history, or `.paperclip-runtime`
+    // their own roots. No workspace, git-history, or `.todero-runtime`
     // semantics apply; those stay anchor-only. Per-project failure isolation: one
     // project's confinement or sync failure logs a warning and is skipped, and
     // the run plus the other projects continue. Only a project that stages
@@ -1483,7 +1483,7 @@ export async function prepareSandboxManagedRuntime(input: {
       if (syncWorkspace) {
         outboundTasks.push(() =>
           runStepSpan("restore.workspace", async () => {
-            await withTempDir("paperclip-sandbox-restore-", async (tempDir) => {
+            await withTempDir("todero-sandbox-restore-", async (tempDir) => {
               let importedRef: string | null = null;
               let importedHead: string | null = null;
               let remoteWorkspaceStatus = "dirty";
@@ -1680,7 +1680,7 @@ export async function prepareSandboxManagedRuntime(input: {
         const assetKey = asset.key;
         outboundTasks.push(() =>
           runStepSpan(`restore.asset.${assetKey}`, async () => {
-            await withTempDir("paperclip-sandbox-restore-", async (tempDir) => {
+            await withTempDir("todero-sandbox-restore-", async (tempDir) => {
               await assetRestore({
                 assetDir: path.posix.join(runtimeRootDir, assetKey),
                 readFile: async (remotePath) => toBuffer(await input.client.readFile(remotePath)),

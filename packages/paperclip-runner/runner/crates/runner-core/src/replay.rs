@@ -7,11 +7,11 @@ use serde_json::Value;
 
 pub const PRP_PROTOCOL_VERSION: u64 = 1;
 const PRP_FIXTURE_VERSION: u64 = 1;
-const PRP_FIXTURE_SCHEMA: &str = "paperclip.prp.fixture.v1";
-const PRP_EVENT_SCHEMA: &str = "paperclip.prp.event.v1";
-const PRP_SEMANTIC_TOOL_SCHEMA: &str = "paperclip.prp.semantic_tool.v1";
-const PRP_STOP_REASON_SCHEMA: &str = "paperclip.prp.stop_reason.v1";
-const PRP_SEMANTIC_TOOLS_CAPABILITY_SCHEMA: &str = "paperclip.prp.semantic_tools.v1";
+const PRP_FIXTURE_SCHEMA: &str = "todero.prp.fixture.v1";
+const PRP_EVENT_SCHEMA: &str = "todero.prp.event.v1";
+const PRP_SEMANTIC_TOOL_SCHEMA: &str = "todero.prp.semantic_tool.v1";
+const PRP_STOP_REASON_SCHEMA: &str = "todero.prp.stop_reason.v1";
+const PRP_SEMANTIC_TOOLS_CAPABILITY_SCHEMA: &str = "todero.prp.semantic_tools.v1";
 const MAX_EXACT_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 const MAX_RECORDED_MISSING_SEQUENCES: u64 = 256;
 

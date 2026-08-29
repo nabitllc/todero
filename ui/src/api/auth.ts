@@ -4,7 +4,7 @@ import {
   type AuthSession,
   type CurrentUserProfile,
   type UpdateCurrentUserProfile,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { redactUrlSecrets } from "@/lib/redact-url-secrets";
 
 type AuthErrorBody =

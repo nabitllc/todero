@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { IssueReviewAttention } from "@paperclipai/shared";
+import type { IssueReviewAttention } from "@todero/shared";
 import { withRecoveryModelProfileHint } from "./model-profile-hint.js";
 
 export const ISSUE_REVIEW_PATH_LOST_WAKE_REASON = "issue_review_path_lost";

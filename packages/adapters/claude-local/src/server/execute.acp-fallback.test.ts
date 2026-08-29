@@ -40,16 +40,16 @@ const {
 vi.mock("./acp.js", () => ({
   createClaudeAcpExecutor: () => executeClaudeAcp,
   formatClaudeAcpFallbackMessage: (reason: string) =>
-    `[paperclip] Claude ACP default unavailable; falling back to Claude CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`,
+    `[todero] Claude ACP default unavailable; falling back to Claude CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`,
   resolveClaudeExecutionEngineForRun: async (ctx: { config: Record<string, unknown> }) =>
     ctx.config.engine === "acp"
       ? { engine: "acp", explicit: true }
       : { engine: "acp", explicit: false },
 }));
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@todero/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/execution-target")>(
+    "@todero/adapter-utils/execution-target",
   );
   return {
     ...actual,
@@ -111,9 +111,9 @@ describe("claude_local ACP startup fallback", () => {
     );
   });
 
-  it("trusts the Paperclip API URL when network access is allowlisted", async () => {
-    const paperclipApiUrl = "http://127.0.0.1:4310";
-    vi.stubEnv("PAPERCLIP_API_URL", paperclipApiUrl);
+  it("trusts the Todero API URL when network access is allowlisted", async () => {
+    const toderoApiUrl = "http://127.0.0.1:4310";
+    vi.stubEnv("PAPERCLIP_API_URL", toderoApiUrl);
     const ctx = buildContext({ networkScope: "allowlist" });
 
     await execute(ctx as never);
@@ -127,7 +127,7 @@ describe("claude_local ACP startup fallback", () => {
       expect.objectContaining({
         localProcessSandbox: expect.objectContaining({
           networkScope: "allowlist",
-          networkTrustedUrls: [paperclipApiUrl],
+          networkTrustedUrls: [toderoApiUrl],
         }),
       }),
     );

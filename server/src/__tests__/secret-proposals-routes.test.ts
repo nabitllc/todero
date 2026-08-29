@@ -22,7 +22,7 @@ import {
   issues,
   userSecretDeclarations,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { conflict } from "../errors.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { secretRoutes } from "../routes/secrets.js";
@@ -45,7 +45,7 @@ describeEmbeddedPostgres("secret proposal routes", () => {
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-secret-proposals-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-secret-proposals-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });
@@ -295,7 +295,7 @@ describeEmbeddedPostgres("secret proposal routes", () => {
       config: { region: "us-east-1", namespace: "prod-use1" },
     });
     const externalRef =
-      "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-use1/proposed-token";
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:todero/prod-use1/proposed-token";
     const createSecret = vi.spyOn(awsSecretsManagerProvider, "createSecret").mockResolvedValue({
       material: {
         scheme: "aws_secrets_manager_v1",
@@ -368,7 +368,7 @@ describeEmbeddedPostgres("secret proposal routes", () => {
     const [registeredRun] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, fixture.heartbeatRunId));
     expect(JSON.stringify(registeredRun.contextSnapshot)).not.toContain("top-secret");
     expect(registeredRun.contextSnapshot).toMatchObject({
-      paperclipSecretRedactions: [expect.objectContaining({ fingerprintSha256: expect.any(String), material: expect.any(Object) })],
+      toderoSecretRedactions: [expect.objectContaining({ fingerprintSha256: expect.any(String), material: expect.any(Object) })],
     });
 
     const bindingResponse = await request(createAgentApp(fixture))

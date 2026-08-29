@@ -1,5 +1,5 @@
 {
-  "schema": "paperclip.fake_harness.script.v1",
+  "schema": "todero.fake_harness.script.v1",
   "name": "oversized-line",
   "steps": [
     {

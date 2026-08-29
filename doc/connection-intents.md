@@ -23,11 +23,11 @@ Claude and Codex receive the tools through a native managed MCP server. Local/pr
 The equivalent CLI helpers are:
 
 ```sh
-paperclipai connections search notion
-paperclipai connections request notion
+todero connections search notion
+todero connections request notion
 ```
 
-The manually configured Paperclip MCP server also advertises `connections_search` and `connection_request`. Both helper surfaces require the narrow runtime token and fail outside an active heartbeat.
+The manually configured Todero MCP server also advertises `connections_search` and `connection_request`. Both helper surfaces require the narrow runtime token and fail outside an active heartbeat.
 
 ## Security and lifecycle
 

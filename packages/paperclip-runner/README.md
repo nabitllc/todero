@@ -1,6 +1,6 @@
-# Paperclip Runner
+# Todero Runner
 
-This private workspace package contains the staged Paperclip Runner work.
+This private workspace package contains the staged Todero Runner work.
 
 The package currently exposes the language-neutral PRP v1 TypeScript
 contract, provider-neutral structured questions and responses, deterministic
@@ -30,10 +30,10 @@ adapter. See
 
 The package has two initial public surfaces:
 
-- `@paperclipai/paperclip-runner` contains runtime contracts, validation,
+- `@todero/paperclip-runner` contains runtime contracts, validation,
   replay/reducer logic, the semantic catalog, the authorization dispatcher, and
   the Node-only durable server authority.
-- `@paperclipai/paperclip-runner/testing` adds Node-only fixture loading and a
+- `@todero/paperclip-runner/testing` adds Node-only fixture loading and a
   provider-neutral semantic conformance kit for deterministic test adapters.
 
 No SDK, browser, React, eval, live-console, lab, or provider-experiment entry
@@ -52,13 +52,13 @@ existing lockfile process.
 Run the complete contract gate with:
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner check:protocol
+pnpm --filter @todero/paperclip-runner check:protocol
 ```
 
 Run the Rust runner gate with:
 
 ```sh
-pnpm --filter @paperclipai/paperclip-runner check:runner
+pnpm --filter @todero/paperclip-runner check:runner
 ```
 
 This command checks Rust formatting, builds and tests the minimal workspace in

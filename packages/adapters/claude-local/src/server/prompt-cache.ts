@@ -2,14 +2,14 @@ import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash, type Hash } from "node:crypto";
-import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext } from "@todero/adapter-utils";
 import {
-  ensurePaperclipSkillSymlink,
-  resolvePaperclipInstanceRootForAdapter,
-  type PaperclipSkillEntry,
-} from "@paperclipai/adapter-utils/server-utils";
+  ensureToderoSkillSymlink,
+  resolveToderoInstanceRootForAdapter,
+  type ToderoSkillEntry,
+} from "@todero/adapter-utils/server-utils";
 
-type SkillEntry = PaperclipSkillEntry;
+type SkillEntry = ToderoSkillEntry;
 
 export interface ClaudePromptBundle {
   bundleKey: string;
@@ -26,7 +26,7 @@ function resolveManagedClaudePromptCacheRoot(
   env: NodeJS.ProcessEnv,
   companyId: string,
 ): string {
-  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+  const instanceRoot = resolveToderoInstanceRootForAdapter({
     homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
     instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
     env,
@@ -90,7 +90,7 @@ async function buildClaudePromptBundleKey(input: {
   instructionsContents: string | null;
 }): Promise<string> {
   const hash = createHash("sha256");
-  hash.update("paperclip-claude-prompt-bundle:v1\n");
+  hash.update("todero-claude-prompt-bundle:v1\n");
   if (input.instructionsContents) {
     hash.update("instructions\n");
     hash.update(input.instructionsContents);
@@ -149,11 +149,11 @@ export async function prepareClaudePromptBundle(input: {
   for (const entry of skills) {
     const target = path.join(skillsHome, entry.runtimeName);
     try {
-      await ensurePaperclipSkillSymlink(entry.source, target);
+      await ensureToderoSkillSymlink(entry.source, target);
     } catch (err) {
       await onLog(
         "stderr",
-        `[paperclip] Failed to materialize Claude skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[todero] Failed to materialize Claude skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }

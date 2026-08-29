@@ -6,7 +6,7 @@ import type {
   AdapterExecutionContext,
   AdapterEnvironmentCheck,
   AdapterRuntimeMcpServer,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   adapterExecutionTargetUsesManagedHome,
   maybeRunSandboxInstallCommand,
@@ -14,9 +14,9 @@ import {
   runAdapterExecutionTargetShellCommand,
   type AdapterExecutionTarget,
   type AdapterExecutionTargetShellOptions,
-} from "@paperclipai/adapter-utils/execution-target";
-import { resolvePaperclipInstanceRootForAdapter } from "@paperclipai/adapter-utils/server-utils";
-import { shellQuote } from "@paperclipai/adapter-utils/ssh";
+} from "@todero/adapter-utils/execution-target";
+import { resolveToderoInstanceRootForAdapter } from "@todero/adapter-utils/server-utils";
+import { shellQuote } from "@todero/adapter-utils/ssh";
 import { classifyThrownErrorClass, logSandboxProbeDiagnostic } from "./probe-diagnostics.js";
 
 const SEEDED_SHARED_FILES = ["settings.json", "CLAUDE.md"] as const;
@@ -131,7 +131,7 @@ export function resolveManagedClaudeConfigSeedDir(
   env: NodeJS.ProcessEnv,
   companyId?: string,
 ): string {
-  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+  const instanceRoot = resolveToderoInstanceRootForAdapter({
     homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
     instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
     env,
@@ -146,7 +146,7 @@ export function resolveManagedClaudeRuntimeStateDir(
   companyId: string,
   agentId: string,
 ): string {
-  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+  const instanceRoot = resolveToderoInstanceRootForAdapter({
     homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
     instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
     env,
@@ -154,7 +154,7 @@ export function resolveManagedClaudeRuntimeStateDir(
   return path.join(instanceRoot, "companies", companyId, "agents", agentId, "claude-runtime");
 }
 
-export async function writePaperclipClaudeMcpConfig(input: {
+export async function writeToderoClaudeMcpConfig(input: {
   stateDir: string;
   runId: string;
   servers: AdapterRuntimeMcpServer[];
@@ -206,12 +206,12 @@ export async function prepareClaudeConfigSeed(
   if (copiedFiles.length > 0) {
     await onLog(
       "stdout",
-      `[paperclip] Prepared Claude config seed "${targetDir}" from "${sourceDir}" (${copiedFiles.map((file) => file.name).join(", ")}).\n`,
+      `[todero] Prepared Claude config seed "${targetDir}" from "${sourceDir}" (${copiedFiles.map((file) => file.name).join(", ")}).\n`,
     );
   } else {
     await onLog(
       "stdout",
-      `[paperclip] No local Claude config seed files were found in "${sourceDir}". Remote Claude auth may still require login.\n`,
+      `[todero] No local Claude config seed files were found in "${sourceDir}". Remote Claude auth may still require login.\n`,
     );
   }
 
@@ -258,7 +258,7 @@ function isNonEmptyString(value: unknown): value is string {
 /**
  * Prepare the sandbox runtime that a Claude hello probe needs. The step
  * installs the Claude CLI in the sandbox when the CLI is absent, and it
- * materializes the Paperclip-managed Claude config directory. Both the CLI
+ * materializes the Todero-managed Claude config directory. Both the CLI
  * Test lane and the ACP Test lane call this helper, so the two lanes probe
  * the same login state. The Claude CLI and the Claude ACP engine share the
  * same stored Claude login.
@@ -304,7 +304,7 @@ export async function prepareSandboxClaudeProbeRuntime(input: {
       const managedRemoteCwd =
         input.target?.kind === "remote" ? input.target.remoteCwd : input.cwd;
       tempWorkspaceDir = await fs.mkdtemp(
-        path.join(os.tmpdir(), "paperclip-claude-envtest-workspace-"),
+        path.join(os.tmpdir(), "todero-claude-envtest-workspace-"),
       );
       preparedRuntime = await prepareAdapterExecutionTargetRuntime({
         runId: input.runId,
@@ -323,7 +323,7 @@ export async function prepareSandboxClaudeProbeRuntime(input: {
       });
       const runtimeRootDir =
         preparedRuntime.runtimeRootDir ??
-        path.posix.join(managedRemoteCwd, ".paperclip-runtime", "claude");
+        path.posix.join(managedRemoteCwd, ".todero-runtime", "claude");
       const remoteClaudeConfigSeedDir =
         preparedRuntime.assetDirs["config-seed"] ??
         path.posix.join(runtimeRootDir, "config-seed");
@@ -345,7 +345,7 @@ export async function prepareSandboxClaudeProbeRuntime(input: {
       checks.push({
         code: "claude_managed_config_dir",
         level: "info",
-        message: "The environment probe is using Paperclip-managed Claude config materialization.",
+        message: "The environment probe is using Todero-managed Claude config materialization.",
         detail: remoteClaudeConfigDir,
       });
     } catch (err) {
@@ -353,14 +353,14 @@ export async function prepareSandboxClaudeProbeRuntime(input: {
       // only the fixed context, the allowlisted classification, and a safe
       // error class name.
       logSandboxProbeDiagnostic(
-        "Could not materialize Paperclip-managed Claude config for the environment probe",
+        "Could not materialize Todero-managed Claude config for the environment probe",
         "spawn_error",
         { errorClass: classifyThrownErrorClass(err) },
       );
       checks.push({
         code: "claude_managed_config_dir_failed",
         level: "error",
-        message: "Could not materialize Paperclip-managed Claude config for the environment probe.",
+        message: "Could not materialize Todero-managed Claude config for the environment probe.",
         hint: "Retry the Test. If the failure repeats, check the server log for the redacted diagnostic.",
       });
     } finally {

@@ -29,9 +29,9 @@ import {
   toolProfileEntries,
   toolProfiles,
   toolRuntimeSlots,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { and, eq, sql } from "drizzle-orm";
-import { MCP_CONFIG_HELP_PROMPT } from "@paperclipai/shared";
+import { MCP_CONFIG_HELP_PROMPT } from "@todero/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -56,7 +56,7 @@ const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : 
  * deterministic and needs no network or vendor credentials.
  */
 
-const PUBLIC_BASE_URL = "https://paperclip.fixture.test";
+const PUBLIC_BASE_URL = "https://todero.fixture.test";
 const REDIRECT_URI = `${PUBLIC_BASE_URL}/api/tools/oauth/callback`;
 const CLIENT_METADATA_DOCUMENT_URL = `${PUBLIC_BASE_URL}/api/tools/oauth/client-metadata`;
 
@@ -155,7 +155,7 @@ function headerRecord(init: RequestInit | undefined): Record<string, string> {
 /**
  * A single fetch implementation standing in for an MCP server plus its
  * authorization server. Returns the request log so tests can assert on the exact
- * protocol parameters Paperclip sent (RFC 8707 `resource`, DCR metadata, PKCE).
+ * protocol parameters Todero sent (RFC 8707 `resource`, DCR metadata, PKCE).
  */
 function installMcpOAuthFixture(options: FixtureOptions = {}) {
   const auth = options.auth ?? "public";
@@ -196,7 +196,7 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
         const supplied = headers[options.requiredHeader.name.toLowerCase()];
         if (supplied !== options.requiredHeader.value) return unauthorizedMcpResponse(resourceMetadataUrl);
       }
-      return jsonResponse({ jsonrpc: "2.0", id: "paperclip-catalog-refresh", result: { tools } });
+      return jsonResponse({ jsonrpc: "2.0", id: "todero-catalog-refresh", result: { tools } });
     }
 
     if (href === resourceMetadataUrl) {
@@ -219,7 +219,7 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
       const requested = parsedBody as Record<string, unknown>;
       return jsonResponse({
         client_id: "fixture-dcr-client",
-        // A conforming server echoes back what it registered, and Paperclip
+        // A conforming server echoes back what it registered, and Todero
         // requires its own callback even when the provider adds a routing URI.
         redirect_uris: [
           ...(requested.redirect_uris as string[]),
@@ -327,7 +327,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-generic-mcp-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-generic-mcp-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -418,7 +418,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       if (String(url) === secretUrl && (init?.method ?? "GET").toUpperCase() === "POST") {
         return jsonResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: FIXTURE_TOOLS },
         });
       }
@@ -467,7 +467,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
         if (url === secretUrl && (init.method ?? "GET").toUpperCase() === "POST") {
           return jsonResponse({
             jsonrpc: "2.0",
-            id: "paperclip-catalog-refresh",
+            id: "todero-catalog-refresh",
             result: { tools: FIXTURE_TOOLS },
           });
         }
@@ -586,7 +586,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
 
     const response = await request(app)
       .get("/api/tools/oauth/client-metadata")
-      .set("Host", "paperclip.example.test")
+      .set("Host", "todero.example.test")
       .expect(422);
 
     expect(response.body).toMatchObject({
@@ -698,7 +698,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       listConnectedAccounts: async () => ({
         items: [{
           id: "account-github",
-          user_id: `paperclip:${company.id}`,
+          user_id: `todero:${company.id}`,
           status: "ACTIVE",
           toolkit: { slug: "github" },
           auth_config: { id: "auth-github", auth_scheme: "OAUTH2", is_composio_managed: true },
@@ -719,7 +719,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
         expect(new Headers(init.headers).get("authorization")).toBe("Bearer session-secret");
         return jsonResponse({
           jsonrpc: "2.0",
-          id: "paperclip-catalog-refresh",
+          id: "todero-catalog-refresh",
           result: { tools: [{ name: "GITHUB_LIST_REPOS", description: "List repositories", annotations: { readOnlyHint: true } }] },
         });
       },
@@ -757,7 +757,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       expect.objectContaining({ toolName: "GITHUB_LIST_REPOS", status: "active" }),
     ]);
     expect(sessionRequests).toEqual([
-      expect.objectContaining({ userId: `paperclip:${company.id}`, options: expect.objectContaining({ toolkits: ["github"], mcp: true }) }),
+      expect.objectContaining({ userId: `todero:${company.id}`, options: expect.objectContaining({ toolkits: ["github"], mcp: true }) }),
     ]);
     const sessionManager = createComposioSessionManager(db, { composioClientFactory: () => client });
     const [readScope, writeScope] = await Promise.all([
@@ -776,7 +776,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       redirect_url: "https://connect.composio.test/github",
     });
     expect(connectRequests).toEqual([
-      expect.objectContaining({ authConfigId: "auth-github", userId: `paperclip:${company.id}` }),
+      expect.objectContaining({ authConfigId: "auth-github", userId: `todero:${company.id}` }),
     ]);
     await expect(service.pollComposioService(connected.connectionId, "github")).resolves.toMatchObject({
       child: { id: childId },
@@ -817,7 +817,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     expect(serialized).toContain("X-Api-Key");
   });
 
-  it("rejects header names Paperclip refuses to send", async () => {
+  it("rejects header names Todero refuses to send", async () => {
     installMcpOAuthFixture({ auth: "public" });
     const company = await createCompany(db);
     const service = toolAccessService(db);
@@ -1128,7 +1128,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
 
     const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Fixture private CIMD" });
     const firstStart = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.tailnet.test:42001/api/tools/oauth/callback",
+      redirectUri: "https://todero.tailnet.test:42001/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board-user" },
     });
     expect(firstStart.registrationSource).toBe("cimd");
@@ -1138,7 +1138,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     // CIMD client id must not keep presenting it forever.
     metadataAddress = "100.100.100.100";
     const retry = await service.startOAuth(company.id, connected.connectionId, {
-      redirectUri: "https://paperclip.tailnet.test:42001/api/tools/oauth/callback",
+      redirectUri: "https://todero.tailnet.test:42001/api/tools/oauth/callback",
       actor: { actorType: "user", actorId: "board-user" },
     });
 
@@ -1339,7 +1339,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
    */
   const PROVIDER_CANARY = "canary-sk-live-9f3a2b7c";
   const HOSTILE_ERROR_DESCRIPTION =
-    `\u001b[31mFATAL\u001b[0m **Paperclip needs your recovery key**: ${PROVIDER_CANARY} <script>alert(1)</script>`;
+    `\u001b[31mFATAL\u001b[0m **Todero needs your recovery key**: ${PROVIDER_CANARY} <script>alert(1)</script>`;
   const HOSTILE_ERROR_BODY = {
     error_description: HOSTILE_ERROR_DESCRIPTION,
     error_uri: `https://attacker.fixture.test/why?leak=${PROVIDER_CANARY}`,
@@ -1397,7 +1397,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       actor: { actorType: "user", actorId: "board-user" },
     }).then(() => null, (error: unknown) => error);
 
-    // Paperclip's own copy for `invalid_grant`, not a syllable of the provider's.
+    // Todero's own copy for `invalid_grant`, not a syllable of the provider's.
     expect(thrown).toMatchObject({
       status: 502,
       message: "The authorization server rejected the authorization code or refresh token.",
@@ -1437,7 +1437,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     }).then(() => null, (error: unknown) => error);
 
     // Off the allowlist, so the label collapses and the message falls back to
-    // Paperclip's generic copy rather than naming the provider's code.
+    // Todero's generic copy rather than naming the provider's code.
     expect(thrown).toMatchObject({
       status: 502,
       message: "OAuth token exchange failed",
@@ -1466,7 +1466,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
 
     expect(thrown).toMatchObject({
       status: 502,
-      message: "The authorization server rejected Paperclip's callback URL.",
+      message: "The authorization server rejected Todero's callback URL.",
       details: {
         code: "oauth_dynamic_client_registration_failed",
         providerError: "invalid_redirect_uri",
@@ -1586,10 +1586,10 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     const service = toolAccessService(db);
     await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Fixture unsolicited denial" });
 
-    // An unsolicited callback carries no state Paperclip issued, so it is
+    // An unsolicited callback carries no state Todero issued, so it is
     // rejected on that ground and never reaches the provider-error branch.
     await expect(service.completeOAuthCallback({
-      state: "state-paperclip-never-issued",
+      state: "state-todero-never-issued",
       error: "access_denied",
       redirectUri: REDIRECT_URI,
       actor: { actorType: "user", actorId: "board-user" },
@@ -1642,7 +1642,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       const state = new URL(start.authorizationUrl).searchParams.get("state")!;
       const code = fixture.issueAuthorizationCode(start.authorizationUrl);
 
-      // Real providers invent their own cancel codes. Whether or not Paperclip
+      // Real providers invent their own cancel codes. Whether or not Todero
       // recognizes the label, the request is over.
       const thrown = await service.completeOAuthCallback({
         state,
@@ -1741,7 +1741,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       expect(resolved).toMatchObject({ status: "rejected", resolvedByUserId: "board-user" });
       expect(resolved!.result).toMatchObject({ outcome: "rejected" });
       expect(resolved!.resolvedAt).not.toBeNull();
-      // The prompt's reason is Paperclip's own copy, never the provider's.
+      // The prompt's reason is Todero's own copy, never the provider's.
       expect(JSON.stringify(resolved!.result)).not.toContain("access_denied");
       await expect(db.select().from(toolOauthStates)).resolves.toHaveLength(0);
     });
@@ -1851,7 +1851,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       actor: { actorType: "user", actorId: "board-user" },
     });
 
-    // The callback moved. Paperclip cannot re-register in the operator's console,
+    // The callback moved. Todero cannot re-register in the operator's console,
     // so it must stop and say so rather than silently minting a new client.
     await expect(service.startOAuth(company.id, connected.connectionId, {
       redirectUri: "https://other.fixture.test/api/tools/oauth/callback",
@@ -1860,7 +1860,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   });
 
   /**
-   * PAP-17099 — the authorization endpoint is the one discovered value Paperclip
+   * PAP-17099 — the authorization endpoint is the one discovered value Todero
    * hands to the operator's browser as a top-level navigation, so a hostile
    * server must not be able to advertise a scheme that runs code in the board's
    * origin, reads a local file, or downgrades the authorization request.
@@ -1896,7 +1896,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
 
       const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Fixture poisoned config" });
       // A row written before the gate existed (or by any other writer) is not
-      // trusted just because it is in Paperclip's own database.
+      // trusted just because it is in Todero's own database.
       const poisonStoredAuthorizationUrl = async () => {
         const [row] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
         const poisoned = {

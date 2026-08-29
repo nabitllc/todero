@@ -42,7 +42,7 @@ describe("remote managed runtime", () => {
   });
 
   it("restores runtime assets without restoring an in-place SSH workspace", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-remote-runtime-assets-only-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-remote-runtime-assets-only-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     const homeDir = path.join(rootDir, "home");
@@ -81,7 +81,7 @@ describe("remote managed runtime", () => {
     expect(prepareWorkspaceForSshExecution).not.toHaveBeenCalled();
     expect(syncDirectoryToSsh).toHaveBeenCalledWith(expect.objectContaining({
       localDir: homeDir,
-      remoteDir: "/app/.paperclip-runtime/codex/home",
+      remoteDir: "/app/.todero-runtime/codex/home",
     }));
 
     await prepared.restoreWorkspace();
@@ -89,14 +89,14 @@ describe("remote managed runtime", () => {
     expect(restoreWorkspaceFromSshExecution).not.toHaveBeenCalled();
     expect(runSshCommand).toHaveBeenCalledWith(
       expect.anything(),
-      "base64 < '/app/.paperclip-runtime/codex/home/auth.json'",
+      "base64 < '/app/.todero-runtime/codex/home/auth.json'",
       { maxBuffer: 1024 * 1024 },
     );
     expect(restoredAuth).toBe('{"token":"remote"}\n');
   });
 
   it("stages each additional project into its own isolated SSH dir, isolating one failure", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-remote-runtime-additional-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-remote-runtime-additional-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     const firstDir = path.join(rootDir, "referenced-first");
@@ -136,21 +136,21 @@ describe("remote managed runtime", () => {
     // Each healthy project staged into its OWN isolated dir under the runtime
     // root; the broken one is skipped, not fatal.
     expect(Object.keys(prepared.additionalSourceDirs).sort()).toEqual(["first", "second"]);
-    expect(prepared.additionalSourceDirs.first).toBe("/app/.paperclip-runtime/codex/project-first");
-    expect(prepared.additionalSourceDirs.second).toBe("/app/.paperclip-runtime/codex/project-second");
+    expect(prepared.additionalSourceDirs.first).toBe("/app/.todero-runtime/codex/project-first");
+    expect(prepared.additionalSourceDirs.second).toBe("/app/.todero-runtime/codex/project-second");
     expect(prepared.additionalSourceDirs.broken).toBeUndefined();
     expect(syncDirectoryToSsh).toHaveBeenCalledWith(expect.objectContaining({
       localDir: firstDir,
-      remoteDir: "/app/.paperclip-runtime/codex/project-first",
+      remoteDir: "/app/.todero-runtime/codex/project-first",
     }));
     expect(syncDirectoryToSsh).toHaveBeenCalledWith(expect.objectContaining({
       localDir: secondDir,
-      remoteDir: "/app/.paperclip-runtime/codex/project-second",
+      remoteDir: "/app/.todero-runtime/codex/project-second",
     }));
   });
 
   it("skips an additional project whose localPath is not absolute", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-remote-runtime-relative-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-remote-runtime-relative-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     const healthyDir = path.join(rootDir, "referenced-healthy");
@@ -187,7 +187,7 @@ describe("remote managed runtime", () => {
   });
 
   it("passes a project's resolved Git-ignored paths to the SSH exclude list, escaped", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-remote-runtime-ignore-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-remote-runtime-ignore-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     const projectDir = path.join(rootDir, "referenced-project");
@@ -230,7 +230,7 @@ describe("remote managed runtime", () => {
   });
 
   it("skips a project whose ignore resolution failed without ever calling syncDirectoryToSsh for it", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-remote-runtime-failed-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-remote-runtime-failed-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     const healthyDir = path.join(rootDir, "referenced-healthy");
@@ -266,7 +266,7 @@ describe("remote managed runtime", () => {
   });
 
   it("never leaks a raw absolute path into the remote per-project staging warning", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-remote-runtime-redact-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-remote-runtime-redact-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     const failedDir = path.join(rootDir, "referenced-failed");

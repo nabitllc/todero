@@ -5,7 +5,7 @@ const {
   ensureAdapterExecutionTargetRuntimeCommandInstalled,
   executeCodexAcp,
   prepareCodexRuntimeConfig,
-  readPaperclipRuntimeSkillEntries,
+  readToderoRuntimeSkillEntries,
   resolveAdapterExecutionTargetCommandForLogs,
   runAdapterExecutionTargetProcess,
   tempCodexHome,
@@ -16,7 +16,7 @@ const {
     throw new Error('Transform failed with 1 error: execute.ts:818:0: ERROR: Unexpected "<<"');
   }),
   prepareCodexRuntimeConfig: vi.fn(async () => ({ cleanup: vi.fn(async () => undefined), notes: [] })),
-  readPaperclipRuntimeSkillEntries: vi.fn(async () => []),
+  readToderoRuntimeSkillEntries: vi.fn(async () => []),
   resolveAdapterExecutionTargetCommandForLogs: vi.fn(async () => "codex"),
   runAdapterExecutionTargetProcess: vi.fn(async () => ({
     exitCode: 0,
@@ -37,22 +37,22 @@ const {
     pid: 123,
     startedAt: new Date().toISOString(),
   })),
-  tempCodexHome: "/tmp/paperclip-codex-acp-fallback-test-home",
+  tempCodexHome: "/tmp/todero-codex-acp-fallback-test-home",
 }));
 
 vi.mock("./acp.js", () => ({
   createCodexAcpExecutor: () => executeCodexAcp,
   formatCodexAcpFallbackMessage: (reason: string) =>
-    `[paperclip] Codex ACP default unavailable; falling back to Codex CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`,
+    `[todero] Codex ACP default unavailable; falling back to Codex CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`,
   resolveCodexExecutionEngineForRun: async (ctx: { config: Record<string, unknown> }) =>
     ctx.config.engine === "acp"
       ? { engine: "acp", explicit: true }
       : { engine: "acp", explicit: false },
 }));
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@todero/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/execution-target")>(
+    "@todero/adapter-utils/execution-target",
   );
   return {
     ...actual,
@@ -63,13 +63,13 @@ vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/server-utils")>(
-    "@paperclipai/adapter-utils/server-utils",
+vi.mock("@todero/adapter-utils/server-utils", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/server-utils")>(
+    "@todero/adapter-utils/server-utils",
   );
   return {
     ...actual,
-    readPaperclipRuntimeSkillEntries,
+    readToderoRuntimeSkillEntries,
   };
 });
 

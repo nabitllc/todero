@@ -1,4 +1,4 @@
-# Quickstart: single-container Paperclip with embedded database.
+# Quickstart: single-container Todero with embedded database.
 # Copy this file and set the required env vars before running.
 #
 #   cd docker
@@ -7,7 +7,7 @@
 #   docker compose -f docker-compose.quickstart.yml up --build
 #
 services:
-  paperclip:
+  todero:
     build:
       context: ..
       dockerfile: Dockerfile
@@ -20,7 +20,7 @@ services:
       - "${PAPERCLIP_PORT:-3100}:3100"
     environment:
       HOST: "0.0.0.0"
-      PAPERCLIP_HOME: "/paperclip"
+      PAPERCLIP_HOME: "/todero"
 
       # ── LLM provider keys (at least one is needed for agents to work) ──
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
@@ -38,4 +38,4 @@ services:
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
     volumes:
       # Persistent data directory (database, agent workspaces, uploads)
-      - "${PAPERCLIP_DATA_DIR:-../data/docker-paperclip}:/paperclip"
+      - "${PAPERCLIP_DATA_DIR:-../data/docker-todero}:/todero"

@@ -74,7 +74,7 @@ export function captureException(error: unknown): void {
     sentryHandle.captureException(error);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error("[paperclip] Sentry captureException failed", err);
+    console.error("[todero] Sentry captureException failed", err);
   }
 }
 
@@ -93,7 +93,7 @@ export function shutdownSentry(): Promise<void> {
       await sentryHandle.close(5_000);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[paperclip] Sentry shutdown failed", err);
+      console.error("[todero] Sentry shutdown failed", err);
     }
   })();
   return shutdownPromise;
@@ -165,7 +165,7 @@ async function bootstrapSentry(dsn: string): Promise<void> {
   if (!versionCheck.ok) {
     // eslint-disable-next-line no-console
     console.warn(
-      "[paperclip] SENTRY_DSN is set but the @sentry/node package is not " +
+      "[todero] SENTRY_DSN is set but the @sentry/node package is not " +
         "installed, or is installed at an unsupported version. Install the " +
         "declared version of @sentry/node to enable server error " +
         "monitoring. Continuing without it.",
@@ -192,7 +192,7 @@ async function bootstrapSentry(dsn: string): Promise<void> {
     // after that point reaches this block.
     // eslint-disable-next-line no-console
     console.warn(
-      "[paperclip] SENTRY_DSN is set and @sentry/node passed the version " +
+      "[todero] SENTRY_DSN is set and @sentry/node passed the version " +
         "check, but it failed to load or initialize. Continuing without " +
         "error monitoring.",
       err,

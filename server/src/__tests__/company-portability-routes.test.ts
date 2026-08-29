@@ -134,7 +134,7 @@ const exportRequest = {
 
 function createExportResult() {
   return {
-    rootPath: "paperclip",
+    rootPath: "todero",
     manifest: {
       agents: [],
       skills: [],
@@ -160,8 +160,8 @@ const importRequest = {
 };
 
 const cloudHeaders = {
-  "x-paperclip-cloud-stack-id": "stack-alpha",
-  "x-paperclip-cloud-paperclip-company-id": companyId,
+  "x-todero-cloud-stack-id": "stack-alpha",
+  "x-todero-cloud-todero-company-id": companyId,
 };
 
 function cloudTenantActor() {
@@ -343,13 +343,13 @@ describe.sequential("company portability routes", () => {
     }));
     mockCompanyPortabilityService.exportBundle.mockResolvedValue(createExportResult());
     mockCompanyPortabilityService.previewExport.mockResolvedValue({
-      rootPath: "paperclip",
+      rootPath: "todero",
       manifest: { agents: [], skills: [], projects: [], issues: [], envInputs: [], includes: { company: true, agents: true, projects: true, issues: false, skills: false }, company: null, schemaVersion: 1, generatedAt: new Date().toISOString(), source: null },
       files: {},
       fileInventory: [],
       counts: { files: 0, agents: 0, skills: 0, projects: 0, issues: 0 },
       warnings: [],
-      paperclipExtensionPath: ".paperclip.yaml",
+      toderoExtensionPath: ".todero.yaml",
     });
     mockCompanyPortabilityService.previewImport.mockResolvedValue({ ok: true });
     mockCompanyPortabilityService.importBundle.mockResolvedValue({
@@ -415,13 +415,13 @@ describe.sequential("company portability routes", () => {
 
   it.sequential("allows CEO agents to use company-scoped export preview routes", async () => {
     mockCompanyPortabilityService.previewExport.mockResolvedValue({
-      rootPath: "paperclip",
+      rootPath: "todero",
       manifest: { agents: [], skills: [], projects: [], issues: [], envInputs: [], includes: { company: true, agents: true, projects: true, issues: false, skills: false }, company: null, schemaVersion: 1, generatedAt: new Date().toISOString(), source: null },
       files: {},
       fileInventory: [],
       counts: { files: 0, agents: 0, skills: 0, projects: 0, issues: 0 },
       warnings: [],
-      paperclipExtensionPath: ".paperclip.yaml",
+      toderoExtensionPath: ".todero.yaml",
     });
     const app = await createApp({
       type: "agent",
@@ -436,7 +436,7 @@ describe.sequential("company portability routes", () => {
       .send(exportRequest);
 
     expect(res.status).toBe(200);
-    expect(res.body.rootPath).toBe("paperclip");
+    expect(res.body.rootPath).toBe("todero");
   });
 
   it.sequential("allows CEO agents to export through legacy and CEO-safe bundle routes", async () => {
@@ -453,7 +453,7 @@ describe.sequential("company portability routes", () => {
       const res = await request(app).post(path).send(exportRequest);
 
       expect(res.status).toBe(200);
-      expect(res.body.rootPath).toBe("paperclip");
+      expect(res.body.rootPath).toBe("todero");
     }
     expect(mockCompanyPortabilityService.exportBundle).toHaveBeenCalledTimes(2);
     expect(mockCompanyPortabilityService.exportBundle).toHaveBeenNthCalledWith(1, companyId, exportRequest);
@@ -474,7 +474,7 @@ describe.sequential("company portability routes", () => {
       const res = await request(app).post(path).send(exportRequest);
 
       expect(res.status).toBe(200);
-      expect(res.body.rootPath).toBe("paperclip");
+      expect(res.body.rootPath).toBe("todero");
     }
     expect(mockCompanyPortabilityService.exportBundle).toHaveBeenCalledTimes(2);
   });
@@ -761,7 +761,7 @@ describe.sequential("company portability routes", () => {
 
     const accepted = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(cloudHeaders)
       .send(importRequest);
 
@@ -822,7 +822,7 @@ describe.sequential("company portability routes", () => {
 
     const accepted = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(cloudHeaders)
       .send(importRequest);
 
@@ -842,7 +842,7 @@ describe.sequential("company portability routes", () => {
 
     const accepted = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(cloudHeaders)
       .send({ target: { mode: "existing_company", companyId } });
 
@@ -909,7 +909,7 @@ describe.sequential("company portability routes", () => {
 
     const accepted = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(TEST_USER_HEADER, "board-user-a")
       .send(importRequest);
 
@@ -945,7 +945,7 @@ describe.sequential("company portability routes", () => {
 
     const accepted = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(TEST_USER_HEADER, "board-user-a")
       .send(importRequest);
 
@@ -966,7 +966,7 @@ describe.sequential("company portability routes", () => {
 
     const first = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(TEST_USER_HEADER, "board-user-a")
       .send(importRequest);
 
@@ -974,7 +974,7 @@ describe.sequential("company portability routes", () => {
 
     const duplicate = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(TEST_USER_HEADER, "board-user-a")
       .send(importRequest);
 
@@ -988,7 +988,7 @@ describe.sequential("company portability routes", () => {
     mockCompanyPortabilityService.importBundle.mockReturnValueOnce(new Promise(() => undefined));
     const otherUser = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(TEST_USER_HEADER, "board-user-b")
       .send(importRequest);
 
@@ -1004,7 +1004,7 @@ describe.sequential("company portability routes", () => {
 
       const first = await request(app)
         .post("/api/companies/import")
-        .set("x-paperclip-cloud-async-import", "1")
+        .set("x-todero-cloud-async-import", "1")
         .set(TEST_USER_HEADER, "board-user-a")
         .send(importRequest);
 
@@ -1016,7 +1016,7 @@ describe.sequential("company portability routes", () => {
       // job to watch, and no second import starts.
       const different = await request(app)
         .post("/api/companies/import")
-        .set("x-paperclip-cloud-async-import", "1")
+        .set("x-todero-cloud-async-import", "1")
         .set(TEST_USER_HEADER, "board-user-a")
         .send({ ...importRequest, target: { mode: "new_company", newCompanyName: "A Different Destination" } });
 
@@ -1034,7 +1034,7 @@ describe.sequential("company portability routes", () => {
 
     const accepted = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(TEST_USER_HEADER, "board-user-a")
       .send(importRequest);
 
@@ -1103,20 +1103,20 @@ describe.sequential("company portability routes", () => {
   it.sequential("imports a company from a multipart zip upload, unzipping into the same inline bundle", async () => {
     const app = await createBoardApp();
     const files = { "COMPANY.md": "---\nname: Test\n---\n", "agents/ceo/AGENTS.md": "---\nname: CEO\n---\n" };
-    const zip = buildStoreZip(files, "paperclip");
+    const zip = buildStoreZip(files, "todero");
 
     const res = await request(app)
       .post("/api/companies/import")
       .set(TEST_USER_HEADER, "board-user-a")
       .field("meta", JSON.stringify(importMeta))
-      .attach("package", zip, "paperclip-demo.zip");
+      .attach("package", zip, "todero-demo.zip");
 
     expect(res.status).toBe(200);
     expect(mockCompanyPortabilityService.importBundle).toHaveBeenCalledTimes(1);
     const call = mockCompanyPortabilityService.importBundle.mock.calls[0]!;
     // The uploaded zip is unzipped into the exact inline source the importer
     // consumes; the other import fields ride along from the JSON meta field.
-    expect(call[0]).toEqual({ ...importMeta, source: { type: "inline", rootPath: "paperclip", files } });
+    expect(call[0]).toEqual({ ...importMeta, source: { type: "inline", rootPath: "todero", files } });
     expect(call[1]).toBe("board-user-a");
     expect(call[2]).toEqual({ pauseAutomations: false });
   });
@@ -1124,18 +1124,18 @@ describe.sequential("company portability routes", () => {
   it.sequential("previews a company from a multipart zip upload", async () => {
     const app = await createBoardApp();
     const files = { "COMPANY.md": "---\nname: Test\n---\n" };
-    const zip = buildStoreZip(files, "paperclip");
+    const zip = buildStoreZip(files, "todero");
 
     const res = await request(app)
       .post("/api/companies/import/preview")
       .set(TEST_USER_HEADER, "board-user-a")
       .field("meta", JSON.stringify(importMeta))
-      .attach("package", zip, "paperclip-demo.zip");
+      .attach("package", zip, "todero-demo.zip");
 
     expect(res.status).toBe(200);
     expect(mockCompanyPortabilityService.previewImport).toHaveBeenCalledTimes(1);
     const call = mockCompanyPortabilityService.previewImport.mock.calls[0]!;
-    expect(call[0]).toEqual({ ...importMeta, source: { type: "inline", rootPath: "paperclip", files } });
+    expect(call[0]).toEqual({ ...importMeta, source: { type: "inline", rootPath: "todero", files } });
   });
 
   it.sequential("runs a multipart zip import as an async board job via ?async=1", async () => {
@@ -1146,13 +1146,13 @@ describe.sequential("company portability routes", () => {
     mockCompanyPortabilityService.importBundle.mockReturnValueOnce(pendingImport);
     const app = await createBoardApp();
     const files = { "COMPANY.md": "---\nname: Test\n---\n" };
-    const zip = buildStoreZip(files, "paperclip");
+    const zip = buildStoreZip(files, "todero");
 
     const accepted = await request(app)
       .post("/api/companies/import?async=1")
       .set(TEST_USER_HEADER, "board-user-a")
       .field("meta", JSON.stringify(importMeta))
-      .attach("package", zip, "paperclip-demo.zip");
+      .attach("package", zip, "todero-demo.zip");
 
     expect(accepted.status).toBe(202);
     expect(accepted.body.job.status).toBe("running");
@@ -1163,7 +1163,7 @@ describe.sequential("company portability routes", () => {
     );
     expect(mockCompanyPortabilityService.importBundle.mock.calls[0]![0]).toEqual({
       ...importMeta,
-      source: { type: "inline", rootPath: "paperclip", files },
+      source: { type: "inline", rootPath: "todero", files },
     });
 
     const fullResult = createImportResult("created");
@@ -1179,7 +1179,7 @@ describe.sequential("company portability routes", () => {
     mockCompanyPortabilityService.importBundle.mockReturnValueOnce(new Promise(() => undefined));
     const app = await createBoardApp();
 
-    // The Cloud harness strips inbound x-paperclip-cloud-* headers, so a browser
+    // The Cloud harness strips inbound x-todero-cloud-* headers, so a browser
     // can only opt into async with the proxy-safe query parameter.
     const accepted = await request(app)
       .post("/api/companies/import?async=1")
@@ -1203,13 +1203,13 @@ describe.sequential("company portability routes", () => {
     expect(res.body.company.id).toBe(companyId);
   });
 
-  it.sequential("still engages the async path for cloud tenants via the x-paperclip-cloud-async-import header", async () => {
+  it.sequential("still engages the async path for cloud tenants via the x-todero-cloud-async-import header", async () => {
     mockCompanyPortabilityService.importBundle.mockReturnValueOnce(new Promise(() => undefined));
     const app = await createApp(cloudTenantActor());
 
     const accepted = await request(app)
       .post("/api/companies/import")
-      .set("x-paperclip-cloud-async-import", "1")
+      .set("x-todero-cloud-async-import", "1")
       .set(cloudHeaders)
       .send(importRequest);
 
@@ -1219,14 +1219,14 @@ describe.sequential("company portability routes", () => {
 
   it.sequential("rejects a truncated zip upload without importing anything", async () => {
     const app = await createBoardApp();
-    const zip = buildStoreZip({ "COMPANY.md": "---\nname: Test\n---\n" }, "paperclip");
+    const zip = buildStoreZip({ "COMPANY.md": "---\nname: Test\n---\n" }, "todero");
     const truncated = zip.subarray(0, 40);
 
     const res = await request(app)
       .post("/api/companies/import")
       .set(TEST_USER_HEADER, "board-user-a")
       .field("meta", JSON.stringify(importMeta))
-      .attach("package", truncated, "paperclip-demo.zip");
+      .attach("package", truncated, "todero-demo.zip");
 
     expect(res.status).toBe(400);
     expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();

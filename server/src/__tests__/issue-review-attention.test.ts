@@ -11,7 +11,7 @@ import {
   issueRecoveryActions,
   issueThreadInteractions,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -33,7 +33,7 @@ describeEmbeddedPostgres("issue review attention", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-review-attention-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-issue-review-attention-");
     db = createDb(tempDb.connectionString);
     svc = issueService(db);
   }, 30_000);

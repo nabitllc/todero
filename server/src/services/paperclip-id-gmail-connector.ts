@@ -13,7 +13,7 @@ import {
   GOOGLE_WORKSPACE_CONNECTOR_PROFILES,
   isGoogleWorkspaceConnectorProfileId,
   type GoogleWorkspaceConnectorProfileId,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 
 export const GMAIL_MCP_URL = "https://gmailmcp.googleapis.com/mcp/v1";
 export const GMAIL_CONNECTOR_SCOPES = [
@@ -22,13 +22,13 @@ export const GMAIL_CONNECTOR_SCOPES = [
 ] as const;
 export { GOOGLE_WORKSPACE_CONNECTOR_PROFILES };
 
-export type PaperclipIdConnectorEnvironment = "development" | "staging" | "production";
-export type PaperclipIdConnectorOperation = "session" | "claim" | "refresh" | "revoke";
+export type ToderoIdConnectorEnvironment = "development" | "staging" | "production";
+export type ToderoIdConnectorOperation = "session" | "claim" | "refresh" | "revoke";
 
-export type PaperclipIdGmailConnectorConfig = {
+export type ToderoIdGmailConnectorConfig = {
   baseUrl: string;
   instanceId: string;
-  environment: PaperclipIdConnectorEnvironment;
+  environment: ToderoIdConnectorEnvironment;
   signPrivateKey: string;
   sealPrivateKey: string;
 };
@@ -66,13 +66,13 @@ type ConnectorResponse = {
   protocolVersion?: unknown;
 };
 
-const ENDPOINTS: Record<PaperclipIdConnectorOperation, string> = {
+const ENDPOINTS: Record<ToderoIdConnectorOperation, string> = {
   session: "/api/connect/sessions",
   claim: "/api/connect/claims",
   refresh: "/api/connect/refresh",
   revoke: "/api/connect/revoke",
 };
-const JWS_TYP = "paperclip-connector-request+jwt";
+const JWS_TYP = "todero-connector-request+jwt";
 const SEAL_ALGORITHM = "X25519-HKDF-SHA256-A256GCM";
 const AES_TAG_BYTES = 16;
 const RAW_PRIVATE_KEY_BYTES = 32;
@@ -81,39 +81,39 @@ const X25519_PKCS8_PREFIX = Buffer.from("302e020100300506032b656e04220420", "hex
 const X25519_SPKI_PREFIX = Buffer.from("302a300506032b656e032100", "hex");
 
 /** A stable, intentionally detail-free error for all remote broker failures. */
-export class PaperclipIdConnectorError extends Error {
+export class ToderoIdConnectorError extends Error {
   constructor(
     message: string,
     readonly code: string,
     readonly status?: number,
   ) {
     super(message);
-    this.name = "PaperclipIdConnectorError";
+    this.name = "ToderoIdConnectorError";
   }
 }
 
-export function paperclipIdGmailConnectorConfigFromEnv(
+export function toderoIdGmailConnectorConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-): PaperclipIdGmailConnectorConfig | null {
+): ToderoIdGmailConnectorConfig | null {
   const instanceId = env.PAPERCLIP_ID_CONNECTOR_INSTANCE_ID?.trim();
   const signPrivateKey = env.PAPERCLIP_ID_CONNECTOR_SIGN_PRIVATE_KEY?.trim();
   const sealPrivateKey = env.PAPERCLIP_ID_CONNECTOR_SEAL_PRIVATE_KEY?.trim();
   const environment = env.PAPERCLIP_ID_CONNECTOR_ENVIRONMENT?.trim();
-  const baseUrl = env.PAPERCLIP_ID_CONNECTOR_BASE_URL?.trim() || "https://id.paperclip.app";
+  const baseUrl = env.PAPERCLIP_ID_CONNECTOR_BASE_URL?.trim() || "https://id.todero.app";
   const values = [instanceId, signPrivateKey, sealPrivateKey, environment];
   if (values.every((value) => !value)) return null;
   if (values.some((value) => !value)) {
-    throw new PaperclipIdConnectorError("Paperclip ID Gmail connector configuration is incomplete", "CONNECTOR_CONFIG_INCOMPLETE");
+    throw new ToderoIdConnectorError("Todero ID Gmail connector configuration is incomplete", "CONNECTOR_CONFIG_INCOMPLETE");
   }
   if (environment !== "development" && environment !== "staging" && environment !== "production") {
-    throw new PaperclipIdConnectorError("Paperclip ID Gmail connector environment is invalid", "CONNECTOR_CONFIG_INVALID");
+    throw new ToderoIdConnectorError("Todero ID Gmail connector environment is invalid", "CONNECTOR_CONFIG_INVALID");
   }
   const parsedBaseUrl = new URL(baseUrl);
   if (parsedBaseUrl.protocol !== "https:" && !(parsedBaseUrl.protocol === "http:" && isLoopback(parsedBaseUrl.hostname))) {
-    throw new PaperclipIdConnectorError("Paperclip ID Gmail connector URL must use HTTPS", "CONNECTOR_CONFIG_INVALID");
+    throw new ToderoIdConnectorError("Todero ID Gmail connector URL must use HTTPS", "CONNECTOR_CONFIG_INVALID");
   }
   if (parsedBaseUrl.username || parsedBaseUrl.password || parsedBaseUrl.search || parsedBaseUrl.hash) {
-    throw new PaperclipIdConnectorError("Paperclip ID Gmail connector URL is invalid", "CONNECTOR_CONFIG_INVALID");
+    throw new ToderoIdConnectorError("Todero ID Gmail connector URL is invalid", "CONNECTOR_CONFIG_INVALID");
   }
   parsedBaseUrl.pathname = parsedBaseUrl.pathname.replace(/\/$/, "");
   return {
@@ -125,8 +125,8 @@ export function paperclipIdGmailConnectorConfigFromEnv(
   };
 }
 
-export function createPaperclipIdGmailConnector(input: {
-  config: PaperclipIdGmailConnectorConfig;
+export function createToderoIdGmailConnector(input: {
+  config: ToderoIdGmailConnectorConfig;
   request?: typeof fetch;
   now?: () => number;
 }) {
@@ -137,7 +137,7 @@ export function createPaperclipIdGmailConnector(input: {
   const sealKey = privateKey(config.sealPrivateKey, "x25519");
 
   async function call(
-    operation: PaperclipIdConnectorOperation,
+    operation: ToderoIdConnectorOperation,
     claims: { subject: string; companyId: string; profile?: GoogleWorkspaceConnectorProfileId; returnUri?: string; returnState?: string; claimId?: string },
     secret?: { field: "refreshToken" | "token"; value: string },
   ): Promise<ConnectorResponse> {
@@ -172,12 +172,12 @@ export function createPaperclipIdGmailConnector(input: {
         signal: AbortSignal.timeout(15_000),
       });
     } catch {
-      throw new PaperclipIdConnectorError("Paperclip ID Gmail connector is unavailable", "CONNECTOR_UNAVAILABLE");
+      throw new ToderoIdConnectorError("Todero ID Gmail connector is unavailable", "CONNECTOR_UNAVAILABLE");
     }
     if (operation === "revoke" && response.status === 204) return {};
     if (!response.ok) {
-      throw new PaperclipIdConnectorError(
-        "Paperclip ID Gmail connector rejected the request",
+      throw new ToderoIdConnectorError(
+        "Todero ID Gmail connector rejected the request",
         response.status === 409 ? "REAUTHORIZATION_REQUIRED" : "CONNECTOR_REQUEST_FAILED",
         response.status,
       );
@@ -185,7 +185,7 @@ export function createPaperclipIdGmailConnector(input: {
     try {
       return await response.json() as ConnectorResponse;
     } catch {
-      throw new PaperclipIdConnectorError("Paperclip ID Gmail connector returned an invalid response", "CONNECTOR_BAD_RESPONSE");
+      throw new ToderoIdConnectorError("Todero ID Gmail connector returned an invalid response", "CONNECTOR_BAD_RESPONSE");
     }
   }
 
@@ -205,13 +205,13 @@ export function createPaperclipIdGmailConnector(input: {
       purpose.startsWith("google-workspace-") ? profile : undefined,
     );
     if (credentials.subject !== subject || credentials.companyId !== companyId) {
-      throw new PaperclipIdConnectorError("Paperclip ID Gmail credential binding did not match", "CONNECTOR_BINDING_MISMATCH");
+      throw new ToderoIdConnectorError("Todero ID Gmail credential binding did not match", "CONNECTOR_BINDING_MISMATCH");
     }
     if (credentials.profile && credentials.profile !== profile) {
-      throw new PaperclipIdConnectorError("Paperclip ID connector profile binding did not match", "CONNECTOR_BINDING_MISMATCH");
+      throw new ToderoIdConnectorError("Todero ID connector profile binding did not match", "CONNECTOR_BINDING_MISMATCH");
     }
     if (!sameStringSet(credentials.scopes, GOOGLE_WORKSPACE_CONNECTOR_PROFILES[profile].scopes)) {
-      throw new PaperclipIdConnectorError("Paperclip ID Gmail scope grant did not match", "REAUTHORIZATION_REQUIRED");
+      throw new ToderoIdConnectorError("Todero ID Gmail scope grant did not match", "REAUTHORIZATION_REQUIRED");
     }
     return credentials;
   }
@@ -236,14 +236,14 @@ export function createPaperclipIdGmailConnector(input: {
       const profile = values.profile ?? "gmail.draft";
       const response = await call("session", { ...values, profile });
       if (typeof response.authorizationUrl !== "string" || typeof response.expiresAt !== "string") {
-        throw new PaperclipIdConnectorError("Paperclip ID Gmail connector returned an invalid session", "CONNECTOR_BAD_RESPONSE");
+        throw new ToderoIdConnectorError("Todero ID Gmail connector returned an invalid session", "CONNECTOR_BAD_RESPONSE");
       }
       if (!sameStringSet(response.scopes, GOOGLE_WORKSPACE_CONNECTOR_PROFILES[profile].scopes)) {
-        throw new PaperclipIdConnectorError("Paperclip ID Gmail connector returned an invalid scope set", "CONNECTOR_BAD_RESPONSE");
+        throw new ToderoIdConnectorError("Todero ID Gmail connector returned an invalid scope set", "CONNECTOR_BAD_RESPONSE");
       }
       const authorizationUrl = new URL(response.authorizationUrl);
       if (authorizationUrl.protocol !== "https:" || authorizationUrl.hostname !== "accounts.google.com") {
-        throw new PaperclipIdConnectorError("Paperclip ID Gmail connector returned an invalid authorization URL", "CONNECTOR_BAD_RESPONSE");
+        throw new ToderoIdConnectorError("Todero ID Gmail connector returned an invalid authorization URL", "CONNECTOR_BAD_RESPONSE");
       }
       return { authorizationUrl: authorizationUrl.toString(), expiresAt: response.expiresAt };
     },
@@ -267,19 +267,19 @@ export function createPaperclipIdGmailConnector(input: {
   };
 }
 
-export type PaperclipIdGmailConnector = ReturnType<typeof createPaperclipIdGmailConnector>;
-export type PaperclipIdGoogleWorkspaceConnector = PaperclipIdGmailConnector;
+export type ToderoIdGmailConnector = ReturnType<typeof createToderoIdGmailConnector>;
+export type ToderoIdGoogleWorkspaceConnector = ToderoIdGmailConnector;
 
 let capabilityCache: { key: string; expiresAt: number; profiles: GoogleWorkspaceConnectorProfileId[] } | null = null;
 
-export async function paperclipIdGoogleConnectorCapabilitiesFromEnv(
+export async function toderoIdGoogleConnectorCapabilitiesFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<GoogleWorkspaceConnectorProfileId[]> {
-  const config = paperclipIdGmailConnectorConfigFromEnv(env);
+  const config = toderoIdGmailConnectorConfigFromEnv(env);
   if (!config) return [];
   const key = `${config.baseUrl}|${config.instanceId}|${config.environment}`;
   if (capabilityCache?.key === key && capabilityCache.expiresAt > Date.now()) return capabilityCache.profiles;
-  const profiles = await createPaperclipIdGmailConnector({ config }).getCapabilities();
+  const profiles = await createToderoIdGmailConnector({ config }).getCapabilities();
   capabilityCache = { key, expiresAt: Date.now() + 60_000, profiles };
   return profiles;
 }
@@ -308,7 +308,7 @@ function privateKey(value: string, curve: "ed25519" | "x25519"): KeyObject {
     if (parsed.asymmetricKeyType !== curve) throw new Error("wrong key type");
     return parsed;
   } catch {
-    throw new PaperclipIdConnectorError(`Paperclip ID ${curve} private key is invalid`, "CONNECTOR_CONFIG_INVALID");
+    throw new ToderoIdConnectorError(`Todero ID ${curve} private key is invalid`, "CONNECTOR_CONFIG_INVALID");
   }
 }
 
@@ -370,13 +370,13 @@ function unseal(
     }
     return parsed as SealedGmailCredentials;
   } catch (error) {
-    if (error instanceof PaperclipIdConnectorError) throw error;
+    if (error instanceof ToderoIdConnectorError) throw error;
     throw badEnvelope();
   }
 }
 
 function badEnvelope() {
-  return new PaperclipIdConnectorError("Paperclip ID Gmail connector returned an invalid sealed credential", "CONNECTOR_BAD_RESPONSE");
+  return new ToderoIdConnectorError("Todero ID Gmail connector returned an invalid sealed credential", "CONNECTOR_BAD_RESPONSE");
 }
 
 function sealPurpose(

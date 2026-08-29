@@ -30,18 +30,18 @@ import {
   validatePrpEvent,
   type PrpEvent,
 } from "../protocol/replay-contract.js";
-import { digestPaperclipSemanticContent } from "../semantic-tools/receipts.js";
+import { digestToderoSemanticContent } from "../semantic-tools/receipts.js";
 import {
   type DurableRecoveryCommittedEvent,
   type DurableRecoveryCoreCommand,
   type DurableRecoveryIdentity,
 } from "./prp-transport-types.js";
 
-const protocol = "paperclip.runner";
+const protocol = "todero.runner";
 const protocolVersion = 1;
-const secureFrameSchema = "paperclip.runner.secure-frame.v1";
+const secureFrameSchema = "todero.runner.secure-frame.v1";
 const websocketGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-const coreStateSchema = "paperclip.runner.durable.control-plane-state.v1";
+const coreStateSchema = "todero.runner.durable.control-plane-state.v1";
 const maxFrameBytes = 1024 * 1024;
 const maxCommandBytes = maxFrameBytes - 4 * 1024;
 const maxCommands = 500;
@@ -278,7 +278,7 @@ function isStoredCoreState(
     !commands.every(
       (command, index) =>
         isRecord(command) &&
-        command.schema === "paperclip.prp.command.v1" &&
+        command.schema === "todero.prp.command.v1" &&
         typeof command.commandId === "string" &&
         stableIdPattern.test(command.commandId) &&
         command.commandId.length <= 160 &&
@@ -916,7 +916,7 @@ export class DurablePrpControlPlane {
     }
     const controllerSeq = this.#store.state.commands.length + 1;
     const command: DurableRecoveryCoreCommand = {
-      schema: "paperclip.prp.command.v1",
+      schema: "todero.prp.command.v1",
       commandId:
         commandId ?? `command_prp_${controllerSeq.toString().padStart(8, "0")}`,
       controllerSeq,
@@ -951,7 +951,7 @@ export class DurablePrpControlPlane {
     expectedPath = "/api/runner/v1/connect",
     head: Buffer<ArrayBufferLike> = Buffer.alloc(0),
   ): void {
-    const requestPath = new URL(request.url ?? "/", "http://paperclip.invalid")
+    const requestPath = new URL(request.url ?? "/", "http://todero.invalid")
       .pathname;
     if (requestPath !== expectedPath) {
       socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
@@ -1529,7 +1529,7 @@ export class DurablePrpControlPlane {
         typeof semantic.content !== "object" ||
         semantic.content === null ||
         (semantic.content as Record<string, unknown>).digest !==
-          digestPaperclipSemanticContent(semantic.input) ||
+          digestToderoSemanticContent(semantic.input) ||
         semanticCorrelation?.runId !== this.#identity.runId ||
         semanticCorrelation.normalizedSessionId !==
           this.#identity.normalizedSessionId ||

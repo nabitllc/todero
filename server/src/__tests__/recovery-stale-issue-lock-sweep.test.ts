@@ -11,7 +11,7 @@ import {
   issueComments,
   issueRelations,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -38,7 +38,7 @@ describeEmbeddedPostgres("recovery sweepStaleIssueLocks", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-stale-lock-sweep-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-stale-lock-sweep-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -65,7 +65,7 @@ describeEmbeddedPostgres("recovery sweepStaleIssueLocks", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

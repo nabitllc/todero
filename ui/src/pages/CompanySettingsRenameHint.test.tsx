@@ -67,7 +67,7 @@ const CLOUD_HEALTH = {
   status: "ok" as const,
   cloud: {
     managed: true as const,
-    managedBy: "paperclip-cloud" as const,
+    managedBy: "todero-cloud" as const,
     stackSlug: "acme-labs",
     cloudBaseUrl: "https://cloud.example.test",
   },

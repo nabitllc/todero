@@ -9,7 +9,7 @@ import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
 import { resolveSkillSummaryText } from "../lib/company-skill-summary";
-import { AGENT_ROLES, type AdapterEnvironmentTestResult, type AgentPermissions } from "@paperclipai/shared";
+import { AGENT_ROLES, type AdapterEnvironmentTestResult, type AgentPermissions } from "@todero/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -29,7 +29,7 @@ import {
 } from "../components/AgentConfigForm";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { buildFixedClaudeOAuthBinding } from "../components/environment-variables-editor/model";
-import type { EnvBinding } from "@paperclipai/shared";
+import type { EnvBinding } from "@todero/shared";
 import { getUIAdapter, listUIAdapters } from "../adapters";
 import { useDisabledAdaptersSync } from "../adapters/use-disabled-adapters";
 import { isValidAdapterType } from "../adapters/metadata";
@@ -37,11 +37,11 @@ import { ReportsToPicker } from "../components/ReportsToPicker";
 import { buildNewAgentHirePayload } from "../lib/new-agent-hire-payload";
 import { TrustPresetSection } from "../components/TrustPresetSection";
 import { buildPermissionsForTrustPreset, getTrustPreset } from "../lib/trust-policy-ui";
-import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_KIMI_LOCAL_MODEL } from "@paperclipai/adapter-kimi-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@paperclipai/adapter-opencode-local";
+import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@todero/adapter-codex-local";
+import { DEFAULT_CURSOR_LOCAL_MODEL } from "@todero/adapter-cursor-local";
+import { DEFAULT_GEMINI_LOCAL_MODEL } from "@todero/adapter-gemini-local";
+import { DEFAULT_KIMI_LOCAL_MODEL } from "@todero/adapter-kimi-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@todero/adapter-opencode-local";
 
 function createValuesForAdapterType(
   adapterType: CreateConfigValues["adapterType"],
@@ -190,7 +190,7 @@ export function NewAgent() {
     );
   }
 
-  const availableSkills = (companySkills ?? []).filter((skill) => !skill.key.startsWith("paperclipai/paperclip/"));
+  const availableSkills = (companySkills ?? []).filter((skill) => !skill.key.startsWith("nabitllc/todero/"));
 
   function toggleSkill(key: string, checked: boolean) {
     setSelectedSkillKeys((prev) => {
@@ -353,7 +353,7 @@ export function NewAgent() {
             <div>
               <h2 className="text-sm font-medium">Organization skills</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Optional skills from the organization library. Built-in Paperclip runtime skills are added automatically.
+                Optional skills from the organization library. Built-in Todero runtime skills are added automatically.
               </p>
             </div>
             {availableSkills.length === 0 ? (

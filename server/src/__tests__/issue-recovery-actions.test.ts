@@ -17,14 +17,14 @@ import {
   issueRecoveryActions,
   issueRelations,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
-import { buildPaperclipWakePayload } from "../services/heartbeat.js";
+import { buildToderoWakePayload } from "../services/heartbeat.js";
 import { issueRecoveryActionService } from "../services/issue-recovery-actions.js";
 import { recoveryService } from "../services/recovery/service.js";
 import { noticeMetadataReferencesRecoveryAction } from "../services/recovery/successful-run-handoff.js";
@@ -130,7 +130,7 @@ describeEmbeddedPostgres("issue recovery actions", () => {
   let db: ReturnType<typeof createDb>;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-recovery-actions-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-issue-recovery-actions-");
     db = createDb(tempDb.connectionString);
   }, 30_000);
 
@@ -1547,7 +1547,7 @@ describeEmbeddedPostgres("issue recovery actions", () => {
       maxAttempts: 3,
     });
 
-    const payload = await buildPaperclipWakePayload({
+    const payload = await buildToderoWakePayload({
       db,
       companyId,
       contextSnapshot: {

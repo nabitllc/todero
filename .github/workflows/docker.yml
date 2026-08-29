@@ -167,8 +167,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=sha
           labels: |
-            io.github.paperclipai.schema.last-migration=${{ steps.schema.outputs.last }}
-            io.github.paperclipai.schema.migration-count=${{ steps.schema.outputs.count }}
+            io.github.toderoai.schema.last-migration=${{ steps.schema.outputs.last }}
+            io.github.toderoai.schema.migration-count=${{ steps.schema.outputs.count }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -363,8 +363,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=sha
           labels: |
-            io.github.paperclipai.schema.last-migration=${{ steps.schema.outputs.last }}
-            io.github.paperclipai.schema.migration-count=${{ steps.schema.outputs.count }}
+            io.github.toderoai.schema.last-migration=${{ steps.schema.outputs.last }}
+            io.github.toderoai.schema.migration-count=${{ steps.schema.outputs.count }}
 
       - name: Build and push (cloud)
         uses: docker/build-push-action@v7

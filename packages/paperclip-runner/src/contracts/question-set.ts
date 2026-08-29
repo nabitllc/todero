@@ -1,26 +1,26 @@
 export const PAPERCLIP_QUESTION_SET_SCHEMA =
-  "paperclip.question_set.v1" as const;
+  "todero.question_set.v1" as const;
 export const PAPERCLIP_QUESTION_RESPONSE_SCHEMA =
-  "paperclip.question_response.v1" as const;
+  "todero.question_response.v1" as const;
 export const PAPERCLIP_RUNTIME_REQUEST_SCHEMA_V2 =
-  "paperclip.runtime_request.v2" as const;
+  "todero.runtime_request.v2" as const;
 
-export type PaperclipQuestionAnswerMode =
+export type ToderoQuestionAnswerMode =
   "single_select" | "multi_select" | "text";
 
-export interface PaperclipQuestionOption {
+export interface ToderoQuestionOption {
   id: string;
   label: string;
   description?: string;
 }
 
-export interface PaperclipQuestionCustomAnswer {
+export interface ToderoQuestionCustomAnswer {
   enabled: true;
   label?: string;
   placeholder?: string;
 }
 
-export interface PaperclipQuestionTextValidation {
+export interface ToderoQuestionTextValidation {
   minLength?: number;
   maxLength?: number;
   pattern?: string;
@@ -29,63 +29,63 @@ export interface PaperclipQuestionTextValidation {
   maximum?: number;
 }
 
-export interface PaperclipQuestion {
+export interface ToderoQuestion {
   id: string;
   header?: string;
   prompt: string;
   helpText?: string;
   required: boolean;
-  answerMode: PaperclipQuestionAnswerMode;
-  options?: PaperclipQuestionOption[];
-  customAnswer?: PaperclipQuestionCustomAnswer;
-  textValidation?: PaperclipQuestionTextValidation;
+  answerMode: ToderoQuestionAnswerMode;
+  options?: ToderoQuestionOption[];
+  customAnswer?: ToderoQuestionCustomAnswer;
+  textValidation?: ToderoQuestionTextValidation;
 }
 
-export interface PaperclipQuestionSet {
+export interface ToderoQuestionSet {
   schema: typeof PAPERCLIP_QUESTION_SET_SCHEMA;
   title?: string;
   description?: string;
   submitLabel?: string;
-  questions: PaperclipQuestion[];
+  questions: ToderoQuestion[];
 }
 
-export interface PaperclipQuestionAnswer {
+export interface ToderoQuestionAnswer {
   selectedOptionIds?: string[];
   text?: string;
   customText?: string;
 }
 
-export interface PaperclipQuestionResponse {
+export interface ToderoQuestionResponse {
   schema: typeof PAPERCLIP_QUESTION_RESPONSE_SCHEMA;
-  answers: Record<string, PaperclipQuestionAnswer>;
+  answers: Record<string, ToderoQuestionAnswer>;
 }
 
-export interface PaperclipRuntimeRequestOrigin {
+export interface ToderoRuntimeRequestOrigin {
   adapter: string;
   provider?: string;
   method?: string;
 }
 
-export interface PaperclipRuntimeInputRequest {
+export interface ToderoRuntimeInputRequest {
   schema: typeof PAPERCLIP_RUNTIME_REQUEST_SCHEMA_V2;
   requestKind: "runtime";
   requestId: string;
   type: "input";
   status: "pending" | "resolved" | "expired" | "cancelled";
   prompt: string;
-  input: PaperclipQuestionSet;
-  origin?: PaperclipRuntimeRequestOrigin;
+  input: ToderoQuestionSet;
+  origin?: ToderoRuntimeRequestOrigin;
   turnId?: string;
   itemId?: string;
 }
 
-export class PaperclipQuestionValidationError extends Error {
+export class ToderoQuestionValidationError extends Error {
   readonly code = "invalid_question_response" as const;
   readonly path: string;
 
   constructor(path: string, detail: string) {
     super(`${path}: ${detail}`);
-    this.name = "PaperclipQuestionValidationError";
+    this.name = "ToderoQuestionValidationError";
     this.path = path;
   }
 }
@@ -104,7 +104,7 @@ function rejectUnknownKeys(
   const allowedKeys = new Set(allowed);
   const unknown = Object.keys(value).find((key) => !allowedKeys.has(key));
   if (unknown !== undefined) {
-    throw new PaperclipQuestionValidationError(
+    throw new ToderoQuestionValidationError(
       `${path}/${unknown}`,
       "is not part of the canonical response contract",
     );
@@ -117,7 +117,7 @@ function requiredText(value: unknown, path: string, maxLength = 4_000): string {
     value.length === 0 ||
     value.length > maxLength
   ) {
-    throw new PaperclipQuestionValidationError(
+    throw new ToderoQuestionValidationError(
       path,
       `must be a non-empty string of at most ${maxLength} characters`,
     );
@@ -132,7 +132,7 @@ function optionalText(
 ): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.length > maxLength) {
-    throw new PaperclipQuestionValidationError(
+    throw new ToderoQuestionValidationError(
       path,
       `must be a string of at most ${maxLength} characters`,
     );
@@ -146,21 +146,21 @@ function optionalFiniteNumber(
 ): number | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new PaperclipQuestionValidationError(path, "must be a finite number");
+    throw new ToderoQuestionValidationError(path, "must be a finite number");
   }
   return value;
 }
 
 /** Parse and sanitize the provider-neutral presentation contract at an adapter boundary. */
-export function parsePaperclipQuestionSet(
+export function parseToderoQuestionSet(
   value: unknown,
-): PaperclipQuestionSet {
+): ToderoQuestionSet {
   const candidate = record(value);
   if (
     candidate === null ||
     candidate.schema !== PAPERCLIP_QUESTION_SET_SCHEMA
   ) {
-    throw new PaperclipQuestionValidationError(
+    throw new ToderoQuestionValidationError(
       "/input",
       `must use ${PAPERCLIP_QUESTION_SET_SCHEMA}`,
     );
@@ -170,21 +170,21 @@ export function parsePaperclipQuestionSet(
     candidate.questions.length === 0 ||
     candidate.questions.length > 64
   ) {
-    throw new PaperclipQuestionValidationError(
+    throw new ToderoQuestionValidationError(
       "/input/questions",
       "must contain between 1 and 64 questions",
     );
   }
   const questionIds = new Set<string>();
   const questions = candidate.questions.map(
-    (rawQuestion, questionIndex): PaperclipQuestion => {
+    (rawQuestion, questionIndex): ToderoQuestion => {
       const path = `/input/questions/${questionIndex}`;
       const question = record(rawQuestion);
       if (question === null)
-        throw new PaperclipQuestionValidationError(path, "must be an object");
+        throw new ToderoQuestionValidationError(path, "must be an object");
       const id = requiredText(question.id, `${path}/id`, 160);
       if (questionIds.has(id))
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/id`,
           "must be unique",
         );
@@ -195,31 +195,31 @@ export function parsePaperclipQuestionSet(
         answerMode !== "multi_select" &&
         answerMode !== "text"
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/answerMode`,
           "must be single_select, multi_select, or text",
         );
       }
       if (typeof question.required !== "boolean") {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/required`,
           "must be boolean",
         );
       }
       if (Array.isArray(question.options) && question.options.length > 128) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/options`,
           "cannot contain more than 128 options",
         );
       }
-      const options: PaperclipQuestionOption[] | undefined = Array.isArray(
+      const options: ToderoQuestionOption[] | undefined = Array.isArray(
         question.options,
       )
         ? question.options.map((rawOption, optionIndex) => {
             const optionPath = `${path}/options/${optionIndex}`;
             const option = record(rawOption);
             if (option === null)
-              throw new PaperclipQuestionValidationError(
+              throw new ToderoQuestionValidationError(
                 optionPath,
                 "must be an object",
               );
@@ -244,13 +244,13 @@ export function parsePaperclipQuestionSet(
         options !== undefined &&
         new Set(options.map((option) => option.id)).size !== options.length
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/options`,
           "option IDs must be unique within a question",
         );
       }
       if (answerMode !== "text" && (!options || options.length === 0)) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/options`,
           "select questions require at least one option",
         );
@@ -260,7 +260,7 @@ export function parsePaperclipQuestionSet(
         options !== undefined &&
         options.length > 0
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/options`,
           "text questions cannot define options",
         );
@@ -299,19 +299,19 @@ export function parsePaperclipQuestionSet(
                 : {}),
             };
       if (custom !== null && custom.enabled !== true) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/customAnswer/enabled`,
           "must be true when customAnswer is present",
         );
       }
       if (answerMode === "text" && customAnswer !== undefined) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/customAnswer`,
           "text questions do not use a separate custom answer",
         );
       }
       const validation = record(question.textValidation);
-      const textValidation: PaperclipQuestionTextValidation | undefined =
+      const textValidation: ToderoQuestionTextValidation | undefined =
         validation === null
           ? undefined
           : {
@@ -371,7 +371,7 @@ export function parsePaperclipQuestionSet(
               (raw as number) < 0 ||
               (raw as number) > 100_000)
           ) {
-            throw new PaperclipQuestionValidationError(
+            throw new ToderoQuestionValidationError(
               `${path}/textValidation/${key}`,
               "must be an integer from 0 through 100000",
             );
@@ -381,7 +381,7 @@ export function parsePaperclipQuestionSet(
           validation.inputType !== undefined &&
           !["text", "number", "integer"].includes(String(validation.inputType))
         ) {
-          throw new PaperclipQuestionValidationError(
+          throw new ToderoQuestionValidationError(
             `${path}/textValidation/inputType`,
             "must be text, number, or integer",
           );
@@ -391,7 +391,7 @@ export function parsePaperclipQuestionSet(
           textValidation.maxLength !== undefined &&
           textValidation.minLength > textValidation.maxLength
         ) {
-          throw new PaperclipQuestionValidationError(
+          throw new ToderoQuestionValidationError(
             `${path}/textValidation`,
             "minLength cannot exceed maxLength",
           );
@@ -401,7 +401,7 @@ export function parsePaperclipQuestionSet(
           textValidation.maximum !== undefined &&
           textValidation.minimum > textValidation.maximum
         ) {
-          throw new PaperclipQuestionValidationError(
+          throw new ToderoQuestionValidationError(
             `${path}/textValidation`,
             "minimum cannot exceed maximum",
           );
@@ -410,7 +410,7 @@ export function parsePaperclipQuestionSet(
           try {
             new RegExp(textValidation.pattern);
           } catch {
-            throw new PaperclipQuestionValidationError(
+            throw new ToderoQuestionValidationError(
               `${path}/textValidation/pattern`,
               "must be a valid regular expression",
             );
@@ -461,7 +461,7 @@ export function parsePaperclipQuestionSet(
   };
 }
 
-function answerHasValue(answer: PaperclipQuestionAnswer): boolean {
+function answerHasValue(answer: ToderoQuestionAnswer): boolean {
   return Boolean(
     answer.text?.trim() ||
     answer.customText?.trim() ||
@@ -470,17 +470,17 @@ function answerHasValue(answer: PaperclipQuestionAnswer): boolean {
 }
 
 /** Revalidate untrusted UI input against the persisted question set. */
-export function parsePaperclipQuestionResponse(
+export function parseToderoQuestionResponse(
   questionSetValue: unknown,
   responseValue: unknown,
-): PaperclipQuestionResponse {
-  const questionSet = parsePaperclipQuestionSet(questionSetValue);
+): ToderoQuestionResponse {
+  const questionSet = parseToderoQuestionSet(questionSetValue);
   const response = record(responseValue);
   if (
     response === null ||
     response.schema !== PAPERCLIP_QUESTION_RESPONSE_SCHEMA
   ) {
-    throw new PaperclipQuestionValidationError(
+    throw new ToderoQuestionValidationError(
       "/response",
       `must use ${PAPERCLIP_QUESTION_RESPONSE_SCHEMA}`,
     );
@@ -488,7 +488,7 @@ export function parsePaperclipQuestionResponse(
   rejectUnknownKeys(response, ["schema", "answers"], "/response");
   const rawAnswers = record(response.answers);
   if (rawAnswers === null)
-    throw new PaperclipQuestionValidationError(
+    throw new ToderoQuestionValidationError(
       "/response/answers",
       "must be an object keyed by question ID",
     );
@@ -497,23 +497,23 @@ export function parsePaperclipQuestionResponse(
   );
   for (const questionId of Object.keys(rawAnswers)) {
     if (!questions.has(questionId))
-      throw new PaperclipQuestionValidationError(
+      throw new ToderoQuestionValidationError(
         `/response/answers/${questionId}`,
         "does not match a question in the persisted set",
       );
   }
-  const answers: Record<string, PaperclipQuestionAnswer> = {};
+  const answers: Record<string, ToderoQuestionAnswer> = {};
   for (const question of questionSet.questions) {
     const path = `/response/answers/${question.id}`;
     const raw = rawAnswers[question.id];
     if (raw === undefined) {
       if (question.required)
-        throw new PaperclipQuestionValidationError(path, "is required");
+        throw new ToderoQuestionValidationError(path, "is required");
       continue;
     }
     const answer = record(raw);
     if (answer === null)
-      throw new PaperclipQuestionValidationError(path, "must be an object");
+      throw new ToderoQuestionValidationError(path, "must be an object");
     rejectUnknownKeys(
       answer,
       ["selectedOptionIds", "text", "customText"],
@@ -527,7 +527,7 @@ export function parsePaperclipQuestionResponse(
           ? [...answer.selectedOptionIds]
           : null;
     if (selectedOptionIds === null)
-      throw new PaperclipQuestionValidationError(
+      throw new ToderoQuestionValidationError(
         `${path}/selectedOptionIds`,
         "must be an array of strings",
       );
@@ -535,7 +535,7 @@ export function parsePaperclipQuestionResponse(
       selectedOptionIds !== undefined &&
       new Set(selectedOptionIds).size !== selectedOptionIds.length
     ) {
-      throw new PaperclipQuestionValidationError(
+      throw new ToderoQuestionValidationError(
         `${path}/selectedOptionIds`,
         "cannot contain duplicates",
       );
@@ -548,13 +548,13 @@ export function parsePaperclipQuestionResponse(
     );
     if (question.answerMode === "text") {
       if (selectedOptionIds?.length || customText !== undefined)
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           path,
           "text answers only carry text",
         );
     } else {
       if (textValue !== undefined)
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           path,
           "select answers do not carry text",
         );
@@ -563,7 +563,7 @@ export function parsePaperclipQuestionResponse(
       );
       for (const optionId of selectedOptionIds ?? []) {
         if (!allowed.has(optionId))
-          throw new PaperclipQuestionValidationError(
+          throw new ToderoQuestionValidationError(
             `${path}/selectedOptionIds`,
             `contains unknown option ${optionId}`,
           );
@@ -572,13 +572,13 @@ export function parsePaperclipQuestionResponse(
         question.answerMode === "single_select" &&
         (selectedOptionIds?.length ?? 0) > 1
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/selectedOptionIds`,
           "single-select answers choose at most one option",
         );
       }
       if (customText !== undefined && question.customAnswer?.enabled !== true) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           `${path}/customText`,
           "custom answers are not enabled for this question",
         );
@@ -588,19 +588,19 @@ export function parsePaperclipQuestionResponse(
         (selectedOptionIds?.length ?? 0) > 0 &&
         question.answerMode === "single_select"
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           path,
           "single-select answers cannot select an option and a custom answer",
         );
       }
     }
-    const parsed: PaperclipQuestionAnswer = {
+    const parsed: ToderoQuestionAnswer = {
       ...(selectedOptionIds !== undefined ? { selectedOptionIds } : {}),
       ...(textValue !== undefined ? { text: textValue } : {}),
       ...(customText !== undefined ? { customText } : {}),
     };
     if (question.required && !answerHasValue(parsed))
-      throw new PaperclipQuestionValidationError(path, "is required");
+      throw new ToderoQuestionValidationError(path, "is required");
     const boundedText =
       question.answerMode === "text" ? parsed.text : parsed.customText;
     if (boundedText !== undefined) {
@@ -609,7 +609,7 @@ export function parsePaperclipQuestionResponse(
         validation?.minLength !== undefined &&
         boundedText.length < validation.minLength
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           path,
           `must contain at least ${validation.minLength} characters`,
         );
@@ -618,7 +618,7 @@ export function parsePaperclipQuestionResponse(
         validation?.maxLength !== undefined &&
         boundedText.length > validation.maxLength
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           path,
           `must contain at most ${validation.maxLength} characters`,
         );
@@ -627,7 +627,7 @@ export function parsePaperclipQuestionResponse(
         validation?.pattern !== undefined &&
         !new RegExp(validation.pattern).test(boundedText)
       ) {
-        throw new PaperclipQuestionValidationError(
+        throw new ToderoQuestionValidationError(
           path,
           "does not match the required format",
         );
@@ -641,18 +641,18 @@ export function parsePaperclipQuestionResponse(
           !Number.isFinite(numeric) ||
           (validation.inputType === "integer" && !Number.isInteger(numeric))
         ) {
-          throw new PaperclipQuestionValidationError(
+          throw new ToderoQuestionValidationError(
             path,
             `must be a valid ${validation.inputType}`,
           );
         }
         if (validation.minimum !== undefined && numeric < validation.minimum)
-          throw new PaperclipQuestionValidationError(
+          throw new ToderoQuestionValidationError(
             path,
             `must be at least ${validation.minimum}`,
           );
         if (validation.maximum !== undefined && numeric > validation.maximum)
-          throw new PaperclipQuestionValidationError(
+          throw new ToderoQuestionValidationError(
             path,
             `must be at most ${validation.maximum}`,
           );

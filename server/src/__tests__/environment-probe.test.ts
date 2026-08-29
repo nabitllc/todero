@@ -13,7 +13,7 @@ const mockEnvironmentRuntimeService = vi.hoisted(() => vi.fn(() => ({
   })),
 })));
 
-vi.mock("@paperclipai/adapter-utils/ssh", () => ({
+vi.mock("@todero/adapter-utils/ssh", () => ({
   ensureSshWorkspaceReady: mockEnsureSshWorkspaceReady,
 }));
 
@@ -63,7 +63,7 @@ describe("probeEnvironment", () => {
 
   it("runs an SSH probe and returns the verified remote cwd", async () => {
     mockEnsureSshWorkspaceReady.mockResolvedValue({
-      remoteCwd: "/srv/paperclip/workspace",
+      remoteCwd: "/srv/todero/workspace",
     });
 
     const result = await probeEnvironment({} as any, {
@@ -77,7 +77,7 @@ describe("probeEnvironment", () => {
         host: "ssh.example.test",
         port: 2222,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: null,
         knownHosts: null,
@@ -96,8 +96,8 @@ describe("probeEnvironment", () => {
         host: "ssh.example.test",
         port: 2222,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
-        remoteCwd: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
+        remoteCwd: "/srv/todero/workspace",
       },
     });
     expect(mockEnsureSshWorkspaceReady).toHaveBeenCalledTimes(1);
@@ -204,7 +204,7 @@ describe("probeEnvironment", () => {
         cleanupStatus: "pending",
         metadata: {
           provider: "daytona",
-          sandboxName: "paperclip-probe",
+          sandboxName: "todero-probe",
           reuseLease: false,
         },
         createdAt: new Date(),
@@ -239,7 +239,7 @@ describe("probeEnvironment", () => {
     expect(result).toMatchObject({
       ok: true,
       driver: "sandbox",
-      summary: "Connected to daytona sandbox paperclip-probe.",
+      summary: "Connected to daytona sandbox todero-probe.",
     });
     expect(mockProbePluginSandboxProviderDriver).not.toHaveBeenCalled();
     expect(mockRuntimeAcquireRunLease).toHaveBeenCalledWith(expect.objectContaining({
@@ -325,7 +325,7 @@ describe("probeEnvironment", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         privateKeySecretRef: null,
         knownHosts: null,

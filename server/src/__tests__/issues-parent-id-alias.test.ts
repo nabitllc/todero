@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { expect, it } from "vitest";
-import { issues } from "@paperclipai/db";
+import { issues } from "@todero/db";
 import { issueRoutes } from "../routes/issues.js";
 import {
   describeEmbeddedPostgres,
@@ -12,7 +12,7 @@ import {
 } from "./helpers/route-test-harness.js";
 
 describeEmbeddedPostgres("issue list parentIssueId query alias", () => {
-  const ctx = useEmbeddedPostgres("paperclip-issues-parent-id-alias-", {
+  const ctx = useEmbeddedPostgres("todero-issues-parent-id-alias-", {
     resetEach: resetCompanyIssueFixtures,
   });
 

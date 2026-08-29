@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   approvals,
@@ -34,8 +34,8 @@ import {
   toolProfileEntries,
   toolProfiles,
   toolStdioCommandTemplates,
-} from "@paperclipai/db";
-import type { ToolRunContext } from "@paperclipai/plugin-sdk";
+} from "@todero/db";
+import type { ToolRunContext } from "@todero/plugin-sdk";
 import type {
   CreateToolMcpGateway,
   CreateToolMcpGatewayToken,
@@ -55,11 +55,11 @@ import type {
   ToolMcpGatewayTokenCreated,
   ToolMcpGatewayWithTokens,
   UpdateToolMcpGateway,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   isGoogleWorkspaceConnectorProfileId,
   type GoogleWorkspaceConnectorProfileId,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import type { AgentToolDescriptor, PluginToolDispatcher } from "./plugin-tool-dispatcher.js";
 import { logActivity, type LogActivityInput } from "./activity-log.js";
 import { secretService } from "./secrets.js";
@@ -91,10 +91,10 @@ import { recordToolRuntimeAuditWriteFailure } from "./tool-runtime-metrics.js";
 import { composioChildConfig, createComposioSessionManager } from "./composio-session-manager.js";
 import type { ComposioClient } from "./composio.js";
 import {
-  createPaperclipIdGmailConnector,
-  paperclipIdGmailConnectorConfigFromEnv,
-  PaperclipIdConnectorError,
-  type PaperclipIdGmailConnector,
+  createToderoIdGmailConnector,
+  toderoIdGmailConnectorConfigFromEnv,
+  ToderoIdConnectorError,
+  type ToderoIdGmailConnector,
 } from "./paperclip-id-gmail-connector.js";
 import {
   createVercelConnectClient,
@@ -339,8 +339,8 @@ type LocalStdioRuntimeTemplate = {
 };
 
 const BUILTIN_LOCAL_STDIO_RUNTIME_TEMPLATES: Record<string, Omit<LocalStdioRuntimeTemplate, "templateId">> = {
-  "paperclip.google-sheets": {
-    command: "paperclip-google-sheets-mcp-server",
+  "todero.google-sheets": {
+    command: "todero-google-sheets-mcp-server",
     args: [],
     envKeys: [
       "GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON",
@@ -348,12 +348,12 @@ const BUILTIN_LOCAL_STDIO_RUNTIME_TEMPLATES: Record<string, Omit<LocalStdioRunti
       "GOOGLE_SHEETS_ALLOWED_SPREADSHEET_IDS",
     ],
   },
-  "paperclip.echo-calculator-time": {
+  "todero.echo-calculator-time": {
     command: null,
     args: [],
     envKeys: [],
   },
-  "paperclip.synthetic-todo-kv": {
+  "todero.synthetic-todo-kv": {
     command: null,
     args: [],
     envKeys: [],
@@ -371,11 +371,11 @@ const sensitivePassthroughHeaderNames = new Set([
   "proxy-authorization",
   "cookie",
   "set-cookie",
-  "x-paperclip-tool-gateway-token",
+  "x-todero-tool-gateway-token",
 ]);
 
 function isSensitivePassthroughHeader(name: string) {
-  return name.startsWith("x-paperclip-")
+  return name.startsWith("x-todero-")
     || sensitivePassthroughHeaderNames.has(name)
     || sensitivePassthroughHeaderPattern.test(name);
 }
@@ -486,7 +486,7 @@ function safeHeaderValue(headers: Record<string, string | string[] | undefined> 
 }
 
 function safeClientMetadata(headers: Record<string, string | string[] | undefined> | undefined) {
-  const clientName = safeHeaderValue(headers, "x-paperclip-client-name", 120)
+  const clientName = safeHeaderValue(headers, "x-todero-client-name", 120)
     ?? safeHeaderValue(headers, "mcp-client-name", 120)
     ?? null;
   const correlationId = safeHeaderValue(headers, "x-request-id", 120)
@@ -728,28 +728,28 @@ const BUILTIN_TOOLS: ToolGatewayDescriptor[] = [
     risk: "write",
   },
   {
-    name: "paperclip-self:list_my_issues",
-    displayName: "List my Paperclip issues",
-    description: "Paperclip self-MCP read fixture that lists the authenticated agent's current issues.",
+    name: "todero-self:list_my_issues",
+    displayName: "List my Todero issues",
+    description: "Todero self-MCP read fixture that lists the authenticated agent's current issues.",
     parametersSchema: {
       type: "object",
       properties: { limit: { type: "number" } },
       additionalProperties: false,
     },
-    pluginId: "paperclip-self",
+    pluginId: "todero-self",
     providerType: "paperclip_self",
     risk: "read",
   },
   {
-    name: "paperclip-self:get_issue_context",
+    name: "todero-self:get_issue_context",
     displayName: "Get issue context",
-    description: "Paperclip self-MCP read fixture that returns scoped issue context and plan document metadata.",
+    description: "Todero self-MCP read fixture that returns scoped issue context and plan document metadata.",
     parametersSchema: {
       type: "object",
       properties: { issueId: { type: "string" } },
       additionalProperties: false,
     },
-    pluginId: "paperclip-self",
+    pluginId: "todero-self",
     providerType: "paperclip_self",
     risk: "read",
   },
@@ -784,7 +784,7 @@ const BUILTIN_TOOLS: ToolGatewayDescriptor[] = [
 const VIRTUAL_SEARCH_TOOLS: ToolGatewayDescriptor = {
   name: "search_tools",
   displayName: "Search available tools",
-  description: "Search the tools available through this Paperclip gateway without loading every target tool into the tool list.",
+  description: "Search the tools available through this Todero gateway without loading every target tool into the tool list.",
   parametersSchema: {
     type: "object",
     properties: {
@@ -793,7 +793,7 @@ const VIRTUAL_SEARCH_TOOLS: ToolGatewayDescriptor = {
     },
     additionalProperties: false,
   },
-  pluginId: "paperclip-gateway",
+  pluginId: "todero-gateway",
   providerType: "paperclip_virtual",
   risk: "read",
 };
@@ -801,7 +801,7 @@ const VIRTUAL_SEARCH_TOOLS: ToolGatewayDescriptor = {
 const VIRTUAL_RUN_TOOL: ToolGatewayDescriptor = {
   name: "run_tool",
   displayName: "Run a selected tool",
-  description: "Run a target tool by name after Paperclip applies the target tool's profile, policy, approval, and rate-limit checks.",
+  description: "Run a target tool by name after Todero applies the target tool's profile, policy, approval, and rate-limit checks.",
   parametersSchema: {
     type: "object",
     properties: {
@@ -811,7 +811,7 @@ const VIRTUAL_RUN_TOOL: ToolGatewayDescriptor = {
     required: ["tool"],
     additionalProperties: false,
   },
-  pluginId: "paperclip-gateway",
+  pluginId: "todero-gateway",
   providerType: "paperclip_virtual",
   risk: "write",
 };
@@ -832,7 +832,7 @@ export function createToolGatewayService(
     /** Test seam for Composio session creation without vendor traffic. */
     composioClientFactory?: (apiKey: string) => ComposioClient;
     /** Test seam for refreshing personal Gmail grants. */
-    paperclipIdGmailConnector?: PaperclipIdGmailConnector | null;
+    toderoIdGmailConnector?: ToderoIdGmailConnector | null;
     /** Refreshes customer-owned/DCR OAuth grants before remote MCP execution. */
     oauthGrantRefresher?: (input: {
       companyId: string;
@@ -871,12 +871,12 @@ export function createToolGatewayService(
   const interactions = issueThreadInteractionService(db);
   const policyService = toolAccessPolicyService(db);
   const secrets = secretService(db);
-  const gmailConnectorConfig = options.paperclipIdGmailConnector === undefined
-    ? paperclipIdGmailConnectorConfigFromEnv()
+  const gmailConnectorConfig = options.toderoIdGmailConnector === undefined
+    ? toderoIdGmailConnectorConfigFromEnv()
     : null;
-  const gmailConnector = options.paperclipIdGmailConnector
+  const gmailConnector = options.toderoIdGmailConnector
     ?? (gmailConnectorConfig
-      ? createPaperclipIdGmailConnector({ config: gmailConnectorConfig, now: options.now })
+      ? createToderoIdGmailConnector({ config: gmailConnectorConfig, now: options.now })
       : null);
   const gmailRefreshFlights = new Map<string, Promise<typeof connectionGrants.$inferSelect>>();
   const vercelConnect = options.vercelConnectClient === undefined
@@ -1778,7 +1778,7 @@ export function createToolGatewayService(
         kind: "request_confirmation",
         idempotencyKey: `tool-action:${actionRequest.id}`,
         title: "Approve tool action",
-        summary: `${input.tool.name} requires approval before Paperclip will execute it.`,
+        summary: `${input.tool.name} requires approval before Todero will execute it.`,
         continuationPolicy: "wake_assignee",
         payload: {
           version: 1,
@@ -2136,9 +2136,9 @@ export function createToolGatewayService(
       };
     }
 
-    if (tool.name === "paperclip-self:list_my_issues") {
+    if (tool.name === "todero-self:list_my_issues") {
       if (!session.agentId) {
-        throw new ToolGatewayHttpError(403, "Paperclip self tools require an agent-scoped gateway session", "agent_context_required");
+        throw new ToolGatewayHttpError(403, "Todero self tools require an agent-scoped gateway session", "agent_context_required");
       }
       const limit = Math.max(1, Math.min(50, Number(params.limit ?? 10) || 10));
       const rows = await db
@@ -2160,9 +2160,9 @@ export function createToolGatewayService(
       };
     }
 
-    if (tool.name === "paperclip-self:get_issue_context") {
+    if (tool.name === "todero-self:get_issue_context") {
       if (!session.agentId) {
-        throw new ToolGatewayHttpError(403, "Paperclip self tools require an agent-scoped gateway session", "agent_context_required");
+        throw new ToolGatewayHttpError(403, "Todero self tools require an agent-scoped gateway session", "agent_context_required");
       }
       const issueId = typeof params.issueId === "string" ? params.issueId : session.issueId;
       if (!issueId) {
@@ -2425,7 +2425,7 @@ export function createToolGatewayService(
     };
     for (const key of policy.metadataHeaders) {
       const value = values[key];
-      if (value) headers[`x-paperclip-${key.replace(/_/g, "-")}`] = value;
+      if (value) headers[`x-todero-${key.replace(/_/g, "-")}`] = value;
     }
     return headers;
   }
@@ -2618,7 +2618,7 @@ export function createToolGatewayService(
     return resolved.value;
   }
 
-  async function maybeRefreshPaperclipIdGoogleGrant(
+  async function maybeRefreshToderoIdGoogleGrant(
     session: ToolGatewaySession,
     connection: typeof toolConnections.$inferSelect,
     grant: typeof connectionGrants.$inferSelect,
@@ -2700,7 +2700,7 @@ export function createToolGatewayService(
         return updated;
       } catch (error) {
         if (error instanceof ToolGatewayHttpError) throw error;
-        if (error instanceof PaperclipIdConnectorError && error.code === "REAUTHORIZATION_REQUIRED") {
+        if (error instanceof ToderoIdConnectorError && error.code === "REAUTHORIZATION_REQUIRED") {
           await db.update(connectionGrants).set({ status: "needs_reauthorization", updatedAt: new Date(options.now?.() ?? Date.now()) })
             .where(eq(connectionGrants.id, grant.id));
           throw new ToolGatewayHttpError(409, "Google authorization must be reconnected", "google_reauthorization_required", {
@@ -2814,7 +2814,7 @@ export function createToolGatewayService(
         });
       }
     }
-    grant = await maybeRefreshPaperclipIdGoogleGrant(session, connection, grant);
+    grant = await maybeRefreshToderoIdGoogleGrant(session, connection, grant);
     const oauth = asRecord(asRecord(connection.config)?.oauth);
     if (
       connection.authKind === "oauth"
@@ -3005,7 +3005,7 @@ export function createToolGatewayService(
       rejectLabel: "Not now",
       detailsMarkdown: grantKind === "organization"
         ? "Vercel Connect reports that the shared organization identity needs authorization."
-        : "This run needs your personal authorization. Paperclip will not use another user's identity.",
+        : "This run needs your personal authorization. Todero will not use another user's identity.",
       target: {
         type: "custom" as const,
         key: `connection:${connection.uid}:user:${userId}`,
@@ -3072,7 +3072,7 @@ export function createToolGatewayService(
       prompt: `Allow this agent to use your ${connection.name} account for autonomous runs`,
       acceptLabel: "Review delegation",
       rejectLabel: "Not now",
-      detailsMarkdown: "This autonomous run is paused. Paperclip will not use your personal identity until you explicitly delegate it to this named agent.",
+      detailsMarkdown: "This autonomous run is paused. Todero will not use your personal identity until you explicitly delegate it to this named agent.",
       target: {
         type: "custom" as const,
         key: `connection:${connection.uid}:delegation:${userId}:${session.agentId}`,
@@ -3520,7 +3520,7 @@ export function createToolGatewayService(
       await request("initialize", {
         protocolVersion: "2024-11-05",
         capabilities: {},
-        clientInfo: { name: "paperclip-tool-gateway", version: "0.3.1" },
+        clientInfo: { name: "todero-tool-gateway", version: "0.3.1" },
       });
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`);
       return await request("tools/call", {
@@ -3741,7 +3741,7 @@ export function createToolGatewayService(
       .set({
         status: "awaiting_approval",
         errorCode: "elicitation_required",
-        errorMessage: "Remote MCP tool requested elicitation; Paperclip created an issue interaction for the response.",
+        errorMessage: "Remote MCP tool requested elicitation; Todero created an issue interaction for the response.",
         updatedAt: now,
       })
       .where(eq(toolInvocations.id, input.invocationId));
@@ -3854,7 +3854,7 @@ export function createToolGatewayService(
     });
     let headers = builtHeaders.headers;
     let headerSummary = builtHeaders.summary;
-    const requestId = `paperclip-tool-${randomUUID()}`;
+    const requestId = `todero-tool-${randomUUID()}`;
     const execution: RemoteHttpExecutionAudit = {
       transport: "mcp_remote",
       request: {
@@ -4131,7 +4131,7 @@ export function createToolGatewayService(
         client: "cursor",
         label: "Cursor",
         config: { mcpServers: { [gateway.name]: { url: endpoint, headers: { Authorization: `Bearer ${bearerPlaceholder}` } } } },
-        notes: ["Use the full Paperclip origin before the endpoint path."],
+        notes: ["Use the full Todero origin before the endpoint path."],
       },
       {
         client: "claude_desktop",
@@ -4155,7 +4155,7 @@ export function createToolGatewayService(
         client: "opencode",
         label: "OpenCode",
         config: { mcp: { [gateway.name]: { url: endpoint, headers: { Authorization: `Bearer ${bearerPlaceholder}` } } } },
-        notes: ["Use the full Paperclip origin before the endpoint path."],
+        notes: ["Use the full Todero origin before the endpoint path."],
       },
     ];
   }

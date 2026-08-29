@@ -1,5 +1,5 @@
 {
-  "schema": "paperclip.fake_harness.script.v1",
+  "schema": "todero.fake_harness.script.v1",
   "name": "happy-path",
   "steps": [
     {
@@ -41,7 +41,7 @@
     {
       "kind": "result",
       "payload": {
-        "schema": "paperclip.run_result.v1",
+        "schema": "todero.run_result.v1",
         "reportedWorkDisposition": "done",
         "summary": "The live fake-harness run completed successfully.",
         "completionClaim": {
@@ -79,7 +79,7 @@
     {
       "kind": "terminal",
       "payload": {
-        "schema": "paperclip.prp.terminal.v1",
+        "schema": "todero.prp.terminal.v1",
         "turnTerminalState": "completed",
         "runTerminalState": "succeeded",
         "reportedWorkDisposition": "done"

@@ -3,9 +3,9 @@ title: Execution Workspaces And Runtime Services
 summary: How project runtime configuration, execution workspaces, and issue runs fit together
 ---
 
-This guide documents the intended runtime model for projects, execution workspaces, and issue runs in Paperclip.
+This guide documents the intended runtime model for projects, execution workspaces, and issue runs in Todero.
 
-Paperclip now presents this as a workspace-command model:
+Todero now presents this as a workspace-command model:
 
 - `Services` are long-running commands that stay supervised.
 - `Jobs` are one-shot commands that run once and exit.
@@ -27,7 +27,7 @@ Workspace commands can be controlled manually from the UI, and heartbeat runs al
 - Execution workspace services are started and stopped from the execution workspace UI, and execution-workspace jobs can be run on demand there.
 - Heartbeat runs also auto-start the workspace's runtime services at the beginning of an issue run. `ensureRuntimeServicesForRun` (`server/src/services/workspace-runtime.ts`, called from `server/src/services/heartbeat.ts`) starts each service whose desired state resolves to `running` — which is the default when no explicit per-service desired state is set. A running service that matches an existing reuse key is reused rather than restarted.
 - You can opt a service out of that auto-start by setting its desired state to `stopped`/`manual` in the runtime config; those services stay UI-controlled.
-- Paperclip does not automatically restart workspace services on server boot — services only come back up when the next run (or a manual start) brings them up.
+- Todero does not automatically restart workspace services on server boot — services only come back up when the next run (or a manual start) brings them up.
 
 ## Execution workspace inheritance
 
@@ -60,26 +60,26 @@ Execution workspaces are durable until a human closes them.
 Heartbeat resolves a workspace for the run (code location and session continuity) and also brings up that workspace's runtime services.
 
 1. Heartbeat resolves a base workspace for the run.
-2. Paperclip realizes the effective execution workspace, including creating or reusing a worktree when needed.
-3. Paperclip persists execution-workspace metadata such as paths, refs, and provisioning settings.
+2. Todero realizes the effective execution workspace, including creating or reusing a worktree when needed.
+3. Todero persists execution-workspace metadata such as paths, refs, and provisioning settings.
 4. Heartbeat passes the resolved code workspace to the agent run.
 5. Heartbeat calls `ensureRuntimeServicesForRun` to start the workspace's `running`-desired runtime services, running the lazy runtime provision command first if one is configured and has not yet run (see "Lazy runtime provisioning" below).
 
 ## Browser-reachable origins for OAuth QA
 
-A managed service that runs Paperclip itself needs one canonical origin for Better Auth and tool OAuth callbacks. Paperclip resolves that origin in this order:
+A managed service that runs Todero itself needs one canonical origin for Better Auth and tool OAuth callbacks. Todero resolves that origin in this order:
 
 1. Explicit service/runtime configuration such as `PAPERCLIP_PUBLIC_URL` or `BETTER_AUTH_URL`.
 2. An explicit instance auth public base URL.
 3. The managed service's rendered `expose.urlTemplate`, injected as a low-priority runtime fallback.
 
-The exposed URL must describe the route the operator's browser actually uses. Non-loopback callbacks require HTTPS. Loopback HTTP such as `http://127.0.0.1:45439` is supported for local browser QA. A non-loopback hostname rendered from workspace data must remain inside the stable domain suffix configured by `expose.urlTemplate`; branch names cannot replace that domain. Bind addresses, internal-only single-label names such as `paperclip-dev`, reserved/non-resolving names, and non-loopback HTTP origins fail service startup with configuration guidance instead of silently producing an unusable redirect URI.
+The exposed URL must describe the route the operator's browser actually uses. Non-loopback callbacks require HTTPS. Loopback HTTP such as `http://127.0.0.1:45439` is supported for local browser QA. A non-loopback hostname rendered from workspace data must remain inside the stable domain suffix configured by `expose.urlTemplate`; branch names cannot replace that domain. Bind addresses, internal-only single-label names such as `todero-dev`, reserved/non-resolving names, and non-loopback HTTP origins fail service startup with configuration guidance instead of silently producing an unusable redirect URI.
 
 Keep readiness and browser exposure separate when a proxy or tailnet route fronts the process:
 
 ```json
 {
-  "name": "paperclip-dev",
+  "name": "todero-dev",
   "command": "pnpm dev --bind lan",
   "port": { "type": "auto" },
   "readiness": {

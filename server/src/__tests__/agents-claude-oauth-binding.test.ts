@@ -17,7 +17,7 @@ import {
   environments,
   userSecretDeclarations,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -208,7 +208,7 @@ describeEmbeddedPostgres("agent service Claude OAuth binding claim", () => {
   let connectionString!: string;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-claude-oauth-binding-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-claude-oauth-binding-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });
@@ -254,7 +254,7 @@ describeEmbeddedPostgres("agent service Claude OAuth binding claim", () => {
     const environmentId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

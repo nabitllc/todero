@@ -22,7 +22,7 @@ import {
   projectWorkspaces,
   projects,
   workspaceRuntimeServices,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -173,10 +173,10 @@ async function readGit(cwd: string, args: string[]) {
 }
 
 async function createTempRepo() {
-  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-execution-workspace-"));
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "todero-execution-workspace-"));
   await runGit(repoRoot, ["init"]);
-  await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
-  await runGit(repoRoot, ["config", "user.email", "test@paperclip.local"]);
+  await runGit(repoRoot, ["config", "user.name", "Todero Test"]);
+  await runGit(repoRoot, ["config", "user.email", "test@todero.local"]);
   await fs.writeFile(path.join(repoRoot, "README.md"), "# Test repo\n", "utf8");
   await runGit(repoRoot, ["add", "README.md"]);
   await runGit(repoRoot, ["commit", "-m", "Initial commit"]);
@@ -252,7 +252,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   }>();
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-execution-workspaces-service-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-execution-workspaces-service-");
     db = createDb(tempDb.connectionString);
     svc = executionWorkspaceService(db, {
       resolvePullRequestDetails: vi.fn(async (companyId, reference) =>
@@ -304,7 +304,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const issuePrefix = `P${companyId.slice(0, 8).toUpperCase()}`;
     const identifier = `${issuePrefix}-1`;
     const repoRoot = await createTempRepo();
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-terminal-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-terminal-${randomUUID()}`);
     tempDirs.add(repoRoot);
     tempDirs.add(worktreePath);
     await runGit(repoRoot, ["branch", "PAP-16015-delivery"]);
@@ -315,7 +315,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const headSha = await readGit(worktreePath, ["rev-parse", "HEAD"]);
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -336,7 +336,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       cwd: worktreePath,
       providerRef: worktreePath,
       providerType: "git_worktree",
-      repoUrl: "https://github.com/paperclipai/paperclip.git",
+      repoUrl: "https://github.com/nabitllc/todero.git",
       baseRef: "main",
       branchName: "PAP-16015-delivery",
     });
@@ -373,7 +373,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         type: "pull_request",
         provider: "github",
         title: "Delivered PR",
-        url: "https://github.com/paperclipai/paperclip/pull/10623",
+        url: "https://github.com/nabitllc/todero/pull/10623",
         status: "merged",
       });
     }
@@ -420,7 +420,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("reports a squash cross-branch delivery as merged_via_pr and suppresses the ancestry warning", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-delivery-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-delivery-${randomUUID()}`);
     tempDirs.add(worktreePath);
     await runGit(repoRoot, ["branch", "PAP-16015-delivery"]);
     await runGit(repoRoot, ["worktree", "add", worktreePath, "PAP-16015-delivery"]);
@@ -439,7 +439,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       providerRef: worktreePath,
       providerType: "git_worktree",
       baseRef: "main",
-      repoUrl: "https://github.com/paperclipai/paperclip.git",
+      repoUrl: "https://github.com/nabitllc/todero.git",
       branchName: "PAP-16015-delivery",
     }).where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
     await db.insert(issueWorkProducts).values({
@@ -448,7 +448,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       type: "pull_request",
       provider: "github",
       title: "Cross-branch delivery",
-      url: "https://github.com/paperclipai/paperclip/pull/10623",
+      url: "https://github.com/nabitllc/todero/pull/10623",
       status: "merged",
     });
 
@@ -482,7 +482,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     // pull request, so delivery derives to merged_by_ancestry.
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-ancestry-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-ancestry-${randomUUID()}`);
     tempDirs.add(worktreePath);
     const branchName = `ancestry-${randomUUID().slice(0, 8)}`;
     await runGit(repoRoot, ["branch", branchName]);
@@ -495,7 +495,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const issuePrefix = `P${companyId.slice(0, 8).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -516,7 +516,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       cwd: worktreePath,
       providerRef: worktreePath,
       providerType: "git_worktree",
-      repoUrl: "https://github.com/paperclipai/paperclip.git",
+      repoUrl: "https://github.com/nabitllc/todero.git",
       baseRef: "main",
       branchName,
     });
@@ -565,7 +565,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         state: "blocked",
         isDestructiveCloseAllowed: false,
         blockingReasons: [
-          "Paperclip could not verify the workspace git status. Retry before destructive cleanup.",
+          "Todero could not verify the workspace git status. Retry before destructive cleanup.",
         ],
       });
 
@@ -641,7 +641,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const issuePrefix = `P${companyId.slice(0, 8).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -960,7 +960,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       type: "pull_request",
       provider: "github",
       title: "Unrelated merged PR",
-      url: "https://github.com/paperclipai/paperclip/pull/10624",
+      url: "https://github.com/nabitllc/todero/pull/10624",
       status: "merged",
     });
 
@@ -994,7 +994,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         type: "pull_request",
         provider: "github",
         title: "Wrong branch merged PR",
-        url: "https://github.com/paperclipai/paperclip/pull/10624",
+        url: "https://github.com/nabitllc/todero/pull/10624",
         status: "merged",
       },
       {
@@ -1004,7 +1004,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         type: "pull_request",
         provider: "github",
         title: "Wrong repository merged PR",
-        url: "https://github.com/unrelated/paperclip/pull/10623",
+        url: "https://github.com/unrelated/todero/pull/10623",
         status: "merged",
       },
     ]);
@@ -1799,7 +1799,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       type: "pull_request",
       provider: "github",
       title: "Descendant delivery",
-      url: "https://github.com/paperclipai/paperclip/pull/10625",
+      url: "https://github.com/nabitllc/todero/pull/10625",
       status: "merged",
     });
 
@@ -1869,7 +1869,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -1889,7 +1889,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       name: "Primary",
       sourceType: "local_path",
       isPrimary: true,
-      cwd: "/tmp/paperclip-primary",
+      cwd: "/tmp/todero-primary",
     });
     await db.insert(executionWorkspaces).values({
       id: executionWorkspaceId,
@@ -1901,7 +1901,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       name: "Shared workspace",
       status: "active",
       providerType: "local_fs",
-      cwd: "/tmp/paperclip-primary",
+      cwd: "/tmp/todero-primary",
       metadata: {
         config: {
           teardownCommand: "bash ./scripts/teardown.sh",
@@ -1945,7 +1945,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2042,7 +2042,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2066,7 +2066,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         status: "idle",
         providerType: "git_worktree",
         cwd: "/tmp/open-workspace",
-        branchName: "paperclip/open",
+        branchName: "todero/open",
       },
       {
         id: sharedWorkspaceId,
@@ -2105,7 +2105,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         mode: "isolated_workspace",
         status: "idle",
         cwd: "/tmp/open-workspace",
-        branchName: "paperclip/open",
+        branchName: "todero/open",
       }),
     ]);
   });
@@ -2113,7 +2113,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("reconciles a forward branch record, comments on the source issue, and resolves matching workspace recovery", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-reconcile-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-reconcile-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -2139,7 +2139,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2246,7 +2246,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("reconciles forward when the recorded branch has no resolvable commit and the worktree is clean", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-missing-recorded-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-missing-recorded-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["worktree", "add", "-b", "feature/current", worktreePath, "HEAD"]);
@@ -2261,7 +2261,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2329,7 +2329,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("keeps forward reconciliation fail-closed when the recorded branch is missing but the worktree is dirty", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-missing-recorded-dirty-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-missing-recorded-dirty-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["worktree", "add", "-b", "feature/current", worktreePath, "HEAD"]);
@@ -2342,7 +2342,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2395,7 +2395,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("keeps forward reconciliation fail-closed when the checked-out branch ref does not resolve either", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-missing-both-refs-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-missing-both-refs-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     // An empty tree keeps the worktree clean even after its branch ref is
@@ -2415,7 +2415,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2468,7 +2468,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("quarantine_restore rescues dirty live-branch work, resolves recovery, and returns the source issue to todo", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-quarantine-restore-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-quarantine-restore-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -2494,7 +2494,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2585,7 +2585,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       fingerprint,
     });
     expect(result.rescueRef).toMatchObject({
-      branchName: expect.stringMatching(/^paperclip\/rescue\/PAP-124\/\d{8}T\d{6}Z$/),
+      branchName: expect.stringMatching(/^todero\/rescue\/PAP-124\/\d{8}T\d{6}Z$/),
       fileCount: 2,
     });
     expect(result.restoredSourceIssue).toMatchObject({
@@ -2639,7 +2639,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("quarantine_restore rejects active runtime services before creating a rescue branch", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-quarantine-running-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-quarantine-running-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -2654,7 +2654,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2734,7 +2734,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     await expect(readGit(worktreePath, ["branch", "--show-current"])).resolves.toBe("feature/live");
     await expect(readGit(
       repoRoot,
-      ["for-each-ref", "--format=%(refname:short)", "refs/heads/paperclip/rescue"],
+      ["for-each-ref", "--format=%(refname:short)", "refs/heads/todero/rescue"],
     )).resolves.toBeNull();
     const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
     expect(comments).toHaveLength(0);
@@ -2745,7 +2745,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     async (stageType) => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-quarantine-${stageType}-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-quarantine-${stageType}-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -2772,7 +2772,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -2931,7 +2931,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     async ({ claimantIssueIdentifier, claimantHasActiveRun, expectedReason }) => {
       const repoRoot = await createTempRepo();
       tempDirs.add(repoRoot);
-      const worktreePath = path.join(path.dirname(repoRoot), `paperclip-quarantine-claimant-${randomUUID()}`);
+      const worktreePath = path.join(path.dirname(repoRoot), `todero-quarantine-claimant-${randomUUID()}`);
       tempDirs.add(worktreePath);
 
       await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -2948,12 +2948,12 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       const executionWorkspaceId = randomUUID();
       const claimantWorkspaceId = randomUUID();
       const claimantRunId = claimantHasActiveRun ? randomUUID() : null;
-      const claimantWorkspacePath = path.join(path.dirname(repoRoot), `paperclip-claimant-${randomUUID()}`);
+      const claimantWorkspacePath = path.join(path.dirname(repoRoot), `todero-claimant-${randomUUID()}`);
       const now = new Date();
 
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix: "PAP",
         requireBoardApprovalForNewAgents: false,
       });
@@ -3102,7 +3102,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("rejects branch reconciliation when the worktree is dirty", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-dirty-reconcile-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-dirty-reconcile-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -3120,7 +3120,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3188,7 +3188,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("rejects branch reconciliation while the workspace lifecycle is active", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-active-reconcile-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-active-reconcile-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -3205,7 +3205,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3273,7 +3273,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("rejects branch reconciliation if the workspace becomes active before the branch record update", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-race-reconcile-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-race-reconcile-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -3290,7 +3290,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3376,7 +3376,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("rejects branch reconciliation while runtime services are active", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-running-reconcile-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-running-reconcile-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -3394,7 +3394,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3483,7 +3483,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("rejects branch reconciliation when a runtime service starts before the locked update", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-raced-service-reconcile-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-raced-service-reconcile-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -3501,7 +3501,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3612,7 +3612,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("rejects branch reconciliation when runtime service activation is already spawning", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-spawning-service-reconcile-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-spawning-service-reconcile-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["branch", "feature/recorded"]);
@@ -3626,11 +3626,11 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const projectId = randomUUID();
     const issueId = randomUUID();
     const executionWorkspaceId = randomUUID();
-    const runtimeStartedMarker = path.join(os.tmpdir(), `paperclip-runtime-started-${randomUUID()}.marker`);
+    const runtimeStartedMarker = path.join(os.tmpdir(), `todero-runtime-started-${randomUUID()}.marker`);
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3791,7 +3791,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("rejects forward branch reconciliation for diverged branches", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-diverged-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-diverged-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
     await runGit(repoRoot, ["checkout", "-b", "feature/recorded"]);
@@ -3813,7 +3813,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3884,7 +3884,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3976,7 +3976,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -4136,12 +4136,12 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     const provisioningWorkspaceId = randomUUID();
     const readyServiceId = randomUUID();
     const provisioningServiceId = randomUUID();
-    const hostname = "paperclip-dev.tail29c1aa.ts.net";
+    const hostname = "todero-dev.tail29c1aa.ts.net";
     const httpsUrl = `https://${hostname}:42010`;
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -4161,7 +4161,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       cwd: "/tmp/https-url-serialization",
       metadata: {
         runtimeConfig: {
-          workspaceRuntime: { services: [{ name: "paperclip-dev", command: "pnpm dev" }] },
+          workspaceRuntime: { services: [{ name: "todero-dev", command: "pnpm dev" }] },
           desiredState: "running",
         },
       },
@@ -4201,7 +4201,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         executionWorkspaceId: readyWorkspaceId,
         scopeType: "execution_workspace",
         scopeId: readyWorkspaceId,
-        serviceName: "paperclip-dev",
+        serviceName: "todero-dev",
         status: "running",
         lifecycle: "shared",
         reuseKey: "ready-dev",
@@ -4236,7 +4236,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         executionWorkspaceId: provisioningWorkspaceId,
         scopeType: "execution_workspace",
         scopeId: provisioningWorkspaceId,
-        serviceName: "paperclip-dev",
+        serviceName: "todero-dev",
         status: "running",
         lifecycle: "shared",
         reuseKey: "provisioning-dev",
@@ -4314,7 +4314,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     await db.insert(companies).values([
       {
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix: "PAP",
         requireBoardApprovalForNewAgents: false,
       },
@@ -4359,7 +4359,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         status: "active",
         providerType: "git_worktree",
         cwd: "/tmp/workspace-a",
-        branchName: "paperclip/a",
+        branchName: "todero/a",
         lastUsedAt: new Date("2026-06-03T10:00:00.000Z"),
         updatedAt: new Date("2026-06-03T10:05:00.000Z"),
         metadata: {
@@ -4380,7 +4380,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
         status: "idle",
         providerType: "git_worktree",
         cwd: "/tmp/workspace-b",
-        branchName: "paperclip/b",
+        branchName: "todero/b",
         lastUsedAt: new Date("2026-06-02T10:00:00.000Z"),
         updatedAt: new Date("2026-06-02T10:05:00.000Z"),
       },
@@ -4500,7 +4500,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       projectId,
       projectUrlKey: "workspaces",
       projectName: "Workspaces",
-      branchName: "paperclip/a",
+      branchName: "todero/a",
       serviceCount: 1,
       runningServiceCount: 1,
       primaryServiceUrl: "http://localhost:3100",
@@ -4534,7 +4534,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -4612,11 +4612,11 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   it("warns about dirty and unmerged git worktrees and reports cleanup actions", async () => {
     const repoRoot = await createTempRepo();
     tempDirs.add(repoRoot);
-    const worktreePath = path.join(path.dirname(repoRoot), `paperclip-worktree-${randomUUID()}`);
+    const worktreePath = path.join(path.dirname(repoRoot), `todero-worktree-${randomUUID()}`);
     tempDirs.add(worktreePath);
 
-    await runGit(repoRoot, ["branch", "paperclip-close-check"]);
-    await runGit(repoRoot, ["worktree", "add", worktreePath, "paperclip-close-check"]);
+    await runGit(repoRoot, ["branch", "todero-close-check"]);
+    await runGit(repoRoot, ["worktree", "add", worktreePath, "todero-close-check"]);
     await fs.writeFile(path.join(worktreePath, "feature.txt"), "hello\n", "utf8");
     await runGit(worktreePath, ["add", "feature.txt"]);
     await runGit(worktreePath, ["commit", "-m", "Feature commit"]);
@@ -4629,7 +4629,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: "PAP",
       requireBoardApprovalForNewAgents: false,
     });
@@ -4668,7 +4668,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       providerType: "git_worktree",
       cwd: worktreePath,
       providerRef: worktreePath,
-      branchName: "paperclip-close-check",
+      branchName: "todero-close-check",
       baseRef: "main",
       metadata: {
         createdByRuntime: true,
@@ -4690,7 +4690,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       isDestructiveCloseAllowed: true,
       git: {
         workspacePath: worktreePath,
-        branchName: "paperclip-close-check",
+        branchName: "todero-close-check",
         baseRef: "main",
         createdByRuntime: true,
         hasDirtyTrackedFiles: false,

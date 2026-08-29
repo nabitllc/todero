@@ -48,8 +48,8 @@ describe("oauthCallbackUrlForBrowser", () => {
   });
 
   it("preserves public HTTPS origins", () => {
-    expect(oauthCallbackUrlForBrowser("https://paperclip.example.test")).toBe(
-      "https://paperclip.example.test/api/tools/oauth/callback",
+    expect(oauthCallbackUrlForBrowser("https://todero.example.test")).toBe(
+      "https://todero.example.test/api/tools/oauth/callback",
     );
   });
 });
@@ -86,7 +86,7 @@ describe("genericConnectGuidance", () => {
     expect(guidance.body).toContain("Advanced authentication");
   });
 
-  it("points at the deployment when Paperclip itself has no public HTTPS address", () => {
+  it("points at the deployment when Todero itself has no public HTTPS address", () => {
     expect(genericConnectGuidance("oauth_redirect_origin_unsupported", null).focus).toBe("deployment");
   });
 
@@ -98,7 +98,7 @@ describe("genericConnectGuidance", () => {
   it("passes a rejected header's own message through", () => {
     const guidance = genericConnectGuidance(
       "mcp_header_rejected",
-      'Paperclip manages the "Host" header and cannot send a custom value for it.',
+      'Todero manages the "Host" header and cannot send a custom value for it.',
     );
     expect(guidance.body).toContain('"Host"');
     expect(guidance.focus).toBe("credentials");
@@ -118,9 +118,9 @@ describe("customHeaderError", () => {
     ])).toBeNull();
   });
 
-  it("rejects headers Paperclip refuses to send", () => {
+  it("rejects headers Todero refuses to send", () => {
     expect(customHeaderError([{ id: "a", name: "Host", value: "evil.example" }]))
-      .toContain('Paperclip manages the "Host" header');
+      .toContain('Todero manages the "Host" header');
   });
 
   it("rejects a value that would split the request", () => {

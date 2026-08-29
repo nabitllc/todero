@@ -1,4 +1,4 @@
-import { buildAdapterEnvConfig, type CreateConfigValues } from "@paperclipai/adapter-utils";
+import { buildAdapterEnvConfig, type CreateConfigValues } from "@todero/adapter-utils";
 import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "../index.js";
 
 function parseCommaArgs(value: string): string[] {
@@ -62,7 +62,7 @@ export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unk
 }
 
 /** Build the Codex-only profile accepted by the experimental Rust runner. */
-export function buildPaperclipRunnerConfig(v: CreateConfigValues): Record<string, unknown> {
+export function buildToderoRunnerConfig(v: CreateConfigValues): Record<string, unknown> {
   const config = buildCodexLocalConfig(v);
   for (const unsupportedKey of [
     "engine",

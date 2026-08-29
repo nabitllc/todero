@@ -4,7 +4,7 @@ import { getStoredBoardCredential, loginBoardCli } from "../../client/board-auth
 import { buildCliCommandLabel } from "../../client/command-label.js";
 import { readConfig } from "../../config/store.js";
 import { readContext, resolveProfile, type ClientContextProfile } from "../../client/context.js";
-import { ApiRequestError, PaperclipApiClient } from "../../client/http.js";
+import { ApiRequestError, ToderoApiClient } from "../../client/http.js";
 
 export interface BaseClientOptions {
   config?: string;
@@ -19,7 +19,7 @@ export interface BaseClientOptions {
 }
 
 export interface ResolvedClientContext {
-  api: PaperclipApiClient;
+  api: ToderoApiClient;
   companyId?: string;
   profileName: string;
   profile: ClientContextProfile;
@@ -29,11 +29,11 @@ export interface ResolvedClientContext {
 
 export function addCommonClientOptions(command: Command, opts?: { includeCompany?: boolean }): Command {
   command
-    .option("-c, --config <path>", "Path to Paperclip config file")
-    .option("-d, --data-dir <path>", "Paperclip data directory root (isolates state from ~/.paperclip)")
+    .option("-c, --config <path>", "Path to Todero config file")
+    .option("-d, --data-dir <path>", "Todero data directory root (isolates state from ~/.todero)")
     .option("--context <path>", "Path to CLI context file")
     .option("--profile <name>", "CLI context profile name")
-    .option("--api-base <url>", "Base URL for the Paperclip API")
+    .option("--api-base <url>", "Base URL for the Todero API")
     .option("--api-key <token>", "Bearer token for agent-authenticated calls")
     .option("--run-id <id>", "Heartbeat run id for agent-authenticated mutations (checkout/release/interactions/in-progress update); falls back to $PAPERCLIP_RUN_ID")
     .option("--json", "Output raw JSON");
@@ -66,17 +66,17 @@ export function resolveCommandContext(
 
   if (opts?.requireCompany && !companyId) {
     throw new Error(
-      "Company ID is required. Pass --company-id, set PAPERCLIP_COMPANY_ID, or set context profile companyId via `paperclipai context set`.",
+      "Company ID is required. Pass --company-id, set PAPERCLIP_COMPANY_ID, or set context profile companyId via `todero context set`.",
     );
   }
 
   // Agent-authenticated mutations (checkout, release, interactions, PATCH of an
-  // in-progress issue) require the X-Paperclip-Run-Id header (the server returns
+  // in-progress issue) require the X-Todero-Run-Id header (the server returns
   // "401 Agent run id required" without it). Source it from --run-id, else the
   // PAPERCLIP_RUN_ID env the adapter/embodiment context already exports.
   const runId = options.runId?.trim() || process.env.PAPERCLIP_RUN_ID?.trim() || undefined;
 
-  const api = new PaperclipApiClient({
+  const api = new ToderoApiClient({
     apiBase,
     apiKey,
     runId,

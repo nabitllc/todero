@@ -1,4 +1,4 @@
-import { APP_STORE_DEFINITIONS, appSupportsCatalogSetup } from "@paperclipai/shared";
+import { APP_STORE_DEFINITIONS, appSupportsCatalogSetup } from "@todero/shared";
 import { describe, expect, it } from "vitest";
 import {
   MCP_DIRECT_OAUTH_CONNECT_SLUGS,
@@ -55,7 +55,7 @@ describe("app connect policy", () => {
     expect(connectableApps.length).toBeGreaterThan(0);
     for (const app of connectableApps) {
       const href = appSourceConnectHref(app.slug);
-      const searchParams = new URL(href, "http://paperclip.test").searchParams;
+      const searchParams = new URL(href, "http://todero.test").searchParams;
 
       expect(canEnterAppsConnect(searchParams), app.slug).toBe(true);
       expect(resolveAppsConnectRouteKey({ sourceSlug: searchParams.get("source") }), app.slug).toBe(app.slug);

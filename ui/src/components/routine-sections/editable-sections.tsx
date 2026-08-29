@@ -35,7 +35,7 @@ import { RoutineVariablesEditor, RoutineVariablesHint } from "../RoutineVariable
 import { RoutineTriggerCard } from "../RoutineTriggerCard";
 import { EnvironmentVariablesEditor } from "../environment-variables-editor";
 import { createDefaultNewTrigger, useRoutineDetail } from "./context";
-import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@paperclipai/shared";
+import type { EnvBinding, RoutineDetail as RoutineDetailType } from "@todero/shared";
 
 const concurrencyPolicyOptions = [
   {
@@ -652,7 +652,7 @@ export function SecretsSection() {
           <div>
             <p className="font-medium">{secretMessage.title}</p>
             <p className="text-xs text-muted-foreground">
-              Save this now. Paperclip will not show the secret value again.
+              Save this now. Todero will not show the secret value again.
             </p>
           </div>
           <div className="space-y-3">

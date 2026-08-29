@@ -1,7 +1,7 @@
 import {
   buildSandboxNpmInstallCommand,
   type AdapterModelProfileDefinition,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 
 export const type = "gemini_local";
 export const label = "Gemini CLI";
@@ -38,14 +38,14 @@ export const agentConfigurationDoc = `# gemini_local agent configuration
 Adapter: gemini_local
 
 Use when:
-- You want Paperclip to run the Gemini CLI locally on the host machine
+- You want Todero to run the Gemini CLI locally on the host machine
 - You want Gemini chat sessions resumed across heartbeats with --resume
-- You want Paperclip skills injected locally without polluting the global environment
+- You want Todero skills injected locally without polluting the global environment
 
 Don't use when:
 - You need webhook-style external invocation (use http or openclaw_gateway)
 - You only need a one-shot script without an AI coding agent loop (use process)
-- Gemini CLI is not installed on the machine that runs Paperclip
+- Gemini CLI is not installed on the machine that runs Todero
 
 Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
@@ -68,10 +68,10 @@ Operational fields:
 - graceSec (number, optional): SIGTERM grace period in seconds
 
 Notes:
-- Gemini ACP is the preferred auto lane when Node >=24.11.0 and the local Gemini CLI command is available. It runs Gemini CLI's native \`gemini --acp\` server through Paperclip's shared ACP engine, including selected skill links, Paperclip runtime prompt/env guidance, model config, and persistent ACP session state. Auto selection falls back to the CLI lane when ACP prerequisites are unavailable; explicit engine="acp" fails loudly.
+- Gemini ACP is the preferred auto lane when Node >=24.11.0 and the local Gemini CLI command is available. It runs Gemini CLI's native \`gemini --acp\` server through Todero's shared ACP engine, including selected skill links, Todero runtime prompt/env guidance, model config, and persistent ACP session state. Auto selection falls back to the CLI lane when ACP prerequisites are unavailable; explicit engine="acp" fails loudly.
 - Runs use --prompt for non-interactive execution, not stdin.
 - The adapter sets a headless-safe terminal/browser environment for Gemini CLI child processes so unattended runs do not wait on browser auth or 256-color terminal prompts.
 - Sessions resume with --resume when stored session cwd matches the current cwd.
-- Paperclip auto-injects local skills into \`~/.gemini/skills/\` via symlinks, so the CLI can discover both credentials and skills in their natural location.
+- Todero auto-injects local skills into \`~/.gemini/skills/\` via symlinks, so the CLI can discover both credentials and skills in their natural location.
 - Authentication can use GEMINI_API_KEY / GOOGLE_API_KEY or local Gemini CLI login.
 `;

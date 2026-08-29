@@ -17,7 +17,7 @@ import {
   toolCatalogEntries,
   toolConnections,
   toolInvocations,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { toolAccessService } from "../services/tool-access.js";
 import { createToolGatewayService } from "../services/tool-gateway.js";
 import { canonicalToolArguments, signToolArguments } from "../services/tool-content-guards.js";
@@ -35,7 +35,7 @@ describeEmbeddedPostgres("tool review queue vs unsigned ask-first request", () =
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-review-queue-unsigned-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-review-queue-unsigned-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 

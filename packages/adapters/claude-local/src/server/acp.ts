@@ -8,35 +8,35 @@ import type {
   AdapterEnvironmentTestResult,
   AdapterExecutionContext,
   AdapterExecutionResult,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   parseLocalProcessFilesystemScope,
   parseLocalProcessNetworkScope,
-} from "@paperclipai/adapter-utils/local-process-sandbox";
+} from "@todero/adapter-utils/local-process-sandbox";
 import {
   ensureAdapterExecutionTargetCommandResolvable,
   readAdapterExecutionTarget,
   resolveAdapterExecutionTargetCwd,
   runAdapterExecutionTargetProcess,
-} from "@paperclipai/adapter-utils/execution-target";
-import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
+import type { AdapterExecutionTarget } from "@todero/adapter-utils/execution-target";
 import {
   DEFAULT_ACP_ENGINE_MODE,
   DEFAULT_ACP_ENGINE_NON_INTERACTIVE_PERMISSIONS,
   DEFAULT_ACP_ENGINE_PERMISSION_MODE,
   DEFAULT_ACP_ENGINE_WARM_HANDLE_IDLE_MS,
-} from "@paperclipai/adapter-utils/acpx-engine/constants";
+} from "@todero/adapter-utils/acpx-engine/constants";
 import type {
   AcpxEngineExecutorOptions,
   AcpxRemoteManagedHomeContext,
   AcpxRemoteManagedHomeResult,
-} from "@paperclipai/adapter-utils/acpx-engine/execute";
+} from "@todero/adapter-utils/acpx-engine/execute";
 import {
   asBoolean,
   asNumber,
   asString,
   parseObject,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/adapter-utils/server-utils";
 import {
   materializeRemoteClaudeConfig,
   prepareClaudeConfigSeed,
@@ -48,7 +48,7 @@ import {
   classifyThrownErrorClass,
   logSandboxProbeDiagnostic,
 } from "./probe-diagnostics.js";
-import { createWorkspaceRestoreTeardown } from "@paperclipai/adapter-utils/workspace-restore-teardown";
+import { createWorkspaceRestoreTeardown } from "@todero/adapter-utils/workspace-restore-teardown";
 import { buildLocalAdapterTestProbeEnv } from "./probe-env.js";
 import { detectClaudeLoginRequired, parseClaudeStreamJson } from "./parse.js";
 import { buildClaudeProbePermissionArgs } from "./permissions.js";
@@ -115,7 +115,7 @@ export async function resolveClaudeExecutionEngineForRun(
 }
 
 export function formatClaudeAcpFallbackMessage(reason: string): string {
-  return `[paperclip] Claude ACP default unavailable; falling back to Claude CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`;
+  return `[todero] Claude ACP default unavailable; falling back to Claude CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`;
 }
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
@@ -220,8 +220,8 @@ async function prepareClaudeRemoteManagedHome(
     createWorkspaceRestoreTeardown({
       stagedRuntime,
       onLog,
-      startMessage: "[paperclip] Restoring workspace changes from the sandbox.\n",
-      failurePrefix: "[paperclip] Claude ACP teardown workspace restore failed",
+      startMessage: "[todero] Restoring workspace changes from the sandbox.\n",
+      failurePrefix: "[todero] Claude ACP teardown workspace restore failed",
     });
   const envConfig = parseObject(input.config.env);
   const explicitClaudeConfigDir =
@@ -256,13 +256,13 @@ async function prepareClaudeRemoteManagedHome(
       env.CLAUDE_CONFIG_DIR = remappedConfigDir;
       await onLog(
         "stdout",
-        `[paperclip] Remapped operator CLAUDE_CONFIG_DIR from host path ${explicitClaudeConfigDir} onto the in-sandbox workspace path ${remappedConfigDir} for the remote ACP run.\n`,
+        `[todero] Remapped operator CLAUDE_CONFIG_DIR from host path ${explicitClaudeConfigDir} onto the in-sandbox workspace path ${remappedConfigDir} for the remote ACP run.\n`,
       );
       return { stagedRuntime, teardown: registerWorkspaceSyncBack(stagedRuntime) };
     }
     await onLog(
       "stderr",
-      `[paperclip] operator-provided CLAUDE_CONFIG_DIR=${explicitClaudeConfigDir} is outside the staged workspace and cannot reach the remote sandbox; ignoring the host-only path and seeding the managed Claude config instead.\n`,
+      `[todero] operator-provided CLAUDE_CONFIG_DIR=${explicitClaudeConfigDir} is outside the staged workspace and cannot reach the remote sandbox; ignoring the host-only path and seeding the managed Claude config instead.\n`,
     );
   }
 
@@ -275,12 +275,12 @@ async function prepareClaudeRemoteManagedHome(
 
   const remoteClaudeRuntimeRoot =
     stagedRuntime.runtimeRootDir ??
-    path.posix.join(stagedRuntime.workspaceRemoteDir ?? input.workspaceLocalDir, ".paperclip-runtime", "claude");
+    path.posix.join(stagedRuntime.workspaceRemoteDir ?? input.workspaceLocalDir, ".todero-runtime", "claude");
   const remoteClaudeConfigSeedDir =
     stagedRuntime.assetDirs["config-seed"] ?? path.posix.join(remoteClaudeRuntimeRoot, "config-seed");
   const remoteClaudeConfigDir = path.posix.join(remoteClaudeRuntimeRoot, "config");
 
-  await onLog("stdout", `[paperclip] Materializing Claude auth/config into ${remoteClaudeConfigDir}.\n`);
+  await onLog("stdout", `[todero] Materializing Claude auth/config into ${remoteClaudeConfigDir}.\n`);
   await materializeRemoteClaudeConfig({
     runId,
     target: executionTarget,
@@ -345,7 +345,7 @@ export function createClaudeAcpExecutor(options: ClaudeAcpExecutorOptions = {}):
   return async (ctx) => {
     let currentExecutor = executor;
     if (!currentExecutor) {
-      const { createAcpxEngineExecutor } = await import("@paperclipai/adapter-utils/acpx-engine/execute");
+      const { createAcpxEngineExecutor } = await import("@todero/adapter-utils/acpx-engine/execute");
       currentExecutor = createAcpxEngineExecutor(withClaudeAcpDefaults(options));
       executor = currentExecutor;
     }
@@ -601,7 +601,7 @@ export async function probeClaudeAcpSandboxLogin(input: {
       trustedEnv: process.env,
     });
     if (!built.command) {
-      return [buildAcpLoginProbeUnavailableCheck("Claude is not installed on the Paperclip host.")];
+      return [buildAcpLoginProbeUnavailableCheck("Claude is not installed on the Todero host.")];
     }
     command = built.command;
     env = built.env;
@@ -695,7 +695,7 @@ export async function testClaudeAcpEnvironment(
       code: "claude_acp_remote_target",
       level: "info",
       message: "Claude ACP will run against the remote execution environment.",
-      hint: "Remote ACP requires a bidirectional process target such as SSH or Paperclip's sandbox process-session bridge.",
+      hint: "Remote ACP requires a bidirectional process target such as SSH or Todero's sandbox process-session bridge.",
     });
   }
 

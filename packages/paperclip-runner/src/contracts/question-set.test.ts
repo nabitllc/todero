@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
   PAPERCLIP_QUESTION_SET_SCHEMA,
-  parsePaperclipQuestionResponse,
-  parsePaperclipQuestionSet,
-  type PaperclipQuestionSet,
+  parseToderoQuestionResponse,
+  parseToderoQuestionSet,
+  type ToderoQuestionSet,
 } from "./question-set.js";
 
-const questionSet: PaperclipQuestionSet = {
+const questionSet: ToderoQuestionSet = {
   schema: PAPERCLIP_QUESTION_SET_SCHEMA,
   title: "Release input",
   questions: [
@@ -33,11 +33,11 @@ const questionSet: PaperclipQuestionSet = {
   ],
 };
 
-describe("Paperclip question-set contract", () => {
+describe("Todero question-set contract", () => {
   it("round-trips the portable presentation model", () => {
-    expect(parsePaperclipQuestionSet(questionSet)).toEqual(questionSet);
+    expect(parseToderoQuestionSet(questionSet)).toEqual(questionSet);
     expect(
-      parsePaperclipQuestionResponse(questionSet, {
+      parseToderoQuestionResponse(questionSet, {
         schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
         answers: {
           environment: { selectedOptionIds: ["staging"] },
@@ -55,7 +55,7 @@ describe("Paperclip question-set contract", () => {
 
   it("rejects missing, unknown, and provider-shaped answers", () => {
     expect(() =>
-      parsePaperclipQuestionResponse(questionSet, {
+      parseToderoQuestionResponse(questionSet, {
         schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
         answers: {
           environment: { selectedOptionIds: ["unknown"] },
@@ -64,18 +64,18 @@ describe("Paperclip question-set contract", () => {
       }),
     ).toThrow(/unknown option/);
     expect(() =>
-      parsePaperclipQuestionResponse(questionSet, {
+      parseToderoQuestionResponse(questionSet, {
         schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
         answers: { environment: { selectedOptionIds: ["staging"] } },
       }),
     ).toThrow(/replicas.*required/);
     expect(() =>
-      parsePaperclipQuestionResponse(questionSet, {
+      parseToderoQuestionResponse(questionSet, {
         answers: { environment: { answers: ["Staging"] } },
       }),
-    ).toThrow(/paperclip.question_response.v1/);
+    ).toThrow(/todero.question_response.v1/);
     expect(() =>
-      parsePaperclipQuestionResponse(questionSet, {
+      parseToderoQuestionResponse(questionSet, {
         schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
         answers: {
           environment: { answers: ["Staging"] },
@@ -87,7 +87,7 @@ describe("Paperclip question-set contract", () => {
 
   it("applies typed numeric validation before an adapter sees the answer", () => {
     expect(() =>
-      parsePaperclipQuestionResponse(questionSet, {
+      parseToderoQuestionResponse(questionSet, {
         schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
         answers: {
           environment: { customText: "Canary" },
@@ -96,7 +96,7 @@ describe("Paperclip question-set contract", () => {
       }),
     ).toThrow(/valid integer/);
     expect(() =>
-      parsePaperclipQuestionResponse(questionSet, {
+      parseToderoQuestionResponse(questionSet, {
         schema: PAPERCLIP_QUESTION_RESPONSE_SCHEMA,
         answers: {
           environment: { customText: "Canary" },

@@ -1,8 +1,8 @@
 import { and, eq, ne, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { agents, companyOnboardingSeeds, goals, issues, projects } from "@paperclipai/db";
-import type { ApplyOnboardingSeed } from "@paperclipai/shared";
-import { writePaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
+import type { Db } from "@todero/db";
+import { agents, companyOnboardingSeeds, goals, issues, projects } from "@todero/db";
+import type { ApplyOnboardingSeed } from "@todero/shared";
+import { writeToderoSkillSyncPreference } from "@todero/adapter-utils/server-utils";
 import { findActiveServerAdapter } from "../adapters/registry.js";
 import { agentService } from "./agents.js";
 import { PAPERCLIP_CORE_SKILL_KEYS } from "./company-skills.js";
@@ -41,7 +41,7 @@ function seededAgentAdapterType() {
 
 /**
  * Adapter config for the seeded CEO. The default CEO instructions tell the
- * agent to use the core paperclip skills (hiring, memory, coordination), and
+ * agent to use the core todero skills (hiring, memory, coordination), and
  * an agent's runtime only receives skills listed in its own desired set — so
  * a seeded CEO with an empty adapter config arrives with zero skills and
  * truthfully reports its own toolkit as not installed. Enable the core set
@@ -50,7 +50,7 @@ function seededAgentAdapterType() {
 function seededAgentAdapterConfig(adapterType: string): Record<string, unknown> {
   const adapter = findActiveServerAdapter(adapterType);
   if (!adapter?.listSkills && !adapter?.syncSkills) return {};
-  return writePaperclipSkillSyncPreference(
+  return writeToderoSkillSyncPreference(
     {},
     PAPERCLIP_CORE_SKILL_KEYS.map((key) => ({ key, versionId: null })),
   );
@@ -259,7 +259,7 @@ export function onboardingSeedService(db: Db) {
     //
     //    No-first-task contract (PAP-67 r17.4): on the Cloud walk this branch
     //    never runs. The seed Cloud sends is mission-only — `agent` and
-    //    `firstTask` are unpopulated by the signup wizard and a paperclip-cloud
+    //    `firstTask` are unpopulated by the signup wizard and a todero-cloud
     //    `node:test` in `src/onboarding/` pins that — so `firstTaskTitle` is
     //    null here and the first task stays owned by the tenant's own
     //    server-owned onboarding path (`POST /issues` with
@@ -395,7 +395,7 @@ export function onboardingSeedService(db: Db) {
 
     const result = await db.transaction(async (tx) => {
       await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`paperclip:onboarding-seed:${companyId}`}, 0))`,
+        sql`select pg_advisory_xact_lock(hashtextextended(${`todero:onboarding-seed:${companyId}`}, 0))`,
       );
       const dbx = tx as unknown as Db;
       const applied = await applyWithin(dbx, companyId, seed);

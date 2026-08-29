@@ -34,7 +34,7 @@ describe("isCloudManagedInstance", () => {
 });
 
 describe("getCloudStackContext", () => {
-  it("returns null outside Paperclip Cloud even when stray stack metadata exists", () => {
+  it("returns null outside Todero Cloud even when stray stack metadata exists", () => {
     expect(getCloudStackContext({ PAPERCLIP_STACK_SLUG: "stray-stack" })).toBeNull();
   });
 
@@ -44,14 +44,14 @@ describe("getCloudStackContext", () => {
       PAPERCLIP_CLOUD_STACK_ID: " stack-1 ",
       PAPERCLIP_STACK_SLUG: " acme ",
       PAPERCLIP_CLOUD_ACCOUNT_GROUP_ID: " account-group-1 ",
-      PAPERCLIP_PRIMARY_HOST: " acme.paperclip.app ",
-      PAPERCLIP_CLOUD_API_ORIGIN: " https://app.paperclip.app ",
+      PAPERCLIP_PRIMARY_HOST: " acme.todero.app ",
+      PAPERCLIP_CLOUD_API_ORIGIN: " https://app.todero.app ",
     })).toEqual({
       stackId: "stack-1",
       stackSlug: "acme",
       accountGroupId: "account-group-1",
-      primaryHost: "acme.paperclip.app",
-      cloudOrigin: "https://app.paperclip.app",
+      primaryHost: "acme.todero.app",
+      cloudOrigin: "https://app.todero.app",
     });
   });
 
